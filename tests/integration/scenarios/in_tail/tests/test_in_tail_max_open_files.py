@@ -378,3 +378,166 @@ def test_max_open_files_preserves_stateful_files(workspace, mode):
         assert "max_open_files=1 reached; deferring" in log
     finally:
         service.stop()
+
+
+def dormant_database_rows(workspace):
+    import sqlite3
+
+    with sqlite3.connect(workspace / "tail.db", timeout=1) as database:
+        return database.execute("SELECT COUNT(*) FROM in_tail_files").fetchone()[0]
+
+
+def wait_for_dormant_cleanup(service, workspace, rows=0):
+    import re
+
+    def cleaned():
+        counts = re.findall(r"dormant files retained=(\d+)", Path(service.flb.log_file).read_text())
+        return (counts and int(counts[-1]) == rows and
+                dormant_database_rows(workspace) == rows)
+
+    service.service.wait_for_condition(cleaned, timeout=30, interval=0.2,
+                                       description="dormant indexes and database cleanup")
+
+
+def test_max_open_files_deleted_dormant_cleanup(workspace):
+    service = budget_service(workspace, 1)
+    try:
+        service.start()
+        for index in range(4):
+            path = workspace / f"unique-{index}.log"
+            path.write_text(f"line-{index}\n")
+            service.wait_for_records(index + 1)
+            wait_for_dormant(service, path)
+            assert dormant_database_rows(workspace) == 1
+            path.unlink()
+            wait_for_dormant_cleanup(service, workspace)
+    finally:
+        service.stop()
+
+
+def test_max_open_files_replaced_dormant_cleanup(workspace):
+    path = workspace / "same.log"
+    path.write_text("original\n")
+    service = budget_service(workspace, 1)
+    try:
+        service.start()
+        service.wait_for_records(1)
+        wait_for_dormant(service, path)
+        # Keep the old inode alive outside the monitored glob to prevent reuse.
+        path.rename(workspace / "old.retired")
+        path.write_text("replacement\n")
+        records = service.wait_for_records(2)
+        assert_log_set(records, ["original", "replacement"])
+        wait_for_dormant_cleanup(service, workspace, rows=1)
+        path.unlink()
+        wait_for_dormant_cleanup(service, workspace)
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("database", [False, True])
+def test_max_open_files_dormant_rename_with_replacement(workspace, database):
+    path = workspace / "a.log"
+    renamed = workspace / "z.log"
+    path.write_text("original\n")
+    service = budget_service(workspace, 1)
+    if not database:
+        config = Path(service.config_file)
+        config.write_text("\n".join(line for line in config.read_text().splitlines()
+                                     if not line.strip().startswith("db")) + "\n")
+    try:
+        service.start()
+        service.wait_for_records(1)
+        wait_for_dormant(service, path)
+        path.rename(renamed)
+        path.write_text("replacement\n")
+        write_and_sync(renamed, "after-rename\n")
+        records = service.wait_for_records(3, timeout=30)
+        service.assert_no_new_records_for(3)
+        assert_log_set(records, ["original", "replacement", "after-rename"])
+        wait_for_dormant(service, renamed)
+        if database:
+            wait_for_dormant_cleanup(service, workspace, rows=2)
+        path.unlink()
+        renamed.unlink()
+        if database:
+            wait_for_dormant_cleanup(service, workspace)
+    finally:
+        service.stop()
+
+
+def test_max_open_files_dormant_incomplete_scan(workspace):
+    if sys.platform == "win32" or os.geteuid() == 0:
+        pytest.skip("requires POSIX directory permissions enforced for a non-root user")
+    blocked = workspace / "blocked"
+    blocked.mkdir()
+    path = workspace / "a.log"
+    moved = blocked / "a.log"
+    path.write_text("original\n")
+    service = budget_service(workspace, 1)
+    config = Path(service.config_file)
+    config.write_text(config.read_text().replace("${TAIL_TEST_PATH}",
+                      f"{workspace}/*.log,{blocked}/*.log"))
+    try:
+        service.start()
+        service.wait_for_records(1)
+        wait_for_dormant(service, path)
+        path.rename(moved)
+        write_and_sync(moved, "after-scan-error\n")
+        blocked.chmod(0)
+        service.service.wait_for_condition(
+            lambda: "error scanning path" in Path(service.flb.log_file).read_text(),
+            timeout=30, interval=0.2, description="incomplete scan",
+        )
+        service.assert_no_new_records_for(1)
+        assert dormant_database_rows(workspace) == 1
+        blocked.chmod(0o700)
+        records = service.wait_for_records(2, timeout=30)
+        service.assert_no_new_records_for(2)
+        assert_log_set(records, ["original", "after-scan-error"])
+        moved.unlink()
+        wait_for_dormant_cleanup(service, workspace)
+    finally:
+        blocked.chmod(0o700)
+        service.stop()
+
+
+@pytest.mark.parametrize("reappear", [False, True])
+def test_max_open_files_dormant_database_delete_retry(workspace, reappear):
+    import sqlite3
+
+    path = workspace / "a.log"
+    path.write_text("original\n")
+    service = budget_service(workspace, 1)
+    database = None
+    try:
+        service.start()
+        service.wait_for_records(1)
+        wait_for_dormant(service, path)
+        database = sqlite3.connect(workspace / "tail.db")
+        database.execute("BEGIN EXCLUSIVE")
+        if reappear:
+            path.rename(path.with_suffix(".retired"))
+        else:
+            path.unlink()
+        service.service.wait_for_condition(
+            lambda: "error deleting stale entry" in Path(service.flb.log_file).read_text(),
+            timeout=30, interval=0.2, description="blocked dormant row deletion",
+        )
+        if reappear:
+            path.with_suffix(".retired").rename(path)
+            write_and_sync(path, "reappeared\n")
+        database.rollback()
+        database.close()
+        database = None
+        if reappear:
+            records = service.wait_for_records(2, timeout=30)
+            assert_log_set(records, ["original", "reappeared"])
+            wait_for_dormant_cleanup(service, workspace, rows=1)
+            path.unlink()
+        wait_for_dormant_cleanup(service, workspace)
+    finally:
+        if database is not None:
+            database.rollback()
+            database.close()
+        service.stop()
