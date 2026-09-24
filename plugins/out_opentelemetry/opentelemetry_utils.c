@@ -175,7 +175,13 @@ int otlp_kvarray_append(Opentelemetry__Proto__Common__V1__KeyValue ***base,
     size_t new_count;
     Opentelemetry__Proto__Common__V1__KeyValue **tmp;
 
-    if (extra == NULL || extra_count == 0) {
+    if (extra == NULL) {
+        return 0;
+    }
+
+    /* nothing to append, the caller hands over the (empty) array */
+    if (extra_count == 0) {
+        flb_free(extra);
         return 0;
     }
 
