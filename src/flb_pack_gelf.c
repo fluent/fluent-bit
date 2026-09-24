@@ -109,6 +109,12 @@ static flb_sds_t flb_msgpack_gelf_key(flb_sds_t *s, int in_array,
     return *s;
 }
 
+/*
+ * Append a value to the GELF output. 'quote' only controls whether the value
+ * is wrapped in double quotes: the content is always JSON-escaped, because an
+ * unquoted value is still written inside a JSON string (array elements are
+ * flattened into the quoted string opened by the enclosing array).
+ */
 static flb_sds_t flb_msgpack_gelf_value(flb_sds_t *s, int quote,
                                         const char *val, int val_len)
 {
@@ -120,23 +126,18 @@ static flb_sds_t flb_msgpack_gelf_value(flb_sds_t *s, int quote,
             return NULL;
         }
         *s = tmp;
+    }
 
-        if (val_len > 0) {
-            tmp = flb_sds_cat_utf8(s, val, val_len);
-            if (tmp == NULL) {
-                return NULL;
-            }
-            *s = tmp;
-        }
-
-        tmp = flb_sds_cat(*s, "\"", 1);
+    if (val_len > 0) {
+        tmp = flb_sds_cat_utf8(s, val, val_len);
         if (tmp == NULL) {
             return NULL;
         }
         *s = tmp;
     }
-    else {
-        tmp = flb_sds_cat(*s, val, val_len);
+
+    if (quote == FLB_TRUE) {
+        tmp = flb_sds_cat(*s, "\"", 1);
         if (tmp == NULL) {
             return NULL;
         }
