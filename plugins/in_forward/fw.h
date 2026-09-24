@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_log_event_encoder.h>
+#include <cfl/cfl_atomic.h>
 
 #define FW_INSTANCE_STATE_RUNNING           0
 #define FW_INSTANCE_STATE_ACCEPTING_CLIENT  1
@@ -103,8 +104,34 @@ struct flb_in_fw_config {
     /* fw_conn_del_all() is walking the connections list */
     int conn_del_all_active;
 
+    /*
+     * Pause requested by the engine thread (parent context only). It is set
+     * before in_fw_pause() blocks waiting for every listener worker to
+     * acknowledge the pause, so a worker waiting for ingress queue space can
+     * give up and return to its event loop.
+     */
+    uint64_t pause_requested;
+
     struct flb_downstream_worker_runtime *runtime;
 };
+
+/*
+ * The ingress queue is drained by the engine thread and, while pausing, that
+ * thread waits for the listener workers to acknowledge the pause: a worker
+ * must stop waiting for queue space once this is set or neither side can
+ * make progress.
+ */
+static inline int fw_pause_requested(struct flb_in_fw_config *ctx)
+{
+    struct flb_in_fw_config *parent;
+
+    parent = ctx->ins->context;
+    if (parent == NULL) {
+        return FLB_FALSE;
+    }
+
+    return cfl_atomic_load(&parent->pause_requested) == FLB_TRUE;
+}
 
 static inline int fw_ingest_logs(struct flb_in_fw_config *ctx,
                                  const char *tag, size_t tag_len,
