@@ -195,7 +195,13 @@ static ssize_t parse_payload_json(struct tcp_conn *conn)
     ret = process_pack(conn, pack, (size_t) out_size);
     flb_free(pack);
     if (ret < 0) {
-        return -1;
+        /*
+         * The records could not be encoded or ingested (process_pack already
+         * logged why). The bytes up to 'last_byte' were fully tokenized, so
+         * still consume them: keeping them in the buffer would make every
+         * later read re-parse and refuse the same payload again.
+         */
+        flb_plg_warn(conn->ins, "skipping unprocessable JSON payload");
     }
 
     processed = conn->pack_state.last_byte;
@@ -496,6 +502,12 @@ int tcp_conn_event(void *data)
                 goto cleanup;
             }
             else if (ret_payload == -1) {
+                /*
+                 * The payload could not be turned into records: drop the
+                 * buffered bytes, otherwise every later read would re-parse
+                 * the same undeliverable data from offset 0.
+                 */
+                conn->buf_len = 0;
                 flb_pack_state_reset(&conn->pack_state);
                 if (flb_pack_state_init(&conn->pack_state) == -1) {
                     flb_plg_error(ctx->ins,
