@@ -311,9 +311,12 @@ static int process_event(struct flb_kinesis *ctx, struct flush *buf,
         /* format time output and return the length */
         len = flb_aws_strftime_precision(&out_buf, ctx->time_key_format, tms);
 
-        /* how much space do we have left */
+        /*
+         * how much space do we have left: the closing '}' is replaced by
+         * ,"<time_key>":"<time>"} and a newline is appended afterwards.
+         */
         tmp_size = (buf->tmp_buf_size - buf->tmp_buf_offset) - written;
-        if (len > tmp_size) {
+        if (len > 0 && (len + strlen(ctx->time_key) + 7) > tmp_size) {
             /* not enough space - tell caller to retry */
             flb_free(out_buf);
             return 1;
