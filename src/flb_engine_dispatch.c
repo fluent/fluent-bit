@@ -94,6 +94,22 @@ int flb_engine_dispatch_retry(struct flb_task_retry *retry,
 
     task = retry->parent;
 
+    /*
+     * Same bound applied by tasks_start(): when too many flush requests are
+     * in flight, re-schedule the retry without spending an attempt.
+     */
+    if (config->flush_in_flight >= config->flush_in_flight_limit) {
+        flb_debug("[engine] %i flush requests in flight, deferring retry of "
+                  "task_id=%i", config->flush_in_flight, task->id);
+
+        ret = flb_task_retry_reschedule(retry, config);
+        if (ret == -1) {
+            return -1;
+        }
+
+        return 0;
+    }
+
     /* Set file up/down based on restrictions */
     ret = flb_input_chunk_set_up(task->ic);
     if (ret == -1) {
