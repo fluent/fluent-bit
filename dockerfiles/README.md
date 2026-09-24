@@ -8,7 +8,7 @@ Optionally, we provide debug images which contain shells and tooling that can be
 
 There are also images for ARM32 and ARM64 architectures but no debug versions of these.
 
-For a detailed list of installation, usage and versions available, please refer to the the official documentation: https://docs.fluentbit.io/manual/installation/docker
+For a detailed list of installation, usage and versions available, please refer to the the official documentation: https://docs.fluentbit.io/manual/installation/downloads/docker
 
 ## Multiple architecture support
 
