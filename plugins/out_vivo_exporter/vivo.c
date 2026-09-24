@@ -52,16 +52,37 @@ static msgpack_object *find_map_value(msgpack_object *map,
     return NULL;
 }
 
+/* Serialize a group opener as [METADATA, BODY] into the given buffer */
+static void pack_group(msgpack_sbuffer *sbuf, struct flb_log_event *event)
+{
+    msgpack_packer pck;
+
+    msgpack_sbuffer_clear(sbuf);
+    msgpack_packer_init(&pck, sbuf, msgpack_sbuffer_write);
+
+    msgpack_pack_array(&pck, 2);
+    msgpack_pack_object(&pck, *event->metadata);
+    msgpack_pack_object(&pck, *event->body);
+}
+
 static flb_sds_t format_logs(struct flb_input_instance *src_ins,
                              struct flb_event_chunk *event_chunk, struct flb_config *config)
 {
     int len;
+    int ret;
     int result;
+    int32_t record_type;
     char *name;
+    size_t off = 0;
     flb_sds_t out_js;
     flb_sds_t out_buf = NULL;
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
+    msgpack_sbuffer group_sbuf;
+    msgpack_sbuffer cmp_sbuf;
+    msgpack_unpacked group_result;
+    int group_found = FLB_FALSE;
+    int in_group = FLB_FALSE;
     int group_mismatch = FLB_FALSE;
     int is_otlp = FLB_FALSE;
     struct flb_log_event log_event;
@@ -84,6 +105,18 @@ static flb_sds_t format_logs(struct flb_input_instance *src_ins,
         return NULL;
     }
 
+    /*
+     * The decoder releases the group record as soon as it reads the group
+     * closer, so the group metadata and body cannot be referenced after the
+     * decoding loop. Read the group markers explicitly and keep a private
+     * copy of the group in 'group_sbuf' instead.
+     */
+    result = flb_log_event_decoder_read_groups(&log_decoder, FLB_TRUE);
+    if (result != 0) {
+        flb_log_event_decoder_destroy(&log_decoder);
+        return NULL;
+    }
+
     out_buf = flb_sds_create_size((event_chunk->size * 2) / 4);
     if (!out_buf) {
         flb_errno();
@@ -93,6 +126,11 @@ static flb_sds_t format_logs(struct flb_input_instance *src_ins,
     /* Create temporary msgpack buffer */
     msgpack_sbuffer_init(&tmp_sbuf);
     msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
+
+    /* Buffers for the group copy and for comparing further groups against it */
+    msgpack_sbuffer_init(&group_sbuf);
+    msgpack_sbuffer_init(&cmp_sbuf);
+    msgpack_unpacked_init(&group_result);
 
     /*
      * Here is an example of the packaging done for Logs
@@ -160,22 +198,38 @@ static flb_sds_t format_logs(struct flb_input_instance *src_ins,
                         &log_decoder,
                         &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
 
-        if (log_event.group_metadata != NULL) {
-            if (group_metadata == NULL) {
-                group_metadata = log_event.group_metadata;
-            }
-            else if (group_metadata != log_event.group_metadata) {
-                group_mismatch = FLB_TRUE;
-            }
+        ret = flb_log_event_decoder_get_record_type(&log_event, &record_type);
+        if (ret != 0) {
+            continue;
         }
 
-        if (log_event.group_attributes != NULL) {
-            if (group_attributes == NULL) {
-                group_attributes = log_event.group_attributes;
+        if (record_type == FLB_LOG_EVENT_GROUP_START) {
+            /*
+             * Keep a copy of the first group; any further group with a
+             * different content means the chunk has mixed groups.
+             */
+            if (group_found == FLB_FALSE) {
+                pack_group(&group_sbuf, &log_event);
+                group_found = FLB_TRUE;
             }
-            else if (group_attributes != log_event.group_attributes) {
-                group_mismatch = FLB_TRUE;
+            else if (group_mismatch == FLB_FALSE) {
+                pack_group(&cmp_sbuf, &log_event);
+                if (cmp_sbuf.size != group_sbuf.size ||
+                    memcmp(cmp_sbuf.data, group_sbuf.data, group_sbuf.size) != 0) {
+                    group_mismatch = FLB_TRUE;
+                }
             }
+            in_group = FLB_TRUE;
+            continue;
+        }
+        else if (record_type == FLB_LOG_EVENT_GROUP_END) {
+            in_group = FLB_FALSE;
+            continue;
+        }
+
+        /* the chunk group only applies when every record belongs to a group */
+        if (in_group == FLB_FALSE) {
+            group_mismatch = FLB_TRUE;
         }
 
         flb_mp_array_header_append(&mh);
@@ -195,6 +249,18 @@ static flb_sds_t format_logs(struct flb_input_instance *src_ins,
     }
 
     flb_mp_array_header_end(&mh);
+
+    /* Unpack our own copy of the group: [METADATA, BODY] */
+    if (group_found == FLB_TRUE && group_mismatch == FLB_FALSE) {
+        ret = msgpack_unpack_next(&group_result, group_sbuf.data,
+                                  group_sbuf.size, &off);
+        if (ret == MSGPACK_UNPACK_SUCCESS &&
+            group_result.data.type == MSGPACK_OBJECT_ARRAY &&
+            group_result.data.via.array.size == 2) {
+            group_metadata = &group_result.data.via.array.ptr[0];
+            group_attributes = &group_result.data.via.array.ptr[1];
+        }
+    }
 
     if (group_mismatch == FLB_FALSE &&
         (group_metadata != NULL || group_attributes != NULL)) {
@@ -268,7 +334,10 @@ static flb_sds_t format_logs(struct flb_input_instance *src_ins,
 
     flb_mp_map_header_end(&root_map);
 
-    /* Release the unpacker */
+    /* Release the group copy and the unpacker */
+    msgpack_unpacked_destroy(&group_result);
+    msgpack_sbuffer_destroy(&cmp_sbuf);
+    msgpack_sbuffer_destroy(&group_sbuf);
     flb_log_event_decoder_destroy(&log_decoder);
 
     /* Convert the complete msgpack structure to JSON */
