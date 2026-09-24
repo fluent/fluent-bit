@@ -268,16 +268,23 @@ int syslog_prot_process(struct syslog_conn *conn)
 
         /* No data ? */
         if (len == 0) {
-            consume_bytes(conn->buf_data, 1, conn->buf_len);
-            conn->buf_len--;
-            conn->buf_parsed = 0;
-            conn->buf_data[conn->buf_len] = '\0';
-            end = conn->buf_data + conn->buf_len;
-
-            if (conn->buf_len == 0) {
-                break;
+            /*
+             * Skip the empty frame in place: the bytes before buf_parsed were
+             * already processed, so they must not be parsed again. The buffer
+             * is compacted once after the loop.
+             */
+            if (ctx->frame_type == FLB_SYSLOG_FRAME_NEWLINE) {
+                conn->buf_parsed += 1;
             }
-
+            else {
+                conn->frame_expected_len = 0;
+                conn->frame_have_len = 0;
+                if (conn->buf_parsed < conn->buf_len &&
+                    conn->buf_data[conn->buf_parsed] == '\n') {
+                    conn->buf_parsed += 1;
+                }
+            }
+            eof = conn->buf_data + conn->buf_parsed;
             continue;
         }
 
