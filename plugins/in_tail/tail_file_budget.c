@@ -196,3 +196,16 @@ void flb_tail_file_budget_release(struct flb_tail_config *ctx)
         }
     }
 }
+
+int flb_tail_file_budget_pressure(struct flb_tail_config *ctx)
+{
+    struct flb_tail_file_budget *budget = ctx->file_budget;
+    uint64_t count;
+
+    if (budget->limit == 0) {
+        return FLB_FALSE;
+    }
+
+    count = cfl_atomic_load(&budget->state) & TAIL_BUDGET_COUNT;
+    return count >= budget->limit - budget->limit / 4;
+}
