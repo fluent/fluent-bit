@@ -91,8 +91,38 @@ struct flb_in_fw_config *fw_config_init(struct flb_input_instance *i_ins)
     ret = flb_input_config_map_set(i_ins, (void *)config);
     if (ret == -1) {
         flb_plg_error(i_ins, "config map set error");
+        /* values written so far are still owned by the config map */
+        config->tag_prefix = NULL;
         fw_config_destroy(config);
         return NULL;
+    }
+
+    /*
+     * The config map owns the strings it writes into the context and
+     * releases them the next time it is applied to the same instance, which
+     * happens once per listener worker (in_fw_worker_init). Keep private
+     * copies of the values used while serving connections so no context is
+     * left pointing to released memory.
+     */
+    if (config->tag_prefix) {
+        config->tag_prefix = flb_sds_create_len(config->tag_prefix,
+                                                flb_sds_len(config->tag_prefix));
+        if (!config->tag_prefix) {
+            flb_plg_error(i_ins, "tag_prefix alloc failed");
+            fw_config_destroy(config);
+            return NULL;
+        }
+    }
+
+    if (config->shared_key) {
+        config->shared_key = flb_sds_create_len(config->shared_key,
+                                                flb_sds_len(config->shared_key));
+        if (!config->shared_key) {
+            flb_plg_error(i_ins, "shared_key alloc failed");
+            fw_config_destroy(config);
+            return NULL;
+        }
+        config->owns_shared_key = FLB_TRUE;
     }
 
     p = flb_input_get_property("unix_path", i_ins);
@@ -172,6 +202,7 @@ int fw_config_destroy(struct flb_in_fw_config *config)
     }
 
     fw_destroy_shared_key(config);
+    flb_sds_destroy(config->tag_prefix);
     flb_sds_destroy(config->self_hostname);
 
     flb_free(config);
