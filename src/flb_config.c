@@ -456,6 +456,7 @@ struct flb_config *flb_config_init()
     config->sched_cap  = FLB_SCHED_CAP;
     config->sched_base = FLB_SCHED_BASE;
     config->json_escape_unicode = FLB_TRUE;
+    config->flush_in_flight_limit = FLB_CONFIG_FLUSH_IN_FLIGHT_LIMIT;
 
     /* reload */
     config->ensure_thread_safety_on_hot_reloading = FLB_TRUE;

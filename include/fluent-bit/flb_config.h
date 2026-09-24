@@ -379,6 +379,7 @@ struct flb_config {
 
     /* flush requests dispatched to outputs whose status is pending */
     int flush_in_flight;
+    int flush_in_flight_limit;
 
     int json_escape_unicode;
 
