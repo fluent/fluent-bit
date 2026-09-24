@@ -59,6 +59,38 @@
 
 #define FLB_TAIL_DB_OFFSET_MARKER_SIZE 32
 
+/* Resume state is owned by the input thread and copied by the hash table. */
+struct tail_dormant_file {
+    struct stat st;
+    int64_t offset;
+    uint64_t marker;
+    size_t marker_size;
+};
+
+static int dormant_file_unchanged(struct tail_dormant_file *dormant, struct stat *st)
+{
+    struct stat *previous = &dormant->st;
+
+    if (previous->st_dev != st->st_dev || previous->st_ino != st->st_ino ||
+        previous->st_size != st->st_size || previous->st_mtime != st->st_mtime ||
+        previous->st_ctime != st->st_ctime) {
+        return FLB_FALSE;
+    }
+
+#if defined(FLB_SYSTEM_WINDOWS)
+    return previous->st_mtime_nsec == st->st_mtime_nsec &&
+           previous->st_ctime_nsec == st->st_ctime_nsec;
+#elif defined(__APPLE__) && !defined(_POSIX_C_SOURCE)
+    return previous->st_mtimespec.tv_nsec == st->st_mtimespec.tv_nsec &&
+           previous->st_ctimespec.tv_nsec == st->st_ctimespec.tv_nsec;
+#elif defined(__linux__) || defined(__FreeBSD__)
+    return previous->st_mtim.tv_nsec == st->st_mtim.tv_nsec &&
+           previous->st_ctim.tv_nsec == st->st_ctim.tv_nsec;
+#else
+    return FLB_TRUE;
+#endif
+}
+
 #ifdef FLB_SYSTEM_WINDOWS
 static inline int tail_file_open(struct flb_tail_config *ctx, const char *path,
                                  int flags)
@@ -266,12 +298,7 @@ int flb_tail_file_reset_on_truncate(struct flb_tail_file *file,
 
 static uint64_t stat_get_st_dev(struct stat *st)
 {
-#ifdef FLB_SYSTEM_WINDOWS
-    /* do you want to contribute with a way to extract volume serial number ? */
-    return 0;
-#else
     return st->st_dev;
-#endif
 }
 
 static int stat_to_hash_bits(struct flb_tail_config *ctx, struct stat *st,
@@ -1399,6 +1426,10 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     size_t tag_len;
     struct flb_tail_file *file;
     struct stat lst;
+    struct stat opened_st;
+    struct tail_dormant_file *dormant;
+    struct tail_dormant_file *opened_dormant;
+    flb_sds_t dormant_key;
     flb_sds_t inode_str;
 
     if (!S_ISREG(st->st_mode)) {
@@ -1406,6 +1437,19 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     }
 
     if (flb_tail_file_exists(st, ctx) == FLB_TRUE) {
+        return -1;
+    }
+
+    if (stat_to_hash_key(ctx, st, &dormant_key) != 0) {
+        return -1;
+    }
+    /* Identity lookup also preserves offsets across a dormant rename/hard link. */
+    dormant = flb_hash_table_get_ptr(ctx->dormant_inodes, dormant_key, flb_sds_len(dormant_key));
+    flb_sds_destroy(dormant_key);
+    if (dormant == NULL) {
+        dormant = flb_hash_table_get_ptr(ctx->dormant_files, path, strlen(path));
+    }
+    if (dormant != NULL && dormant_file_unchanged(dormant, st)) {
         return -1;
     }
 
@@ -1425,6 +1469,15 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
         flb_tail_file_budget_release(ctx);
         flb_plg_error(ctx->ins, "cannot open %s", path);
         return -1;
+    }
+
+    /* The path may have been replaced since the directory scan. */
+    if (fstat(fd, &opened_st) == -1 || !S_ISREG(opened_st.st_mode)) {
+        goto err_close_fd;
+    }
+    st = &opened_st;
+    if (flb_tail_file_exists(st, ctx) == FLB_TRUE) {
+        goto err_close_fd;
     }
 
     file = flb_calloc(1, sizeof(struct flb_tail_file));
@@ -1463,6 +1516,10 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
         goto err_free_file;
     }
     file->hash_key = hash_key;
+    opened_dormant = flb_hash_table_get_ptr(ctx->dormant_inodes, hash_key, flb_sds_len(hash_key));
+    if (opened_dormant != NULL) {
+        dormant = opened_dormant;
+    }
 
     file->inode     = st->st_ino;
     file->offset    = 0;
@@ -1668,6 +1725,25 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
         goto err_fs_remove;
     }
 
+    if (dormant != NULL) {
+        /* Dormant state takes precedence over read_from_head and the DB. */
+        file->offset = 0;
+        if (dormant->st.st_dev == st->st_dev && dormant->st.st_ino == st->st_ino &&
+            dormant->offset <= file->size) {
+            file->offset = dormant->offset;
+            file->db_offset_marker = dormant->marker;
+            file->db_offset_marker_size = dormant->marker_size;
+            if (flb_tail_file_offset_marker_matches(file) != FLB_TRUE) {
+                file->offset = 0;
+            }
+        }
+        if (lseek(fd, file->offset, SEEK_SET) == -1) {
+            goto err_fs_remove;
+        }
+        file->stream_offset = file->offset;
+        update_resumable_offset_state(file);
+    }
+
     /* Remaining bytes to read */
     file->pending_bytes = file->size - file->offset;
 
@@ -1698,6 +1774,10 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     flb_metrics_sum(FLB_TAIL_METRIC_F_OPENED, 1, ctx->ins->metrics);
 #endif
 
+    if (dormant != NULL) {
+        flb_hash_table_del(ctx->dormant_files, path);
+        flb_hash_table_del(ctx->dormant_inodes, file->hash_key);
+    }
     return 0;
 
 /*
@@ -1844,6 +1924,62 @@ void flb_tail_file_remove(struct flb_tail_file *file)
 #endif
 
     flb_free(file);
+}
+
+/* Called only by the input's scan collector, never by another pool user. */
+void flb_tail_file_reclaim(struct flb_tail_config *ctx)
+{
+    int ret;
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct flb_tail_file *file;
+    struct stat path_st;
+    struct tail_dormant_file dormant;
+
+    /* These modes may retain parser state beyond the file's read buffer. */
+    if (ctx->multiline || ctx->ml_ctx || ctx->docker_mode) {
+        return;
+    }
+
+    mk_list_foreach_safe(head, tmp, &ctx->files_event) {
+        if (!flb_tail_file_budget_pressure(ctx)) {
+            break;
+        }
+        file = mk_list_entry(head, struct flb_tail_file, _head);
+        if (file->rotated || file->is_link || file->decompression_context ||
+            file->buf_len != 0 || file->pending_bytes != 0 || file->skip_next ||
+            file->sl_log_event_encoder->output_length != 0) {
+            continue;
+        }
+        if (fstat(file->fd, &dormant.st) == -1 ||
+            tail_file_stat(ctx, file->name, &path_st) == -1 ||
+            dormant.st.st_dev != path_st.st_dev || dormant.st.st_ino != path_st.st_ino ||
+            dormant.st.st_size != file->offset ||
+            flb_tail_file_is_rotated(ctx, file) != FLB_FALSE ||
+            flb_tail_file_offset_marker_matches(file) != FLB_TRUE) {
+            continue;
+        }
+        if (file->offset > 0 && file->db_offset_marker_size == 0 &&
+            flb_tail_file_update_offset_marker(file) != 0) {
+            continue;
+        }
+        dormant.offset = file->offset;
+        dormant.marker = file->db_offset_marker;
+        dormant.marker_size = file->db_offset_marker_size;
+        ret = flb_hash_table_add(ctx->dormant_files, file->name, file->name_len,
+                                &dormant, sizeof(dormant));
+        if (ret == -1) {
+            continue;
+        }
+        ret = flb_hash_table_add(ctx->dormant_inodes, file->hash_key,
+                                flb_sds_len(file->hash_key), &dormant, sizeof(dormant));
+        if (ret == -1) {
+            flb_hash_table_del(ctx->dormant_files, file->name);
+            continue;
+        }
+        flb_plg_debug(ctx->ins, "releasing dormant file at 75%% budget usage: %s", file->name);
+        flb_tail_file_remove(file);
+    }
 }
 
 int flb_tail_file_remove_all(struct flb_tail_config *ctx)
