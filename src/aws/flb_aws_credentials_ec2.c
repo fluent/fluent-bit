@@ -125,12 +125,26 @@ struct flb_aws_credentials *get_credentials_fn_ec2(struct flb_aws_provider
     return creds;
 }
 
+/**
+ * Force an immediate refresh of EC2 IMDS credentials for the given provider.
+ *
+ * Attempts to acquire the provider lock and, if successful, triggers an immediate
+ * credentials refresh from the EC2 Instance Metadata Service. If the lock cannot
+ * be acquired the function does not perform a refresh.
+ *
+ * @param provider The AWS provider whose EC2 IMDS credentials should be refreshed.
+ * @returns `0` on successful credential refresh, `-1` if the refresh failed or did not occur.
+ */
 int refresh_fn_ec2(struct flb_aws_provider *provider) {
     struct flb_aws_provider_ec2 *implementation = provider->implementation;
     int ret = -1;
 
     flb_debug("[aws_credentials] Refresh called on the EC2 IMDS provider");
+    
     if (try_lock_provider(provider)) {
+        /* Set to 1 (epoch start) to trigger immediate refresh via time check */
+        implementation->next_refresh = 1;
+        
         ret = get_creds_ec2(implementation);
         unlock_provider(provider);
     }
