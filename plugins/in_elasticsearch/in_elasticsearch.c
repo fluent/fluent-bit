@@ -32,6 +32,8 @@ static void bytes_to_groupname(unsigned char *data, char *buf, size_t len) {
                      "abcdefghijklmnopqrstuvwxyz"
                      "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
+    /* buf must have room for len + 1 bytes */
+    buf[len] = '\0';
     while (len-- > 0) {
         index = (int) data[len];
         index = index % (sizeof(charset) - 1);
@@ -44,6 +46,8 @@ static void bytes_to_nodename(unsigned char *data, char *buf, size_t len) {
     char charset[] = "0123456789"
                      "abcdefghijklmnopqrstuvwxyz";
 
+    /* buf must have room for len + 1 bytes */
+    buf[len] = '\0';
     while (len-- > 0) {
         index = (int) data[len];
         index = index % (sizeof(charset) - 1);
