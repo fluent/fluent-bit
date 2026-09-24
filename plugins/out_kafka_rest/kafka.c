@@ -38,6 +38,12 @@ static struct flb_config_map config_map[] = {
     },
 
     {
+     FLB_CONFIG_MAP_STR, "message_key_field", NULL,
+     0, FLB_TRUE, offsetof(struct flb_kafka_rest, message_key_field),
+     "Specify a message key field. "
+    },
+
+    {
      FLB_CONFIG_MAP_STR, "time_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_kafka_rest, time_key),
      "Specify the name of the field that holds the record timestamp. "
@@ -101,6 +107,8 @@ static flb_sds_t kafka_rest_format(const void *data, size_t bytes,
     int len;
     int arr_size = 0;
     int map_size;
+    char *message_key = NULL;
+    size_t message_key_len = 0;
     size_t s;
     flb_sds_t out_buf;
     char time_formatted[256];
@@ -147,8 +155,34 @@ static flb_sds_t kafka_rest_format(const void *data, size_t bytes,
         if (ctx->partition >= 0) {
             map_size++;
         }
+        message_key = NULL;
+        message_key_len = 0;
 
-        if (ctx->message_key != NULL) {
+        /*
+         * Logic for populating Message Key in below mentioned order
+         * - If Message_Key_Field is defined and present in the record, use it
+         * - If Message_Key_Field is defined but not present in the record, look for Message_Key
+         * - If Message_Key is defined, use it
+         */
+        if (ctx->message_key_field && val.type == MSGPACK_OBJECT_STR) {
+            for (i = 0; i < map.via.map.size; i++) {
+                key = map.via.map.ptr[i].key;
+                val = map.via.map.ptr[i].val;
+                if (key.via.str.size == ctx->message_key_field_len &&
+                        strncmp(key.via.str.ptr, ctx->message_key_field, ctx->message_key_field_len) == 0) {
+                    message_key = (char *) val.via.str.ptr;
+                    message_key_len = val.via.str.size;
+                    break;
+                }
+            }
+        }
+
+        if (message_key == NULL && ctx->message_key != NULL) {
+            message_key = ctx->message_key;
+            message_key_len = ctx->message_key_len;
+        }
+
+        if (message_key != NULL) {
             map_size++;
         }
 
@@ -159,12 +193,11 @@ static flb_sds_t kafka_rest_format(const void *data, size_t bytes,
             msgpack_pack_int64(&mp_pck, ctx->partition);
         }
 
-
-        if (ctx->message_key != NULL) {
+        if (message_key != NULL) {
             msgpack_pack_str(&mp_pck, 3);
             msgpack_pack_str_body(&mp_pck, "key", 3);
-            msgpack_pack_str(&mp_pck, ctx->message_key_len);
-            msgpack_pack_str_body(&mp_pck, ctx->message_key, ctx->message_key_len);
+            msgpack_pack_str(&mp_pck, message_key_len);
+            msgpack_pack_str_body(&mp_pck, message_key, message_key_len);
         }
 
         /* Value Map Size */
