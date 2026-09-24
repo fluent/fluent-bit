@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_lua.h>
 #include <stdint.h>
+#include <limits.h>
 #include <math.h>
 
 int flb_lua_enable_flb_null(lua_State *l)
@@ -317,7 +318,8 @@ static int lua_table_maxn(lua_State *l, int index)
         return -1;
     }
 
-    if (lua_isinteger(l, -1)) {
+    /* keys beyond INT_MAX cannot be an array length */
+    if (lua_isinteger(l, -1) && lua_tonumber(l, -1) <= INT_MAX) {
         ret = lua_tointeger(l, -1);
     }
     lua_pop(l, 1);
@@ -330,7 +332,7 @@ static int lua_table_maxn(lua_State *l, int index)
 
 int flb_lua_arraylength(lua_State *l, int index)
 {
-    lua_Integer n;
+    lua_Number n;
     int count = 0;
     int max = 0;
     int ret = 0;
@@ -339,6 +341,20 @@ int flb_lua_arraylength(lua_State *l, int index)
 
     ret = lua_table_maxn(l, index);
     if (ret > 0) {
+        /*
+         * table.maxn() returns the largest positive numeric key, holes
+         * included. A table holding a single large key (e.g. an integer key
+         * copied from a record) must not be packed as an array of that many
+         * elements, so only accept tables where most slots are used.
+         */
+        lua_pushnil(l);
+        while (lua_next(l, index) != 0) {
+            count++;
+            lua_pop(l, 1);
+        }
+        if (ret - count > count) {
+            return -1;
+        }
         return ret;
     }
 
@@ -346,7 +362,7 @@ int flb_lua_arraylength(lua_State *l, int index)
     while (lua_next(l, index) != 0) {
         if (lua_type(l, -2) == LUA_TNUMBER) {
             n = lua_tonumber(l, -2);
-            if (n > 0) {
+            if (n > 0 && n <= INT_MAX) {
                 max = n > max ? n : max;
                 count++;
                 lua_pop(l, 1);
