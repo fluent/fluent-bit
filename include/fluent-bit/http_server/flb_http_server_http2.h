@@ -52,6 +52,10 @@ int flb_http2_response_set_body(struct flb_http_response *response,
 
 int flb_http2_response_commit(struct flb_http_response *response);
 
+/* STREAM */
+
+void flb_http2_server_stream_release(struct flb_http_stream *stream);
+
 /* SESSION */
 
 int flb_http2_server_session_init(struct flb_http2_server_session *session, 

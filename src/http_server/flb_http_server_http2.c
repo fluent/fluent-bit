@@ -348,9 +348,44 @@ int flb_http2_response_commit(struct flb_http_response *response)
         return -8;
     }
 
-    stream->status = HTTP_STREAM_STATUS_RECEIVING_HEADERS;
-
     return 0;
+}
+
+/* STREAM */
+
+/*
+ * Called once the request callback is done with a dispatched stream. The
+ * response body is pulled by nghttp2 through the data provider for as long
+ * as the stream is open (e.g. when the peer flow control window is
+ * exhausted), so the stream can only be destroyed once nghttp2 closed it.
+ */
+void flb_http2_server_stream_release(struct flb_http_stream *stream)
+{
+    struct flb_http_server_session *parent_session;
+    void                           *stream_user_data;
+
+    if (!cfl_list_entry_is_orphan(&stream->request._head)) {
+        cfl_list_del(&stream->request._head);
+    }
+
+    parent_session = (struct flb_http_server_session *) stream->parent;
+    stream_user_data = NULL;
+
+    if (parent_session != NULL && parent_session->http2.initialized) {
+        stream_user_data = nghttp2_session_get_stream_user_data(
+                                parent_session->http2.inner_session,
+                                stream->id);
+    }
+
+    if (stream_user_data != stream) {
+        /* nghttp2 does not reference the stream anymore */
+        flb_http_stream_destroy(stream);
+
+        return;
+    }
+
+    /* http2_stream_close_callback() destroys it */
+    stream->status = HTTP_STREAM_STATUS_RELEASED;
 }
 
 /* SESSION */
@@ -506,6 +541,12 @@ static int http2_header_callback(nghttp2_session *inner_session,
         return 0;
     }
 
+    /* the request was already dispatched (or rejected) */
+    if (stream->status != HTTP_STREAM_STATUS_RECEIVING_HEADERS &&
+        stream->status != HTTP_STREAM_STATUS_RECEIVING_DATA) {
+        return 0;
+    }
+
     if (flb_http_server_strncasecmp(name, name_length, ":method", 0) == 0) {
         strncpy(temporary_buffer, 
                 (const char *) value, 
@@ -618,6 +659,12 @@ static int http2_frame_recv_callback(nghttp2_session *inner_session,
         return 0;
     }
 
+    /* frames received once the request was dispatched must not queue it again */
+    if (stream->status != HTTP_STREAM_STATUS_RECEIVING_HEADERS &&
+        stream->status != HTTP_STREAM_STATUS_RECEIVING_DATA) {
+        return 0;
+    }
+
     switch (frame->hd.type) {
         case NGHTTP2_CONTINUATION:
         case NGHTTP2_HEADERS:
@@ -670,6 +717,18 @@ static int http2_stream_close_callback(nghttp2_session *session,
     stream = nghttp2_session_get_stream_user_data(session, stream_id);
 
     if (stream == NULL) {
+        return 0;
+    }
+
+    /*
+     * Streams that are not queued nor being dispatched are not referenced
+     * anywhere else, nghttp2 won't reference them after this callback.
+     */
+    if (stream->status == HTTP_STREAM_STATUS_RELEASED ||
+        stream->status == HTTP_STREAM_STATUS_RECEIVING_HEADERS ||
+        stream->status == HTTP_STREAM_STATUS_RECEIVING_DATA) {
+        flb_http_stream_destroy(stream);
+
         return 0;
     }
 
@@ -818,6 +877,11 @@ static ssize_t http2_data_source_read_callback(nghttp2_session *session,
         return NGHTTP2_ERR_CALLBACK_FAILURE;
     }
 
+    /* the response was already released, reset the stream */
+    if (stream->response.trailer_headers == NULL) {
+        return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
+    }
+
     if (stream->response.body != NULL) {
         body_offset    = stream->response.body_read_offset;
         content_length = cfl_sds_len(stream->response.body) - body_offset;
@@ -837,7 +901,7 @@ static ssize_t http2_data_source_read_callback(nghttp2_session *session,
     }
     else {
         if (content_length > 0) {
-            memcpy(buf, stream->response.body, content_length);
+            memcpy(buf, &stream->response.body[body_offset], content_length);
 
             stream->response.body_read_offset += content_length;
         }
