@@ -24,8 +24,6 @@
 
 #include <inttypes.h>
 
-#define FLB_LOG_EVENT_DECODER_MAX_RECURSION_DEPTH        1000  /* Safety limit for recursion */
-
 static int create_empty_map(struct flb_log_event_decoder *context) {
     msgpack_packer  packer;
     msgpack_sbuffer buffer;
@@ -356,13 +354,20 @@ int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
         return context->last_result;
     }
 
-    context->record_base = NULL;
-    context->record_length = 0;
-
     if (event == NULL) {
         context->last_result = FLB_EVENT_DECODER_ERROR_INVALID_ARGUMENT;
         return context->last_result;
     }
+
+    /*
+     * Records that must not be returned to the caller are skipped by jumping
+     * back here instead of recursing, so the stack usage does not depend on
+     * the number of consecutive records that are skipped. Every iteration
+     * consumes one msgpack object, so the loop is bounded by the input size.
+     */
+next_record:
+    context->record_base = NULL;
+    context->record_length = 0;
 
     previous_offset = context->offset;
     result = msgpack_unpack_next(&context->unpacked_event,
@@ -385,14 +390,6 @@ int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
                                                            &context->unpacked_event.data);
 
     if (context->last_result == FLB_EVENT_DECODER_SUCCESS) {
-        /* Check recursion depth limit to prevent stack overflow */
-        if (context->recursion_depth >= FLB_LOG_EVENT_DECODER_MAX_RECURSION_DEPTH) {
-            flb_warn("[decoder] Maximum recursion depth (%d) reached, possible corruption or excessive group markers",
-                     FLB_LOG_EVENT_DECODER_MAX_RECURSION_DEPTH);
-            context->last_result = FLB_EVENT_DECODER_ERROR_DESERIALIZATION_FAILURE;
-            return context->last_result;
-        }
-
         /* get log event type */
         ret = flb_log_event_decoder_get_record_type(event, &record_type);
         if (ret != 0) {
@@ -405,12 +402,8 @@ int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
             flb_debug("[decoder] Invalid group marker timestamp (%" PRId64 "), skipping record. "
                      "Group state preserved.", invalid_timestamp);
 
-            /* Increment recursion depth before recursive call */
-            context->recursion_depth++;
             memset(event, 0, sizeof(struct flb_log_event));
-            ret = flb_log_event_decoder_next(context, event);
-            context->recursion_depth--;  /* Restore after return */
-            return ret;
+            goto next_record;
         }
 
         /* Meta records such as the group opener and closer are identified by negative
@@ -467,16 +460,12 @@ int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
 
             if (context->read_groups != FLB_TRUE) {
                 /*
-                 * Skip group markers by recursively calling to get next record.
+                 * Skip group markers and move to the next record.
                  * msgpack_unpack_next will properly destroy and reinitialize
                  * unpacked_event, so no explicit cleanup needed here.
-                 * Increment recursion depth before recursive call.
                  */
-                context->recursion_depth++;
                 memset(event, 0, sizeof(struct flb_log_event));
-                ret = flb_log_event_decoder_next(context, event);
-                context->recursion_depth--;  /* Restore after return */
-                return ret;
+                goto next_record;
             }
         }
         else {
