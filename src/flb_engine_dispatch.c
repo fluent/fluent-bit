@@ -254,7 +254,7 @@ static int tasks_start(struct flb_input_instance *in,
          * status back to the engine. The remaining tasks keep their
          * FLB_TASK_NEW status and are started on the next flush cycle.
          */
-        if (config->flush_in_flight >= FLB_CONFIG_FLUSH_IN_FLIGHT_LIMIT) {
+        if (config->flush_in_flight >= config->flush_in_flight_limit) {
             flb_debug("[engine] %i flush requests in flight, deferring tasks of "
                       "input %s to the next flush cycle",
                       config->flush_in_flight, flb_input_name(in));
