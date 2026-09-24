@@ -364,10 +364,24 @@ int fw_conn_del_all(struct flb_in_fw_config *ctx)
     struct mk_list *head;
     struct fw_conn *conn;
 
+    /*
+     * On thread-safe downstreams, releasing a busy connection resumes its
+     * coroutine inline and fw_conn_event() may call back into this function
+     * while the outer walk is in progress. A nested walk would release the
+     * entry saved by the outer iterator, so let the outer walk finish the job.
+     */
+    if (ctx->conn_del_all_active == FLB_TRUE) {
+        return 0;
+    }
+
+    ctx->conn_del_all_active = FLB_TRUE;
+
     mk_list_foreach_safe(head, tmp, &ctx->connections) {
         conn = mk_list_entry(head, struct fw_conn, _head);
         fw_conn_del(conn);
     }
+
+    ctx->conn_del_all_active = FLB_FALSE;
 
     return 0;
 }

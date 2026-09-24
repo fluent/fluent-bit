@@ -100,6 +100,9 @@ struct flb_in_fw_config {
     /* Plugin is paused */
     int is_paused;
 
+    /* fw_conn_del_all() is walking the connections list */
+    int conn_del_all_active;
+
     struct flb_downstream_worker_runtime *runtime;
 };
 
