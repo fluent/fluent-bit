@@ -56,6 +56,27 @@ struct flb_hash_table;
  * pointers.
  */
 
+/*
+ * Maximum number of flush requests in flight (dispatched to an output and
+ * whose return status has not been processed by the engine yet).
+ *
+ * Flush requests and their return status travel through pipes written with
+ * blocking calls: the engine hands the task to the output (worker
+ * 'ch_parent_events' or engine 'ch_self_events') and the output reports the
+ * status back through the instance 'ch_events' channel, which is only drained
+ * by the engine event loop. Each request takes an 8 bytes slot and pipes can
+ * hold 64KiB on Linux (8192 slots) but only 16KiB on other systems, so if more
+ * requests than that are dispatched at once the engine and the output
+ * workers end up blocked on each other forever. Keep the number of requests
+ * in flight below the pipe capacity, the remaining tasks are started on the
+ * next flush cycle.
+ */
+#ifdef __linux__
+#define FLB_CONFIG_FLUSH_IN_FLIGHT_LIMIT  4096
+#else
+#define FLB_CONFIG_FLUSH_IN_FLIGHT_LIMIT  1024
+#endif
+
 /* Main struct to hold the configuration of the runtime service */
 struct flb_config {
     struct mk_event ch_event;
@@ -355,6 +376,9 @@ struct flb_config {
 
     struct flb_task_map *task_map;
     size_t task_map_size;
+
+    /* flush requests dispatched to outputs whose status is pending */
+    int flush_in_flight;
 
     int json_escape_unicode;
 
