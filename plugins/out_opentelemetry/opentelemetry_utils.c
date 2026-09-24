@@ -462,9 +462,17 @@ Opentelemetry__Proto__Common__V1__KeyValue **msgpack_map_to_otlp_kvarray(struct 
             kv = &o->via.map.ptr[index];
             keyvalue = msgpack_kv_to_otlp_any_value(kv);
 
-            /* skip entries that cannot be represented (e.g. non-string keys) */
             if (keyvalue == NULL) {
-                continue;
+                /* skip entries that cannot be represented (non-string keys) */
+                if (kv->key.type != MSGPACK_OBJECT_STR) {
+                    continue;
+                }
+
+                /* conversion failure */
+                otlp_kvarray_destroy(result, *entry_count);
+                *entry_count = 0;
+
+                return NULL;
             }
 
             result[*entry_count] = keyvalue;
@@ -493,9 +501,16 @@ Opentelemetry__Proto__Common__V1__AnyValue *msgpack_map_to_otlp_any_value(struct
             kv = &o->via.map.ptr[index];
             keyvalue = msgpack_kv_to_otlp_any_value(kv);
 
-            /* skip entries that cannot be represented (e.g. non-string keys) */
             if (keyvalue == NULL) {
-                continue;
+                /* skip entries that cannot be represented (non-string keys) */
+                if (kv->key.type != MSGPACK_OBJECT_STR) {
+                    continue;
+                }
+
+                /* conversion failure */
+                otlp_any_value_destroy(result);
+
+                return NULL;
             }
 
             result->kvlist_value->values[result->kvlist_value->n_values] = keyvalue;
