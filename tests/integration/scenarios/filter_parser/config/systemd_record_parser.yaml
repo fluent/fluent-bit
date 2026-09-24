@@ -1,0 +1,32 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: info
+parsers:
+  - name: journal_envelope
+    format: json
+  - name: nginx
+    format: regex
+    regex: '^(?<remote>[^ ]*) [^ ]* [^ ]* \[(?<time>[^\]]*)\] "(?<method>\S+) (?<path>\S+) [^"]*" (?<code>[^ ]*) (?<size>[^ ]*)$'
+    time_key: time
+    time_format: '%d/%b/%Y:%H:%M:%S %z'
+pipeline:
+  inputs:
+    - name: tail
+      path: ${PARSER_TEST_RECORDS}
+      parser: journal_envelope
+      read_from_head: true
+      exit_on_eof: true
+      tag: systemd.test-parser.service
+      processors:
+        logs:
+          - name: parser
+            key_name: MESSAGE
+            parser_key: FLUENT_BIT_PARSER
+            reserve_data: true
+            preserve_key: false
+            preserve_parser_key: false
+  outputs:
+    - name: stdout
+      match: '*'
+      format: json_lines
