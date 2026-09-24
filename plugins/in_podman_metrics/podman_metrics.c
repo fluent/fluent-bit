@@ -40,14 +40,15 @@ static int collect_container_data(struct flb_in_metrics *ctx)
 {
     /* Buffers for reading data from JSON */
     char *buffer;
-    char name[CONTAINER_NAME_SIZE];
-    char id[CONTAINER_ID_SIZE];
-    char image_name[IMAGE_NAME_SIZE];
-    char metadata[CONTAINER_METADATA_SIZE];
+    flb_sds_t name = NULL;
+    flb_sds_t id = NULL;
+    flb_sds_t image_name = NULL;
+    flb_sds_t metadata = NULL;
     char *metadata_token_start;
     char *metadata_token_stop;
     int metadata_token_size;
 
+    int ret;
     int array_id;
     int r, i, j;
     size_t read_bytes = 0;
@@ -81,13 +82,18 @@ static int collect_container_data(struct flb_in_metrics *ctx)
         return -1;
     }
 
-    for (i=0; i<r; i++) {
+    /* Every field we look for is followed by its value token, so stop at r - 1 */
+    for (i=0; i<r-1; i++) {
         if (t[i].type == JSMN_STRING) {
             if (sizeof(JSON_FIELD_ID)-1 == t[i].end - t[i].start &&
                 strncmp(buffer + t[i].start, JSON_FIELD_ID, t[i].end - t[i].start) == 0) {
                 token_len = t[i + 1].end - t[i + 1].start;
-                strncpy(id, buffer + t[i+1].start, t[i + 1].end - t[i + 1].start);
-                id[token_len] = '\0';
+                flb_sds_destroy(id);
+                id = flb_sds_create_len(buffer + t[i+1].start, token_len);
+                if (!id) {
+                    flb_errno();
+                    continue;
+                }
                 flb_plg_trace(ctx->ins, "Found id %s", id);
             }
             else if (sizeof(JSON_FIELD_NAMES)-1 == t[i].end - t[i].start &&
@@ -95,10 +101,15 @@ static int collect_container_data(struct flb_in_metrics *ctx)
                 array_id = i + 1;
                 if (t[array_id].type == JSMN_ARRAY) {
                     j = array_id + 1;
-                    while (t[j].parent == array_id)
+                    while (j < r && t[j].parent == array_id)
                     {
-                        strncpy(name, buffer + t[j].start, t[j].end - t[j].start);
-                        name[t[j].end - t[j].start] = '\0';
+                        token_len = t[j].end - t[j].start;
+                        flb_sds_destroy(name);
+                        name = flb_sds_create_len(buffer + t[j].start, token_len);
+                        if (!name) {
+                            flb_errno();
+                            break;
+                        }
                         flb_plg_trace(ctx->ins, "Found name %s", name);
                         j++;
                     }
@@ -106,31 +117,57 @@ static int collect_container_data(struct flb_in_metrics *ctx)
             }
             else if (sizeof(JSON_FIELD_METADATA)-1 == t[i].end - t[i].start &&
                 strncmp(buffer + t[i].start, JSON_FIELD_METADATA, t[i].end - t[i].start) == 0) {
-                token_len = t[i + 1].end - t[i + 1].start;
-                strncpy(metadata, buffer + t[i+1].start, t[i + 1].end - t[i + 1].start);
-                metadata[token_len] = '\0';
+                if (!id || !name) {
+                    flb_plg_debug(ctx->ins, "skipping container without id or name");
+                    continue;
+                }
 
+                token_len = t[i + 1].end - t[i + 1].start;
+                flb_sds_destroy(metadata);
+                metadata = flb_sds_create_len(buffer + t[i+1].start, token_len);
+                if (!metadata) {
+                    flb_errno();
+                    continue;
+                }
+
+                metadata_token_stop = NULL;
                 metadata_token_start = strstr(metadata, JSON_SUBFIELD_IMAGE_NAME);
                 if (metadata_token_start) {
-                    metadata_token_stop = strstr(metadata_token_start + JSON_SUBFIELD_SIZE_IMAGE_NAME+1, "\\\"");
+                    /* start right after the key: the value can be empty */
+                    metadata_token_stop = strstr(metadata_token_start +
+                                                 JSON_SUBFIELD_SIZE_IMAGE_NAME, "\\\"");
+                }
+                if (metadata_token_start && metadata_token_stop) {
                     metadata_token_size = metadata_token_stop - metadata_token_start - JSON_SUBFIELD_SIZE_IMAGE_NAME;
 
-                    strncpy(image_name, metadata_token_start+JSON_SUBFIELD_SIZE_IMAGE_NAME, metadata_token_size);
-                    image_name[metadata_token_size] = '\0';
+                    flb_sds_destroy(image_name);
+                    image_name = flb_sds_create_len(metadata_token_start +
+                                                    JSON_SUBFIELD_SIZE_IMAGE_NAME,
+                                                    metadata_token_size);
+                    if (!image_name) {
+                        flb_errno();
+                        continue;
+                    }
 
                     flb_plg_trace(ctx->ins, "Found image name %s", image_name);
-                    add_container_to_list(ctx, id, name, image_name);
+                    ret = add_container_to_list(ctx, id, name, image_name);
                 }
                 else {
                     flb_plg_warn(ctx->ins, "Image name was not found for %s", id);
-                    add_container_to_list(ctx, id, name, "unknown");
+                    ret = add_container_to_list(ctx, id, name, "unknown");
                 }
-                collected_containers++;
+                if (ret == 0) {
+                    collected_containers++;
+                }
             }
         }
     }
 
     flb_plg_debug(ctx->ins, "Collected %d containers from podman config file", collected_containers);
+    flb_sds_destroy(id);
+    flb_sds_destroy(name);
+    flb_sds_destroy(image_name);
+    flb_sds_destroy(metadata);
     free(buffer);
     return collected_containers;
 }
@@ -151,6 +188,14 @@ static int add_container_to_list(struct flb_in_metrics *ctx, flb_sds_t id, flb_s
     cnt->id = flb_sds_create(id);
     cnt->name = flb_sds_create(name);
     cnt->image_name = flb_sds_create(image_name);
+    if (!cnt->id || !cnt->name || !cnt->image_name) {
+        flb_errno();
+        flb_sds_destroy(cnt->id);
+        flb_sds_destroy(cnt->name);
+        flb_sds_destroy(cnt->image_name);
+        flb_free(cnt);
+        return -1;
+    }
 
     cnt->memory_usage = UINT64_MAX;
     cnt->memory_max_usage = UINT64_MAX;
