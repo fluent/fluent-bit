@@ -1099,6 +1099,10 @@ cleanup:
 
         /* check if we have more gRPC messages to process */
         if (grpc_offset < request_body_size) {
+            /* release the tag of this message, the next one creates its own */
+            flb_sds_destroy(tag);
+            tag = NULL;
+
             buf = (char *) request->body + grpc_offset;
             goto next_grpc_message;
         }
