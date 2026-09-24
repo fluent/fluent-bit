@@ -1537,6 +1537,8 @@ int flb_output_set_http_debug_callbacks(struct flb_output_instance *ins);
 int flb_output_task_flush(struct flb_task *task,
                           struct flb_output_instance *out_ins,
                           struct flb_config *config);
+int flb_output_task_flush_error(struct flb_task *task,
+                                struct flb_output_instance *out_ins);
 
 struct mk_list *flb_output_get_global_config_map(struct flb_config *config);
 
