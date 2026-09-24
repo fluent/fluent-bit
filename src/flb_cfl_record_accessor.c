@@ -521,7 +521,12 @@ static flb_sds_t cfl_ra_translate_string(struct flb_ra_parser *rp, flb_sds_t buf
     return tmp;
 }
 
-static int cfl_to_json(struct cfl_variant *var, flb_sds_t buf)
+/*
+ * Append the JSON representation of 'var' to the buffer referenced by 'buf'.
+ * Appending may reallocate the buffer, so it is passed by reference to keep
+ * every frame of the recursion and the caller pointing to the live buffer.
+ */
+static int cfl_to_json(struct cfl_variant *var, flb_sds_t *buf)
 {
     int i = 0;
     int ret;
@@ -532,32 +537,44 @@ static int cfl_to_json(struct cfl_variant *var, flb_sds_t buf)
 
     switch (var->type) {
     case CFL_VARIANT_NULL:
-        flb_sds_cat_safe(&buf, "null", 4);
+        if (flb_sds_cat_safe(buf, "null", 4) != 0) {
+            return -1;
+        }
         break;
     case CFL_VARIANT_BOOL:
         if (var->data.as_bool) {
-            flb_sds_cat_safe(&buf, "true", 4);
+            if (flb_sds_cat_safe(buf, "true", 4) != 0) {
+                return -1;
+            }
         }
         else {
-            flb_sds_cat_safe(&buf, "false", 5);
+            if (flb_sds_cat_safe(buf, "false", 5) != 0) {
+                return -1;
+            }
         }
         break;
     case CFL_VARIANT_INT: {
         char tmp[32] = {0};
         i = snprintf(tmp, sizeof(tmp)-1, "%"PRId64, var->data.as_int64);
-        flb_sds_cat_safe(&buf, tmp, i);
+        if (flb_sds_cat_safe(buf, tmp, i) != 0) {
+            return -1;
+        }
         break;
     }
     case CFL_VARIANT_UINT: {
         char tmp[32] = {0};
         i = snprintf(tmp, sizeof(tmp)-1, "%"PRIu64, var->data.as_uint64);
-        flb_sds_cat_safe(&buf, tmp, i);
+        if (flb_sds_cat_safe(buf, tmp, i) != 0) {
+            return -1;
+        }
         break;
     }
     case CFL_VARIANT_DOUBLE: {
         char tmp[512] = {0};
         i = snprintf(tmp, sizeof(tmp)-1, "%"PRIu64, var->data.as_uint64);
-        flb_sds_cat_safe(&buf, tmp, i);
+        if (flb_sds_cat_safe(buf, tmp, i) != 0) {
+            return -1;
+        }
         break;
     }
     case CFL_VARIANT_STRING:
@@ -566,20 +583,34 @@ static int cfl_to_json(struct cfl_variant *var, flb_sds_t buf)
          * buffer (no sds header), so the length must come from the variant
          * itself and not from cfl_sds_len().
          */
-        flb_sds_cat_safe(&buf, "\"", 1);
-        flb_sds_cat_safe(&buf, var->data.as_string, cfl_variant_size_get(var));
-        flb_sds_cat_safe(&buf, "\"", 1);
+        if (flb_sds_cat_safe(buf, "\"", 1) != 0) {
+            return -1;
+        }
+        if (!flb_sds_cat_utf8(buf, var->data.as_string, cfl_variant_size_get(var))) {
+            return -1;
+        }
+        if (flb_sds_cat_safe(buf, "\"", 1) != 0) {
+            return -1;
+        }
         break;
     case CFL_VARIANT_BYTES:
-        flb_sds_cat_safe(&buf, "\"", 1);
-        flb_sds_cat_safe(&buf, var->data.as_bytes, cfl_variant_size_get(var));
-        flb_sds_cat_safe(&buf, "\"", 1);
+        if (flb_sds_cat_safe(buf, "\"", 1) != 0) {
+            return -1;
+        }
+        if (!flb_sds_cat_utf8(buf, var->data.as_bytes, cfl_variant_size_get(var))) {
+            return -1;
+        }
+        if (flb_sds_cat_safe(buf, "\"", 1) != 0) {
+            return -1;
+        }
         break;
     case CFL_VARIANT_ARRAY: {
         struct cfl_array *array = var->data.as_array;
         loop = cfl_array_size(array);
 
-        flb_sds_cat_safe(&buf, "[", 1);
+        if (flb_sds_cat_safe(buf, "[", 1) != 0) {
+            return -1;
+        }
         for (i = 0; i < loop; i++) {
             ret = cfl_to_json(array->entries[i], buf);
             if (ret == -1) {
@@ -587,25 +618,39 @@ static int cfl_to_json(struct cfl_variant *var, flb_sds_t buf)
             }
 
             if (i + 1 < loop) {
-                flb_sds_cat_safe(&buf, ",", 1);
+                if (flb_sds_cat_safe(buf, ",", 1) != 0) {
+                    return -1;
+                }
             }
         }
-        flb_sds_cat_safe(&buf, "]", 1);
+        if (flb_sds_cat_safe(buf, "]", 1) != 0) {
+            return -1;
+        }
         break;
     }
     case CFL_VARIANT_KVLIST:
         kvlist = var->data.as_kvlist;
-        flb_sds_cat_safe(&buf, "{", 1);
+        if (flb_sds_cat_safe(buf, "{", 1) != 0) {
+            return -1;
+        }
         cfl_list_foreach(head, &kvlist->list) {
             kv = cfl_list_entry(head, struct cfl_kvpair, _head);
 
             /* key */
-            flb_sds_cat_safe(&buf, "\"", 1);
-            flb_sds_cat_safe(&buf, kv->key, cfl_sds_len(kv->key));
-            flb_sds_cat_safe(&buf, "\"", 1);
+            if (flb_sds_cat_safe(buf, "\"", 1) != 0) {
+                return -1;
+            }
+            if (!flb_sds_cat_utf8(buf, kv->key, cfl_sds_len(kv->key))) {
+                return -1;
+            }
+            if (flb_sds_cat_safe(buf, "\"", 1) != 0) {
+                return -1;
+            }
 
             /* separator */
-            flb_sds_cat_safe(&buf, ":", 1);
+            if (flb_sds_cat_safe(buf, ":", 1) != 0) {
+                return -1;
+            }
 
             /* value */
             ret = cfl_to_json(kv->val, buf);
@@ -614,10 +659,14 @@ static int cfl_to_json(struct cfl_variant *var, flb_sds_t buf)
             }
 
             if (head->next != &kvlist->list) {
-                flb_sds_cat_safe(&buf, ",", 1);
+                if (flb_sds_cat_safe(buf, ",", 1) != 0) {
+                    return -1;
+                }
             }
         }
-        flb_sds_cat_safe(&buf, "}", 1);
+        if (flb_sds_cat_safe(buf, "}", 1) != 0) {
+            return -1;
+        }
         break;
     }
 
@@ -654,16 +703,16 @@ static flb_sds_t cfl_ra_translate_keymap(struct flb_ra_parser *rp, flb_sds_t buf
         /* Check if is a kvlist or a real bool */
         if (crv->v.type == CFL_VARIANT_KVLIST) {
             js = flb_sds_create_size(1024);
+            if (!js) {
+                flb_cfl_ra_key_value_destroy(crv);
+                return NULL;
+            }
             /* Convert cfl_variant to JSON string */
-            ret = cfl_to_json(&crv->v, js);
+            ret = cfl_to_json(&crv->v, &js);
             if (ret == 0) {
-                len = strlen(js);
-                tmp = flb_sds_cat(buf, js, len);
-                flb_sds_destroy(js);
+                tmp = flb_sds_cat(buf, js, flb_sds_len(js));
             }
-            else {
-                flb_sds_destroy(js);
-            }
+            flb_sds_destroy(js);
         }
         else if (crv->v.type == CFL_VARIANT_BOOL) {
             if (crv->val.boolean) {
