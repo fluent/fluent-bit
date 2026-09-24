@@ -622,6 +622,13 @@ static int http2_frame_recv_callback(nghttp2_session *inner_session,
         case NGHTTP2_CONTINUATION:
         case NGHTTP2_HEADERS:
             if ((frame->hd.flags & NGHTTP2_FLAG_END_HEADERS) != 0) {
+                /* request callbacks expect the path to be set */
+                if (stream->request.path == NULL) {
+                    stream->status = HTTP_STREAM_STATUS_ERROR;
+
+                    return -1;
+                }
+
                 stream->status = HTTP_STREAM_STATUS_RECEIVING_DATA;
             }
             else {
