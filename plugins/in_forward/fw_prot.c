@@ -1321,6 +1321,42 @@ static int append_metrics(struct flb_input_instance *ins, struct fw_conn *conn,
     return 0;
 }
 
+/*
+ * PackedForward and CompressedPackedForward payloads are ingested as they
+ * are, so unlike Forward and Message mode entries they never go through the
+ * log event decoder. Make sure every entry is a well formed log event
+ * ([ts, map] or [[ts, metadata], map]) before the payload is written into a
+ * chunk, consumers of the chunk content rely on that shape.
+ */
+static int fw_validate_packed_forward_entries(struct flb_input_instance *ins,
+                                              const void *data, size_t len)
+{
+    int ret;
+    struct flb_log_event event;
+    struct flb_log_event_decoder decoder;
+
+    ret = flb_log_event_decoder_init(&decoder, (char *) data, len);
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_warn(ins, "event decoder initialization failure: %d", ret);
+        return -1;
+    }
+
+    while ((ret = flb_log_event_decoder_next(&decoder, &event)) ==
+           FLB_EVENT_DECODER_SUCCESS) {
+    }
+
+    ret = flb_log_event_decoder_get_last_result(&decoder);
+    flb_log_event_decoder_destroy(&decoder);
+
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_plg_warn(ins, "invalid PackedForward entry: %s",
+                     flb_log_event_decoder_get_error_description(ret));
+        return -1;
+    }
+
+    return 0;
+}
+
 static int append_log(struct flb_input_instance *ins, struct fw_conn *conn,
                       int event_type,
                       flb_sds_t out_tag, const void *data, size_t len)
@@ -1330,6 +1366,10 @@ static int append_log(struct flb_input_instance *ins, struct fw_conn *conn,
     struct ctrace *ctr;
 
     if (event_type == FLB_EVENT_TYPE_LOGS) {
+        if (fw_validate_packed_forward_entries(ins, data, len) != 0) {
+            return -1;
+        }
+
         ret = fw_ingest_logs(conn->ctx,
                              out_tag, flb_sds_len(out_tag),
                              data, len);
