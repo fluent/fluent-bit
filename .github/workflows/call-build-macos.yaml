@@ -90,7 +90,7 @@ jobs:
       - name: Install dependencies
         run: |
           brew update
-          brew install bison flex libyaml openssl pkgconfig || true
+          brew install bison flex libyaml openssl pkgconfig rabbitmq-c || true
 
       - name: Install cmake
         uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2.2.0
