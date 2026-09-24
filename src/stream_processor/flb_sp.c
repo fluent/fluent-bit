@@ -1429,6 +1429,23 @@ static struct aggregate_node * sp_process_aggregate_data(struct flb_sp_task *tas
 }
 
 /*
+ * Records must be a [timestamp, map] array: the processing functions access
+ * the map body directly, so anything else is skipped.
+ */
+static int sp_record_is_valid(msgpack_object *root)
+{
+    if (root->type != MSGPACK_OBJECT_ARRAY || root->via.array.size != 2) {
+        return FLB_FALSE;
+    }
+
+    if (root->via.array.ptr[1].type != MSGPACK_OBJECT_MAP) {
+        return FLB_FALSE;
+    }
+
+    return FLB_TRUE;
+}
+
+/*
  * Process data, task and it defined command involves the call of aggregation
  * functions (AVG, SUM, COUNT, MIN, MAX).
  */
@@ -1470,6 +1487,11 @@ int sp_process_data_aggr(const char *buf_data, size_t buf_size,
     /* Iterate incoming records */
     while (msgpack_unpack_next(&result, buf_data, buf_size, &off) == ok) {
         root = result.data;
+
+        /* skip anything that is not a [timestamp, map] record */
+        if (!sp_record_is_valid(&root)) {
+            continue;
+        }
 
         /* extract timestamp */
         flb_time_pop_from_msgpack(&tms, &result, &obj);
@@ -1655,6 +1677,12 @@ int sp_process_data(const char *tag, int tag_len,
     /* Iterate incoming records */
     while (msgpack_unpack_next(&result, buf_data, buf_size, &off) == ok) {
         root = result.data;
+
+        /* skip anything that is not a [timestamp, map] record */
+        if (!sp_record_is_valid(&root)) {
+            off_copy = off;
+            continue;
+        }
 
         /* extract timestamp */
         flb_time_pop_from_msgpack(&tms, &result, &obj);
