@@ -325,6 +325,18 @@ static int process_json_payload_log_records_entry(
     if (metadata_object != NULL) {
         flb_log_event_encoder_append_string(encoder, FLB_LOG_EVENT_METADATA, "attributes", 10);
         result = flb_otel_utils_json_payload_append_converted_kvlist(encoder, FLB_LOG_EVENT_METADATA, metadata_object);
+        if (result != FLB_EVENT_ENCODER_SUCCESS) {
+            /*
+             * the kvlist rollback only drops the nested map, the "attributes"
+             * key is still in the parent map: drop the whole record so we
+             * don't emit a malformed msgpack entry.
+             */
+            if (error_status) {
+                *error_status = FLB_OTEL_LOGS_ERR_UNEXPECTED_ATTRIBUTES_TYPE;
+            }
+            flb_log_event_encoder_rollback_record(encoder);
+            return -FLB_OTEL_LOGS_ERR_UNEXPECTED_ATTRIBUTES_TYPE;
+        }
     }
 
     if (dropped_attributes_count != NULL &&
