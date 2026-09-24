@@ -504,8 +504,14 @@ static int flb_http_server_client_activity_event_handler(void *data)
 
         close_connection = flb_http_server_should_connection_be_closed(request);
 
-        flb_http_request_destroy(&stream->request);
-        flb_http_response_destroy(&stream->response);
+        if (session->version == HTTP_PROTOCOL_VERSION_20) {
+            /* nghttp2 might still need the response (deferred DATA) */
+            flb_http2_server_stream_release(stream);
+        }
+        else {
+            flb_http_request_destroy(&stream->request);
+            flb_http_response_destroy(&stream->response);
+        }
     }
 
     result = flb_http_server_session_write(session);
