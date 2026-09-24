@@ -246,6 +246,20 @@ static int tasks_start(struct flb_input_instance *in,
         if (task->status != FLB_TASK_NEW) {
             continue;
         }
+
+        /*
+         * Do not dispatch more flush requests than the channels between the
+         * engine and the outputs can hold, otherwise the engine blocks
+         * writing to an output worker that is blocked writing its return
+         * status back to the engine. The remaining tasks keep their
+         * FLB_TASK_NEW status and are started on the next flush cycle.
+         */
+        if (config->flush_in_flight >= FLB_CONFIG_FLUSH_IN_FLIGHT_LIMIT) {
+            flb_debug("[engine] %i flush requests in flight, deferring tasks of "
+                      "input %s to the next flush cycle",
+                      config->flush_in_flight, flb_input_name(in));
+            break;
+        }
         task->status = FLB_TASK_RUNNING;
 
         /* A task contain one or more routes */
