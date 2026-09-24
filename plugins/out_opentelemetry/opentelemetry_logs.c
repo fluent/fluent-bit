@@ -420,7 +420,9 @@ static int log_record_set_attributes(struct opentelemetry_context *ctx,
         }
 
         buf[attr_count] = msgpack_kv_to_otlp_any_value(kv);
-        attr_count++;
+        if (buf[attr_count] != NULL) {
+            attr_count++;
+        }
     }
 
     /* remaining fields that were not added to log body */
@@ -429,7 +431,9 @@ static int log_record_set_attributes(struct opentelemetry_context *ctx,
         for (i = 0; i < result.data.via.map.size; i++) {
             kv = &result.data.via.map.ptr[i];
             buf[attr_count] = msgpack_kv_to_otlp_any_value(kv);
-            attr_count++;
+            if (buf[attr_count] != NULL) {
+                attr_count++;
+            }
         }
         msgpack_unpacked_destroy(&result);
         flb_free(out_buf);
