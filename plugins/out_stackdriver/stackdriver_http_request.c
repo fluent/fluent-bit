@@ -149,7 +149,7 @@ void add_http_request_field(struct http_request_field *http_request,
     msgpack_pack_str(mp_pck, HTTP_REQUEST_CACHE_HIT_SIZE);
     msgpack_pack_str_body(mp_pck, HTTP_REQUEST_CACHE_HIT,
                           HTTP_REQUEST_CACHE_HIT_SIZE);
-    if (http_request->cacheLookup == FLB_TRUE) {
+    if (http_request->cacheHit == FLB_TRUE) {
         msgpack_pack_true(mp_pck);
     }
     else {
