@@ -276,7 +276,7 @@ int flb_http2_response_commit(struct flb_http_response *response)
                                      stream->id, 
                                      headers, 
                                      header_count, 
-                                     &data_provider);
+                                     stream->request.method == HTTP_METHOD_HEAD ? NULL : &data_provider);
 
     if (result != 0) {
         stream->status = HTTP_STREAM_STATUS_ERROR;
