@@ -313,6 +313,7 @@ static ssize_t parse_payload_none(struct tcp_conn *conn)
                 else {
                     flb_plg_debug(ctx->ins, "parser '%s' failed on incoming data",
                                   ctx->parser_name);
+                    flb_plg_debug(ctx->ins, "unparsed log message: %.*s", (int) len, buf);
                     ret = flb_log_event_encoder_begin_record(ctx->log_encoder);
 
                     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
