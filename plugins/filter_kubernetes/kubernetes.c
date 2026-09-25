@@ -1225,6 +1225,20 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_kube, kube_token_ttl),
      "kubernetes token ttl, until it is reread from the token file. Default: 10m"
     },
+    {
+     FLB_CONFIG_MAP_TIME, "kube_meta_io_timeout", "30s",
+     0, FLB_TRUE, offsetof(struct flb_kube, kube_meta_io_timeout),
+     "network read timeout for the API server / kubelet metadata request. "
+     "The request is synchronous on the pipeline thread, so without a bound a "
+     "stalled connection blocks in_tail indefinitely. Default: 30s (0 = legacy)."
+    },
+    {
+     FLB_CONFIG_MAP_TIME, "kube_meta_negative_cache_ttl", "60s",
+     0, FLB_TRUE, offsetof(struct flb_kube, kube_meta_negative_cache_ttl),
+     "how long a failed pod metadata lookup is remembered so records for that "
+     "pod pass through un-enriched instead of re-issuing a blocking request per "
+     "line while the control plane is unreachable. Default: 60s (0 = disabled)."
+    },
     /*
      * Set TTL for K8s cached metadata 
      */
