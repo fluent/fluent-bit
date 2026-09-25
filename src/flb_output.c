@@ -543,6 +543,25 @@ int flb_output_task_flush(struct flb_task *task,
 
 int flb_output_instance_destroy(struct flb_output_instance *ins)
 {
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct flb_output_flush *out_flush;
+
+    /* Unlink queued completion events before freeing their owning instance. */
+    if (ins->event.status & MK_EVENT_REGISTERED) {
+        mk_event_del(ins->config->evl, &ins->event);
+    }
+
+    /* The shutdown deadline may leave unstarted or completed flushes queued. */
+    mk_list_foreach_safe(head, tmp, &ins->flush_list) {
+        out_flush = mk_list_entry(head, struct flb_output_flush, _head);
+        flb_output_flush_destroy(out_flush);
+    }
+    mk_list_foreach_safe(head, tmp, &ins->flush_list_destroy) {
+        out_flush = mk_list_entry(head, struct flb_output_flush, _head);
+        flb_output_flush_destroy(out_flush);
+    }
+
     if (ins->alias) {
         flb_sds_destroy(ins->alias);
     }
