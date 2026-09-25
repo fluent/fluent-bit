@@ -89,6 +89,11 @@ static void flb_http_server_connection_drop(struct flb_connection *connection)
         session->connection == connection) {
         session->connection = NULL;
         session->drop_pending = FLB_FALSE;
+        connection->user_data = NULL;
+
+        /* Keep detached sessions off the live list until deferred cleanup. */
+        cfl_list_del(&session->_head);
+        cfl_list_add(&session->_head, &session->parent->detached_clients);
     }
 
     connection->drop_notification_callback = NULL;
@@ -102,16 +107,12 @@ static void flb_http_server_reap_stale_sessions(struct flb_http_server *server)
 
     cfl_list_foreach_safe(iterator,
                           iterator_backup,
-                          &server->clients) {
+                          &server->detached_clients) {
         session = cfl_list_entry(iterator,
                                  struct flb_http_server_session,
                                  _head);
 
-        if (session->drop_pending == FLB_FALSE &&
-            (session->connection == NULL ||
-             session->connection->fd == FLB_INVALID_SOCKET)) {
-            flb_http_server_session_destroy(session);
-        }
+        flb_http_server_session_destroy(session);
     }
 }
 
@@ -196,6 +197,7 @@ static int flb_http_server_apply_options(struct flb_http_server *session,
     }
     session->workers = options->workers;
     session->worker_id = 0;
+    session->managed_worker = FLB_FALSE;
     session->use_caller_event_loop = options->use_caller_event_loop;
     session->reuse_port = options->reuse_port;
     session->tls_alpn_configured = FLB_FALSE;
@@ -204,6 +206,7 @@ static int flb_http_server_apply_options(struct flb_http_server *session,
     session->runtime = NULL;
 
     cfl_list_init(&session->clients);
+    cfl_list_init(&session->detached_clients);
 
     MK_EVENT_NEW(&session->listener_event);
 
@@ -542,7 +545,8 @@ static int flb_http_server_client_connection_initialize(
 
     server = (struct flb_http_server *) data;
 
-    if (server->max_connections > 0) {
+    /* Caller-loop servers have no maintenance; capped workers need free slots. */
+    if (server->managed_worker == FLB_FALSE || server->max_connections > 0) {
         flb_http_server_reap_stale_sessions(server);
     }
 
@@ -700,6 +704,8 @@ static int flb_http_server_worker_initialize(struct flb_downstream_worker *worke
     if (result != 0) {
         return result;
     }
+
+    context->server.managed_worker = FLB_TRUE;
 
     result = flb_http_server_start(&context->server);
     if (result != 0) {
@@ -1183,6 +1189,8 @@ int flb_http_server_stop(struct flb_http_server *server)
 
             flb_http_server_session_destroy(session);
         }
+
+        flb_http_server_reap_stale_sessions(server);
 
         if (server->cb_worker_exit != NULL) {
             server->cb_worker_exit(server, server->user_data);

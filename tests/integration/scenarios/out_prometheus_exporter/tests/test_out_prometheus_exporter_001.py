@@ -1,4 +1,5 @@
 import os
+from http.client import HTTPConnection
 import subprocess
 
 import pytest
@@ -17,11 +18,15 @@ def _headers_map(headers_raw):
 
 
 class Service:
-    def __init__(self):
+    def __init__(self, *, idle_timeout="10s"):
         self.config_file = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "../config/out_prometheus_exporter.yaml")
         )
-        self.service = FluentBitTestService(self.config_file, pre_start=self._pre_start)
+        self.service = FluentBitTestService(
+            self.config_file,
+            pre_start=self._pre_start,
+            extra_env={"EXPORTER_IDLE_TIMEOUT": idle_timeout},
+        )
 
     def _pre_start(self, service):
         self.exporter_port = service.allocate_port_env("EXPORTER_PORT")
@@ -99,4 +104,51 @@ def test_out_prometheus_exporter_http2_metrics():
         assert metrics["http_version"] == "2"
         assert "fluentbit_input_metrics_scrapes_total" in metrics["body"]
     finally:
+        service.stop()
+
+
+def test_out_prometheus_exporter_repeated_connections():
+    service = Service()
+    service.start()
+
+    try:
+        # Each curl process opens and closes a fresh connection. Leave the
+        # connection limit unset to exercise the default caller-loop cleanup.
+        for _ in range(100):
+            metrics = service.request("/metrics")
+            assert metrics["status_code"] == 200
+    finally:
+        service.stop()
+
+
+def test_out_prometheus_exporter_preserves_live_sessions_during_connection_churn():
+    # Slow CI and Valgrind runs can keep the persistent clients idle for over 10s.
+    service = Service(idle_timeout="5m")
+    service.start()
+    connections = []
+
+    try:
+        for _ in range(32):
+            connection = HTTPConnection("127.0.0.1", service.exporter_port, timeout=10)
+            connections.append(connection)
+            connection.request("GET", "/metrics")
+            response = connection.getresponse()
+            response.read()
+            assert response.status == 200
+            assert not response.will_close
+
+        sockets = [connection.sock for connection in connections]
+        for _ in range(50):
+            assert service.request("/metrics")["status_code"] == 200
+
+        # Reaping disconnected clients must preserve the existing live sessions.
+        for connection, original_socket in zip(connections, sockets):
+            connection.request("GET", "/metrics")
+            response = connection.getresponse()
+            response.read()
+            assert response.status == 200
+            assert connection.sock is original_socket
+    finally:
+        for connection in connections:
+            connection.close()
         service.stop()
