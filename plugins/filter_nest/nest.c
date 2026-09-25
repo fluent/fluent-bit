@@ -146,6 +146,9 @@ static int configure(struct filter_nest_ctx *ctx,
             ctx->prefix = flb_strdup(kv->val);
             ctx->prefix_len = flb_sds_len(kv->val);
             ctx->remove_prefix = true;
+        }
+        else if (strcasecmp(kv->key, "suppress_warnings") == 0) {
+            continue;
         } else {
             flb_plg_error(ctx->ins, "Invalid configuration key '%s'", kv->key);
             return -1;
@@ -219,7 +222,10 @@ static inline void map_pack_each_fn(struct flb_log_event_encoder *log_encoder,
                                     msgpack_object * map,
                                     struct filter_nest_ctx *ctx,
                                     bool(*f) (msgpack_object_kv * kv,
-                                              struct filter_nest_ctx * ctx))
+                                              struct filter_nest_ctx * ctx,
+                                              const char * tag),
+                                    const char *tag
+    )
 {
     int i;
     int ret;
@@ -229,7 +235,7 @@ static inline void map_pack_each_fn(struct flb_log_event_encoder *log_encoder,
          i < map->via.map.size &&
          ret == FLB_EVENT_ENCODER_SUCCESS;
          i++) {
-        if ((*f) (&map->via.map.ptr[i], ctx)) {
+        if ((*f) (&map->via.map.ptr[i], ctx, tag)) {
             ret = flb_log_event_encoder_append_body_values(
                     log_encoder,
                     FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(
@@ -244,7 +250,9 @@ static inline void map_transform_and_pack_each_fn(struct flb_log_event_encoder *
                                     msgpack_object * map,
                                     struct filter_nest_ctx *ctx,
                                     bool(*f) (msgpack_object_kv * kv,
-                                              struct filter_nest_ctx * ctx)
+                                              struct filter_nest_ctx * ctx,
+                                              const char * tag),
+                                    const char *tag
     )
 {
     int i;
@@ -256,7 +264,7 @@ static inline void map_transform_and_pack_each_fn(struct flb_log_event_encoder *
          i < map->via.map.size &&
          ret == FLB_EVENT_ENCODER_SUCCESS ;
          i++) {
-        if ((*f) (&map->via.map.ptr[i], ctx)) {
+        if ((*f) (&map->via.map.ptr[i], ctx, tag)) {
             key = &map->via.map.ptr[i].key;
 
             if (ctx->add_prefix) {
@@ -281,14 +289,15 @@ static inline void map_transform_and_pack_each_fn(struct flb_log_event_encoder *
 static inline int map_count_fn(msgpack_object * map,
                                struct filter_nest_ctx *ctx,
                                bool(*f) (msgpack_object_kv * kv,
-                                         struct filter_nest_ctx * ctx)
-    )
+                                         struct filter_nest_ctx * ctx,
+                                         const char * tag),
+                               const char *tag)
 {
     int i;
     int count = 0;
 
     for (i = 0; i < map->via.map.size; i++) {
-        if ((*f) (&map->via.map.ptr[i], ctx)) {
+        if ((*f) (&map->via.map.ptr[i], ctx, tag)) {
             count++;
         }
     }
@@ -296,7 +305,8 @@ static inline int map_count_fn(msgpack_object * map,
 }
 
 static inline bool is_kv_to_nest(msgpack_object_kv * kv,
-                                 struct filter_nest_ctx *ctx)
+                                 struct filter_nest_ctx *ctx,
+                                 const char *tag)
 {
 
     const char *key;
@@ -345,13 +355,15 @@ static inline bool is_kv_to_nest(msgpack_object_kv * kv,
 }
 
 static inline bool is_not_kv_to_nest(msgpack_object_kv * kv,
-                                     struct filter_nest_ctx *ctx)
+                                     struct filter_nest_ctx *ctx,
+                                     const char *tag)
 {
-    return !is_kv_to_nest(kv, ctx);
+    return !is_kv_to_nest(kv, ctx, tag);
 }
 
 static inline bool is_kv_to_lift(msgpack_object_kv * kv,
-                                 struct filter_nest_ctx *ctx)
+                                 struct filter_nest_ctx *ctx,
+                                 const char *tag)
 {
 
     const char *key;
@@ -385,9 +397,11 @@ static inline bool is_kv_to_lift(msgpack_object_kv * kv,
         }
         memcpy(tmp, key, klen);
         tmp[klen] = '\0';
-        flb_plg_warn(ctx->ins, "Value of key '%s' is not a map. "
-                     "Will not attempt to lift from here",
-                     tmp);
+        if (!ctx->suppress_warnings) {
+            flb_plg_warn(ctx->ins, "Value of key '%s' is not a map. "
+                          "Will not attempt to lift from here. Tag: %s",
+                          tmp, tag);
+        }
         flb_free(tmp);
         return false;
     }
@@ -397,13 +411,15 @@ static inline bool is_kv_to_lift(msgpack_object_kv * kv,
 }
 
 static inline bool is_not_kv_to_lift(msgpack_object_kv * kv,
-                                     struct filter_nest_ctx *ctx)
+                                     struct filter_nest_ctx *ctx,
+                                     const char *tag)
 {
-    return !is_kv_to_lift(kv, ctx);
+    return !is_kv_to_lift(kv, ctx, tag);
 }
 
 static inline int count_items_to_lift(msgpack_object * map,
-                                      struct filter_nest_ctx *ctx)
+                                      struct filter_nest_ctx *ctx,
+                                      const char *tag)
 {
     int i;
     int count = 0;
@@ -411,7 +427,7 @@ static inline int count_items_to_lift(msgpack_object * map,
 
     for (i = 0; i < map->via.map.size; i++) {
         kv = &map->via.map.ptr[i];
-        if (is_kv_to_lift(kv, ctx)) {
+        if (is_kv_to_lift(kv, ctx, tag)) {
             count = count + kv->val.via.map.size;
         }
     }
@@ -421,7 +437,8 @@ static inline int count_items_to_lift(msgpack_object * map,
 static inline void pack_map(
     struct flb_log_event_encoder *log_encoder,
     msgpack_object * map,
-    struct filter_nest_ctx *ctx)
+    struct filter_nest_ctx *ctx
+    )
 {
     int i;
     int ret;
@@ -456,7 +473,9 @@ static inline void map_lift_each_fn(struct flb_log_event_encoder *log_encoder,
                                     msgpack_object * map,
                                     struct filter_nest_ctx *ctx,
                                     bool(*f) (msgpack_object_kv * kv,
-                                              struct filter_nest_ctx * ctx)
+                                              struct filter_nest_ctx * ctx,
+                                              const char * tag),
+                                    const char *tag
     )
 {
     int i;
@@ -464,7 +483,7 @@ static inline void map_lift_each_fn(struct flb_log_event_encoder *log_encoder,
 
     for (i = 0; i < map->via.map.size; i++) {
         kv = &map->via.map.ptr[i];
-        if ((*f) (kv, ctx)) {
+        if ((*f) (kv, ctx, tag)) {
             pack_map(log_encoder, &kv->val, ctx);
         }
     }
@@ -472,12 +491,13 @@ static inline void map_lift_each_fn(struct flb_log_event_encoder *log_encoder,
 
 static inline int apply_lifting_rules(struct flb_log_event_encoder *log_encoder,
                                       struct flb_log_event *log_event,
-                                      struct filter_nest_ctx *ctx)
+                                      struct filter_nest_ctx *ctx,
+                                      const char *tag)
 {
     int ret;
     msgpack_object map = *log_event->body;
 
-    int items_to_lift = map_count_fn(&map, ctx, &is_kv_to_lift);
+    int items_to_lift = map_count_fn(&map, ctx, &is_kv_to_lift, tag);
 
     if (items_to_lift == 0) {
         flb_plg_debug(ctx->ins, "Lift : No match found for %s", ctx->key);
@@ -491,7 +511,7 @@ static inline int apply_lifting_rules(struct flb_log_event_encoder *log_encoder,
      *   + number of element inside maps to lift
      */
     int toplevel_items =
-        (map.via.map.size - items_to_lift) + count_items_to_lift(&map, ctx);
+        (map.via.map.size - items_to_lift) + count_items_to_lift(&map, ctx, tag);
 
     flb_plg_debug(ctx->ins, "Lift : Outer map size is %d, will be %d, "
                   "lifting %d record(s)",
@@ -518,10 +538,10 @@ static inline int apply_lifting_rules(struct flb_log_event_encoder *log_encoder,
     }
 
     /* Pack all current top-level items excluding the key keys */
-    map_pack_each_fn(log_encoder, &map, ctx, &is_not_kv_to_lift);
+    map_pack_each_fn(log_encoder, &map, ctx, &is_not_kv_to_lift, tag);
 
     /* Lift and pack all elements in key keys */
-    map_lift_each_fn(log_encoder, &map, ctx, &is_kv_to_lift);
+    map_lift_each_fn(log_encoder, &map, ctx, &is_kv_to_lift, tag);
 
     ret = flb_log_event_encoder_commit_record(log_encoder);
 
@@ -534,12 +554,13 @@ static inline int apply_lifting_rules(struct flb_log_event_encoder *log_encoder,
 
 static inline int apply_nesting_rules(struct flb_log_event_encoder *log_encoder,
                                       struct flb_log_event *log_event,
-                                      struct filter_nest_ctx *ctx)
+                                      struct filter_nest_ctx *ctx,
+                                      const char *tag)
 {
     int ret;
     msgpack_object map = *log_event->body;
 
-    size_t items_to_nest = map_count_fn(&map, ctx, &is_kv_to_nest);
+    size_t items_to_nest = map_count_fn(&map, ctx, &is_kv_to_nest, tag);
 
     if (items_to_nest == 0) {
         flb_plg_debug(ctx->ins, "no match found for %s", ctx->prefix);
@@ -576,7 +597,7 @@ static inline int apply_nesting_rules(struct flb_log_event_encoder *log_encoder,
      * Record array item 2/2
      * Create a new map with toplevel items +1 for nested map
      */
-    map_pack_each_fn(log_encoder, &map, ctx, &is_not_kv_to_nest);
+    map_pack_each_fn(log_encoder, &map, ctx, &is_not_kv_to_nest, tag);
 
     /* Pack the nested map key */
     ret = flb_log_event_encoder_append_body_string(
@@ -594,7 +615,7 @@ static inline int apply_nesting_rules(struct flb_log_event_encoder *log_encoder,
     }
 
     /* Pack the nested items */
-    map_transform_and_pack_each_fn(log_encoder, &map, ctx, &is_kv_to_nest);
+    map_transform_and_pack_each_fn(log_encoder, &map, ctx, &is_kv_to_nest, tag);
 
     ret = flb_log_event_encoder_commit_record(log_encoder);
 
@@ -675,11 +696,11 @@ static int cb_nest_filter(const void *data, size_t bytes,
 
         if (ctx->operation == NEST) {
             modified_records =
-                apply_nesting_rules(&log_encoder, &log_event, ctx);
+                apply_nesting_rules(&log_encoder, &log_event, ctx, tag);
         }
         else {
             modified_records =
-                apply_lifting_rules(&log_encoder, &log_event, ctx);
+                apply_lifting_rules(&log_encoder, &log_event, ctx, tag);
         }
 
         if (modified_records == 0) {
@@ -756,6 +777,11 @@ static struct flb_config_map config_map[] = {
     FLB_CONFIG_MAP_STR, "Remove_prefix", NULL,
     0, FLB_FALSE, 0,
     "Remove prefix from affected keys if it matches this string"
+   },
+   {
+    FLB_CONFIG_MAP_BOOL, "suppress_warnings", "false",
+    0, FLB_TRUE, offsetof(struct filter_nest_ctx, suppress_warnings),
+    "Suppress warnings about non-matching keys"
    },
    {0}
 };
