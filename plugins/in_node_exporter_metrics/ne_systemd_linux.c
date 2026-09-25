@@ -709,7 +709,7 @@ static int ne_systemd_init(struct flb_ne *ctx)
                                                    "per Systemd unit.",
                                                    1, (char *[]) {"name"});
 
-    if (ctx->systemd_unit_tasks == NULL) {
+    if (ctx->systemd_unit_tasks_max == NULL) {
         return -1;
     }
 
