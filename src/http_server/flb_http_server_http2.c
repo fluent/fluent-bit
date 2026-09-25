@@ -608,6 +608,12 @@ static int http2_header_callback(nghttp2_session *inner_session,
     else if (flb_http_server_strncasecmp(
                 name, name_length, "content-type", 0) == 0) {
 
+        /* regular header fields can be repeated */
+        if (stream->request.content_type != NULL) {
+            cfl_sds_destroy(stream->request.content_type);
+            stream->request.content_type = NULL;
+        }
+
         stream->request.content_type = cfl_sds_create_len((const char *) value, value_length);
     
         if (stream->request.content_type == NULL) {

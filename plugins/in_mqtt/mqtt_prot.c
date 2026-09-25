@@ -263,7 +263,7 @@ static int mqtt_handle_publish(struct mqtt_conn *conn)
     size_t sent;
     uint16_t hlen;
     uint16_t packet_id;
-    char buf[4];
+    char buf[4] = {0, 0, 0, 0};
     struct flb_in_mqtt_config *ctx = conn->ctx;
 
     /*
@@ -273,6 +273,11 @@ static int mqtt_handle_publish(struct mqtt_conn *conn)
      */
 
     qos = ((conn->buf[0] >> 1) & 0x03);
+    if (qos > MQTT_QOS_LEV2) {
+        /* MQTT-3.3.1-4: a PUBLISH packet must not have both QoS bits set */
+        flb_plg_debug(ctx->ins, "invalid publish QoS");
+        return -1;
+    }
     conn->buf_pos++;
 
     /* Topic */
