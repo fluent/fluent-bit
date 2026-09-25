@@ -107,10 +107,12 @@ int flb_tail_scan(struct mk_list *path_list, struct flb_tail_config *ctx)
     struct mk_list *head;
     struct flb_slist_entry *pattern;
 
+    flb_tail_file_dormant_scan_begin(ctx);
     mk_list_foreach(head, path_list) {
         pattern = mk_list_entry(head, struct flb_slist_entry, _head);
         ret = tail_scan_path(pattern->str, ctx);
         if (ret == -1) {
+            ctx->dormant_scan_failed = FLB_TRUE;
             flb_plg_warn(ctx->ins, "error scanning path: %s", pattern->str);
         }
         else {
@@ -119,6 +121,7 @@ int flb_tail_scan(struct mk_list *path_list, struct flb_tail_config *ctx)
         }
     }
 
+    flb_tail_file_dormant_scan_end(ctx);
     return 0;
 }
 
@@ -133,6 +136,7 @@ int flb_tail_scan_callback(struct flb_input_instance *ins,
     struct flb_tail_config *ctx = context;
     (void) config;
 
+    flb_tail_file_reclaim(ctx);
     ret = flb_tail_scan(ctx->path_list, ctx);
     if (ret > 0) {
         flb_plg_debug(ins, "%i new files found", ret);

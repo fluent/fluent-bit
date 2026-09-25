@@ -58,6 +58,11 @@ struct flb_tail_config {
     int ch_reads;              /* count number if signal reads */
     int ch_writes;             /* count number of signal writes */
 
+    /* All Tail instances reference one process-wide file budget. */
+    int max_open_files;
+    struct flb_tail_file_budget *file_budget;
+    int files_deferred;
+
     /* Buffer Config */
     size_t buf_chunk_size;     /* allocation chunks        */
     size_t buf_max_size;       /* max size of a buffer     */
@@ -189,6 +194,10 @@ struct flb_tail_config {
     struct flb_hash_table *static_hash;
     struct flb_hash_table *event_hash;
 
+    struct mk_list files_dormant;
+    int dormant_scan_failed;
+    struct flb_hash_table *dormant_files;
+    struct flb_hash_table *dormant_inodes;
     struct flb_hash_table *ignored_file_sizes;
     struct flb_hash_table *aged_out_file_inodes;
 
