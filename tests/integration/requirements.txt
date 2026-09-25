@@ -3,6 +3,7 @@ blinker==1.8.2
 certifi==2024.6.2
 charset-normalizer==3.3.2
 click==8.1.7
+dbus-next==0.2.3; sys_platform == "linux"
 deepdiff==7.0.1
 Deprecated==1.2.14
 Flask==3.0.3
