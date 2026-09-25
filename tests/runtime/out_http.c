@@ -1195,6 +1195,68 @@ void flb_test_in_http()
     test_ctx_destroy(ctx);
 }
 
+/* test that http_bearer_token_file cannot be combined with http_user/http_passwd */
+void flb_test_http_bearer_token_file_conflicts_with_http_user()
+{
+    struct test_ctx *ctx;
+    int ret;
+
+    ctx = test_ctx_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "http_bearer_token_file", "/tmp/does-not-need-to-exist.token",
+                         "http_user", "user1",
+                         "http_passwd", "passwd1",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    if (!TEST_CHECK(ret != 0)) {
+        TEST_MSG("expected startup failure for http_bearer_token_file + http_user");
+    }
+
+    /* flb_start failed, so there is no running engine to stop. */
+    flb_destroy(ctx->flb);
+    flb_free(ctx);
+}
+
+/* test that http_bearer_token_file cannot be combined with oauth2.enable */
+void flb_test_http_bearer_token_file_conflicts_with_oauth2()
+{
+    struct test_ctx *ctx;
+    int ret;
+
+    ctx = test_ctx_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "http_bearer_token_file", "/tmp/does-not-need-to-exist.token",
+                         "oauth2.enable", "true",
+                         "oauth2.token_url", "http://127.0.0.1:8888/oauth/token",
+                         "oauth2.client_id", "client1",
+                         "oauth2.client_secret", "secret1",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    if (!TEST_CHECK(ret != 0)) {
+        TEST_MSG("expected startup failure for http_bearer_token_file + oauth2.enable");
+    }
+
+    /* flb_start failed, so there is no running engine to stop. */
+    flb_destroy(ctx->flb);
+    flb_free(ctx);
+}
+
 /* Test list */
 TEST_LIST = {
     {"format_msgpack" , flb_test_format_msgpack},
@@ -1212,5 +1274,9 @@ TEST_LIST = {
     {"json_date_format_iso8601" , flb_test_json_date_format_iso8601},
     {"json_date_format_java_sql_timestamp" , flb_test_json_date_format_java_sql_timestamp},
     {"in_http", flb_test_in_http},
+    {"http_bearer_token_file_conflicts_with_http_user",
+     flb_test_http_bearer_token_file_conflicts_with_http_user},
+    {"http_bearer_token_file_conflicts_with_oauth2",
+     flb_test_http_bearer_token_file_conflicts_with_oauth2},
     {NULL, NULL}
 };
