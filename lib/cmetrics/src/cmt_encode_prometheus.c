@@ -97,6 +97,39 @@ static void metric_escape(cfl_sds_t *buf, cfl_sds_t description, bool escape_quo
     }
 }
 
+/*
+ * Metric and label names have no escape sequence in the exposition format: they
+ * must match [a-zA-Z_:][a-zA-Z0-9_:]* (label names cannot contain ':'). Names
+ * received from the network (OTLP, remote write, msgpack) are not constrained,
+ * so replace every other byte with '_', otherwise a name containing a newline
+ * or a space would inject new lines/tokens into the output.
+ */
+static void metric_name_cat(cfl_sds_t *buf, cfl_sds_t name, bool is_label)
+{
+    size_t i;
+    size_t len;
+    char c;
+
+    len = cfl_sds_len(name);
+
+    for (i = 0; i < len; i++) {
+        c = name[i];
+
+        if (i == 0 && c >= '0' && c <= '9') {
+            /* a leading digit is not allowed, prefix it */
+            cfl_sds_cat_safe(buf, "_", 1);
+        }
+
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+              (c >= '0' && c <= '9') || c == '_' ||
+              (c == ':' && !is_label))) {
+            c = '_';
+        }
+
+        cfl_sds_cat_safe(buf, &c, 1);
+    }
+}
+
 static void metric_banner(cfl_sds_t *buf, struct cmt_map *map,
                           struct cmt_metric *metric)
 {
@@ -106,7 +139,7 @@ static void metric_banner(cfl_sds_t *buf, struct cmt_map *map,
 
     /* HELP */
     cfl_sds_cat_safe(buf, "# HELP ", 7);
-    cfl_sds_cat_safe(buf, opts->fqname, cfl_sds_len(opts->fqname));
+    metric_name_cat(buf, opts->fqname, false);
 
     if (cfl_sds_len(opts->description) > 1 || opts->description[0] != ' ') {
         /* only append description if it is not empty. the parser uses a single whitespace
@@ -118,7 +151,7 @@ static void metric_banner(cfl_sds_t *buf, struct cmt_map *map,
 
     /* TYPE */
     cfl_sds_cat_safe(buf, "# TYPE ", 7);
-    cfl_sds_cat_safe(buf, opts->fqname, cfl_sds_len(opts->fqname));
+    metric_name_cat(buf, opts->fqname, false);
 
     if (map->type == CMT_COUNTER) {
         cfl_sds_cat_safe(buf, " counter\n", 9);
@@ -213,7 +246,7 @@ static void append_metric_value(cfl_sds_t *buf,
 
 static int add_label(cfl_sds_t *buf, cfl_sds_t key, cfl_sds_t val)
 {
-    cfl_sds_cat_safe(buf, key, cfl_sds_len(key));
+    metric_name_cat(buf, key, true);
     cfl_sds_cat_safe(buf, "=\"", 2);
     metric_escape(buf, val, true);
     cfl_sds_cat_safe(buf, "\"", 1);
@@ -313,7 +346,7 @@ static void format_metric(struct cmt *cmt,
 
     /* Metric info */
     if (!fmt->metric_name) {
-        cfl_sds_cat_safe(buf, opts->fqname, cfl_sds_len(opts->fqname));
+        metric_name_cat(buf, opts->fqname, false);
     }
 
     /* Static labels */
@@ -438,7 +471,7 @@ static void format_histogram_bucket(struct cmt *cmt,
 
     for (i = 0; i <= bucket->count; i++) {
         /* metric name */
-        cfl_sds_cat_safe(buf, opts->fqname, cfl_sds_len(opts->fqname));
+        metric_name_cat(buf, opts->fqname, false);
         cfl_sds_cat_safe(buf, "_bucket", 7);
 
         /* upper bound */
@@ -471,7 +504,7 @@ static void format_histogram_bucket(struct cmt *cmt,
         fmt.metric_name = CMT_TRUE;
         fmt.value_from = PROM_FMT_VAL_FROM_SUM;
 
-        cfl_sds_cat_safe(buf, opts->fqname, cfl_sds_len(opts->fqname));
+        metric_name_cat(buf, opts->fqname, false);
         cfl_sds_cat_safe(buf, "_sum", 4);
         format_metric(cmt, buf, map, metric, add_timestamp, &fmt);
     }
@@ -482,7 +515,7 @@ static void format_histogram_bucket(struct cmt *cmt,
     fmt.labels_count = 0;
     fmt.value_from = PROM_FMT_VAL_FROM_COUNT;
 
-    cfl_sds_cat_safe(buf, opts->fqname, cfl_sds_len(opts->fqname));
+    metric_name_cat(buf, opts->fqname, false);
     cfl_sds_cat_safe(buf, "_count", 6);
     format_metric(cmt, buf, map, metric, add_timestamp, &fmt);
 }
@@ -503,7 +536,7 @@ static void format_summary_quantiles(struct cmt *cmt,
     if (cmt_atomic_load(&metric->sum_quantiles_set)) {
         for (i = 0; i < summary->quantiles_count; i++) {
             /* metric name */
-            cfl_sds_cat_safe(buf, opts->fqname, cfl_sds_len(opts->fqname));
+            metric_name_cat(buf, opts->fqname, false);
 
             /* quantiles */
             cfl_sds_cat_safe(buf, "{quantile=\"", 11);
@@ -529,7 +562,7 @@ static void format_summary_quantiles(struct cmt *cmt,
     fmt.metric_name = CMT_TRUE;
     fmt.value_from = PROM_FMT_VAL_FROM_SUM;
 
-    cfl_sds_cat_safe(buf, opts->fqname, cfl_sds_len(opts->fqname));
+    metric_name_cat(buf, opts->fqname, false);
     cfl_sds_cat_safe(buf, "_sum", 4);
     format_metric(cmt, buf, map, metric, add_timestamp, &fmt);
 
@@ -537,7 +570,7 @@ static void format_summary_quantiles(struct cmt *cmt,
     fmt.labels_count = 0;
     fmt.value_from = PROM_FMT_VAL_FROM_COUNT;
 
-    cfl_sds_cat_safe(buf, opts->fqname, cfl_sds_len(opts->fqname));
+    metric_name_cat(buf, opts->fqname, false);
     cfl_sds_cat_safe(buf, "_count", 6);
     format_metric(cmt, buf, map, metric, add_timestamp, &fmt);
 }

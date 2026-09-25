@@ -887,6 +887,12 @@ static int decode_summary_data_point(struct cmt *cmt,
             summary->quantiles[index] = data_point->quantile_values[index]->quantile;
         }
     }
+    else if (data_point->n_quantile_values != summary->quantiles_count) {
+        /* the quantile layout is defined by the first data point and every
+         * sample is sized and read using it
+         */
+        return CMT_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
+    }
 
     static_metric_detected = CMT_FALSE;
 
@@ -932,7 +938,7 @@ static int decode_summary_data_point(struct cmt *cmt,
         struct cfl_kvlist *point_metadata;
 
         if (cmt_atomic_load(&sample->sum_quantiles_set) == CMT_FALSE) {
-            sample->sum_quantiles = calloc(data_point->n_quantile_values,
+            sample->sum_quantiles = calloc(summary->quantiles_count,
                                            sizeof(uint64_t));
 
             if (sample->sum_quantiles == NULL) {
@@ -940,7 +946,7 @@ static int decode_summary_data_point(struct cmt *cmt,
             }
 
             cmt_atomic_store(&sample->sum_quantiles_set, CMT_TRUE);
-            sample->sum_quantiles_count = data_point->n_quantile_values;
+            sample->sum_quantiles_count = summary->quantiles_count;
         }
 
         for (index = 0 ;
@@ -1036,6 +1042,12 @@ static int decode_histogram_data_point(struct cmt *cmt,
             return CMT_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
         }
     }
+    else if (data_point->n_explicit_bounds != histogram->buckets->count) {
+        /* the bucket layout is defined by the first data point and every
+         * sample is sized and read using it
+         */
+        return CMT_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
+    }
 
     static_metric_detected = CMT_FALSE;
 
@@ -1081,11 +1093,11 @@ static int decode_histogram_data_point(struct cmt *cmt,
         struct cfl_kvlist *point_metadata;
 
         if (sample->hist_buckets == NULL) {
-            if (data_point->n_bucket_counts == SIZE_MAX) {
-                return CMT_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
-            }
-
-            sample->hist_buckets = calloc(data_point->n_bucket_counts + 1,
+            /* size the storage from the metric layout, the encoders read
+             * buckets->count + 1 entries even when the data point carries
+             * fewer bucket counts
+             */
+            sample->hist_buckets = calloc(histogram->buckets->count + 1,
                                           sizeof(uint64_t));
 
             if (sample->hist_buckets == NULL) {

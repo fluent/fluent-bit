@@ -1378,6 +1378,46 @@ void test_prometheus_histogram_bucket_decimal_label()
     cmt_destroy(cmt);
 }
 
+void test_prometheus_invalid_name_chars()
+{
+    uint64_t ts;
+    cfl_sds_t text;
+    struct cmt *cmt;
+    struct cmt_gauge *g;
+
+    cmt_initialize();
+
+    cmt = cmt_create();
+    TEST_CHECK(cmt != NULL);
+    if (cmt == NULL) {
+        return;
+    }
+
+    /* names cannot be escaped: bytes outside the allowed set become '_' */
+    g = cmt_gauge_create(cmt, "", "", "9tenant.metric\nforged{a=\"b\"} 1",
+                         "Invalid name", 1, (char *[]) {"k\nINJECTED 42"});
+    TEST_CHECK(g != NULL);
+    if (g == NULL) {
+        cmt_destroy(cmt);
+        return;
+    }
+
+    ts = 0;
+    cmt_gauge_set(g, ts, 7, 1, (char *[]) {"v"});
+
+    text = cmt_encode_prometheus_create(cmt, CMT_FALSE);
+    TEST_CHECK(text != NULL);
+    if (text != NULL) {
+        TEST_CHECK(strcmp(text,
+                          "# HELP _9tenant_metric_forged_a__b___1 Invalid name\n"
+                          "# TYPE _9tenant_metric_forged_a__b___1 gauge\n"
+                          "_9tenant_metric_forged_a__b___1{k_INJECTED_42=\"v\"} 7\n") == 0);
+        cmt_encode_prometheus_destroy(text);
+    }
+
+    cmt_destroy(cmt);
+}
+
 void test_text()
 {
     uint64_t ts;
@@ -1857,6 +1897,7 @@ TEST_LIST = {
     {"cloudwatch_emf",                 test_cloudwatch_emf},
     {"prometheus",                     test_prometheus},
     {"prometheus_histogram_bucket_decimal_label", test_prometheus_histogram_bucket_decimal_label},
+    {"prometheus_invalid_name_chars",  test_prometheus_invalid_name_chars},
     {"text",                           test_text},
     {"influx",                         test_influx},
     {"influx_without_namespaces",      test_influx_without_namespaces},

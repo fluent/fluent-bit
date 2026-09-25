@@ -667,6 +667,7 @@ static int unpack_summary_quantile(mpack_reader_t *reader, size_t index, void *c
 
 static int unpack_summary_quantiles(mpack_reader_t *reader, size_t index, void *context)
 {
+    int    result;
     size_t expected_count;
     size_t entry_count;
     struct cmt_msgpack_decode_context *decode_context;
@@ -689,7 +690,13 @@ static int unpack_summary_quantiles(mpack_reader_t *reader, size_t index, void *
         return CMT_DECODE_MSGPACK_CORRUPT_INPUT_DATA_ERROR;
     }
 
-    return cmt_mpack_unpack_array(reader, unpack_summary_quantile, context);
+    result = cmt_mpack_unpack_array(reader, unpack_summary_quantile, context);
+
+    if (result == CMT_DECODE_MSGPACK_SUCCESS) {
+        decode_context->metric_section_set = CMT_TRUE;
+    }
+
+    return result;
 }
 
 static int unpack_summary_count(mpack_reader_t *reader, size_t index, void *context)
@@ -755,6 +762,10 @@ static int unpack_metric_summary(mpack_reader_t *reader, size_t index, void *con
     }
 
     decode_context = (struct cmt_msgpack_decode_context *) context;
+
+    if (decode_context->map->type != CMT_SUMMARY) {
+        return CMT_DECODE_MSGPACK_CORRUPT_INPUT_DATA_ERROR;
+    }
 
     result = cmt_mpack_unpack_map(reader, callbacks, (void *) decode_context);
 
@@ -846,6 +857,7 @@ static int unpack_histogram_buckets(mpack_reader_t *reader, size_t index, void *
     struct cmt_histogram *histogram;
     size_t expected_count;
     size_t entry_count;
+    int result;
 
     if (NULL == reader  ||
         NULL == context ) {
@@ -870,7 +882,13 @@ static int unpack_histogram_buckets(mpack_reader_t *reader, size_t index, void *
         return CMT_DECODE_MSGPACK_CORRUPT_INPUT_DATA_ERROR;
     }
 
-    return cmt_mpack_unpack_array(reader, unpack_histogram_bucket, decode_context);
+    result = cmt_mpack_unpack_array(reader, unpack_histogram_bucket, decode_context);
+
+    if (result == CMT_DECODE_MSGPACK_SUCCESS) {
+        decode_context->metric_section_set = CMT_TRUE;
+    }
+
+    return result;
 }
 
 static int unpack_metric_histogram(mpack_reader_t *reader, size_t index, void *context)
@@ -891,6 +909,10 @@ static int unpack_metric_histogram(mpack_reader_t *reader, size_t index, void *c
     }
 
     decode_context = (struct cmt_msgpack_decode_context *) context;
+
+    if (decode_context->map->type != CMT_HISTOGRAM) {
+        return CMT_DECODE_MSGPACK_CORRUPT_INPUT_DATA_ERROR;
+    }
 
     result = cmt_mpack_unpack_map(reader, callbacks, (void *) decode_context);
 
@@ -1171,6 +1193,11 @@ static int unpack_metric_exp_histogram(mpack_reader_t *reader, size_t index, voi
     };
 
     decode_context = (struct cmt_msgpack_decode_context *) context;
+
+    if (decode_context->map->type != CMT_EXP_HISTOGRAM) {
+        return CMT_DECODE_MSGPACK_CORRUPT_INPUT_DATA_ERROR;
+    }
+
     cmt_metric_exp_hist_lock(decode_context->metric);
     result = cmt_mpack_unpack_map(reader, callbacks, context);
     cmt_metric_exp_hist_unlock(decode_context->metric);
@@ -1269,8 +1296,20 @@ static int unpack_metric(mpack_reader_t *reader,
 
     decode_context->metric = metric;
     decode_context->metric_value_type_set = CMT_FALSE;
+    decode_context->metric_section_set = CMT_FALSE;
 
     result = cmt_mpack_unpack_map(reader, callbacks, (void *) decode_context);
+
+    /* the bucket or quantile storage above is sized from the map layout, so
+     * the entry must carry that data, otherwise a tiny entry could make the
+     * decoder allocate the whole layout for nothing
+     */
+    if (CMT_DECODE_MSGPACK_SUCCESS == result &&
+        (decode_context->map->type == CMT_HISTOGRAM ||
+         decode_context->map->type == CMT_SUMMARY) &&
+        decode_context->metric_section_set == CMT_FALSE) {
+        result = CMT_DECODE_MSGPACK_CORRUPT_INPUT_DATA_ERROR;
+    }
 
     if (CMT_DECODE_MSGPACK_SUCCESS != result) {
         destroy_label_list(&metric->labels);
@@ -1303,6 +1342,8 @@ static int unpack_metric_array_entry(mpack_reader_t *reader, size_t index, void 
     int                                result;
     uint64_t                          *old_negative_buckets;
     uint64_t                          *old_positive_buckets;
+    uint64_t                          *old_hist_buckets;
+    uint64_t                          *old_sum_quantiles;
     struct cmt_metric                 *metric;
     struct cmt_msgpack_decode_context *decode_context;
 
@@ -1327,13 +1368,23 @@ static int unpack_metric_array_entry(mpack_reader_t *reader, size_t index, void 
             decode_context->map->metric_static_set = 1;
 
             if (decode_context->map->type == CMT_HISTOGRAM) {
+                /* a previous label-less entry may own the static storage */
+                old_hist_buckets = decode_context->map->metric.hist_buckets;
+
                 decode_context->map->metric.hist_buckets = metric->hist_buckets;
                 cmt_atomic_store(&decode_context->map->metric.hist_count,
                                  cmt_atomic_load(&metric->hist_count));
                 cmt_atomic_store(&decode_context->map->metric.hist_sum,
                                  cmt_atomic_load(&metric->hist_sum));
+
+                if (old_hist_buckets != NULL) {
+                    free(old_hist_buckets);
+                }
             }
             else if (decode_context->map->type == CMT_SUMMARY) {
+                /* a previous label-less entry may own the static storage */
+                old_sum_quantiles = decode_context->map->metric.sum_quantiles;
+
                 cmt_atomic_store(&decode_context->map->metric.sum_quantiles_set, cmt_atomic_load(&metric->sum_quantiles_set));
                 decode_context->map->metric.sum_quantiles = metric->sum_quantiles;
                 decode_context->map->metric.sum_quantiles_count =
@@ -1342,6 +1393,10 @@ static int unpack_metric_array_entry(mpack_reader_t *reader, size_t index, void 
                                  cmt_atomic_load(&metric->sum_count));
                 cmt_atomic_store(&decode_context->map->metric.sum_sum,
                                  cmt_atomic_load(&metric->sum_sum));
+
+                if (old_sum_quantiles != NULL) {
+                    free(old_sum_quantiles);
+                }
             }
             else if (decode_context->map->type == CMT_EXP_HISTOGRAM) {
                 cmt_metric_exp_hist_lock(&decode_context->map->metric);

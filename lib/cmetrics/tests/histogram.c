@@ -20,6 +20,7 @@
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_histogram.h>
 #include <cmetrics/cmt_encode_prometheus.h>
+#include <cmetrics/cmt_encode_cloudwatch_emf.h>
 #include <cmetrics/cmt_map.h>
 #include "cmt_tests.h"
 
@@ -301,10 +302,102 @@ void test_prometheus_large_integer_bucket_precision()
     cmt_destroy(cmt);
 }
 
+static int emf_read_double(char *buf, size_t size, char *key, double *value)
+{
+    size_t   index;
+    size_t   key_length;
+    uint64_t bits;
+    int      byte;
+
+    key_length = strlen(key);
+
+    for (index = 0; index + key_length + 10 <= size; index++) {
+        if ((unsigned char) buf[index] == (0xa0 | key_length) &&
+            memcmp(&buf[index + 1], key, key_length) == 0 &&
+            (unsigned char) buf[index + 1 + key_length] == 0xcb) {
+            bits = 0;
+            for (byte = 0; byte < 8; byte++) {
+                bits = (bits << 8) |
+                       (unsigned char) buf[index + 2 + key_length + byte];
+            }
+            memcpy(value, &bits, sizeof(double));
+            return 0;
+        }
+    }
+
+    return -1;
+}
+
+/* Min / Max of a large histogram must be computed without sorting all the
+ * bucket counters, and keep reporting the same values
+ */
+void test_cloudwatch_emf_min_max()
+{
+    int                           ret;
+    size_t                        index;
+    size_t                        bucket_count;
+    size_t                        out_size;
+    double                        value;
+    double                       *bounds;
+    uint64_t                     *counts;
+    char                         *out_buf;
+    struct cmt                   *cmt;
+    struct cmt_histogram         *histogram;
+    struct cmt_histogram_buckets *buckets;
+
+    cmt_initialize();
+
+    bucket_count = 65534;
+    bounds = calloc(bucket_count, sizeof(double));
+    counts = calloc(bucket_count + 1, sizeof(uint64_t));
+    TEST_ASSERT(bounds != NULL && counts != NULL);
+
+    for (index = 0; index < bucket_count; index++) {
+        bounds[index] = (double) (index + 1);
+        counts[index] = 10 + (index % 1000);
+    }
+    counts[1234] = 3;
+    counts[4321] = 5000;
+    counts[bucket_count] = 9000;
+
+    cmt = cmt_create();
+    TEST_ASSERT(cmt != NULL);
+
+    buckets = cmt_histogram_buckets_create_size(bounds, bucket_count);
+    TEST_ASSERT(buckets != NULL);
+
+    histogram = cmt_histogram_create(cmt, "test", "emf", "large", "help",
+                                     buckets, 0, NULL);
+    TEST_ASSERT(histogram != NULL);
+
+    ret = cmt_histogram_set_default(histogram, 1, counts, 1.0, 9000, 0, NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = cmt_encode_cloudwatch_emf_create(cmt, &out_buf, &out_size, CMT_FALSE);
+    TEST_CHECK(ret == 0);
+    if (ret == 0) {
+        TEST_CHECK(emf_read_double(out_buf, out_size, "Min", &value) == 0);
+        TEST_CHECK(value == 3.0);
+        TEST_MSG("Min=%f", value);
+
+        /* the second highest counter of the sorted set is reported */
+        TEST_CHECK(emf_read_double(out_buf, out_size, "Max", &value) == 0);
+        TEST_CHECK(value == 5000.0);
+        TEST_MSG("Max=%f", value);
+
+        cmt_encode_cloudwatch_emf_destroy(out_buf);
+    }
+
+    cmt_destroy(cmt);
+    free(bounds);
+    free(counts);
+}
+
 TEST_LIST = {
     {"non_finite_bucket_labels"                 , test_histogram_non_finite_bucket_labels},
     {"histogram"                                , test_histogram},
     {"set_defaults"                             , test_set_defaults},
     {"prometheus_large_integer_bucket_precision", test_prometheus_large_integer_bucket_precision},
+    {"cloudwatch_emf_min_max"                   , test_cloudwatch_emf_min_max},
     { 0 }
 };
