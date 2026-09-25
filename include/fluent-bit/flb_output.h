@@ -673,6 +673,14 @@ static FLB_INLINE void flb_output_flush_destroy(struct flb_output_flush *out_flu
 {
     flb_debug("[out flush] cb_destroy coro_id=%i", out_flush->id);
 
+    /* A cancelled flush has not released its output processor result yet. */
+    if (out_flush->processed_event_chunk != NULL) {
+        if (out_flush->processed_event_chunk->data != out_flush->buffer) {
+            flb_free(out_flush->processed_event_chunk->data);
+        }
+        flb_event_chunk_destroy(out_flush->processed_event_chunk);
+    }
+
     mk_list_del(&out_flush->_head);
     flb_coro_destroy(out_flush->coro);
     flb_free(out_flush);
