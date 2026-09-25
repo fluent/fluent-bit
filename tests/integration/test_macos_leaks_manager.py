@@ -5,6 +5,7 @@ import pytest
 
 from utils import fluent_bit_manager as manager_module
 from utils.fluent_bit_manager import FluentBitManager, FluentBitStartupError
+from scenarios.filter_parser.tests.test_filter_parser import run_configuration
 
 
 class FakeProcess:
@@ -131,6 +132,35 @@ def test_leaks_strict_fails_when_leaks_reports_leak(monkeypatch, tmp_path):
 
     with pytest.raises(AssertionError, match="memory leaks were detected"):
         manager.stop()
+
+
+@pytest.mark.parametrize("return_code", [0, 1, 255])
+@pytest.mark.parametrize("valid", [True, False])
+def test_parser_runner_uses_shared_leaks_checks(monkeypatch, tmp_path, return_code, valid):
+    process = FakeProcess(return_code=return_code)
+    monkeypatch.delenv("VALGRIND", raising=False)
+    config_path, binary_path, popen_calls = _prepare_start(monkeypatch, tmp_path, process)
+    monkeypatch.setenv("FLUENT_BIT_BINARY", str(binary_path))
+    monkeypatch.setenv("LEAKS_STRICT", "1")
+    monkeypatch.setattr(FluentBitManager, "create_results_directory", lambda self: str(tmp_path))
+    monkeypatch.setattr(manager_module.os, "kill", lambda pid, sig: None)
+
+    def unexpected_readiness_check(self):
+        pytest.fail("finite parser tests must not wait for HTTP readiness")
+
+    monkeypatch.setattr(FluentBitManager, "wait_for_fluent_bit", unexpected_readiness_check)
+    output = '{"value":42}\n' if valid else '[error] [engine] input initialization failed\n'
+    (tmp_path / "fluent_bit.log").write_text(output)
+
+    if return_code:
+        with pytest.raises(AssertionError, match="macOS leaks check failed"):
+            run_configuration(tmp_path, config_path, valid=valid)
+    else:
+        result = run_configuration(tmp_path, config_path, valid=valid)
+        assert result == ([{"value": 42}] if valid else output)
+
+    assert popen_calls[0]["command"][0] == "/usr/bin/leaks"
+    assert "-atExit" in popen_calls[0]["command"]
 
 
 @pytest.mark.parametrize("configured,expected", [
