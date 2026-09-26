@@ -33,10 +33,26 @@
 #define FLB_AZ_LI_TLS_MODE          FLB_IO_TLS
 /* refresh token every 60 minutes */
 #define FLB_AZ_LI_TOKEN_TIMEOUT 3600
+/* Azure Logs Ingestion API maximum HTTP body size. With Content-Encoding:
+ * gzip this applies to the compressed wire representation. */
+#define FLB_AZ_LI_MAX_REQUEST_SIZE (1024 * 1024)
+/* One maximum-size request BLOB, SQLite membership for eight complete
+ * source chunks, and transition metadata must remain constructible. */
+#define FLB_AZ_LI_MIN_BUFFER_SIZE (FLB_AZ_LI_MAX_REQUEST_SIZE + 73728)
+
+#include <time.h>
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_sds.h>
+
+#ifdef FLB_HAVE_METRICS
+#include <cmetrics/cmt_counter.h>
+#include <cmetrics/cmt_gauge.h>
+#include <cmetrics/cmt_histogram.h>
+#endif
+
+struct flb_az_li_batch;
 
 /* Context structure for Azure Logs Ingestion API */
 struct flb_az_li {
@@ -56,20 +72,69 @@ struct flb_az_li {
     /* compress payload */
     int compress_enabled;
 
+    /* optional disk-backed request batching */
+    int buffering_enabled;
+    flb_sds_t buffer_dir;
+    flb_sds_t buffer_key;
+    int buffer_key_owned;
+    size_t batch_target_size;
+    int batch_timeout;
+    size_t batch_max_uncompressed_size;
+    size_t buffer_dir_limit_size;
+    int upload_retry_limit;
+    int upload_retry_base;
+    int buffer_receipt_ttl;
+    int http_timeout;
+    struct flb_az_li_batch *batch;
+
     /* mangement auth */
     flb_sds_t auth_url_override;
     flb_sds_t auth_url;
     struct flb_oauth2 *u_auth;
     /* mutex for acquiring tokens */
     pthread_mutex_t token_mutex;
+    int token_mutex_initialized;
 
     /* upstream connection to the data collection endpoint */
     struct flb_upstream *u_dce;
     flb_sds_t dce_u_url;
 
+#ifdef FLB_HAVE_METRICS
+    struct cmt_histogram *cmt_uncompressed_payload_size;
+    struct cmt_histogram *cmt_http_payload_size;
+    struct cmt_counter *cmt_admitted_chunks;
+    struct cmt_counter *cmt_admitted_records;
+    struct cmt_counter *cmt_admitted_bytes;
+    struct cmt_counter *cmt_delivered_chunks;
+    struct cmt_counter *cmt_delivered_records;
+    struct cmt_counter *cmt_delivered_bytes;
+    struct cmt_counter *cmt_quarantined_chunks;
+    struct cmt_counter *cmt_quarantined_records;
+    struct cmt_counter *cmt_quota_rejections;
+    struct cmt_counter *cmt_persistence_failures;
+    struct cmt_counter *cmt_degraded_recoveries;
+    struct cmt_gauge *cmt_queued_chunks;
+    struct cmt_gauge *cmt_queued_records;
+    struct cmt_gauge *cmt_queued_bytes;
+    struct cmt_gauge *cmt_quarantined_chunks_current;
+    struct cmt_gauge *cmt_quarantined_bytes;
+    struct cmt_gauge *cmt_quota_used_bytes;
+    struct cmt_gauge *cmt_quota_limit_bytes;
+    struct cmt_gauge *cmt_oldest_queued_age;
+    struct cmt_gauge *cmt_uploader_up;
+    struct cmt_gauge *cmt_uploader_consecutive_failures;
+    struct cmt_gauge *cmt_uploader_last_success;
+    pthread_mutex_t payload_metrics_mutex;
+    int payload_metrics_mutex_initialized;
+#endif
+
     /* plugin output and config instance reference */
     struct flb_output_instance *ins;
     struct flb_config *config;
 };
+
+int az_li_send_payload(struct flb_az_li *ctx, const void *payload,
+                       size_t payload_size, size_t uncompressed_size,
+                       int compressed, int *http_status);
 
 #endif
