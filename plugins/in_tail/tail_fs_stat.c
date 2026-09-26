@@ -97,7 +97,6 @@ static int tail_fs_check(struct flb_input_instance *ins,
                          struct flb_config *config, void *in_context)
 {
     int ret;
-    int64_t offset;
     char *name;
     struct mk_list *tmp;
     struct mk_list *head;
@@ -127,6 +126,7 @@ static int tail_fs_check(struct flb_input_instance *ins,
                 flb_tail_db_file_delete(file, ctx);
             }
 #endif
+            flb_tail_file_abandoned(file, &st);
             flb_tail_file_remove(file);
             continue;
         }
@@ -138,24 +138,11 @@ static int tail_fs_check(struct flb_input_instance *ins,
 
         /* Check if the file was truncated */
         if (size_delta < 0) {
-            offset = lseek(file->fd, 0, SEEK_SET);
-            if (offset == -1) {
-                flb_errno();
+            ret = flb_tail_file_reset_on_truncate(file, size_delta, "tail_fs_check");
+            if (ret == -1) {
                 return -1;
             }
-
-            flb_plg_debug(ctx->ins, "tail_fs_check: file truncated %s (diff: %"PRId64" bytes)", 
-                         file->name, size_delta);
-            file->offset = offset;
-            file->buf_len = 0;
             memcpy(&fst->st, &st, sizeof(struct stat));
-
-#ifdef FLB_HAVE_SQLDB
-            /* Update offset in database file */
-            if (ctx->db) {
-                flb_tail_db_file_offset(file, ctx);
-            }
-#endif
         }
 
         if (file->offset < st.st_size) {
