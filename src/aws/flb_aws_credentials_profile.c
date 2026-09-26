@@ -49,7 +49,8 @@
 
 /* Declarations */
 struct flb_aws_provider_profile;
-static int refresh_credentials(struct flb_aws_provider_profile *implementation,
+static int refresh_credentials(struct flb_aws_provider *provider,
+                               struct flb_aws_provider_profile *implementation,
                                int debug_only);
 
 static int get_aws_shared_file_path(flb_sds_t* field, char* env_var, char* home_aws_path);
@@ -91,68 +92,46 @@ struct flb_aws_credentials *get_credentials_fn_profile(struct flb_aws_provider
                                                        *provider)
 {
     struct flb_aws_credentials *creds;
+    time_t next_refresh;
     int ret;
     struct flb_aws_provider_profile *implementation = provider->implementation;
+
+    next_refresh = flb_aws_cache_get_refresh_time(provider,
+                                                  &implementation->next_refresh);
+
+    creds = flb_aws_cache_get_credentials(provider, &implementation->creds);
 
     /*
      * If next_refresh <= 0, it means we don't know how long the credentials
      * are valid for. So we won't refresh them unless explicitly asked
      * via refresh_fn_profile.
      */
-    if (!implementation->creds || (implementation->next_refresh > 0 &&
-        time(NULL) >= implementation->next_refresh)) {
+    if (!creds || (next_refresh > 0 && time(NULL) >= next_refresh)) {
         AWS_CREDS_DEBUG("Retrieving credentials for AWS Profile %s",
                         implementation->profile);
         if (try_lock_provider(provider) == FLB_TRUE) {
-            ret = refresh_credentials(implementation, FLB_FALSE);
+            ret = refresh_credentials(provider, implementation, FLB_FALSE);
             unlock_provider(provider);
+
+            flb_aws_credentials_destroy(creds);
+            creds = NULL;
+
             if (ret < 0) {
                 AWS_CREDS_ERROR("Failed to retrieve credentials for AWS Profile %s",
                                 implementation->profile);
                 return NULL;
             }
+
+            creds = flb_aws_cache_get_credentials(provider,
+                                                  &implementation->creds);
         } else {
             AWS_CREDS_WARN("Another thread is refreshing credentials, will retry");
+            flb_aws_credentials_destroy(creds);
             return NULL;
         }
     }
 
-    creds = flb_calloc(1, sizeof(struct flb_aws_credentials));
-    if (!creds) {
-        flb_errno();
-        goto error;
-    }
-
-    creds->access_key_id = flb_sds_create(implementation->creds->access_key_id);
-    if (!creds->access_key_id) {
-        flb_errno();
-        goto error;
-    }
-
-    creds->secret_access_key = flb_sds_create(implementation->
-                                              creds->secret_access_key);
-    if (!creds->secret_access_key) {
-        flb_errno();
-        goto error;
-    }
-
-    if (implementation->creds->session_token) {
-        creds->session_token = flb_sds_create(implementation->
-                                              creds->session_token);
-        if (!creds->session_token) {
-            flb_errno();
-            goto error;
-        }
-
-    } else {
-        creds->session_token = NULL;
-    }
-
     return creds;
-
-error:
-    flb_aws_credentials_destroy(creds);
-    return NULL;
 }
 
 int refresh_fn_profile(struct flb_aws_provider *provider)
@@ -161,7 +140,7 @@ int refresh_fn_profile(struct flb_aws_provider *provider)
     int ret = -1;
     AWS_CREDS_DEBUG("Refresh called on the profile provider");
     if (try_lock_provider(provider) == FLB_TRUE) {
-        ret = refresh_credentials(implementation, FLB_FALSE);
+        ret = refresh_credentials(provider, implementation, FLB_FALSE);
         unlock_provider(provider);
         return ret;
     }
@@ -174,7 +153,7 @@ int init_fn_profile(struct flb_aws_provider *provider)
     int ret = -1;
     AWS_CREDS_DEBUG("Init called on the profile provider");
     if (try_lock_provider(provider) == FLB_TRUE) {
-        ret = refresh_credentials(implementation, FLB_TRUE);
+        ret = refresh_credentials(provider, implementation, FLB_TRUE);
         unlock_provider(provider);
         return ret;
     }
@@ -253,6 +232,7 @@ struct flb_aws_provider *flb_profile_provider_create(char* profile)
     }
 
     pthread_mutex_init(&provider->lock, NULL);
+    pthread_mutex_init(&provider->cache_lock, NULL);
 
     implementation = flb_calloc(1,
                                 sizeof(
@@ -694,7 +674,8 @@ end:
     return result;
 }
 
-static int refresh_credentials(struct flb_aws_provider_profile *implementation,
+static int refresh_credentials(struct flb_aws_provider *provider,
+                               struct flb_aws_provider_profile *implementation,
                                int debug_only)
 {
     struct flb_aws_credentials *creds = NULL;
@@ -735,15 +716,15 @@ static int refresh_credentials(struct flb_aws_provider_profile *implementation,
         expiration = 0;
     }
 
-    /* unset and free existing credentials */
-    flb_aws_credentials_destroy(implementation->creds);
-    implementation->creds = creds;
-
     if (expiration > 0) {
-        implementation->next_refresh = expiration - FLB_AWS_REFRESH_WINDOW;
+        expiration -= FLB_AWS_REFRESH_WINDOW;
     } else {
-        implementation->next_refresh = 0;
+        expiration = 0;
     }
+
+    /* publish the new credentials; the old ones are freed for us */
+    flb_aws_cache_set_credentials(provider, &implementation->creds, creds,
+                                  &implementation->next_refresh, expiration);
 
     return 0;
 
