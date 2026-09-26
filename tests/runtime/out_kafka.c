@@ -3,8 +3,33 @@
 #include <fluent-bit.h>
 #include "flb_tests_runtime.h"
 
+#include "rdkafka.h"
+
 /* Test data */
 #include "data/td/json_td.h"
+
+/*
+ * Ensure librdkafka was compiled with zstd support so Kafka producers can
+ * negotiate zstd compression. Setting compression.codec to zstd only succeeds
+ * when WITH_ZSTD was enabled at build time, otherwise rd_kafka_conf_set
+ * reports the codec as not built in.
+ */
+void flb_test_zstd_compression_available()
+{
+    rd_kafka_conf_t *conf;
+    rd_kafka_conf_res_t res;
+    char errstr[512] = {0};
+
+    conf = rd_kafka_conf_new();
+    TEST_CHECK(conf != NULL);
+
+    res = rd_kafka_conf_set(conf, "compression.codec", "zstd",
+                            errstr, sizeof(errstr));
+    TEST_CHECK(res == RD_KAFKA_CONF_OK);
+    TEST_MSG("compression.codec=zstd rejected: %s", errstr);
+
+    rd_kafka_conf_destroy(conf);
+}
 
 
 void flb_test_raw_format()
@@ -44,6 +69,7 @@ void flb_test_raw_format()
 }
 
 TEST_LIST = {
+  { "zstd_compression_available", flb_test_zstd_compression_available },
   { "raw_format", flb_test_raw_format },
   { NULL, NULL },
 };
