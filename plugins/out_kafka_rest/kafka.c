@@ -338,6 +338,10 @@ static int cb_kafka_exit(void *data, struct flb_config *config)
 {
     struct flb_kafka_rest *ctx = data;
 
+    if (!ctx) {
+        return 0;
+    }
+
     flb_kr_conf_destroy(ctx);
     return 0;
 }
