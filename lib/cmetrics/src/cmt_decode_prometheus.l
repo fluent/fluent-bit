@@ -254,6 +254,16 @@ static int append_strbuf(struct cmt_decode_prometheus_context *context,
     return NUMSTR;
 }
 
+<INQUOTE,INHELPTAG,INTYPETAG>. {
+    // Catch all for the exclusive start conditions which do not have a rule
+    // for every possible character (unknown escape sequences, a bare "\r" or
+    // an unknown metric type). Without it flex runs its default jam action
+    // which terminates the process. Return the character to the parser so it
+    // is reported as a syntax error instead.
+    BEGIN(INITIAL);
+    return (unsigned char) *yytext;
+}
+
 . {
     // Catch all workaround to avoid having to define token types for every
     // possible delimiter. We simply return the character to the parser.

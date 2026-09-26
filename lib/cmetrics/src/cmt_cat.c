@@ -114,6 +114,10 @@ static inline int cat_histogram_values(struct cmt_metric *metric_dst, struct cmt
         return 0;
     }
 
+    if (histogram_src->buckets == NULL || histogram_dst->buckets == NULL) {
+        return -1;
+    }
+
     bucket_count_src = histogram_src->buckets->count;
     bucket_count_dst = histogram_dst->buckets->count;
 
@@ -197,12 +201,17 @@ static inline int cat_summary_values(struct cmt_metric *metric_dst, struct cmt_s
     return 0;
 }
 
-static inline int cat_exp_histogram_values(struct cmt_metric *metric_dst,
-                                           struct cmt_metric *metric_src)
+/* build the merge of the src buckets into the dst buckets in a new array
+ * without modifying either side. On success *out_buckets is NULL when src
+ * has no buckets, meaning dst stays as is.
+ */
+static int merge_exp_hist_buckets(uint64_t *dst_buckets, int32_t dst_offset,
+                                  size_t dst_count,
+                                  uint64_t *src_buckets, int32_t src_offset,
+                                  size_t src_count,
+                                  uint64_t **out_buckets, int32_t *out_offset,
+                                  size_t *out_count)
 {
-    int result;
-    struct cmt_metric *first_lock_target;
-    struct cmt_metric *second_lock_target;
     int64_t dst_start;
     int64_t dst_end;
     int64_t src_start;
@@ -211,12 +220,87 @@ static inline int cat_exp_histogram_values(struct cmt_metric *metric_dst,
     int64_t merged_end;
     size_t index;
     size_t merged_count;
+    uint64_t *merged_buckets;
+
+    *out_buckets = NULL;
+    *out_offset = 0;
+    *out_count = 0;
+
+    if (src_count == 0) {
+        return 0;
+    }
+
+    if (dst_count == 0) {
+        merged_buckets = calloc(src_count, sizeof(uint64_t));
+        if (merged_buckets == NULL) {
+            return -1;
+        }
+
+        memcpy(merged_buckets, src_buckets, sizeof(uint64_t) * src_count);
+
+        *out_buckets = merged_buckets;
+        *out_offset = src_offset;
+        *out_count = src_count;
+
+        return 0;
+    }
+
+    dst_start = dst_offset;
+    dst_end = dst_start + dst_count;
+    src_start = src_offset;
+    src_end = src_start + src_count;
+
+    merged_start = dst_start < src_start ? dst_start : src_start;
+    merged_end = dst_end > src_end ? dst_end : src_end;
+    merged_count = (size_t) (merged_end - merged_start);
+
+    /* the range comes from the sample offsets, not from the number
+     * of buckets present, so it must be bounded
+     */
+    if (merged_count > CMT_EXP_HISTOGRAM_MAX_BUCKETS) {
+        return -1;
+    }
+
+    merged_buckets = calloc(merged_count, sizeof(uint64_t));
+    if (merged_buckets == NULL) {
+        return -1;
+    }
+
+    for (index = 0; index < dst_count; index++) {
+        merged_buckets[(size_t) (dst_start + index - merged_start)] +=
+            dst_buckets[index];
+    }
+
+    for (index = 0; index < src_count; index++) {
+        merged_buckets[(size_t) (src_start + index - merged_start)] +=
+            src_buckets[index];
+    }
+
+    *out_buckets = merged_buckets;
+    *out_offset = (int32_t) merged_start;
+    *out_count = merged_count;
+
+    return 0;
+}
+
+static inline int cat_exp_histogram_values(struct cmt_metric *metric_dst,
+                                           struct cmt_metric *metric_src)
+{
+    int result;
+    struct cmt_metric *first_lock_target;
+    struct cmt_metric *second_lock_target;
+    int32_t positive_offset;
+    int32_t negative_offset;
+    size_t positive_count;
+    size_t negative_count;
     uint64_t old_value;
     uint64_t new_value;
-    uint64_t *merged_buckets;
-    uint64_t *tmp_buckets;
+    uint64_t *positive_buckets;
+    uint64_t *negative_buckets;
 
     result = -1;
+    positive_buckets = NULL;
+    negative_buckets = NULL;
     first_lock_target = metric_dst;
     second_lock_target = metric_src;
 
@@ -312,98 +396,44 @@ static inline int cat_exp_histogram_values(struct cmt_metric *metric_dst,
         goto cleanup;
     }
 
-    if (metric_src->exp_hist_positive_count > 0) {
-        if (metric_dst->exp_hist_positive_count == 0) {
-            metric_dst->exp_hist_positive_buckets = calloc(metric_src->exp_hist_positive_count,
-                                                           sizeof(uint64_t));
-            if (metric_dst->exp_hist_positive_buckets == NULL) {
-                goto cleanup;
-            }
-
-            memcpy(metric_dst->exp_hist_positive_buckets,
-                   metric_src->exp_hist_positive_buckets,
-                   sizeof(uint64_t) * metric_src->exp_hist_positive_count);
-            metric_dst->exp_hist_positive_offset = metric_src->exp_hist_positive_offset;
-            metric_dst->exp_hist_positive_count = metric_src->exp_hist_positive_count;
-        }
-        else {
-            dst_start = metric_dst->exp_hist_positive_offset;
-            dst_end = dst_start + metric_dst->exp_hist_positive_count;
-            src_start = metric_src->exp_hist_positive_offset;
-            src_end = src_start + metric_src->exp_hist_positive_count;
-
-            merged_start = dst_start < src_start ? dst_start : src_start;
-            merged_end = dst_end > src_end ? dst_end : src_end;
-            merged_count = (size_t) (merged_end - merged_start);
-
-            merged_buckets = calloc(merged_count, sizeof(uint64_t));
-            if (merged_buckets == NULL) {
-                goto cleanup;
-            }
-
-            for (index = 0; index < metric_dst->exp_hist_positive_count; index++) {
-                merged_buckets[(size_t) (dst_start + index - merged_start)] +=
-                    metric_dst->exp_hist_positive_buckets[index];
-            }
-
-            for (index = 0; index < metric_src->exp_hist_positive_count; index++) {
-                merged_buckets[(size_t) (src_start + index - merged_start)] +=
-                    metric_src->exp_hist_positive_buckets[index];
-            }
-
-            tmp_buckets = metric_dst->exp_hist_positive_buckets;
-            metric_dst->exp_hist_positive_buckets = merged_buckets;
-            metric_dst->exp_hist_positive_offset = (int32_t) merged_start;
-            metric_dst->exp_hist_positive_count = merged_count;
-            free(tmp_buckets);
-        }
+    /* stage both sides before touching the destination so a failure on
+     * either side leaves it unchanged
+     */
+    if (merge_exp_hist_buckets(metric_dst->exp_hist_positive_buckets,
+                               metric_dst->exp_hist_positive_offset,
+                               metric_dst->exp_hist_positive_count,
+                               metric_src->exp_hist_positive_buckets,
+                               metric_src->exp_hist_positive_offset,
+                               metric_src->exp_hist_positive_count,
+                               &positive_buckets, &positive_offset,
+                               &positive_count) != 0) {
+        goto cleanup;
     }
 
-    if (metric_src->exp_hist_negative_count > 0) {
-        if (metric_dst->exp_hist_negative_count == 0) {
-            metric_dst->exp_hist_negative_buckets = calloc(metric_src->exp_hist_negative_count,
-                                                           sizeof(uint64_t));
-            if (metric_dst->exp_hist_negative_buckets == NULL) {
-                goto cleanup;
-            }
+    if (merge_exp_hist_buckets(metric_dst->exp_hist_negative_buckets,
+                               metric_dst->exp_hist_negative_offset,
+                               metric_dst->exp_hist_negative_count,
+                               metric_src->exp_hist_negative_buckets,
+                               metric_src->exp_hist_negative_offset,
+                               metric_src->exp_hist_negative_count,
+                               &negative_buckets, &negative_offset,
+                               &negative_count) != 0) {
+        free(positive_buckets);
+        goto cleanup;
+    }
 
-            memcpy(metric_dst->exp_hist_negative_buckets,
-                   metric_src->exp_hist_negative_buckets,
-                   sizeof(uint64_t) * metric_src->exp_hist_negative_count);
-            metric_dst->exp_hist_negative_offset = metric_src->exp_hist_negative_offset;
-            metric_dst->exp_hist_negative_count = metric_src->exp_hist_negative_count;
-        }
-        else {
-            dst_start = metric_dst->exp_hist_negative_offset;
-            dst_end = dst_start + metric_dst->exp_hist_negative_count;
-            src_start = metric_src->exp_hist_negative_offset;
-            src_end = src_start + metric_src->exp_hist_negative_count;
+    if (positive_buckets != NULL) {
+        free(metric_dst->exp_hist_positive_buckets);
+        metric_dst->exp_hist_positive_buckets = positive_buckets;
+        metric_dst->exp_hist_positive_offset = positive_offset;
+        metric_dst->exp_hist_positive_count = positive_count;
+    }
 
-            merged_start = dst_start < src_start ? dst_start : src_start;
-            merged_end = dst_end > src_end ? dst_end : src_end;
-            merged_count = (size_t) (merged_end - merged_start);
-
-            merged_buckets = calloc(merged_count, sizeof(uint64_t));
-            if (merged_buckets == NULL) {
-                goto cleanup;
-            }
-
-            for (index = 0; index < metric_dst->exp_hist_negative_count; index++) {
-                merged_buckets[(size_t) (dst_start + index - merged_start)] +=
-                    metric_dst->exp_hist_negative_buckets[index];
-            }
-
-            for (index = 0; index < metric_src->exp_hist_negative_count; index++) {
-                merged_buckets[(size_t) (src_start + index - merged_start)] +=
-                    metric_src->exp_hist_negative_buckets[index];
-            }
-
-            tmp_buckets = metric_dst->exp_hist_negative_buckets;
-            metric_dst->exp_hist_negative_buckets = merged_buckets;
-            metric_dst->exp_hist_negative_offset = (int32_t) merged_start;
-            metric_dst->exp_hist_negative_count = merged_count;
-            free(tmp_buckets);
-        }
+    if (negative_buckets != NULL) {
+        free(metric_dst->exp_hist_negative_buckets);
+        metric_dst->exp_hist_negative_buckets = negative_buckets;
+        metric_dst->exp_hist_negative_offset = negative_offset;
+        metric_dst->exp_hist_negative_count = negative_count;
     }
 
     metric_dst->exp_hist_zero_count += metric_src->exp_hist_zero_count;
@@ -856,6 +886,11 @@ int cmt_cat_histogram(struct cmt *cmt, struct cmt_histogram *histogram,
 
     map = histogram->map;
     opts = map->opts;
+
+    /* a decoded histogram may come without a bucket layout */
+    if (histogram->buckets == NULL) {
+        return -1;
+    }
 
     ret = cmt_cat_copy_label_keys(map, (char **) &labels);
     if (ret == -1) {
