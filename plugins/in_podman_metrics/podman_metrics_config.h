@@ -83,6 +83,7 @@
 
 /* Key names in .stat files */
 #define STAT_KEY_RSS                    "rss"
+#define V2_STAT_KEY_RSS                 "anon"
 #define STAT_KEY_CPU                    "usage_usec"
 #define STAT_KEY_CPU_USER               "user_usec"
 
@@ -112,7 +113,8 @@
 #define V2_SYSFS_FILE_MEMORY_LIMIT     "memory.max"
 #define V2_SYSFS_FILE_CPU_STAT         "cpu.stat"
 #define V2_SYSFS_FILE_PIDS             "cgroup.procs"
-#define V2_SYSFS_FILE_PIDS_ALT         "containers/cgroup.procs"
+#define V2_SYSFS_FILE_PIDS_ALT         "container/cgroup.procs"
+#define V2_SYSFS_FILE_PIDS_ALT_LEGACY  "containers/cgroup.procs"
 #define V2_SYSFS_FILE_IO_STAT          "io.stat"
 
 /* Values used to construct counters/gauges names and descriptions */
