@@ -156,8 +156,7 @@ static inline int process_pack(struct tcp_conn *conn,
                 flb_plg_error(ctx->ins,
                               "could not append TCP logs for %s:%s. ret=%d",
                               ctx->listen, ctx->tcp_port, ret);
-                /* ingestion failure, the caller keeps the payload */
-                return -2;
+                return -1;
             }
         }
         ret = 0;
@@ -203,19 +202,14 @@ static ssize_t parse_payload_json(struct tcp_conn *conn)
 
     ret = process_pack(conn, pack, (size_t) out_size);
     flb_free(pack);
-    if (ret == -2) {
+    if (ret < 0) {
         /*
-         * The records could not be ingested (e.g. the ingress queue is full):
-         * do not consume the payload, it's parsed again on the next read.
-         */
-        return -2;
-    }
-    else if (ret < 0) {
-        /*
-         * The records could not be encoded (process_pack already logged
-         * why). The bytes up to 'last_byte' were fully tokenized, so still
-         * consume them: keeping them in the buffer would make every later
-         * read re-parse and refuse the same payload again.
+         * The records could not be encoded or ingested (process_pack already
+         * logged why). The bytes up to 'last_byte' were fully tokenized, so
+         * still consume them: an append can fail after some routes already
+         * received the records, so processing the payload again would
+         * duplicate them, and a payload that cannot be ingested would be
+         * re-parsed on every later read.
          */
         flb_plg_warn(conn->ins, "skipping unprocessable JSON payload");
     }
@@ -524,25 +518,6 @@ int tcp_conn_event(void *data)
                  * the same undeliverable data from offset 0.
                  */
                 conn->buf_len = 0;
-                flb_pack_state_reset(&conn->pack_state);
-                if (flb_pack_state_init(&conn->pack_state) == -1) {
-                    flb_plg_error(ctx->ins,
-                                  "fd=%i failed to reinitialize JSON parser state",
-                                  event->fd);
-                    conn->pending_close = FLB_TRUE;
-                    ret = -1;
-                    goto cleanup;
-                }
-                conn->pack_state.multiple = FLB_TRUE;
-                ret = -1;
-                goto cleanup;
-            }
-            else if (ret_payload == -2) {
-                /*
-                 * The records could not be ingested: keep the buffered data
-                 * and restart the JSON parser so it's processed again on the
-                 * next read.
-                 */
                 flb_pack_state_reset(&conn->pack_state);
                 if (flb_pack_state_init(&conn->pack_state) == -1) {
                     flb_plg_error(ctx->ins,
