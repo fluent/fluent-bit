@@ -39,6 +39,7 @@ FLB_RT_TEST(FLB_CHUNK_TRACE "core_chunk_trace.c")
 FLB_RT_TEST(FLB_IN_EVENT_TEST   "in_event_test.c")
 # FLB_IN_WINEVTLOG is only enabled on Windows builds
 FLB_RT_TEST(FLB_IN_WINEVTLOG    "in_winevtlog.c")
+FLB_RT_TEST(FLB_IN_WINDOWS_EXPORTER_METRICS "in_windows_exporter_metrics_tcp.c")
 
 if(FLB_OUT_LIB)
   if(${CMAKE_SYSTEM_NAME} MATCHES "Linux" OR ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
