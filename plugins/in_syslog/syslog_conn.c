@@ -104,6 +104,7 @@ int syslog_stream_conn_event(void *data)
             conn->buf_data[conn->buf_len] = '\0';
             ret = syslog_prot_process(conn);
             if (ret == -1) {
+                syslog_conn_del(conn);
                 return -1;
             }
             return bytes;
