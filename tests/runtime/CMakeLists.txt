@@ -348,6 +348,11 @@ foreach(source_file ${CHECK_PROGRAMS})
       ${CMAKE_THREAD_LIBS_INIT}
       ${SYSTEMD_LIB}
       )
+    if(o_source_file_we STREQUAL "in_windows_exporter_metrics_tcp")
+      target_link_libraries(${source_file_we}
+        flb-plugin-in_windows_exporter_metrics
+        )
+    endif()
       if(FLB_AVRO_ENCODER)
         target_link_libraries(${source_file_we} avro-static jansson)
       endif()
