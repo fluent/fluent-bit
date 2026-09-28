@@ -205,6 +205,7 @@ int syslog_prot_process(struct syslog_conn *conn)
 {
     int len;
     int ret;
+    int status = 0;
     char *p;
     char *eof;
     char *end;
@@ -239,6 +240,16 @@ int syslog_prot_process(struct syslog_conn *conn)
             if (!conn->frame_have_len) {
                 char *sp = p;
                 size_t n = 0;
+
+                if (p == end) {
+                    break;
+                }
+                /* RFC 6587 MSG-LEN starts with a nonzero digit. */
+                if (*p < '1' || *p > '9') {
+                    flb_plg_warn(ctx->ins, "invalid octet-counting length");
+                    status = -1;
+                    break;
+                }
                 while (sp < end && *sp >= '0' && *sp <= '9') {
                     if (n >= SIZE_MAX / 10) {
                         n = SIZE_MAX;
@@ -252,7 +263,8 @@ int syslog_prot_process(struct syslog_conn *conn)
                 }
                 if (*sp != ' ') {
                     flb_plg_warn(ctx->ins, "invalid octet-counting length");
-                    return -1;
+                    status = -1;
+                    break;
                 }
                 conn->buf_parsed += (sp - p) + 1;
                 conn->frame_expected_len = n;
@@ -266,18 +278,10 @@ int syslog_prot_process(struct syslog_conn *conn)
             len = (int)conn->frame_expected_len;
         }
 
-        /* No data ? */
+        /* Skip an empty newline frame without replaying earlier messages. */
         if (len == 0) {
-            consume_bytes(conn->buf_data, 1, conn->buf_len);
-            conn->buf_len--;
-            conn->buf_parsed = 0;
-            conn->buf_data[conn->buf_len] = '\0';
-            end = conn->buf_data + conn->buf_len;
-
-            if (conn->buf_len == 0) {
-                break;
-            }
-
+            conn->buf_parsed++;
+            eof = conn->buf_data + conn->buf_parsed;
             continue;
         }
 
@@ -332,7 +336,7 @@ int syslog_prot_process(struct syslog_conn *conn)
                              ctx->log_encoder->output_length);
     }
 
-    return 0;
+    return status;
 }
 
 int syslog_prot_process_udp(struct syslog_conn *conn)
