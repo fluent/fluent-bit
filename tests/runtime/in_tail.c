@@ -2459,14 +2459,79 @@ static int wait_tail_collectors_state(struct flb_tail_config *tail_ctx,
     return -1;
 }
 
+struct tail_pause_test {
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+    struct flb_input_plugin plugin;
+    struct flb_input_plugin *original_plugin;
+    int collector_id;
+    int done;
+    int pause_result;
+    int resume_result;
+    int fs_running[3];
+    int progress_running[3];
+};
+
+static int cb_tail_pause_test(struct flb_input_instance *ins,
+                              struct flb_config *config, void *data)
+{
+    int i;
+    struct flb_tail_config *tail_ctx = data;
+    struct tail_pause_test *test = ins->data;
+
+    /* Collector state and event queue mutations belong to the engine thread. */
+    flb_input_collector_pause(test->collector_id, ins);
+    pthread_mutex_lock(&test->mutex);
+    for (i = 0; i < 3; i++) {
+        if (i == 1) {
+            test->pause_result = flb_input_pause(ins);
+        }
+        else if (i == 2) {
+            test->resume_result = flb_input_resume(ins);
+        }
+        test->fs_running[i] = flb_input_collector_running(tail_ctx->coll_fd_fs1, ins);
+        test->progress_running[i] =
+            flb_input_collector_running(tail_ctx->coll_fd_progress_check, ins);
+    }
+    test->done = FLB_TRUE;
+    pthread_cond_signal(&test->cond);
+    pthread_mutex_unlock(&test->mutex);
+
+    return 0;
+}
+
+static int cb_tail_pause_test_pre_run(struct flb_input_instance *ins,
+                                      struct flb_config *config, void *data)
+{
+    int ret;
+    struct tail_pause_test *test = ins->data;
+
+    ret = test->original_plugin->cb_pre_run(ins, config, data);
+    if (ret == -1) {
+        return ret;
+    }
+
+    /* Register on the owning thread after the engine event loop exists. */
+    test->collector_id = flb_input_set_collector_time(ins, cb_tail_pause_test,
+                                                     0, 10000000, config);
+    if (test->collector_id < 0) {
+        return -1;
+    }
+
+    return 0;
+}
+
 void flb_test_inotify_pause_collectors()
 {
     int ret;
+    int i;
+    int expected;
+    struct timespec deadline;
     struct mk_list *head;
     struct flb_input_instance *ins;
-    struct flb_tail_config *tail_ctx;
     struct flb_lib_out_cb cb_data;
     struct test_tail_ctx *ctx;
+    struct tail_pause_test test = {0};
     char *file[] = {"inotify_pause_collectors.log"};
 
     cb_data.cb = cb_count_msgpack;
@@ -2475,38 +2540,60 @@ void flb_test_inotify_pause_collectors()
     ctx = test_tail_ctx_create(&cb_data, &file[0], 1, FLB_TRUE);
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
-        exit(EXIT_FAILURE);
+        return;
     }
 
-    ret = flb_input_set(ctx->flb, ctx->i_ffd,
-                        "path", file[0],
-                        NULL);
+    ret = flb_input_set(ctx->flb, ctx->i_ffd, "path", file[0], NULL);
     TEST_CHECK(ret == 0);
 
-    ret = flb_start(ctx->flb);
-    TEST_CHECK(ret == 0);
-
+    pthread_mutex_init(&test.mutex, NULL);
+    pthread_cond_init(&test.cond, NULL);
     head = ctx->flb->config->inputs.next;
     ins = mk_list_entry(head, struct flb_input_instance, _head);
-    tail_ctx = ins->context;
+    test.original_plugin = ins->p;
+    test.plugin = *ins->p;
+    test.plugin.cb_pre_run = cb_tail_pause_test_pre_run;
+    ins->p = &test.plugin;
+    ins->data = &test;
 
-    TEST_CHECK(flb_input_collector_running(tail_ctx->coll_fd_fs1, ins) == FLB_TRUE);
-    TEST_CHECK(flb_input_collector_running(tail_ctx->coll_fd_progress_check,
-                                           ins) == FLB_TRUE);
+    ret = flb_start(ctx->flb);
+    if (TEST_CHECK(ret == 0)) {
+        clock_gettime(CLOCK_REALTIME, &deadline);
+        deadline.tv_sec += 5;
+        pthread_mutex_lock(&test.mutex);
+        while (!test.done) {
+            ret = pthread_cond_timedwait(&test.cond, &test.mutex, &deadline);
+            if (ret != 0) {
+                break;
+            }
+        }
+        if (TEST_CHECK(test.done)) {
+            TEST_CHECK(test.pause_result == 0);
+            TEST_CHECK(test.resume_result == 0);
+            for (i = 0; i < 3; i++) {
+                expected = i == 1 ? FLB_FALSE : FLB_TRUE;
+                TEST_CHECK(test.fs_running[i] == expected);
+                TEST_CHECK(test.progress_running[i] == expected);
+            }
+        }
+        pthread_mutex_unlock(&test.mutex);
+    }
 
-    ret = flb_input_pause(ins);
-    TEST_CHECK(ret == 0);
-    TEST_CHECK(flb_input_collector_running(tail_ctx->coll_fd_fs1, ins) == FLB_FALSE);
-    TEST_CHECK(flb_input_collector_running(tail_ctx->coll_fd_progress_check,
-                                           ins) == FLB_FALSE);
-
-    ret = flb_input_resume(ins);
-    TEST_CHECK(ret == 0);
-    TEST_CHECK(flb_input_collector_running(tail_ctx->coll_fd_fs1, ins) == FLB_TRUE);
-    TEST_CHECK(flb_input_collector_running(tail_ctx->coll_fd_progress_check,
-                                           ins) == FLB_TRUE);
-
-    test_tail_ctx_destroy(ctx);
+    /* Join the engine before releasing callback data or removing its files. */
+    ret = flb_stop(ctx->flb);
+    if (!TEST_CHECK(ret == 0)) {
+        /* Do not release callback storage when quiescence is unconfirmed. */
+        exit(EXIT_FAILURE);
+    }
+    flb_destroy(ctx->flb);
+    for (i = 0; i < ctx->fd_num; i++) {
+        close(ctx->fds[i]);
+        unlink(ctx->filepaths[i]);
+    }
+    flb_free(ctx->fds);
+    flb_free(ctx);
+    pthread_cond_destroy(&test.cond);
+    pthread_mutex_destroy(&test.mutex);
 }
 
 void flb_test_inotify_threaded_pause_collectors()
