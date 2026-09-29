@@ -1404,7 +1404,6 @@ static int process_log_events(struct flb_cloudwatch *ctx, const char *input_plug
 
         /* Get the record/map */
         map = *log_event.body;
-        map_size = map.via.map.size;
 
         if(ctx->kubernete_metadata_enabled && ctx->add_entity) {
             msgpack_sbuffer_init(&filtered_sbuf);
@@ -1433,6 +1432,7 @@ static int process_log_events(struct flb_cloudwatch *ctx, const char *input_plug
             }
         }
 
+        map_size = map.via.map.size;
         if (ctx->log_key) {
             key_str = NULL;
             key_str_size = 0;
@@ -1477,7 +1477,7 @@ static int process_log_events(struct flb_cloudwatch *ctx, const char *input_plug
                 i++;
             }
 
-            continue;
+            goto cleanup_record;
         }
 
         if (strncmp(input_plugin, "cpu", 3) == 0
@@ -1554,6 +1554,7 @@ static int process_log_events(struct flb_cloudwatch *ctx, const char *input_plug
         if (ret == 0) {
             i++;
         }
+cleanup_record:
         if(ctx->kubernete_metadata_enabled && ctx->add_entity) {
             msgpack_sbuffer_destroy(&filtered_sbuf);
             msgpack_unpacked_destroy(&modified_unpacked);
