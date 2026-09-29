@@ -16,6 +16,7 @@
  */
 
 #include <fluent-bit.h>
+#include <fluent-bit/flb_fstore.h>
 #include <fluent-bit/flb_socket.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_utils.h>
@@ -495,6 +496,98 @@ static void test_commit_200(void)
     buffered_commit(200, "");
 }
 
+static void test_recovery_releases_capacity(void)
+{
+    const char retained[] =
+        "{\"record_id\":\"retained-commit\",\"padding\":\""
+        "012345678901234567890123456789012345678901234567890123456789\"}\n";
+    struct blob_test test = create_test(1, 0);
+    struct flb_fstore *fs;
+    struct flb_fstore_stream *stream;
+    struct flb_fstore_file *file;
+    struct request recovered;
+    struct request fresh;
+    struct request commit;
+    char root[PATH_MAX];
+    char path[PATH_MAX];
+    flb_sockfd_t fd;
+    int count;
+    int64_t deadline;
+
+    TEST_ASSERT(flb_output_set(test.ctx, test.output,
+                               "store_dir_limit_size", "128", NULL) == 0);
+    TEST_ASSERT(mkdir(test.buffer_dir, 0700) == 0);
+    snprintf(root, sizeof(root), "%s/commit", test.buffer_dir);
+    fs = flb_fstore_create(root, FLB_FSTORE_FS);
+    TEST_ASSERT(fs != NULL);
+    stream = flb_fstore_stream_create(fs, "retained");
+    TEST_ASSERT(stream != NULL);
+    file = flb_fstore_file_create(fs, stream, "record", sizeof(retained) - 1);
+    TEST_ASSERT(file != NULL);
+    TEST_ASSERT(flb_fstore_file_meta_set(fs, file, "commit", 6) == 0);
+    TEST_ASSERT(flb_fstore_file_append(file, (void *) retained,
+                                      sizeof(retained) - 1) == 0);
+    TEST_ASSERT(flb_fstore_destroy(fs) == 0);
+
+    TEST_ASSERT(flb_start(test.ctx) == 0);
+    push_record(&test);
+    fd = stage_block(&test, &recovered, &commit);
+    if (fd == FLB_INVALID_SOCKET) {
+        goto cleanup;
+    }
+    TEST_CHECK(recovered.size == sizeof(retained) - 1);
+    TEST_CHECK(recovered.size == sizeof(retained) - 1 &&
+               memcmp(recovered.body, retained, recovered.size) == 0);
+    respond(fd, 201, "", 0);
+
+    fd = stage_block(&test, &fresh, &commit);
+    if (fd == FLB_INVALID_SOCKET) {
+        goto cleanup;
+    }
+    TEST_CHECK(strstr(fresh.body, "\"record_id\":\"azure-commit\"") != NULL);
+    TEST_CHECK(fresh.size < 128 && recovered.size + fresh.size >= 128);
+    respond(fd, 201, "", 0);
+    deadline = milliseconds() + 3000;
+    do {
+        count = find_buffer(test.buffer_dir, path, sizeof(path));
+        if (count == 0) {
+            break;
+        }
+        flb_time_msleep(10);
+    } while (milliseconds() < deadline);
+    TEST_CHECK_(count == 0, "recovered and fresh buffers removed after accepted commits");
+
+cleanup:
+    stop_test(&test);
+    remove_directory(test.directory);
+}
+
+static void test_storage_initialization_failure(void)
+{
+    const char contents[] = "preserve the existing file";
+    struct blob_test test = create_test(1, 0);
+    FILE *file;
+    char *data;
+    size_t size;
+    int ret;
+
+    file = fopen(test.buffer_dir, "wb");
+    TEST_ASSERT(file != NULL);
+    TEST_ASSERT(fwrite(contents, 1, sizeof(contents) - 1, file) == sizeof(contents) - 1);
+    TEST_ASSERT(fclose(file) == 0);
+    ret = flb_start(test.ctx);
+    TEST_CHECK(ret == -1);
+    if (ret == 0) {
+        flb_stop(test.ctx);
+    }
+    flb_destroy(test.ctx);
+    flb_socket_close(test.listener);
+    TEST_ASSERT(flb_utils_read_file(test.buffer_dir, &data, &size) == 0);
+    TEST_CHECK(size == sizeof(contents) - 1 && memcmp(data, contents, size) == 0);
+    flb_free(data);
+    remove_directory(test.directory);
+}
+
 static void test_malformed_commit(void)
 {
     const char malformed[] =
@@ -555,6 +648,8 @@ TEST_LIST = {
     {"commit_403", test_commit_403},
     {"commit_500_empty", test_commit_500_empty},
     {"commit_200", test_commit_200},
+    {"recovery_releases_capacity", test_recovery_releases_capacity},
+    {"storage_initialization_failure", test_storage_initialization_failure},
     {"malformed_commit", test_malformed_commit},
     {NULL, NULL}
 };
