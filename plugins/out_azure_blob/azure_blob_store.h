@@ -28,6 +28,7 @@
 struct azure_blob_file {
     int locked;                      /* locked chunk is busy, cannot write to it */
     int failures;                    /* delivery failures */
+    time_t next_retry_time;          /* earliest time the upload timer may retry */
     size_t size;                     /* file size */
     time_t create_time;              /* creation time */
     flb_sds_t file_path;             /* file path */

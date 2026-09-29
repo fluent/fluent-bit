@@ -48,6 +48,9 @@
 #define UPLOAD_TIMER_MIN_WAIT 18000
 #define MAX_FILE_SIZE         4000000000 // 4GB
 
+/* upper bound, in seconds, for the backoff between failed buffered uploads */
+#define AZURE_BLOB_MAX_UPLOAD_BACKOFF 64
+
 #define AZURE_BLOB_APPENDBLOB 0
 #define AZURE_BLOB_BLOCKBLOB  1
 
@@ -182,5 +185,7 @@ int azb_resolve_path(struct flb_azure_blob *ctx,
 
 const char *azb_commit_prefix_with_fallback(struct flb_azure_blob *ctx,
                                             const char *db_prefix);
+
+int azure_blob_upload_backoff(int failures);
 
 #endif
