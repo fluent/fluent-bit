@@ -189,18 +189,13 @@ static void cb_check_logstash_format_long_prefix(void *ctx, int ffd,
                                                  int res_ret, void *res_data, size_t res_size,
                                                  void *data)
 {
-    char *p;
-    char *out_js = res_data;
-    char expected[256];
-
-    /* logstash_index is a 256-byte buffer; the prefix is truncated to 255
-     * bytes before it reaches the index, so that is what must show up. */
-    memset(expected, 'a', sizeof(expected) - 1);
-    expected[sizeof(expected) - 1] = '\0';
-
-    p = strstr(out_js, expected);
-    if (!TEST_CHECK(p != NULL)) {
-        TEST_MSG("Got: %s", out_js);
+    /* A prefix that fills the 256-byte logstash_index buffer leaves no room
+     * for the separator and date, so compose_index_header fails on both the
+     * configured and the default separator. The record is dropped instead of
+     * being emitted under an index that has no date, so nothing is formatted. */
+    if (!TEST_CHECK(res_size == 0)) {
+        TEST_MSG("expected the oversized-prefix record to be dropped, "
+                 "got %zu bytes", res_size);
     }
     flb_sds_destroy(res_data);
 }
