@@ -275,6 +275,10 @@ if(FLB_KAFKA)
   REGISTER_IN_PLUGIN("in_kafka")
 endif()
 
+if(FLB_LUAJIT AND FLB_METRICS)
+  REGISTER_IN_PLUGIN("in_lua_metrics_exporter")
+endif()
+
 REGISTER_IN_PLUGIN("in_fluentbit_metrics")
 REGISTER_IN_PLUGIN("in_fluentbit_logs")
 REGISTER_IN_PLUGIN("in_prometheus_scrape")
