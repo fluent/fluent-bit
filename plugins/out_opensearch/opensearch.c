@@ -488,9 +488,18 @@ static int opensearch_format(struct flb_config *config,
                                        ctx->logstash_prefix_separator, &tm);
             if (ret < 0) {
                 /* retry with default separator */
-                compose_index_header(ctx, index_custom_len,
-                                     &logstash_index[0], sizeof(logstash_index),
-                                     "-", &tm);
+                ret = compose_index_header(ctx, index_custom_len,
+                                           &logstash_index[0], sizeof(logstash_index),
+                                           "-", &tm);
+            }
+            if (ret < 0) {
+                /* the prefix leaves no room for the date, drop the record
+                 * instead of emitting an index without one */
+                flb_plg_warn(ctx->ins,
+                             "logstash_prefix too long to compose index, "
+                             "skipping record");
+                msgpack_sbuffer_destroy(&tmp_sbuf);
+                continue;
             }
             index = logstash_index;
             if (ctx->generate_id == FLB_FALSE) {
