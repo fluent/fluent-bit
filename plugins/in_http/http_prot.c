@@ -897,7 +897,7 @@ int http_prot_handle_ng(struct flb_http_request *request,
     ctx = (struct flb_http *) response->stream->user_data;
     auth_header = NULL;
     auth_len = 0;
-    if (request->path[0] != '/') {
+    if (request->path == NULL || request->path[0] != '/') {
         send_response_ng(response, 400, "error: invalid request\n");
         return -1;
     }

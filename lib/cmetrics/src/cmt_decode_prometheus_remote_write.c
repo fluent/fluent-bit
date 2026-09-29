@@ -748,6 +748,16 @@ static int decode_metrics_entry(struct cmt *cmt,
             type = PROMETHEUS__METRIC_METADATA__METRIC_TYPE__GAUGE;
             metric_description = "-";
         }
+        else if (metadata->type == PROMETHEUS__METRIC_METADATA__METRIC_TYPE__HISTOGRAM) {
+            /* the series only carries plain samples, there are no native
+             * histogram points to build the buckets from: decode it as a
+             * gauge instead of creating a histogram without buckets */
+            type = PROMETHEUS__METRIC_METADATA__METRIC_TYPE__GAUGE;
+            metric_description = metadata->help;
+            if (metric_description == NULL) {
+                metric_description = "-";
+            }
+        }
         else {
             type = metadata->type;
             metric_description = metadata->help;

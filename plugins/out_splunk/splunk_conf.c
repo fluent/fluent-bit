@@ -90,6 +90,7 @@ struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
     int ret;
     int io_flags = 0;
     size_t size;
+    flb_sds_t pattern;
     flb_sds_t t;
     const char *tmp;
     struct flb_upstream *upstream;
@@ -233,6 +234,64 @@ struct flb_splunk *flb_splunk_conf_create(struct flb_output_instance *ins,
         }
     }
 
+    /*
+     * Event time. On raw mode there is no HEC envelope to populate, so the
+     * option is skipped entirely instead of being validated and ignored.
+     *
+     * 'time_key' accepts a record accessor pattern, for convenience a plain
+     * record key is also accepted and promoted to a pattern.
+     */
+    if (ctx->time_key && ctx->splunk_send_raw == FLB_TRUE) {
+        flb_plg_warn(ctx->ins, "'time_key' is ignored when 'splunk_send_raw' "
+                     "is enabled");
+    }
+    else if (ctx->time_key) {
+        if (ctx->time_key[0] == '$') {
+            ctx->ra_time_key = flb_ra_create(ctx->time_key, FLB_TRUE);
+        }
+        else {
+            pattern = flb_sds_create_size(flb_sds_len(ctx->time_key) + 1);
+            if (!pattern) {
+                flb_errno();
+                flb_splunk_conf_destroy(ctx);
+                return NULL;
+            }
+
+            t = flb_sds_printf(&pattern, "$%s", ctx->time_key);
+            if (!t) {
+                flb_errno();
+                flb_sds_destroy(pattern);
+                flb_splunk_conf_destroy(ctx);
+                return NULL;
+            }
+
+            ctx->ra_time_key = flb_ra_create(pattern, FLB_TRUE);
+            flb_sds_destroy(pattern);
+        }
+
+        if (!ctx->ra_time_key) {
+            flb_plg_error(ctx->ins,
+                          "cannot create record accessor for time_key "
+                          "pattern: '%s'", ctx->time_key);
+            flb_splunk_conf_destroy(ctx);
+            return NULL;
+        }
+    }
+
+    if (ctx->time_key_format && ctx->ra_time_key == NULL) {
+        flb_plg_warn(ctx->ins, "'time_key_format' has no effect because "
+                     "'time_key' is not in use");
+    }
+    else if (ctx->time_key_format) {
+        ret = flb_time_fmt_create(&ctx->time_key_fmt, ctx->time_key_format);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "cannot prepare time_key_format '%s'",
+                          ctx->time_key_format);
+            flb_splunk_conf_destroy(ctx);
+            return NULL;
+        }
+    }
+
     /* Event fields */
     ret = event_fields_create(ctx);
     if (ret == -1) {
@@ -323,6 +382,12 @@ int flb_splunk_conf_destroy(struct flb_splunk *ctx)
     if (ctx->ra_event_index_key) {
         flb_ra_destroy(ctx->ra_event_index_key);
     }
+
+    if (ctx->ra_time_key) {
+        flb_ra_destroy(ctx->ra_time_key);
+    }
+
+    flb_time_fmt_destroy(&ctx->time_key_fmt);
 
     if (ctx->ra_metadata_auth_key) {
         flb_ra_destroy(ctx->ra_metadata_auth_key);

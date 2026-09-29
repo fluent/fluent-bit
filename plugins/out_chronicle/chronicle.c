@@ -515,9 +515,16 @@ static int cb_chronicle_init(struct flb_output_instance *ins,
     return 0;
 }
 
-static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, uint64_t bytes,
-                                                  struct flb_log_event log_event,
-                                                  struct flb_config *config)
+enum chronicle_log_key_result {
+    CHRONICLE_LOG_KEY_ERROR = -1,
+    CHRONICLE_LOG_KEY_OK = 0,
+    CHRONICLE_LOG_KEY_MISSING = 1
+};
+
+static int flb_pack_msgpack_extract_log_key(void *out_context, uint64_t bytes,
+                                           struct flb_log_event log_event,
+                                           struct flb_config *config,
+                                           flb_sds_t *out_log_text)
 {
     int i;
     int map_size;
@@ -535,13 +542,15 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, uint64_t by
     msgpack_object key;
     msgpack_object val;
 
+    *out_log_text = NULL;
+
     /* Allocate buffer to store log_key contents */
     val_buf = flb_calloc(1, msgpack_size);
     if (val_buf == NULL) {
         flb_plg_error(ctx->ins, "Could not allocate enough "
                       "memory to read record");
         flb_errno();
-        return NULL;
+        return CHRONICLE_LOG_KEY_ERROR;
     }
 
     /* Get the record/map */
@@ -549,7 +558,7 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, uint64_t by
 
     if (map.type != MSGPACK_OBJECT_MAP) {
         flb_free(val_buf);
-        return NULL;
+        return CHRONICLE_LOG_KEY_ERROR;
     }
 
     map_size = map.via.map.size;
@@ -595,8 +604,10 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, uint64_t by
                     ret = flb_msgpack_to_json(val_buf + val_offset,
                                               msgpack_size - val_offset, &val,
                                               config->json_escape_unicode);
-                    if (ret < 0) {
-                        break;
+                    if (ret <= 0) {
+                        flb_plg_error(ctx->ins, "Could not convert log_key value to JSON");
+                        flb_free(val_buf);
+                        return CHRONICLE_LOG_KEY_ERROR;
                     }
                     val_offset += ret;
                     val_buf[val_offset] = '\0';
@@ -613,13 +624,13 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, uint64_t by
         flb_plg_error(ctx->ins, "Could not find log_key '%s' in record",
                       ctx->log_key);
         flb_free(val_buf);
-        return NULL;
+        return CHRONICLE_LOG_KEY_MISSING;
     }
 
     /* If nothing was read, destroy buffer */
     if (val_offset == 0) {
         flb_free(val_buf);
-        return NULL;
+        return CHRONICLE_LOG_KEY_ERROR;
     }
     val_buf[val_offset] = '\0';
 
@@ -631,7 +642,12 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, uint64_t by
     }
     flb_free(val_buf);
 
-    return out_buf;
+    if (out_buf == NULL) {
+        return CHRONICLE_LOG_KEY_ERROR;
+    }
+
+    *out_log_text = out_buf;
+    return CHRONICLE_LOG_KEY_OK;
 }
 
 static int count_mp_with_threshold(size_t last_offset, size_t threshold,
@@ -965,10 +981,19 @@ static int chronicle_format(const void *data, size_t bytes,
         alloc_size = (off - record_start) + 128; /* JSON is larger than msgpack */
 
         if (ctx->log_key != NULL) {
-            log_text = flb_pack_msgpack_extract_log_key(ctx, bytes, log_event, config);
-            if (log_text == NULL) {
-                flb_plg_error(ctx->ins, "log_key extraction failed, skipping record");
+            ret = flb_pack_msgpack_extract_log_key(ctx, bytes, log_event, config, &log_text);
+            if (ret == CHRONICLE_LOG_KEY_MISSING) {
+                flb_plg_error(ctx->ins, "log_key is missing, skipping record");
+                /* A skipped record must not be retried in the next payload. */
+                last_off = off;
                 continue;
+            }
+            if (ret != CHRONICLE_LOG_KEY_OK) {
+                flb_plg_error(ctx->ins, "log_key extraction failed");
+                chronicle_resolved_labels_destroy(&resolved_labels);
+                flb_sds_destroy(namespace);
+                chronicle_entries_destroy(&entry_list);
+                return -1;
             }
             log_text_size = flb_sds_len(log_text);
         }
@@ -1218,7 +1243,9 @@ static int cb_chronicle_format_test(struct flb_config *config,
 {
     struct flb_chronicle *ctx = plugin_context;
     struct flb_log_event_decoder log_decoder;
+    struct flb_test_out_formatter *formatter = &ctx->ins->test_formatter;
     int ret;
+    size_t offset = 0;
     size_t out_offset;
 
     ret = flb_log_event_decoder_init(&log_decoder, (char *) data, bytes);
@@ -1227,10 +1254,41 @@ static int cb_chronicle_format_test(struct flb_config *config,
         return -1;
     }
 
-    ret = chronicle_format(data, bytes, tag, tag_len,
-                           (char **)out_data, out_size,
-                           0, bytes, &out_offset,
-                           &log_decoder, ctx, config);
+    do {
+        ret = chronicle_format(data, bytes, tag, tag_len,
+                               (char **)out_data, out_size,
+                               offset, bytes, &out_offset,
+                               &log_decoder, ctx, config);
+        if (ret != 0) {
+            break;
+        }
+
+        if (out_offset <= offset || out_offset > bytes) {
+            flb_plg_error(ctx->ins, "formatter returned an invalid continuation offset");
+            flb_sds_destroy(*out_data);
+            *out_data = NULL;
+            *out_size = 0;
+            ret = -1;
+            break;
+        }
+
+        /* The engine delivers the final payload to the runtime checker. */
+        if (out_offset == bytes) {
+            break;
+        }
+
+        /* Deliver intermediate payloads before formatting the remainder. */
+        if (formatter->rt_out_callback) {
+            formatter->rt_out_callback(formatter->rt_ctx, formatter->rt_ffd,
+                                       ret, *out_data, *out_size, formatter->rt_data);
+        }
+        else {
+            flb_sds_destroy(*out_data);
+        }
+        *out_data = NULL;
+        *out_size = 0;
+        offset = out_offset;
+    } while (offset < bytes);
 
     flb_log_event_decoder_destroy(&log_decoder);
     return ret;

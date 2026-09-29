@@ -23,6 +23,8 @@
 #include <ctraces/ctraces.h>
 #include <ctraces/ctr_encode_msgpack.h>
 #include <ctraces/ctr_decode_msgpack.h>
+#include <ctraces/ctr_mpack_utils.h>
+#include <ctraces/ctr_variant_utils.h>
 #include <ctraces/ctr_encode_text.h>
 #include "ctr_tests.h"
 
@@ -534,7 +536,7 @@ static void msgpack_encode_decode_and_compare(struct ctrace *context)
     result = ctr_decode_msgpack_create(&decoded_context, msgpack_text_buffer, msgpack_text_size, &offset);
     TEST_ASSERT(result == 0);
 
-    validation_text_buffer = ctr_encode_text_create(context);
+    validation_text_buffer = ctr_encode_text_create(decoded_context);
     TEST_ASSERT(validation_text_buffer != NULL);
 
     TEST_ASSERT(strcmp(referece_text_buffer, validation_text_buffer) == 0);
@@ -574,6 +576,286 @@ void test_msgpack_to_ctr_with_empty_spans()
 
     ctr_encode_text_destroy(referece_text_buffer);
     ctr_destroy(context);
+}
+
+void test_msgpack_preserves_flags()
+{
+    char *buffer;
+    size_t size;
+    size_t offset;
+    struct ctrace *ctx;
+    struct ctrace *decoded;
+    struct ctrace_resource_span *rs;
+    struct ctrace_scope_span *ss;
+    struct ctrace_span *span;
+    struct ctrace_link *link;
+    int result;
+
+    ctx = ctr_create(NULL);
+    rs = ctr_resource_span_create(ctx);
+    ss = ctr_scope_span_create(rs);
+    span = ctr_span_create(ctx, ss, "flags", NULL);
+    link = ctr_link_create(span, NULL, 0, NULL, 0);
+    TEST_ASSERT(link != NULL);
+
+    ctr_span_set_flags(span, 0x301);
+    ctr_span_set_dropped_links_count(span, 17);
+    ctr_link_set_flags(link, 0x201);
+
+    result = ctr_encode_msgpack_create(ctx, &buffer, &size);
+    TEST_ASSERT(result == 0);
+
+    offset = 0;
+    result = ctr_decode_msgpack_create(&decoded, buffer, size, &offset);
+    TEST_ASSERT(result == 0);
+    TEST_ASSERT(decoded != NULL);
+
+    rs = cfl_list_entry(decoded->resource_spans.next,
+                        struct ctrace_resource_span, _head);
+    ss = cfl_list_entry(rs->scope_spans.next, struct ctrace_scope_span, _head);
+    span = cfl_list_entry(ss->spans.next, struct ctrace_span, _head);
+    link = cfl_list_entry(span->links.next, struct ctrace_link, _head);
+
+    TEST_CHECK(span->flags == 0x301);
+    TEST_CHECK(span->dropped_links_count == 17);
+    TEST_CHECK(link->flags == 0x201);
+
+    ctr_destroy(decoded);
+    ctr_encode_msgpack_destroy(buffer);
+    ctr_destroy(ctx);
+}
+
+void test_msgpack_invalid_offset()
+{
+    char data[] = {0x80};
+    size_t offset;
+    struct ctrace *decoded;
+    int result;
+
+    offset = sizeof(data) + 1;
+    decoded = (struct ctrace *) 0x1;
+    result = ctr_decode_msgpack_create(&decoded, data, sizeof(data), &offset);
+    TEST_CHECK(result == CTR_DECODE_MSGPACK_INSUFFICIENT_DATA);
+    TEST_CHECK(decoded == NULL);
+}
+
+void test_msgpack_integer_ranges()
+{
+    char negative[] = {(char) 0xff};
+    char overflow_u32[] = {(char) 0xcf, 0x00, 0x00, 0x00, 0x01,
+                           0x00, 0x00, 0x00, 0x00};
+    char overflow_i32[] = {(char) 0xce, (char) 0x80, 0x00, 0x00, 0x00};
+    mpack_reader_t reader;
+    uint64_t u64;
+    uint32_t u32;
+    int32_t i32;
+
+    mpack_reader_init_data(&reader, negative, sizeof(negative));
+    TEST_CHECK(ctr_mpack_consume_uint64_tag(&reader, &u64) ==
+               CTR_MPACK_CORRUPT_INPUT_DATA_ERROR);
+    mpack_reader_destroy(&reader);
+
+    mpack_reader_init_data(&reader, overflow_u32, sizeof(overflow_u32));
+    TEST_CHECK(ctr_mpack_consume_uint32_tag(&reader, &u32) ==
+               CTR_MPACK_CORRUPT_INPUT_DATA_ERROR);
+    mpack_reader_destroy(&reader);
+
+    mpack_reader_init_data(&reader, overflow_i32, sizeof(overflow_i32));
+    TEST_CHECK(ctr_mpack_consume_int32_tag(&reader, &i32) ==
+               CTR_MPACK_CORRUPT_INPUT_DATA_ERROR);
+    mpack_reader_destroy(&reader);
+}
+
+void test_msgpack_long_attribute_key()
+{
+    char key[512];
+    char *buffer;
+    size_t size;
+    size_t offset;
+    struct ctrace *ctx;
+    struct ctrace *decoded;
+    struct ctrace_resource_span *rs;
+    struct ctrace_scope_span *ss;
+    struct ctrace_span *span;
+    struct cfl_variant *null_value;
+    struct cfl_variant *value;
+    int result;
+
+    memset(key, 'k', sizeof(key) - 1);
+    key[sizeof(key) - 1] = '\0';
+
+    ctx = ctr_create(NULL);
+    rs = ctr_resource_span_create(ctx);
+    ss = ctr_scope_span_create(rs);
+    span = ctr_span_create(ctx, ss, "long-key", NULL);
+    TEST_ASSERT(ctr_span_set_attribute_string(span, key, "value") == 0);
+    TEST_ASSERT(cfl_kvlist_insert_uint64(span->attr->kv, "uint", UINT64_MAX) == 0);
+    null_value = cfl_variant_create_from_null();
+    TEST_ASSERT(null_value != NULL);
+    TEST_ASSERT(cfl_kvlist_insert(span->attr->kv, "null", null_value) == 0);
+    TEST_ASSERT(ctr_encode_msgpack_create(ctx, &buffer, &size) == 0);
+
+    offset = 0;
+    result = ctr_decode_msgpack_create(&decoded, buffer, size, &offset);
+    TEST_ASSERT(result == 0);
+    rs = cfl_list_entry(decoded->resource_spans.next,
+                        struct ctrace_resource_span, _head);
+    ss = cfl_list_entry(rs->scope_spans.next, struct ctrace_scope_span, _head);
+    span = cfl_list_entry(ss->spans.next, struct ctrace_span, _head);
+    TEST_CHECK(cfl_kvlist_fetch(span->attr->kv, key) != NULL);
+    value = cfl_kvlist_fetch(span->attr->kv, "uint");
+    TEST_ASSERT(value != NULL);
+    TEST_CHECK(value->type == CFL_VARIANT_UINT);
+    TEST_CHECK(value->data.as_uint64 == UINT64_MAX);
+    value = cfl_kvlist_fetch(span->attr->kv, "null");
+    TEST_ASSERT(value != NULL);
+    TEST_CHECK(value->type == CFL_VARIANT_NULL);
+
+    ctr_destroy(decoded);
+    ctr_encode_msgpack_destroy(buffer);
+    ctr_destroy(ctx);
+}
+
+static void check_variant_nesting_limit(int use_maps, size_t nesting_depth,
+                                        int expected_result)
+{
+    char *buffer;
+    size_t size;
+    size_t index;
+    int result;
+    mpack_writer_t writer;
+    mpack_reader_t reader;
+    struct cfl_variant *variant;
+
+    buffer = NULL;
+    size = 0;
+    variant = NULL;
+    mpack_writer_init_growable(&writer, &buffer, &size);
+
+    for (index = 0; index < nesting_depth; index++) {
+        if (use_maps) {
+            mpack_start_map(&writer, 1);
+            mpack_write_cstr(&writer, "key");
+        }
+        else {
+            mpack_start_array(&writer, 1);
+        }
+    }
+
+    mpack_write_i64(&writer, 1);
+
+    for (index = 0; index < nesting_depth; index++) {
+        if (use_maps) {
+            mpack_finish_map(&writer);
+        }
+        else {
+            mpack_finish_array(&writer);
+        }
+    }
+
+    TEST_ASSERT(mpack_writer_destroy(&writer) == mpack_ok);
+
+    mpack_reader_init_data(&reader, buffer, size);
+    result = unpack_cfl_variant(&reader, &variant);
+    TEST_CHECK((result == 0) == (expected_result == 0));
+
+    if (variant != NULL) {
+        cfl_variant_destroy(variant);
+    }
+
+    mpack_reader_destroy(&reader);
+    free(buffer);
+}
+
+void test_msgpack_variant_limits()
+{
+    char *buffer;
+    size_t size;
+    int result;
+    mpack_writer_t writer;
+    mpack_reader_t reader;
+    struct cfl_variant *variant;
+    struct cfl_kvlist *kvlist;
+
+    check_variant_nesting_limit(CFL_FALSE,
+                                CFL_VARIANT_UTILS_MAXIMUM_NESTING_DEPTH, 0);
+    check_variant_nesting_limit(CFL_FALSE,
+                                CFL_VARIANT_UTILS_MAXIMUM_NESTING_DEPTH + 1, -1);
+    check_variant_nesting_limit(CFL_TRUE,
+                                CFL_VARIANT_UTILS_MAXIMUM_NESTING_DEPTH, 0);
+    check_variant_nesting_limit(CFL_TRUE,
+                                CFL_VARIANT_UTILS_MAXIMUM_NESTING_DEPTH + 1, -1);
+
+    mpack_writer_init_growable(&writer, &buffer, &size);
+    mpack_start_map(&writer, 1);
+    mpack_write_cstr(&writer, "overflow");
+    mpack_write_u64(&writer, UINT64_MAX);
+    mpack_finish_map(&writer);
+    TEST_ASSERT(mpack_writer_destroy(&writer) == mpack_ok);
+
+    mpack_reader_init_data(&reader, buffer, size);
+    result = unpack_cfl_kvlist(&reader, &kvlist);
+    TEST_ASSERT(result == 0);
+    variant = cfl_kvlist_fetch(kvlist, "overflow");
+    TEST_ASSERT(variant != NULL);
+    TEST_CHECK(variant->type == CFL_VARIANT_UINT);
+    TEST_CHECK(variant->data.as_uint64 == UINT64_MAX);
+    cfl_kvlist_destroy(kvlist);
+    mpack_reader_destroy(&reader);
+    free(buffer);
+}
+
+void test_msgpack_rejects_reference()
+{
+    char *buffer;
+    size_t size;
+    struct ctrace *ctx;
+    struct ctrace_resource_span *rs;
+    struct ctrace_scope_span *ss;
+    struct ctrace_span *span;
+
+    ctx = ctr_create(NULL);
+    rs = ctr_resource_span_create(ctx);
+    ss = ctr_scope_span_create(rs);
+    span = ctr_span_create(ctx, ss, "reference", NULL);
+    TEST_ASSERT(cfl_kvlist_insert_reference(span->attr->kv, "opaque", span) == 0);
+
+    buffer = (char *) 0x1;
+    size = 123;
+    TEST_CHECK(ctr_encode_msgpack_create(ctx, &buffer, &size) != 0);
+    TEST_CHECK(buffer == NULL);
+    TEST_CHECK(size == 0);
+
+    ctr_destroy(ctx);
+}
+
+void test_msgpack_rejects_duplicate_fields()
+{
+    char *buffer;
+    size_t size;
+    size_t offset;
+    mpack_writer_t writer;
+    struct ctrace *decoded;
+    int result;
+
+    mpack_writer_init_growable(&writer, &buffer, &size);
+    mpack_start_map(&writer, 2);
+    mpack_write_cstr(&writer, "resourceSpans");
+    mpack_start_array(&writer, 0);
+    mpack_finish_array(&writer);
+    mpack_write_cstr(&writer, "resourceSpans");
+    mpack_start_array(&writer, 0);
+    mpack_finish_array(&writer);
+    mpack_finish_map(&writer);
+    TEST_ASSERT(mpack_writer_destroy(&writer) == mpack_ok);
+
+    offset = 0;
+    decoded = NULL;
+    result = ctr_decode_msgpack_create(&decoded, buffer, size, &offset);
+    TEST_CHECK(result == CTR_MPACK_CORRUPT_INPUT_DATA_ERROR);
+    TEST_CHECK(decoded == NULL);
+
+    free(buffer);
 }
 
 void test_simple_to_msgpack_and_back()
@@ -734,5 +1016,12 @@ TEST_LIST = {
     {"cmt_simple_to_msgpack_and_back", test_simple_to_msgpack_and_back},
     {"cmt_msgpack",                    test_msgpack_to_cmt},
     {"empty_spans",                    test_msgpack_to_ctr_with_empty_spans},
+    {"msgpack_preserves_flags",         test_msgpack_preserves_flags},
+    {"msgpack_invalid_offset",          test_msgpack_invalid_offset},
+    {"msgpack_integer_ranges",          test_msgpack_integer_ranges},
+    {"msgpack_long_attribute_key",      test_msgpack_long_attribute_key},
+    {"msgpack_variant_limits",          test_msgpack_variant_limits},
+    {"msgpack_rejects_reference",       test_msgpack_rejects_reference},
+    {"msgpack_rejects_duplicate_fields", test_msgpack_rejects_duplicate_fields},
     { 0 }
 };

@@ -1433,14 +1433,16 @@ static void *thread_worker(void *arg)
     int bytes;
 
     for (i = 0; i < data->events_per_thread; i++) {
+        /* Records larger than PIPE_BUF can interleave on the shared input pipe. */
+        pthread_mutex_lock(data->mutex);
         bytes = flb_lib_push(data->ctx, data->in_ffd, data->json_data,
                              data->json_len);
         if (bytes != (int)data->json_len) {
-            pthread_mutex_lock(data->mutex);
             *data->success = 0;
             pthread_mutex_unlock(data->mutex);
             return NULL;
         }
+        pthread_mutex_unlock(data->mutex);
         flb_time_msleep(10);
     }
 
@@ -1462,10 +1464,11 @@ void flb_test_file_rotation_multithreaded(void)
     int success = 1;
     int num_threads = 4;
     int events_per_thread = 10;
-    FILE *fp;
     char *content;
+    char *pos;
     size_t content_size;
     int line_count = 0;
+    int key_count = 0;
 
     recursive_delete_directory(TEST_LOGPATH);
     TEST_MKDIR(TEST_LOGPATH);
@@ -1510,8 +1513,6 @@ void flb_test_file_rotation_multithreaded(void)
         pthread_join(threads[i], NULL);
     }
 
-    ret = wait_for_file_size(logfile, 100 * 1024, TEST_TIMEOUT_MS);
-    TEST_CHECK(ret == 0);
     TEST_CHECK(wait_for_output_records(ctx,
                                        num_threads * events_per_thread) == 0);
 
@@ -1520,30 +1521,26 @@ void flb_test_file_rotation_multithreaded(void)
 
     TEST_CHECK(success == 1);
 
-    fp = fopen(logfile, "r");
-    TEST_CHECK(fp != NULL);
-    if (fp) {
-        char line[4096];
-        while (fgets(line, sizeof(line), fp) != NULL) {
-            line_count++;
-        }
-        fclose(fp);
-    }
-
-    TEST_CHECK(line_count >= num_threads * events_per_thread);
-
     content = read_file_content(logfile, &content_size);
     TEST_CHECK(content != NULL);
     if (content) {
         TEST_CHECK(strstr(content, "test") != NULL);
         TEST_CHECK(strstr(content, "1448403340") != NULL);
-        int key_count = 0;
-        char *pos = content;
+
+        /* Count complete records, including lines longer than a read buffer. */
+        pos = content;
+        while ((pos = strchr(pos, '\n')) != NULL) {
+            line_count++;
+            pos++;
+        }
+        TEST_CHECK(line_count == num_threads * events_per_thread);
+
+        pos = content;
         while ((pos = strstr(pos, "key_0")) != NULL) {
             key_count++;
             pos++;
         }
-        TEST_CHECK(key_count >= num_threads * events_per_thread);
+        TEST_CHECK(key_count == num_threads * events_per_thread);
         flb_free(content);
     }
 

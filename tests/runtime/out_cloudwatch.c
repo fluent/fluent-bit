@@ -1,4 +1,5 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+#include <time.h>
 #include <fluent-bit.h>
 #include "flb_tests_runtime.h"
 
@@ -19,8 +20,7 @@
 #define ERROR_UNKNOWN "{\"__type\":\"UNKNOWN\"}"
 
 /* JSON structure constants for test message generation */
-static const char *TEST_JSON_PREFIX = "{\"message\":\"";
-static const char *TEST_JSON_SUFFIX = "\"}";
+static const char *TEST_JSON_SUFFIX = "\"}]";
 
 /* It writes a big JSON message (copied from TD test) */
 void flb_test_cloudwatch_success(void)
@@ -532,35 +532,37 @@ void flb_test_cloudwatch_put_events_escapes_stream_name(void)
     flb_sds_destroy(stream.name);
 }
 
-/* Helper function to create a large JSON message of specified size */
+/* Create a lib input record with a message of the specified escaped size. */
 static char* create_large_json_message(size_t target_size)
 {
-    size_t prefix_len = strlen(TEST_JSON_PREFIX);
+    int ret;
+    size_t prefix_len;
     size_t suffix_len = strlen(TEST_JSON_SUFFIX);
-    size_t overhead = prefix_len + suffix_len;
-    size_t data_size;
+    size_t total_size;
+    char prefix[64];
     char *json;
 
-    /* Reject target_size too small for valid JSON structure */
-    if (target_size < overhead + 1) {
+    ret = snprintf(prefix, sizeof(prefix), "[%lld,{\"message\":\"", (long long) time(NULL));
+    if (ret < 0 || ret >= sizeof(prefix)) {
         return NULL;
     }
+    prefix_len = ret;
+    total_size = prefix_len + target_size + suffix_len;
 
-    json = flb_malloc(target_size + 1);
+    json = flb_malloc(total_size + 1);
     if (!json) {
         return NULL;
     }
 
     /* Build JSON: prefix + data + suffix */
-    memcpy(json, TEST_JSON_PREFIX, prefix_len);
-    data_size = target_size - overhead;
+    memcpy(json, prefix, prefix_len);
 
     /* Fill with 'A' characters */
-    memset(json + prefix_len, 'A', data_size);
+    memset(json + prefix_len, 'A', target_size);
 
     /* Close JSON object */
-    memcpy(json + prefix_len + data_size, TEST_JSON_SUFFIX, suffix_len);
-    json[target_size] = '\0';
+    memcpy(json + prefix_len + target_size, TEST_JSON_SUFFIX, suffix_len);
+    json[total_size] = '\0';
 
     /* Caller must free */
     return json;
@@ -575,6 +577,8 @@ static void run_cloudwatch_test_with_data(char *data, size_t data_len)
     int out_ffd;
 
     setenv("FLB_CLOUDWATCH_PLUGIN_UNDER_TEST", "true", 1);
+
+    cloudwatch_mock_call_count_reset();
 
     ctx = flb_create();
     TEST_CHECK(ctx != NULL);
@@ -593,16 +597,21 @@ static void run_cloudwatch_test_with_data(char *data, size_t data_len)
     flb_output_set(ctx, out_ffd, "net.keepalive", "Off", NULL);
     flb_output_set(ctx, out_ffd, "Retry_Limit", "1", NULL);
 
+    flb_output_set(ctx, out_ffd, "log_key", "message", NULL);
+
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
 
     if (data) {
-        flb_lib_push(ctx, in_ffd, data, data_len);
+        ret = flb_lib_push(ctx, in_ffd, data, data_len);
+        TEST_CHECK(ret == data_len);
     }
 
     sleep(2);
     flb_stop(ctx);
+    TEST_CHECK(cloudwatch_mock_call_count_get("PutLogEvents") > 0);
     flb_destroy(ctx);
+    unsetenv("FLB_CLOUDWATCH_PLUGIN_UNDER_TEST");
 }
 
 /* Test event size at maximum allowed limit (should succeed without truncation) */
@@ -639,11 +648,10 @@ void flb_test_cloudwatch_event_size_over_limit(void)
 void flb_test_cloudwatch_event_truncation_with_backslash(void)
 {
     char *large_json;
-    size_t prefix_len = strlen(TEST_JSON_PREFIX);
+    size_t prefix_len;
     size_t suffix_len = strlen(TEST_JSON_SUFFIX);
     size_t total_len;
-    size_t data_len;
-    size_t i;
+    size_t boundary;
 
     /* Create base message exceeding MAX_EVENT_LEN */
     large_json = create_large_json_message(MAX_EVENT_LEN + 100);
@@ -651,15 +659,9 @@ void flb_test_cloudwatch_event_truncation_with_backslash(void)
 
     if (large_json) {
         total_len = strlen(large_json);
-        data_len = total_len - prefix_len - suffix_len;
+        prefix_len = total_len - suffix_len - (MAX_EVENT_LEN + 100);
 
-        /* Replace pairs of characters with valid escape sequence "\\" */
-        for (i = 98; i < data_len - 1; i += 100) {
-            large_json[prefix_len + i] = '\\';
-            large_json[prefix_len + i + 1] = '\\';
-        }
-
-        size_t boundary = MAX_EVENT_LEN - 1; /* index in full JSON string */
+        boundary = prefix_len + MAX_EVENT_LEN - 1;
         /* Ensure a backslash is at the exact truncation boundary */
         if (boundary + 1 < total_len - suffix_len) {
             large_json[boundary] = '\\';

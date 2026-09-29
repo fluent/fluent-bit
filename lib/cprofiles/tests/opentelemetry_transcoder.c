@@ -298,9 +298,12 @@ static struct cprof *create_cprof_with_dictionary_tables(void)
     struct cprof_location         *loc;
     struct cprof_line             *line;
     struct cprof_link             *link;
+    struct cprof_attribute_unit   *attribute_unit;
     struct cfl_kvlist             *attrs;
     size_t                         id_bin;
     size_t                         id_foo;
+    size_t                         id_attribute_key;
+    size_t                         id_unit;
     int                            ret;
 
     cprof = cprof_create();
@@ -352,17 +355,53 @@ static struct cprof *create_cprof_with_dictionary_tables(void)
     }
     profile->time_nanos = 2000000000ULL;
     profile->duration_nanos = 200000000ULL;
-
-    cprof_sample_type_str_create(profile, "count", "", CPROF_AGGREGATION_TEMPORALITY_CUMULATIVE);
-    id_bin = cprof_profile_string_add(profile, "/bin/app", -1);
-    id_foo = cprof_profile_string_add(profile, "foo", -1);
-    if (id_bin == 0 || id_foo == 0) {
+    profile->profile_id[0] = 0x42;
+    profile->profile_id[15] = 0x24;
+    profile->dropped_attributes_count = 3;
+    profile->original_payload_format = cfl_sds_create("pprof");
+    profile->original_payload = cfl_sds_create_len("payload", 7);
+    if (profile->original_payload_format == NULL || profile->original_payload == NULL) {
         cprof_profile_destroy(profile);
         cprof_scope_profiles_destroy(scope_profiles);
         cprof_resource_profiles_destroy(resource_profiles);
         cprof_destroy(cprof);
         return NULL;
     }
+
+    cprof_sample_type_str_create(profile, "count", "", CPROF_AGGREGATION_TEMPORALITY_CUMULATIVE);
+    id_bin = cprof_profile_string_add(profile, "/bin/app", -1);
+    id_foo = cprof_profile_string_add(profile, "foo", -1);
+    id_attribute_key = cprof_profile_string_add(profile, "table.key", -1);
+    id_unit = cprof_profile_string_add(profile, "bytes", -1);
+    if (id_bin == 0 || id_foo == 0 || id_attribute_key == 0 || id_unit == 0) {
+        cprof_profile_destroy(profile);
+        cprof_scope_profiles_destroy(scope_profiles);
+        cprof_resource_profiles_destroy(resource_profiles);
+        cprof_destroy(cprof);
+        return NULL;
+    }
+
+    if (cfl_kvlist_insert_string(profile->attribute_table,
+                                 "table.key", "table.value") != 0 ||
+        cfl_kvlist_insert_string(profile->attributes,
+                                 "profile.key", "profile.value") != 0) {
+        cprof_profile_destroy(profile);
+        cprof_scope_profiles_destroy(scope_profiles);
+        cprof_resource_profiles_destroy(resource_profiles);
+        cprof_destroy(cprof);
+        return NULL;
+    }
+
+    attribute_unit = cprof_attribute_unit_create(profile);
+    if (attribute_unit == NULL) {
+        cprof_profile_destroy(profile);
+        cprof_scope_profiles_destroy(scope_profiles);
+        cprof_resource_profiles_destroy(resource_profiles);
+        cprof_destroy(cprof);
+        return NULL;
+    }
+    attribute_unit->attribute_key = (int64_t) id_attribute_key;
+    attribute_unit->unit = (int64_t) id_unit;
 
     /* One mapping (dict mapping_table will have zero + this). */
     mapping = cprof_mapping_create(profile);
@@ -377,6 +416,13 @@ static struct cprof *create_cprof_with_dictionary_tables(void)
     mapping->memory_limit = 0x2000ULL;
     mapping->file_offset = 0;
     mapping->filename = (int64_t)id_bin;
+    if (cprof_mapping_add_attribute(mapping, 0) != 0) {
+        cprof_profile_destroy(profile);
+        cprof_scope_profiles_destroy(scope_profiles);
+        cprof_resource_profiles_destroy(resource_profiles);
+        cprof_destroy(cprof);
+        return NULL;
+    }
 
     /* One function (dict function_table will have zero + this). */
     func = cprof_function_create(profile);
@@ -403,6 +449,13 @@ static struct cprof *create_cprof_with_dictionary_tables(void)
     }
     loc->mapping_index = 0;
     loc->address = 0x1000ULL;
+    if (cprof_location_add_attribute(loc, 0) != 0) {
+        cprof_profile_destroy(profile);
+        cprof_scope_profiles_destroy(scope_profiles);
+        cprof_resource_profiles_destroy(resource_profiles);
+        cprof_destroy(cprof);
+        return NULL;
+    }
     line = cprof_line_create(loc);
     if (line == NULL) {
         cprof_profile_destroy(profile);
@@ -447,6 +500,14 @@ static struct cprof *create_cprof_with_dictionary_tables(void)
         return NULL;
     }
     ret = cprof_sample_add_value(sample, 42);
+    if (ret != 0) {
+        cprof_profile_destroy(profile);
+        cprof_scope_profiles_destroy(scope_profiles);
+        cprof_resource_profiles_destroy(resource_profiles);
+        cprof_destroy(cprof);
+        return NULL;
+    }
+    ret = cprof_sample_add_attribute(sample, 0);
     if (ret != 0) {
         cprof_profile_destroy(profile);
         cprof_scope_profiles_destroy(scope_profiles);
@@ -566,6 +627,32 @@ static void test_encoder_dictionary_tables()
     cprof_destroy(context);
 }
 
+static void test_encoder_empty_context()
+{
+    cfl_sds_t     otlp_result;
+    struct cprof *context;
+    int           result;
+    Opentelemetry__Proto__Collector__Profiles__V1development__ExportProfilesServiceRequest *request;
+
+    context = cprof_create();
+    TEST_ASSERT(context != NULL);
+
+    result = cprof_encode_opentelemetry_create(&otlp_result, context);
+    cprof_destroy(context);
+
+    TEST_CHECK(result == CPROF_ENCODE_OPENTELEMETRY_SUCCESS);
+    TEST_ASSERT(otlp_result != NULL);
+
+    request = opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__unpack(
+        NULL, cfl_sds_len(otlp_result), (const unsigned char *) otlp_result);
+    TEST_ASSERT(request != NULL);
+    TEST_CHECK(request->n_resource_profiles == 0);
+
+    opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__free_unpacked(
+        request, NULL);
+    cprof_encode_opentelemetry_destroy(otlp_result);
+}
+
 /*
  * Verify decoded cprof matches the structure produced by create_cprof_with_dictionary_tables.
  * Decoder may emit dictionary sentinel at index 0 plus our entry, so we require at least 1
@@ -582,6 +669,7 @@ static void verify_decoded_cprof_dictionary_tables(struct cprof *decoded)
     struct cprof_line                 *line;
     struct cprof_link                 *link;
     struct cprof_sample               *sample;
+    struct cfl_variant                *profile_attribute;
     struct cfl_list                   *rp_iter;
     struct cfl_list                   *sp_iter;
     struct cfl_list                   *prof_iter;
@@ -629,6 +717,24 @@ static void verify_decoded_cprof_dictionary_tables(struct cprof *decoded)
     /* Profile metadata */
     TEST_CHECK(profile->time_nanos == 2000000000ULL);
     TEST_CHECK(profile->duration_nanos == 200000000ULL);
+    TEST_CHECK(profile->profile_id[0] == 0x42);
+    TEST_CHECK(profile->profile_id[15] == 0x24);
+    TEST_CHECK(profile->dropped_attributes_count == 3);
+    TEST_CHECK(profile->original_payload_format != NULL);
+    TEST_CHECK(profile->original_payload != NULL);
+    if (profile->original_payload_format != NULL) {
+        TEST_CHECK(strcmp(profile->original_payload_format, "pprof") == 0);
+    }
+    if (profile->original_payload != NULL) {
+        TEST_CHECK(cfl_sds_len(profile->original_payload) == 7);
+        TEST_CHECK(memcmp(profile->original_payload, "payload", 7) == 0);
+    }
+    profile_attribute = cfl_kvlist_fetch(profile->attributes, "profile.key");
+    TEST_CHECK(profile_attribute != NULL);
+    if (profile_attribute != NULL) {
+        TEST_CHECK(profile_attribute->type == CFL_VARIANT_STRING);
+        TEST_CHECK(strcmp(profile_attribute->data.as_string, "profile.value") == 0);
+    }
 
     /* At least one mapping; find one with memory_start=0x1000, filename "/bin/app" */
     TEST_CHECK(cfl_list_size(&profile->mappings) >= 1);
@@ -637,6 +743,10 @@ static void verify_decoded_cprof_dictionary_tables(struct cprof *decoded)
         mapping = cfl_list_entry(map_iter, struct cprof_mapping, _head);
         if (mapping->memory_start == 0x1000ULL && mapping->memory_limit == 0x2000ULL &&
             mapping->file_offset == 0) {
+            TEST_CHECK(mapping->attributes_count == 1);
+            if (mapping->attributes_count == 1) {
+                TEST_CHECK(mapping->attributes[0] > 0);
+            }
             if (mapping->filename >= 0 && (size_t)mapping->filename < profile->string_table_count &&
                 profile->string_table[mapping->filename] != NULL &&
                 strcmp(profile->string_table[mapping->filename], "/bin/app") == 0) {
@@ -669,6 +779,10 @@ static void verify_decoded_cprof_dictionary_tables(struct cprof *decoded)
     for (loc_iter = profile->locations.next; loc_iter != &profile->locations; loc_iter = loc_iter->next) {
         loc = cfl_list_entry(loc_iter, struct cprof_location, _head);
         if (loc->address == 0x1000ULL && cfl_list_size(&loc->lines) >= 1) {
+            TEST_CHECK(loc->attributes_count == 1);
+            if (loc->attributes_count == 1) {
+                TEST_CHECK(loc->attributes[0] > 0);
+            }
             line_iter = loc->lines.next;
             line = cfl_list_entry(line_iter, struct cprof_line, _head);
             if (line->line == 10) {
@@ -703,6 +817,11 @@ static void verify_decoded_cprof_dictionary_tables(struct cprof *decoded)
         TEST_CHECK(sample->value_count == 1);
         if (sample->value_count >= 1 && sample->values != NULL) {
             TEST_CHECK(sample->values[0] == 42);
+        }
+        TEST_CHECK(sample->attributes_count == 1);
+        if (sample->attributes_count == 1) {
+            TEST_CHECK(sample->attributes[0] > 0);
+            TEST_CHECK(sample->attributes[0] < cfl_kvlist_count(profile->attribute_table));
         }
         TEST_CHECK(sample->location_index_count >= 1 && "sample must have at least one location_index");
         if (sample->location_index_count >= 1 && sample->location_index != NULL) {
@@ -797,6 +916,28 @@ static void test_wire_format_dictionary_present()
             TEST_CHECK(req->dictionary->n_location_table >= 1 && "dictionary must have at least one location");
             TEST_CHECK(req->dictionary->n_link_table >= 1 && "dictionary must have at least one link");
             TEST_CHECK(req->dictionary->n_stack_table >= 1 && "dictionary must have at least one stack");
+            TEST_CHECK(req->dictionary->n_attribute_table >= 2 &&
+                       "dictionary must contain the sentinel and profile attributes");
+        }
+        if (req->n_resource_profiles == 1 &&
+            req->resource_profiles[0]->n_scope_profiles == 1 &&
+            req->resource_profiles[0]->scope_profiles[0]->n_profiles == 1) {
+            Opentelemetry__Proto__Profiles__V1development__Profile *wire_profile;
+
+            wire_profile = req->resource_profiles[0]->scope_profiles[0]->profiles[0];
+            TEST_CHECK(wire_profile->profile_id.len == 16);
+            TEST_CHECK(wire_profile->profile_id.data[0] == 0x42);
+            TEST_CHECK(wire_profile->profile_id.data[15] == 0x24);
+            TEST_CHECK(wire_profile->dropped_attributes_count == 3);
+            TEST_CHECK(strcmp(wire_profile->original_payload_format, "pprof") == 0);
+            TEST_CHECK(wire_profile->original_payload.len == 7);
+            TEST_CHECK(wire_profile->n_attribute_indices == 1);
+            TEST_CHECK(wire_profile->samples[0]->n_attribute_indices == 1);
+            TEST_CHECK(wire_profile->samples[0]->attribute_indices[0] > 0);
+            TEST_CHECK(req->dictionary->mapping_table[1]->n_attribute_indices == 1);
+            TEST_CHECK(req->dictionary->mapping_table[1]->attribute_indices[0] > 0);
+            TEST_CHECK(req->dictionary->location_table[1]->n_attribute_indices == 1);
+            TEST_CHECK(req->dictionary->location_table[1]->attribute_indices[0] > 0);
         }
         opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__free_unpacked(req, NULL);
     }
@@ -1533,10 +1674,287 @@ static void test_decoder_rejects_invalid_sample_link_reference()
         request, NULL);
 }
 
+
+static void test_decoder_argument_validation(void)
+{
+    unsigned char input[] = {0xff};
+    struct cprof *context;
+    size_t offset;
+    int result;
+
+    context = NULL;
+    offset = 0;
+    result = cprof_decode_opentelemetry_create(NULL, input, sizeof(input), &offset);
+    TEST_CHECK(result == CPROF_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR);
+    result = cprof_decode_opentelemetry_create(&context, NULL, sizeof(input), &offset);
+    TEST_CHECK(result == CPROF_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR);
+    TEST_CHECK(context == NULL);
+    result = cprof_decode_opentelemetry_create(&context, input, sizeof(input), NULL);
+    TEST_CHECK(result == CPROF_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR);
+    TEST_CHECK(context == NULL);
+    offset = sizeof(input) + 1;
+    result = cprof_decode_opentelemetry_create(&context, input, sizeof(input), &offset);
+    TEST_CHECK(result == CPROF_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR);
+    TEST_CHECK(context == NULL);
+    TEST_CHECK(offset == sizeof(input) + 1);
+    offset = SIZE_MAX;
+    result = cprof_decode_opentelemetry_create(&context, input, sizeof(input), &offset);
+    TEST_CHECK(result == CPROF_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR);
+    TEST_CHECK(context == NULL);
+    TEST_CHECK(offset == SIZE_MAX);
+
+    /* A zero-length protobuf message at the end of the input is valid. */
+    offset = sizeof(input);
+    result = cprof_decode_opentelemetry_create(&context, input, sizeof(input), &offset);
+    TEST_CHECK(result == CPROF_DECODE_OPENTELEMETRY_SUCCESS);
+    TEST_CHECK(context != NULL);
+    TEST_CHECK(offset == sizeof(input));
+    cprof_decode_opentelemetry_destroy(context);
+}
+
+static void test_encoder_attribute_units_by_key(void)
+{
+    struct cprof *context;
+    struct cprof_resource_profiles *resource_profiles;
+    struct cprof_scope_profiles *scope_profiles;
+    struct cprof_profile *profile;
+    struct cprof_attribute_unit *unit;
+    cfl_sds_t encoded;
+    size_t index;
+    size_t found;
+    int result;
+    const char *key;
+    const char *expected;
+    Opentelemetry__Proto__Collector__Profiles__V1development__ExportProfilesServiceRequest *request;
+    Opentelemetry__Proto__Profiles__V1development__KeyValueAndUnit *attribute;
+
+    context = create_minimal_cprof();
+    TEST_ASSERT(context != NULL);
+    resource_profiles = cfl_list_entry(context->profiles.next,
+                                      struct cprof_resource_profiles, _head);
+    scope_profiles = cfl_list_entry(resource_profiles->scope_profiles.next,
+                                   struct cprof_scope_profiles, _head);
+    profile = cfl_list_entry(scope_profiles->profiles.next, struct cprof_profile, _head);
+    TEST_ASSERT(cfl_kvlist_insert_string(profile->attribute_table, "no.unit", "a") == 0);
+    TEST_ASSERT(cfl_kvlist_insert_string(profile->attribute_table, "size", "b") == 0);
+    TEST_ASSERT(cfl_kvlist_insert_string(profile->attribute_table, "duration", "c") == 0);
+    TEST_ASSERT(cfl_kvlist_insert_string(profile->attribute_table, "invalid.unit", "d") == 0);
+
+    /* Invalid keys and a sparse, reversed unit list must not shift units. */
+    unit = cprof_attribute_unit_create(profile);
+    TEST_ASSERT(unit != NULL);
+    unit->attribute_key = -1;
+    unit->unit = 0;
+    unit = cprof_attribute_unit_create(profile);
+    TEST_ASSERT(unit != NULL);
+    unit->attribute_key = INT64_MAX;
+    unit->unit = 0;
+    unit = cprof_attribute_unit_create(profile);
+    TEST_ASSERT(unit != NULL);
+    unit->attribute_key = cprof_profile_string_add(profile, "duration", -1);
+    unit->unit = cprof_profile_string_add(profile, "seconds", -1);
+    unit = cprof_attribute_unit_create(profile);
+    TEST_ASSERT(unit != NULL);
+    unit->attribute_key = cprof_profile_string_add(profile, "size", -1);
+    unit->unit = cprof_profile_string_add(profile, "bytes", -1);
+    unit = cprof_attribute_unit_create(profile);
+    TEST_ASSERT(unit != NULL);
+    unit->attribute_key = cprof_profile_string_add(profile, "invalid.unit", -1);
+    unit->unit = INT64_MAX;
+
+    encoded = NULL;
+    result = cprof_encode_opentelemetry_create(&encoded, context);
+    TEST_ASSERT(result == CPROF_ENCODE_OPENTELEMETRY_SUCCESS);
+    request = opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__unpack(
+        NULL, cfl_sds_len(encoded), (const unsigned char *) encoded);
+    TEST_ASSERT(request != NULL);
+    TEST_ASSERT(request->dictionary != NULL);
+    found = 0;
+    for (index = 1; index < request->dictionary->n_attribute_table; index++) {
+        attribute = request->dictionary->attribute_table[index];
+        TEST_ASSERT(attribute->key_strindex >= 0 &&
+                    (size_t) attribute->key_strindex < request->dictionary->n_string_table);
+        TEST_ASSERT(attribute->unit_strindex >= 0 &&
+                    (size_t) attribute->unit_strindex < request->dictionary->n_string_table);
+        key = request->dictionary->string_table[attribute->key_strindex];
+        if (strcmp(key, "size") == 0) {
+            expected = "bytes";
+        }
+        else if (strcmp(key, "duration") == 0) {
+            expected = "seconds";
+        }
+        else if (strcmp(key, "no.unit") == 0 || strcmp(key, "invalid.unit") == 0) {
+            expected = "";
+        }
+        else {
+            continue;
+        }
+        found++;
+        TEST_CHECK(strcmp(request->dictionary->string_table[attribute->unit_strindex], expected) == 0);
+        TEST_MSG("attribute %s expected unit %s", key, expected);
+    }
+    TEST_CHECK(found == 4);
+    opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__free_unpacked(
+        request, NULL);
+    cprof_encode_opentelemetry_destroy(encoded);
+    cprof_destroy(context);
+}
+
+static void test_repeated_attribute_units_roundtrip(void)
+{
+    struct cprof *context;
+    cfl_sds_t encoded;
+    size_t index;
+    size_t first;
+    int32_t key;
+    int32_t unit;
+    int32_t output_index;
+    int64_t values[] = {11, 22, 11};
+    Opentelemetry__Proto__Collector__Profiles__V1development__ExportProfilesServiceRequest *request;
+    Opentelemetry__Proto__Collector__Profiles__V1development__ExportProfilesServiceRequest *output;
+    Opentelemetry__Proto__Profiles__V1development__ProfilesDictionary *dictionary;
+    Opentelemetry__Proto__Profiles__V1development__KeyValueAndUnit **attributes;
+    Opentelemetry__Proto__Profiles__V1development__KeyValueAndUnit *attribute;
+    Opentelemetry__Proto__Profiles__V1development__Sample *sample;
+    int32_t *indices;
+
+    request = create_unpacked_dictionary_request();
+    TEST_ASSERT(request != NULL);
+    dictionary = request->dictionary;
+    key = dictionary->attribute_table[1]->key_strindex;
+    unit = dictionary->attribute_table[1]->unit_strindex;
+    first = dictionary->n_attribute_table;
+    attributes = realloc(dictionary->attribute_table,
+                         (first + 3) * sizeof(*attributes));
+    TEST_ASSERT(attributes != NULL);
+    dictionary->attribute_table = attributes;
+    for (index = 0; index < 3; index++) {
+        attribute = calloc(1, sizeof(*attribute));
+        TEST_ASSERT(attribute != NULL);
+        opentelemetry__proto__profiles__v1development__key_value_and_unit__init(attribute);
+        attribute->key_strindex = key;
+        attribute->unit_strindex = index == 0 ? unit : 0;
+        attribute->value = calloc(1, sizeof(*attribute->value));
+        TEST_ASSERT(attribute->value != NULL);
+        opentelemetry__proto__common__v1__any_value__init(attribute->value);
+        attribute->value->value_case = OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_INT_VALUE;
+        attribute->value->int_value = values[index];
+        dictionary->attribute_table[dictionary->n_attribute_table++] = attribute;
+    }
+
+    sample = request->resource_profiles[0]->scope_profiles[0]->profiles[0]->samples[0];
+    indices = realloc(sample->attribute_indices, 3 * sizeof(*indices));
+    TEST_ASSERT(indices != NULL);
+    sample->attribute_indices = indices;
+    sample->n_attribute_indices = 3;
+    for (index = 0; index < 3; index++) {
+        indices[index] = (int32_t) (first + index);
+    }
+
+    context = NULL;
+    TEST_ASSERT(decode_export_service_request(&context, request) == 0);
+    TEST_ASSERT(context != NULL);
+    encoded = NULL;
+    TEST_ASSERT(cprof_encode_opentelemetry_create(&encoded, context) == 0);
+    output = opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__unpack(
+        NULL, cfl_sds_len(encoded), (const unsigned char *) encoded);
+    TEST_ASSERT(output != NULL);
+    sample = output->resource_profiles[0]->scope_profiles[0]->profiles[0]->samples[0];
+    TEST_ASSERT(sample->n_attribute_indices == 3);
+    for (index = 0; index < 3; index++) {
+        output_index = sample->attribute_indices[index];
+        TEST_ASSERT(output_index >= 0 &&
+                    (size_t) output_index < output->dictionary->n_attribute_table);
+        attribute = output->dictionary->attribute_table[output_index];
+        TEST_CHECK(attribute->value->value_case ==
+                   OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_INT_VALUE);
+        TEST_CHECK(attribute->value->int_value == values[index]);
+        TEST_ASSERT(attribute->unit_strindex >= 0 &&
+                    (size_t) attribute->unit_strindex < output->dictionary->n_string_table);
+        TEST_CHECK(strcmp(output->dictionary->string_table[attribute->unit_strindex],
+                          index == 0 ? dictionary->string_table[unit] : "") == 0);
+        TEST_MSG("repeated attribute occurrence %zu", index);
+    }
+
+    opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__free_unpacked(
+        output, NULL);
+    opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__free_unpacked(
+        request, NULL);
+    cprof_encode_opentelemetry_destroy(encoded);
+    cprof_destroy(context);
+}
+
+static void check_otlp_depth(size_t depth, int shape)
+{
+    struct cprof *original;
+    struct cprof *decoded;
+    struct cprof_resource_profiles *resource;
+    struct cfl_variant *value;
+    struct cfl_variant *parent;
+    struct cfl_kvlist *map;
+    struct cfl_array *array;
+    cfl_sds_t wire;
+    size_t index;
+    size_t offset;
+    int result;
+
+    original = create_minimal_cprof();
+    TEST_ASSERT(original != NULL);
+    resource = cfl_list_entry(original->profiles.next, struct cprof_resource_profiles, _head);
+    value = cfl_variant_create_from_string("leaf");
+    TEST_ASSERT(value != NULL);
+    for (index = 0; index < depth; index++) {
+        if (shape == 0 || (shape == 2 && index % 2 == 0)) {
+            map = cfl_kvlist_create();
+            TEST_ASSERT(map != NULL);
+            TEST_ASSERT(cfl_kvlist_insert(map, "k", value) == 0);
+            parent = cfl_variant_create_from_kvlist(map);
+        }
+        else {
+            array = cfl_array_create(1);
+            TEST_ASSERT(array != NULL);
+            TEST_ASSERT(cfl_array_append(array, value) == 0);
+            parent = cfl_variant_create_from_array(array);
+        }
+        TEST_ASSERT(parent != NULL);
+        value = parent;
+    }
+    TEST_ASSERT(cfl_kvlist_insert(resource->resource->attributes, "deep", value) == 0);
+    TEST_ASSERT(cprof_encode_opentelemetry_create(&wire, original) == 0);
+    TEST_ASSERT(wire != NULL);
+    cprof_destroy(original);
+    decoded = NULL;
+    offset = 0;
+    result = cprof_decode_opentelemetry_create(&decoded, (unsigned char *) wire,
+                                               cfl_sds_len(wire), &offset);
+    TEST_CHECK((result == 0) == (depth < 32));
+    if (decoded != NULL) {
+        cprof_destroy(decoded);
+    }
+    cprof_encode_opentelemetry_destroy(wire);
+}
+
+static void test_otlp_depth_boundary(void)
+{
+    int shape;
+
+    for (shape = 0; shape < 3; shape++) {
+        check_otlp_depth(8, shape);
+        check_otlp_depth(31, shape);
+        check_otlp_depth(32, shape);
+        check_otlp_depth(400, shape);
+    }
+}
+
 TEST_LIST = {
+    {"repeated_attribute_units_roundtrip", test_repeated_attribute_units_roundtrip},
+    {"decoder_argument_validation", test_decoder_argument_validation},
+    {"encoder_attribute_units_by_key", test_encoder_attribute_units_by_key},
+    {"otlp_depth_boundary", test_otlp_depth_boundary},
     {"encoder", test_encoder},
     {"decoder", test_decoder},
     {"encoder_dictionary_tables", test_encoder_dictionary_tables},
+    {"encoder_empty_context", test_encoder_empty_context},
     {"wire_format_dictionary_present", test_wire_format_dictionary_present},
     {"decoder_dictionary_tables", test_decoder_dictionary_tables},
     {"decoder_dictionary_string_references", test_decoder_dictionary_string_references},

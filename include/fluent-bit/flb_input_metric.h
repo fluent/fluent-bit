@@ -28,6 +28,10 @@ int flb_input_metrics_append(struct flb_input_instance *ins,
                              const char *tag, size_t tag_len,
                              struct cmt *cmt);
 
+int flb_input_metrics_append_list(struct flb_input_instance *ins,
+                                  const char *tag, size_t tag_len,
+                                  struct cfl_list *contexts);
+
 int flb_input_metrics_append_skip_processor_stages(
         struct flb_input_instance *ins,
         size_t processor_starting_stage,

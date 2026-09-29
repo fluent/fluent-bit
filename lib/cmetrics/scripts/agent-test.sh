@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+repository_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 build_dir=${BUILD_DIR:-"$repository_root/build/agent"}
 
 if [ ! -f "$build_dir/CTestTestfile.cmake" ]; then

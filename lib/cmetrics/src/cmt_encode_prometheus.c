@@ -97,6 +97,82 @@ static void metric_escape(cfl_sds_t *buf, cfl_sds_t description, bool escape_quo
     }
 }
 
+/*
+ * Metric and label names have no escape sequence in the exposition format: they
+ * must match [a-zA-Z_:][a-zA-Z0-9_:]* (label names cannot contain ':'). Names
+ * received from the network (OTLP, remote write, msgpack) are not constrained,
+ * so replace every other byte with '_', otherwise a name containing a newline
+ * or a space would inject new lines/tokens into the output.
+ */
+static char sanitize_name_char(char c, bool is_label)
+{
+    if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+          (c >= '0' && c <= '9') || c == '_' ||
+          (c == ':' && !is_label))) {
+        return '_';
+    }
+
+    return c;
+}
+
+static void metric_name_cat(cfl_sds_t *buf, cfl_sds_t name, bool is_label)
+{
+    size_t i;
+    size_t len;
+    char c;
+
+    len = cfl_sds_len(name);
+
+    for (i = 0; i < len; i++) {
+        c = name[i];
+
+        if (i == 0 && c >= '0' && c <= '9') {
+            /* a leading digit is not allowed, prefix it */
+            cfl_sds_cat_safe(buf, "_", 1);
+        }
+
+        c = sanitize_name_char(c, is_label);
+
+        cfl_sds_cat_safe(buf, &c, 1);
+    }
+}
+
+/*
+ * Sanitizing is not injective ('a.b' and 'a_b' are both written as 'a_b'),
+ * compare two names as they are written by metric_name_cat().
+ */
+static int sanitized_name_equal(cfl_sds_t a, cfl_sds_t b, bool is_label)
+{
+    size_t i;
+    size_t a_len;
+    size_t b_len;
+    size_t a_prefix;
+    size_t b_prefix;
+    char   a_char;
+    char   b_char;
+
+    a_len = cfl_sds_len(a);
+    b_len = cfl_sds_len(b);
+
+    a_prefix = (a_len > 0 && a[0] >= '0' && a[0] <= '9') ? 1 : 0;
+    b_prefix = (b_len > 0 && b[0] >= '0' && b[0] <= '9') ? 1 : 0;
+
+    if (a_len + a_prefix != b_len + b_prefix) {
+        return CMT_FALSE;
+    }
+
+    for (i = 0; i < a_len + a_prefix; i++) {
+        a_char = (i < a_prefix) ? '_' : sanitize_name_char(a[i - a_prefix], is_label);
+        b_char = (i < b_prefix) ? '_' : sanitize_name_char(b[i - b_prefix], is_label);
+
+        if (a_char != b_char) {
+            return CMT_FALSE;
+        }
+    }
+
+    return CMT_TRUE;
+}
+
 static void metric_banner(cfl_sds_t *buf, struct cmt_map *map,
                           struct cmt_metric *metric)
 {
@@ -106,7 +182,7 @@ static void metric_banner(cfl_sds_t *buf, struct cmt_map *map,
 
     /* HELP */
     cfl_sds_cat_safe(buf, "# HELP ", 7);
-    cfl_sds_cat_safe(buf, opts->fqname, cfl_sds_len(opts->fqname));
+    metric_name_cat(buf, opts->fqname, false);
 
     if (cfl_sds_len(opts->description) > 1 || opts->description[0] != ' ') {
         /* only append description if it is not empty. the parser uses a single whitespace
@@ -118,7 +194,7 @@ static void metric_banner(cfl_sds_t *buf, struct cmt_map *map,
 
     /* TYPE */
     cfl_sds_cat_safe(buf, "# TYPE ", 7);
-    cfl_sds_cat_safe(buf, opts->fqname, cfl_sds_len(opts->fqname));
+    metric_name_cat(buf, opts->fqname, false);
 
     if (map->type == CMT_COUNTER) {
         cfl_sds_cat_safe(buf, " counter\n", 9);
@@ -211,34 +287,204 @@ static void append_metric_value(cfl_sds_t *buf,
     cfl_sds_cat_safe(buf, tmp, len);
 }
 
-static int add_label(cfl_sds_t *buf, cfl_sds_t key, cfl_sds_t val)
-{
-    cfl_sds_cat_safe(buf, key, cfl_sds_len(key));
-    cfl_sds_cat_safe(buf, "=\"", 2);
-    metric_escape(buf, val, true);
-    cfl_sds_cat_safe(buf, "\"", 1);
+/*
+ * Walks the labels of a sample in output order: static labels first, then
+ * the api defined labels that have both a key and a value.
+ */
+struct prom_label_iter {
+    struct cmt           *cmt;
+    struct cmt_map       *map;
+    struct cmt_metric    *metric;
+    struct cfl_list      *static_head;
+    struct cfl_list      *value_head;
+    struct cmt_map_label *label_k;
+    int                   label_index;
+    int                   static_done;
+};
 
-    return 1;
+static void prom_label_iter_init(struct prom_label_iter *iter, struct cmt *cmt,
+                                 struct cmt_map *map, struct cmt_metric *metric)
+{
+    iter->cmt = cmt;
+    iter->map = map;
+    iter->metric = metric;
+    iter->static_head = cmt->static_labels->list.next;
+    iter->value_head = metric->labels.next;
+    iter->label_k = NULL;
+    iter->label_index = 0;
+    iter->static_done = CMT_FALSE;
+
+    if (map->label_count > 0) {
+        iter->label_k = cfl_list_entry_first(&map->label_keys,
+                                             struct cmt_map_label, _head);
+    }
 }
 
-static int add_static_labels(struct cmt *cmt, cfl_sds_t *buf)
+static int prom_label_iter_next(struct prom_label_iter *iter,
+                                cfl_sds_t *key, cfl_sds_t *val)
 {
-    int count = 0;
-    int total = 0;
-    struct cfl_list *head;
-    struct cmt_label *label;
+    struct cmt_label *static_label;
+    struct cmt_map_label *label_k;
+    struct cmt_map_label *label_v;
 
-    total = cfl_list_size(&cmt->static_labels->list);
-    cfl_list_foreach(head, &cmt->static_labels->list) {
-        label = cfl_list_entry(head, struct cmt_label, _head);
+    if (!iter->static_done) {
+        if (iter->static_head != &iter->cmt->static_labels->list) {
+            static_label = cfl_list_entry(iter->static_head, struct cmt_label, _head);
+            iter->static_head = iter->static_head->next;
+            *key = static_label->key;
+            *val = static_label->val;
+            return CMT_TRUE;
+        }
+        iter->static_done = CMT_TRUE;
+    }
 
-        count += add_label(buf, label->key, label->val);
-        if (count < total) {
-            cfl_sds_cat_safe(buf, ",", 1);
+    while (iter->value_head != &iter->metric->labels &&
+           iter->label_index < iter->map->label_count) {
+        label_k = iter->label_k;
+        label_v = cfl_list_entry(iter->value_head, struct cmt_map_label, _head);
+
+        iter->value_head = iter->value_head->next;
+        iter->label_index++;
+        iter->label_k = cfl_list_entry_next(&label_k->_head, struct cmt_map_label,
+                                            _head, &iter->map->label_keys);
+
+        if (label_k->name != NULL && label_v->name != NULL) {
+            *key = label_k->name;
+            *val = label_v->name;
+            return CMT_TRUE;
         }
     }
 
-    return count;
+    return CMT_FALSE;
+}
+
+/*
+ * Report if two label keys of the map samples are written under the same
+ * name, computed once per map so samples without collisions take the plain
+ * path in add_labels().
+ */
+static int label_keys_collide(struct cmt *cmt, struct cmt_map *map)
+{
+    struct cfl_list *head;
+    struct cfl_list *other_head;
+    struct cmt_label *static_label;
+    struct cmt_label *other_static_label;
+    struct cmt_map_label *label_k;
+    struct cmt_map_label *other_label_k;
+
+    cfl_list_foreach(head, &cmt->static_labels->list) {
+        static_label = cfl_list_entry(head, struct cmt_label, _head);
+
+        for (other_head = head->next;
+             other_head != &cmt->static_labels->list;
+             other_head = other_head->next) {
+            other_static_label = cfl_list_entry(other_head, struct cmt_label, _head);
+            if (sanitized_name_equal(static_label->key, other_static_label->key, true)) {
+                return CMT_TRUE;
+            }
+        }
+
+        cfl_list_foreach(other_head, &map->label_keys) {
+            other_label_k = cfl_list_entry(other_head, struct cmt_map_label, _head);
+            if (other_label_k->name != NULL &&
+                sanitized_name_equal(static_label->key, other_label_k->name, true)) {
+                return CMT_TRUE;
+            }
+        }
+    }
+
+    cfl_list_foreach(head, &map->label_keys) {
+        label_k = cfl_list_entry(head, struct cmt_map_label, _head);
+        if (label_k->name == NULL) {
+            continue;
+        }
+
+        for (other_head = head->next;
+             other_head != &map->label_keys;
+             other_head = other_head->next) {
+            other_label_k = cfl_list_entry(other_head, struct cmt_map_label, _head);
+            if (other_label_k->name != NULL &&
+                sanitized_name_equal(label_k->name, other_label_k->name, true)) {
+                return CMT_TRUE;
+            }
+        }
+    }
+
+    return CMT_FALSE;
+}
+
+/*
+ * Append the labels of a sample. Distinct keys can sanitize to the same
+ * label name, which is invalid in the exposition format, so a colliding
+ * label is written once with the values joined by ';'.
+ */
+static void add_labels(struct cmt *cmt, cfl_sds_t *buf, struct cmt_map *map,
+                       struct cmt_metric *metric, int label_collisions,
+                       struct prom_fmt *fmt)
+{
+    int i;
+    int j;
+    int duplicate;
+    cfl_sds_t key;
+    cfl_sds_t val;
+    cfl_sds_t other_key;
+    cfl_sds_t other_val;
+    struct prom_label_iter iter;
+    struct prom_label_iter other;
+
+    prom_label_iter_init(&iter, cmt, map, metric);
+
+    for (i = 0; prom_label_iter_next(&iter, &key, &val); i++) {
+        if (!label_collisions) {
+            if (fmt->labels_count > 0) {
+                cfl_sds_cat_safe(buf, ",", 1);
+            }
+
+            metric_name_cat(buf, key, true);
+            cfl_sds_cat_safe(buf, "=\"", 2);
+            metric_escape(buf, val, true);
+            cfl_sds_cat_safe(buf, "\"", 1);
+
+            fmt->labels_count++;
+            continue;
+        }
+
+        /* skip the label if an earlier one was written under the same name */
+        duplicate = CMT_FALSE;
+        prom_label_iter_init(&other, cmt, map, metric);
+
+        for (j = 0; j < i && prom_label_iter_next(&other, &other_key, &other_val); j++) {
+            if (sanitized_name_equal(other_key, key, true)) {
+                duplicate = CMT_TRUE;
+                break;
+            }
+        }
+
+        if (duplicate) {
+            continue;
+        }
+
+        if (fmt->labels_count > 0) {
+            cfl_sds_cat_safe(buf, ",", 1);
+        }
+
+        metric_name_cat(buf, key, true);
+        cfl_sds_cat_safe(buf, "=\"", 2);
+        metric_escape(buf, val, true);
+
+        /* join the values of the following labels with the same name */
+        other = iter;
+        while (prom_label_iter_next(&other, &other_key, &other_val)) {
+            if (sanitized_name_equal(key, other_key, true)) {
+                cfl_sds_cat_safe(buf, ";", 1);
+                metric_escape(buf, other_val, true);
+            }
+        }
+
+        cfl_sds_cat_safe(buf, "\"", 1);
+
+        fmt->labels_count++;
+    }
 }
 
 static void destroy_temporary_metric_labels(struct cmt_metric *metric)
@@ -297,9 +543,8 @@ static int initialize_temporary_metric(struct cmt_metric *destination,
 static void format_metric(struct cmt *cmt,
                           cfl_sds_t *buf, struct cmt_map *map,
                           struct cmt_metric *metric, int add_timestamp,
-                          struct prom_fmt *fmt)
+                          int label_collisions, struct prom_fmt *fmt)
 {
-    int i;
     int static_labels = 0;
     int defined_labels = 0;
     int label_key_count;
@@ -313,7 +558,7 @@ static void format_metric(struct cmt *cmt,
 
     /* Metric info */
     if (!fmt->metric_name) {
-        cfl_sds_cat_safe(buf, opts->fqname, cfl_sds_len(opts->fqname));
+        metric_name_cat(buf, opts->fqname, false);
     }
 
     /* Static labels */
@@ -343,45 +588,8 @@ static void format_metric(struct cmt *cmt,
         cfl_sds_cat_safe(buf, "{", 1);
     }
 
-    if (static_labels > 0) {
-        /* if some labels were added before, add the separator */
-        if (fmt->labels_count > 0) {
-            cfl_sds_cat_safe(buf, ",", 1);
-        }
-        fmt->labels_count += add_static_labels(cmt, buf);
-    }
-
-    /* Append api defined labels */
-    if (defined_labels > 0) {
-        if (fmt->labels_count > 0) {
-            cfl_sds_cat_safe(buf, ",", 1);
-        }
-
-        i = 1;
-        label_index = 0;
-        label_k = cfl_list_entry_first(&map->label_keys, struct cmt_map_label, _head);
-        cfl_list_foreach(head, &metric->labels) {
-            if (label_index >= label_key_count) {
-                break;
-            }
-
-            label_v = cfl_list_entry(head, struct cmt_map_label, _head);
-
-            if (label_k->name != NULL &&
-                label_v->name != NULL) {
-                fmt->labels_count += add_label(buf, label_k->name, label_v->name);
-                if (i < defined_labels) {
-                    cfl_sds_cat_safe(buf, ",", 1);
-                }
-
-                i++;
-            }
-
-            label_index++;
-            label_k = cfl_list_entry_next(&label_k->_head, struct cmt_map_label,
-                                          _head, &map->label_keys);
-        }
-    }
+    /* Append static and api defined labels */
+    add_labels(cmt, buf, map, metric, label_collisions, fmt);
 
     if (fmt->labels_count > 0) {
         cfl_sds_cat_safe(buf, "}", 1);
@@ -423,7 +631,7 @@ static cfl_sds_t bucket_value_to_string(double val)
 static void format_histogram_bucket(struct cmt *cmt,
                                     cfl_sds_t *buf, struct cmt_map *map,
                                     struct cmt_metric *metric, int add_timestamp,
-                                    int include_sum)
+                                    int label_collisions, int include_sum)
 {
     int i;
     cfl_sds_t val;
@@ -438,7 +646,7 @@ static void format_histogram_bucket(struct cmt *cmt,
 
     for (i = 0; i <= bucket->count; i++) {
         /* metric name */
-        cfl_sds_cat_safe(buf, opts->fqname, cfl_sds_len(opts->fqname));
+        metric_name_cat(buf, opts->fqname, false);
         cfl_sds_cat_safe(buf, "_bucket", 7);
 
         /* upper bound */
@@ -462,7 +670,7 @@ static void format_histogram_bucket(struct cmt *cmt,
         fmt.id           = i;
 
         /* append metric labels, value and timestamp */
-        format_metric(cmt, buf, map, metric, add_timestamp, &fmt);
+        format_metric(cmt, buf, map, metric, add_timestamp, label_collisions, &fmt);
     }
 
     if (include_sum) {
@@ -471,9 +679,9 @@ static void format_histogram_bucket(struct cmt *cmt,
         fmt.metric_name = CMT_TRUE;
         fmt.value_from = PROM_FMT_VAL_FROM_SUM;
 
-        cfl_sds_cat_safe(buf, opts->fqname, cfl_sds_len(opts->fqname));
+        metric_name_cat(buf, opts->fqname, false);
         cfl_sds_cat_safe(buf, "_sum", 4);
-        format_metric(cmt, buf, map, metric, add_timestamp, &fmt);
+        format_metric(cmt, buf, map, metric, add_timestamp, label_collisions, &fmt);
     }
 
     /* count */
@@ -482,14 +690,15 @@ static void format_histogram_bucket(struct cmt *cmt,
     fmt.labels_count = 0;
     fmt.value_from = PROM_FMT_VAL_FROM_COUNT;
 
-    cfl_sds_cat_safe(buf, opts->fqname, cfl_sds_len(opts->fqname));
+    metric_name_cat(buf, opts->fqname, false);
     cfl_sds_cat_safe(buf, "_count", 6);
-    format_metric(cmt, buf, map, metric, add_timestamp, &fmt);
+    format_metric(cmt, buf, map, metric, add_timestamp, label_collisions, &fmt);
 }
 
 static void format_summary_quantiles(struct cmt *cmt,
                                      cfl_sds_t *buf, struct cmt_map *map,
-                                     struct cmt_metric *metric, int add_timestamp)
+                                     struct cmt_metric *metric, int add_timestamp,
+                                     int label_collisions)
 {
     int i;
     cfl_sds_t val;
@@ -503,7 +712,7 @@ static void format_summary_quantiles(struct cmt *cmt,
     if (cmt_atomic_load(&metric->sum_quantiles_set)) {
         for (i = 0; i < summary->quantiles_count; i++) {
             /* metric name */
-            cfl_sds_cat_safe(buf, opts->fqname, cfl_sds_len(opts->fqname));
+            metric_name_cat(buf, opts->fqname, false);
 
             /* quantiles */
             cfl_sds_cat_safe(buf, "{quantile=\"", 11);
@@ -520,7 +729,7 @@ static void format_summary_quantiles(struct cmt *cmt,
             fmt.id           = i;
 
             /* append metric labels, value and timestamp */
-            format_metric(cmt, buf, map, metric, add_timestamp, &fmt);
+            format_metric(cmt, buf, map, metric, add_timestamp, label_collisions, &fmt);
         }
     }
 
@@ -529,26 +738,29 @@ static void format_summary_quantiles(struct cmt *cmt,
     fmt.metric_name = CMT_TRUE;
     fmt.value_from = PROM_FMT_VAL_FROM_SUM;
 
-    cfl_sds_cat_safe(buf, opts->fqname, cfl_sds_len(opts->fqname));
+    metric_name_cat(buf, opts->fqname, false);
     cfl_sds_cat_safe(buf, "_sum", 4);
-    format_metric(cmt, buf, map, metric, add_timestamp, &fmt);
+    format_metric(cmt, buf, map, metric, add_timestamp, label_collisions, &fmt);
 
     /* count */
     fmt.labels_count = 0;
     fmt.value_from = PROM_FMT_VAL_FROM_COUNT;
 
-    cfl_sds_cat_safe(buf, opts->fqname, cfl_sds_len(opts->fqname));
+    metric_name_cat(buf, opts->fqname, false);
     cfl_sds_cat_safe(buf, "_count", 6);
-    format_metric(cmt, buf, map, metric, add_timestamp, &fmt);
+    format_metric(cmt, buf, map, metric, add_timestamp, label_collisions, &fmt);
 }
 
 static void format_metrics(struct cmt *cmt, cfl_sds_t *buf, struct cmt_map *map,
                            int add_timestamp)
 {
     int banner_set = CMT_FALSE;
+    int label_collisions;
     struct cfl_list *head;
     struct cmt_metric *metric;
     struct prom_fmt fmt = {0};
+
+    label_collisions = label_keys_collide(cmt, map);
 
     /* Simple metric, no labels */
     if (map->metric_static_set) {
@@ -558,7 +770,7 @@ static void format_metrics(struct cmt *cmt, cfl_sds_t *buf, struct cmt_map *map,
         if (map->type == CMT_HISTOGRAM) {
             /* Histogram needs to format the buckets, one line per bucket */
             format_histogram_bucket(cmt, buf, map, &map->metric, add_timestamp,
-                                    CMT_TRUE);
+                                    label_collisions, CMT_TRUE);
         }
         else if (map->type == CMT_EXP_HISTOGRAM) {
             struct cmt_map fake_map;
@@ -592,7 +804,7 @@ static void format_metrics(struct cmt *cmt, cfl_sds_t *buf, struct cmt_map *map,
                     fake_metric.hist_sum = cmt_atomic_load(&map->metric.exp_hist_sum);
 
                     format_histogram_bucket(cmt, buf, &fake_map, &fake_metric,
-                                            add_timestamp,
+                                            add_timestamp, label_collisions,
                                             cmt_atomic_load(&map->metric.exp_hist_sum_set));
 
                     destroy_temporary_metric_labels(&fake_metric);
@@ -604,11 +816,13 @@ static void format_metrics(struct cmt *cmt, cfl_sds_t *buf, struct cmt_map *map,
         }
         else if (map->type == CMT_SUMMARY) {
             /* Histogram needs to format the buckets, one line per bucket */
-            format_summary_quantiles(cmt, buf, map, &map->metric, add_timestamp);
+            format_summary_quantiles(cmt, buf, map, &map->metric, add_timestamp,
+                                     label_collisions);
         }
         else {
             prom_fmt_init(&fmt);
-            format_metric(cmt, buf, map, &map->metric, add_timestamp, &fmt);
+            format_metric(cmt, buf, map, &map->metric, add_timestamp,
+                          label_collisions, &fmt);
         }
     }
 
@@ -625,7 +839,8 @@ static void format_metrics(struct cmt *cmt, cfl_sds_t *buf, struct cmt_map *map,
         /* Format the metric based on its type */
         if (map->type == CMT_HISTOGRAM) {
             /* Histogram needs to format the buckets, one line per bucket */
-            format_histogram_bucket(cmt, buf, map, metric, add_timestamp, CMT_TRUE);
+            format_histogram_bucket(cmt, buf, map, metric, add_timestamp,
+                                    label_collisions, CMT_TRUE);
         }
         else if (map->type == CMT_EXP_HISTOGRAM) {
             struct cmt_map fake_map;
@@ -664,7 +879,7 @@ static void format_metrics(struct cmt *cmt, cfl_sds_t *buf, struct cmt_map *map,
                 fake_metric.hist_sum = cmt_atomic_load(&metric->exp_hist_sum);
 
                 format_histogram_bucket(cmt, buf, &fake_map, &fake_metric,
-                                        add_timestamp,
+                                        add_timestamp, label_collisions,
                                         cmt_atomic_load(&metric->exp_hist_sum_set));
 
                 destroy_temporary_metric_labels(&fake_metric);
@@ -673,19 +888,125 @@ static void format_metrics(struct cmt *cmt, cfl_sds_t *buf, struct cmt_map *map,
             }
         }
         else if (map->type == CMT_SUMMARY) {
-            format_summary_quantiles(cmt, buf, map, metric, add_timestamp);
+            format_summary_quantiles(cmt, buf, map, metric, add_timestamp,
+                                     label_collisions);
         }
         else {
             prom_fmt_init(&fmt);
-            format_metric(cmt, buf, map, metric, add_timestamp, &fmt);
+            format_metric(cmt, buf, map, metric, add_timestamp, label_collisions, &fmt);
         }
     }
 }
 
-/* Format all the registered metrics in Prometheus Text format */
-cfl_sds_t cmt_encode_prometheus_create(struct cmt *cmt, int add_timestamp)
+/*
+ * Distinct metric names can sanitize to the same name, and a metric family
+ * must be described once. Only the first name written under a sanitized name
+ * is kept, maps sharing the exact same name (a family split across maps by
+ * the decoders) are all written. Only a name changed by sanitizing can
+ * collide with a different name, so the names are indexed only when such a
+ * name exists.
+ */
+struct prom_name_entry {
+    uint64_t  hash;
+    cfl_sds_t name;
+};
+
+struct prom_encoder {
+    struct cmt             *cmt;
+    cfl_sds_t              *buf;
+    int                     add_timestamp;
+    size_t                  maps_count;   /* maps with samples */
+    int                     sanitized;    /* a name is changed by sanitizing */
+    struct prom_name_entry *names;        /* open addressing, NULL if unused */
+    size_t                  names_size;   /* power of two */
+};
+
+/* FNV-1a of the name as written by metric_name_cat() */
+static uint64_t sanitized_name_hash(cfl_sds_t name)
 {
-    cfl_sds_t buf;
+    size_t   i;
+    size_t   len;
+    uint64_t hash;
+
+    hash = 14695981039346656037ULL;
+    len = cfl_sds_len(name);
+
+    if (len > 0 && name[0] >= '0' && name[0] <= '9') {
+        hash ^= (unsigned char) '_';
+        hash *= 1099511628211ULL;
+    }
+
+    for (i = 0; i < len; i++) {
+        hash ^= (unsigned char) sanitize_name_char(name[i], false);
+        hash *= 1099511628211ULL;
+    }
+
+    return hash;
+}
+
+/*
+ * Return the name already written under the sanitized form of 'name', or
+ * register 'name' and return it.
+ */
+static cfl_sds_t prom_names_claim(struct prom_encoder *encoder, cfl_sds_t name)
+{
+    size_t                  index;
+    size_t                  mask;
+    uint64_t                hash;
+    struct prom_name_entry *entry;
+
+    hash = sanitized_name_hash(name);
+    mask = encoder->names_size - 1;
+    index = (size_t) hash & mask;
+
+    while (1) {
+        entry = &encoder->names[index];
+
+        if (entry->name == NULL) {
+            entry->hash = hash;
+            entry->name = name;
+            return name;
+        }
+
+        if (entry->hash == hash &&
+            sanitized_name_equal(entry->name, name, false)) {
+            return entry->name;
+        }
+
+        index = (index + 1) & mask;
+    }
+}
+
+static int metric_name_is_valid(cfl_sds_t name)
+{
+    size_t i;
+    size_t len;
+
+    len = cfl_sds_len(name);
+
+    if (len > 0 && name[0] >= '0' && name[0] <= '9') {
+        return CMT_FALSE;
+    }
+
+    for (i = 0; i < len; i++) {
+        if (sanitize_name_char(name[i], false) != name[i]) {
+            return CMT_FALSE;
+        }
+    }
+
+    return CMT_TRUE;
+}
+
+static int map_has_samples(struct cmt_map *map)
+{
+    return map->metric_static_set || cfl_list_size(&map->metrics) > 0;
+}
+
+static int walk_maps(struct cmt *cmt,
+                     int (*callback)(struct prom_encoder *, struct cmt_map *),
+                     struct prom_encoder *encoder)
+{
+    int ret = 0;
     struct cfl_list *head;
     struct cmt_counter *counter;
     struct cmt_gauge *gauge;
@@ -694,46 +1015,141 @@ cfl_sds_t cmt_encode_prometheus_create(struct cmt *cmt, int add_timestamp)
     struct cmt_exp_histogram *exp_histogram;
     struct cmt_untyped *untyped;
 
+    /* Counters */
+    cfl_list_foreach(head, &cmt->counters) {
+        counter = cfl_list_entry(head, struct cmt_counter, _head);
+        if ((ret = callback(encoder, counter->map)) != 0) {
+            return ret;
+        }
+    }
+
+    /* Gauges */
+    cfl_list_foreach(head, &cmt->gauges) {
+        gauge = cfl_list_entry(head, struct cmt_gauge, _head);
+        if ((ret = callback(encoder, gauge->map)) != 0) {
+            return ret;
+        }
+    }
+
+    /* Summaries */
+    cfl_list_foreach(head, &cmt->summaries) {
+        summary = cfl_list_entry(head, struct cmt_summary, _head);
+        if ((ret = callback(encoder, summary->map)) != 0) {
+            return ret;
+        }
+    }
+
+    /* Histograms */
+    cfl_list_foreach(head, &cmt->histograms) {
+        histogram = cfl_list_entry(head, struct cmt_histogram, _head);
+        if ((ret = callback(encoder, histogram->map)) != 0) {
+            return ret;
+        }
+    }
+
+    /* Exponential Histograms */
+    cfl_list_foreach(head, &cmt->exp_histograms) {
+        exp_histogram = cfl_list_entry(head, struct cmt_exp_histogram, _head);
+        if ((ret = callback(encoder, exp_histogram->map)) != 0) {
+            return ret;
+        }
+    }
+
+    /* Untyped */
+    cfl_list_foreach(head, &cmt->untypeds) {
+        untyped = cfl_list_entry(head, struct cmt_untyped, _head);
+        if ((ret = callback(encoder, untyped->map)) != 0) {
+            return ret;
+        }
+    }
+
+    return ret;
+}
+
+static int inspect_map(struct prom_encoder *encoder, struct cmt_map *map)
+{
+    if (!map_has_samples(map)) {
+        return 0;
+    }
+
+    encoder->maps_count++;
+
+    if (!encoder->sanitized && !metric_name_is_valid(map->opts->fqname)) {
+        encoder->sanitized = CMT_TRUE;
+    }
+
+    return 0;
+}
+
+static int format_map(struct prom_encoder *encoder, struct cmt_map *map)
+{
+    cfl_sds_t fqname;
+    cfl_sds_t written;
+
+    /* maps without samples do not write anything */
+    if (!map_has_samples(map)) {
+        return 0;
+    }
+
+    fqname = map->opts->fqname;
+
+    if (encoder->names != NULL) {
+        written = prom_names_claim(encoder, fqname);
+
+        if (written != fqname &&
+            (cfl_sds_len(written) != cfl_sds_len(fqname) ||
+             memcmp(written, fqname, cfl_sds_len(fqname)) != 0)) {
+            /* a different name was already written under this name */
+            return 0;
+        }
+    }
+
+    format_metrics(encoder->cmt, encoder->buf, map, encoder->add_timestamp);
+
+    return 0;
+}
+
+/* Format all the registered metrics in Prometheus Text format */
+cfl_sds_t cmt_encode_prometheus_create(struct cmt *cmt, int add_timestamp)
+{
+    int ret;
+    cfl_sds_t buf;
+    struct prom_encoder encoder = {0};
+
     /* Allocate a 1KB of buffer */
     buf = cfl_sds_create_size(1024);
     if (!buf) {
         return NULL;
     }
 
-    /* Counters */
-    cfl_list_foreach(head, &cmt->counters) {
-        counter = cfl_list_entry(head, struct cmt_counter, _head);
-        format_metrics(cmt, &buf, counter->map, add_timestamp);
+    encoder.cmt = cmt;
+    encoder.buf = &buf;
+    encoder.add_timestamp = add_timestamp;
+
+    walk_maps(cmt, inspect_map, &encoder);
+
+    if (encoder.sanitized) {
+        /* keep the table at most half full */
+        encoder.names_size = 16;
+        while (encoder.names_size < encoder.maps_count * 2) {
+            encoder.names_size *= 2;
+        }
+
+        encoder.names = calloc(encoder.names_size, sizeof(struct prom_name_entry));
+        if (encoder.names == NULL) {
+            cmt_errno();
+            cfl_sds_destroy(buf);
+            return NULL;
+        }
     }
 
-    /* Gauges */
-    cfl_list_foreach(head, &cmt->gauges) {
-        gauge = cfl_list_entry(head, struct cmt_gauge, _head);
-        format_metrics(cmt, &buf, gauge->map, add_timestamp);
-    }
+    ret = walk_maps(cmt, format_map, &encoder);
 
-    /* Summaries */
-    cfl_list_foreach(head, &cmt->summaries) {
-        summary = cfl_list_entry(head, struct cmt_summary, _head);
-        format_metrics(cmt, &buf, summary->map, add_timestamp);
-    }
+    free(encoder.names);
 
-    /* Histograms */
-    cfl_list_foreach(head, &cmt->histograms) {
-        histogram = cfl_list_entry(head, struct cmt_histogram, _head);
-        format_metrics(cmt, &buf, histogram->map, add_timestamp);
-    }
-
-    /* Exponential Histograms */
-    cfl_list_foreach(head, &cmt->exp_histograms) {
-        exp_histogram = cfl_list_entry(head, struct cmt_exp_histogram, _head);
-        format_metrics(cmt, &buf, exp_histogram->map, add_timestamp);
-    }
-
-    /* Untyped */
-    cfl_list_foreach(head, &cmt->untypeds) {
-        untyped = cfl_list_entry(head, struct cmt_untyped, _head);
-        format_metrics(cmt, &buf, untyped->map, add_timestamp);
+    if (ret != 0) {
+        cfl_sds_destroy(buf);
+        return NULL;
     }
 
     return buf;

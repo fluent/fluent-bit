@@ -50,6 +50,7 @@
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_http_client_debug.h>
 #include <fluent-bit/flb_network.h>
+#include <fluent-bit/flb_upstream_ha.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_base64.h>
 #include <fluent-bit/tls/flb_tls.h>
@@ -2560,6 +2561,7 @@ struct flb_http_client_session *flb_http_client_session_begin(struct flb_http_cl
 
     if (protocol_version == HTTP_PROTOCOL_VERSION_20) {
         flb_stream_disable_keepalive(&upstream->base);
+        flb_upstream_conn_recycle(connection, FLB_FALSE);
     }
 
     session = flb_http_client_session_create(client, protocol_version, connection);

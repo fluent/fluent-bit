@@ -22,7 +22,7 @@ jobs:
         with:
           submodules: true
 
-      - uses: uraimo/run-on-arch-action@v3.1.0
+      - uses: uraimo/run-on-arch-action@v3.2.0
         name: Build the ${{matrix.format}} packages
         with:
           arch: aarch64

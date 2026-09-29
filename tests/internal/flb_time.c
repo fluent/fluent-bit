@@ -24,6 +24,8 @@
 #include <mpack/mpack.h>
 #include <msgpack.h>
 #include <msgpack/timestamp.h>
+#include <math.h>
+#include <stdlib.h>
 #include <string.h>
 #include "flb_tests_internal.h"
 
@@ -531,6 +533,323 @@ void test_iana_zone_to_utc_offset()
     }
 }
 
+struct str_check {
+    const char *format;
+    const char *value;
+    time_t expect_sec;
+    long expect_nsec;
+};
+
+void test_from_str_numeric()
+{
+    int i;
+    int ret;
+    struct flb_time tm;
+    struct str_check checks[] = {
+        {NULL, "1647061992"    , SEC_32BIT, 0},
+        {NULL, "1647061992.123", SEC_32BIT, NSEC_32BIT},
+        {NULL, "  1647061992 " , SEC_32BIT, 0},
+        {NULL, NULL, 0, 0}
+    };
+
+    for (i = 0; checks[i].value != NULL; i++) {
+        ret = flb_time_from_str(&tm, checks[i].value,
+                                strlen(checks[i].value), NULL);
+        if (!TEST_CHECK(ret == 0)) {
+            TEST_MSG("flb_time_from_str failed for '%s'", checks[i].value);
+            continue;
+        }
+
+        if (!TEST_CHECK(tm.tm.tv_sec == checks[i].expect_sec &&
+                        labs(tm.tm.tv_nsec - checks[i].expect_nsec) < 10000)) {
+            TEST_MSG("value  ='%s'", checks[i].value);
+            TEST_MSG("got    =%ld.%ld", (long) tm.tm.tv_sec, tm.tm.tv_nsec);
+            TEST_MSG("expect =%ld.%ld", (long) checks[i].expect_sec,
+                     checks[i].expect_nsec);
+        }
+    }
+}
+
+void test_from_str_numeric_invalid()
+{
+    int i;
+    int ret;
+    struct flb_time tm;
+    const char *values[] = {
+        "",                 /* empty */
+        "not-a-number",
+        "123abc",           /* trailing garbage */
+        "nan",              /* non finite */
+        "inf",
+        "infinity",
+        "-inf",
+        NULL
+    };
+
+    for (i = 0; values[i] != NULL; i++) {
+        ret = flb_time_from_str(&tm, values[i], strlen(values[i]), NULL);
+        if (!TEST_CHECK(ret != 0)) {
+            TEST_MSG("flb_time_from_str should fail for '%s', got %ld.%ld",
+                     values[i], (long) tm.tm.tv_sec, tm.tm.tv_nsec);
+        }
+    }
+}
+
+void test_from_str_format()
+{
+    int i;
+    int ret;
+    struct flb_time tm;
+    struct flb_time_fmt tf;
+    struct str_check checks[] = {
+        /* no fractional seconds */
+        {"%Y-%m-%dT%H:%M:%S", "2022-03-12T05:13:12", SEC_32BIT, 0},
+        /* '%L' at the end of the format */
+        {"%Y-%m-%dT%H:%M:%S.%L", "2022-03-12T05:13:12.123",
+         SEC_32BIT, NSEC_32BIT},
+        /* trailing literal after '%L' */
+        {"%Y-%m-%dT%H:%M:%S.%LZ", "2022-03-12T05:13:12.123Z",
+         SEC_32BIT, NSEC_32BIT},
+        /* timezone offset after '%L' */
+        {"%Y-%m-%dT%H:%M:%S.%L%z", "2022-03-12T10:43:12.123+0530",
+         SEC_32BIT, NSEC_32BIT},
+        /*
+         * timezone offset before '%L': flb_strptime() resets the offset on
+         * every call, so this checks that the offset parsed by the first pass
+         * survives the parsing of the fractional seconds.
+         */
+        {"%Y-%m-%dT%H:%M:%S%z.%L", "2022-03-12T10:43:12+0530.123",
+         SEC_32BIT, NSEC_32BIT},
+        /* nanosecond resolution */
+        {"%Y-%m-%dT%H:%M:%S.%L", "2022-03-12T05:13:12.123456789",
+         SEC_32BIT, 123456789},
+        {NULL, NULL, 0, 0}
+    };
+
+    for (i = 0; checks[i].value != NULL; i++) {
+        ret = flb_time_fmt_create(&tf, checks[i].format);
+        if (!TEST_CHECK(ret == 0)) {
+            TEST_MSG("flb_time_fmt_create failed for '%s'", checks[i].format);
+            continue;
+        }
+
+        ret = flb_time_from_str(&tm, checks[i].value,
+                                strlen(checks[i].value), &tf);
+        if (!TEST_CHECK(ret == 0)) {
+            TEST_MSG("flb_time_from_str failed for '%s' (format '%s')",
+                     checks[i].value, checks[i].format);
+            flb_time_fmt_destroy(&tf);
+            continue;
+        }
+
+        if (!TEST_CHECK(tm.tm.tv_sec == checks[i].expect_sec &&
+                        labs(tm.tm.tv_nsec - checks[i].expect_nsec) < 10000)) {
+            TEST_MSG("format ='%s'", checks[i].format);
+            TEST_MSG("value  ='%s'", checks[i].value);
+            TEST_MSG("got    =%ld.%ld", (long) tm.tm.tv_sec, tm.tm.tv_nsec);
+            TEST_MSG("expect =%ld.%ld", (long) checks[i].expect_sec,
+                     checks[i].expect_nsec);
+        }
+
+        flb_time_fmt_destroy(&tf);
+    }
+}
+
+void test_from_str_format_invalid()
+{
+    int i;
+    int ret;
+    struct flb_time tm;
+    struct flb_time_fmt tf;
+    struct str_check checks[] = {
+        /* does not match the format at all */
+        {"%Y-%m-%dT%H:%M:%S", "not a timestamp", 0, 0},
+        /* trailing data after a complete match must be rejected */
+        {"%Y-%m-%dT%H:%M:%SZ", "2022-03-12T05:13:12Zgarbage", 0, 0},
+        {"%Y-%m-%dT%H:%M:%S.%L", "2022-03-12T05:13:12.123garbage", 0, 0},
+        /* '%L' with no digits to consume */
+        {"%Y-%m-%dT%H:%M:%S.%L", "2022-03-12T05:13:12.", 0, 0},
+        {NULL, NULL, 0, 0}
+    };
+
+    for (i = 0; checks[i].value != NULL; i++) {
+        ret = flb_time_fmt_create(&tf, checks[i].format);
+        if (!TEST_CHECK(ret == 0)) {
+            TEST_MSG("flb_time_fmt_create failed for '%s'", checks[i].format);
+            continue;
+        }
+
+        ret = flb_time_from_str(&tm, checks[i].value,
+                                strlen(checks[i].value), &tf);
+        if (!TEST_CHECK(ret != 0)) {
+            TEST_MSG("flb_time_from_str should fail for '%s' (format '%s')",
+                     checks[i].value, checks[i].format);
+        }
+
+        flb_time_fmt_destroy(&tf);
+    }
+}
+
+void test_from_str_too_long()
+{
+    int ret;
+    char value[FLB_TIME_STR_MAX + 8];
+    struct flb_time tm;
+
+    memset(value, '1', sizeof(value) - 1);
+    value[sizeof(value) - 1] = '\0';
+
+    ret = flb_time_from_str(&tm, value, strlen(value), NULL);
+    if (!TEST_CHECK(ret != 0)) {
+        TEST_MSG("flb_time_from_str should reject values longer than %d bytes",
+                 FLB_TIME_STR_MAX);
+    }
+}
+
+void test_fmt_create_invalid()
+{
+    struct flb_time_fmt tf;
+
+    if (!TEST_CHECK(flb_time_fmt_create(&tf, NULL) != 0)) {
+        TEST_MSG("flb_time_fmt_create should fail on a NULL format");
+    }
+
+    if (!TEST_CHECK(flb_time_fmt_create(NULL, "%Y") != 0)) {
+        TEST_MSG("flb_time_fmt_create should fail on a NULL holder");
+    }
+
+    /* destroying a never created format must be safe */
+    flb_time_fmt_destroy(NULL);
+}
+
+void test_from_msgpack_object_str()
+{
+    int ret;
+    struct flb_time tm;
+    struct flb_time_fmt tf;
+
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_unpacked result;
+    msgpack_object tm_obj;
+
+    const char *value = "2022-03-12T05:13:12.123Z";
+
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    msgpack_pack_str_with_body(&mp_pck, value, strlen(value));
+
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, mp_sbuf.data, mp_sbuf.size, NULL);
+    tm_obj = result.data;
+
+    ret = flb_time_fmt_create(&tf, "%Y-%m-%dT%H:%M:%S.%LZ");
+    TEST_CHECK(ret == 0);
+
+    ret = flb_time_from_msgpack_object(&tm, &tm_obj, &tf);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("flb_time_from_msgpack_object failed");
+    }
+    else if (!TEST_CHECK(tm.tm.tv_sec == SEC_32BIT &&
+                         labs(tm.tm.tv_nsec - NSEC_32BIT) < 10000)) {
+        TEST_MSG("got %ld.%ld, expect %d.%d", (long) tm.tm.tv_sec,
+                 tm.tm.tv_nsec, SEC_32BIT, NSEC_32BIT);
+    }
+
+    flb_time_fmt_destroy(&tf);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+    msgpack_unpacked_destroy(&result);
+}
+
+void test_from_msgpack_object_numbers()
+{
+    int ret;
+    struct flb_time tm;
+
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_unpacked result;
+    msgpack_object tm_obj;
+
+    /* positive integer */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    msgpack_pack_uint64(&mp_pck, SEC_32BIT);
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, mp_sbuf.data, mp_sbuf.size, NULL);
+    tm_obj = result.data;
+
+    ret = flb_time_from_msgpack_object(&tm, &tm_obj, NULL);
+    TEST_CHECK(ret == 0);
+    if (!TEST_CHECK(tm.tm.tv_sec == SEC_32BIT && tm.tm.tv_nsec == 0)) {
+        TEST_MSG("got %ld.%ld", (long) tm.tm.tv_sec, tm.tm.tv_nsec);
+    }
+
+    msgpack_sbuffer_destroy(&mp_sbuf);
+    msgpack_unpacked_destroy(&result);
+
+    /* negative integer, not handled by flb_time_msgpack_to_time() */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    msgpack_pack_int64(&mp_pck, -1);
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, mp_sbuf.data, mp_sbuf.size, NULL);
+    tm_obj = result.data;
+
+    ret = flb_time_from_msgpack_object(&tm, &tm_obj, NULL);
+    TEST_CHECK(ret == 0);
+    if (!TEST_CHECK(tm.tm.tv_sec == -1 && tm.tm.tv_nsec == 0)) {
+        TEST_MSG("got %ld.%ld", (long) tm.tm.tv_sec, tm.tm.tv_nsec);
+    }
+
+    msgpack_sbuffer_destroy(&mp_sbuf);
+    msgpack_unpacked_destroy(&result);
+}
+
+void test_from_msgpack_object_invalid()
+{
+    int ret;
+    struct flb_time tm;
+
+    msgpack_packer mp_pck;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_unpacked result;
+    msgpack_object tm_obj;
+
+    /* a non finite float cannot be represented as a timestamp */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    msgpack_pack_double(&mp_pck, INFINITY);
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, mp_sbuf.data, mp_sbuf.size, NULL);
+    tm_obj = result.data;
+
+    ret = flb_time_from_msgpack_object(&tm, &tm_obj, NULL);
+    if (!TEST_CHECK(ret != 0)) {
+        TEST_MSG("flb_time_from_msgpack_object should reject a non finite "
+                 "float");
+    }
+
+    msgpack_sbuffer_destroy(&mp_sbuf);
+    msgpack_unpacked_destroy(&result);
+
+    /* an unsupported type must be rejected */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    msgpack_pack_true(&mp_pck);
+    msgpack_unpacked_init(&result);
+    msgpack_unpack_next(&result, mp_sbuf.data, mp_sbuf.size, NULL);
+    tm_obj = result.data;
+
+    ret = flb_time_from_msgpack_object(&tm, &tm_obj, NULL);
+    if (!TEST_CHECK(ret != 0)) {
+        TEST_MSG("flb_time_from_msgpack_object should reject a boolean");
+    }
+
+    msgpack_sbuffer_destroy(&mp_sbuf);
+    msgpack_unpacked_destroy(&result);
+}
+
 TEST_LIST = {
     { "flb_time_to_nanosec"           , test_to_nanosec},
     { "flb_time_append_to_mpack_v1"   , test_append_to_mpack_v1},
@@ -545,5 +864,14 @@ TEST_LIST = {
     { "iana_zone_to_windows"          , test_iana_zone_to_windows},
     { "windows_zone_to_utc_offset"    , test_windows_zone_to_utc_offset},
     { "iana_zone_to_utc_offset"       , test_iana_zone_to_utc_offset},
+    { "from_str_numeric"              , test_from_str_numeric},
+    { "from_str_numeric_invalid"      , test_from_str_numeric_invalid},
+    { "from_str_format"               , test_from_str_format},
+    { "from_str_format_invalid"       , test_from_str_format_invalid},
+    { "from_str_too_long"             , test_from_str_too_long},
+    { "fmt_create_invalid"            , test_fmt_create_invalid},
+    { "from_msgpack_object_str"       , test_from_msgpack_object_str},
+    { "from_msgpack_object_numbers"   , test_from_msgpack_object_numbers},
+    { "from_msgpack_object_invalid"   , test_from_msgpack_object_invalid},
     { NULL, NULL }
 };

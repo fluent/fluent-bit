@@ -19,3 +19,4 @@ pipeline:
       mode: tls
       tls.verify: off
       syslog_message_key: message
+      syslog_framing: newline

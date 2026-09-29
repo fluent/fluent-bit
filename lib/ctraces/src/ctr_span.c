@@ -28,7 +28,8 @@ struct ctrace_span *ctr_span_create(struct ctrace *ctx, struct ctrace_scope_span
 {
     struct ctrace_span *span;
 
-    if (!ctx || !scope_span || !name) {
+    if (!ctx || !scope_span || !name || !scope_span->resource_span ||
+        scope_span->resource_span->ctx != ctx) {
         return NULL;
     }
 
@@ -90,20 +91,21 @@ struct ctrace_span *ctr_span_create(struct ctrace *ctx, struct ctrace_scope_span
 /* Set the Span ID with a given buffer and length */
 int ctr_span_set_trace_id(struct ctrace_span *span, void *buf, size_t len)
 {
+    struct ctrace_id *new_id;
+
     if (!buf || len <= 0) {
         return -1;
     }
 
-    /* If trace_id is already set, free it first */
-    if (span->trace_id != NULL) {
-        ctr_id_destroy(span->trace_id);
-        span->trace_id = NULL;
-    }
-
-    span->trace_id = ctr_id_create(buf, len);
-    if (!span->trace_id) {
+    new_id = ctr_id_create(buf, len);
+    if (!new_id) {
         return -1;
     }
+
+    if (span->trace_id != NULL) {
+        ctr_id_destroy(span->trace_id);
+    }
+    span->trace_id = new_id;
 
     return 0;
 }
@@ -119,16 +121,20 @@ int ctr_span_set_trace_id_with_cid(struct ctrace_span *span, struct ctrace_id *c
 /* Set the Span ID with a given buffer and length */
 int ctr_span_set_span_id(struct ctrace_span *span, void *buf, size_t len)
 {
+    struct ctrace_id *new_id;
+
     if (!buf || len <= 0) {
         return -1;
     }
+    new_id = ctr_id_create(buf, len);
+    if (!new_id) {
+        return -1;
+    }
+
     if (span->span_id != NULL) {
         ctr_id_destroy(span->span_id);
     }
-    span->span_id = ctr_id_create(buf, len);
-    if (!span->span_id) {
-        return -1;
-    }
+    span->span_id = new_id;
 
     return 0;
 }
@@ -144,18 +150,21 @@ int ctr_span_set_span_id_with_cid(struct ctrace_span *span, struct ctrace_id *ci
 /* Set the Span Parent ID with a given buffer and length */
 int ctr_span_set_parent_span_id(struct ctrace_span *span, void *buf, size_t len)
 {
+    struct ctrace_id *new_id;
+
     if (!buf || len <= 0) {
+        return -1;
+    }
+
+    new_id = ctr_id_create(buf, len);
+    if (!new_id) {
         return -1;
     }
 
     if (span->parent_span_id) {
         ctr_id_destroy(span->parent_span_id);
     }
-
-    span->parent_span_id = ctr_id_create(buf, len);
-    if (!span->parent_span_id) {
-        return -1;
-    }
+    span->parent_span_id = new_id;
 
     return 0;
 }
@@ -170,6 +179,10 @@ int ctr_span_set_parent_span_id_with_cid(struct ctrace_span *span, struct ctrace
 
 int ctr_span_kind_set(struct ctrace_span *span, int kind)
 {
+    if (span == NULL) {
+        return -1;
+    }
+
     if (kind < CTRACE_SPAN_UNSPECIFIED || kind > CTRACE_SPAN_CONSUMER) {
         return -1;
     }
@@ -207,11 +220,10 @@ int ctr_span_set_attributes(struct ctrace_span *span, struct ctrace_attributes *
         return -1;
     }
 
-    if (span->attr) {
+    if (span->attr != attr) {
         ctr_attributes_destroy(span->attr);
+        span->attr = attr;
     }
-
-    span->attr = attr;
     return 0;
 }
 
@@ -280,34 +292,48 @@ void ctr_span_end_ts(struct ctrace *ctx, struct ctrace_span *span, uint64_t ts)
 
 int ctr_span_set_status(struct ctrace_span *span, int code, char *message)
 {
+    cfl_sds_t new_message;
     struct ctrace_span_status *status;
+
+    if (span == NULL || code < CTRACE_SPAN_STATUS_CODE_UNSET ||
+        code > CTRACE_SPAN_STATUS_CODE_ERROR) {
+        return -1;
+    }
+
+    new_message = NULL;
+    if (message) {
+        new_message = cfl_sds_create(message);
+        if (!new_message) {
+            return -1;
+        }
+    }
 
     status = &span->status;
     if (status->message) {
         cfl_sds_destroy(status->message);
     }
-
-    if (message) {
-        status->message = cfl_sds_create(message);
-        if (!status->message) {
-            return -1;
-        }
-    }
-
+    status->message = new_message;
     status->code = code;
     return 0;
 }
 
 int ctr_span_set_trace_state(struct ctrace_span *span, char *state, int len)
 {
+    cfl_sds_t new_state;
+
+    if (span == NULL || state == NULL || len < 0) {
+        return -1;
+    }
+
+    new_state = cfl_sds_create_len(state, len);
+    if (!new_state) {
+        return -1;
+    }
+
     if (span->trace_state) {
         cfl_sds_destroy(span->trace_state);
     }
-
-    span->trace_state = cfl_sds_create_len(state, len);
-    if (!span->trace_state) {
-        return -1;
-    }
+    span->trace_state = new_state;
 
     return 0;
 }
@@ -320,11 +346,21 @@ int ctr_span_set_flags(struct ctrace_span *span, uint32_t flags)
 
 void ctr_span_set_schema_url(struct ctrace_span *span, char *url)
 {
+    cfl_sds_t new_url;
+
+    if (span == NULL || url == NULL) {
+        return;
+    }
+
+    new_url = cfl_sds_create(url);
+    if (new_url == NULL) {
+        return;
+    }
+
     if (span->schema_url) {
         cfl_sds_destroy(span->schema_url);
     }
-
-    span->schema_url = cfl_sds_create(url);
+    span->schema_url = new_url;
 }
 
 void ctr_span_set_dropped_link_count(struct ctrace_span *span, uint32_t count)
@@ -354,6 +390,10 @@ void ctr_span_destroy(struct ctrace_span *span)
     struct ctrace_span_event *event;
     struct ctrace_span_status *status;
     struct ctrace_link *link;
+
+    if (span == NULL) {
+        return;
+    }
 
     if (span->name != NULL) {
         cfl_sds_destroy(span->name);
@@ -429,6 +469,11 @@ struct ctrace_span_event *ctr_span_event_add_ts(struct ctrace_span *span, char *
         return NULL;
     }
     ev->attr = ctr_attributes_create();
+    if (ev->attr == NULL) {
+        cfl_sds_destroy(ev->name);
+        free(ev);
+        return NULL;
+    }
     ev->dropped_attr_count = 0;
 
     /* if no timestamp is given, use the current time */
@@ -463,6 +508,11 @@ int ctr_span_event_set_attribute_int64(struct ctrace_span_event *event, char *ke
     return ctr_attributes_set_int64(event->attr, key, value);
 }
 
+int ctr_span_event_set_attribute_int(struct ctrace_span_event *event, char *key, int value)
+{
+    return ctr_span_event_set_attribute_int64(event, key, value);
+}
+
 int ctr_span_event_set_attribute_double(struct ctrace_span_event *event, char *key, double value)
 {
     return ctr_attributes_set_double(event->attr, key, value);
@@ -487,11 +537,10 @@ int ctr_span_event_set_attributes(struct ctrace_span_event *event, struct ctrace
         return -1;
     }
 
-    if (event->attr) {
+    if (event->attr != attr) {
         ctr_attributes_destroy(event->attr);
+        event->attr = attr;
     }
-
-    event->attr = attr;
     return 0;
 }
 
@@ -513,4 +562,3 @@ void ctr_span_event_delete(struct ctrace_span_event *event)
     cfl_list_del(&event->_head);
     free(event);
 }
-

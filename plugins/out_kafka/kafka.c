@@ -144,10 +144,15 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     msgpack_object key;
     msgpack_object val;
     flb_sds_t s = NULL;
+#ifdef FLB_HAVE_PROTOBUF_ENCODER
+    char *protobuf_payload;
+    char protobuf_error[512];
+#endif
 
 #ifdef FLB_HAVE_AVRO_ENCODER
     // used to flag when a buffer needs to be freed for avro
     bool avro_fast_buffer = true;
+    struct flb_avro_fields avro_fields;
 
     // avro encoding uses a buffer
     // the majority of lines are fairly small
@@ -342,6 +347,36 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         out_buf = s;
         out_size = flb_sds_len(s);
     }
+#ifdef FLB_HAVE_PROTOBUF_ENCODER
+    else if (ctx->format == FLB_KAFKA_FMT_PROTOBUF) {
+        ret = flb_kafka_schema_registry_resolve(ctx);
+        if (ret != FLB_OK) {
+            msgpack_sbuffer_destroy(&mp_sbuf);
+            return ret;
+        }
+        s = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size, config->json_escape_unicode);
+        if (s == NULL) {
+            msgpack_sbuffer_destroy(&mp_sbuf);
+            return FLB_ERROR;
+        }
+        ret = flb_kafka_protobuf_encode(ctx->protobuf, ctx->schema_id, s, flb_sds_len(s),
+                                       &protobuf_payload, &out_size,
+                                       protobuf_error, sizeof(protobuf_error));
+        flb_sds_destroy(s);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "cannot encode Protobuf event: %s", protobuf_error);
+            msgpack_sbuffer_destroy(&mp_sbuf);
+            return FLB_ERROR;
+        }
+        s = flb_sds_create_len(protobuf_payload, out_size);
+        flb_kafka_protobuf_free(protobuf_payload);
+        if (s == NULL) {
+            msgpack_sbuffer_destroy(&mp_sbuf);
+            return FLB_ERROR;
+        }
+        out_buf = s;
+    }
+#endif
 #ifdef FLB_HAVE_AVRO_ENCODER
     else if (ctx->format == FLB_KAFKA_FMT_AVRO) {
 
@@ -351,29 +386,29 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
             return ret;
         }
 
-        flb_plg_debug(ctx->ins, "avro schema ID:%d:\n", ctx->avro_fields.schema_id);
-        flb_plg_debug(ctx->ins, "avro schema string:%s:\n", ctx->avro_fields.schema_str);
+        flb_plg_debug(ctx->ins, "avro schema ID:%d:\n", ctx->schema_id);
+        flb_plg_debug(ctx->ins, "avro schema string:%s:\n", ctx->schema_str);
 
 	// if there's no data then log it and return
         if (mp_sbuf.size == 0) {
-            flb_plg_error(ctx->ins, "got zero bytes decoding to avro AVRO:schemaID:%d:\n", ctx->avro_fields.schema_id);
+            flb_plg_error(ctx->ins, "got zero bytes decoding to avro AVRO:schemaID:%d:\n", ctx->schema_id);
             msgpack_sbuffer_destroy(&mp_sbuf);
             return FLB_OK;
         }
 
 	// is the line is too long log it and return
         if (mp_sbuf.size > AVRO_LINE_MAX_LEN) {
-            flb_plg_warn(ctx->ins, "skipping long line AVRO:len:%zu:limit:%zu:schemaID:%d:\n", (size_t)mp_sbuf.size, (size_t)AVRO_LINE_MAX_LEN, ctx->avro_fields.schema_id);
+            flb_plg_warn(ctx->ins, "skipping long line AVRO:len:%zu:limit:%zu:schemaID:%d:\n", (size_t)mp_sbuf.size, (size_t)AVRO_LINE_MAX_LEN, ctx->schema_id);
             msgpack_sbuffer_destroy(&mp_sbuf);
             return FLB_OK;
         }
 
-        flb_plg_debug(ctx->ins, "using default buffer AVRO:len:%zu:limit:%zu:schemaID:%d:\n", (size_t)mp_sbuf.size, (size_t)AVRO_DEFAULT_BUFFER_SIZE, ctx->avro_fields.schema_id);
+        flb_plg_debug(ctx->ins, "using default buffer AVRO:len:%zu:limit:%zu:schemaID:%d:\n", (size_t)mp_sbuf.size, (size_t)AVRO_DEFAULT_BUFFER_SIZE, ctx->schema_id);
         out_buf = avro_buff;
         out_size = AVRO_DEFAULT_BUFFER_SIZE;
 
 	if (mp_sbuf.size + AVRO_SCHEMA_OVERHEAD >= AVRO_DEFAULT_BUFFER_SIZE) {
-            flb_plg_info(ctx->ins, "upsizing to dynamic buffer AVRO:len:%zu:schemaID:%d:\n", (size_t)mp_sbuf.size, ctx->avro_fields.schema_id);
+            flb_plg_info(ctx->ins, "upsizing to dynamic buffer AVRO:len:%zu:schemaID:%d:\n", (size_t)mp_sbuf.size, ctx->schema_id);
             avro_fast_buffer = false;
             // avro will always be  smaller than msgpack
             // it contains no meta-info aside from the schemaid
@@ -383,14 +418,16 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
             out_size = mp_sbuf.size + AVRO_SCHEMA_OVERHEAD;
             out_buf = flb_malloc(out_size);
             if (!out_buf) {
-                flb_plg_error(ctx->ins, "error allocating memory for decoding to AVRO:schema:%s:schemaID:%d:\n", ctx->avro_fields.schema_str, ctx->avro_fields.schema_id);
+                flb_plg_error(ctx->ins, "error allocating memory for decoding to AVRO:schema:%s:schemaID:%d:\n", ctx->schema_str, ctx->schema_id);
                 msgpack_sbuffer_destroy(&mp_sbuf);
                 return FLB_ERROR;
             }
 	}
 
-        if(!flb_msgpack_raw_to_avro_sds(mp_sbuf.data, mp_sbuf.size, &ctx->avro_fields, out_buf, &out_size)) {
-            flb_plg_error(ctx->ins, "error encoding to AVRO:schema:%s:schemaID:%d:\n", ctx->avro_fields.schema_str, ctx->avro_fields.schema_id);
+        avro_fields.schema_str = ctx->schema_str;
+        avro_fields.schema_id = ctx->schema_id;
+        if(!flb_msgpack_raw_to_avro_sds(mp_sbuf.data, mp_sbuf.size, &avro_fields, out_buf, &out_size)) {
+            flb_plg_error(ctx->ins, "error encoding to AVRO:schema:%s:schemaID:%d:\n", ctx->schema_str, ctx->schema_id);
             msgpack_sbuffer_destroy(&mp_sbuf);
             if (!avro_fast_buffer) {
                 flb_free(out_buf);
@@ -420,6 +457,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     }
     if (!topic) {
         flb_plg_error(ctx->ins, "no default topic found");
+        flb_sds_destroy(s);
         msgpack_sbuffer_destroy(&mp_sbuf);
 #ifdef FLB_HAVE_AVRO_ENCODER
         if (ctx->format == FLB_KAFKA_FMT_AVRO) {
@@ -504,7 +542,8 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
 
         ctx->blocked = FLB_FALSE;
         if (ctx->format == FLB_KAFKA_FMT_JSON ||
-            ctx->format == FLB_KAFKA_FMT_GELF) {
+            ctx->format == FLB_KAFKA_FMT_GELF ||
+            ctx->format == FLB_KAFKA_FMT_PROTOBUF) {
             flb_sds_destroy(s);
         }
         msgpack_sbuffer_destroy(&mp_sbuf);
@@ -523,7 +562,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     ctx->blocked = FLB_FALSE;
 
     rd_kafka_poll(ctx->kafka.rk, 0);
-    if (ctx->format == FLB_KAFKA_FMT_JSON) {
+    if (ctx->format == FLB_KAFKA_FMT_JSON || ctx->format == FLB_KAFKA_FMT_PROTOBUF) {
         flb_sds_destroy(s);
     }
     if (ctx->format == FLB_KAFKA_FMT_GELF) {
@@ -1392,13 +1431,21 @@ static void kafka_flush_force(struct flb_out_kafka *ctx,
                               struct flb_config *config)
 {
     int ret;
+    int timeout;
 
     if (!ctx) {
         return;
     }
 
     if (ctx->kafka.rk) {
-        ret = rd_kafka_flush(ctx->kafka.rk, config->grace * 1000);
+        timeout = config->grace;
+
+        /* Preserve the no-wait and infinite timeout (-1) sentinels. */
+        if (timeout > 0) {
+            timeout *= 1000;
+        }
+
+        ret = rd_kafka_flush(ctx->kafka.rk, timeout);
         if (ret != RD_KAFKA_RESP_ERR_NO_ERROR) {
             flb_plg_warn(ctx->ins, "Failed to force flush: %s",
                          rd_kafka_err2str(ret));
@@ -1429,7 +1476,7 @@ static struct flb_config_map config_map[] = {
    {
     FLB_CONFIG_MAP_STR, "format", (char *)NULL,
     0, FLB_TRUE, offsetof(struct flb_out_kafka, format_str),
-    "Set the record output format. Supported values include json, msgpack, gelf, raw, otlp_json and otlp_proto."
+    "Set the record output format. Supported values include json, msgpack, gelf, raw, avro, protobuf, otlp_json and otlp_proto."
    },
    {
     FLB_CONFIG_MAP_BOOL, "otlp_logs_partition_by_resource", "false",
@@ -1492,7 +1539,14 @@ static struct flb_config_map config_map[] = {
     0, FLB_FALSE,  0,
     "Set the level key for gelf  output."
    },
-#ifdef FLB_HAVE_AVRO_ENCODER
+#ifdef FLB_HAVE_PROTOBUF_ENCODER
+   {
+    FLB_CONFIG_MAP_STR, "protobuf_message", NULL,
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, protobuf_message),
+    "Fully qualified Protobuf message name. Required when the root schema has multiple messages."
+   },
+#endif
+#ifdef FLB_HAVE_KAFKA_SCHEMA_REGISTRY
    {
     FLB_CONFIG_MAP_STR, "schema_str", (char *)NULL,
     0, FLB_FALSE, 0,
@@ -1500,38 +1554,38 @@ static struct flb_config_map config_map[] = {
    },
    {
     FLB_CONFIG_MAP_INT, "schema_id", (char *)NULL,
-    0, FLB_TRUE, offsetof(struct flb_out_kafka, avro_fields) + offsetof(struct flb_avro_fields, schema_id),
-    "Set AVRO schema ID."
+    0, FLB_TRUE, offsetof(struct flb_out_kafka, schema_id),
+    "Set the Avro or Protobuf schema ID."
    },
    {
     FLB_CONFIG_MAP_STR, "schema_registry_url", (char *)NULL,
     0, FLB_TRUE, offsetof(struct flb_out_kafka, schema_registry_url),
-    "Set the Confluent Schema Registry base URL for AVRO schemas."
+    "Set the Confluent Schema Registry base URL for Avro or Protobuf schemas."
    },
    {
     FLB_CONFIG_MAP_STR, "schema.registry.url", (char *)NULL,
     0, FLB_TRUE, offsetof(struct flb_out_kafka, schema_registry_url),
-    "Set the Confluent Schema Registry base URL for AVRO schemas."
+    "Set the Confluent Schema Registry base URL for Avro or Protobuf schemas."
    },
    {
     FLB_CONFIG_MAP_STR, "schema_registry_subject", (char *)NULL,
     0, FLB_TRUE, offsetof(struct flb_out_kafka, schema_registry_subject),
-    "Set the Confluent Schema Registry subject for AVRO schemas."
+    "Set the Confluent Schema Registry subject for Avro or Protobuf schemas."
    },
    {
     FLB_CONFIG_MAP_STR, "schema.registry.subject", (char *)NULL,
     0, FLB_TRUE, offsetof(struct flb_out_kafka, schema_registry_subject),
-    "Set the Confluent Schema Registry subject for AVRO schemas."
+    "Set the Confluent Schema Registry subject for Avro or Protobuf schemas."
    },
    {
     FLB_CONFIG_MAP_STR, "schema_registry_version", "latest",
     0, FLB_TRUE, offsetof(struct flb_out_kafka, schema_registry_version),
-    "Set the Confluent Schema Registry subject version for AVRO schemas."
+    "Set the Confluent Schema Registry subject version for Avro or Protobuf schemas."
    },
    {
     FLB_CONFIG_MAP_STR, "schema.registry.version", (char *)NULL,
     0, FLB_TRUE, offsetof(struct flb_out_kafka, schema_registry_version),
-    "Set the Confluent Schema Registry subject version for AVRO schemas."
+    "Set the Confluent Schema Registry subject version for Avro or Protobuf schemas."
    },
    {
     FLB_CONFIG_MAP_STR, "schema_registry_http_user", (char *)NULL,

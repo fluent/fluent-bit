@@ -2,8 +2,11 @@ import base64
 import json
 import logging
 import os
+import re
+import shutil
 import socket
 import threading
+from collections import Counter
 
 import requests
 import pytest
@@ -22,6 +25,7 @@ from server.http_server import (
 )
 from server.otlp_server import (
     configure_otlp_grpc_methods,
+    configure_otlp_response,
     data_storage,
     otlp_server_run,
     stop_otlp_server,
@@ -523,6 +527,111 @@ def _build_conditional_grouped_logs_payload():
     return {"resource_logs": resource_logs}
 
 
+def _build_batched_metrics_payload():
+    def attributes(series_id):
+        return [
+            {
+                "key": "series.id",
+                "value": {
+                    "string_value": str(series_id),
+                },
+            }
+        ]
+
+    def resource(service_name, metric):
+        return {
+            "schema_url": f"https://example.com/resource/{service_name}/1.0.0",
+            "resource": {
+                "attributes": [
+                    {
+                        "key": "service.name",
+                        "value": {
+                            "string_value": service_name,
+                        },
+                    }
+                ],
+            },
+            "scope_metrics": [
+                {
+                    "scope": {
+                        "name": f"batch-test-{service_name}",
+                        "version": "1.0.0",
+                    },
+                    "schema_url": f"https://example.com/scope/{service_name}/1.0.0",
+                    "metrics": [metric],
+                }
+            ],
+        }
+
+    gauge_points = [
+        {
+            "attributes": attributes(series_id),
+            "time_unix_nano": str(1704067200000000000 + series_id),
+            "as_int": series_id,
+        }
+        for series_id in range(7)
+    ]
+    sum_points = [
+        {
+            "attributes": attributes(series_id),
+            "start_time_unix_nano": "1704067200000000000",
+            "time_unix_nano": str(1704067200000000000 + series_id),
+            "as_int": series_id,
+        }
+        for series_id in range(7, 11)
+    ]
+
+    return {
+        "resource_metrics": [
+            resource(
+                "service-a",
+                {
+                    "name": "batch.gauge",
+                    "gauge": {
+                        "data_points": gauge_points,
+                    },
+                },
+            ),
+            resource(
+                "service-b",
+                {
+                    "name": "batch.sum",
+                    "sum": {
+                        "data_points": sum_points,
+                        "aggregation_temporality": 2,
+                        "is_monotonic": True,
+                    },
+                },
+            ),
+        ]
+    }
+
+
+def iter_metric_points_with_resource(output):
+    data_keys = ("gauge", "sum", "histogram", "exponentialHistogram", "summary")
+
+    for resource_metric in output.get("resourceMetrics", []):
+        resource_attributes = _attributes_to_dict(
+            resource_metric.get("resource", {}).get("attributes", [])
+        )
+        resource_schema_url = resource_metric.get("schemaUrl")
+        for scope_metric in resource_metric.get("scopeMetrics", []):
+            scope = scope_metric.get("scope", {})
+            scope_schema_url = scope_metric.get("schemaUrl")
+            for metric in scope_metric.get("metrics", []):
+                for data_key in data_keys:
+                    if data_key in metric:
+                        for point in metric[data_key].get("dataPoints", []):
+                            yield (
+                                point,
+                                resource_attributes,
+                                resource_schema_url,
+                                scope,
+                                scope_schema_url,
+                            )
+                        break
+
+
 def _assert_log_resource_attribution(logs_seen):
     output = json.loads(json_format.MessageToJson(logs_seen[0]))
     records = list(iter_log_records(output))
@@ -717,6 +826,10 @@ def test_out_opentelemetry_gzip_and_logs_body_key_attributes():
     assert "message" not in attributes
 
 
+@pytest.mark.skipif(
+    shutil.which("zstd") is None,
+    reason="zstd executable is required to decode the test payload",
+)
 def test_out_opentelemetry_zstd_and_logs_body_key_attributes():
     service = Service("out_otel_http_logs_zstd.yaml")
     service.start()
@@ -851,6 +964,118 @@ def test_out_opentelemetry_grpc_metrics_uri():
     assert output["resourceMetrics"]
 
 
+@pytest.mark.parametrize(
+    "config_file,receiver_mode,request_path",
+    [
+        ("out_otel_http_metrics_max_datapoints.conf", "http", "/batched/metrics"),
+        (
+            "out_otel_grpc_metrics_max_datapoints.conf",
+            "grpc",
+            "/batched.metrics.v1.Metrics/Export",
+        ),
+    ],
+    ids=["http", "grpc"],
+)
+def test_out_opentelemetry_metrics_max_datapoints(
+    config_file,
+    receiver_mode,
+    request_path,
+):
+    grpc_methods = {"metrics": request_path} if receiver_mode == "grpc" else None
+    service = Service(
+        config_file,
+        receiver_mode=receiver_mode,
+        grpc_methods=grpc_methods,
+    )
+    service.start()
+    service.send_payload_dict(_build_batched_metrics_payload(), "metrics")
+    metrics_seen = service.wait_for_signal("metrics", minimum_count=3, timeout=15)
+    requests_seen = service.wait_for_requests(3, timeout=15)
+    service.stop()
+
+    assert len(metrics_seen) == 3
+    assert len(requests_seen) == 3
+    assert {request["path"] for request in requests_seen} == {request_path}
+
+    batch_sizes = []
+    observed_series = {}
+    for export_request in metrics_seen:
+        output = json.loads(json_format.MessageToJson(export_request))
+        points = list(iter_metric_points_with_resource(output))
+        batch_sizes.append(len(points))
+        assert len(points) <= 4
+
+        for (
+            point,
+            resource_attributes,
+            resource_schema_url,
+            scope,
+            scope_schema_url,
+        ) in points:
+            point_attributes = _attributes_to_dict(point.get("attributes", []))
+            series_id = int(point_attributes["series.id"])
+            assert series_id not in observed_series
+            service_name = "service-a" if series_id < 7 else "service-b"
+            assert resource_attributes["service.name"] == service_name
+            assert resource_schema_url == (
+                f"https://example.com/resource/{service_name}/1.0.0"
+            )
+            assert scope == {
+                "name": f"batch-test-{service_name}",
+                "version": "1.0.0",
+            }
+            assert scope_schema_url == (
+                f"https://example.com/scope/{service_name}/1.0.0"
+            )
+            observed_series[series_id] = service_name
+
+    assert sorted(batch_sizes) == [3, 4, 4]
+    assert observed_series == {
+        **{series_id: "service-a" for series_id in range(7)},
+        **{series_id: "service-b" for series_id in range(7, 11)},
+    }
+
+
+def test_out_opentelemetry_metrics_partial_success_is_not_retried():
+    payload = _build_batched_metrics_payload()
+    resource_metrics = payload["resource_metrics"]
+    gauge_points = resource_metrics[0]["scope_metrics"][0]["metrics"][0]["gauge"]
+    gauge_points["data_points"].extend(
+        resource_metrics[1]["scope_metrics"][0]["metrics"][0]["sum"]["data_points"]
+    )
+    payload["resource_metrics"] = [resource_metrics[0]]
+
+    service = Service("out_otel_http_metrics_max_datapoints.conf")
+    service.start()
+    try:
+        configure_otlp_response(status_codes=[200, 503, 200])
+        service.send_payload_dict(payload, "metrics")
+        metrics_seen = service.wait_for_signal("metrics", minimum_count=2, timeout=15)
+        _wait_for_log_message(service, "metric payload partially succeeded")
+        requests_seen = list(data_storage["requests"])
+    finally:
+        service.stop()
+
+    assert len(metrics_seen) == 2
+    assert len(requests_seen) == 2
+
+    batch_series = []
+    for export_request in metrics_seen:
+        output = json.loads(json_format.MessageToJson(export_request))
+        points = list(iter_metric_points_with_resource(output))
+        assert len(points) == 4
+        batch_series.append(
+            {
+                int(_attributes_to_dict(point.get("attributes", []))["series.id"])
+                for point, _, _, _, _ in points
+            }
+        )
+
+    assert batch_series[0] == {0, 1, 2, 3}
+    assert batch_series[1] == {4, 5, 6, 7}
+    assert {8, 9, 10}.isdisjoint(set().union(*batch_series))
+
+
 def test_out_opentelemetry_traces_uri():
     service = Service("out_otel_http_traces.yaml")
     service.start()
@@ -886,6 +1111,133 @@ def test_out_opentelemetry_batch_size_splits_log_exports():
             for scope_log in resource_log.get("scopeLogs", [])
         )
         assert record_count == 1
+
+
+@pytest.mark.parametrize(
+    "input_name,batch_size,record_count,fail_request,status_code",
+    [
+        ("http", 1, 2, 0, 429),
+        ("http", 1, 2, 1, 429),
+        ("http", 1, 2, 2, 429),
+        ("http", 2, 5, 1, 429),
+        ("http", 2, 5, 2, 429),
+        ("http", 2, 5, 3, 429),
+        ("http", 2, 1, 1, 429),
+        ("http", 2, 2, 1, 429),
+        ("http", 1000, 2000, 1, 429),
+        ("http", 1000, 2000, 2, 429),
+        ("http", 1, 2, 1, 400),
+        ("http", 1, 2, 2, 400),
+        ("opentelemetry", 1, 2, 0, 429),
+        ("opentelemetry", 1, 2, 1, 429),
+        ("opentelemetry", 1, 2, 2, 429),
+    ],
+)
+def test_out_opentelemetry_log_batch_retry(
+    monkeypatch, input_name, batch_size, record_count, fail_request, status_code
+):
+    monkeypatch.setenv("TEST_LOG_INPUT", input_name)
+    monkeypatch.setenv("TEST_LOG_BATCH_SIZE", str(batch_size))
+    service = Service("out_otel_http_logs_batch_retry.yaml")
+    expected = [f"event-{index:06d}" for index in range(record_count)]
+    expected_batches = [expected[index:index + batch_size] for index in range(0, record_count, batch_size)]
+    statuses = [200] * (fail_request - 1) + [status_code] if fail_request else []
+    permanent_failure = bool(fail_request and status_code == 400)
+    retried = bool(fail_request and not permanent_failure)
+    service.start()
+    try:
+        configure_otlp_response(
+            status_codes=statuses,
+            body=b"",
+            content_type="application/x-protobuf",
+        )
+        if input_name == "opentelemetry":
+            service.send_payload_dict(
+                {"resource_logs": [
+                    _build_resource_collision_payload(event_id, event_id)["resource_logs"][0]
+                    for event_id in expected
+                ]},
+                "logs",
+            )
+        else:
+            response = requests.post(
+                f"http://127.0.0.1:{service.flb_listener_port}/repro",
+                json=[{"message": event_id} for event_id in expected],
+                timeout=5,
+            )
+            assert response.status_code == 201
+
+        def completed_metrics():
+            try:
+                response = requests.get(
+                    f"http://127.0.0.1:{service.flb.http_monitoring_port}/api/v1/metrics/prometheus",
+                    timeout=2,
+                )
+            except (requests.ConnectionError, requests.Timeout):
+                return None
+            response.raise_for_status()
+            counters = {
+                name: int(value)
+                for name, value in re.findall(
+                    r'^fluentbit_output_(\w+)\{name="opentelemetry\.0"\} (\d+)',
+                    response.text,
+                    re.MULTILINE,
+                )
+            }
+            finished = counters.get("proc_records_total", 0) + counters.get("dropped_records_total", 0)
+            return counters if finished == record_count else None
+
+        counters = service.service.wait_for_condition(
+            completed_metrics,
+            timeout=30,
+            description="completion of the whole log chunk",
+        )
+        _wait_for_log_message(service, "[task] destroy task=")
+        requests_seen = list(data_storage["logs"])
+    finally:
+        service.stop()
+
+    accepted = []
+    batches = []
+    for request_number, export_request in enumerate(requests_seen, start=1):
+        batch = [
+            record.body.string_value
+            for resource in export_request.resource_logs
+            for scope in resource.scope_logs
+            for record in scope.log_records
+        ]
+        assert 0 < len(batch) <= batch_size
+        batches.append(batch)
+        if request_number != fail_request:
+            accepted.extend(batch)
+
+    assert counters["proc_records_total"] == (0 if permanent_failure else record_count)
+    assert counters["retries_total"] == int(retried)
+    assert counters["retried_records_total"] == (record_count if retried else 0)
+    assert counters["errors_total"] == int(permanent_failure)
+    assert counters["dropped_records_total"] == (record_count if permanent_failure else 0)
+    if fail_request:
+        assert batches[fail_request - 1] == expected_batches[fail_request - 1]
+        attempted = expected_batches[:fail_request]
+        expected_accepted = expected[:(fail_request - 1) * batch_size]
+        if retried:
+            assert batches[fail_request] == expected_batches[0]
+            replayed = [event_id for batch in batches[fail_request:] for event_id in batch]
+            assert Counter(replayed) == Counter(expected)
+            attempted += expected_batches
+            expected_accepted += expected
+    else:
+        attempted = expected_batches
+        expected_accepted = expected
+    assert Counter(accepted) == Counter(expected_accepted)
+    assert Counter(map(tuple, batches)) == Counter(map(tuple, attempted))
+
+    with open(service.flb.log_file, encoding="utf-8") as log_file:
+        log = log_file.read()
+    created = re.findall(r"\[task\] created task=(\S+)", log)
+    destroyed = re.findall(r"\[task\] destroy task=(\S+)", log)
+    assert len(created) == 1
+    assert destroyed == created
 
 
 def test_out_opentelemetry_log_severity_message_keys():

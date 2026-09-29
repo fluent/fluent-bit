@@ -2222,6 +2222,13 @@ struct mk_list *winevtlog_open_all(const char *channels, struct winevtlog_config
 
     if (mk_list_size(list) == 0) {
         flb_free(tmp);
+        if (ctx->ignore_missing_channels) {
+            /*
+             * All channels are missing but tolerated: return the empty
+             * list so the caller can iterate it safely on collect/exit.
+             */
+            return list;
+        }
         winevtlog_close_all(list);
         return NULL;
     }
@@ -2235,6 +2242,10 @@ void winevtlog_close_all(struct mk_list *list)
     struct winevtlog_channel *ch;
     struct mk_list *head;
     struct mk_list *tmp;
+
+    if (!list) {
+        return;
+    }
 
     mk_list_foreach_safe(head, tmp, list) {
         ch = mk_list_entry(head, struct winevtlog_channel, _head);

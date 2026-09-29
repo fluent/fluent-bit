@@ -27,12 +27,22 @@ static inline void sds_cat_safe(cfl_sds_t *buf, char *str)
     cfl_sds_cat_safe(buf, str, len);
 }
 
+static inline char *string_or_empty(char *str)
+{
+    if (str == NULL) {
+        return "";
+    }
+
+    return str;
+}
+
 static void format_string(cfl_sds_t *buf, cfl_sds_t val, int level)
 {
-    char tmp[1024];
-
-    snprintf(tmp, sizeof(tmp) - 1, "'%s'", val);
-    sds_cat_safe(buf, tmp);
+    sds_cat_safe(buf, "'");
+    if (val != NULL) {
+        cfl_sds_cat_safe(buf, val, cfl_sds_len(val));
+    }
+    sds_cat_safe(buf, "'");
 }
 
 static void format_int64(cfl_sds_t *buf, int64_t val, int level)
@@ -40,6 +50,14 @@ static void format_int64(cfl_sds_t *buf, int64_t val, int level)
     char tmp[1024];
 
     snprintf(tmp, sizeof(tmp) - 1, "%" PRIi64, val);
+    sds_cat_safe(buf, tmp);
+}
+
+static void format_uint64(cfl_sds_t *buf, uint64_t val, int level)
+{
+    char tmp[1024];
+
+    snprintf(tmp, sizeof(tmp) - 1, "%" PRIu64, val);
     sds_cat_safe(buf, tmp);
 }
 
@@ -86,6 +104,12 @@ static void format_array(cfl_sds_t *buf, struct cfl_array *array, int level)
         else if (v->type == CFL_VARIANT_INT) {
             format_int64(buf, v->data.as_int64, off);
         }
+        else if (v->type == CFL_VARIANT_UINT) {
+            format_uint64(buf, v->data.as_uint64, off);
+        }
+        else if (v->type == CFL_VARIANT_NULL) {
+            sds_cat_safe(buf, "null");
+        }
         else if (v->type == CFL_VARIANT_DOUBLE) {
             format_double(buf, v->data.as_double, off);
         }
@@ -131,6 +155,12 @@ static void format_attributes(cfl_sds_t *buf, struct cfl_kvlist *kv, int level)
         else if (v->type == CFL_VARIANT_INT) {
             format_int64(buf, v->data.as_int64, off);
         }
+        else if (v->type == CFL_VARIANT_UINT) {
+            format_uint64(buf, v->data.as_uint64, off);
+        }
+        else if (v->type == CFL_VARIANT_NULL) {
+            sds_cat_safe(buf, "null");
+        }
         else if (v->type == CFL_VARIANT_DOUBLE) {
             format_double(buf, v->data.as_double, off);
         }
@@ -152,7 +182,8 @@ static void format_event(cfl_sds_t *buf, struct ctrace_span_event *event, int le
 
     sds_cat_safe(buf, "\n");
 
-    snprintf(tmp, sizeof(tmp) - 1, "%*s- name: %s\n", off, "", event->name);
+    snprintf(tmp, sizeof(tmp) - 1, "%*s- name: %s\n", off, "",
+             string_or_empty(event->name));
     sds_cat_safe(buf, tmp);
     off += 4;
 
@@ -188,7 +219,8 @@ static void format_span(cfl_sds_t *buf, struct ctrace *ctx, int id, struct ctrac
 
     min = off + 4;
 
-    snprintf(tmp, sizeof(tmp) - 1, "%*s[span #%i '%s']\n", off, "", id, span->name);
+    snprintf(tmp, sizeof(tmp) - 1, "%*s[span #%i '%s']\n", off, "", id,
+             string_or_empty(span->name));
     sds_cat_safe(buf, tmp);
 
     /* trace_id */
@@ -249,7 +281,8 @@ static void format_span(cfl_sds_t *buf, struct ctrace *ctx, int id, struct ctrac
     sds_cat_safe(buf, tmp);
 
     /* trace_state */
-    snprintf(tmp, sizeof(tmp) - 1, "%*s- trace_state             : %s\n", min, "", span->trace_state);
+    snprintf(tmp, sizeof(tmp) - 1, "%*s- trace_state             : %s\n", min, "",
+             string_or_empty(span->trace_state));
     sds_cat_safe(buf, tmp);
 
     /* schema_url */
@@ -331,7 +364,8 @@ static void format_span(cfl_sds_t *buf, struct ctrace *ctx, int id, struct ctrac
         sds_cat_safe(buf, tmp);
         cfl_sds_destroy(id_hex);
 
-        snprintf(tmp, sizeof(tmp) - 1, "%*s- trace_state          : %s\n", off, "", link->trace_state);
+        snprintf(tmp, sizeof(tmp) - 1, "%*s- trace_state          : %s\n", off, "",
+                 string_or_empty(link->trace_state));
         sds_cat_safe(buf, tmp);
 
         snprintf(tmp, sizeof(tmp) - 1, "%*s- dropped_events_count : %" PRIu32 "\n", off, "", link->dropped_attr_count);
@@ -372,8 +406,10 @@ static void format_instrumentation_scope(cfl_sds_t *buf,
                                          struct ctrace_instrumentation_scope *scope)
 {
     cfl_sds_printf(buf, "    instrumentation scope:\n");
-    cfl_sds_printf(buf, "        - name                    : %s\n", scope->name);
-    cfl_sds_printf(buf, "        - version                 : %s\n", scope->version);
+    cfl_sds_printf(buf, "        - name                    : %s\n",
+                   string_or_empty(scope->name));
+    cfl_sds_printf(buf, "        - version                 : %s\n",
+                   string_or_empty(scope->version));
     cfl_sds_printf(buf, "        - dropped_attributes_count: %i\n", scope->dropped_attr_count);
 
     if (scope->attr) {

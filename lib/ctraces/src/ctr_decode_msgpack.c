@@ -306,6 +306,13 @@ static int unpack_link_dropped_attributes_count(mpack_reader_t *reader, size_t i
     return ctr_mpack_consume_uint32_tag(reader, &context->link->dropped_attr_count);
 }
 
+static int unpack_link_flags(mpack_reader_t *reader, size_t index, void *ctx)
+{
+    struct ctr_msgpack_decode_context *context = ctx;
+
+    return ctr_mpack_consume_uint32_tag(reader, &context->link->flags);
+}
+
 static int unpack_link_attributes(mpack_reader_t *reader, size_t index, void *ctx)
 {
     struct ctr_msgpack_decode_context *context = ctx;
@@ -321,6 +328,10 @@ static int unpack_link_attributes(mpack_reader_t *reader, size_t index, void *ct
         if (result == 0) {
             if (context->link->attr == NULL) {
                 context->link->attr = ctr_attributes_create();
+                if (context->link->attr == NULL) {
+                    cfl_kvlist_destroy(attributes);
+                    return CTR_DECODE_MSGPACK_ALLOCATION_ERROR;
+                }
             }
 
             if (context->link->attr->kv != NULL) {
@@ -349,6 +360,7 @@ static int unpack_link(mpack_reader_t *reader, size_t index, void *ctx)
             {"trace_state",              unpack_link_trace_state},
             {"attributes",               unpack_link_attributes},
             {"dropped_attributes_count", unpack_link_dropped_attributes_count},
+            {"flags",                    unpack_link_flags},
             {NULL,                       NULL}
         };
 
@@ -376,9 +388,12 @@ static int unpack_span_trace_id(mpack_reader_t *reader, size_t index, void *ctx)
         decoded_id = ctr_id_from_base16(value);
 
         if (decoded_id != NULL) {
-            ctr_span_set_trace_id_with_cid(context->span, decoded_id);
+            result = ctr_span_set_trace_id_with_cid(context->span, decoded_id);
 
             ctr_id_destroy(decoded_id);
+            if (result != 0) {
+                result = CTR_DECODE_MSGPACK_ALLOCATION_ERROR;
+            }
         }
         else {
             result = CTR_MPACK_CORRUPT_INPUT_DATA_ERROR;
@@ -403,9 +418,12 @@ static int unpack_span_span_id(mpack_reader_t *reader, size_t index, void *ctx)
         decoded_id = ctr_id_from_base16(value);
 
         if (decoded_id != NULL) {
-            ctr_span_set_span_id_with_cid(context->span, decoded_id);
+            result = ctr_span_set_span_id_with_cid(context->span, decoded_id);
 
             ctr_id_destroy(decoded_id);
+            if (result != 0) {
+                result = CTR_DECODE_MSGPACK_ALLOCATION_ERROR;
+            }
         }
         else {
             result = CTR_MPACK_CORRUPT_INPUT_DATA_ERROR;
@@ -430,9 +448,12 @@ static int unpack_span_parent_span_id(mpack_reader_t *reader, size_t index, void
         decoded_id = ctr_id_from_base16(value);
 
         if (decoded_id != NULL) {
-            ctr_span_set_parent_span_id_with_cid(context->span, decoded_id);
+            result = ctr_span_set_parent_span_id_with_cid(context->span, decoded_id);
 
             ctr_id_destroy(decoded_id);
+            if (result != 0) {
+                result = CTR_DECODE_MSGPACK_ALLOCATION_ERROR;
+            }
         }
         else {
             result = CTR_MPACK_CORRUPT_INPUT_DATA_ERROR;
@@ -457,6 +478,20 @@ static int unpack_span_trace_state(mpack_reader_t *reader, size_t index, void *c
     return ctr_mpack_consume_string_or_nil_tag(reader, &context->span->trace_state);
 }
 
+static int unpack_span_flags(mpack_reader_t *reader, size_t index, void *ctx)
+{
+    struct ctr_msgpack_decode_context *context = ctx;
+    uint32_t flags;
+    int result;
+
+    result = ctr_mpack_consume_uint32_tag(reader, &flags);
+    if (result == CTR_MPACK_SUCCESS) {
+        context->span->flags = flags;
+    }
+
+    return result;
+}
+
 static int unpack_span_name(mpack_reader_t *reader, size_t index, void *ctx)
 {
     struct ctr_msgpack_decode_context *context = ctx;
@@ -473,8 +508,15 @@ static int unpack_span_name(mpack_reader_t *reader, size_t index, void *ctx)
 static int unpack_span_kind(mpack_reader_t *reader, size_t index, void *ctx)
 {
     struct ctr_msgpack_decode_context *context = ctx;
+    int32_t kind;
+    int result;
 
-    return ctr_mpack_consume_int32_tag(reader, &context->span->kind);
+    result = ctr_mpack_consume_int32_tag(reader, &kind);
+    if (result == CTR_MPACK_SUCCESS && ctr_span_kind_set(context->span, kind) != 0) {
+        return CTR_MPACK_CORRUPT_INPUT_DATA_ERROR;
+    }
+
+    return result;
 }
 
 static int unpack_span_start_time_unix_nano(mpack_reader_t *reader, size_t index, void *ctx)
@@ -550,8 +592,18 @@ static int unpack_span_links(mpack_reader_t *reader, size_t index, void *ctx)
 static int unpack_span_status_code(mpack_reader_t *reader, size_t index, void *ctx)
 {
     struct ctr_msgpack_decode_context *context = ctx;
+    int32_t code;
+    int result;
 
-    return ctr_mpack_consume_int32_tag(reader, &context->span->status.code);
+    result = ctr_mpack_consume_int32_tag(reader, &code);
+    if (result == CTR_MPACK_SUCCESS) {
+        if (code < CTRACE_SPAN_STATUS_CODE_UNSET || code > CTRACE_SPAN_STATUS_CODE_ERROR) {
+            return CTR_MPACK_CORRUPT_INPUT_DATA_ERROR;
+        }
+        context->span->status.code = code;
+    }
+
+    return result;
 }
 
 static int unpack_span_status_message(mpack_reader_t *reader, size_t index, void *ctx)
@@ -590,6 +642,7 @@ static int unpack_span(mpack_reader_t *reader, size_t index, void *ctx)
             {"span_id",                  unpack_span_span_id},
             {"parent_span_id",           unpack_span_parent_span_id},
             {"trace_state",              unpack_span_trace_state},
+            {"flags",                    unpack_span_flags},
             {"name",                     unpack_span_name},
             {"kind",                     unpack_span_kind},
             {"start_time_unix_nano",     unpack_span_start_time_unix_nano},
@@ -732,6 +785,16 @@ int ctr_decode_msgpack_create(struct ctrace **out_context, char *in_buf, size_t 
     struct ctr_msgpack_decode_context context;
     mpack_reader_t                    reader;
     int                               result;
+
+    if (out_context == NULL || in_buf == NULL || offset == NULL) {
+        return CTR_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+    }
+
+    *out_context = NULL;
+
+    if (*offset >= in_size) {
+        return CTR_DECODE_MSGPACK_INSUFFICIENT_DATA;
+    }
 
     memset(&context, 0, sizeof(context));
 
