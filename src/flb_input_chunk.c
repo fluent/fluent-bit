@@ -740,6 +740,11 @@ static int flb_input_chunk_release_space(
 
     *required_space -= released_space;
 
+    /* Task-free eviction must also refresh accounting and resume paused inputs. */
+    if (released_space > 0) {
+        flb_input_chunk_set_limits(input_plugin);
+    }
+
     return 0;
 }
 
