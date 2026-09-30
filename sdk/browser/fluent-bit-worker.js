@@ -397,6 +397,8 @@ async function execute(request) {
     }
     if (method === 'destroy') {
         await command(id, 4);
+        await drainLogs();
+        await Promise.all([...pthreadWorkers].map(worker => worker.shutdown()));
         releaseStorage?.();
         state = 'destroyed';
         return null;
@@ -431,6 +433,10 @@ self.onmessage = async ({data}) => {
     try {
         const value = await execute(data);
         post({type: 'response', id: data.id, ok: true, value});
+        if (state === 'destroyed') {
+            clearTimeout(logTimer);
+            self.close();
+        }
     }
     catch (error) {
         await drainLogs();
