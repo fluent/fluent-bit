@@ -69,3 +69,24 @@ test('failed persistent startup requires checkpoint recovery too', async () => {
     await sdk.request('syncStorage');
     assert.equal((await sdk.request('getStats')).checkpointRequired, false);
 });
+
+test('graceful destruction drains logs and children before replying and closing', async () => {
+    const sdk = worker();
+    sdk.run(`
+        const teardown = [];
+        state = 'stopped';
+        command = async () => { teardown.push('engine'); return {result: 0}; };
+        drainLogs = async () => { teardown.push('logs'); };
+        pthreadWorkers.add({shutdown: async () => { teardown.push('child'); }});
+        releaseStorage = () => teardown.push('storage');
+        self.postMessage = message => {
+            if (message.type === 'response' && message.ok) teardown.push('response');
+        };
+        self.close = () => teardown.push('close');
+    `);
+    await sdk.run(`self.onmessage({data: {abi: 1, type: 'request', id: 1,
+        method: 'destroy', payload: {}}})`);
+    assert.deepEqual(Array.from(sdk.run('teardown')),
+        ['engine', 'logs', 'child', 'storage', 'response', 'close']);
+    assert.equal(sdk.run('state'), 'destroyed');
+});

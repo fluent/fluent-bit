@@ -73,6 +73,7 @@ pipeline:
             '      threaded: true\n      alias: app')}), 'E_CONFIG');
         await fluent.writeFile('/config/sparse.lua', `function sparse(tag, ts, record)
             record.values = {[1] = "first", [3] = "third"}
+            record.large_index = {[1000000000] = 7}
             return 2, ts, record
         end`);
         await fluent.start({yaml: yaml.replace('  outputs:', `  filters:
@@ -86,7 +87,8 @@ pipeline:
             try {
                 const record = JSON.parse(line);
                 return record.message === 'sparse array regression' &&
-                    JSON.stringify(record.values) === '["first",null,"third"]';
+                    JSON.stringify(record.values) === '["first",null,"third"]' &&
+                    !Array.isArray(record.large_index) && record.large_index['1000000000'] === 7;
             }
             catch (_) { return false; }
         }));
@@ -102,6 +104,16 @@ pipeline:
     await rejected(() => fluent.start({yaml}), 'E_STATE');
     check(!errors.length, `Unexpected SDK errors: ${errors}`);
     check(states.includes('running') && states.includes('destroyed'), 'State notifications');
+
+    // Reentrant application callbacks must not revive a terminated runtime.
+    for (const stage of ['starting', 'stopping']) {
+        let interrupted;
+        interrupted = await createFluentBit({onStateChange(state) {
+            if (state === stage) { interrupted.destroy({force: true}); }
+        }});
+        await rejected(() => stage === 'starting' ? interrupted.start({yaml}) : interrupted.stop(), 'E_STATE');
+        check(interrupted.state === 'destroyed', `${stage}: destruction stays terminal`);
+    }
 
     // Two independent runtimes must not share virtual files or configuration.
     const first = await createFluentBit();
