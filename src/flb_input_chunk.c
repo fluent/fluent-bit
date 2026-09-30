@@ -1586,7 +1586,13 @@ struct flb_input_chunk *flb_input_chunk_map(struct flb_input_instance *in,
         }
     }
     else if (ic->event_type == FLB_INPUT_TRACES) {
-
+        ret = flb_mp_validate_trace_chunk(buf_data, buf_size, &records, &offset);
+        if (ret == -1) {
+            flb_plg_error(in, "traces chunk validation failed at byte %lu", offset);
+            flb_free(ic->routes_mask);
+            flb_free(ic);
+            return NULL;
+        }
     }
 
     /* Skip chunks without content data */
