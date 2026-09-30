@@ -18,6 +18,7 @@
  */
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_filter.h>
@@ -45,6 +46,8 @@
 #define HTTP_RESULT_OK_LEN               (sizeof(HTTP_RESULT_OK)-1)
 #define HTTP_RESULT_ERROR                "error"
 #define HTTP_RESULT_ERROR_LEN            (sizeof(HTTP_RESULT_ERROR)-1)
+#define HTTP_RESULT_FORBIDDEN            "output plugin or parameter not allowed"
+#define HTTP_RESULT_FORBIDDEN_LEN        (sizeof(HTTP_RESULT_FORBIDDEN)-1)
 #define HTTP_RESULT_NOTFOUND             "not found"
 #define HTTP_RESULT_NOTFOUND_LEN         (sizeof(HTTP_RESULT_NOTFOUND)-1)
 #define HTTP_RESULT_METHODNOTALLOWED     "method not allowed"
@@ -72,10 +75,73 @@ static struct flb_input_instance *find_input(struct flb_hs *hs, const char *name
     return NULL;
 }
 
+/*
+ * The trace API is served by the unauthenticated monitoring server, so it must
+ * not let a remote client instantiate arbitrary output plugins: outputs such
+ * as file, http or s3 can write files, open connections or run the AWS
+ * credential_process. Only stdout, and the calyptia output which reuses the
+ * properties of the configured instance, can be requested. Any other output
+ * can still be used locally through the --trace command line option.
+ */
+static const char *trace_allowed_outputs[] = {
+    "stdout",
+    "calyptia",
+    NULL
+};
+
+static const char *trace_allowed_params[] = {
+    "format",
+    "json_date_key",
+    "json_date_format",
+    NULL
+};
+
+static int trace_name_allowed(const char **list, const char *name)
+{
+    int i;
+
+    for (i = 0; list[i] != NULL; i++) {
+        if (strcasecmp(list[i], name) == 0) {
+            return FLB_TRUE;
+        }
+    }
+
+    return FLB_FALSE;
+}
+
+static int trace_output_allowed(const char *output_name, struct mk_list *props)
+{
+    struct mk_list *head;
+    struct flb_kv *kv;
+
+    if (trace_name_allowed(trace_allowed_outputs, output_name) == FLB_FALSE) {
+        flb_error("trace output '%s' is not allowed", output_name);
+        return FLB_FALSE;
+    }
+
+    if (props == NULL) {
+        return FLB_TRUE;
+    }
+
+    mk_list_foreach(head, props) {
+        kv = mk_list_entry(head, struct flb_kv, _head);
+        if (trace_name_allowed(trace_allowed_params, kv->key) == FLB_FALSE) {
+            flb_error("trace output parameter '%s' is not allowed", kv->key);
+            return FLB_FALSE;
+        }
+    }
+
+    return FLB_TRUE;
+}
+
 static int enable_trace_input(struct flb_hs *hs, const char *name, ssize_t nlen, const char *prefix,
                               const char *output_name, struct mk_list *props)
 {
     struct flb_input_instance *in;
+
+    if (trace_output_allowed(output_name, props) == FLB_FALSE) {
+        return 403;
+    }
 
     in = find_input(hs, name, nlen);
     if (in == NULL) {
@@ -225,10 +291,7 @@ static int msgpack_params_enable_trace(struct flb_hs *hs, msgpack_unpacked *resu
         }
 
         toggled_on = enable_trace_input(hs, input_name, input_nlen, prefix, output_name, props);
-        if (!toggled_on) {
-            ret = -1;
-            goto parse_error;
-        }
+        ret = toggled_on;
     }
 
 parse_error:
@@ -467,6 +530,13 @@ error:
         msgpack_pack_map(&mp_pck, 1);
         msgpack_pack_str_with_body(&mp_pck, HTTP_FIELD_STATUS, HTTP_FIELD_STATUS_LEN);
         msgpack_pack_str_with_body(&mp_pck, HTTP_RESULT_NOTFOUND, HTTP_RESULT_NOTFOUND_LEN);
+    }
+    else if (http_status == 403) {
+        msgpack_pack_map(&mp_pck, 2);
+        msgpack_pack_str_with_body(&mp_pck, HTTP_FIELD_STATUS, HTTP_FIELD_STATUS_LEN);
+        msgpack_pack_str_with_body(&mp_pck, HTTP_RESULT_ERROR, HTTP_RESULT_ERROR_LEN);
+        msgpack_pack_str_with_body(&mp_pck, HTTP_FIELD_MESSAGE, HTTP_FIELD_MESSAGE_LEN);
+        msgpack_pack_str_with_body(&mp_pck, HTTP_RESULT_FORBIDDEN, HTTP_RESULT_FORBIDDEN_LEN);
     }
     else if (http_status == 503) {
         msgpack_pack_map(&mp_pck, 1);
