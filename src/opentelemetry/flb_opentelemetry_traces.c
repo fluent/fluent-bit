@@ -594,12 +594,12 @@ static int process_span_status(struct ctrace *ctr,
 
     if (status->type != MSGPACK_OBJECT_MAP) {
         flb_error("unexpected type for status");
-        return -1;
+        goto invalid_status;
     }
 
     /* Missing code defaults to UNSET, as in the Protobuf representation. */
     ret = flb_otel_utils_find_map_entry_by_key(&status->via.map, "code", 0, FLB_FALSE);
-    if (ret >= 0) {
+    if (ret >= 0 && status->via.map.ptr[ret].val.type != MSGPACK_OBJECT_NIL) {
         value = &status->via.map.ptr[ret].val;
         if (value->type == MSGPACK_OBJECT_POSITIVE_INTEGER && value->via.u64 <= INT32_MAX) {
             code = (int) value->via.u64;
@@ -611,7 +611,7 @@ static int process_span_status(struct ctrace *ctr,
             /* Retain legacy short names and accept canonical Protobuf enum names. */
             tmp = cfl_sds_create_len(value->via.str.ptr, value->via.str.size);
             if (!tmp) {
-                return -1;
+                goto invalid_status;
             }
 
             if (strcasecmp(tmp, "UNSET") == 0 || strcasecmp(tmp, "STATUS_CODE_UNSET") == 0) {
@@ -625,30 +625,41 @@ static int process_span_status(struct ctrace *ctr,
             }
             else {
                 cfl_sds_destroy(tmp);
-                goto invalid_code;
+                goto invalid_status;
             }
             cfl_sds_destroy(tmp);
         }
         else {
-            goto invalid_code;
+            goto invalid_status;
         }
     }
 
     /* message */
     ret = flb_otel_utils_find_map_entry_by_key(&status->via.map, "message", 0, FLB_FALSE);
-    if (ret >= 0 && status->via.map.ptr[ret].val.type == MSGPACK_OBJECT_STR) {
-        message = flb_sds_create_len(status->via.map.ptr[ret].val.via.str.ptr,
-                                     status->via.map.ptr[ret].val.via.str.size);
+    if (ret >= 0) {
+        value = &status->via.map.ptr[ret].val;
+        if (value->type == MSGPACK_OBJECT_STR) {
+            message = flb_sds_create_len(value->via.str.ptr, value->via.str.size);
+            if (!message) {
+                goto invalid_status;
+            }
+        }
+        else if (value->type != MSGPACK_OBJECT_NIL) {
+            goto invalid_status;
+        }
     }
 
-    ctr_span_set_status(span, code, message);
+    ret = ctr_span_set_status(span, code, message);
     if (message) {
         flb_sds_destroy(message);
+    }
+    if (ret != 0) {
+        goto invalid_status;
     }
 
     return 0;
 
-invalid_code:
+invalid_status:
     if (error_status) {
         *error_status = FLB_OTEL_TRACES_ERR_STATUS_FAILURE;
     }
@@ -905,7 +916,7 @@ static int process_spans(struct ctrace *ctr,
 
         /* status */
         ret = flb_otel_utils_find_map_entry_by_key(&span.via.map, "status", 0, FLB_TRUE);
-        if (ret >= 0 && span.via.map.ptr[ret].val.type == MSGPACK_OBJECT_MAP) {
+        if (ret >= 0 && span.via.map.ptr[ret].val.type != MSGPACK_OBJECT_NIL) {
             ret = process_span_status(ctr, ctr_span, &span.via.map.ptr[ret].val, error_status);
             if (ret == -1) {
                 return -1;
