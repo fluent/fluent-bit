@@ -1058,6 +1058,42 @@ void flb_test_response_partially_success()
     flb_destroy(ctx);
 }
 
+/*
+ * A cloud_id whose base64 payload decodes to 256 bytes used to fill the
+ * decode buffer without a terminator and overflow the host buffer.
+ */
+void flb_test_cloud_id_oversized()
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    const char *cloud_id = "test:"
+    "ciRCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJC"
+    "QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJC"
+    "QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJC"
+    "QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJC"
+    "QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJC"
+    "QkJCQkJCQkJCQkJCQkJCQg==";
+
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "es", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "cloud_id", cloud_id,
+                   NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret != 0);
+
+    flb_destroy(ctx);
+}
+
 /* Test list */
 TEST_LIST = {
     {"long_index"            , flb_test_long_index },
@@ -1077,5 +1113,6 @@ TEST_LIST = {
     {"response_success"      , flb_test_response_success },
     {"response_successes", flb_test_response_successes },
     {"response_partially_success" , flb_test_response_partially_success },
+    {"cloud_id_oversized"        , flb_test_cloud_id_oversized },
     {NULL, NULL}
 };
