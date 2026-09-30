@@ -328,7 +328,15 @@ static void test_lua_sparse_arraylength(void)
     TEST_CHECK(lua_gettop(l) == top);
     lua_pop(l, 2);
     TEST_CHECK(luaL_dostring(l, "return {[3] = 'third'}") == 0);
-    TEST_CHECK(flb_lua_arraylength(l, -1) == 3);
+    TEST_CHECK(flb_lua_arraylength(l, -1) == -1);
+    TEST_CHECK(lua_gettop(l) == 1);
+    lua_pop(l, 1);
+    TEST_CHECK(luaL_dostring(l, "return {[500] = 7}") == 0);
+    TEST_CHECK(flb_lua_arraylength(l, -1) == -1);
+    TEST_CHECK(lua_gettop(l) == 1);
+    lua_pop(l, 1);
+    TEST_CHECK(luaL_dostring(l, "return {[1000000000] = 7}") == 0);
+    TEST_CHECK(flb_lua_arraylength(l, -1) == -1);
     TEST_CHECK(lua_gettop(l) == 1);
     lua_close(l);
 }
