@@ -481,12 +481,13 @@ static ssize_t parse_payload_urlencoded(struct flb_http *ctx,
     ret = process_pack_ng(ctx, tag, sbuf.data, sbuf.size, request, encoder);
 
 decode_error:
-    for (idx = 0; idx < mk_list_size(kvs); idx++) {
-        if (keys[idx]) {
-            flb_sds_destroy(keys[idx]);
+    /* only the first 'idx' entries were populated */
+    for (i = 0; i < idx; i++) {
+        if (keys[i]) {
+            flb_sds_destroy(keys[i]);
         }
-        if (vals[idx]) {
-            flb_sds_destroy(vals[idx]);
+        if (vals[i]) {
+            flb_sds_destroy(vals[i]);
         }
     }
     flb_free(vals);
