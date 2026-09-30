@@ -138,36 +138,36 @@ static int in_fw_collect(struct flb_input_instance *ins,
     return in_fw_collect_ctx(in_context);
 }
 
-static int in_fw_collect_ctx(struct flb_in_fw_config *ctx)
+static int in_fw_conn_is_paused(struct flb_in_fw_config *ctx)
 {
-    int                      state_backup;
-    struct flb_connection   *connection;
-    struct fw_conn          *conn;
-
-    state_backup = ctx->state;
-    ctx->state = FW_INSTANCE_STATE_ACCEPTING_CLIENT;
-
-    connection = flb_downstream_conn_get(ctx->downstream);
-
-    if (connection == NULL) {
-        flb_plg_error(ctx->ins, "could not accept new connection");
-        ctx->state = state_backup;
-
-        return -1;
+    if (ctx->is_paused == FLB_TRUE ||
+        ctx->state == FW_INSTANCE_STATE_PAUSED ||
+        ctx->downstream->paused == FLB_TRUE) {
+        return FLB_TRUE;
     }
+
+    return FLB_FALSE;
+}
+
+/*
+ * Accept callback: invoked from the connection event coroutine once the
+ * socket has been accepted and the TLS handshake (if any) completed. A
+ * non-zero return value makes the downstream release the connection.
+ */
+static int in_fw_conn_accept(struct flb_connection *connection, void *data)
+{
+    struct fw_conn          *conn;
+    struct flb_in_fw_config *ctx;
+
+    ctx = data;
 
     if (!ctx->ins->config->is_ingestion_active) {
-        flb_downstream_conn_release(connection);
-        ctx->state = state_backup;
-
         return -1;
     }
 
-    if (ctx->is_paused) {
-        flb_plg_trace(ctx->ins, "TCP connection will be closed FD=%i", connection->fd);
-        flb_downstream_conn_release(connection);
-        ctx->state = state_backup;
-
+    if (in_fw_conn_is_paused(ctx)) {
+        flb_plg_trace(ctx->ins, "TCP connection will be closed FD=%i",
+                      connection->fd);
         return -1;
     }
 
@@ -175,16 +175,45 @@ static int in_fw_collect_ctx(struct flb_in_fw_config *ctx)
 
     conn = fw_conn_add(connection, ctx);
     if (!conn) {
-        flb_downstream_conn_release(connection);
-        ctx->state = state_backup;
-
+        flb_plg_error(ctx->ins, "could not accept new connection");
         return -1;
     }
 
-    ctx->state = state_backup;
+    /*
+     * The secure forward HELO write can suspend this coroutine, the plugin
+     * might have been paused and its connections closed meanwhile. The
+     * wrapper is released by the drop notification.
+     */
+    if (in_fw_conn_is_paused(ctx)) {
+        flb_plg_trace(ctx->ins, "TCP connection will be closed FD=%i",
+                      connection->fd);
+        return -1;
+    }
 
-    if (ctx->state == FW_INSTANCE_STATE_PAUSED) {
-        fw_conn_del_all(ctx);
+    return 0;
+}
+
+static int in_fw_collect_ctx(struct flb_in_fw_config *ctx)
+{
+    int ret;
+
+    /*
+     * Accept the client in its own event coroutine so the TLS handshake
+     * yields back to the event loop while it waits for the peer instead of
+     * blocking it.
+     */
+    ret = flb_downstream_conn_event_accept(ctx->downstream,
+                                           in_fw_conn_accept,
+                                           ctx,
+                                           fw_conn_event,
+                                           MK_EVENT_READ);
+    if (ret != 0) {
+        /*
+         * accept(2) and handshake failures are reported by the core, this
+         * also covers a client which was rejected or served and closed
+         * before the accept coroutine suspended.
+         */
+        flb_plg_trace(ctx->ins, "no new connection accepted");
     }
 
     return 0;
@@ -322,6 +351,9 @@ static int in_fw_start_tcp_listener(struct flb_in_fw_config *ctx,
 
     flb_input_downstream_set(ctx->downstream, ctx->ins);
     flb_net_socket_nonblocking(ctx->downstream->server_fd);
+
+    /* Connections are accepted and served from event coroutines */
+    flb_stream_enable_async_mode(&ctx->downstream->base);
 
     if (use_collector == FLB_TRUE) {
         ret = flb_input_set_collector_socket(ctx->ins,
@@ -580,6 +612,9 @@ static int in_fw_init(struct flb_input_instance *ins,
     if (ctx->unix_path) {
         flb_input_downstream_set(ctx->downstream, ctx->ins);
         flb_net_socket_nonblocking(ctx->downstream->server_fd);
+
+        /* Connections are accepted and served from event coroutines */
+        flb_stream_enable_async_mode(&ctx->downstream->base);
 
         ret = flb_input_set_collector_socket(ins,
                                              in_fw_collect,
