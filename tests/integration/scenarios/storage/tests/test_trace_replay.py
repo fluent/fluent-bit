@@ -84,6 +84,60 @@ def send_traces(port, codes, batch=0):
     assert response.status_code in (200, 201), response.text
 
 
+def test_trace_shutdown_completes_inflight_request(tmp_path):
+    entered = threading.Event()
+    release = threading.Event()
+    received = []
+
+    class Sink(BaseHTTPRequestHandler):
+        def do_POST(self):
+            body = self.rfile.read(int(self.headers["Content-Length"]))
+            entered.set()
+            if not release.wait(15):
+                return
+            received.append(ExportTraceServiceRequest.FromString(body))
+            self.send_response(200)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def log_message(self, *_args):
+            pass
+
+    sink = ThreadingHTTPServer(("127.0.0.1", 0), Sink)
+    thread = threading.Thread(target=sink.serve_forever, daemon=True)
+    thread.start()
+    storage = tmp_path / "storage"
+    config = tmp_path / "fluent-bit.yaml"
+    input_port = find_available_port()
+    write_config(config, storage, input_port, sink.server_port, 1)
+    settings = yaml.safe_load(config.read_text())
+    settings["service"]["grace"] = 5
+    config.write_text(yaml.safe_dump(settings))
+    manager = FluentBitManager(str(config))
+    timer = None
+    try:
+        manager.start()
+        send_traces(input_port, [3])
+        assert entered.wait(15), "The output request did not reach the receiver"
+        # Let the suspended HTTP callback finish while shutdown waits for its task.
+        timer = threading.Timer(0.5, release.set)
+        timer.start()
+        manager.stop()
+        assert len(received) == 1
+        spans = [span for resource in received[0].resource_spans
+                 for scope in resource.scope_spans for span in scope.spans]
+        assert [(span.name, span.status.code) for span in spans] == [("batch-0-status-3", 3)]
+        assert not list(storage.glob("*/*.flb"))
+    finally:
+        release.set()
+        if timer:
+            timer.cancel()
+        manager.stop()
+        sink.shutdown()
+        sink.server_close()
+        thread.join(timeout=5)
+
+
 @pytest.mark.parametrize("routes", [1, 2], ids=["single-route", "fan-out"])
 @pytest.mark.parametrize("shutdown", ["graceful", "crash"])
 def test_trace_filesystem_restart(tmp_path, routes, shutdown):
