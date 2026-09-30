@@ -36,41 +36,62 @@
 #include "syslog_conn.h"
 #include "syslog_prot.h"
 
+/*
+ * Accept callback: invoked from the connection event coroutine once the
+ * socket has been accepted and the TLS handshake (if any) completed.
+ */
+static int in_syslog_conn_accept(struct flb_connection *connection,
+                                 void *data)
+{
+    struct syslog_conn    *conn;
+    struct flb_syslog     *ctx;
+
+    ctx = data;
+
+    flb_plg_trace(ctx->ins, "new Unix connection arrived FD=%i", connection->fd);
+
+    conn = syslog_conn_add(connection, ctx);
+
+    if (conn == NULL) {
+        flb_plg_error(ctx->ins, "could not accept new connection");
+
+        return -1;
+    }
+
+    return 0;
+}
+
 /* cb_collect callback */
 static int in_syslog_collect_tcp(struct flb_input_instance *i_ins,
                                  struct flb_config *config, void *in_context)
 {
-    struct flb_connection *connection;
-    struct syslog_conn    *conn;
+    int                    ret;
     struct flb_syslog     *ctx;
 
     (void) i_ins;
 
     ctx = in_context;
 
-    connection = flb_downstream_conn_get(ctx->downstream);
+    /*
+     * Accept the client in its own event coroutine so a TLS handshake that
+     * has to wait for the peer yields back to the event loop instead of
+     * blocking the engine thread until net.accept_timeout expires.
+     */
+    ret = flb_downstream_conn_event_accept(ctx->downstream,
+                                           in_syslog_conn_accept,
+                                           ctx,
+                                           syslog_conn_event,
+                                           MK_EVENT_READ);
 
-    if (connection == NULL) {
-        flb_plg_error(ctx->ins, "could not accept new connection");
+    /*
+     * A non-zero result also covers a client that was fully served and
+     * closed before this call returned, so it is not necessarily an error;
+     * accept(2) failures are reported by the core.
+     */
+    if (ret != 0) {
+        flb_plg_debug(ctx->ins, "no new connection accepted");
 
         return -1;
-    }
-
-    if (ctx->dgram_mode_flag) {
-        return syslog_dgram_conn_event(connection);
-    }
-    else {
-        flb_plg_trace(ctx->ins, "new Unix connection arrived FD=%i", connection->fd);
-
-        conn = syslog_conn_add(connection, ctx);
-
-        if (conn == NULL) {
-            flb_plg_error(ctx->ins, "could not accept new connection");
-
-            flb_downstream_conn_release(connection);
-
-            return -1;
-        }
     }
 
     return 0;
@@ -155,6 +176,9 @@ static int in_syslog_init(struct flb_input_instance *in,
     /* Collect events for every opened connection to our socket */
     if (ctx->mode == FLB_SYSLOG_UNIX_TCP ||
         ctx->mode == FLB_SYSLOG_TCP) {
+        /* Connections are accepted and served from event coroutines */
+        flb_stream_enable_async_mode(&ctx->downstream->base);
+
         ret = flb_input_set_collector_socket(in,
                                              in_syslog_collect_tcp,
                                              ctx->downstream->server_fd,
