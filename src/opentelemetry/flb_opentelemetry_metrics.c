@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_base64.h>
+#include <fluent-bit/flb_hash_table.h>
 
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_counter.h>
@@ -368,6 +369,69 @@ static struct cfl_kvlist *get_or_create_external_metadata_kvlist(
     return entry_kvlist;
 }
 
+/*
+ * cfl_kvlist_fetch() is a linear scan, so resolving the metadata context of
+ * every metric and data point of a request through it is quadratic. The
+ * otlp metrics subtree is only populated by this decoder, so keep a hash
+ * index of the entries created there during the request, keyed by parent
+ * kvlist and lowercased key to keep the case-insensitive kvlist semantics.
+ */
+static struct cfl_kvlist *get_or_create_indexed_kvlist(struct flb_hash_table *index,
+                                                       struct cfl_kvlist *root,
+                                                       char *key)
+{
+    int                 ret;
+    size_t              i;
+    size_t              out_size;
+    void               *out_buf;
+    flb_sds_t           index_key;
+    struct cfl_kvlist  *entry_kvlist;
+
+    index_key = flb_sds_create_size(strlen(key) + 32);
+    if (index_key == NULL) {
+        return NULL;
+    }
+
+    if (flb_sds_printf(&index_key, "%p:%s", (void *) root, key) == NULL) {
+        flb_sds_destroy(index_key);
+        return NULL;
+    }
+
+    for (i = 0; i < flb_sds_len(index_key); i++) {
+        index_key[i] = tolower((unsigned char) index_key[i]);
+    }
+
+    ret = flb_hash_table_get(index, index_key, flb_sds_len(index_key),
+                             &out_buf, &out_size);
+    if (ret >= 0) {
+        flb_sds_destroy(index_key);
+        return (struct cfl_kvlist *) out_buf;
+    }
+
+    entry_kvlist = cfl_kvlist_create();
+    if (entry_kvlist == NULL) {
+        flb_sds_destroy(index_key);
+        return NULL;
+    }
+
+    ret = cfl_kvlist_insert_kvlist(root, key, entry_kvlist);
+    if (ret != 0) {
+        cfl_kvlist_destroy(entry_kvlist);
+        flb_sds_destroy(index_key);
+        return NULL;
+    }
+
+    /* the kvlist is owned by root, the index only references it */
+    ret = flb_hash_table_add(index, index_key, flb_sds_len(index_key),
+                             entry_kvlist, 0);
+    flb_sds_destroy(index_key);
+    if (ret == -1) {
+        return NULL;
+    }
+
+    return entry_kvlist;
+}
+
 static uint64_t compute_metric_hash(struct cmt_map *map, struct cmt_metric *sample)
 {
     struct cfl_list      *head;
@@ -398,6 +462,7 @@ static uint64_t compute_metric_hash(struct cmt_map *map, struct cmt_metric *samp
 }
 
 static struct cfl_kvlist *get_or_create_metric_metadata_context(struct cmt *cmt,
+                                                                 struct flb_hash_table *kvlist_index,
                                                                  struct cmt_map *map)
 {
     struct cfl_kvlist *otlp_root;
@@ -408,27 +473,28 @@ static struct cfl_kvlist *get_or_create_metric_metadata_context(struct cmt *cmt,
         return NULL;
     }
 
-    otlp_root = get_or_create_external_metadata_kvlist(cmt->external_metadata, "otlp");
+    otlp_root = get_or_create_indexed_kvlist(kvlist_index, cmt->external_metadata, "otlp");
     if (otlp_root == NULL) {
         return NULL;
     }
 
-    metrics_root = get_or_create_external_metadata_kvlist(otlp_root, "metrics");
+    metrics_root = get_or_create_indexed_kvlist(kvlist_index, otlp_root, "metrics");
     if (metrics_root == NULL) {
         return NULL;
     }
 
-    type_root = get_or_create_external_metadata_kvlist(metrics_root,
-                                                       map_type_to_key(map->type));
+    type_root = get_or_create_indexed_kvlist(kvlist_index, metrics_root,
+                                             map_type_to_key(map->type));
     if (type_root == NULL) {
         return NULL;
     }
 
-    return get_or_create_external_metadata_kvlist(type_root, map->opts->fqname);
+    return get_or_create_indexed_kvlist(kvlist_index, type_root, map->opts->fqname);
 }
 
 static struct cfl_kvlist *get_or_create_data_point_metadata_context(
                                                 struct cmt *cmt,
+                                                struct flb_hash_table *kvlist_index,
                                                 struct cmt_map *map,
                                                 struct cmt_metric *sample,
                                                 uint64_t timestamp)
@@ -441,13 +507,13 @@ static struct cfl_kvlist *get_or_create_data_point_metadata_context(
         sample->hash = compute_metric_hash(map, sample);
     }
 
-    metric_context = get_or_create_metric_metadata_context(cmt, map);
+    metric_context = get_or_create_metric_metadata_context(cmt, kvlist_index, map);
     if (metric_context == NULL) {
         return NULL;
     }
 
-    datapoints_context = get_or_create_external_metadata_kvlist(metric_context,
-                                                                "datapoints");
+    datapoints_context = get_or_create_indexed_kvlist(kvlist_index, metric_context,
+                                                      "datapoints");
     if (datapoints_context == NULL) {
         return NULL;
     }
@@ -456,7 +522,7 @@ static struct cfl_kvlist *get_or_create_data_point_metadata_context(
              (unsigned long long) (sample != NULL ? sample->hash : 0),
              (unsigned long long) timestamp);
 
-    return get_or_create_external_metadata_kvlist(datapoints_context, key);
+    return get_or_create_indexed_kvlist(kvlist_index, datapoints_context, key);
 }
 
 static int object_to_sds(msgpack_object *obj, flb_sds_t *out)
@@ -1090,6 +1156,7 @@ static void append_common_datapoint_metadata(struct cfl_kvlist *point_metadata,
 }
 
 static int clone_metric_metadata(struct cmt *context,
+                                 struct flb_hash_table *kvlist_index,
                                  struct cmt_map *map,
                                  msgpack_object_map *metric_map)
 {
@@ -1111,7 +1178,7 @@ static int clone_metric_metadata(struct cmt *context,
         return OTEL_METRICS_JSON_DECODER_ERROR;
     }
 
-    metric_context = get_or_create_metric_metadata_context(context, map);
+    metric_context = get_or_create_metric_metadata_context(context, kvlist_index, map);
     if (metric_context == NULL) {
         return CMT_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
     }
@@ -1380,6 +1447,7 @@ static int clone_resource_metrics_metadata(struct cfl_kvlist *external_metadata,
 }
 
 static int process_metric_gauge_data_points(struct cmt *context,
+                                            struct flb_hash_table *kvlist_index,
                                             msgpack_object_map *metric_map,
                                             msgpack_object *name_object,
                                             msgpack_object_array *data_points)
@@ -1501,7 +1569,7 @@ static int process_metric_gauge_data_points(struct cmt *context,
                 return result;
             }
 
-            result = clone_metric_metadata(context, gauge->map, metric_map);
+            result = clone_metric_metadata(context, kvlist_index, gauge->map, metric_map);
             if (result != 0) {
                 destroy_label_arrays(point_label_count, NULL, point_label_values);
                 destroy_label_arrays(metric_label_count, metric_label_keys, NULL);
@@ -1537,6 +1605,7 @@ static int process_metric_gauge_data_points(struct cmt *context,
             }
 
             point_metadata = get_or_create_data_point_metadata_context(context,
+                                                                       kvlist_index,
                                                                        gauge->map,
                                                                        sample,
                                                                        timestamp);
@@ -1565,6 +1634,7 @@ static int process_metric_gauge_data_points(struct cmt *context,
 }
 
 static int process_metric_sum_data_points(struct cmt *context,
+                                          struct flb_hash_table *kvlist_index,
                                           msgpack_object_map *metric_map,
                                           msgpack_object *name_object,
                                           int allow_reset,
@@ -1688,7 +1758,7 @@ static int process_metric_sum_data_points(struct cmt *context,
                 return result;
             }
 
-            result = clone_metric_metadata(context, counter->map, metric_map);
+            result = clone_metric_metadata(context, kvlist_index, counter->map, metric_map);
             if (result != 0) {
                 destroy_label_arrays(point_label_count, NULL, point_label_values);
                 destroy_label_arrays(metric_label_count, metric_label_keys, NULL);
@@ -1734,6 +1804,7 @@ static int process_metric_sum_data_points(struct cmt *context,
             }
 
             point_metadata = get_or_create_data_point_metadata_context(context,
+                                                                       kvlist_index,
                                                                        counter->map,
                                                                        sample,
                                                                        timestamp);
@@ -2081,6 +2152,7 @@ static int check_double_array_layout(size_t expected_count,
 }
 
 static int process_metric_histogram_data_points(struct cmt *context,
+                                                struct flb_hash_table *kvlist_index,
                                                 msgpack_object_map *metric_map,
                                                 msgpack_object *name_object,
                                                 int aggregation_type,
@@ -2383,7 +2455,7 @@ static int process_metric_histogram_data_points(struct cmt *context,
                 return result;
             }
 
-            result = clone_metric_metadata(context, histogram->map, metric_map);
+            result = clone_metric_metadata(context, kvlist_index, histogram->map, metric_map);
             if (result != 0) {
                 destroy_label_arrays(point_label_count, NULL, point_label_values);
                 destroy_label_arrays(metric_label_count, metric_label_keys, NULL);
@@ -2435,6 +2507,7 @@ static int process_metric_histogram_data_points(struct cmt *context,
                                     CMT_FALSE);
         if (sample != NULL) {
             point_metadata = get_or_create_data_point_metadata_context(context,
+                                                                       kvlist_index,
                                                                        histogram->map,
                                                                        sample,
                                                                        timestamp);
@@ -2466,6 +2539,7 @@ static int process_metric_histogram_data_points(struct cmt *context,
 }
 
 static int process_metric_summary_data_points(struct cmt *context,
+                                              struct flb_hash_table *kvlist_index,
                                               msgpack_object_map *metric_map,
                                               msgpack_object *name_object,
                                               msgpack_object_array *data_points)
@@ -2674,7 +2748,7 @@ static int process_metric_summary_data_points(struct cmt *context,
                 return result;
             }
 
-            result = clone_metric_metadata(context, summary->map, metric_map);
+            result = clone_metric_metadata(context, kvlist_index, summary->map, metric_map);
             if (result != 0) {
                 destroy_label_arrays(point_label_count, NULL, point_label_values);
                 destroy_label_arrays(metric_label_count, metric_label_keys, NULL);
@@ -2725,6 +2799,7 @@ static int process_metric_summary_data_points(struct cmt *context,
                                     CMT_FALSE);
         if (sample != NULL) {
             point_metadata = get_or_create_data_point_metadata_context(context,
+                                                                       kvlist_index,
                                                                        summary->map,
                                                                        sample,
                                                                        timestamp);
@@ -2746,6 +2821,7 @@ static int process_metric_summary_data_points(struct cmt *context,
 
 static int process_metric_exponential_histogram_data_points(
                                                 struct cmt *context,
+                                                struct flb_hash_table *kvlist_index,
                                                 msgpack_object_map *metric_map,
                                                 msgpack_object *name_object,
                                                 int aggregation_type,
@@ -3057,7 +3133,7 @@ static int process_metric_exponential_histogram_data_points(
                 return result;
             }
 
-            result = clone_metric_metadata(context, exp_histogram->map, metric_map);
+            result = clone_metric_metadata(context, kvlist_index, exp_histogram->map, metric_map);
             if (result != 0) {
                 destroy_label_arrays(point_label_count, NULL, point_label_values);
                 destroy_label_arrays(metric_label_count, metric_label_keys, NULL);
@@ -3117,6 +3193,7 @@ static int process_metric_exponential_histogram_data_points(
                                     CMT_FALSE);
         if (sample != NULL) {
             point_metadata = get_or_create_data_point_metadata_context(context,
+                                                                       kvlist_index,
                                                                        exp_histogram->map,
                                                                        sample,
                                                                        timestamp);
@@ -3149,6 +3226,7 @@ static int process_metric_exponential_histogram_data_points(
 }
 
 static int decode_metric_gauge(struct cmt *context,
+                               struct flb_hash_table *kvlist_index,
                                msgpack_object_map *metric_map,
                                msgpack_object *name_object)
 {
@@ -3183,12 +3261,14 @@ static int decode_metric_gauge(struct cmt *context,
     }
 
     return process_metric_gauge_data_points(context,
+                                            kvlist_index,
                                             metric_map,
                                             name_object,
                                             &data_points_object->via.array);
 }
 
 static int decode_metric_sum(struct cmt *context,
+                             struct flb_hash_table *kvlist_index,
                              msgpack_object_map *metric_map,
                              msgpack_object *name_object)
 {
@@ -3255,6 +3335,7 @@ static int decode_metric_sum(struct cmt *context,
     }
 
     return process_metric_sum_data_points(context,
+                                          kvlist_index,
                                           metric_map,
                                           name_object,
                                           allow_reset,
@@ -3263,6 +3344,7 @@ static int decode_metric_sum(struct cmt *context,
 }
 
 static int decode_metric_histogram(struct cmt *context,
+                                   struct flb_hash_table *kvlist_index,
                                    msgpack_object_map *metric_map,
                                    msgpack_object *name_object)
 {
@@ -3319,6 +3401,7 @@ static int decode_metric_histogram(struct cmt *context,
     }
 
     return process_metric_histogram_data_points(context,
+                                                kvlist_index,
                                                 metric_map,
                                                 name_object,
                                                 aggregation_type,
@@ -3326,6 +3409,7 @@ static int decode_metric_histogram(struct cmt *context,
 }
 
 static int decode_metric_summary(struct cmt *context,
+                                 struct flb_hash_table *kvlist_index,
                                  msgpack_object_map *metric_map,
                                  msgpack_object *name_object)
 {
@@ -3363,12 +3447,14 @@ static int decode_metric_summary(struct cmt *context,
     }
 
     return process_metric_summary_data_points(context,
+                                              kvlist_index,
                                               metric_map,
                                               name_object,
                                               &data_points_object->via.array);
 }
 
 static int decode_metric_exponential_histogram(struct cmt *context,
+                                               struct flb_hash_table *kvlist_index,
                                                msgpack_object_map *metric_map,
                                                msgpack_object *name_object)
 {
@@ -3426,13 +3512,16 @@ static int decode_metric_exponential_histogram(struct cmt *context,
 
     return process_metric_exponential_histogram_data_points(
                                                 context,
+                                                kvlist_index,
                                                 metric_map,
                                                 name_object,
                                                 aggregation_type,
                                                 &data_points_object->via.array);
 }
 
-static int decode_metric_entry(struct cmt *context, msgpack_object *metric_object)
+static int decode_metric_entry(struct cmt *context,
+                               struct flb_hash_table *kvlist_index,
+                               msgpack_object *metric_object)
 {
     int               result;
     int               name_index;
@@ -3483,28 +3572,28 @@ static int decode_metric_entry(struct cmt *context, msgpack_object *metric_objec
     }
 
     if (gauge_index >= 0) {
-        result = decode_metric_gauge(context, metric_map, name_object);
+        result = decode_metric_gauge(context, kvlist_index, metric_map, name_object);
         if (result != 0) {
             return result;
         }
     }
 
     if (sum_index >= 0) {
-        result = decode_metric_sum(context, metric_map, name_object);
+        result = decode_metric_sum(context, kvlist_index, metric_map, name_object);
         if (result != 0) {
             return result;
         }
     }
 
     if (histogram_index >= 0) {
-        result = decode_metric_histogram(context, metric_map, name_object);
+        result = decode_metric_histogram(context, kvlist_index, metric_map, name_object);
         if (result != 0) {
             return result;
         }
     }
 
     if (summary_index >= 0) {
-        result = decode_metric_summary(context, metric_map, name_object);
+        result = decode_metric_summary(context, kvlist_index, metric_map, name_object);
         if (result != 0) {
             return result;
         }
@@ -3512,6 +3601,7 @@ static int decode_metric_entry(struct cmt *context, msgpack_object *metric_objec
 
     if (exponential_histogram_index >= 0) {
         result = decode_metric_exponential_histogram(context,
+                                                     kvlist_index,
                                                      metric_map,
                                                      name_object);
         if (result != 0) {
@@ -3523,6 +3613,7 @@ static int decode_metric_entry(struct cmt *context, msgpack_object *metric_objec
 }
 
 static int decode_scope_metrics_entry(struct cfl_list *context_list,
+                                      struct flb_hash_table *kvlist_index,
                                       msgpack_object *scope_metrics_object)
 {
     int                 index;
@@ -3602,7 +3693,7 @@ static int decode_scope_metrics_entry(struct cfl_list *context_list,
     metrics_array = &metrics_object->via.array;
 
     for (index = 0 ; index < metrics_array->size ; index++) {
-        result = decode_metric_entry(context, &metrics_array->ptr[index]);
+        result = decode_metric_entry(context, kvlist_index, &metrics_array->ptr[index]);
         if (result != 0) {
             cmt_destroy(context);
             return result;
@@ -3615,6 +3706,7 @@ static int decode_scope_metrics_entry(struct cfl_list *context_list,
 }
 
 static int decode_resource_metrics_entry(struct cfl_list *context_list,
+                                         struct flb_hash_table *kvlist_index,
                                          msgpack_object *resource_metrics_object)
 {
     int                 index;
@@ -3660,7 +3752,8 @@ static int decode_resource_metrics_entry(struct cfl_list *context_list,
 
     scope_metrics_array = &scope_metrics_object->via.array;
     for (index = 0 ; index < scope_metrics_array->size ; index++) {
-        result = decode_scope_metrics_entry(context_list, &scope_metrics_array->ptr[index]);
+        result = decode_scope_metrics_entry(context_list, kvlist_index,
+                                            &scope_metrics_array->ptr[index]);
         if (result != 0) {
             return result;
         }
@@ -3706,6 +3799,7 @@ int flb_opentelemetry_metrics_json_to_cmt(struct cfl_list *context_list,
     msgpack_object      *root_object;
     msgpack_object      *resource_metrics_object;
     msgpack_object_array *resource_metrics;
+    struct flb_hash_table *kvlist_index;
 
     msgpack_body = NULL;
     msgpack_body_size = 0;
@@ -3752,14 +3846,25 @@ int flb_opentelemetry_metrics_json_to_cmt(struct cfl_list *context_list,
     }
 
     resource_metrics = &resource_metrics_object->via.array;
+
+    kvlist_index = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 4096, 0);
+    if (kvlist_index == NULL) {
+        flb_free(msgpack_body);
+        msgpack_unpacked_destroy(&result_set);
+        return CMT_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
+    }
+
     result = CMT_DECODE_OPENTELEMETRY_SUCCESS;
 
     for (index = 0 ;
          result == CMT_DECODE_OPENTELEMETRY_SUCCESS && index < resource_metrics->size ;
          index++) {
         result = decode_resource_metrics_entry(context_list,
+                                               kvlist_index,
                                                &resource_metrics->ptr[index]);
     }
+
+    flb_hash_table_destroy(kvlist_index);
 
     if (result != CMT_DECODE_OPENTELEMETRY_SUCCESS) {
         destroy_context_list(context_list);
