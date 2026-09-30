@@ -2027,6 +2027,7 @@ int flb_input_instance_init(struct flb_input_instance *ins,
             if (ret == -1) {
                 flb_error("failed initialize processors for input %s",
                           ins->name);
+                flb_input_instance_exit(ins, config);
                 return -1;
             }
         }
