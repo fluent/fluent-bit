@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_network.h>
+#include <fluent-bit/flb_downstream.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_msgpack_append_message.h>
@@ -30,6 +31,8 @@
 
 #include "tcp.h"
 #include "tcp_conn.h"
+
+static void tcp_conn_drop(struct flb_connection *connection);
 
 static inline void consume_bytes(char *buf, size_t bytes, size_t length)
 {
@@ -425,190 +428,189 @@ static ssize_t parse_payload_none(struct tcp_conn *conn)
     return consumed;
 }
 
-/* Callback invoked every time an event is triggered for a connection */
+/*
+ * Parse the buffered payload and ingest complete records. It returns -1 when
+ * the connection must be closed and 0 otherwise.
+ */
+static int tcp_conn_process(struct tcp_conn *conn)
+{
+    ssize_t ret_payload;
+    struct flb_in_tcp_config *ctx;
+
+    ctx = conn->ctx;
+    ret_payload = -1;
+
+    /* Strip CR or LF if found at first byte */
+    if (conn->buf_data[0] == '\r' || conn->buf_data[0] == '\n') {
+        /* Skip message with one byte with CR or LF */
+        flb_plg_trace(ctx->ins, "skip one byte message with ASCII code=%i",
+                      conn->buf_data[0]);
+        consume_bytes(conn->buf_data, 1, conn->buf_len);
+        conn->buf_len--;
+        conn->buf_data[conn->buf_len] = '\0';
+    }
+
+    /* JSON Format handler */
+    if (ctx->format == FLB_TCP_FMT_JSON) {
+        ret_payload = parse_payload_json(conn);
+        if (ret_payload == 0) {
+            /* Incomplete JSON message, we need more data */
+            return 0;
+        }
+        else if (ret_payload == -1) {
+            /*
+             * The payload could not be turned into records: drop the
+             * buffered bytes, otherwise every later read would re-parse
+             * the same undeliverable data from offset 0.
+             */
+            conn->buf_len = 0;
+            flb_pack_state_reset(&conn->pack_state);
+            if (flb_pack_state_init(&conn->pack_state) == -1) {
+                flb_plg_error(ctx->ins,
+                              "fd=%i failed to reinitialize JSON parser state",
+                              conn->connection->fd);
+                return -1;
+            }
+            conn->pack_state.multiple = FLB_TRUE;
+            return 0;
+        }
+    }
+    else if (ctx->format == FLB_TCP_FMT_NONE) {
+        ret_payload = parse_payload_none(conn);
+        if (ret_payload == 0) {
+            return 0;
+        }
+        else if (ret_payload == -1) {
+            conn->buf_len = 0;
+            return 0;
+        }
+    }
+
+    if (ret_payload < 0 || ret_payload > conn->buf_len) {
+        flb_plg_warn(ctx->ins,
+                     "fd=%i invalid payload consume length=%zd buf_len=%i",
+                     conn->connection->fd, ret_payload, conn->buf_len);
+
+        if (ctx->format == FLB_TCP_FMT_JSON) {
+            flb_pack_state_reset(&conn->pack_state);
+            if (flb_pack_state_init(&conn->pack_state) == -1) {
+                flb_plg_error(ctx->ins,
+                              "fd=%i failed to reinitialize JSON parser state",
+                              conn->connection->fd);
+                return -1;
+            }
+            conn->pack_state.multiple = FLB_TRUE;
+        }
+
+        conn->buf_len = 0;
+        return 0;
+    }
+
+    consume_bytes(conn->buf_data, (size_t) ret_payload, (size_t) conn->buf_len);
+    conn->buf_len -= ret_payload;
+    conn->buf_data[conn->buf_len] = '\0';
+
+    if (ctx->format == FLB_TCP_FMT_JSON) {
+        jsmn_init(&conn->pack_state.parser);
+        conn->pack_state.tokens_count = 0;
+        conn->pack_state.last_byte = 0;
+        conn->pack_state.buf_len = 0;
+    }
+
+    return 0;
+}
+
+/* Parsers, filters and processors run on the parent stack */
+static int tcp_conn_process_dispatch(void *data)
+{
+    return tcp_conn_process((struct tcp_conn *) data);
+}
+
+/*
+ * Callback invoked from the downstream event coroutine of the connection. It
+ * is called in a loop and the read below suspends the coroutine until data
+ * is available, so every return path must either consume data or release
+ * the connection.
+ */
 int tcp_conn_event(void *data)
 {
     int bytes;
     int available;
     int size;
-    ssize_t ret_payload = -1;
+    int ret;
     char *tmp;
-    struct mk_event *event;
     struct tcp_conn *conn;
     struct flb_connection *connection;
     struct flb_in_tcp_config *ctx;
-    int ret = 0;
 
     connection = (struct flb_connection *) data;
 
     conn = connection->user_data;
 
+    /* The wrapper might have been released by the drop notification */
+    if (conn == NULL) {
+        return -1;
+    }
+
     ctx = conn->ctx;
 
-    event = &connection->event;
-
-    conn->busy = FLB_TRUE;
-
-    if (event->mask & MK_EVENT_READ) {
-        available = (conn->buf_size - conn->buf_len) - 1;
-        if (available < 1) {
-            if (conn->buf_size + ctx->chunk_size > ctx->buffer_size) {
-                flb_plg_warn(ctx->ins,
-                             "fd=%i incoming data exceeds 'Buffer_Size' (%zu KB)",
-                             event->fd, (ctx->buffer_size / 1024));
-                conn->busy = FLB_FALSE;
-                tcp_conn_del(conn);
-                return -1;
-            }
-
-            size = conn->buf_size + ctx->chunk_size;
-            tmp = flb_realloc(conn->buf_data, size);
-            if (!tmp) {
-                conn->busy = FLB_FALSE;
-                flb_errno();
-                return -1;
-            }
-            flb_plg_trace(ctx->ins, "fd=%i buffer realloc %i -> %i",
-                          event->fd, conn->buf_size, size);
-
-            conn->buf_data = tmp;
-            conn->buf_size = size;
-            available = (conn->buf_size - conn->buf_len) - 1;
-        }
-
-        /* Read data */
-        bytes = flb_io_net_read(connection,
-                                (void *) &conn->buf_data[conn->buf_len],
-                                available);
-
-        if (bytes <= 0) {
-            flb_plg_trace(ctx->ins, "fd=%i closed connection", event->fd);
-            conn->busy = FLB_FALSE;
+    available = (conn->buf_size - conn->buf_len) - 1;
+    if (available < 1) {
+        if (conn->buf_size + ctx->chunk_size > ctx->buffer_size) {
+            flb_plg_warn(ctx->ins,
+                         "fd=%i incoming data exceeds 'Buffer_Size' (%zu KB)",
+                         connection->fd, (ctx->buffer_size / 1024));
             tcp_conn_del(conn);
             return -1;
         }
 
-        flb_plg_trace(ctx->ins, "read()=%i pre_len=%i now_len=%i",
-                      bytes, conn->buf_len, conn->buf_len + bytes);
-        conn->buf_len += bytes;
-        conn->buf_data[conn->buf_len] = '\0';
-
-        /* Strip CR or LF if found at first byte */
-        if (conn->buf_data[0] == '\r' || conn->buf_data[0] == '\n') {
-            /* Skip message with one byte with CR or LF */
-            flb_plg_trace(ctx->ins, "skip one byte message with ASCII code=%i",
-                      conn->buf_data[0]);
-            consume_bytes(conn->buf_data, 1, conn->buf_len);
-            conn->buf_len--;
-            conn->buf_data[conn->buf_len] = '\0';
+        size = conn->buf_size + ctx->chunk_size;
+        tmp = flb_realloc(conn->buf_data, size);
+        if (!tmp) {
+            flb_errno();
+            tcp_conn_del(conn);
+            return -1;
         }
+        flb_plg_trace(ctx->ins, "fd=%i buffer realloc %i -> %i",
+                      connection->fd, conn->buf_size, size);
 
-        /* JSON Format handler */
-        if (ctx->format == FLB_TCP_FMT_JSON) {
-            ret_payload = parse_payload_json(conn);
-            if (ret_payload == 0) {
-                /* Incomplete JSON message, we need more data */
-                ret = -1;
-                goto cleanup;
-            }
-            else if (ret_payload == -1) {
-                /*
-                 * The payload could not be turned into records: drop the
-                 * buffered bytes, otherwise every later read would re-parse
-                 * the same undeliverable data from offset 0.
-                 */
-                conn->buf_len = 0;
-                flb_pack_state_reset(&conn->pack_state);
-                if (flb_pack_state_init(&conn->pack_state) == -1) {
-                    flb_plg_error(ctx->ins,
-                                  "fd=%i failed to reinitialize JSON parser state",
-                                  event->fd);
-                    conn->pending_close = FLB_TRUE;
-                    ret = -1;
-                    goto cleanup;
-                }
-                conn->pack_state.multiple = FLB_TRUE;
-                ret = -1;
-                goto cleanup;
-            }
-        }
-        else if (ctx->format == FLB_TCP_FMT_NONE) {
-            ret_payload = parse_payload_none(conn);
-            if (ret_payload == 0) {
-                ret = -1;
-                goto cleanup;
-            }
-            else if (ret_payload == -1) {
-                conn->buf_len = 0;
-                ret = -1;
-                goto cleanup;
-            }
-        }
-
-
-        if (ret_payload < 0 || ret_payload > conn->buf_len) {
-            flb_plg_warn(ctx->ins,
-                         "fd=%i invalid payload consume length=%zd buf_len=%i",
-                         event->fd, ret_payload, conn->buf_len);
-
-            if (ctx->format == FLB_TCP_FMT_JSON) {
-                flb_pack_state_reset(&conn->pack_state);
-                if (flb_pack_state_init(&conn->pack_state) == -1) {
-                    flb_plg_error(ctx->ins,
-                                  "fd=%i failed to reinitialize JSON parser state",
-                                  event->fd);
-                    conn->pending_close = FLB_TRUE;
-                    ret = -1;
-                    goto cleanup;
-                }
-                conn->pack_state.multiple = FLB_TRUE;
-            }
-
-            conn->buf_len = 0;
-            ret = -1;
-            goto cleanup;
-        }
-
-        consume_bytes(conn->buf_data, (size_t) ret_payload, (size_t) conn->buf_len);
-        conn->buf_len -= ret_payload;
-        conn->buf_data[conn->buf_len] = '\0';
-
-        if (ctx->format == FLB_TCP_FMT_JSON) {
-            jsmn_init(&conn->pack_state.parser);
-            conn->pack_state.tokens_count = 0;
-            conn->pack_state.last_byte = 0;
-            conn->pack_state.buf_len = 0;
-        }
-
-        ret = bytes;
-        goto cleanup;
+        conn->buf_data = tmp;
+        conn->buf_size = size;
+        available = (conn->buf_size - conn->buf_len) - 1;
     }
 
-    if (event->mask & MK_EVENT_CLOSE) {
-        flb_plg_trace(ctx->ins, "fd=%i hangup", event->fd);
-        conn->busy = FLB_FALSE;
+    /* Read data */
+    bytes = flb_io_net_read(connection,
+                            (void *) &conn->buf_data[conn->buf_len],
+                            available);
+
+    if (bytes <= 0) {
+        flb_plg_trace(ctx->ins, "fd=%i closed connection", connection->fd);
         tcp_conn_del(conn);
         return -1;
     }
 
-    ret = 0;
+    flb_plg_trace(ctx->ins, "read()=%i pre_len=%i now_len=%i",
+                  bytes, conn->buf_len, conn->buf_len + bytes);
+    conn->buf_len += bytes;
+    conn->buf_data[conn->buf_len] = '\0';
 
-cleanup:
-    conn->busy = FLB_FALSE;
-    if (conn->pending_close) {
+    ret = flb_downstream_conn_event_call_parent(connection,
+                                                tcp_conn_process_dispatch,
+                                                conn);
+    if (ret == -1) {
         tcp_conn_del(conn);
         return -1;
     }
 
-    return ret;
+    return bytes;
 }
 
-/* Create a new mqtt request instance */
+/* Create a new TCP connection wrapper */
 struct tcp_conn *tcp_conn_add(struct flb_connection *connection,
                               struct flb_in_tcp_config *ctx)
 {
     struct tcp_conn *conn;
-    int              ret;
 
     conn = flb_malloc(sizeof(struct tcp_conn));
     if (!conn) {
@@ -617,13 +619,6 @@ struct tcp_conn *tcp_conn_add(struct flb_connection *connection,
     }
 
     conn->connection = connection;
-
-    /* Set data for the event-loop */
-    MK_EVENT_NEW(&connection->event);
-
-    connection->user_data     = conn;
-    connection->event.type    = FLB_ENGINE_EV_CUSTOM;
-    connection->event.handler = tcp_conn_event;
 
     /* Connection info */
     conn->ctx     = ctx;
@@ -649,49 +644,58 @@ struct tcp_conn *tcp_conn_add(struct flb_connection *connection,
         conn->pack_state.multiple = FLB_TRUE;
     }
 
-    /* Register instance into the event loop */
-    ret = mk_event_add(flb_engine_evl_get(),
-                       connection->fd,
-                       FLB_ENGINE_EV_CUSTOM,
-                       MK_EVENT_READ,
-                       &connection->event);
-    if (ret == -1) {
-        flb_plg_error(ctx->ins, "could not register new connection");
-
-        flb_free(conn->buf_data);
-        flb_free(conn);
-
-        return NULL;
-    }
+    connection->user_data = conn;
 
     mk_list_add(&conn->_head, &ctx->connections);
 
-    conn->busy = FLB_FALSE;
-    conn->pending_close = FLB_FALSE;
+    /*
+     * The connection is registered into the event loop by the downstream
+     * accept coroutine. The wrapper is released from the drop notification
+     * once the downstream tears the connection down, either on request
+     * through tcp_conn_del() or on its own (e.g. timeouts).
+     */
+    connection->drop_notification_callback = tcp_conn_drop;
 
     return conn;
 }
 
-int tcp_conn_del(struct tcp_conn *conn)
+/* Release the plugin-side wrapper, the downstream connection is not touched */
+static void tcp_conn_release(struct tcp_conn *conn)
 {
-    struct flb_in_tcp_config *ctx;
-
-    ctx = conn->ctx;
-
-    if (ctx->format == FLB_TCP_FMT_JSON) {
+    if (conn->ctx->format == FLB_TCP_FMT_JSON) {
         flb_pack_state_reset(&conn->pack_state);
     }
 
-    /* The downstream unregisters the file descriptor from the event-loop
-     * so there's nothing to be done by the plugin
-     */
-    flb_downstream_conn_release(conn->connection);
-
-    /* Release resources */
     mk_list_del(&conn->_head);
 
     flb_free(conn->buf_data);
     flb_free(conn);
+}
+
+static void tcp_conn_drop(struct flb_connection *connection)
+{
+    struct tcp_conn *conn;
+
+    conn = connection->user_data;
+
+    connection->drop_notification_callback = NULL;
+    connection->user_data = NULL;
+
+    if (conn != NULL) {
+        flb_plg_trace(conn->ctx->ins, "drop connection fd=%i", connection->fd);
+        conn->connection = NULL;
+        tcp_conn_release(conn);
+    }
+}
+
+int tcp_conn_del(struct tcp_conn *conn)
+{
+    /*
+     * The downstream may have to wake the connection coroutine suspended in
+     * asynchronous I/O before releasing it, so the wrapper is freed by the
+     * drop notification in both the immediate and the deferred paths.
+     */
+    flb_downstream_conn_release(conn->connection);
 
     return 0;
 }
