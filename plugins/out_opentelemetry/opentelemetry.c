@@ -931,9 +931,15 @@ static int process_traces(struct flb_event_chunk *event_chunk,
     flb_plg_debug(ctx->ins, "ctraces msgpack size: %lu",
                   event_chunk->size);
 
-    while (ctr_decode_msgpack_create(&ctr,
-                                     (char *) event_chunk->data,
-                                     event_chunk->size, &off) == 0) {
+    while (off < event_chunk->size) {
+        ret = ctr_decode_msgpack_create(&ctr, (char *) event_chunk->data,
+                                        event_chunk->size, &off);
+        if (ret != CTR_DECODE_MSGPACK_SUCCESS) {
+            flb_plg_error(ctx->ins, "could not decode traces msgpack: %d", ret);
+            result = FLB_ERROR;
+            goto exit;
+        }
+
         /* Create a OpenTelemetry payload */
         encoded_chunk = ctr_encode_opentelemetry_create(ctr);
         if (encoded_chunk == NULL) {
