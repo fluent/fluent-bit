@@ -262,6 +262,38 @@ static void wait_for_file_count_at_most(const char *path, int expected)
     }
 }
 
+static int wait_for_shared_upload_cleanup(struct flb_s3 *ctx,
+                                          char *first_name, char *second_name)
+{
+    uint64_t elapsed_ms;
+    struct flb_time start_time;
+    struct flb_time end_time;
+    struct flb_time diff_time;
+
+    elapsed_ms = 0;
+    flb_time_get(&start_time);
+
+    while (elapsed_ms < S3_TEST_WAIT_TIMEOUT_MS) {
+        pthread_mutex_lock(&ctx->files_mutex);
+        if (flb_fstore_file_get(ctx->fs, ctx->stream_active,
+                               first_name, strlen(first_name)) == NULL &&
+            flb_fstore_file_get(ctx->fs, ctx->stream_active,
+                               second_name, strlen(second_name)) == NULL &&
+            mk_list_is_empty(&ctx->upload_queue) == 0) {
+            pthread_mutex_unlock(&ctx->files_mutex);
+            return 0;
+        }
+        pthread_mutex_unlock(&ctx->files_mutex);
+
+        flb_time_msleep(S3_TEST_WAIT_STEP_MS);
+        flb_time_get(&end_time);
+        flb_time_diff(&end_time, &start_time, &diff_time);
+        elapsed_ms = flb_time_to_nanosec(&diff_time) / 1000000;
+    }
+
+    return -1;
+}
+
 static int wait_for_s3_file_create_time(struct flb_s3 *ctx, const char *tag,
                                         int tag_len, time_t create_time,
                                         char *file_name, size_t file_name_size)
@@ -1194,8 +1226,10 @@ void flb_test_s3_ordered_shared_upload_retries_safely(void)
     TEST_CHECK(ret >= 0);
     wait_for_file_count(s3_ctx->stream_active->path, 2);
     wait_for_s3_call_count("UploadPart", 4);
-    wait_for_file_count_at_most(s3_ctx->stream_active->path, 1);
+    ret = wait_for_shared_upload_cleanup(s3_ctx, first_file_name, second_file_name);
+    TEST_CHECK_(ret == 0, "Expected both shared-upload chunks to finish cleanup");
 
+    pthread_mutex_lock(&s3_ctx->files_mutex);
     TEST_CHECK_(get_s3_call_count("UploadPart") == 4,
                 "Expected both shared-upload chunks to exhaust safely, got %d attempts",
                 get_s3_call_count("UploadPart"));
@@ -1207,6 +1241,7 @@ void flb_test_s3_ordered_shared_upload_retries_safely(void)
                 "Expected second retry-exhausted chunk to be deleted");
     TEST_CHECK_(mk_list_is_empty(&s3_ctx->upload_queue) == 0,
                 "Expected shared-upload queue to be empty");
+    pthread_mutex_unlock(&s3_ctx->files_mutex);
 
 cleanup:
     flb_stop(ctx);
