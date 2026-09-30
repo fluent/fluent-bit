@@ -292,16 +292,9 @@ def test_trace_shutdown_aborts_inflight_requests_and_replays(tmp_path, transport
     stopping = threading.Event()
     received = [[] for _ in range(routes)]
     lock = threading.Lock()
-    pending_requests = 0
+    pending_requests = set()
 
     def capture(path, headers, body):
-        nonlocal pending_requests
-        if not release.is_set():
-            with lock:
-                pending_requests += 1
-                if pending_requests == routes * 2:
-                    entered.set()
-            return False
         if transport == "grpc":
             compressed = body[0]
             body = body[5:]
@@ -312,6 +305,12 @@ def test_trace_shutdown_aborts_inflight_requests_and_replays(tmp_path, transport
         request = ExportTraceServiceRequest.FromString(body)
         spans = [span for resource in request.resource_spans
                  for scope in resource.scope_spans for span in scope.spans]
+        if not release.is_set():
+            with lock:
+                pending_requests.update((path, span.name) for span in spans)
+                if len(pending_requests) == routes * 2:
+                    entered.set()
+            return False
         with lock:
             received[int(path[1:])].extend(
                 (span.name, span.status.code) for span in spans
