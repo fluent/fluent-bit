@@ -12,7 +12,7 @@ from utils.test_service import FluentBitTestService
 
 @pytest.mark.parametrize("context", ["filter", "processor"])
 @pytest.mark.parametrize("mode", [
-    "modify3", "modify5", "sparse", "drop", "runtime_error", "syntax_error", "missing_call", "init_error"
+    "modify3", "modify5", "sparse", "sparse_large", "drop", "runtime_error", "syntax_error", "missing_call", "init_error"
 ])
 def test_lua_callbacks(tmp_path, context, mode):
     args = "tag, timestamp, record"
@@ -31,6 +31,8 @@ end
 """
     if mode == "sparse":
         code = code.replace("return 2,", 'record.values = {[1] = "first", [3] = "third"}\n    return 2,')
+    elif mode == "sparse_large":
+        code = code.replace("return 2,", "record.values = {[1000000000] = 7}\n    return 2,")
     elif mode == "drop":
         code = code.replace("return 2,", "return -1,")
     elif mode == "runtime_error":
@@ -85,6 +87,8 @@ end
         else:
             output = service.wait_for_condition(records, timeout=20)
             values = ["first", None, "third"] if mode == "sparse" else [1, 2, 3]
+            if mode == "sparse_large":
+                values = {"1000000000": 7}
             assert all(record["message"] == "lua-test café" and record["total"] == 6 and
                        record["values"] == values and record["optional"] is None for record in output)
     finally:
