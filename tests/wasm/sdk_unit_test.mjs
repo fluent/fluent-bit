@@ -196,3 +196,31 @@ test('status exposes immutable queue pressure and dropped-log counters', async (
     assert.equal(Object.isFrozen(stats), true);
     await sdk.destroy();
 });
+
+test('forced destruction during lifecycle callbacks preserves the terminal state', async () => {
+    for (const stage of ['starting', 'stopping']) {
+        let sdk;
+        const states = [];
+        sdk = await createFluentBit({...defaults, onStateChange(state) {
+            states.push(state);
+            if (state === stage) { sdk.destroy({force: true}); }
+        }});
+        const operation = stage === 'starting' ? sdk.start({yaml: 'pipeline: {}'}) : sdk.stop();
+        await assert.rejects(operation, {code: 'E_STATE'});
+        assert.equal(sdk.state, 'destroyed');
+        assert.equal(states.at(-1), 'destroyed');
+        assert.equal(instances.at(-1).terminated, true);
+        await assert.rejects(sdk.getStats(), {code: 'E_STATE'});
+    }
+});
+
+test('forced destruction after a startup response cannot revive the instance', async () => {
+    const sdk = await createFluentBit(defaults);
+    reply = (worker, message) => {
+        if (message.type !== 'request') { return; }
+        worker.emit({type: 'response', id: message.id, ok: true, value: {engineMs: 1}});
+        sdk.destroy({force: true});
+    };
+    await assert.rejects(sdk.start({yaml: 'pipeline: {}'}), {code: 'E_STATE'});
+    assert.equal(sdk.state, 'destroyed');
+});
