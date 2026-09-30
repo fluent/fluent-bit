@@ -612,6 +612,10 @@ int flb_output_instance_destroy(struct flb_output_instance *ins)
         flb_config_map_destroy(ins->oauth2_config_map);
     }
 
+    if (ins->event.status & MK_EVENT_REGISTERED) {
+        mk_event_del(ins->config->evl, &ins->event);
+    }
+
     if (ins->ch_events[0] > 0) {
         mk_event_closesocket(ins->ch_events[0]);
     }
@@ -645,8 +649,11 @@ void flb_output_exit(struct flb_config *config)
 {
     struct mk_list *tmp;
     struct mk_list *head;
+    struct mk_list *flush_tmp;
+    struct mk_list *flush_head;
     struct flb_output_instance *ins;
     struct flb_output_plugin *p;
+    struct flb_output_flush *out_flush;
     void *params;
 
     mk_list_foreach_safe(head, tmp, &config->outputs) {
@@ -662,6 +669,22 @@ void flb_output_exit(struct flb_config *config)
         /* Stop any worker thread */
         if (flb_output_is_threaded(ins) == FLB_TRUE) {
             flb_output_thread_pool_destroy(ins);
+        }
+
+        /* Release flushes still queued or suspended when the grace period expired. */
+        mk_list_foreach_safe(flush_head, flush_tmp, &ins->flush_list) {
+            out_flush = mk_list_entry(flush_head, struct flb_output_flush, _head);
+            if (out_flush->processed_event_chunk) {
+                if (out_flush->processed_event_chunk->data != out_flush->task->event_chunk->data) {
+                    flb_free(out_flush->processed_event_chunk->data);
+                }
+                flb_event_chunk_destroy(out_flush->processed_event_chunk);
+            }
+            flb_output_flush_destroy(out_flush);
+        }
+        mk_list_foreach_safe(flush_head, flush_tmp, &ins->flush_list_destroy) {
+            out_flush = mk_list_entry(flush_head, struct flb_output_flush, _head);
+            flb_output_flush_destroy(out_flush);
         }
 
         /* Check a exit callback */
