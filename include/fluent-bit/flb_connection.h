@@ -168,6 +168,7 @@ struct flb_connection {
     flb_connection_event_callback event_parent_callback;
     void *event_parent_callback_data;
     int event_parent_callback_result;
+    int event_parent_active;
     int event_wakeup_pending;
     int event_release_pending;
 
