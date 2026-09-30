@@ -8,16 +8,18 @@ import yaml
 from utils.fluent_bit_manager import FluentBitManager, FluentBitStartupError
 
 
-@pytest.mark.parametrize("context", ["filter", "processor"])
+@pytest.mark.parametrize("context, threaded", [
+    ("filter", False), ("processor", False), ("processor", True),
+])
 @pytest.mark.parametrize("code, call, diagnostic", [
     ("function !bad syntax", "enrich", "error loading buffer"),
     ("function enrich(tag, timestamp, record) return 0, timestamp, record end",
      "missing", "function missing is not found"),
     ('error("startup-cleanup-test")', "enrich", "invalid lua content"),
 ])
-def test_lua_startup_cleanup(tmp_path, context, code, call, diagnostic):
+def test_lua_startup_cleanup(tmp_path, context, threaded, code, call, diagnostic):
     lua_filter = {"name": "lua", "code": code, "call": call}
-    dummy = {"name": "dummy", "tag": "startup.test"}
+    dummy = {"name": "dummy", "tag": "startup.test", "threaded": threaded}
     pipeline = {"inputs": [dummy], "outputs": [{"name": "null", "match": "*"}]}
     if context == "processor":
         dummy["processors"] = {"logs": [lua_filter]}
