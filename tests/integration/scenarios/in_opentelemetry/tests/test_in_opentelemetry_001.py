@@ -1361,6 +1361,42 @@ def test_in_opentelemetry_trace_status_invalid_codes():
     service.stop()
 
 
+@pytest.mark.parametrize("status", [
+    True, 1, "ERROR", [],
+    {"code": 2, "message": True},
+    {"code": 2, "message": 1},
+    {"code": 2, "message": []},
+    {"code": 2, "message": {}},
+])
+def test_in_opentelemetry_trace_status_invalid_fields_recovery(status):
+    service = Service("003-stdout-otlp-json.yaml")
+    service.start()
+    spans = [
+        {"name": "before-invalid", "status": {"code": 2, "message": "valid"}},
+        {"name": "invalid-status", "status": status},
+    ]
+    payload = {"resourceSpans": [{"scopeSpans": [{"spans": spans}]}]}
+    response = service.send_raw_request(
+        "/v1/traces", json.dumps(payload).encode(), "application/json")
+    assert response.status_code == 400, response.text
+
+    spans = [{"name": "recovered", "status": {"code": 2, "message": "error details"}}]
+    payload = {"resourceSpans": [{"scopeSpans": [{"spans": spans}]}]}
+    response = service.send_raw_request(
+        "/v1/traces", json.dumps(payload).encode(), "application/json")
+    assert 200 <= response.status_code < 300, response.text
+    output = read_stdout_otlp_json(service, "resourceSpans")
+    log_file = service.flb.log_file
+    service.stop()
+    received = [entry["span"] for entry in iter_spans(output)]
+    assert [span["name"] for span in received] == ["recovered"]
+    assert received[0]["status"] == {"code": 2, "message": "error details"}
+    with open(log_file, encoding="utf-8") as stream:
+        emitted = stream.read()
+    assert "before-invalid" not in emitted
+    assert "invalid-status" not in emitted
+
+
 def test_in_opentelemetry_trace_status_default_code():
     service = Service("003-stdout-otlp-json.yaml")
     service.start()
@@ -1368,6 +1404,9 @@ def test_in_opentelemetry_trace_status_default_code():
         {"name": "empty-status", "status": {}},
         {"name": "message-only", "status": {"message": "unset"}},
         {"name": "absent-status"},
+        {"name": "null-status", "status": None},
+        {"name": "null-message", "status": {"code": 2, "message": None}},
+        {"name": "null-code", "status": {"code": None, "message": "unset"}},
     ]}]}]}
     response = service.send_raw_request(
         "/v1/traces", json.dumps(payload).encode(), "application/json")
@@ -1375,9 +1414,11 @@ def test_in_opentelemetry_trace_status_default_code():
     output = read_stdout_otlp_json(service, "resourceSpans")
     service.stop()
     received = {entry["span"]["name"]: entry["span"] for entry in iter_spans(output)}
-    assert len(received) == 3
+    assert len(received) == 6
     assert received["message-only"]["status"] == {"code": 0, "message": "unset"}
-    for name in ["empty-status", "absent-status"]:
+    assert received["null-message"]["status"] == {"code": 2}
+    assert received["null-code"]["status"] == {"code": 0, "message": "unset"}
+    for name in ["empty-status", "absent-status", "null-status"]:
         assert received[name].get("status", {}).get("code", 0) == 0
 
 
