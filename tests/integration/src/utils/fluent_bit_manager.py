@@ -177,7 +177,7 @@ class FluentBitManager:
         os.environ[env_var_name] = str(port)
         self.http_monitoring_port = str(port)
 
-    def start(self):
+    def start(self, *, wait_for_ready=True):
         if not self.config_path or not os.path.exists(self.config_path):
             raise FileNotFoundError(f"Config file {self.config_path} does not exist")
         if not os.path.isfile(self.binary_absolute_path):
@@ -249,8 +249,9 @@ class FluentBitManager:
             f"Fluent Bit started (pid: {self.target_pid}, supervisor pid: {self.process.pid})"
         )
 
-        # wait for Fluent Bit to start
-        self.wait_for_fluent_bit()
+        # Finite commands may finish before the HTTP readiness check can succeed.
+        if wait_for_ready:
+            self.wait_for_fluent_bit()
 
     def stop(self):
         if not self.process:

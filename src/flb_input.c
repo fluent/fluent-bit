@@ -2027,6 +2027,9 @@ int flb_input_instance_init(struct flb_input_instance *ins,
             if (ret == -1) {
                 flb_error("failed initialize processors for input %s",
                           ins->name);
+                /* The input initialized successfully and owns a plugin context. */
+                flb_input_instance_exit(ins, config);
+                ins->context = NULL;
                 return -1;
             }
         }
