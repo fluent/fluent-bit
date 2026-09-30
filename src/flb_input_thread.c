@@ -222,7 +222,11 @@ static void input_thread_instance_destroy(struct flb_input_thread_instance *thi)
         mk_event_closesocket(thi->ch_thread_events[1]);
     }
 
-    flb_tp_destroy(thi->tp);
+    if (thi->tp) {
+        flb_tp_destroy(thi->tp);
+    }
+    pthread_cond_destroy(&thi->init_condition);
+    pthread_mutex_destroy(&thi->init_mutex);
     flb_free(thi);
 }
 
@@ -369,6 +373,7 @@ static void input_thread(void *data)
     ret = p->cb_init(ins, ins->config, ins->data);
     if (ret == -1) {
         flb_error("failed initialize input %s", flb_input_name(ins));
+        flb_sched_destroy(sched);
         /* message the parent thread that this thread could not be initialized */
         input_thread_instance_set_status(ins, FLB_INPUT_THREAD_ERROR);
         return;
@@ -380,6 +385,11 @@ static void input_thread(void *data)
     if (ret == -1) {
         flb_error("failed initialize processors for input %s",
                   flb_input_name(ins));
+        if (p->cb_exit && ins->context) {
+            p->cb_exit(ins->context, ins->config);
+            ins->context = NULL;
+        }
+        flb_sched_destroy(sched);
         input_thread_instance_set_status(ins, FLB_INPUT_THREAD_ERROR);
         return;
     }
@@ -647,6 +657,10 @@ int flb_input_thread_instance_init(struct flb_config *config, struct flb_input_i
     }
     else if (ret == FLB_FALSE) {
         flb_plg_error(ins, "could not initialize threaded plugin instance");
+        /* The failed worker has no event loop to receive an exit message. */
+        pthread_join(thi->th->tid, NULL);
+        input_thread_instance_destroy(thi);
+        ins->thi = NULL;
         return -1;
     }
     else if (ret == FLB_TRUE) {
