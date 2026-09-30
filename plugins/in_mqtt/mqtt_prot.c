@@ -266,7 +266,11 @@ static int mqtt_handle_connect(struct mqtt_conn *conn)
     flb_plg_trace(ctx->ins, "[fd=%i] CMD CONNECT (connack=%i bytes)",
                   conn->connection->fd, ret);
 
-    return ret;
+    if (ret == -1) {
+        return -1;
+    }
+
+    return 0;
 }
 
 /*
@@ -274,6 +278,7 @@ static int mqtt_handle_connect(struct mqtt_conn *conn)
  */
 static int mqtt_handle_publish(struct mqtt_conn *conn)
 {
+    int ret;
     int frame_avail;
     int topic;
     int topic_len;
@@ -346,11 +351,15 @@ static int mqtt_handle_publish(struct mqtt_conn *conn)
         buf[2] = (packet_id >> 8) & 0xff;
         buf[3] = (packet_id & 0xff);
 
-        /* This operation should be checked */
-        flb_io_net_write(conn->connection,
-                         (void *) buf,
-                         4,
-                         &sent);
+        ret = flb_io_net_write(conn->connection,
+                               (void *) buf,
+                               4,
+                               &sent);
+        if (ret == -1) {
+            flb_plg_debug(ctx->ins, "[fd=%i] could not acknowledge publish",
+                          conn->connection->fd);
+            return -1;
+        }
     }
 
     /* Message */
@@ -397,7 +406,12 @@ static int mqtt_handle_ping(struct mqtt_conn *conn)
 
     flb_plg_trace(ctx->ins, "[fd=%i] CMD PING (pong=%i bytes)",
                   conn->connection->fd, ret);
-    return ret;
+
+    if (ret == -1) {
+        return -1;
+    }
+
+    return 0;
 }
 
 int mqtt_prot_parser(struct mqtt_conn *conn)
@@ -484,7 +498,10 @@ int mqtt_prot_parser(struct mqtt_conn *conn)
 
             /* At this point we have a full control packet in place */
             if (conn->packet_type == MQTT_CONNECT) {
-                mqtt_handle_connect(conn);
+                ret = mqtt_handle_connect(conn);
+                if (ret == -1) {
+                    return MQTT_ERROR;
+                }
             }
             else if (conn->packet_type == MQTT_PUBLISH) {
                 ret = mqtt_handle_publish(conn);
@@ -493,7 +510,10 @@ int mqtt_prot_parser(struct mqtt_conn *conn)
                 }
             }
             else if (conn->packet_type == MQTT_PINGREQ) {
-                mqtt_handle_ping(conn);
+                ret = mqtt_handle_ping(conn);
+                if (ret == -1) {
+                    return MQTT_ERROR;
+                }
             }
             else if (conn->packet_type == MQTT_DISCONNECT) {
                 flb_plg_trace(ctx->ins, "[fd=%i] CMD DISCONNECT",
