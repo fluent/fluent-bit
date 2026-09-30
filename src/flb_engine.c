@@ -1558,6 +1558,8 @@ int flb_engine_start(struct flb_config *config)
                         flb_info("[engine] service has stopped (%i pending tasks)",
                                  tasks);
                         ret = config->exit_status_code;
+                        /* This event bypasses the loop's final cleanup. */
+                        flb_net_dns_lookup_context_cleanup(&dns_ctx);
                         flb_engine_shutdown(config);
 
                         if (config->shutdown_fd > 0) {
