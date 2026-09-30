@@ -671,9 +671,12 @@ void flb_output_exit(struct flb_config *config)
             flb_output_thread_pool_destroy(ins);
         }
 
-        /* Release flushes still queued or suspended when the grace period expired. */
+        /* Release queued flushes whose output callback has not started. */
         mk_list_foreach_safe(flush_head, flush_tmp, &ins->flush_list) {
             out_flush = mk_list_entry(flush_head, struct flb_output_flush, _head);
+            if (flb_task_get_route_status(out_flush->task, ins) == FLB_TASK_ROUTE_ACTIVE) {
+                continue;
+            }
             if (out_flush->processed_event_chunk) {
                 if (out_flush->processed_event_chunk->data != out_flush->task->event_chunk->data) {
                     flb_free(out_flush->processed_event_chunk->data);
