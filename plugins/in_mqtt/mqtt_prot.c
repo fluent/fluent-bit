@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_downstream.h>
 #include <msgpack.h>
 
 #include "mqtt.h"
@@ -122,6 +123,14 @@ static inline int mqtt_packet_header(int type, int length, char *buf)
     return i;
 }
 
+struct mqtt_data_append_args {
+    char *topic;
+    size_t topic_len;
+    char *msg;
+    int msg_len;
+    struct flb_in_mqtt_config *ctx;
+};
+
 /* Collect a buffer of JSON data and convert it to Fluent Bit format */
 static int mqtt_data_append(char *topic, size_t topic_len,
                             char *msg, int msg_len,
@@ -219,6 +228,15 @@ static int mqtt_data_append(char *topic, size_t topic_len,
     return ret;
 }
 
+static int mqtt_data_append_dispatch(void *data)
+{
+    struct mqtt_data_append_args *args;
+
+    args = data;
+
+    return mqtt_data_append(args->topic, args->topic_len,
+                            args->msg, args->msg_len, args->ctx);
+}
 
 /*
  * Handle a CONNECT request control packet:
@@ -264,6 +282,7 @@ static int mqtt_handle_publish(struct mqtt_conn *conn)
     uint16_t hlen;
     uint16_t packet_id;
     char buf[4] = {0, 0, 0, 0};
+    struct mqtt_data_append_args args;
     struct flb_in_mqtt_config *ctx = conn->ctx;
 
     /*
@@ -340,10 +359,19 @@ static int mqtt_handle_publish(struct mqtt_conn *conn)
         return -1;
     }
 
-    mqtt_data_append((char *) (conn->buf + topic), topic_len,
-                     (char *) (conn->buf + conn->buf_pos),
-                     conn->buf_frame_end - conn->buf_pos + 1,
-                     conn->ctx);
+    args.topic = (char *) (conn->buf + topic);
+    args.topic_len = topic_len;
+    args.msg = (char *) (conn->buf + conn->buf_pos);
+    args.msg_len = conn->buf_frame_end - conn->buf_pos + 1;
+    args.ctx = conn->ctx;
+
+    /*
+     * Filters and processors run while records are appended, keep them on
+     * the parent stack instead of the connection coroutine stack.
+     */
+    flb_downstream_conn_event_call_parent(conn->connection,
+                                          mqtt_data_append_dispatch,
+                                          &args);
 
     flb_plg_trace(ctx->ins, "[fd=%i] CMD PUBLISH",
                   conn->connection->fd);
