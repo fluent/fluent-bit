@@ -37,6 +37,8 @@ int flb_mp_validate_log_chunk(const void *data, size_t bytes,
                               int *out_records, size_t *processed_bytes);
 int flb_mp_validate_metric_chunk(const void *data, size_t bytes,
                                  int *out_series, size_t *processed_bytes);
+int flb_mp_validate_trace_chunk(const void *data, size_t bytes,
+                                int *out_contexts, size_t *processed_bytes);
 
 void flb_mp_set_map_header_size(char *buf, int arr_size);
 

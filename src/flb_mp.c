@@ -34,6 +34,7 @@
 
 #include <msgpack.h>
 #include <mpack/mpack.h>
+#include <ctraces/ctr_decode_msgpack.h>
 
 /* don't do this at home */
 #define pack_uint16(buf, d) _msgpack_store16(buf, (uint16_t) d)
@@ -381,6 +382,33 @@ error:
     *processed_bytes = pre_off;
 
     return -1;
+}
+
+int flb_mp_validate_trace_chunk(const void *data, size_t bytes,
+                                int *out_contexts, size_t *processed_bytes)
+{
+    int ret;
+    int count;
+    size_t offset;
+    struct ctrace *trace;
+
+    count = 0;
+    offset = 0;
+    *out_contexts = 0;
+    *processed_bytes = 0;
+
+    while (offset < bytes) {
+        ret = ctr_decode_msgpack_create(&trace, (char *) data, bytes, &offset);
+        if (ret != CTR_DECODE_MSGPACK_SUCCESS) {
+            return -1;
+        }
+        ctr_destroy(trace);
+        count++;
+        *out_contexts = count;
+        *processed_bytes = offset;
+    }
+
+    return 0;
 }
 
 int flb_mp_validate_log_chunk(const void *data, size_t bytes,
