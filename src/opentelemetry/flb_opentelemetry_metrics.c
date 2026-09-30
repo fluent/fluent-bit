@@ -3799,6 +3799,7 @@ int flb_opentelemetry_metrics_json_to_cmt(struct cfl_list *context_list,
     msgpack_object      *root_object;
     msgpack_object      *resource_metrics_object;
     msgpack_object_array *resource_metrics;
+    size_t               index_size;
     struct flb_hash_table *kvlist_index;
 
     msgpack_body = NULL;
@@ -3847,7 +3848,16 @@ int flb_opentelemetry_metrics_json_to_cmt(struct cfl_list *context_list,
 
     resource_metrics = &resource_metrics_object->via.array;
 
-    kvlist_index = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 4096, 0);
+    /* size the index after the request, every entry needs a few JSON bytes */
+    index_size = len / 64;
+    if (index_size < 64) {
+        index_size = 64;
+    }
+    else if (index_size > 65536) {
+        index_size = 65536;
+    }
+
+    kvlist_index = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, index_size, 0);
     if (kvlist_index == NULL) {
         flb_free(msgpack_body);
         msgpack_unpacked_destroy(&result_set);
