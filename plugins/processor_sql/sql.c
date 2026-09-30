@@ -429,6 +429,9 @@ static int sql_key_to_value(char *name, struct flb_mp_chunk_record *record, stru
         /* record strings may be referenced, not NUL terminated */
         val->val.string = cfl_sds_create_len(var->data.as_string,
                                              cfl_variant_size_get(var));
+        if (!val->val.string) {
+            return -1;
+        }
     }
     else if (var->type == CFL_VARIANT_INT) {
         val->type = SQL_EXP_INT;

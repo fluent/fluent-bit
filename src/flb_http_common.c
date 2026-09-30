@@ -18,13 +18,20 @@
  */
 
 #include <fluent-bit/flb_mem.h>
+#include <ctype.h>
 
+#ifndef __EMSCRIPTEN__
 #include <fluent-bit/http_server/flb_http_server.h>
+#endif
+#include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_http_common.h>
 #include <fluent-bit/flb_signv4_ng.h>
 #include <fluent-bit/flb_snappy.h>
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_zstd.h>
+#ifdef __EMSCRIPTEN__
+#include <fluent-bit/wasm/flb_wasm_http.h>
+#endif
 
 /* PRIVATE */
 
@@ -102,6 +109,7 @@ int compress_zstd(char **output_buffer,
 
 /* HTTP REQUEST */
 
+#ifndef __EMSCRIPTEN__
 static int flb_http_request_get_version(struct flb_http_request *request)
 {
     int version;
@@ -115,6 +123,7 @@ static int flb_http_request_get_version(struct flb_http_request *request)
 
     return version;
 }
+#endif
 
 int flb_http_request_init(struct flb_http_request *request)
 {
@@ -216,6 +225,10 @@ void flb_http_request_destroy(struct flb_http_request *request)
 
 int flb_http_request_commit(struct flb_http_request *request)
 {
+#ifdef __EMSCRIPTEN__
+    /* Complete browser requests are submitted by the shared client adapter. */
+    return -1;
+#else
     int version;
 
     version = flb_http_request_get_version(request);
@@ -225,6 +238,7 @@ int flb_http_request_commit(struct flb_http_request *request)
     }
 
     return flb_http1_request_commit(request);
+#endif
 }
 
 char *flb_http_request_get_header(struct flb_http_request *request,
@@ -258,6 +272,9 @@ char *flb_http_request_get_header(struct flb_http_request *request,
 
 const char *flb_http_request_get_remote_address(struct flb_http_request *request)
 {
+#ifdef __EMSCRIPTEN__
+    return NULL;
+#else
     struct flb_http_server_session *server_session;
 
     if (request == NULL || request->stream == NULL) {
@@ -276,6 +293,7 @@ const char *flb_http_request_get_remote_address(struct flb_http_request *request
     }
 
     return flb_connection_get_remote_address(server_session->connection);
+#endif
 }
 
 int flb_http_request_set_header(struct flb_http_request *request,
@@ -542,6 +560,11 @@ int flb_http_request_set_url(struct flb_http_request *request,
     int        result;
     uint16_t   port;
 
+#ifdef __EMSCRIPTEN__
+    if (flb_wasm_http_validate(url) != 0) {
+        return -1;
+    }
+#endif
     local_url = cfl_sds_create(url);
 
     if (local_url == NULL) {
@@ -777,9 +800,13 @@ int flb_http_request_set_body(struct flb_http_request *request,
     uint64_t flags;
 
     if (request->stream->role == HTTP_STREAM_ROLE_SERVER) {
+#ifndef __EMSCRIPTEN__
         flags = ((struct flb_http_server_session *) request->stream->parent)->parent->flags;
 
         compress = flags & FLB_HTTP_SERVER_FLAG_AUTO_DEFLATE;
+#else
+        return -1;
+#endif
     }
     else {
         flags = ((struct flb_http_client_session *) request->stream->parent)->parent->flags;
@@ -856,6 +883,10 @@ int flb_http_request_perform_signv4_signature(
 {
     flb_sds_t signature;
 
+#ifdef __EMSCRIPTEN__
+    flb_error("[http_client] browser AWS signing is not supported");
+    return -1;
+#endif
 #ifdef FLB_HAVE_SIGNV4
 #ifdef FLB_HAVE_AWS
     flb_debug("signing request with AWS Sigv4");
@@ -884,6 +915,7 @@ int flb_http_request_perform_signv4_signature(
 
 /* HTTP RESPONSE */
 
+#ifndef __EMSCRIPTEN__
 static int flb_http_response_get_version(struct flb_http_response *response)
 {
     int version;
@@ -897,6 +929,7 @@ static int flb_http_response_get_version(struct flb_http_response *response)
 
     return version;
 }
+#endif
 
 int flb_http_response_init(struct flb_http_response *response)
 {
@@ -982,16 +1015,23 @@ struct flb_http_response *flb_http_response_begin(
                                 struct flb_http_server_session *session,
                                 void *stream)
 {
+#ifdef __EMSCRIPTEN__
+    return NULL;
+#else
     if (session->version == HTTP_PROTOCOL_VERSION_20) {
         return flb_http2_response_begin(&session->http2, stream);
     }
     else {
         return flb_http1_response_begin(&session->http1, stream);
     }
+#endif
 }
 
 int flb_http_response_commit(struct flb_http_response *response)
 {
+#ifdef __EMSCRIPTEN__
+    return -1;
+#else
     int len;
     char tmp[64];
     int version;
@@ -1039,6 +1079,7 @@ int flb_http_response_commit(struct flb_http_response *response)
     }
 
     return flb_http1_response_commit(response);
+#endif
 }
 
 char *flb_http_response_get_header(struct flb_http_response *response,
@@ -1075,7 +1116,9 @@ int flb_http_response_set_header(struct flb_http_response *response,
                              char *value, size_t value_length)
 {
     char *lowercase_name;
+#ifndef __EMSCRIPTEN__
     int   version;
+#endif
     int   result;
 
     if (name_length == 0) {
@@ -1098,6 +1141,10 @@ int flb_http_response_set_header(struct flb_http_response *response,
         }
     }
 
+#ifdef __EMSCRIPTEN__
+    result = flb_hash_table_add(response->headers, lowercase_name, name_length,
+                               value, value_length) < 0 ? -1 : 0;
+#else
     version = flb_http_response_get_version(response);
 
     if (version == HTTP_PROTOCOL_VERSION_20) {
@@ -1110,6 +1157,7 @@ int flb_http_response_set_header(struct flb_http_response *response,
                                                lowercase_name, name_length,
                                                value, value_length);
     }
+#endif
 
     flb_free(lowercase_name);
 
@@ -1186,6 +1234,10 @@ int flb_http_response_set_trailer_header(struct flb_http_response *response,
 int flb_http_response_set_status(struct flb_http_response *response,
                              int status)
 {
+#ifdef __EMSCRIPTEN__
+    response->status = status;
+    return 0;
+#else
     int version;
 
     version = flb_http_response_get_version(response);
@@ -1197,6 +1249,7 @@ int flb_http_response_set_status(struct flb_http_response *response,
     }
 
     return flb_http1_response_set_status(response, status);
+#endif
 }
 
 int flb_http_response_set_message(struct flb_http_response *response,
@@ -1486,6 +1539,7 @@ struct flb_http_stream *flb_http_stream_create(void *parent,
 
     if (result != 0) {
         flb_http_stream_destroy(stream);
+        return NULL;
     }
 
     return stream;

@@ -117,8 +117,8 @@ int cio_file_native_remap(struct cio_file *cf, size_t new_size)
 
     result = 0;
 
-/* OSX mman does not implement mremap or MREMAP_MAYMOVE. */
-#ifndef MREMAP_MAYMOVE
+/* macOS has no mremap; Emscripten declares it but only supplies a stub. */
+#if !defined(MREMAP_MAYMOVE) || defined(__EMSCRIPTEN__)
     result = cio_file_native_unmap(cf);
 
     if (result == -1) {

@@ -30,6 +30,7 @@
 #include <chunkio/cio_chunk.h>
 #include <chunkio/cio_error.h>
 #include <chunkio/cio_log.h>
+#include <chunkio/cio_scan.h>
 
 #ifdef _WIN32
 #include "win32/dirent.h"
@@ -161,8 +162,9 @@ int cio_scan_streams(struct cio_ctx *ctx, char *chunk_extension)
     return 0;
 }
 #else
-int cio_scan_streams(struct cio_ctx *ctx)
+int cio_scan_streams(struct cio_ctx *ctx, char *chunk_extension)
 {
+    (void) chunk_extension;
     cio_log_error(ctx, "[cio scan] file system backend not supported");
     return -1;
 }

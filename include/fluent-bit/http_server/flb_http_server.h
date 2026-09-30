@@ -33,12 +33,9 @@
 #include <cfl/cfl_sds.h>
 
 #include <fluent-bit/flb_http_common.h>
+#include <fluent-bit/http_server/flb_http_server_config.h>
 #include <fluent-bit/http_server/flb_http_server_http1.h>
 #include <fluent-bit/http_server/flb_http_server_http2.h>
-
-#define HTTP_SERVER_INITIAL_BUFFER_SIZE        (10 * 1024)
-#define HTTP_SERVER_MAXIMUM_BUFFER_SIZE        (10 * (1000 * 1024))
-#define HTTP_SERVER_DEFAULT_IDLE_TIMEOUT       10  /* seconds */
 
 #define FLB_HTTP_SERVER_FLAG_KEEPALIVE         (((uint64_t) 1) << 0)
 #define FLB_HTTP_SERVER_FLAG_AUTO_DEFLATE      (((uint64_t) 1) << 1)
@@ -65,20 +62,6 @@ typedef int (*flb_http_server_worker_callback)(struct flb_http_server *server,
                                                void *data);
 
 struct flb_input_instance;
-
-#define FLB_HTTP_SERVER_INGRESS_QUEUE_EVENT_LIMIT 8192
-#define FLB_HTTP_SERVER_INGRESS_QUEUE_BYTE_LIMIT  (256 * 1024 * 1024)
-
-struct flb_http_server_config {
-    int    http2;
-    int    idle_timeout; /* seconds */
-    size_t buffer_max_size;
-    size_t buffer_chunk_size;
-    size_t max_connections;
-    int    workers;
-    size_t ingress_queue_event_limit;
-    size_t ingress_queue_byte_limit;
-};
 
 struct flb_http_server_options {
     int                                  protocol_version;
@@ -198,7 +181,6 @@ int flb_http_server_init(struct flb_http_server *session,
 
 void flb_http_server_options_init(struct flb_http_server_options *options);
 
-void flb_http_server_config_init(struct flb_http_server_config *config);
 
 int flb_http_server_options_init_from_input(struct flb_http_server_options *options,
                                             struct flb_input_instance *input_instance,

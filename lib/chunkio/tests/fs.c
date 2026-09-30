@@ -721,6 +721,7 @@ void test_issue_write_at()
     cf = (struct cio_file *) chunk->backend;
     TEST_CHECK(cf->map == NULL);
     TEST_CHECK(cf->fd <= 0);
+    cio_destroy(ctx);
 }
 
 
@@ -1075,6 +1076,7 @@ static void test_metadata_unsigned_underflow()
     TEST_CHECK(memcmp(content_buf, content_data, strlen(content_data)) == 0);
 
     /* Step 6: Sync to disk to ensure persistence */
+    free(content_buf);
     ret = cio_chunk_sync(chunk);
     TEST_CHECK(ret == CIO_OK);
 
