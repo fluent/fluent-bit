@@ -1013,7 +1013,9 @@ static int search_podname_and_namespace(struct flb_kube_meta *meta,
         if (k.via.str.size == 4 && !strncmp(k.via.str.ptr, "name", 4)) {
 
             podname_found = FLB_TRUE;
-            if (!strncmp(v.via.str.ptr, meta->podname, meta->podname_len)) {
+            if (v.type == MSGPACK_OBJECT_STR &&
+                v.via.str.size == meta->podname_len &&
+                !strncmp(v.via.str.ptr, meta->podname, meta->podname_len)) {
                 target_podname_found = FLB_TRUE;
             }
 
@@ -1022,7 +1024,9 @@ static int search_podname_and_namespace(struct flb_kube_meta *meta,
                                                  "namespace", 9)) {
 
             namespace_found = FLB_TRUE;
-            if (!strncmp((char *)v.via.str.ptr,
+            if (v.type == MSGPACK_OBJECT_STR &&
+                v.via.str.size == meta->namespace_len &&
+                !strncmp((char *)v.via.str.ptr,
                           meta->namespace,
                           meta->namespace_len)) {
                 target_namespace_found = FLB_TRUE;
@@ -1722,7 +1726,7 @@ static inline int parse_regex_tag_data(struct flb_kube *ctx,
     const char *kube_tag_str;
     const char *container = NULL;
     int container_found = FLB_FALSE;
-    int container_length = 0;
+    size_t container_length = 0;
     struct flb_regex_search result;
     msgpack_unpacked mp_result;
     msgpack_object root;
@@ -1740,16 +1744,25 @@ static inline int parse_regex_tag_data(struct flb_kube *ctx,
                 continue;
             }
 
+            if (root.via.array.size < 2 ||
+                root.via.array.ptr[1].type != MSGPACK_OBJECT_MAP) {
+                continue;
+            }
+
             /* Lookup the CONTAINER_NAME key/value */
             map = root.via.array.ptr[1];
             for (i = 0; i < map.via.map.size; i++) {
                 key = map.via.map.ptr[i].key;
-                if (key.via.str.size != 14) {
+                if (key.type != MSGPACK_OBJECT_STR || key.via.str.size != 14) {
                     continue;
                 }
 
                 if (strncmp(key.via.str.ptr, "CONTAINER_NAME", 14) == 0) {
                     val = map.via.map.ptr[i].val;
+                    if (val.type != MSGPACK_OBJECT_STR) {
+                        /* CONTAINER_NAME must be a string, skip the record */
+                        break;
+                    }
                     container = val.via.str.ptr;
                     container_length = val.via.str.size;
                     container_found = FLB_TRUE;
