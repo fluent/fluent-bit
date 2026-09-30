@@ -234,3 +234,45 @@ def test_trace_output_decode_failure(tmp_path, corrupt_context):
         sink.shutdown()
         sink.server_close()
         thread.join(timeout=5)
+
+
+@pytest.mark.parametrize("corrupt_context", [0, 1], ids=["first", "after-valid-prefix"])
+def test_trace_restart_rejects_corrupt_chunk(tmp_path, corrupt_context):
+    release = threading.Event()
+    received = [[]]
+    lock = threading.Lock()
+    sink, thread = start_sink(release, received, lock)
+    storage = tmp_path / "storage"
+    config = tmp_path / "fluent-bit.yaml"
+    input_port = find_available_port()
+    write_config(config, storage, input_port, sink.server_port, 1)
+    manager = FluentBitManager(str(config))
+    try:
+        manager.start()
+        for batch in range(3):
+            send_traces(input_port, [3], batch)
+        manager.stop()
+        chunks = list(storage.glob("*/*.flb"))
+        assert len(chunks) == 1
+        data = bytearray(chunks[0].read_bytes())
+        marker = b"\xa4code\x03"
+        positions = []
+        offset = 0
+        while (offset := data.find(marker, offset)) >= 0:
+            positions.append(offset + len(marker) - 1)
+            offset += len(marker)
+        assert len(positions) == 3
+        data[positions[corrupt_context]] = 0xc3
+        chunks[0].write_bytes(data)
+        release.set()
+        manager.start()
+        wait_until(lambda: "traces chunk validation failed" in Path(manager.log_file).read_text(),
+                   "corrupt backlog rejection")
+        manager.stop()
+        with lock:
+            assert received == [[]], "A corrupt persisted trace chunk was partially exported"
+    finally:
+        manager.stop()
+        sink.shutdown()
+        sink.server_close()
+        thread.join(timeout=5)
