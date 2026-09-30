@@ -109,6 +109,9 @@ struct ctrace_span *ctr_span_create(struct ctrace *ctx, struct ctrace_scope_span
 void ctr_span_destroy(struct ctrace_span *span);
 
 /* Span fields */
+/* Preserve received status codes (including unknown int32 values) and messages.
+ * A NULL message clears the message; failure leaves the previous status intact.
+ */
 int ctr_span_set_status(struct ctrace_span *span, int code, char *message);
 void ctr_span_set_dropped_events_count(struct ctrace_span *span, uint32_t count);
 void ctr_span_set_dropped_links_count(struct ctrace_span *span, uint32_t count);
