@@ -59,11 +59,14 @@ static flb_sds_t extract_cloud_host(struct flb_elasticsearch *ctx,
     colon++;
 
     /* decode base64 */
-    ret = flb_base64_decode((unsigned char *)buf, sizeof(buf), &len, (unsigned char *)colon, strlen(colon));
+    /* keep room for the string terminator */
+    ret = flb_base64_decode((unsigned char *)buf, sizeof(buf) - 1, &len,
+                            (unsigned char *)colon, strlen(colon));
     if (ret) {
         flb_plg_error(ctx->ins, "cannot decode cloud_id");
         return NULL;
     }
+    buf[len] = '\0';
     region = strtok(buf, dollar);
     if (region == NULL) {
         return NULL;
@@ -86,12 +89,17 @@ static flb_sds_t extract_cloud_host(struct flb_elasticsearch *ctx,
         port = colon+1;
     }
 
-    strcpy(cloud_host_buf, host);
-    strcat(cloud_host_buf, ".");
-    strcat(cloud_host_buf, region);
     if (port != NULL) {
-        strcat(cloud_host_buf, ":");
-        strcat(cloud_host_buf, port);
+        ret = snprintf(cloud_host_buf, sizeof(cloud_host_buf), "%s.%s:%s",
+                       host, region, port);
+    }
+    else {
+        ret = snprintf(cloud_host_buf, sizeof(cloud_host_buf), "%s.%s",
+                       host, region);
+    }
+    if (ret < 0 || (size_t) ret >= sizeof(cloud_host_buf)) {
+        flb_plg_error(ctx->ins, "cloud_id host is too long");
+        return NULL;
     }
     return flb_sds_create(cloud_host_buf);
 }
