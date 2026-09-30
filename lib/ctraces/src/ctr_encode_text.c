@@ -298,8 +298,10 @@ static void format_span(cfl_sds_t *buf, struct ctrace *ctx, int id, struct ctrac
     sds_cat_safe(buf, tmp);
 
     if (span->status.message) {
-        snprintf(tmp, sizeof(tmp) - 1, "%*s- message : '%s'\n", min + 4, "", span->status.message);
+        snprintf(tmp, sizeof(tmp) - 1, "%*s- message : ", min + 4, "");
         sds_cat_safe(buf, tmp);
+        format_string(buf, span->status.message, min + 4);
+        sds_cat_safe(buf, "\n");
     }
 
     /* span attributes */

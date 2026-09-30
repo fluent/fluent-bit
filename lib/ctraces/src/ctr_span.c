@@ -18,6 +18,7 @@
  */
 
 #include <ctraces/ctraces.h>
+#include <limits.h>
 
 #include <cfl/cfl.h>
 #include <cfl/cfl_time.h>
@@ -295,10 +296,16 @@ int ctr_span_set_status(struct ctrace_span *span, int code, char *message)
     cfl_sds_t new_message;
     struct ctrace_span_status *status;
 
-    if (span == NULL || code < CTRACE_SPAN_STATUS_CODE_UNSET ||
-        code > CTRACE_SPAN_STATUS_CODE_ERROR) {
+    if (span == NULL) {
         return -1;
     }
+
+    /* Proto3 enums preserve unknown signed 32-bit values in received data. */
+#if INT_MAX > INT32_MAX || INT_MIN < INT32_MIN
+    if (code < INT32_MIN || code > INT32_MAX) {
+        return -1;
+    }
+#endif
 
     new_message = NULL;
     if (message) {

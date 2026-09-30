@@ -597,9 +597,6 @@ static int unpack_span_status_code(mpack_reader_t *reader, size_t index, void *c
 
     result = ctr_mpack_consume_int32_tag(reader, &code);
     if (result == CTR_MPACK_SUCCESS) {
-        if (code < CTRACE_SPAN_STATUS_CODE_UNSET || code > CTRACE_SPAN_STATUS_CODE_ERROR) {
-            return CTR_MPACK_CORRUPT_INPUT_DATA_ERROR;
-        }
         context->span->status.code = code;
     }
 
