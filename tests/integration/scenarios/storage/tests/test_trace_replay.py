@@ -1,15 +1,21 @@
 """Trace filesystem replay and output decode failure regressions."""
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import gzip
 import mmap
 from pathlib import Path
 import signal
+import socket
+import socketserver
 import threading
 import time
 
 import pytest
 import requests
 import yaml
+from h2.config import H2Configuration
+from h2.connection import H2Connection
+from h2.events import DataReceived, RequestReceived, StreamEnded
 from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
 
 from utils.fluent_bit_manager import FluentBitManager
@@ -273,6 +279,144 @@ def test_trace_restart_rejects_corrupt_chunk(tmp_path, corrupt_context):
             assert received == [[]], "A corrupt persisted trace chunk was partially exported"
     finally:
         manager.stop()
+        sink.shutdown()
+        sink.server_close()
+        thread.join(timeout=5)
+
+
+@pytest.mark.parametrize("transport", ["http", "http2", "grpc"])
+@pytest.mark.parametrize("routes", [1, 2], ids=["single-route", "fan-out"])
+def test_trace_shutdown_aborts_inflight_requests_and_replays(tmp_path, transport, routes):
+    release = threading.Event()
+    entered = threading.Event()
+    stopping = threading.Event()
+    received = [[] for _ in range(routes)]
+    lock = threading.Lock()
+    pending_requests = 0
+
+    def capture(path, headers, body):
+        nonlocal pending_requests
+        if not release.is_set():
+            with lock:
+                pending_requests += 1
+                if pending_requests == routes * 2:
+                    entered.set()
+            return False
+        if transport == "grpc":
+            compressed = body[0]
+            body = body[5:]
+        else:
+            compressed = headers.get("content-encoding") == "gzip"
+        if compressed:
+            body = gzip.decompress(body)
+        request = ExportTraceServiceRequest.FromString(body)
+        spans = [span for resource in request.resource_spans
+                 for scope in resource.scope_spans for span in scope.spans]
+        with lock:
+            received[int(path[1:])].extend(
+                (span.name, span.status.code) for span in spans
+            )
+        return True
+
+    class HttpSink(BaseHTTPRequestHandler):
+        def do_POST(self):
+            body = self.rfile.read(int(self.headers["Content-Length"]))
+            if not capture(self.path, self.headers, body):
+                if not release.wait(30):
+                    return
+            try:
+                self.send_response(200)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+
+        def log_message(self, *_args):
+            pass
+
+    class H2Sink(socketserver.BaseRequestHandler):
+        def handle(self):
+            connection = H2Connection(H2Configuration(client_side=False,
+                                                       header_encoding="utf-8"))
+            connection.initiate_connection()
+            self.request.sendall(connection.data_to_send())
+            self.request.settimeout(1)
+            streams = {}
+            while not stopping.is_set():
+                try:
+                    data = self.request.recv(65536)
+                except socket.timeout:
+                    continue
+                except ConnectionResetError:
+                    return
+                if not data:
+                    return
+                for event in connection.receive_data(data):
+                    if isinstance(event, RequestReceived):
+                        streams[event.stream_id] = [dict(event.headers), bytearray()]
+                    elif isinstance(event, DataReceived):
+                        streams[event.stream_id][1].extend(event.data)
+                        connection.acknowledge_received_data(event.flow_controlled_length,
+                                                            event.stream_id)
+                    elif isinstance(event, StreamEnded):
+                        headers, body = streams.pop(event.stream_id)
+                        if capture(headers[":path"], headers, bytes(body)):
+                            if transport == "grpc":
+                                connection.send_headers(event.stream_id,
+                                                        [(":status", "200"),
+                                                         ("content-type", "application/grpc")])
+                                connection.send_data(event.stream_id, b"\x00" * 5)
+                                connection.send_headers(event.stream_id,
+                                                        [("grpc-status", "0")], end_stream=True)
+                            else:
+                                connection.send_headers(event.stream_id,
+                                                        [(":status", "200"),
+                                                         ("content-length", "0")], end_stream=True)
+                try:
+                    self.request.sendall(connection.data_to_send())
+                except (BrokenPipeError, ConnectionResetError):
+                    return
+
+    server_type = ThreadingHTTPServer if transport == "http" else socketserver.ThreadingTCPServer
+    handler = HttpSink if transport == "http" else H2Sink
+    sink = server_type(("127.0.0.1", 0), handler)
+    sink.daemon_threads = True
+    thread = threading.Thread(target=sink.serve_forever, daemon=True)
+    thread.start()
+    storage = tmp_path / "storage"
+    config = tmp_path / "fluent-bit.yaml"
+    ports = [find_available_port(), find_available_port()]
+    write_config(config, storage, ports[0], sink.server_address[1], routes)
+    settings = yaml.safe_load(config.read_text())
+    settings["pipeline"]["inputs"].append(dict(settings["pipeline"]["inputs"][0],
+                                               port=ports[1], tag="second-input"))
+    for route, output in enumerate(settings["pipeline"]["outputs"]):
+        output.update({"compress": "gzip", "net.io_timeout": 120,
+                       "http2": "off" if transport == "http" else "force",
+                       "grpc": transport == "grpc", "grpc_traces_uri": f"/{route}"})
+    config.write_text(yaml.safe_dump(settings))
+    manager = FluentBitManager(str(config))
+    expected = [("batch-0-status-3", 3), ("batch-1-status-3", 3)]
+    try:
+        manager.start()
+        for batch, port in enumerate(ports):
+            send_traces(port, [3], batch)
+        assert entered.wait(20), "Not all output callbacks reached socket I/O"
+        manager.stop()
+        assert list(storage.glob("*/*.flb")), "Aborted requests lost their persisted chunks"
+        release.set()
+        manager.start()
+
+        def drained():
+            with lock:
+                return all(sorted(spans) == expected for spans in received)
+
+        wait_until(drained, "aborted traces to replay to every output")
+        wait_until(lambda: not list(storage.glob("*/*.flb")), "successful replay to release chunks")
+    finally:
+        release.set()
+        manager.stop()
+        stopping.set()
         sink.shutdown()
         sink.server_close()
         thread.join(timeout=5)
