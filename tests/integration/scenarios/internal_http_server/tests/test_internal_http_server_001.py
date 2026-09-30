@@ -123,6 +123,8 @@ def test_internal_http_server_trace_rejects_unsafe_outputs(tmp_path):
         {"output": "s3", "params": {"bucket": "x", "region": "us-east-1"}},
         {"output": "http", "params": {"host": "127.0.0.1", "port": "9"}},
         {"output": "stdout://127.0.0.1"},
+        {"output": "CALYPTIA", "params": {"format": "json"}},
+        {"output": "Stdout"},
         {"output": "stdout", "params": {"workers": "64"}},
         {"output": "stdout", "params": {"match": "*"}},
     ]
