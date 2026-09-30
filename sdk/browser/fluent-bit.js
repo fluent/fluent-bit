@@ -116,7 +116,8 @@ class FluentBit {
         catch (_) { failed(); }
     }
     #setState(state) {
-        if (state === this.#state) { return; }
+        if (state === this.#state || this.#state === 'destroyed' ||
+            (this.#state === 'failed' && state !== 'destroyed')) { return; }
         this.#state = state;
         this.#callback('onStateChange', state);
     }
@@ -246,11 +247,14 @@ class FluentBit {
             this.#setState('starting');
             try {
                 const result = await this.#send('start', {yaml, grace});
+                if (['failed', 'destroyed'].includes(this.#state)) {
+                    throw error('E_STATE', 'SDK instance is unavailable');
+                }
                 this.#setState('running');
                 return result;
             }
             catch (failure) {
-                if (this.#state !== 'failed') { this.#setState('stopped'); }
+                if (!['failed', 'destroyed'].includes(this.#state)) { this.#setState('stopped'); }
                 throw failure;
             }
         }, yaml.byteLength);
@@ -261,7 +265,7 @@ class FluentBit {
         }
         this.#setState('stopping');
         try { await this.#send('stop'); }
-        finally { if (this.#state !== 'failed') { this.#setState('stopped'); } }
+        finally { if (!['failed', 'destroyed'].includes(this.#state)) { this.#setState('stopped'); } }
     }
     stop() { return this.#enqueue(() => this.#stop()); }
 
