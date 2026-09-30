@@ -1,3 +1,4 @@
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -106,6 +107,49 @@ def flattened_records():
             records.append(payload)
 
     return records
+
+
+def test_filter_multiline_key_group_limit_preserves_records():
+    service = Service(config_name="filter_multiline_key_group.yaml")
+    expected = []
+
+    try:
+        service.start()
+
+        # The default group occupies one of the six slots. Interleave the
+        # remaining five groups to verify that PID contents stay separate.
+        for pid in range(5):
+            service.send(f"Default exception handler: pid-{pid}", pid=str(pid))
+        for pid in range(5):
+            service.send(f"trace-{pid}", pid=str(pid))
+            expected.append((str(pid), f"Default exception handler: pid-{pid}\ntrace-{pid}"))
+
+        # New PID values must fall back to standalone records at capacity.
+        # The first overflow also flushes the five pending groups.
+        for pid in range(5, 12):
+            for log in (f"Default exception handler: pid-{pid}", f"trace-{pid}"):
+                service.send(log, pid=str(pid))
+                expected.append((str(pid), log))
+
+        service.wait_for_log("exceeded number of allowed groups (6)")
+        service.wait_for_records(len(expected))
+
+        # Existing groups remain usable after repeated overflow.
+        service.send("Default exception handler: reused", pid="0")
+        service.send("trace-reused", pid="0")
+        expected.append(("0", "Default exception handler: reused\ntrace-reused"))
+
+        # A missing or non-string grouping key uses the default group.
+        for fields in ({}, {"pid": 123}):
+            service.send("standalone", **fields)
+            expected.append((fields.get("pid"), "standalone"))
+        service.wait_for_records(len(expected))
+    finally:
+        service.stop()
+
+    actual = [(record.get("pid"), record["log"].rstrip("\n"))
+              for record in flattened_records()]
+    assert Counter(actual) == Counter(expected)
 
 
 @pytest.mark.parametrize(
