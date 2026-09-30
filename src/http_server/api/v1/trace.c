@@ -96,12 +96,25 @@ static const char *trace_allowed_params[] = {
     NULL
 };
 
-static int trace_name_allowed(const char **list, const char *name)
+/*
+ * Output names are matched exactly: the chunk trace pipeline only reuses the
+ * configured calyptia instance properties for the exact "calyptia" name, while
+ * plugin lookup is case-insensitive. Property names are case-insensitive.
+ */
+static int trace_name_allowed(const char **list, const char *name, int ignore_case)
 {
     int i;
+    int ret;
 
     for (i = 0; list[i] != NULL; i++) {
-        if (strcasecmp(list[i], name) == 0) {
+        if (ignore_case == FLB_TRUE) {
+            ret = strcasecmp(list[i], name);
+        }
+        else {
+            ret = strcmp(list[i], name);
+        }
+
+        if (ret == 0) {
             return FLB_TRUE;
         }
     }
@@ -114,7 +127,7 @@ static int trace_output_allowed(const char *output_name, struct mk_list *props)
     struct mk_list *head;
     struct flb_kv *kv;
 
-    if (trace_name_allowed(trace_allowed_outputs, output_name) == FLB_FALSE) {
+    if (trace_name_allowed(trace_allowed_outputs, output_name, FLB_FALSE) == FLB_FALSE) {
         flb_error("trace output '%s' is not allowed", output_name);
         return FLB_FALSE;
     }
@@ -125,7 +138,7 @@ static int trace_output_allowed(const char *output_name, struct mk_list *props)
 
     mk_list_foreach(head, props) {
         kv = mk_list_entry(head, struct flb_kv, _head);
-        if (trace_name_allowed(trace_allowed_params, kv->key) == FLB_FALSE) {
+        if (trace_name_allowed(trace_allowed_params, kv->key, FLB_TRUE) == FLB_FALSE) {
             flb_error("trace output parameter '%s' is not allowed", kv->key);
             return FLB_FALSE;
         }
