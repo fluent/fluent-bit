@@ -369,9 +369,7 @@ static void input_thread(void *data)
     ret = p->cb_init(ins, ins->config, ins->data);
     if (ret == -1) {
         flb_error("failed initialize input %s", flb_input_name(ins));
-        /* message the parent thread that this thread could not be initialized */
-        input_thread_instance_set_status(ins, FLB_INPUT_THREAD_ERROR);
-        return;
+        goto init_error;
     }
 
     ins->processor->notification_channel = ins->notification_channel;
@@ -380,8 +378,10 @@ static void input_thread(void *data)
     if (ret == -1) {
         flb_error("failed initialize processors for input %s",
                   flb_input_name(ins));
-        input_thread_instance_set_status(ins, FLB_INPUT_THREAD_ERROR);
-        return;
+        if (p->cb_exit && ins->context) {
+            p->cb_exit(ins->context, ins->config);
+        }
+        goto init_error;
     }
 
     flb_plg_debug(ins, "[thread init] initialization OK");
@@ -516,6 +516,12 @@ static void input_thread(void *data)
     flb_bucket_queue_destroy(evl_bktq);
     flb_sched_destroy(sched);
     input_thread_instance_destroy(thi);
+    return;
+
+init_error:
+    flb_net_dns_lookup_context_cleanup(&dns_ctx);
+    flb_sched_destroy(sched);
+    input_thread_instance_set_status(ins, FLB_INPUT_THREAD_ERROR);
 }
 
 
@@ -647,6 +653,9 @@ int flb_input_thread_instance_init(struct flb_config *config, struct flb_input_i
     }
     else if (ret == FLB_FALSE) {
         flb_plg_error(ins, "could not initialize threaded plugin instance");
+        pthread_join(th->tid, NULL);
+        input_thread_instance_destroy(thi);
+        ins->thi = NULL;
         return -1;
     }
     else if (ret == FLB_TRUE) {
