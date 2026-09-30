@@ -1077,9 +1077,30 @@ exit:
 
 static int cb_opentelemetry_exit(void *data, struct flb_config *config)
 {
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct flb_connection *connection;
+    struct flb_upstream_queue *queue;
     struct opentelemetry_context *ctx;
 
     ctx = (struct opentelemetry_context *) data;
+
+    /* Worker callbacks have already finished when their pool is joined. */
+    if (ctx && ctx->u && !ctx->ins->is_threaded) {
+        /* Let callbacks suspended in socket I/O release their HTTP resources. */
+        queue = flb_upstream_queue_get(ctx->u);
+        mk_list_foreach_safe(head, tmp, &queue->busy_queue) {
+            connection = mk_list_entry(head, struct flb_connection, _head);
+            if (connection->coroutine && MK_EVENT_IS_REGISTERED((&connection->event))) {
+                connection->net_error = ECANCELED;
+                connection->recycle = FLB_FALSE;
+                shutdown(connection->fd, SHUT_RDWR);
+                connection->shutdown_flag = FLB_TRUE;
+                mk_event_del(connection->evl, &connection->event);
+                flb_coro_resume(connection->coroutine);
+            }
+        }
+    }
 
     flb_opentelemetry_context_destroy(ctx);
 
