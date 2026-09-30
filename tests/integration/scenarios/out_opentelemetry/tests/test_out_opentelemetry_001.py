@@ -10,6 +10,7 @@ from collections import Counter
 
 import requests
 import pytest
+import yaml
 from google.protobuf import json_format
 from h2.config import H2Configuration
 from h2.connection import H2Connection
@@ -1074,6 +1075,68 @@ def test_out_opentelemetry_metrics_partial_success_is_not_retried():
     assert batch_series[0] == {0, 1, 2, 3}
     assert batch_series[1] == {4, 5, 6, 7}
     assert {8, 9, 10}.isdisjoint(set().union(*batch_series))
+
+
+@pytest.mark.parametrize("encoding", ["json", "protobuf"])
+@pytest.mark.parametrize("filesystem_storage", [False, True])
+def test_out_opentelemetry_trace_status_roundtrip(tmp_path, encoding, filesystem_storage):
+    with open(_repo_relative("../config", "out_otel_http_traces.yaml"), encoding="utf-8") as stream:
+        config = yaml.safe_load(stream)
+    if filesystem_storage:
+        config["service"]["storage.path"] = str(tmp_path / "storage")
+        config["pipeline"]["inputs"][0]["storage.type"] = "filesystem"
+    config_file = tmp_path / "trace-status.yaml"
+    with config_file.open("w", encoding="utf-8") as stream:
+        yaml.safe_dump(config, stream)
+
+    codes = [0, 1, 2, -2147483648, -1, 3, 2147483647]
+    spans = [{
+        "traceId": "0123456789abcdef0123456789abcdef",
+        "spanId": f"{index + 1:016x}",
+        "name": f"status-{code}",
+        "startTimeUnixNano": "1700000000000000000",
+        "endTimeUnixNano": "1700000000000000001",
+        "status": {"code": code, "message": f"message-{code}"},
+    } for index, code in enumerate(codes)]
+    payload = {"resourceSpans": [{"scopeSpans": [{"spans": spans}]}]}
+    service = Service(str(config_file))
+    service.start()
+    if encoding == "protobuf":
+        request = ExportTraceServiceRequest()
+        resource = request.resource_spans.add()
+        resource.resource.SetInParent()
+        scope = resource.scope_spans.add()
+        for source in spans:
+            span = scope.spans.add()
+            span.trace_id = bytes.fromhex(source["traceId"])
+            span.span_id = bytes.fromhex(source["spanId"])
+            span.name = source["name"]
+            span.start_time_unix_nano = int(source["startTimeUnixNano"])
+            span.end_time_unix_nano = int(source["endTimeUnixNano"])
+            span.status.code = source["status"]["code"]
+            span.status.message = source["status"]["message"]
+        body = request.SerializeToString()
+        content_type = "application/x-protobuf"
+    else:
+        body = json.dumps(payload).encode()
+        content_type = "application/json"
+    response = requests.post(
+        f"http://127.0.0.1:{service.flb_listener_port}/v1/traces",
+        data=body,
+        headers={"Content-Type": content_type},
+        timeout=5,
+    )
+    response.raise_for_status()
+    traces_seen = service.wait_for_signal("traces")
+    service.stop()
+    received = [
+        span for request in traces_seen for resource in request.resource_spans
+        for scope in resource.scope_spans for span in scope.spans
+    ]
+    assert len(received) == len(codes)
+    assert {span.name: (span.status.code, span.status.message) for span in received} == {
+        f"status-{code}": (code, f"message-{code}") for code in codes
+    }
 
 
 def test_out_opentelemetry_traces_uri():
