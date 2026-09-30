@@ -659,7 +659,11 @@ int flb_downstream_conn_release(struct flb_connection *connection)
 
         if (flb_coro_get() != connection->event_coroutine) {
             wake_event_coroutine(connection, ECANCELED);
-            resume = flb_stream_is_thread_safe(connection->stream);
+
+            /* an active parent callback resumes the coroutine on return */
+            if (connection->event_parent_active == FLB_FALSE) {
+                resume = flb_stream_is_thread_safe(connection->stream);
+            }
         }
 
         ret = FLB_DOWNSTREAM_CONN_DEFERRED;
@@ -929,7 +933,16 @@ void flb_downstream_conn_event_resume(struct flb_connection *connection)
         connection->event_parent_callback = NULL;
         connection->event_parent_callback_data = NULL;
 
+        /*
+         * The callback runs on this stack while the event coroutine is
+         * suspended in flb_downstream_conn_event_call_parent() and it can
+         * request the release of this connection (e.g. a pause triggered by
+         * ingestion). The coroutine must not be resumed until the callback
+         * returns, otherwise the plugin wrapper it uses could be dropped.
+         */
+        connection->event_parent_active = FLB_TRUE;
         result = callback(callback_data);
+        connection->event_parent_active = FLB_FALSE;
         connection->event_parent_callback_result = result;
         connection->event_wakeup_pending = FLB_FALSE;
     }
@@ -950,7 +963,9 @@ static void resume_pending_event_coroutines(struct flb_downstream *stream)
         mk_list_foreach(head, &stream->busy_queue) {
             connection = mk_list_entry(head, struct flb_connection, _head);
 
+            /* an active parent callback resumes the coroutine on return */
             if (connection->event_coroutine != NULL &&
+                connection->event_parent_active == FLB_FALSE &&
                 connection->event_wakeup_pending == FLB_TRUE) {
                 connection->event_wakeup_pending = FLB_FALSE;
                 break;
