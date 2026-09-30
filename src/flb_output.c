@@ -685,15 +685,17 @@ void flb_output_exit(struct flb_config *config)
             }
             flb_output_flush_destroy(out_flush);
         }
-        mk_list_foreach_safe(flush_head, flush_tmp, &ins->flush_list_destroy) {
-            out_flush = mk_list_entry(flush_head, struct flb_output_flush, _head);
-            flb_output_flush_destroy(out_flush);
-        }
 
         /* Check a exit callback */
         if (p->cb_exit) {
             p->cb_exit(ins->context, config);
         }
+
+        mk_list_foreach_safe(flush_head, flush_tmp, &ins->flush_list_destroy) {
+            out_flush = mk_list_entry(flush_head, struct flb_output_flush, _head);
+            flb_output_flush_destroy(out_flush);
+        }
+
         flb_output_instance_destroy(ins);
     }
 
