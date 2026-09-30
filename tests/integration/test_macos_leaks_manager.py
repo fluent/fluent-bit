@@ -7,6 +7,12 @@ from utils import fluent_bit_manager as manager_module
 from utils.fluent_bit_manager import FluentBitManager, FluentBitStartupError
 
 
+@pytest.fixture(autouse=True)
+def isolate_memory_checker_environment(monkeypatch):
+    monkeypatch.delenv("VALGRIND", raising=False)
+    monkeypatch.delenv("VALGRIND_STRICT", raising=False)
+
+
 class FakeProcess:
     def __init__(self, return_code=0):
         self.pid = 1234
