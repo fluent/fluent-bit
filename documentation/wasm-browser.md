@@ -17,8 +17,9 @@ embeds WAMR inside native Fluent Bit and is disabled here.
 ## Required dependency updates
 
 The browser build requires the following upstream changes, all merged as of
-2026-09-19. Their bundled copies are included in separate library commits in
-[Fluent Bit's draft browser PR](https://github.com/fluent/fluent-bit/pull/12429):
+2026-09-19. The flb_libco and Monkey updates are already bundled on `master`;
+[Fluent Bit's draft browser PR](https://github.com/fluent/fluent-bit/pull/12429)
+retains only the ChunkIO changes in a separate library commit:
 
 - [flb_libco #14](https://github.com/edsiper/flb_libco/pull/14): Emscripten
   fibers, exception cleanup, pthread reuse, and sanitizer stack transitions.
@@ -27,8 +28,8 @@ The browser build requires the following upstream changes, all merged as of
 - [ChunkIO #116](https://github.com/fluent/chunkio/pull/116): memory-only build
   fixes, browser-compatible file growth, and physical recursive deletion.
 
-Do not apply only the Fluent Bit core/SDK commits without these library
-updates. No Emscripten SDK files are patched. The browser profile also builds
+Use a base containing the flb_libco and Monkey upgrades and retain the ChunkIO
+update when applying the Fluent Bit core/SDK commits. No Emscripten SDK files are patched. The browser profile also builds
 SHA-256-pinned OpenSSL 3.5.8, libyaml 0.2.5, and portable Lua 5.4.9 for the same
 Emscripten 6.0.9 toolchain; it does not use host libraries or provide LuaJIT/FFI.
 
