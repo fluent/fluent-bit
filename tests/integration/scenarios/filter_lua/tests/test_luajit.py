@@ -25,6 +25,7 @@ function enrich(tag, timestamp, record)
     record.jit_enabled = default_jit
     record.trace_compiled = require("jit.util").traceinfo(1) ~= nil
     record.unpacked = table.concat({table.unpack({"a", "b", "c"})}, "")
+    record.packed_count = table.pack("a", nil, "c").n
     record.message = record.message .. " café"
     local ok, err = pcall(function() error("protected-error") end)
     record.error_caught = not ok and string.find(err, "protected-error", 1, true) ~= nil
@@ -87,7 +88,7 @@ def test_luajit_callbacks(tmp_path, context, mode):
         else:
             assert all(record == {"message": "lua-test café", "total": 980000,
                                   "jit_enabled": True, "trace_compiled": True,
-                                  "unpacked": "abc", "error_caught": True}
+                                  "unpacked": "abc", "packed_count": 3, "error_caught": True}
                        for record in output)
     finally:
         service.stop()
