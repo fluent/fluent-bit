@@ -24,6 +24,13 @@
 #include <fluent-bit/flb_sds.h>
 #include <chunkio/chunkio.h>
 
+#include <errno.h>
+#ifdef FLB_SYSTEM_WINDOWS
+#include <direct.h>
+#else
+#include <unistd.h>
+#endif
+
 static int log_cb(struct cio_ctx *ctx, int level, const char *file, int line,
                   char *str)
 {
@@ -526,8 +533,8 @@ struct flb_fstore *flb_fstore_create(char *path, int store_type)
 
 int flb_fstore_destroy(struct flb_fstore *fs)
 {
-    int files = 0;
-    int delete;
+    int ret;
+    int saved_errno;
     struct mk_list *head;
     struct mk_list *f_head;
     struct mk_list *tmp;
@@ -539,21 +546,29 @@ int flb_fstore_destroy(struct flb_fstore *fs)
         fs_stream = mk_list_entry(head, struct flb_fstore_stream, _head);
 
         /* delete file references */
-        files = 0;
         mk_list_foreach_safe(f_head, f_tmp, &fs_stream->files) {
             fsf = mk_list_entry(f_head, struct flb_fstore_file, _head);
             flb_fstore_file_inactive(fs, fsf);
-            files++;
         }
 
-        if (files == 0) {
-            delete = FLB_TRUE;
-        }
-        else {
-            delete = FLB_FALSE;
+        /* Inactive files remain on disk without in-memory references. */
+        if (fs_stream->stream->type == CIO_STORE_FS) {
+#ifdef FLB_SYSTEM_WINDOWS
+            ret = _rmdir(fs_stream->path);
+#else
+            ret = rmdir(fs_stream->path);
+#endif
+            if (ret == -1) {
+                saved_errno = errno;
+                if (saved_errno != ENOTEMPTY && saved_errno != EEXIST &&
+                    saved_errno != ENOENT) {
+                    flb_warn("[fstore] cannot remove empty stream directory %s: %s",
+                             fs_stream->path, strerror(saved_errno));
+                }
+            }
         }
 
-        flb_fstore_stream_destroy(fs_stream, delete);
+        flb_fstore_stream_destroy(fs_stream, FLB_FALSE);
     }
 
     if (fs->cio) {
