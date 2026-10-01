@@ -136,6 +136,10 @@ struct flb_azure_kusto {
 
     int timer_created;
     int timer_ms;
+    /* Keep the timer handle so exit can stop callbacks before fstore teardown. */
+    struct flb_sched_timer *upload_timer;
+    /* Gate flush and timer paths while exit owns fstore cleanup. */
+    int shutting_down;
 
     /* mutex for acquiring oauth tokens */
     pthread_mutex_t token_mutex;
@@ -148,6 +152,7 @@ struct flb_azure_kusto {
 
     pthread_mutex_t blob_mutex;
 
+    /* Protect buffered fstore lists shared by flush, timer, and exit paths. */
     pthread_mutex_t buffer_mutex;
 
     int buffering_enabled;
