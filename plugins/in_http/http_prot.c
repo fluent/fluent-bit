@@ -481,12 +481,13 @@ static ssize_t parse_payload_urlencoded(struct flb_http *ctx,
     ret = process_pack_ng(ctx, tag, sbuf.data, sbuf.size, request, encoder);
 
 decode_error:
-    for (idx = 0; idx < mk_list_size(kvs); idx++) {
-        if (keys[idx]) {
-            flb_sds_destroy(keys[idx]);
+    /* only the first 'idx' entries were populated */
+    for (i = 0; i < idx; i++) {
+        if (keys[i]) {
+            flb_sds_destroy(keys[i]);
         }
-        if (vals[idx]) {
-            flb_sds_destroy(vals[idx]);
+        if (vals[i]) {
+            flb_sds_destroy(vals[i]);
         }
     }
     flb_free(vals);
@@ -897,7 +898,7 @@ int http_prot_handle_ng(struct flb_http_request *request,
     ctx = (struct flb_http *) response->stream->user_data;
     auth_header = NULL;
     auth_len = 0;
-    if (request->path[0] != '/') {
+    if (request->path == NULL || request->path[0] != '/') {
         send_response_ng(response, 400, "error: invalid request\n");
         return -1;
     }

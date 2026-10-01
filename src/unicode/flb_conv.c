@@ -627,6 +627,7 @@ int flb_conv_convert_to_utf8(const char *encoding_name,
     converted = conv->cb_to_utf8(src, dest, len, no_error, conv->encoding);
     if (converted <= 0) {
         flb_free(*dest);
+        *dest = NULL;
         return FLB_CONV_CONVERSION_FAILED;
     }
 

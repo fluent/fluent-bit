@@ -1,6 +1,7 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_http_common.h>
 #include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_network.h>
@@ -10,6 +11,7 @@
 #include <fluent-bit/http_server/flb_http_server_config_map.h>
 
 #include <string.h>
+#include <cfl/cfl_atomic.h>
 
 #include "flb_tests_internal.h"
 
@@ -24,6 +26,7 @@ struct test_http_server_context {
     int exit_thread_mismatches;
     int expected_idle_timeout;
     int idle_timeout_mismatches;
+    int managed_worker_mismatches;
     struct flb_http_server *initialized_servers[TEST_HTTP_SERVER_WORKERS];
     pthread_t initialized_threads[TEST_HTTP_SERVER_WORKERS];
 };
@@ -51,6 +54,10 @@ static int test_http_server_worker_init(struct flb_http_server *server, void *da
     if (server->networking_setup == NULL ||
         server->networking_setup->io_timeout != context->expected_idle_timeout) {
         context->idle_timeout_mismatches++;
+    }
+
+    if (server->managed_worker != FLB_TRUE) {
+        context->managed_worker_mismatches++;
     }
 
     if (context->init_calls < TEST_HTTP_SERVER_WORKERS) {
@@ -341,6 +348,7 @@ void test_http_server_worker_exit_runs_on_worker_thread()
             TEST_CHECK(context.exit_calls == TEST_HTTP_SERVER_WORKERS);
             TEST_CHECK(context.exit_thread_mismatches == 0);
             TEST_CHECK(context.idle_timeout_mismatches == 0);
+            TEST_CHECK(context.managed_worker_mismatches == 0);
         }
         else {
             flb_http_server_destroy(&server);
@@ -414,6 +422,7 @@ void test_http_server_single_managed_worker_start()
         if (ret == 0) {
             TEST_CHECK(context.init_calls == 1);
             TEST_CHECK(context.idle_timeout_mismatches == 0);
+            TEST_CHECK(context.managed_worker_mismatches == 0);
         }
 
         flb_http_server_destroy(&server);
@@ -623,6 +632,7 @@ void test_http_server_multi_worker_disabled_idle_timeout_is_preserved()
 
     TEST_CHECK(context.init_calls == TEST_HTTP_SERVER_WORKERS);
     TEST_CHECK(context.idle_timeout_mismatches == 0);
+    TEST_CHECK(context.managed_worker_mismatches == 0);
 
     flb_http_server_destroy(&server);
     TEST_CHECK(context.exit_calls == TEST_HTTP_SERVER_WORKERS);
@@ -634,6 +644,186 @@ void test_http_server_multi_worker_disabled_idle_timeout_is_preserved()
     test_http_server_context_destroy(&context);
     flb_config_exit(config);
     test_http_server_network_cleanup();
+}
+
+static void test_http_server_detached_session_reaping(int managed_worker, size_t max_connections)
+{
+    int ret;
+    int index;
+    int port;
+    flb_sockfd_t client_fds[2] = {FLB_INVALID_SOCKET, FLB_INVALID_SOCKET};
+    struct flb_connection dropped_connection;
+    flb_connection_drop_notification_callback drop_callback;
+    struct flb_http_server_session *live_session;
+    struct sockaddr_in address;
+    struct flb_config *config;
+    struct mk_event_loop *event_loop;
+    struct flb_net_setup net_setup;
+    struct flb_http_server server;
+    struct flb_http_server_options options;
+    struct flb_http_server_session *session;
+
+    if (test_http_server_network_init() != 0) {
+        return;
+    }
+
+    config = flb_config_init();
+    if (!TEST_CHECK(config != NULL)) {
+        test_http_server_network_cleanup();
+        return;
+    }
+
+    event_loop = mk_event_loop_create(32);
+    if (!TEST_CHECK(event_loop != NULL)) {
+        flb_config_exit(config);
+        test_http_server_network_cleanup();
+        return;
+    }
+    flb_engine_evl_set(event_loop);
+    flb_coro_thread_init();
+    memset(&server, 0, sizeof(server));
+
+    port = test_http_server_reserve_port();
+    if (!TEST_CHECK(port > 0)) {
+        goto cleanup;
+    }
+
+    flb_net_setup_init(&net_setup);
+    flb_http_server_options_init(&options);
+    options.protocol_version = HTTP_PROTOCOL_VERSION_11;
+    options.address = (char *) TEST_HTTP_SERVER_HOST;
+    options.port = port;
+    options.networking_flags = FLB_IO_TCP;
+    options.networking_setup = &net_setup;
+    options.system_context = config;
+    options.event_loop = event_loop;
+    options.max_connections = max_connections;
+
+    ret = flb_http_server_init_with_options(&server, &options);
+    if (!TEST_CHECK(ret == 0)) {
+        goto cleanup;
+    }
+
+    ret = flb_http_server_start(&server);
+    if (!TEST_CHECK(ret == 0)) {
+        flb_http_server_destroy(&server);
+        goto cleanup;
+    }
+    TEST_CHECK(server.runtime == NULL);
+    TEST_CHECK(server.managed_worker == FLB_FALSE);
+    /* Exercise the accept policy used by each kind of event-loop owner. */
+    server.managed_worker = managed_worker;
+
+    memset(&address, 0, sizeof(address));
+    address.sin_family = AF_INET;
+    address.sin_port = htons(port);
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+    for (index = 0; index < 2; index++) {
+        client_fds[index] = flb_net_socket_create(AF_INET, FLB_FALSE);
+        if (!TEST_CHECK(client_fds[index] != FLB_INVALID_SOCKET)) {
+            goto server_cleanup;
+        }
+        ret = connect(client_fds[index], (struct sockaddr *) &address, sizeof(address));
+        if (!TEST_CHECK(ret == 0)) {
+            goto server_cleanup;
+        }
+
+        /* Leave the second connection queued until after the drop notifications. */
+        if (index == 0) {
+            ret = server.listener_event.handler(&server);
+            TEST_CHECK(ret == 0);
+        }
+    }
+    if (!TEST_CHECK(cfl_list_size(&server.clients) == 1)) {
+        goto server_cleanup;
+    }
+    live_session = cfl_list_entry_first(&server.clients, struct flb_http_server_session, _head);
+    drop_callback = live_session->connection->drop_notification_callback;
+
+    /* Deliver the same notification used after downstream callbacks unwind. */
+    for (index = 0; index < 3; index++) {
+        session = flb_http_server_session_create(HTTP_PROTOCOL_VERSION_11);
+        if (!TEST_CHECK(session != NULL)) {
+            goto server_cleanup;
+        }
+        memset(&dropped_connection, 0, sizeof(dropped_connection));
+        dropped_connection.fd = FLB_INVALID_SOCKET;
+        dropped_connection.user_data = session;
+        dropped_connection.drop_notification_callback = drop_callback;
+        session->parent = &server;
+        session->connection = &dropped_connection;
+        session->drop_pending = FLB_TRUE;
+        session->connection_slot_reserved = FLB_TRUE;
+        if (max_connections > 0) {
+            cfl_atomic_store(server.connection_counter, index + 2);
+        }
+        cfl_list_add(&session->_head, &server.clients);
+        drop_callback(&dropped_connection);
+        TEST_CHECK(session->connection == NULL);
+        TEST_CHECK(session->drop_pending == FLB_FALSE);
+        TEST_CHECK(dropped_connection.user_data == NULL);
+        TEST_CHECK(dropped_connection.drop_notification_callback == NULL);
+        drop_callback(&dropped_connection);
+        TEST_CHECK(cfl_list_size(&server.clients) == 1);
+        TEST_CHECK(cfl_list_size(&server.detached_clients) == index + 1);
+    }
+
+    ret = server.listener_event.handler(&server);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(cfl_list_size(&server.clients) == 2);
+    TEST_CHECK(live_session->connection != NULL);
+    if (managed_worker == FLB_TRUE && max_connections == 0) {
+        /* Uncapped workers leave detached sessions for maintenance or shutdown. */
+        TEST_CHECK(cfl_list_size(&server.detached_clients) == 3);
+        session = cfl_list_entry_first(&server.detached_clients,
+                                       struct flb_http_server_session, _head);
+        flb_http_server_session_destroy(session);
+        TEST_CHECK(cfl_list_size(&server.detached_clients) == 2);
+    }
+    else {
+        TEST_CHECK(cfl_list_size(&server.detached_clients) == 0);
+    }
+    if (max_connections > 0) {
+        TEST_CHECK(cfl_atomic_load(server.connection_counter) == 2);
+    }
+
+server_cleanup:
+    flb_http_server_destroy(&server);
+    TEST_CHECK(cfl_list_size(&server.clients) == 0);
+    TEST_CHECK(cfl_list_size(&server.detached_clients) == 0);
+    TEST_CHECK(cfl_atomic_load(server.connection_counter) == 0);
+    for (index = 0; index < 2; index++) {
+        if (client_fds[index] != FLB_INVALID_SOCKET) {
+            flb_socket_close(client_fds[index]);
+        }
+    }
+
+cleanup:
+    flb_engine_evl_set(NULL);
+    mk_event_loop_destroy(event_loop);
+    flb_config_exit(config);
+    test_http_server_network_cleanup();
+}
+
+void test_http_server_accept_reaps_stale_sessions_without_limit()
+{
+    test_http_server_detached_session_reaping(FLB_FALSE, 0);
+}
+
+void test_http_server_accept_reaps_stale_sessions_with_limit()
+{
+    test_http_server_detached_session_reaping(FLB_FALSE, 4);
+}
+
+void test_http_server_managed_accept_defers_uncapped_reaping()
+{
+    test_http_server_detached_session_reaping(FLB_TRUE, 0);
+}
+
+void test_http_server_managed_accept_reclaims_connection_slots()
+{
+    test_http_server_detached_session_reaping(FLB_TRUE, 4);
 }
 
 void test_http_server_session_destroy_with_closed_connection()
@@ -716,6 +906,14 @@ void test_http_server_session_destroy_is_reentrant_safe()
 }
 
 TEST_LIST = {
+    { "http_server_accept_reaps_stale_sessions_with_limit",
+      test_http_server_accept_reaps_stale_sessions_with_limit },
+    { "http_server_managed_accept_defers_uncapped_reaping",
+      test_http_server_managed_accept_defers_uncapped_reaping },
+    { "http_server_managed_accept_reclaims_connection_slots",
+      test_http_server_managed_accept_reclaims_connection_slots },
+    { "http_server_accept_reaps_stale_sessions_without_limit",
+      test_http_server_accept_reaps_stale_sessions_without_limit },
     { "http_server_options_defaults", test_http_server_options_defaults },
     { "http_server_options_multi_worker_magic", test_http_server_options_multi_worker_magic },
     { "http_server_managed_worker_contract", test_http_server_managed_worker_contract },

@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_downstream.h>
 #include <msgpack.h>
 
 #include "mqtt.h"
@@ -122,6 +123,14 @@ static inline int mqtt_packet_header(int type, int length, char *buf)
     return i;
 }
 
+struct mqtt_data_append_args {
+    char *topic;
+    size_t topic_len;
+    char *msg;
+    int msg_len;
+    struct flb_in_mqtt_config *ctx;
+};
+
 /* Collect a buffer of JSON data and convert it to Fluent Bit format */
 static int mqtt_data_append(char *topic, size_t topic_len,
                             char *msg, int msg_len,
@@ -219,6 +228,15 @@ static int mqtt_data_append(char *topic, size_t topic_len,
     return ret;
 }
 
+static int mqtt_data_append_dispatch(void *data)
+{
+    struct mqtt_data_append_args *args;
+
+    args = data;
+
+    return mqtt_data_append(args->topic, args->topic_len,
+                            args->msg, args->msg_len, args->ctx);
+}
 
 /*
  * Handle a CONNECT request control packet:
@@ -248,7 +266,11 @@ static int mqtt_handle_connect(struct mqtt_conn *conn)
     flb_plg_trace(ctx->ins, "[fd=%i] CMD CONNECT (connack=%i bytes)",
                   conn->connection->fd, ret);
 
-    return ret;
+    if (ret == -1) {
+        return -1;
+    }
+
+    return 0;
 }
 
 /*
@@ -256,6 +278,7 @@ static int mqtt_handle_connect(struct mqtt_conn *conn)
  */
 static int mqtt_handle_publish(struct mqtt_conn *conn)
 {
+    int ret;
     int frame_avail;
     int topic;
     int topic_len;
@@ -263,7 +286,8 @@ static int mqtt_handle_publish(struct mqtt_conn *conn)
     size_t sent;
     uint16_t hlen;
     uint16_t packet_id;
-    char buf[4];
+    char buf[4] = {0, 0, 0, 0};
+    struct mqtt_data_append_args args;
     struct flb_in_mqtt_config *ctx = conn->ctx;
 
     /*
@@ -273,6 +297,11 @@ static int mqtt_handle_publish(struct mqtt_conn *conn)
      */
 
     qos = ((conn->buf[0] >> 1) & 0x03);
+    if (qos > MQTT_QOS_LEV2) {
+        /* MQTT-3.3.1-4: a PUBLISH packet must not have both QoS bits set */
+        flb_plg_debug(ctx->ins, "invalid publish QoS");
+        return -1;
+    }
     conn->buf_pos++;
 
     /* Topic */
@@ -322,11 +351,15 @@ static int mqtt_handle_publish(struct mqtt_conn *conn)
         buf[2] = (packet_id >> 8) & 0xff;
         buf[3] = (packet_id & 0xff);
 
-        /* This operation should be checked */
-        flb_io_net_write(conn->connection,
-                         (void *) buf,
-                         4,
-                         &sent);
+        ret = flb_io_net_write(conn->connection,
+                               (void *) buf,
+                               4,
+                               &sent);
+        if (ret == -1) {
+            flb_plg_debug(ctx->ins, "[fd=%i] could not acknowledge publish",
+                          conn->connection->fd);
+            return -1;
+        }
     }
 
     /* Message */
@@ -335,10 +368,19 @@ static int mqtt_handle_publish(struct mqtt_conn *conn)
         return -1;
     }
 
-    mqtt_data_append((char *) (conn->buf + topic), topic_len,
-                     (char *) (conn->buf + conn->buf_pos),
-                     conn->buf_frame_end - conn->buf_pos + 1,
-                     conn->ctx);
+    args.topic = (char *) (conn->buf + topic);
+    args.topic_len = topic_len;
+    args.msg = (char *) (conn->buf + conn->buf_pos);
+    args.msg_len = conn->buf_frame_end - conn->buf_pos + 1;
+    args.ctx = conn->ctx;
+
+    /*
+     * Filters and processors run while records are appended, keep them on
+     * the parent stack instead of the connection coroutine stack.
+     */
+    flb_downstream_conn_event_call_parent(conn->connection,
+                                          mqtt_data_append_dispatch,
+                                          &args);
 
     flb_plg_trace(ctx->ins, "[fd=%i] CMD PUBLISH",
                   conn->connection->fd);
@@ -364,7 +406,12 @@ static int mqtt_handle_ping(struct mqtt_conn *conn)
 
     flb_plg_trace(ctx->ins, "[fd=%i] CMD PING (pong=%i bytes)",
                   conn->connection->fd, ret);
-    return ret;
+
+    if (ret == -1) {
+        return -1;
+    }
+
+    return 0;
 }
 
 int mqtt_prot_parser(struct mqtt_conn *conn)
@@ -451,7 +498,10 @@ int mqtt_prot_parser(struct mqtt_conn *conn)
 
             /* At this point we have a full control packet in place */
             if (conn->packet_type == MQTT_CONNECT) {
-                mqtt_handle_connect(conn);
+                ret = mqtt_handle_connect(conn);
+                if (ret == -1) {
+                    return MQTT_ERROR;
+                }
             }
             else if (conn->packet_type == MQTT_PUBLISH) {
                 ret = mqtt_handle_publish(conn);
@@ -460,7 +510,10 @@ int mqtt_prot_parser(struct mqtt_conn *conn)
                 }
             }
             else if (conn->packet_type == MQTT_PINGREQ) {
-                mqtt_handle_ping(conn);
+                ret = mqtt_handle_ping(conn);
+                if (ret == -1) {
+                    return MQTT_ERROR;
+                }
             }
             else if (conn->packet_type == MQTT_DISCONNECT) {
                 flb_plg_trace(ctx->ins, "[fd=%i] CMD DISCONNECT",

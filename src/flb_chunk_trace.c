@@ -226,8 +226,14 @@ static void *trace_chunk_pipeline_thread(void *arg)
 
     if (flb_start(ctx->flb) != 0) {
         flb_error("[pipeline_thead]: unable to start pipeline");
-        goto error_output;
+        /*
+         * the engine already destroyed the input and output instances when
+         * it failed to start, only the library context is left.
+         */
+        goto error_flb;
     }
+
+    ctx->state = FLB_CHUNK_PIPELINE_RUNNING;
 
     /* signal that we have finally started and we can begin waiting to exit.*/
     if (pthread_cond_signal(&ctx->cond) != 0) {
@@ -267,14 +273,20 @@ static void *trace_chunk_pipeline_thread(void *arg)
     return NULL;
 
 error_start:
+    /* stopping the engine destroys the input and output instances */
     flb_stop(ctx->flb);
+    goto error_flb;
 error_output:
     flb_output_instance_destroy(output);
 error_input:
     flb_input_instance_destroy(input);
 error_flb:
     flb_destroy(ctx->flb);
+    ctx->flb = NULL;
 error_lock:
+    /* let trace_pipeline_start() know the pipeline could not be started */
+    ctx->state = FLB_CHUNK_PIPELINE_FAILED;
+    pthread_cond_signal(&ctx->cond);
     pthread_mutex_unlock(&ctx->lock);
     flb_trace("[pipeline_thead]: error: exit trace pipeline thread.");
     return NULL;
@@ -309,16 +321,25 @@ static int trace_pipeline_start(struct flb_chunk_pipeline_context *pipeline)
     }
 
     flb_trace("waiting for pipeline to start");
-    rc = pthread_cond_wait(&pipeline->cond, &pipeline->lock);
+    while (pipeline->state == FLB_CHUNK_PIPELINE_STARTING) {
+        rc = pthread_cond_wait(&pipeline->cond, &pipeline->lock);
 
-    if (rc != 0) {
+        if (rc != 0) {
 
-        /* store the return value in errno if it is zero since . */
-        if (errno == 0) {
-            errno = rc;
+            /* store the return value in errno if it is zero since . */
+            if (errno == 0) {
+                errno = rc;
+            }
+
+            flb_errno();
+            return FLB_FALSE;
         }
+    }
 
-        flb_errno();
+    if (pipeline->state != FLB_CHUNK_PIPELINE_RUNNING) {
+        flb_error("pipeline thread failed to start");
+        pthread_mutex_unlock(&pipeline->lock);
+        pthread_join(pipeline->thread, NULL);
         return FLB_FALSE;
     }
 
@@ -364,8 +385,14 @@ static int trace_pipeline_init(struct flb_chunk_pipeline_context *pipeline,
 
     pthread_mutex_init(&pipeline->lock, NULL);
     pthread_cond_init(&pipeline->cond, NULL);
+    pipeline->state = FLB_CHUNK_PIPELINE_STARTING;
 
-    return trace_pipeline_start(pipeline);
+    if (trace_pipeline_start(pipeline) == FLB_FALSE) {
+        flb_sds_destroy(pipeline->output_name);
+        return FLB_FALSE;
+    }
+
+    return FLB_TRUE;
 }
 
 struct flb_chunk_trace_context *flb_chunk_trace_context_new(void *trace_input,
@@ -387,6 +414,7 @@ struct flb_chunk_trace_context *flb_chunk_trace_context_new(void *trace_input,
 
     if (in->chunk_trace_ctxt) {
         trace_chunk_context_destroy(in->chunk_trace_ctxt);
+        in->chunk_trace_ctxt = NULL;
     }
 
     ctx = flb_calloc(1, sizeof(struct flb_chunk_trace_context));

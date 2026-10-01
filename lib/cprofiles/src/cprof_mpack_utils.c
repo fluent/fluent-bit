@@ -20,6 +20,7 @@
 #include <cprofiles/cprof_mpack_utils.h>
 #include <cfl/cfl_sds.h>
 #include <mpack/mpack.h>
+#include <limits.h>
 
 int cprof_mpack_consume_string_or_nil_tag(mpack_reader_t *reader, cfl_sds_t *output_buffer)
 {
@@ -126,6 +127,10 @@ int cprof_mpack_consume_uint_tag(mpack_reader_t *reader, uint64_t *output_buffer
     }
 
     if (mpack_type_int == mpack_tag_type(&tag)) {
+        if (mpack_tag_int_value(&tag) < 0) {
+            return CPROF_MPACK_CORRUPT_INPUT_DATA_ERROR;
+        }
+
         *output_buffer = (uint64_t) mpack_tag_int_value(&tag);
     }
     else if (mpack_type_uint == mpack_tag_type(&tag)) {
@@ -144,6 +149,10 @@ int cprof_mpack_consume_uint32_tag(mpack_reader_t *reader, uint32_t *output_buff
     uint64_t value;
 
     result = cprof_mpack_consume_uint_tag(reader, &value);
+
+    if (result == CPROF_MPACK_SUCCESS && value > UINT32_MAX) {
+        return CPROF_MPACK_CORRUPT_INPUT_DATA_ERROR;
+    }
 
     if (result == CPROF_MPACK_SUCCESS) {
         *output_buffer = (uint32_t) value;
@@ -179,6 +188,10 @@ int cprof_mpack_consume_int_tag(mpack_reader_t *reader, int64_t *output_buffer)
         *output_buffer = (int64_t) mpack_tag_int_value(&tag);
     }
     else if (mpack_type_uint == mpack_tag_type(&tag)) {
+        if (mpack_tag_uint_value(&tag) > INT64_MAX) {
+            return CPROF_MPACK_CORRUPT_INPUT_DATA_ERROR;
+        }
+
         *output_buffer = (int64_t) mpack_tag_uint_value(&tag);
     }
     else {
@@ -194,6 +207,11 @@ int cprof_mpack_consume_int32_tag(mpack_reader_t *reader, int32_t *output_buffer
     int64_t value;
 
     result = cprof_mpack_consume_int_tag(reader, &value);
+
+    if (result == CPROF_MPACK_SUCCESS &&
+        (value < INT32_MIN || value > INT32_MAX)) {
+        return CPROF_MPACK_CORRUPT_INPUT_DATA_ERROR;
+    }
 
     if (result == CPROF_MPACK_SUCCESS) {
         *output_buffer = (int32_t) value;
@@ -296,6 +314,10 @@ int cprof_mpack_consume_binary_tag(mpack_reader_t *reader, cfl_sds_t *output_buf
     }
 
     string_length = mpack_tag_bin_length(&tag);
+
+    if (CPROF_MPACK_MAX_STRING_LENGTH < string_length) {
+        return CPROF_MPACK_CORRUPT_INPUT_DATA_ERROR;
+    }
 
     *output_buffer = cfl_sds_create_size(string_length);
 

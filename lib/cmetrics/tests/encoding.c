@@ -1030,6 +1030,39 @@ static Prometheus__WriteRequest *decode_remote_write_payload(cfl_sds_t payload)
                                              (uint8_t *) payload);
 }
 
+void test_prometheus_remote_write_labels_are_sorted()
+{
+    cfl_sds_t                 payload;
+    struct cmt                *cmt;
+    Prometheus__WriteRequest  *request;
+    size_t                     series_index;
+    size_t                     label_index;
+
+    cmt_initialize();
+
+    cmt = generate_encoder_test_data_with_timestamp(cfl_time_now());
+    TEST_ASSERT(cmt != NULL);
+
+    payload = cmt_encode_prometheus_remote_write_create(cmt);
+    TEST_ASSERT(payload != NULL);
+
+    request = decode_remote_write_payload(payload);
+    TEST_ASSERT(request != NULL);
+
+    for (series_index = 0; series_index < request->n_timeseries; series_index++) {
+        Prometheus__TimeSeries *series = request->timeseries[series_index];
+
+        for (label_index = 1; label_index < series->n_labels; label_index++) {
+            TEST_CHECK(strcmp(series->labels[label_index - 1]->name,
+                              series->labels[label_index]->name) < 0);
+        }
+    }
+
+    prometheus__write_request__free_unpacked(request, NULL);
+    cmt_encode_prometheus_remote_write_destroy(payload);
+    cmt_destroy(cmt);
+}
+
 void test_prometheus_remote_write_skips_only_stale_samples()
 {
     uint64_t                  now;
@@ -1339,6 +1372,125 @@ void test_prometheus_histogram_bucket_decimal_label()
     if (text != NULL) {
         TEST_CHECK(strstr(text, "cmt_labels_bucket_bucket{le=\"1000000.0\"}") != NULL);
         TEST_CHECK(strstr(text, "cmt_labels_bucket_bucket{le=\"1e+06\"}") == NULL);
+        cmt_encode_prometheus_destroy(text);
+    }
+
+    cmt_destroy(cmt);
+}
+
+void test_prometheus_invalid_name_chars()
+{
+    uint64_t ts;
+    cfl_sds_t text;
+    struct cmt *cmt;
+    struct cmt_gauge *g;
+
+    cmt_initialize();
+
+    cmt = cmt_create();
+    TEST_CHECK(cmt != NULL);
+    if (cmt == NULL) {
+        return;
+    }
+
+    /* names cannot be escaped: bytes outside the allowed set become '_' */
+    g = cmt_gauge_create(cmt, "", "", "9tenant.metric\nforged{a=\"b\"} 1",
+                         "Invalid name", 1, (char *[]) {"k\nINJECTED 42"});
+    TEST_CHECK(g != NULL);
+    if (g == NULL) {
+        cmt_destroy(cmt);
+        return;
+    }
+
+    ts = 0;
+    cmt_gauge_set(g, ts, 7, 1, (char *[]) {"v"});
+
+    text = cmt_encode_prometheus_create(cmt, CMT_FALSE);
+    TEST_CHECK(text != NULL);
+    if (text != NULL) {
+        TEST_CHECK(strcmp(text,
+                          "# HELP _9tenant_metric_forged_a__b___1 Invalid name\n"
+                          "# TYPE _9tenant_metric_forged_a__b___1 gauge\n"
+                          "_9tenant_metric_forged_a__b___1{k_INJECTED_42=\"v\"} 7\n") == 0);
+        cmt_encode_prometheus_destroy(text);
+    }
+
+    cmt_destroy(cmt);
+}
+
+void test_prometheus_sanitized_name_collisions()
+{
+    uint64_t ts;
+    cfl_sds_t text;
+    struct cmt *cmt;
+    struct cmt_counter *dotted;
+    struct cmt_counter *underscored;
+    struct cmt_counter *empty;
+    struct cmt_gauge *idle;
+    struct cmt_gauge *labels;
+    struct cmt_counter *valid;
+    struct cmt_gauge *changed;
+
+    cmt_initialize();
+
+    cmt = cmt_create();
+    TEST_CHECK(cmt != NULL);
+    if (cmt == NULL) {
+        return;
+    }
+
+    /* distinct names that are written under the same sanitized name */
+    dotted = cmt_counter_create(cmt, "", "", "cpu.total", "dotted", 0, NULL);
+    underscored = cmt_counter_create(cmt, "", "", "cpu_total", "underscored", 0, NULL);
+
+    /* a map without samples writes nothing and must not claim its name */
+    empty = cmt_counter_create(cmt, "", "", "idle.metric", "empty",
+                               1, (char *[]) {"k"});
+    idle = cmt_gauge_create(cmt, "", "", "idle_metric", "idle", 0, NULL);
+
+    /* a valid name written first and a later name changed by sanitizing */
+    valid = cmt_counter_create(cmt, "", "", "mem_used", "valid", 0, NULL);
+    changed = cmt_gauge_create(cmt, "", "", "mem.used", "changed", 0, NULL);
+
+    /* static and api defined label keys that sanitize to the same name */
+    labels = cmt_gauge_create(cmt, "", "", "req", "labels",
+                              3, (char *[]) {"a.b", "c", "a_b"});
+
+    TEST_CHECK(dotted != NULL && underscored != NULL && empty != NULL &&
+               idle != NULL && labels != NULL && valid != NULL &&
+               changed != NULL);
+    if (dotted == NULL || underscored == NULL || empty == NULL ||
+        idle == NULL || labels == NULL || valid == NULL || changed == NULL) {
+        cmt_destroy(cmt);
+        return;
+    }
+
+    TEST_CHECK(cmt_label_add(cmt, "a-b", "s") == 0);
+
+    ts = 0;
+    cmt_counter_set(dotted, ts, 1, 0, NULL);
+    cmt_counter_set(underscored, ts, 2, 0, NULL);
+    cmt_gauge_set(idle, ts, 3, 0, NULL);
+    cmt_gauge_set(labels, ts, 4, 3, (char *[]) {"x", "z", "y"});
+    cmt_counter_set(valid, ts, 5, 0, NULL);
+    cmt_gauge_set(changed, ts, 6, 0, NULL);
+
+    text = cmt_encode_prometheus_create(cmt, CMT_FALSE);
+    TEST_CHECK(text != NULL);
+    if (text != NULL) {
+        TEST_CHECK(strcmp(text,
+                          "# HELP cpu_total dotted\n"
+                          "# TYPE cpu_total counter\n"
+                          "cpu_total{a_b=\"s\"} 1\n"
+                          "# HELP mem_used valid\n"
+                          "# TYPE mem_used counter\n"
+                          "mem_used{a_b=\"s\"} 5\n"
+                          "# HELP idle_metric idle\n"
+                          "# TYPE idle_metric gauge\n"
+                          "idle_metric{a_b=\"s\"} 3\n"
+                          "# HELP req labels\n"
+                          "# TYPE req gauge\n"
+                          "req{a_b=\"s;x;y\",c=\"z\"} 4\n") == 0);
         cmt_encode_prometheus_destroy(text);
     }
 
@@ -1809,6 +1961,7 @@ TEST_LIST = {
     {"cmt_msgpack_null_label_roundtrip", test_cmt_msgpack_null_label_roundtrip},
     {"cmt_msgpack_partial_processing", test_cmt_msgpack_partial_processing},
     {"prometheus_remote_write",        test_prometheus_remote_write},
+    {"prometheus_remote_write_labels_are_sorted", test_prometheus_remote_write_labels_are_sorted},
     {"prometheus_remote_write_old_cmt",test_prometheus_remote_write_with_outdated_timestamps},
     {"prometheus_remote_write_skips_only_stale_samples", test_prometheus_remote_write_skips_only_stale_samples},
     {"prometheus_remote_write_continues_after_stale_family", test_prometheus_remote_write_continues_after_stale_family},
@@ -1823,6 +1976,8 @@ TEST_LIST = {
     {"cloudwatch_emf",                 test_cloudwatch_emf},
     {"prometheus",                     test_prometheus},
     {"prometheus_histogram_bucket_decimal_label", test_prometheus_histogram_bucket_decimal_label},
+    {"prometheus_invalid_name_chars",  test_prometheus_invalid_name_chars},
+    {"prometheus_sanitized_name_collisions", test_prometheus_sanitized_name_collisions},
     {"text",                           test_text},
     {"influx",                         test_influx},
     {"influx_without_namespaces",      test_influx_without_namespaces},

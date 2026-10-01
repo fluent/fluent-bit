@@ -6,6 +6,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_mp.h>
 #include <msgpack.h>
+#include <ctraces/ctraces.h>
 
 #include "flb_tests_internal.h"
 
@@ -538,7 +539,69 @@ void test_object_to_cfl_to_msgpack()
     cfl_object_destroy(obj);
 }
 
+void test_validate_trace_chunk()
+{
+    int codes[] = {0, 1, 2, -2147483647 - 1, -1, 3, 2147483647};
+    int ret;
+    int count;
+    size_t index;
+    size_t size;
+    size_t processed;
+    char *packed;
+    char invalid = '\xc1';
+    msgpack_sbuffer buffer;
+    struct ctrace *trace;
+    struct ctrace_resource_span *resource;
+    struct ctrace_scope_span *scope;
+    struct ctrace_span *span;
+
+    msgpack_sbuffer_init(&buffer);
+    for (index = 0; index < sizeof(codes) / sizeof(codes[0]); index++) {
+        trace = ctr_create(NULL);
+        TEST_ASSERT(trace != NULL);
+        resource = ctr_resource_span_create(trace);
+        TEST_ASSERT(resource != NULL);
+        scope = ctr_scope_span_create(resource);
+        TEST_ASSERT(scope != NULL);
+        span = ctr_span_create(trace, scope, "trace", NULL);
+        TEST_ASSERT(span != NULL);
+        TEST_ASSERT(ctr_span_set_status(span, codes[index], "message") == 0);
+        TEST_ASSERT(ctr_encode_msgpack_create(trace, &packed, &size) == 0);
+        TEST_ASSERT(msgpack_sbuffer_write(&buffer, packed, size) == 0);
+        ctr_encode_msgpack_destroy(packed);
+        ctr_destroy(trace);
+    }
+
+    ret = flb_mp_validate_trace_chunk(buffer.data, buffer.size, &count, &processed);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(count == 7);
+    TEST_CHECK(processed == buffer.size);
+
+    ret = flb_mp_validate_trace_chunk(buffer.data, buffer.size - 1, &count, &processed);
+    TEST_CHECK(ret == -1);
+    TEST_CHECK(count == 6);
+    TEST_CHECK(processed < buffer.size - 1);
+
+    TEST_ASSERT(msgpack_sbuffer_write(&buffer, &invalid, 1) == 0);
+    ret = flb_mp_validate_trace_chunk(buffer.data, buffer.size, &count, &processed);
+    TEST_CHECK(ret == -1);
+    TEST_CHECK(count == 7);
+    TEST_CHECK(processed == buffer.size - 1);
+
+    ret = flb_mp_validate_trace_chunk(&invalid, 1, &count, &processed);
+    TEST_CHECK(ret == -1);
+    TEST_CHECK(count == 0);
+    TEST_CHECK(processed == 0);
+
+    ret = flb_mp_validate_trace_chunk(NULL, 0, &count, &processed);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(count == 0);
+    TEST_CHECK(processed == 0);
+    msgpack_sbuffer_destroy(&buffer);
+}
+
 TEST_LIST = {
+    {"validate_trace_chunk" , test_validate_trace_chunk},
     {"count"                , test_count},
     {"map_header"           , test_map_header},
     {"accessor_keys_remove" , test_accessor_keys_remove},

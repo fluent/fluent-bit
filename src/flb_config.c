@@ -456,6 +456,7 @@ struct flb_config *flb_config_init()
     config->sched_cap  = FLB_SCHED_CAP;
     config->sched_base = FLB_SCHED_BASE;
     config->json_escape_unicode = FLB_TRUE;
+    config->flush_in_flight_limit = FLB_CONFIG_FLUSH_IN_FLIGHT_LIMIT;
 
     /* reload */
     config->ensure_thread_safety_on_hot_reloading = FLB_TRUE;
@@ -623,7 +624,8 @@ void flb_config_exit(struct flb_config *config)
     /* Channel notifications */
     if (config->ch_notif[0] > 0) {
         mk_event_closesocket(config->ch_notif[0]);
-        if (config->ch_notif[0] != config->ch_notif[1]) {
+        if (config->ch_notif[1] > 0 &&
+            config->ch_notif[0] != config->ch_notif[1]) {
             mk_event_closesocket(config->ch_notif[1]);
         }
     }
@@ -830,6 +832,26 @@ int set_log_level_from_env(struct flb_config *config)
     return -1;
 }
 
+int flb_config_service_property_is_valid(const char *k)
+{
+    int i = 0;
+    size_t len;
+    char *key;
+
+    len = strnlen(k, 256);
+    key = service_configs[0].key;
+
+    while (key != NULL) {
+        if (prop_key_check(key, k, len) == 0) {
+            return FLB_TRUE;
+        }
+
+        key = service_configs[++i].key;
+    }
+
+    return FLB_FALSE;
+}
+
 int flb_config_set_property(struct flb_config *config,
                             const char *k, const char *v)
 {
@@ -858,6 +880,15 @@ int flb_config_set_property(struct flb_config *config,
                         ret = set_log_level(config, v);
                     }
                 #ifndef FLB_HAVE_STATIC_CONF
+                }
+                else {
+                    /*
+                     * FLB_LOG_LEVEL was set in the environment and already
+                     * applied by set_log_level_from_env(), which takes
+                     * precedence over the config value. Record success so the
+                     * caller does not treat this path as a fatal error.
+                     */
+                    ret = 0;
                 }
                 #endif
             }
@@ -918,6 +949,8 @@ int flb_config_set_property(struct flb_config *config,
         }
         key = service_configs[++i].key;
     }
+
+    flb_warn("[config] unknown service property '%s', it has been ignored", k);
     return 0;
 }
 
@@ -1535,6 +1568,12 @@ int flb_config_load_config_format(struct flb_config *config, struct flb_cf *cf)
             else {
                 /* Yaml allow parsers definitions in any Yaml file, all good */
             }
+        }
+
+        if (s->type == FLB_CF_OTHER &&
+            strcasecmp(s->name, "processor") != 0) {
+            flb_warn("[config] unknown configuration section '%s', it has been ignored",
+                     s->name);
         }
     }
 

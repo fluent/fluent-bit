@@ -34,6 +34,7 @@
 
 #include <msgpack.h>
 #include <mpack/mpack.h>
+#include <ctraces/ctr_decode_msgpack.h>
 
 /* don't do this at home */
 #define pack_uint16(buf, d) _msgpack_store16(buf, (uint16_t) d)
@@ -381,6 +382,33 @@ error:
     *processed_bytes = pre_off;
 
     return -1;
+}
+
+int flb_mp_validate_trace_chunk(const void *data, size_t bytes,
+                                int *out_contexts, size_t *processed_bytes)
+{
+    int ret;
+    int count;
+    size_t offset;
+    struct ctrace *trace;
+
+    count = 0;
+    offset = 0;
+    *out_contexts = 0;
+    *processed_bytes = 0;
+
+    while (offset < bytes) {
+        ret = ctr_decode_msgpack_create(&trace, (char *) data, bytes, &offset);
+        if (ret != CTR_DECODE_MSGPACK_SUCCESS) {
+            return -1;
+        }
+        ctr_destroy(trace);
+        count++;
+        *out_contexts = count;
+        *processed_bytes = offset;
+    }
+
+    return 0;
 }
 
 int flb_mp_validate_log_chunk(const void *data, size_t bytes,
@@ -1893,19 +1921,24 @@ int flb_mp_chunk_cobj_record_next(struct flb_mp_chunk_cobj *chunk_cobj,
 int flb_mp_chunk_cobj_record_destroy(struct flb_mp_chunk_cobj *chunk_cobj,
                                      struct flb_mp_chunk_record *record)
 {
-    struct flb_mp_chunk_record *first;
-    struct flb_mp_chunk_record *last;
-
     if (!record) {
         return -1;
     }
 
-    if (chunk_cobj && chunk_cobj->record_pos) {
-        first = cfl_list_entry_first(&chunk_cobj->records, struct flb_mp_chunk_record, _head);
-        last = cfl_list_entry_last(&chunk_cobj->records, struct flb_mp_chunk_record, _head);
-
-        if (record == first || record == last) {
+    /*
+     * If the record being removed is the one under the iterator cursor, move
+     * the cursor back to the previous entry so the next call to
+     * flb_mp_chunk_cobj_record_next() continues with the record that follows
+     * the removed one. If it was the first entry, reset the cursor so the
+     * iteration restarts from the new head of the list.
+     */
+    if (chunk_cobj && chunk_cobj->record_pos == record) {
+        if (record->_head.prev == &chunk_cobj->records) {
             chunk_cobj->record_pos = NULL;
+        }
+        else {
+            chunk_cobj->record_pos = cfl_list_entry(record->_head.prev,
+                                                    struct flb_mp_chunk_record, _head);
         }
     }
 

@@ -28,6 +28,8 @@
 #include "syslog_conn.h"
 #include "syslog_prot.h"
 
+static void syslog_conn_drop(struct flb_connection *connection);
+
 /* Callback invoked every time an event is triggered for a connection */
 int syslog_conn_event(void *data)
 {
@@ -39,6 +41,11 @@ int syslog_conn_event(void *data)
 
     conn = connection->user_data;
 
+    /* The wrapper might have been released by the drop notification */
+    if (conn == NULL) {
+        return -1;
+    }
+
     ctx = conn->ctx;
 
     if (ctx->dgram_mode_flag) {
@@ -48,6 +55,18 @@ int syslog_conn_event(void *data)
     return syslog_stream_conn_event(data);
 }
 
+/* Parse and ingest buffered records outside of the connection coroutine */
+static int syslog_stream_conn_process(void *data)
+{
+    return syslog_prot_process((struct syslog_conn *) data);
+}
+
+/*
+ * Stream connections are served from a downstream event coroutine which
+ * invokes this callback in a loop: the read below suspends the coroutine
+ * until data is available, so every return path must either consume data
+ * or release the connection.
+ */
 int syslog_stream_conn_event(void *data)
 {
     int ret;
@@ -55,7 +74,6 @@ int syslog_stream_conn_event(void *data)
     int available;
     size_t size;
     char *tmp;
-    struct mk_event *event;
     struct syslog_conn *conn;
     struct flb_syslog *ctx;
     struct flb_connection *connection;
@@ -66,61 +84,59 @@ int syslog_stream_conn_event(void *data)
 
     ctx = conn->ctx;
 
-    event = &connection->event;
-
-    if (event->mask & MK_EVENT_READ) {
-        available = (conn->buf_size - conn->buf_len) - 1;
-        if (available < 1) {
-            if (conn->buf_size + ctx->buffer_chunk_size > ctx->buffer_max_size) {
-                flb_plg_debug(ctx->ins,
-                              "fd=%i incoming data exceed limit (%zd bytes)",
-                              event->fd, (ctx->buffer_max_size));
-                syslog_conn_del(conn);
-                return -1;
-            }
-
-            size = conn->buf_size + ctx->buffer_chunk_size;
-            tmp = flb_realloc(conn->buf_data, size);
-            if (!tmp) {
-                flb_errno();
-                return -1;
-            }
-            flb_plg_trace(ctx->ins, "fd=%i buffer realloc %zd -> %zd",
-                          event->fd, conn->buf_size, size);
-
-            conn->buf_data = tmp;
-            conn->buf_size = size;
-            available = (conn->buf_size - conn->buf_len) - 1;
-        }
-
-        bytes = flb_io_net_read(connection,
-                                (void *) &conn->buf_data[conn->buf_len],
-                                available);
-
-        if (bytes > 0) {
-            flb_plg_trace(ctx->ins, "read()=%i pre_len=%zu now_len=%zu",
-                          bytes, conn->buf_len, conn->buf_len + bytes);
-            conn->buf_len += bytes;
-            conn->buf_data[conn->buf_len] = '\0';
-            ret = syslog_prot_process(conn);
-            if (ret == -1) {
-                return -1;
-            }
-            return bytes;
-        }
-        else {
-            flb_plg_trace(ctx->ins, "fd=%i closed connection", event->fd);
+    available = (conn->buf_size - conn->buf_len) - 1;
+    if (available < 1) {
+        if (conn->buf_size + ctx->buffer_chunk_size > ctx->buffer_max_size) {
+            flb_plg_debug(ctx->ins,
+                          "fd=%i incoming data exceed limit (%zd bytes)",
+                          connection->fd, (ctx->buffer_max_size));
             syslog_conn_del(conn);
             return -1;
         }
+
+        size = conn->buf_size + ctx->buffer_chunk_size;
+        tmp = flb_realloc(conn->buf_data, size);
+        if (!tmp) {
+            flb_errno();
+            syslog_conn_del(conn);
+            return -1;
+        }
+        flb_plg_trace(ctx->ins, "fd=%i buffer realloc %zd -> %zd",
+                      connection->fd, conn->buf_size, size);
+
+        conn->buf_data = tmp;
+        conn->buf_size = size;
+        available = (conn->buf_size - conn->buf_len) - 1;
     }
 
-    if (event->mask & MK_EVENT_CLOSE) {
-        flb_plg_trace(ctx->ins, "fd=%i hangup", event->fd);
+    bytes = flb_io_net_read(connection,
+                            (void *) &conn->buf_data[conn->buf_len],
+                            available);
+
+    if (bytes <= 0) {
+        flb_plg_trace(ctx->ins, "fd=%i closed connection", connection->fd);
         syslog_conn_del(conn);
         return -1;
     }
-    return 0;
+
+    flb_plg_trace(ctx->ins, "read()=%i pre_len=%zu now_len=%zu",
+                  bytes, conn->buf_len, conn->buf_len + bytes);
+    conn->buf_len += bytes;
+    conn->buf_data[conn->buf_len] = '\0';
+
+    /*
+     * Parsers, filters and processors run while records are appended, keep
+     * them on the parent stack instead of the connection coroutine stack.
+     */
+    ret = flb_downstream_conn_event_call_parent(connection,
+                                                syslog_stream_conn_process,
+                                                conn);
+    if (ret == -1) {
+        syslog_conn_del(conn);
+        return -1;
+    }
+
+    return bytes;
 }
 
 int syslog_dgram_conn_event(void *data)
@@ -156,7 +172,6 @@ int syslog_dgram_conn_event(void *data)
 struct syslog_conn *syslog_conn_add(struct flb_connection *connection,
                                     struct flb_syslog *ctx)
 {
-    int ret;
     struct syslog_conn *conn;
 
     conn = flb_malloc(sizeof(struct syslog_conn));
@@ -165,13 +180,6 @@ struct syslog_conn *syslog_conn_add(struct flb_connection *connection,
     }
 
     conn->connection = connection;
-
-    /* Set data for the event-loop */
-    MK_EVENT_NEW(&connection->event);
-
-    connection->user_data     = conn;
-    connection->event.type    = FLB_ENGINE_EV_CUSTOM;
-    connection->event.handler = syslog_conn_event;
 
     /* Connection info */
     conn->ctx     = ctx;
@@ -192,44 +200,68 @@ struct syslog_conn *syslog_conn_add(struct flb_connection *connection,
     }
     conn->buf_size = ctx->buffer_chunk_size;
 
-    /* Register instance into the event loop if we're in
-     * stream mode (UDP events are received through the collector)
-     */
-    if (!ctx->dgram_mode_flag) {
-        ret = mk_event_add(flb_engine_evl_get(),
-                           connection->fd,
-                           FLB_ENGINE_EV_CUSTOM,
-                           MK_EVENT_READ,
-                           &connection->event);
-        if (ret == -1) {
-            flb_plg_error(ctx->ins, "could not register new connection");
-
-            flb_free(conn->buf_data);
-            flb_free(conn);
-
-            return NULL;
-        }
-    }
+    connection->user_data = conn;
 
     mk_list_add(&conn->_head, &ctx->connections);
+
+    /*
+     * Stream connections are registered into the event loop by the
+     * downstream accept coroutine and their wrapper is released from the
+     * drop notification once the engine tears the connection down (UDP
+     * events are received through the collector).
+     */
+    if (!ctx->dgram_mode_flag) {
+        connection->drop_notification_callback = syslog_conn_drop;
+    }
 
     return conn;
 }
 
-int syslog_conn_del(struct syslog_conn *conn)
+/* Release the plugin-side wrapper, the downstream connection is not touched */
+static void syslog_conn_release(struct syslog_conn *conn)
 {
-    /* The downstream unregisters the file descriptor from the event-loop
-     * so there's nothing to be done by the plugin
-     */
-    if (!conn->ctx->dgram_mode_flag) {
-        flb_downstream_conn_release(conn->connection);
-    }
-
-    /* Release resources */
     mk_list_del(&conn->_head);
 
     flb_free(conn->buf_data);
     flb_free(conn);
+}
+
+/*
+ * Invoked by the engine (via prepare_destroy_conn) when the underlying
+ * connection is destroyed, either on our request through syslog_conn_del
+ * or on its own (e.g. an IO timeout).
+ */
+static void syslog_conn_drop(struct flb_connection *connection)
+{
+    struct syslog_conn *conn;
+
+    conn = connection->user_data;
+
+    connection->drop_notification_callback = NULL;
+    connection->user_data = NULL;
+
+    if (conn != NULL) {
+        flb_plg_trace(conn->ctx->ins, "drop connection fd=%i", connection->fd);
+        conn->connection = NULL;
+        syslog_conn_release(conn);
+    }
+}
+
+int syslog_conn_del(struct syslog_conn *conn)
+{
+    /*
+     * The downstream unregisters the file descriptor from the event-loop
+     * and may have to wake a callback suspended in asynchronous I/O before
+     * releasing it, so the wrapper is freed by the drop notification in
+     * both the immediate and the deferred paths.
+     */
+    if (!conn->ctx->dgram_mode_flag) {
+        flb_downstream_conn_release(conn->connection);
+
+        return 0;
+    }
+
+    syslog_conn_release(conn);
 
     return 0;
 }

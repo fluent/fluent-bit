@@ -160,8 +160,90 @@ static void test_profile()
     cprof_destroy(cprof);
 }
 
+static void test_linked_object_destruction()
+{
+    struct cprof *context;
+    struct cprof_resource_profiles *resource_profiles;
+    struct cprof_scope_profiles *scope_profiles;
+    struct cprof_profile *profile;
+    struct cprof_location *location;
+
+    cprof_profile_destroy(NULL);
+    cprof_resource_destroy(NULL);
+
+    context = cprof_create();
+    TEST_ASSERT(context != NULL);
+
+    resource_profiles = cprof_resource_profiles_create("");
+    TEST_ASSERT(resource_profiles != NULL);
+    TEST_CHECK(cprof_resource_profiles_add(context, resource_profiles) == 0);
+    TEST_CHECK(cfl_list_size(&context->profiles) == 1);
+
+    scope_profiles = cprof_scope_profiles_create(resource_profiles, "");
+    TEST_ASSERT(scope_profiles != NULL);
+    TEST_CHECK(cfl_list_size(&resource_profiles->scope_profiles) == 1);
+
+    profile = cprof_profile_create();
+    TEST_ASSERT(profile != NULL);
+    cfl_list_add(&profile->_head, &scope_profiles->profiles);
+    TEST_CHECK(cfl_list_size(&scope_profiles->profiles) == 1);
+
+    TEST_ASSERT(cprof_sample_create(profile) != NULL);
+    cprof_sample_destroy_all(profile);
+    TEST_CHECK(cfl_list_size(&profile->samples) == 0);
+
+    TEST_ASSERT(cprof_sample_type_create(profile, 0, 0, 0) != NULL);
+    cprof_sample_type_destroy_all(profile);
+    TEST_CHECK(cfl_list_size(&profile->sample_type) == 0);
+
+    TEST_ASSERT(cprof_mapping_create(profile) != NULL);
+    cprof_mapping_destroy(cfl_list_entry(profile->mappings.next,
+                                         struct cprof_mapping,
+                                         _head));
+    TEST_CHECK(cfl_list_size(&profile->mappings) == 0);
+
+    location = cprof_location_create(profile);
+    TEST_ASSERT(location != NULL);
+    TEST_ASSERT(cprof_line_create(location) != NULL);
+    cprof_line_destroy(cfl_list_entry(location->lines.next,
+                                     struct cprof_line,
+                                     _head));
+    TEST_CHECK(cfl_list_size(&location->lines) == 0);
+    cprof_location_destroy(location);
+    TEST_CHECK(cfl_list_size(&profile->locations) == 0);
+
+    TEST_ASSERT(cprof_function_create(profile) != NULL);
+    cprof_function_destroy(cfl_list_entry(profile->functions.next,
+                                          struct cprof_function,
+                                          _head));
+    TEST_CHECK(cfl_list_size(&profile->functions) == 0);
+
+    TEST_ASSERT(cprof_attribute_unit_create(profile) != NULL);
+    cprof_attribute_unit_destroy(cfl_list_entry(profile->attribute_units.next,
+                                                struct cprof_attribute_unit,
+                                                _head));
+    TEST_CHECK(cfl_list_size(&profile->attribute_units) == 0);
+
+    TEST_ASSERT(cprof_link_create(profile) != NULL);
+    cprof_link_destroy(cfl_list_entry(profile->link_table.next,
+                                      struct cprof_link,
+                                      _head));
+    TEST_CHECK(cfl_list_size(&profile->link_table) == 0);
+
+    cprof_profile_destroy(profile);
+    TEST_CHECK(cfl_list_size(&scope_profiles->profiles) == 0);
+
+    cprof_scope_profiles_destroy(scope_profiles);
+    TEST_CHECK(cfl_list_size(&resource_profiles->scope_profiles) == 0);
+
+    cprof_resource_profiles_destroy(resource_profiles);
+    TEST_CHECK(cfl_list_size(&context->profiles) == 0);
+
+    cprof_destroy(context);
+}
+
 TEST_LIST = {
     {"profile", test_profile},
+    {"linked_object_destruction", test_linked_object_destruction},
     { 0 }
 };
-

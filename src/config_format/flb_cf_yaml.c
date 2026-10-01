@@ -35,6 +35,7 @@
 #include <yaml.h>
 
 #include <ctype.h>
+#include <errno.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #ifndef _MSC_VER
@@ -550,9 +551,13 @@ static int read_glob(struct flb_cf *conf, struct local_ctx *ctx,
 static char *dirname(char *path)
 {
     char *ptr;
-
+    char *slash;
 
     ptr = strrchr(path, '\\');
+    slash = strrchr(path, '/');
+    if (slash != NULL && (ptr == NULL || slash > ptr)) {
+        ptr = slash;
+    }
 
     if (ptr == NULL) {
         /* No directory component */
@@ -3117,6 +3122,8 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
     int ret;
     int status;
     int code = 0;
+    int path_is_absolute;
+    struct stat st;
     struct parser_state *state;
     flb_sds_t include_dir = NULL;
     flb_sds_t include_file = NULL;
@@ -3125,7 +3132,14 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
     FILE *fh;
     struct file_state fstate;
 
-    if (parent && cfg_file[0] != '/') {
+    path_is_absolute = cfg_file[0] == '/';
+#ifdef _WIN32
+    path_is_absolute = path_is_absolute || cfg_file[0] == '\\' ||
+                       (isalpha((unsigned char) cfg_file[0]) && cfg_file[1] == ':' &&
+                        (cfg_file[2] == '/' || cfg_file[2] == '\\'));
+#endif
+
+    if (parent && !path_is_absolute) {
 
         include_dir = flb_sds_create_size(strlen(cfg_file) + strlen(parent->path));
 
@@ -3141,10 +3155,20 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
 #endif
         if (flb_sds_printf(&include_dir, PATH_CONCAT_TEMPLATE, parent->path, cfg_file) == NULL) {
             flb_error("unable to create full filename");
+            flb_sds_destroy(include_dir);
             return -1;
         }
 #undef PATH_CONCAT_TEMPLATE
 
+        /* Keep parent-relative precedence, then try the working directory. */
+        if (stat(include_dir, &st) == -1 && (errno == ENOENT || errno == ENOTDIR)) {
+            flb_sds_destroy(include_dir);
+            include_dir = flb_sds_create(cfg_file);
+            if (include_dir == NULL) {
+                flb_error("unable to create include filename");
+                return -1;
+            }
+        }
     }
     else {
 

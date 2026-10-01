@@ -191,6 +191,9 @@ static void flb_output_free_properties(struct flb_output_instance *ins)
     if (ins->tls_key_passwd) {
         flb_sds_destroy(ins->tls_key_passwd);
     }
+    if (ins->tls_crl_file) {
+        flb_sds_destroy(ins->tls_crl_file);
+    }
     if (ins->tls_min_version) {
         flb_sds_destroy(ins->tls_min_version);
     }
@@ -409,6 +412,54 @@ int flb_output_task_singleplex_flush_next(struct flb_task_queue *queue)
 }
 
 /*
+ * No flush could be started for the task on the given output instance (e.g.
+ * flb_output_flush_create() failed because the chunk could not be decoded for
+ * the processors pipeline). The engine is waiting for a return status for the
+ * route, so report FLB_ERROR the same way a flush callback does through
+ * flb_output_return(): the engine accounts the dropped chunk and releases its
+ * reference to the task, otherwise the task and its chunk are retained forever.
+ *
+ * The caller must already hold a user reference on the task, it's released by
+ * the engine once the status is processed.
+ */
+int flb_output_task_flush_error(struct flb_task *task,
+                                struct flb_output_instance *out_ins)
+{
+    int n;
+    uint32_t set;
+    uint64_t val;
+
+    flb_error("[output] chunk '%s' could not be prepared for flushing, "
+              "dropping it: task_id=%i, input=%s > output=%s (out_id=%i)",
+              flb_input_chunk_get_name(task->ic), task->id,
+              flb_input_name(task->i_ins),
+              flb_output_name(out_ins), out_ins->id);
+
+    flb_task_acquire_lock(task);
+    flb_task_set_route_data(task, out_ins,
+                            task->event_chunk->total_events,
+                            task->event_chunk->size);
+    flb_task_deactivate_route(task, out_ins);
+    flb_task_release_lock(task);
+
+    set = FLB_TASK_SET(FLB_ERROR, task->id, out_ins->id);
+    val = FLB_BITS_U64_SET(FLB_ENGINE_TASK, set);
+
+    /*
+     * Notify the parent event loop about the return status. No coroutine was
+     * created, so there is nothing for a worker thread event loop to clean up
+     * and the status can go straight to the engine channel.
+     */
+    n = flb_pipe_w(out_ins->ch_events[1], (void *) &val, sizeof(val));
+    if (n == -1) {
+        flb_pipe_error();
+        return -1;
+    }
+
+    return 0;
+}
+
+/*
  * Flush a task through the output plugin, either using a worker thread + coroutine
  * or a simple co-routine in the current thread.
  */
@@ -432,6 +483,10 @@ int flb_output_task_flush(struct flb_task *task,
                 flb_output_task_singleplex_flush_next(out_ins->singleplex_queue);
             }
         }
+        else {
+            /* released when the engine processes the return status */
+            config->flush_in_flight++;
+        }
     }
     else {
         /* Queue co-routine handling */
@@ -440,7 +495,27 @@ int flb_output_task_flush(struct flb_task *task,
                                            out_ins,
                                            config);
         if (!out_flush) {
-            return -1;
+            /*
+             * Nothing to flush: report the error so the engine ends the
+             * route (and releases the task) like it does after a flush
+             * callback returns, callers don't end the task on -1.
+             */
+            flb_task_users_inc(task);
+            ret = flb_output_task_flush_error(task, out_ins);
+            if (ret == -1) {
+                flb_task_users_dec(task, FLB_FALSE);
+
+                /* If we are in synchronous mode, flush one waiting task */
+                if (out_ins->flags & FLB_OUTPUT_SYNCHRONOUS) {
+                    flb_output_task_singleplex_flush_next(out_ins->singleplex_queue);
+                }
+
+                return -1;
+            }
+
+            /* released when the engine processes the return status */
+            config->flush_in_flight++;
+            return 0;
         }
 
         flb_task_users_inc(task);
@@ -458,6 +533,9 @@ int flb_output_task_flush(struct flb_task *task,
 
             return -1;
         }
+
+        /* released when the engine processes the return status */
+        config->flush_in_flight++;
     }
 
     return 0;
@@ -465,6 +543,25 @@ int flb_output_task_flush(struct flb_task *task,
 
 int flb_output_instance_destroy(struct flb_output_instance *ins)
 {
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct flb_output_flush *out_flush;
+
+    /* Unlink queued completion events before freeing their owning instance. */
+    if (ins->event.status & MK_EVENT_REGISTERED) {
+        mk_event_del(ins->config->evl, &ins->event);
+    }
+
+    /* The shutdown deadline may leave unstarted or completed flushes queued. */
+    mk_list_foreach_safe(head, tmp, &ins->flush_list) {
+        out_flush = mk_list_entry(head, struct flb_output_flush, _head);
+        flb_output_flush_destroy(out_flush);
+    }
+    mk_list_foreach_safe(head, tmp, &ins->flush_list_destroy) {
+        out_flush = mk_list_entry(head, struct flb_output_flush, _head);
+        flb_output_flush_destroy(out_flush);
+    }
+
     if (ins->alias) {
         flb_sds_destroy(ins->alias);
     }
@@ -534,6 +631,10 @@ int flb_output_instance_destroy(struct flb_output_instance *ins)
         flb_config_map_destroy(ins->oauth2_config_map);
     }
 
+    if (ins->event.status & MK_EVENT_REGISTERED) {
+        mk_event_del(ins->config->evl, &ins->event);
+    }
+
     if (ins->ch_events[0] > 0) {
         mk_event_closesocket(ins->ch_events[0]);
     }
@@ -567,8 +668,11 @@ void flb_output_exit(struct flb_config *config)
 {
     struct mk_list *tmp;
     struct mk_list *head;
+    struct mk_list *flush_tmp;
+    struct mk_list *flush_head;
     struct flb_output_instance *ins;
     struct flb_output_plugin *p;
+    struct flb_output_flush *out_flush;
     void *params;
 
     mk_list_foreach_safe(head, tmp, &config->outputs) {
@@ -586,10 +690,31 @@ void flb_output_exit(struct flb_config *config)
             flb_output_thread_pool_destroy(ins);
         }
 
+        /* Release queued flushes whose output callback has not started. */
+        mk_list_foreach_safe(flush_head, flush_tmp, &ins->flush_list) {
+            out_flush = mk_list_entry(flush_head, struct flb_output_flush, _head);
+            if (flb_task_get_route_status(out_flush->task, ins) == FLB_TASK_ROUTE_ACTIVE) {
+                continue;
+            }
+            if (out_flush->processed_event_chunk) {
+                if (out_flush->processed_event_chunk->data != out_flush->task->event_chunk->data) {
+                    flb_free(out_flush->processed_event_chunk->data);
+                }
+                flb_event_chunk_destroy(out_flush->processed_event_chunk);
+            }
+            flb_output_flush_destroy(out_flush);
+        }
+
         /* Check a exit callback */
         if (p->cb_exit) {
             p->cb_exit(ins->context, config);
         }
+
+        mk_list_foreach_safe(flush_head, flush_tmp, &ins->flush_list_destroy) {
+            out_flush = mk_list_entry(flush_head, struct flb_output_flush, _head);
+            flb_output_flush_destroy(out_flush);
+        }
+
         flb_output_instance_destroy(ins);
     }
 
@@ -850,6 +975,7 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     instance->tls_crt_file          = NULL;
     instance->tls_key_file          = NULL;
     instance->tls_key_passwd        = NULL;
+    instance->tls_crl_file          = NULL;
 # if defined(FLB_SYSTEM_WINDOWS)
     instance->tls_win_certstore_name = NULL;
     instance->tls_win_use_enterprise_certstore = FLB_FALSE;
@@ -1114,6 +1240,9 @@ int flb_output_set_property(struct flb_output_instance *ins,
     }
     else if (prop_key_check("tls.key_passwd", k, len) == 0) {
         flb_utils_set_plugin_string_property("tls.key_passwd", &ins->tls_key_passwd, tmp);
+    }
+    else if (prop_key_check("tls.crl_file", k, len) == 0) {
+        flb_utils_set_plugin_string_property("tls.crl_file", &ins->tls_crl_file, tmp);
     }
     else if (prop_key_check("tls.min_version", k, len) == 0) {
         flb_utils_set_plugin_string_property("tls.min_version", &ins->tls_min_version, tmp);
@@ -1685,6 +1814,16 @@ int flb_output_init_all(struct flb_config *config)
                 ret = flb_tls_set_ciphers(ins->tls, ins->tls_ciphers);
                 if (ret != 0) {
                     flb_error("[output %s] error setting up TLS ciphers up to TLSv1.2",
+                              ins->name);
+                    flb_output_instance_destroy(ins);
+                    return -1;
+                }
+            }
+
+            if (ins->tls_crl_file != NULL) {
+                ret = flb_tls_set_crl_file(ins->tls, ins->tls_crl_file);
+                if (ret != 0) {
+                    flb_error("[output %s] error setting up TLS CRL file",
                               ins->name);
                     flb_output_instance_destroy(ins);
                     return -1;

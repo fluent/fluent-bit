@@ -59,15 +59,16 @@ struct ctrace_resource *ctr_resource_create_default()
 
 int ctr_resource_set_attributes(struct ctrace_resource *res, struct ctrace_attributes *attr)
 {
-    if (!attr) {
+    if (!res || !attr) {
         return -1;
     }
 
-    if (res->attr) {
-        ctr_attributes_destroy(res->attr);
+    if (res->attr != attr) {
+        if (res->attr != NULL) {
+            ctr_attributes_destroy(res->attr);
+        }
+        res->attr = attr;
     }
-
-    res->attr = attr;
     return 0;
 }
 
@@ -94,15 +95,17 @@ struct ctrace_resource_span *ctr_resource_span_create(struct ctrace *ctx)
 {
     struct ctrace_resource_span *resource_span;
 
+    if (ctx == NULL) {
+        return NULL;
+    }
+
     resource_span = calloc(1, sizeof(struct ctrace_resource_span));
     if (!resource_span) {
         ctr_errno();
         return NULL;
     }
     cfl_list_init(&resource_span->scope_spans);
-
-    /* link to ctraces context */
-    cfl_list_add(&resource_span->_head, &ctx->resource_spans);
+    resource_span->ctx = ctx;
 
     /* create an empty resource */
     resource_span->resource = ctr_resource_create();
@@ -110,6 +113,11 @@ struct ctrace_resource_span *ctr_resource_span_create(struct ctrace *ctx)
         free(resource_span);
         return NULL;
     }
+
+    /* link to ctraces context only after the resource has been created
+     * so we never leave a freed node attached to ctx->resource_spans.
+     */
+    cfl_list_add(&resource_span->_head, &ctx->resource_spans);
 
     return resource_span;
 }
@@ -122,14 +130,21 @@ struct ctrace_resource *ctr_resource_span_get_resource(struct ctrace_resource_sp
 /* Set the schema_url for a resource_span */
 int ctr_resource_span_set_schema_url(struct ctrace_resource_span *resource_span, char *url)
 {
-    if (resource_span->schema_url) {
-        cfl_sds_destroy(resource_span->schema_url);
-    }
+    cfl_sds_t new_url;
 
-    resource_span->schema_url = cfl_sds_create(url);
-    if (!resource_span->schema_url) {
+    if (resource_span == NULL || url == NULL) {
         return -1;
     }
+
+    new_url = cfl_sds_create(url);
+    if (new_url == NULL) {
+        return -1;
+    }
+
+    if (resource_span->schema_url != NULL) {
+        cfl_sds_destroy(resource_span->schema_url);
+    }
+    resource_span->schema_url = new_url;
 
     return 0;
 }
@@ -139,6 +154,15 @@ void ctr_resource_span_destroy(struct ctrace_resource_span *resource_span)
     struct cfl_list *tmp;
     struct cfl_list *head;
     struct ctrace_scope_span *scope_span;
+
+    if (resource_span == NULL) {
+        return;
+    }
+
+    /* Fluent Bit historically unlinked resource spans before destroying them. */
+    if (resource_span->_head.prev != NULL && resource_span->_head.next != NULL) {
+        cfl_list_del(&resource_span->_head);
+    }
 
     /* release resource if set */
     if (resource_span->resource) {

@@ -1,0 +1,5 @@
+service:
+  another_param: 0
+
+something:
+  property: value

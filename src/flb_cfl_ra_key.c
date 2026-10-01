@@ -314,11 +314,12 @@ static int cfl_variant_strcmp(struct cfl_variant v, char *str, int len)
         return -1;
     }
 
-    if (cfl_sds_len(v.data.as_string) != len) {
+    /* record values may be referenced strings (no sds header) */
+    if (cfl_variant_size_get(&v) != len) {
         return -1;
     }
 
-    return strncmp(v.data.as_string, str, len);
+    return memcmp(v.data.as_string, str, len);
 }
 
 int flb_cfl_ra_key_strcmp(flb_sds_t ckey, struct cfl_variant vobj,
@@ -382,14 +383,14 @@ int flb_cfl_ra_key_regex_match(flb_sds_t ckey, struct cfl_variant vobj,
                 /* Regex + capture mode */
                 return flb_regex_do(regex,
                                     (char *) out_val->data.as_string,
-                                    cfl_sds_len(out_val->data.as_string),
+                                    cfl_variant_size_get(out_val),
                                     result);
             }
             else {
                 /* No capture */
                 return flb_regex_match(regex,
                                        (unsigned char *) out_val->data.as_string,
-                                       cfl_sds_len(out_val->data.as_string));
+                                       cfl_variant_size_get(out_val));
             }
         }
         return -1;
@@ -403,13 +404,13 @@ int flb_cfl_ra_key_regex_match(flb_sds_t ckey, struct cfl_variant vobj,
         /* Regex + capture mode */
         return flb_regex_do(regex,
                             (char *) val->data.as_string,
-                            cfl_sds_len(val->data.as_string),
+                            cfl_variant_size_get(val),
                             result);
     }
     else {
         /* No capture */
         return flb_regex_match(regex, (unsigned char *) val->data.as_string,
-                               cfl_sds_len(val->data.as_string));
+                               cfl_variant_size_get(val));
     }
 
     return -1;

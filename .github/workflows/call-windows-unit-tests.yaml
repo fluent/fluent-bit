@@ -50,10 +50,13 @@ jobs:
             os: windows-latest
           - name: "Windows 64bit (Arm64)"
             arch: amd64_arm64
-            cmake_additional_opt: "-DCMAKE_SYSTEM_NAME=Windows -DCMAKE_SYSTEM_VERSION=10.0 -DCMAKE_SYSTEM_PROCESSOR=ARM64"
+            cmake_additional_opt: >-
+              -DCMAKE_SYSTEM_NAME=Windows -DCMAKE_SYSTEM_VERSION=10.0
+              -DCMAKE_SYSTEM_PROCESSOR=ARM64 -DCMAKE_POLICY_VERSION_MINIMUM="3.15"
             runtime_tests: "Off"
             vcpkg_triplet: arm64-windows-static
-            cmake_version: "3.31.6"
+            # The ARM64 runner uses VS2026, which requires CMake 4.2 or newer.
+            cmake_version: "4.2.0"
             os: windows-11-arm
     permissions:
       contents: read

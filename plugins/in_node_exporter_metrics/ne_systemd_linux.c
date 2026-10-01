@@ -20,6 +20,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_input_plugin.h>
+#include <cmetrics/cmt_map.h>
 #include <cmetrics/cmt_math.h>
 #include <systemd/sd-bus.h>
 #include <stdarg.h>
@@ -486,9 +487,27 @@ static int ne_systemd_update_unit_state(struct flb_ne *ctx)
     }
     while (result > 0);
 
-    sd_bus_message_exit_container(reply);
-
+    result = sd_bus_message_exit_container(reply);
     sd_bus_message_unref(reply);
+
+    if (result < 0) {
+        return -4;
+    }
+
+    /*
+     * Only retain label sets observed in this successful scan. Otherwise,
+     * disappeared units and changed labels are exported indefinitely with
+     * their last sample timestamp, causing stale samples in push outputs.
+     */
+    cmt_map_metrics_expire(ctx->systemd_unit_state->map, timestamp);
+    cmt_map_metrics_expire(ctx->systemd_unit_start_times->map, timestamp);
+    cmt_map_metrics_expire(ctx->systemd_unit_tasks->map, timestamp);
+    cmt_map_metrics_expire(ctx->systemd_unit_tasks_max->map, timestamp);
+    cmt_map_metrics_expire(ctx->systemd_service_restarts->map, timestamp);
+    cmt_map_metrics_expire(ctx->systemd_timer_last_trigger_seconds->map, timestamp);
+    cmt_map_metrics_expire(ctx->systemd_socket_accepted_connections->map, timestamp);
+    cmt_map_metrics_expire(ctx->systemd_socket_active_connections->map, timestamp);
+    cmt_map_metrics_expire(ctx->systemd_socket_refused_connections->map, timestamp);
 
     cmt_gauge_set(ctx->systemd_units,
                   timestamp,
@@ -690,7 +709,7 @@ static int ne_systemd_init(struct flb_ne *ctx)
                                                    "per Systemd unit.",
                                                    1, (char *[]) {"name"});
 
-    if (ctx->systemd_unit_tasks == NULL) {
+    if (ctx->systemd_unit_tasks_max == NULL) {
         return -1;
     }
 

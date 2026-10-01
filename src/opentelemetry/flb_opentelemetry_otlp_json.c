@@ -3478,7 +3478,6 @@ static int add_trace_id_field(struct flb_json_mut_doc *doc,
 static struct flb_json_mut_val *create_trace_status_json(struct flb_json_mut_doc *doc,
                                                 struct ctrace_span_status *status)
 {
-    const char     *code_string;
     struct flb_json_mut_val *json;
 
     if (status == NULL) {
@@ -3495,17 +3494,7 @@ static struct flb_json_mut_val *create_trace_status_json(struct flb_json_mut_doc
         return NULL;
     }
 
-    if (status->code == CTRACE_SPAN_STATUS_CODE_OK) {
-        code_string = "OK";
-    }
-    else if (status->code == CTRACE_SPAN_STATUS_CODE_ERROR) {
-        code_string = "ERROR";
-    }
-    else {
-        code_string = "UNSET";
-    }
-
-    if (!flb_json_mut_obj_add_str(doc, json, "code", code_string)) {
+    if (!flb_json_mut_obj_add_int(doc, json, "code", status->code)) {
         return NULL;
     }
 
@@ -3962,7 +3951,8 @@ flb_sds_t flb_opentelemetry_traces_msgpack_to_otlp_json(const void *data,
         return NULL;
     }
 
-    while ((ret = ctr_decode_msgpack_create(&context, (char *) data, size, &offset)) ==
+    while (offset < size &&
+           (ret = ctr_decode_msgpack_create(&context, (char *) data, size, &offset)) ==
            CTR_DECODE_MSGPACK_SUCCESS) {
         rendered = flb_opentelemetry_traces_to_otlp_json(context, result);
         ctr_destroy(context);
@@ -3985,8 +3975,7 @@ flb_sds_t flb_opentelemetry_traces_msgpack_to_otlp_json(const void *data,
         flb_sds_destroy(rendered);
     }
 
-    if (ret != CTR_DECODE_MSGPACK_SUCCESS &&
-        !(ret == CTR_MPACK_ENGINE_ERROR && offset >= size)) {
+    if (ret != CTR_DECODE_MSGPACK_SUCCESS) {
         flb_sds_destroy(output);
         set_error(result, FLB_OPENTELEMETRY_OTLP_JSON_INVALID_ARGUMENT, EINVAL);
         return NULL;
@@ -4030,7 +4019,8 @@ flb_sds_t flb_opentelemetry_traces_msgpack_to_otlp_json_pretty(const void *data,
         return NULL;
     }
 
-    while ((ret = ctr_decode_msgpack_create(&context, (char *) data, size, &offset)) ==
+    while (offset < size &&
+           (ret = ctr_decode_msgpack_create(&context, (char *) data, size, &offset)) ==
            CTR_DECODE_MSGPACK_SUCCESS) {
         rendered = flb_opentelemetry_traces_to_otlp_json_render(context, FLB_TRUE, result);
         ctr_destroy(context);
@@ -4053,8 +4043,7 @@ flb_sds_t flb_opentelemetry_traces_msgpack_to_otlp_json_pretty(const void *data,
         flb_sds_destroy(rendered);
     }
 
-    if (ret != CTR_DECODE_MSGPACK_SUCCESS &&
-        !(ret == CTR_MPACK_ENGINE_ERROR && offset >= size)) {
+    if (ret != CTR_DECODE_MSGPACK_SUCCESS) {
         flb_sds_destroy(output);
         set_error(result, FLB_OPENTELEMETRY_OTLP_JSON_INVALID_ARGUMENT, EINVAL);
         return NULL;

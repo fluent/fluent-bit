@@ -37,8 +37,8 @@
 struct flb_kube_props {
     flb_sds_t stdout_parser; /* suggested parser for stdout */
     flb_sds_t stderr_parser; /* suggested parser for stderr */
-    int stdout_exclude;      /* bool: exclude stdout logs ? */
-    int stderr_exclude;      /* bool: exclude stderr logs ? */
+    int stdout_exclude;      /* tri-state: inherit, include, or exclude stdout */
+    int stderr_exclude;      /* tri-state: inherit, include, or exclude stderr */
 };
 
 #endif

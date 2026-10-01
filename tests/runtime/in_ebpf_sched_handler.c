@@ -86,7 +86,7 @@ static int key_matches(msgpack_object key, const char *str)
 }
 
 static void verify_decoded_values(struct flb_log_event *event,
-                                  const struct event *original)
+                                  const struct sched_sample *original)
 {
     msgpack_object_kv *kv;
     int i;
@@ -102,16 +102,16 @@ static void verify_decoded_values(struct flb_log_event *event,
             TEST_CHECK(strncmp(kv->val.via.str.ptr, "sched", kv->val.via.str.size) == 0);
         }
         else if (key_matches(kv->key, "cpu")) {
-            TEST_CHECK(kv->val.via.u64 == original->details.sched.cpu);
+            TEST_CHECK(kv->val.via.u64 == original->details.cpu);
         }
         else if (key_matches(kv->key, "prev_pid")) {
-            TEST_CHECK(kv->val.via.u64 == original->details.sched.prev_pid);
+            TEST_CHECK(kv->val.via.u64 == original->details.prev_pid);
         }
         else if (key_matches(kv->key, "next_pid")) {
-            TEST_CHECK(kv->val.via.u64 == original->details.sched.next_pid);
+            TEST_CHECK(kv->val.via.u64 == original->details.next_pid);
         }
         else if (key_matches(kv->key, "runq_latency_ns")) {
-            TEST_CHECK(kv->val.via.u64 == original->details.sched.runq_latency_ns);
+            TEST_CHECK(kv->val.via.u64 == original->details.runq_latency_ns);
         }
     }
 }
@@ -120,26 +120,26 @@ void test_sched_event_encoding()
 {
     struct test_context *ctx;
     struct flb_log_event log_event;
-    struct event test_event;
+    struct sched_sample test_event;
     int ret;
 
     ctx = init_test_context();
     TEST_CHECK(ctx != NULL);
 
-    memset(&test_event, 0, sizeof(struct event));
+    memset(&test_event, 0, sizeof(struct sched_sample));
     test_event.type = EVENT_TYPE_SCHED;
     test_event.common.pid = 4321;
     test_event.common.tid = 4321;
     memcpy(test_event.common.comm, "sched_test", strlen("sched_test"));
 
-    test_event.details.sched.prev_pid = 1111;
-    test_event.details.sched.prev_prio = 120;
-    test_event.details.sched.prev_state = 1;
-    test_event.details.sched.next_pid = 4321;
-    test_event.details.sched.next_prio = 90;
-    test_event.details.sched.cpu = 3;
-    test_event.details.sched.runq_latency_ns = 125000;
-    test_event.details.sched.wakeup_tracked = 1;
+    test_event.details.prev_pid = 1111;
+    test_event.details.prev_prio = 120;
+    test_event.details.prev_state = 1;
+    test_event.details.next_pid = 4321;
+    test_event.details.next_prio = 90;
+    test_event.details.cpu = 3;
+    test_event.details.runq_latency_ns = 125000;
+    test_event.details.wakeup_tracked = 1;
 
     ret = encode_sched_event(ctx->event_ctx.log_encoder, &test_event);
     TEST_CHECK(ret == 0);

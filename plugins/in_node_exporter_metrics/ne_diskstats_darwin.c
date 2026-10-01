@@ -51,7 +51,7 @@
     #define IOMainPort IOMasterPort
 #endif
 
-#define TARGET_METRICS 11
+#define TARGET_METRICS 12
 #define DRIVE_NAME_LEN 31
 
 struct dt_metric {

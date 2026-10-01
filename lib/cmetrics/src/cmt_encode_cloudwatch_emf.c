@@ -120,12 +120,12 @@ static void pack_cmetrics_type(mpack_writer_t *writer, struct cmt *cmt,
 static void pack_histogram_metric(mpack_writer_t *writer, struct cmt *cmt,
                                   struct cmt_map *map, struct cmt_metric *metric)
 {
-    int i;
-    int k;
-    int index = 0;
+    size_t i;
     double val = 0.0;
-    double tmp;
-    uint64_t *hist_metrics = NULL;
+    uint64_t count;
+    uint64_t min_count = 0;
+    uint64_t max_count = 0;
+    uint64_t next_count = 0;
     uint64_t *exp_bucket_counts = NULL;
     double *exp_upper_bounds = NULL;
     size_t exp_bucket_count = 0;
@@ -155,41 +155,47 @@ static void pack_histogram_metric(mpack_writer_t *writer, struct cmt *cmt,
         return;
     }
 
-    hist_metrics = calloc(bucket_count + 1, sizeof(uint64_t));
-    if (hist_metrics == NULL) {
-        free(exp_bucket_counts);
-        free(exp_upper_bounds);
-        return;
-    }
-
+    /*
+     * Min is the lowest bucket counter and Max the second highest one, which
+     * is what sorting the bucket_count + 1 counters and picking the entries
+     * at 0 and bucket_count - 1 reported. Compute both in a single pass: the
+     * number of buckets comes from the metric and sorting costs
+     * O(bucket_count^2) per sample.
+     */
     for (i = 0; i <= bucket_count; i++) {
         if (map->type == CMT_HISTOGRAM) {
-            hist_metrics[i] = cmt_metric_hist_get_value(metric, i);
+            count = cmt_metric_hist_get_value(metric, i);
         }
         else {
-            hist_metrics[i] = exp_bucket_counts[i];
+            count = exp_bucket_counts[i];
+        }
+
+        if (i == 0 || count < min_count) {
+            min_count = count;
+        }
+
+        if (i == 0) {
+            max_count = count;
+        }
+        else if (count >= max_count) {
+            next_count = max_count;
+            max_count = count;
+        }
+        else if (i == 1 || count > next_count) {
+            next_count = count;
         }
     }
 
-    for (i = 0; i <= bucket_count; i++) {
-        index = i;
-
-        for (k = i + 1; k <= bucket_count; k++) {
-            if (hist_metrics[k] < hist_metrics[index]) {
-                index = k;
-            }
-        }
-
-        tmp = hist_metrics[i];
-        hist_metrics[i] = hist_metrics[index];
-        hist_metrics[index] = tmp;
+    if (bucket_count == 0) {
+        next_count = max_count;
     }
+
     mpack_write_cstr(writer, opts->fqname);
     mpack_start_map(writer, 4);
     mpack_write_cstr(writer, "Min");
-    mpack_write_double(writer, hist_metrics[0]);
+    mpack_write_double(writer, min_count);
     mpack_write_cstr(writer, "Max");
-    mpack_write_double(writer, hist_metrics[bucket_count - 1]);
+    mpack_write_double(writer, next_count);
     mpack_write_cstr(writer, "Sum");
     if (map->type == CMT_HISTOGRAM) {
         val = cmt_metric_hist_get_sum_value(metric);
@@ -208,7 +214,6 @@ static void pack_histogram_metric(mpack_writer_t *writer, struct cmt *cmt,
     mpack_write_double(writer, val);
     mpack_finish_map(writer);
 
-    free(hist_metrics);
     free(exp_bucket_counts);
     free(exp_upper_bounds);
 }

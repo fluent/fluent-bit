@@ -551,8 +551,109 @@ static void hash_label()
     flb_destroy(ctx);
 }
 
+/* Exercise the copy boundary and verify that the source remains independently owned. */
+static void check_chained_labels(char *first_action, char *action, char *value,
+                                 char *expected, int first_count, int empty)
+{
+    int ret;
+    size_t out_size;
+    void *out_buf = NULL;
+    flb_ctx_t *ctx;
+    struct flb_processor *proc;
+    struct flb_processor_unit *pu;
+    struct cmt *source;
+    struct cmt *result;
+    struct cmt_gauge *gauge;
+    cfl_sds_t source_text;
+    cfl_sds_t text;
+    char *keys[] = {"original"};
+    char *values[] = {"value"};
+    struct cfl_variant property = {
+        .type = CFL_VARIANT_STRING,
+        .data.as_string = "first one",
+    };
+
+    ctx = flb_create();
+    TEST_ASSERT(ctx != NULL);
+    proc = flb_processor_create(ctx->config, "unit_test", NULL, 0);
+    TEST_ASSERT(proc != NULL);
+    pu = flb_processor_unit_create(proc, FLB_PROCESSOR_METRICS, "labels");
+    TEST_ASSERT(pu != NULL);
+    ret = flb_processor_unit_set_property(pu, first_action, &property);
+    TEST_ASSERT(ret == 0);
+    pu = flb_processor_unit_create(proc, FLB_PROCESSOR_METRICS, "labels");
+    TEST_ASSERT(pu != NULL);
+    property.data.as_string = value;
+    ret = flb_processor_unit_set_property(pu, action, &property);
+    TEST_ASSERT(ret == 0);
+    ret = flb_processor_init(proc);
+    TEST_ASSERT(ret == 0);
+
+    source = cmt_create();
+    TEST_ASSERT(source != NULL);
+    ret = cmt_label_add(source, "upstream", "preserved");
+    TEST_ASSERT(ret == 0);
+    if (!empty) {
+        gauge = cmt_gauge_create(source, "", "", "test_metric", "test metric", 1, keys);
+        TEST_ASSERT(gauge != NULL);
+        ret = cmt_gauge_set(gauge, 0, 1.0, 1, values);
+        TEST_ASSERT(ret == 0);
+    }
+    source_text = cmt_encode_text_create(source);
+    TEST_ASSERT(source_text != NULL);
+
+    ret = flb_processor_run(proc, 0, FLB_PROCESSOR_METRICS, "test", 4,
+                            source, 0, &out_buf, &out_size);
+    TEST_ASSERT(ret == 0);
+    TEST_ASSERT(out_buf != NULL);
+    TEST_ASSERT(out_buf != source);
+    result = out_buf;
+
+    text = cmt_encode_text_create(source);
+    TEST_ASSERT(text != NULL);
+    TEST_CHECK(strcmp(source_text, text) == 0);
+    TEST_CHECK(cmt_labels_count(source->static_labels) == 1);
+    cmt_encode_text_destroy(text);
+    cmt_encode_text_destroy(source_text);
+    cmt_destroy(source);
+
+    /* Destroying the source must not invalidate labels in the result. */
+    text = cmt_encode_text_create(result);
+    TEST_ASSERT(text != NULL);
+    if (!empty) {
+        TEST_CHECK(strstr(text, "upstream=\"preserved\"") != NULL);
+        TEST_CHECK(strstr(text, "original=\"value\"") != NULL);
+        TEST_CHECK(count_metrics_matches(text, "first=") == first_count);
+        TEST_CHECK(strstr(text, expected) != NULL);
+        if (strcmp(value, "second two") == 0) {
+            TEST_CHECK(strstr(text, "second=\"two\"") != NULL);
+        }
+    }
+    else {
+        TEST_CHECK(cmt_labels_count(result->static_labels) == 3);
+    }
+    cmt_encode_text_destroy(text);
+    cmt_destroy(result);
+    flb_processor_destroy(proc);
+    flb_destroy(ctx);
+}
+
+static void chained_labels()
+{
+    check_chained_labels("upsert", "upsert", "second two", "first=\"one\"", 1, 0);
+    check_chained_labels("insert", "upsert", "second two", "first=\"one\"", 1, 0);
+    check_chained_labels("upsert", "upsert", "first changed", "first=\"changed\"", 1, 0);
+    check_chained_labels("upsert", "insert", "second two", "first=\"one\"", 1, 0);
+    check_chained_labels("upsert", "update", "first changed", "first=\"changed\"", 1, 0);
+    check_chained_labels("upsert", "delete", "first", "upstream=\"preserved\"", 0, 0);
+    check_chained_labels("upsert", "hash", "first",
+                         "first=\"7692c3ad3540bb803c020b3aee66cd8887123234ea0c6e7143c0add73ff431ed\"", 1, 0);
+    check_chained_labels("upsert", "upsert", "second two", NULL, 0, 1);
+}
+
 TEST_LIST = {
 #ifdef FLB_HAVE_METRICS
+    {"chained_labels", chained_labels},
     {"insert_label", insert_label},
     {"update_label", update_label},
     {"upsert_label", upsert_label},

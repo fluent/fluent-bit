@@ -123,6 +123,14 @@ static void oauth2_cache_cleanup(void)
         oauth2_cache_users--;
         if (oauth2_cache_users == 0 &&
             oauth2_cache_initialized == FLB_TRUE) {
+            /* Deleting keys does not run destructors for the initialization thread. */
+            oauth2_cache_exit(pthread_getspecific(oauth2_type));
+            oauth2_cache_exit(pthread_getspecific(oauth2_token));
+            oauth2_cache_free_expiration(pthread_getspecific(oauth2_token_expires));
+            /* Windows key deletion leaves the current thread's TLS values intact. */
+            pthread_setspecific(oauth2_type, NULL);
+            pthread_setspecific(oauth2_token, NULL);
+            pthread_setspecific(oauth2_token_expires, NULL);
             pthread_key_delete(oauth2_type);
             pthread_key_delete(oauth2_token);
             pthread_key_delete(oauth2_token_expires);
@@ -474,6 +482,8 @@ static flb_sds_t get_google_token(struct flb_stackdriver *ctx)
              * Cached token is expired. Wait on lock to use up-to-date token
              * by either waiting for it to be refreshed or refresh it ourselves.
              */
+            flb_sds_destroy(output);
+            output = NULL;
             flb_plg_info(ctx->ins, "Cached token is expired. Waiting on lock.");
             ret = pthread_mutex_lock(&ctx->token_mutex);
         }
@@ -1401,6 +1411,19 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
         goto error;
     }
     flb_output_upstream_set(ctx->u, ins);
+
+    /*
+     * Authentication is synchronous and serialized by token_mutex, but its
+     * connections must still belong to the calling worker. Otherwise the
+     * main engine can clean up a connection while a worker is using it.
+     * Preserve the authentication upstreams' own TLS and network settings.
+     */
+    if (ins->tp_workers > 0) {
+        flb_upstream_thread_safe(ctx->metadata_u);
+        mk_list_add(&ctx->metadata_u->base._head, &ins->upstreams);
+        flb_upstream_thread_safe(ctx->o->u);
+        mk_list_add(&ctx->o->u->base._head, &ins->upstreams);
+    }
 
     /* Metadata Upstream Sync flags */
     flb_stream_disable_async_mode(&ctx->metadata_u->base);

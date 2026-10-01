@@ -601,18 +601,26 @@ static inline bool helper_msgpack_object_matches_wildcard(msgpack_object *
                                                           int len)
 {
     const char *key;
+    int klen;
 
     if (obj->type == MSGPACK_OBJECT_BIN) {
         key = obj->via.bin.ptr;
+        klen = obj->via.bin.size;
     }
     else if (obj->type == MSGPACK_OBJECT_STR) {
         key = obj->via.str.ptr;
+        klen = obj->via.str.size;
     }
     else {
         return false;
     }
 
-    return (strncmp(str, key, len) == 0);
+    /*
+     * The key is a prefix match: it must be at least as long as the rule
+     * key, otherwise strncmp() would read past the end of the key (and
+     * msgpack may hand us a NULL ptr for a zero-length string).
+     */
+    return ((klen >= len) && (strncmp(str, key, len) == 0));
 }
 
 static inline bool kv_key_matches_wildcard(msgpack_object_kv * kv,

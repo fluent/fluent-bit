@@ -94,6 +94,7 @@ static int fw_conn_event_internal(struct flb_connection *connection)
             tmp = flb_realloc(conn->buf, size);
             if (!tmp) {
                 flb_errno();
+                fw_conn_del(conn);
                 return -1;
             }
             flb_plg_trace(ctx->ins, "fd=%i buffer realloc %zu -> %zu",
@@ -128,12 +129,13 @@ static int fw_conn_event_internal(struct flb_connection *connection)
         }
     }
 
-    if (event->mask & MK_EVENT_CLOSE) {
-        flb_plg_trace(ctx->ins, "fd=%i hangup", event->fd);
-        fw_conn_del(conn);
-        return -1;
-    }
-    return 0;
+    /*
+     * The event coroutine invokes this callback in a loop, a callback that
+     * neither reads nor releases the connection would spin forever.
+     */
+    flb_plg_trace(ctx->ins, "fd=%i hangup", event->fd);
+    fw_conn_del(conn);
+    return -1;
 }
 
 /* Callback invoked every time an event is triggered for a connection */
@@ -175,7 +177,12 @@ int fw_conn_event(void *data)
     return result;
 }
 
-/* Create a new Forward request instance */
+/*
+ * Create a new Forward request instance. It runs from the downstream event
+ * coroutine of the connection once it has been accepted: the downstream
+ * registers the connection into the event loop and invokes fw_conn_event()
+ * after this function succeeds.
+ */
 struct fw_conn *fw_conn_add(struct flb_connection *connection, struct flb_in_fw_config *ctx)
 {
     struct fw_conn *conn;
@@ -224,9 +231,6 @@ struct fw_conn *fw_conn_add(struct flb_connection *connection, struct flb_in_fw_
     conn->connection = connection;
     conn->helo       = helo;
 
-    /* Set data for the event-loop */
-    connection->user_data = conn;
-
     /* Connection info */
     conn->ctx     = ctx;
     conn->buf_len = 0;
@@ -249,25 +253,14 @@ struct fw_conn *fw_conn_add(struct flb_connection *connection, struct flb_in_fw_
     conn->compression_type = FLB_COMPRESSION_ALGORITHM_NONE;
     conn->d_ctx = NULL;
 
-    /* Run connection callbacks in a downstream-owned coroutine. */
-    ret = flb_downstream_conn_event_register(connection,
-                                             fw_conn_event,
-                                             MK_EVENT_READ);
-    if (ret == -1) {
-        flb_plg_error(ctx->ins, "could not register new connection");
-        if (conn->helo != NULL) {
-            flb_free(conn->helo);
-        }
-        flb_free(conn->buf);
-        flb_free(conn);
-        return NULL;
-    }
+    /* Set data for the event-loop */
+    connection->user_data = conn;
 
     mk_list_add(&conn->_head, &ctx->connections);
 
     /*
      * Install the drop notification callback only after all fallible setup
-     * has succeeded. If an earlier allocation or mk_event_add() fails, conn
+     * has succeeded. If an earlier allocation fails, conn
      * is freed and the caller releases the connection; installing the
      * callback before that point would make prepare_destroy_conn() invoke
      * fw_conn_drop() on the freed wrapper (use-after-free/double-free).
@@ -364,10 +357,24 @@ int fw_conn_del_all(struct flb_in_fw_config *ctx)
     struct mk_list *head;
     struct fw_conn *conn;
 
+    /*
+     * On thread-safe downstreams, releasing a busy connection resumes its
+     * coroutine inline and fw_conn_event() may call back into this function
+     * while the outer walk is in progress. A nested walk would release the
+     * entry saved by the outer iterator, so let the outer walk finish the job.
+     */
+    if (ctx->conn_del_all_active == FLB_TRUE) {
+        return 0;
+    }
+
+    ctx->conn_del_all_active = FLB_TRUE;
+
     mk_list_foreach_safe(head, tmp, &ctx->connections) {
         conn = mk_list_entry(head, struct fw_conn, _head);
         fw_conn_del(conn);
     }
+
+    ctx->conn_del_all_active = FLB_FALSE;
 
     return 0;
 }

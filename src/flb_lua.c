@@ -24,6 +24,8 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_lua.h>
 #include <stdint.h>
+#include <limits.h>
+#include <math.h>
 
 int flb_lua_enable_flb_null(lua_State *l)
 {
@@ -83,6 +85,22 @@ static int flb_lua_setmetatable(lua_State *l, struct flb_lua_metadata *meta, int
     lua_setmetatable(l, abs_index);
 
     return 0;
+}
+
+/* check that a key can be used as a table index before lua_settable() */
+static int flb_lua_is_valid_key(lua_State *l, int index)
+{
+    int type;
+
+    type = lua_type(l, index);
+    if (type == LUA_TNIL) {
+        return FLB_FALSE;
+    }
+    if (type == LUA_TNUMBER && isnan(lua_tonumber(l, index))) {
+        return FLB_FALSE;
+    }
+
+    return FLB_TRUE;
 }
 
 int flb_lua_pushmpack(lua_State *l, mpack_reader_t *reader)
@@ -153,6 +171,11 @@ int flb_lua_pushmpack(lua_State *l, mpack_reader_t *reader)
                 ret = flb_lua_pushmpack(l, reader);
                 if (ret) {
                     return ret;
+                }
+                if (flb_lua_is_valid_key(l, -2) == FLB_FALSE) {
+                    /* drop the entry, the key cannot index a table */
+                    lua_pop(l, 2);
+                    continue;
                 }
                 lua_settable(l, -3);
             }
@@ -236,6 +259,11 @@ void flb_lua_pushmsgpack(lua_State *l, msgpack_object *o)
                 msgpack_object_kv *p = o->via.map.ptr;
                 for (i = 0; i < size; i++) {
                     flb_lua_pushmsgpack(l, &(p+i)->key);
+                    if (flb_lua_is_valid_key(l, -1) == FLB_FALSE) {
+                        /* drop the entry, the key cannot index a table */
+                        lua_pop(l, 1);
+                        continue;
+                    }
                     flb_lua_pushmsgpack(l, &(p+i)->val);
                     lua_settable(l, index);
                 }
@@ -290,7 +318,8 @@ static int lua_table_maxn(lua_State *l, int index)
         return -1;
     }
 
-    if (lua_isinteger(l, -1)) {
+    /* keys beyond INT_MAX cannot be an array length */
+    if (lua_isinteger(l, -1) && lua_tonumber(l, -1) <= INT_MAX) {
         ret = lua_tointeger(l, -1);
     }
     lua_pop(l, 1);
@@ -303,7 +332,7 @@ static int lua_table_maxn(lua_State *l, int index)
 
 int flb_lua_arraylength(lua_State *l, int index)
 {
-    lua_Integer n;
+    lua_Number n;
     int count = 0;
     int max = 0;
     int ret = 0;
@@ -312,6 +341,20 @@ int flb_lua_arraylength(lua_State *l, int index)
 
     ret = lua_table_maxn(l, index);
     if (ret > 0) {
+        /*
+         * table.maxn() returns the largest positive numeric key, holes
+         * included. A table holding a single large key (e.g. an integer key
+         * copied from a record) must not be packed as an array of that many
+         * elements, so only accept tables where most slots are used.
+         */
+        lua_pushnil(l);
+        while (lua_next(l, index) != 0) {
+            count++;
+            lua_pop(l, 1);
+        }
+        if (ret - count > count) {
+            return -1;
+        }
         return ret;
     }
 
@@ -319,7 +362,7 @@ int flb_lua_arraylength(lua_State *l, int index)
     while (lua_next(l, index) != 0) {
         if (lua_type(l, -2) == LUA_TNUMBER) {
             n = lua_tonumber(l, -2);
-            if (n > 0) {
+            if (n > 0 && n <= INT_MAX) {
                 max = n > max ? n : max;
                 count++;
                 lua_pop(l, 1);
@@ -342,14 +385,15 @@ static void lua_toarray_msgpack(lua_State *l,
 {
     int len;
     int i;
+    int abs_index;
 
-    lua_pushnumber(l, (lua_Number)lua_objlen(l, -1)); // lua_len
-    len = (int)lua_tointeger(l, -1);
-    lua_pop(l, 1);
+    abs_index = flb_lua_absindex(l, index);
+
+    len = (int) lua_objlen(l, abs_index); /* lua_len */
 
     msgpack_pack_array(pck, len);
     for (i = 1; i <= len; i++) {
-        lua_rawgeti(l, -1, i);
+        lua_rawgeti(l, abs_index, i);
         flb_lua_tomsgpack(l, pck, 0, l2cc);
         lua_pop(l, 1);
     }
@@ -362,14 +406,15 @@ static void lua_toarray_mpack(lua_State *l,
 {
     int len;
     int i;
+    int abs_index;
 
-    lua_pushnumber(l, (lua_Number)lua_objlen(l, -1)); // lua_len
-    len = (int)lua_tointeger(l, -1);
-    lua_pop(l, 1);
+    abs_index = flb_lua_absindex(l, index);
+
+    len = (int) lua_objlen(l, abs_index); /* lua_len */
 
     mpack_write_tag(writer, mpack_tag_array(len));
     for (i = 1; i <= len; i++) {
-        lua_rawgeti(l, -1, i);
+        lua_rawgeti(l, abs_index, i);
         flb_lua_tompack(l, writer, 0, l2cc);
         lua_pop(l, 1);
     }
@@ -408,7 +453,7 @@ static void try_to_convert_data_type(lua_State *l,
             l2c = mk_list_entry(head, struct flb_lua_l2c_type, _head);
             if (!strncmp(l2c->key, tmp, len) && l2c->type == FLB_LUA_L2C_TYPE_ARRAY) {
                 flb_lua_tomsgpack(l, pck, -1, l2cc);
-                lua_toarray_msgpack(l, pck, 0, l2cc);
+                lua_toarray_msgpack(l, pck, -1, l2cc);
                 return;
             }
         }
@@ -452,7 +497,7 @@ static void try_to_convert_data_type_mpack(lua_State *l,
             l2c = mk_list_entry(head, struct flb_lua_l2c_type, _head);
             if (!strncmp(l2c->key, tmp, len) && l2c->type == FLB_LUA_L2C_TYPE_ARRAY) {
                 flb_lua_tompack(l, writer, -1, l2cc);
-                lua_toarray_mpack(l, writer, 0, l2cc);
+                lua_toarray_mpack(l, writer, -1, l2cc);
                 return;
             }
         }
@@ -520,10 +565,13 @@ static void lua_tomap_mpack(lua_State *l,
                             struct flb_lua_l2c_config *l2cc)
 {
     int len;
+    int abs_index;
+
+    abs_index = flb_lua_absindex(l, index);
 
     len = 0;
     lua_pushnil(l);
-    while (lua_next(l, -2) != 0) {
+    while (lua_next(l, abs_index) != 0) {
         lua_pop(l, 1);
         len++;
     }
@@ -533,12 +581,12 @@ static void lua_tomap_mpack(lua_State *l,
 
     if (l2cc->l2c_types_num > 0) {
         /* type conversion */
-        while (lua_next(l, -2) != 0) {
+        while (lua_next(l, abs_index) != 0) {
             try_to_convert_data_type_mpack(l, writer, l2cc);
             lua_pop(l, 1);
         }
     } else {
-        while (lua_next(l, -2) != 0) {
+        while (lua_next(l, abs_index) != 0) {
             flb_lua_tompack(l, writer, -1, l2cc);
             flb_lua_tompack(l, writer, 0, l2cc);
             lua_pop(l, 1);
@@ -553,6 +601,7 @@ void flb_lua_tompack(lua_State *l,
 {
     int len;
     int i;
+    int abs_index;
     int use_metatable = FLB_FALSE;
     struct flb_lua_metadata meta;
 
@@ -594,7 +643,7 @@ void flb_lua_tompack(lua_State *l,
             if (use_metatable) {
                 if (meta.data_type == FLB_LUA_L2C_TYPE_ARRAY) {
                     /* array */
-                    lua_toarray_mpack(l, writer, 0, l2cc);
+                    lua_toarray_mpack(l, writer, -1 + index, l2cc);
                 }
                 else {
                     /* map */
@@ -603,11 +652,12 @@ void flb_lua_tompack(lua_State *l,
                 break;
             }
 
-            len = flb_lua_arraylength(l, -1 + index);
+            abs_index = flb_lua_absindex(l, -1 + index);
+            len = flb_lua_arraylength(l, abs_index);
             if (len > 0) {
                 mpack_write_tag(writer, mpack_tag_array(len));
                 for (i = 1; i <= len; i++) {
-                    lua_rawgeti(l, -1, i);
+                    lua_rawgeti(l, abs_index, i);
                     flb_lua_tompack(l, writer, 0, l2cc);
                     lua_pop(l, 1);
                 }
@@ -675,6 +725,7 @@ void flb_lua_tomsgpack(lua_State *l,
 {
     int len;
     int i;
+    int abs_index;
     int use_metatable = FLB_FALSE;
     struct flb_lua_metadata meta;
 
@@ -717,7 +768,7 @@ void flb_lua_tomsgpack(lua_State *l,
             if (use_metatable) {
                 if (meta.data_type == FLB_LUA_L2C_TYPE_ARRAY) {
                     /* array */
-                    lua_toarray_msgpack(l, pck, 0, l2cc);
+                    lua_toarray_msgpack(l, pck, -1 + index, l2cc);
                 }
                 else {
                     /* map */
@@ -726,11 +777,12 @@ void flb_lua_tomsgpack(lua_State *l,
                 break;
             }
 
-            len = flb_lua_arraylength(l, -1 + index);
+            abs_index = flb_lua_absindex(l, -1 + index);
+            len = flb_lua_arraylength(l, abs_index);
             if (len > 0) {
                 msgpack_pack_array(pck, len);
                 for (i = 1; i <= len; i++) {
-                    lua_rawgeti(l, -1, i);
+                    lua_rawgeti(l, abs_index, i);
                     flb_lua_tomsgpack(l, pck, 0, l2cc);
                     lua_pop(l, 1);
                 }

@@ -16,6 +16,8 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
+#include <string.h>
+
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_metric.h>
 #include <cmetrics/cmt_map.h>
@@ -277,6 +279,17 @@ size_t count_metrics_with_matching_label_set(struct cfl_list *metrics,
     }
 
     return matches;
+}
+
+int compare_prometheus_labels(const void *first, const void *second)
+{
+    Prometheus__Label *label_a;
+    Prometheus__Label *label_b;
+
+    label_a = *(Prometheus__Label * const *) first;
+    label_b = *(Prometheus__Label * const *) second;
+
+    return strcmp(label_a->name, label_b->name);
 }
 
 int append_entry_to_prometheus_label_list(Prometheus__Label **label_list,
@@ -572,6 +585,12 @@ int set_up_time_series_for_label_set(struct cmt_prometheus_remote_write_context 
 
         return result;
     }
+    
+    /* The Prometheus Remote Write specification requires that labels be sorted
+     * lexicographically by name, so sort the assembled label list (which includes
+     * __name__, static labels, and per-metric labels) before it is emitted.
+     */
+    qsort(label_list, label_index, sizeof(Prometheus__Label *), compare_prometheus_labels);
 
     /* Add the time series to the context so we can find it when we try to format
      * a metric with these same labels;

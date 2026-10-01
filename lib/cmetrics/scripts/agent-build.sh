@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+repository_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 build_dir=${BUILD_DIR:-"$repository_root/build/agent"}
 
 git -C "$repository_root" submodule update --init --recursive
