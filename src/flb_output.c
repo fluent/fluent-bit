@@ -701,6 +701,8 @@ void flb_output_exit(struct flb_config *config)
                     flb_free(out_flush->processed_event_chunk->data);
                 }
                 flb_event_chunk_destroy(out_flush->processed_event_chunk);
+                /* The flush destructor must not release this chunk again. */
+                out_flush->processed_event_chunk = NULL;
             }
             flb_output_flush_destroy(out_flush);
         }
