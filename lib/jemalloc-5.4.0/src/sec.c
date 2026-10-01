@@ -1,0 +1,525 @@
+#include "jemalloc/internal/jemalloc_preamble.h"
+
+#include "jemalloc/internal/jemalloc_probe.h"
+#include "jemalloc/internal/sec.h"
+#include "jemalloc/internal/witness.h"
+
+static bool
+sec_bin_init(sec_bin_t *bin) {
+	atomic_store_zu(&bin->bytes_cur, 0, ATOMIC_RELAXED);
+	atomic_store_zu(&bin->bytes_pinned_cur, 0, ATOMIC_RELAXED);
+	atomic_store_zu(&bin->ndalloc_flush, 0, ATOMIC_RELAXED);
+	atomic_store_zu(&bin->nmisses, 0, ATOMIC_RELAXED);
+	atomic_store_zu(&bin->nhits, 0, ATOMIC_RELAXED);
+	atomic_store_zu(&bin->ndalloc_noflush, 0, ATOMIC_RELAXED);
+	atomic_store_zu(&bin->noverfills, 0, ATOMIC_RELAXED);
+	edata_list_active_init(&bin->freelist);
+	bool err = malloc_mutex_init(&bin->mtx, "sec_bin", WITNESS_RANK_SEC_BIN,
+	    malloc_mutex_rank_exclusive);
+	if (err) {
+		return true;
+	}
+
+	return false;
+}
+
+bool
+sec_init(tsdn_t *tsdn, sec_t *sec, base_t *base, const sec_opts_t *opts) {
+	/*
+	 * Invariant: max_alloc == 0 whenever nshards == 0.  This lets
+	 * sec_size_supported() collapse to a single comparison.
+	 */
+	sec->opts = *opts;
+	sec->bins = NULL;
+	sec->npsizes = 0;
+	if (opts->nshards == 0) {
+		sec->opts.max_alloc = 0;
+		return false;
+	}
+	assert(opts->nshards <= 255);
+	assert(opts->max_alloc >= PAGE);
+
+	/*
+	 * Same as tcache, sec do not cache allocs/dallocs larger than
+	 * USIZE_GROW_SLOW_THRESHOLD because the usize above this increases
+	 * by PAGE and the number of usizes is too large.
+	 */
+	assert(opts->max_alloc <= USIZE_GROW_SLOW_THRESHOLD);
+
+	size_t   max_alloc = PAGE_FLOOR(opts->max_alloc);
+	pszind_t npsizes = sz_psz2ind(max_alloc) + 1;
+
+	size_t ntotal_bins = opts->nshards * (size_t)npsizes;
+	size_t sz_bins = sizeof(sec_bin_t) * ntotal_bins;
+	void  *dynalloc = base_alloc(tsdn, base, sz_bins, CACHELINE);
+	if (dynalloc == NULL) {
+		sec->opts.nshards = 0;
+		sec->opts.max_alloc = 0;
+		return true;
+	}
+	sec->bins = (sec_bin_t *)dynalloc;
+	for (pszind_t j = 0; j < ntotal_bins; j++) {
+		if (sec_bin_init(&sec->bins[j])) {
+			sec->opts.nshards = 0;
+			sec->opts.max_alloc = 0;
+			return true;
+		}
+	}
+	sec->npsizes = npsizes;
+
+	return false;
+}
+
+uint8_t
+sec_shard_pick(tsd_t *tsd, sec_t *sec, uint8_t *idxp) {
+	/*
+	 * Eventually, we should implement affinity, tracking source shard using
+	 * the edata_t's newly freed up fields.  For now, just randomly
+	 * distribute across all shards.
+	 *
+	 * Callers must ensure sec->opts.nshards > 1.
+	 */
+	assert(sec->opts.nshards > 1);
+	if (*idxp == (uint8_t)-1) {
+		/*
+		 * First use; initialize using the trick from Daniel Lemire's
+		 * "A fast alternative to the modulo reduction.  Use a 64 bit
+		 * number to store 32 bits, since we'll deliberately overflow
+		 * when we multiply by the number of shards.
+		 */
+		uint64_t rand32 = prng_lg_range_u64(
+		    tsd_prng_statep_get(tsd), 32);
+		uint32_t idx = (uint32_t)((rand32 * (uint64_t)sec->opts.nshards)
+		    >> 32);
+		assert(idx < (uint32_t)sec->opts.nshards);
+		*idxp = (uint8_t)idx;
+	}
+	return *idxp;
+}
+
+static sec_bin_t *
+sec_bin_pick(sec_t *sec, uint8_t shard, pszind_t pszind) {
+	assert(shard < sec->opts.nshards);
+	size_t ind = (size_t)shard * sec->npsizes + pszind;
+	assert(ind < sec->npsizes * sec->opts.nshards);
+	return &sec->bins[ind];
+}
+
+void
+sec_calc_nallocs_for_size(
+    sec_t *sec, size_t size, size_t *min_nallocs_ret, size_t *max_nallocs_ret) {
+	size_t min_nallocs = 1;
+	size_t max_nallocs = 1;
+
+	if (sec_size_supported(sec, size)) {
+		/*
+		 * This attempts to fill up to 1/SEC_MAX_BYTES_DIV of the SEC.
+		 * If we go much over that, we might cause purging.
+		 * This is mainly an issue when max_bytes is small (256K)
+		 * and size is large. For larger max_bytes, we will
+		 * almost always end up with SEC_MAX_NALLOCS.
+		 */
+		size_t nallocs = sec->opts.max_bytes / size / SEC_MAX_BYTES_DIV;
+		nallocs = max_zu(nallocs, SEC_MIN_NALLOCS);
+		min_nallocs = SEC_MIN_NALLOCS;
+		max_nallocs = min_zu(nallocs, SEC_MAX_NALLOCS);
+	}
+
+	/* post-conditions */
+	assert(1 <= min_nallocs);
+	assert(min_nallocs <= max_nallocs);
+	assert(max_nallocs <= SEC_MAX_NALLOCS);
+
+	*min_nallocs_ret = min_nallocs;
+	*max_nallocs_ret = max_nallocs;
+}
+
+static edata_t *
+sec_bin_alloc_locked(tsdn_t *tsdn, sec_t *sec, sec_bin_t *bin, size_t size) {
+	malloc_mutex_assert_owner(tsdn, &bin->mtx);
+
+	edata_t *edata = edata_list_active_first(&bin->freelist);
+	if (edata != NULL) {
+		assert(!edata_list_active_empty(&bin->freelist));
+		edata_list_active_remove(&bin->freelist, edata);
+		size_t sz = edata_size_get(edata);
+		size_t bytes_cur = atomic_load_zu(&bin->bytes_cur, ATOMIC_RELAXED);
+		assert(sz <= bytes_cur && sz > 0);
+		bytes_cur -= sz;
+		if (edata_pinned_get(edata)) {
+			size_t bytes_pinned_cur = atomic_load_zu(
+			    &bin->bytes_pinned_cur, ATOMIC_RELAXED);
+			assert(sz <= bytes_pinned_cur);
+			bytes_pinned_cur -= sz;
+			atomic_store_zu(&bin->bytes_pinned_cur,
+			    bytes_pinned_cur, ATOMIC_RELAXED);
+		}
+		atomic_store_zu(&bin->bytes_cur, bytes_cur, ATOMIC_RELAXED);
+		atomic_load_add_store_zu(&bin->nhits, 1);
+	}
+	return edata;
+}
+
+static edata_t *
+sec_multishard_trylock_alloc(
+    tsdn_t *tsdn, sec_t *sec, size_t size, pszind_t pszind, uint8_t shard) {
+	assert(sec->opts.nshards > 0);
+
+	uint8_t    cur_shard = shard;
+	sec_bin_t *bin;
+	for (size_t i = 0; i < sec->opts.nshards; ++i) {
+		bin = sec_bin_pick(sec, cur_shard, pszind);
+		if (!malloc_mutex_trylock(tsdn, &bin->mtx)) {
+			edata_t *edata = sec_bin_alloc_locked(
+			    tsdn, sec, bin, size);
+			malloc_mutex_unlock(tsdn, &bin->mtx);
+			if (edata != NULL) {
+				JE_USDT(sec_alloc, 5, sec, bin, edata, size,
+				    /* frequent_reuse */ 1);
+				return edata;
+			}
+		}
+		cur_shard++;
+		if (cur_shard == sec->opts.nshards) {
+			cur_shard = 0;
+		}
+	}
+	/*
+	 * TODO: Benchmark whether it is worth blocking on all shards here before
+	 * declaring a miss.  That could recover more remote-shard hits under
+	 * contention, but it also changes the allocation latency policy.
+	 */
+	assert(cur_shard == shard);
+	bin = sec_bin_pick(sec, cur_shard, pszind);
+	malloc_mutex_lock(tsdn, &bin->mtx);
+	edata_t *edata = sec_bin_alloc_locked(tsdn, sec, bin, size);
+	if (edata == NULL) {
+		/* Only now we know it is a miss. */
+		atomic_load_add_store_zu(&bin->nmisses, 1);
+	}
+	malloc_mutex_unlock(tsdn, &bin->mtx);
+	JE_USDT(sec_alloc, 5, sec, bin, edata, size, /* frequent_reuse */ 1);
+	return edata;
+}
+
+edata_t *
+sec_alloc(tsdn_t *tsdn, sec_t *sec, size_t size, uint8_t shard) {
+	assert(sec_size_supported(sec, size));
+	assert((size & PAGE_MASK) == 0);
+	pszind_t pszind = sz_psz2ind(size);
+	assert(pszind < sec->npsizes);
+
+	/*
+	 * If there's only one shard, skip the trylock optimization and
+	 * go straight to the blocking lock.
+	 */
+	if (sec->opts.nshards == 1) {
+		sec_bin_t *bin = sec_bin_pick(sec, /* shard */ 0, pszind);
+		malloc_mutex_lock(tsdn, &bin->mtx);
+		edata_t *edata = sec_bin_alloc_locked(tsdn, sec, bin, size);
+		if (edata == NULL) {
+			atomic_load_add_store_zu(&bin->nmisses, 1);
+		}
+		malloc_mutex_unlock(tsdn, &bin->mtx);
+		JE_USDT(sec_alloc, 5, sec, bin, edata, size,
+		    /* frequent_reuse */ 1);
+		return edata;
+	}
+	return sec_multishard_trylock_alloc(tsdn, sec, size, pszind, shard);
+}
+
+static void
+sec_bin_dalloc_locked(tsdn_t *tsdn, sec_t *sec, sec_bin_t *bin, size_t size,
+    edata_list_active_t *dalloc_list) {
+	malloc_mutex_assert_owner(tsdn, &bin->mtx);
+
+	size_t bytes_cur = atomic_load_zu(&bin->bytes_cur, ATOMIC_RELAXED);
+	size_t bytes_pinned_cur = atomic_load_zu(
+	    &bin->bytes_pinned_cur, ATOMIC_RELAXED);
+	bytes_cur += size;
+	edata_t *edata = edata_list_active_first(dalloc_list);
+	assert(edata != NULL);
+	edata_list_active_remove(dalloc_list, edata);
+	JE_USDT(sec_dalloc, 3, sec, bin, edata);
+	edata_list_active_prepend(&bin->freelist, edata);
+	if (edata_pinned_get(edata)) {
+		bytes_pinned_cur += size;
+	}
+	/* Single extent can be returned to SEC */
+	assert(edata_list_active_empty(dalloc_list));
+
+	if (bytes_cur <= sec->opts.max_bytes) {
+		atomic_store_zu(&bin->bytes_pinned_cur, bytes_pinned_cur,
+		    ATOMIC_RELAXED);
+		atomic_store_zu(&bin->bytes_cur, bytes_cur, ATOMIC_RELAXED);
+		atomic_load_add_store_zu(&bin->ndalloc_noflush, 1);
+		return;
+	}
+	atomic_load_add_store_zu(&bin->ndalloc_flush, 1);
+	/* we want to flush 1/4 of max_bytes */
+	size_t bytes_target = sec->opts.max_bytes - (sec->opts.max_bytes >> 2);
+	while (bytes_cur > bytes_target
+	    && !edata_list_active_empty(&bin->freelist)) {
+		edata_t *cur = edata_list_active_last(&bin->freelist);
+		size_t   sz = edata_size_get(cur);
+		assert(sz <= bytes_cur && sz > 0);
+		bytes_cur -= sz;
+		if (edata_pinned_get(cur)) {
+			assert(sz <= bytes_pinned_cur);
+			bytes_pinned_cur -= sz;
+		}
+		edata_list_active_remove(&bin->freelist, cur);
+		edata_list_active_append(dalloc_list, cur);
+	}
+	atomic_store_zu(&bin->bytes_pinned_cur, bytes_pinned_cur,
+	    ATOMIC_RELAXED);
+	atomic_store_zu(&bin->bytes_cur, bytes_cur, ATOMIC_RELAXED);
+}
+
+static void
+sec_multishard_trylock_dalloc(tsdn_t *tsdn, sec_t *sec, size_t size,
+    pszind_t pszind, edata_list_active_t *dalloc_list, uint8_t shard) {
+	assert(sec->opts.nshards > 0);
+
+	/* Try to dalloc in this threads bin first */
+	uint8_t cur_shard = shard;
+	for (size_t i = 0; i < sec->opts.nshards; ++i) {
+		sec_bin_t *bin = sec_bin_pick(sec, cur_shard, pszind);
+		if (!malloc_mutex_trylock(tsdn, &bin->mtx)) {
+			sec_bin_dalloc_locked(
+			    tsdn, sec, bin, size, dalloc_list);
+			malloc_mutex_unlock(tsdn, &bin->mtx);
+			return;
+		}
+		cur_shard++;
+		if (cur_shard == sec->opts.nshards) {
+			cur_shard = 0;
+		}
+	}
+	/* No bin had alloc or had the extent */
+	assert(cur_shard == shard);
+	sec_bin_t *bin = sec_bin_pick(sec, cur_shard, pszind);
+	malloc_mutex_lock(tsdn, &bin->mtx);
+	sec_bin_dalloc_locked(tsdn, sec, bin, size, dalloc_list);
+	malloc_mutex_unlock(tsdn, &bin->mtx);
+}
+
+void
+sec_dalloc(tsdn_t *tsdn, sec_t *sec, edata_list_active_t *dalloc_list,
+    uint8_t shard) {
+	edata_t *edata = edata_list_active_first(dalloc_list);
+	size_t   size = edata_size_get(edata);
+	assert(sec_size_supported(sec, size));
+	pszind_t pszind = sz_psz2ind(size);
+	assert(pszind < sec->npsizes);
+
+	/*
+	 * If there's only one shard, skip the trylock optimization and
+	 * go straight to the blocking lock.
+	 */
+	if (sec->opts.nshards == 1) {
+		sec_bin_t *bin = sec_bin_pick(sec, /* shard */ 0, pszind);
+		malloc_mutex_lock(tsdn, &bin->mtx);
+		sec_bin_dalloc_locked(tsdn, sec, bin, size, dalloc_list);
+		malloc_mutex_unlock(tsdn, &bin->mtx);
+		return;
+	}
+	sec_multishard_trylock_dalloc(
+	    tsdn, sec, size, pszind, dalloc_list, shard);
+}
+
+static void
+sec_list_pinned_bytes_get(
+    edata_list_active_t *list, size_t size, size_t *pinned_bytes) {
+	*pinned_bytes = 0;
+	for (edata_t *edata = edata_list_active_first(list); edata != NULL;
+	    edata = edata_list_active_next(list, edata)) {
+		assert(edata_size_get(edata) == size);
+		if (edata_pinned_get(edata)) {
+			*pinned_bytes += size;
+		}
+	}
+}
+
+void
+sec_fill(tsdn_t *tsdn, sec_t *sec, size_t size, edata_list_active_t *result,
+    size_t nallocs, uint8_t shard) {
+	assert((size & PAGE_MASK) == 0);
+	assert(sec_size_supported(sec, size));
+	assert(nallocs > 0);
+
+	pszind_t pszind = sz_psz2ind(size);
+	assert(pszind < sec->npsizes);
+
+	sec_bin_t *bin = sec_bin_pick(sec, shard, pszind);
+	malloc_mutex_assert_not_owner(tsdn, &bin->mtx);
+	malloc_mutex_lock(tsdn, &bin->mtx);
+	size_t bytes_cur = atomic_load_zu(&bin->bytes_cur, ATOMIC_RELAXED);
+	size_t bytes_pinned_cur = atomic_load_zu(
+	    &bin->bytes_pinned_cur, ATOMIC_RELAXED);
+	size_t new_cached_bytes = nallocs * size;
+	if (bytes_cur + new_cached_bytes <= sec->opts.max_bytes) {
+		assert(!edata_list_active_empty(result));
+		size_t new_cached_pinned_bytes;
+		sec_list_pinned_bytes_get(
+		    result, size, &new_cached_pinned_bytes);
+		bytes_pinned_cur += new_cached_pinned_bytes;
+		edata_list_active_concat(&bin->freelist, result);
+		atomic_store_zu(&bin->bytes_pinned_cur, bytes_pinned_cur,
+		    ATOMIC_RELAXED);
+		atomic_store_zu(&bin->bytes_cur, bytes_cur + new_cached_bytes,
+		    ATOMIC_RELAXED);
+	} else {
+		/*
+		 * Unlikely case of many threads filling at the same time and
+		 * going above max.
+		 */
+		atomic_load_add_store_zu(&bin->noverfills, 1);
+		while (bytes_cur + size <= sec->opts.max_bytes) {
+			edata_t *edata = edata_list_active_first(result);
+			if (edata == NULL) {
+				break;
+			}
+			edata_list_active_remove(result, edata);
+			assert(size == edata_size_get(edata));
+			edata_list_active_append(&bin->freelist, edata);
+			bytes_cur += size;
+			if (edata_pinned_get(edata)) {
+				bytes_pinned_cur += size;
+			}
+		}
+		atomic_store_zu(&bin->bytes_pinned_cur, bytes_pinned_cur,
+		    ATOMIC_RELAXED);
+		atomic_store_zu(&bin->bytes_cur, bytes_cur, ATOMIC_RELAXED);
+	}
+	malloc_mutex_unlock(tsdn, &bin->mtx);
+}
+
+void
+sec_flush(tsdn_t *tsdn, sec_t *sec, edata_list_active_t *to_flush) {
+	if (!sec_is_used(sec)) {
+		return;
+	}
+	size_t ntotal_bins = sec->opts.nshards * sec->npsizes;
+	for (pszind_t i = 0; i < ntotal_bins; i++) {
+		sec_bin_t *bin = &sec->bins[i];
+		malloc_mutex_lock(tsdn, &bin->mtx);
+		atomic_store_zu(&bin->bytes_cur, 0, ATOMIC_RELAXED);
+		atomic_store_zu(&bin->bytes_pinned_cur, 0, ATOMIC_RELAXED);
+		edata_list_active_concat(to_flush, &bin->freelist);
+		malloc_mutex_unlock(tsdn, &bin->mtx);
+	}
+}
+
+static void
+sec_bin_bytes_get(const sec_bin_t *bin, size_t *bytes, size_t *bytes_pinned) {
+	*bytes = atomic_load_zu(&bin->bytes_cur, ATOMIC_RELAXED);
+	*bytes_pinned = atomic_load_zu(
+	    &bin->bytes_pinned_cur, ATOMIC_RELAXED);
+	*bytes_pinned = min_zu(*bytes_pinned, *bytes);
+}
+
+static void
+sec_stats_merge_bin(
+    const sec_bin_t *bin, pszind_t pszind, sec_pszind_stats_t *stats) {
+	size_t bytes;
+	size_t bytes_pinned;
+	sec_bin_bytes_get(bin, &bytes, &bytes_pinned);
+
+	stats->bytes += bytes;
+	stats->bytes_pinned += bytes_pinned;
+	size_t size = sz_pind2sz(pszind);
+	stats->nextents += bytes / size;
+	stats->nextents_pinned += bytes_pinned / size;
+}
+
+void
+sec_stats_merge(tsdn_t *tsdn, const sec_t *sec, sec_stats_t *stats) {
+	if (!sec_is_used(sec)) {
+		return;
+	}
+	size_t ntotal_bins = sec->opts.nshards * sec->npsizes;
+	for (pszind_t i = 0; i < ntotal_bins; i++) {
+		sec_bin_t *bin = &sec->bins[i];
+		size_t bytes;
+		size_t bytes_pinned;
+		sec_bin_bytes_get(bin, &bytes, &bytes_pinned);
+		stats->bytes += bytes;
+		stats->bytes_pinned += bytes_pinned;
+		stats->total.nmisses +=
+		    atomic_load_zu(&bin->nmisses, ATOMIC_RELAXED);
+		stats->total.nhits +=
+		    atomic_load_zu(&bin->nhits, ATOMIC_RELAXED);
+		stats->total.ndalloc_flush +=
+		    atomic_load_zu(&bin->ndalloc_flush, ATOMIC_RELAXED);
+		stats->total.ndalloc_noflush +=
+		    atomic_load_zu(&bin->ndalloc_noflush, ATOMIC_RELAXED);
+		stats->total.noverfills +=
+		    atomic_load_zu(&bin->noverfills, ATOMIC_RELAXED);
+	}
+}
+
+void
+sec_stats_merge_pszind(tsdn_t *tsdn, const sec_t *sec, pszind_t pszind,
+    sec_pszind_stats_t *stats) {
+	if (!sec_is_used(sec) || pszind >= sec->npsizes) {
+		return;
+	}
+
+	for (size_t shard = 0; shard < sec->opts.nshards; shard++) {
+		size_t ind = shard * sec->npsizes + pszind;
+		assert(ind < sec->npsizes * sec->opts.nshards);
+		sec_stats_merge_bin(&sec->bins[ind], pszind, stats);
+	}
+}
+
+void
+sec_mutex_stats_read(
+    tsdn_t *tsdn, sec_t *sec, mutex_prof_data_t *mutex_prof_data) {
+	if (!sec_is_used(sec)) {
+		return;
+	}
+	size_t ntotal_bins = sec->opts.nshards * sec->npsizes;
+	for (pszind_t i = 0; i < ntotal_bins; i++) {
+		sec_bin_t *bin = &sec->bins[i];
+		malloc_mutex_lock(tsdn, &bin->mtx);
+		malloc_mutex_prof_accum(tsdn, mutex_prof_data, &bin->mtx);
+		malloc_mutex_unlock(tsdn, &bin->mtx);
+	}
+}
+
+void
+sec_prefork2(tsdn_t *tsdn, sec_t *sec) {
+	if (!sec_is_used(sec)) {
+		return;
+	}
+	size_t ntotal_bins = sec->opts.nshards * sec->npsizes;
+	for (pszind_t i = 0; i < ntotal_bins; i++) {
+		sec_bin_t *bin = &sec->bins[i];
+		malloc_mutex_prefork(tsdn, &bin->mtx);
+	}
+}
+
+void
+sec_postfork_parent(tsdn_t *tsdn, sec_t *sec) {
+	if (!sec_is_used(sec)) {
+		return;
+	}
+	size_t ntotal_bins = sec->opts.nshards * sec->npsizes;
+	for (pszind_t i = 0; i < ntotal_bins; i++) {
+		sec_bin_t *bin = &sec->bins[i];
+		malloc_mutex_postfork_parent(tsdn, &bin->mtx);
+	}
+}
+
+void
+sec_postfork_child(tsdn_t *tsdn, sec_t *sec) {
+	if (!sec_is_used(sec)) {
+		return;
+	}
+	size_t ntotal_bins = sec->opts.nshards * sec->npsizes;
+	for (pszind_t i = 0; i < ntotal_bins; i++) {
+		sec_bin_t *bin = &sec->bins[i];
+		malloc_mutex_postfork_child(tsdn, &bin->mtx);
+	}
+}
