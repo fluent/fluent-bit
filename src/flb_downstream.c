@@ -32,6 +32,9 @@
 #include <fluent-bit/flb_config_map.h>
 #include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_thread_storage.h>
+#ifdef FLB_HAVE_UNIX_SOCKET
+#include <sys/un.h>
+#endif
 
 static inline int prepare_destroy_conn_safe(struct flb_connection *connection);
 static void resume_pending_event_coroutines(struct flb_downstream *stream);
@@ -220,6 +223,89 @@ void flb_downstream_init()
     /* There's nothing to do here yet */
 }
 
+#ifdef FLB_HAVE_UNIX_SOCKET
+static int unlink_unix_socket(const char *path, const struct stat *expected)
+{
+    struct stat current;
+
+    if (lstat(path, &current) != 0) {
+        return errno == ENOENT ? 0 : -1;
+    }
+
+    /* Matching identity suggests this is still the socket we tracked. */
+    if (!S_ISSOCK(expected->st_mode) || !S_ISSOCK(current.st_mode) ||
+        current.st_dev != expected->st_dev || current.st_ino != expected->st_ino) {
+        errno = EEXIST;
+        return -1;
+    }
+
+    /* The path can change here: unlink takes a name, not a file descriptor. */
+    return unlink(path);
+}
+
+static int remove_stale_unix_socket(const char *path, int transport)
+{
+    struct stat file_data;
+    struct sockaddr_un address;
+    flb_sockfd_t probe;
+    int result;
+    int socket_error;
+    int type;
+
+    if (path[0] == '\0' || strlen(path) >= sizeof(address.sun_path)) {
+        flb_error("[downstream] invalid Unix socket path length");
+        return -1;
+    }
+
+    if (lstat(path, &file_data) != 0) {
+        if (errno == ENOENT) {
+            return 0;
+        }
+        flb_errno();
+        return -1;
+    }
+
+    if (!S_ISSOCK(file_data.st_mode)) {
+        flb_error("[downstream] %s exists and is not a Unix socket", path);
+        return -1;
+    }
+
+    type = transport == FLB_TRANSPORT_UNIX_STREAM ? SOCK_STREAM : SOCK_DGRAM;
+    probe = socket(AF_UNIX, type, 0);
+    if (probe == -1) {
+        flb_errno();
+        return -1;
+    }
+    if (flb_net_socket_nonblocking(probe) != 0) {
+        flb_socket_close(probe);
+        return -1;
+    }
+
+    memset(&address, 0, sizeof(address));
+    address.sun_family = AF_UNIX;
+    strcpy(address.sun_path, path);
+    result = connect(probe, (struct sockaddr *) &address,
+                     offsetof(struct sockaddr_un, sun_path) + strlen(path) + 1);
+    socket_error = errno;
+    flb_socket_close(probe);
+
+    if (result == 0) {
+        flb_error("[downstream] Unix socket %s is in use", path);
+        return -1;
+    }
+
+    /* Only remove a refused socket; a full backlog must also be preserved. */
+    if (socket_error != ECONNREFUSED) {
+        flb_error("[downstream] cannot probe Unix socket %s", path);
+        errno = socket_error;
+        flb_errno();
+        return -1;
+    }
+
+    return unlink_unix_socket(path, &file_data);
+}
+#endif
+
 int flb_downstream_setup(struct flb_downstream *stream,
                          int transport, int flags,
                          const char *host,
@@ -254,6 +340,13 @@ int flb_downstream_setup(struct flb_downstream *stream,
 
     snprintf(port_string, sizeof(port_string), "%u", port);
 
+#ifdef FLB_HAVE_UNIX_SOCKET
+    if ((transport == FLB_TRANSPORT_UNIX_STREAM || transport == FLB_TRANSPORT_UNIX_DGRAM) &&
+        remove_stale_unix_socket(host, transport) != 0) {
+        return -2;
+    }
+#endif
+
     if (transport == FLB_TRANSPORT_TCP) {
         stream->server_fd = flb_net_server(port_string, host,
                                            net_setup->backlog,
@@ -284,6 +377,14 @@ int flb_downstream_setup(struct flb_downstream *stream,
 
         return -2;
     }
+
+#ifdef FLB_HAVE_UNIX_SOCKET
+    /* Cache stat data so cleanup can check the socket's identity before unlinking. */
+    if ((transport == FLB_TRANSPORT_UNIX_STREAM || transport == FLB_TRANSPORT_UNIX_DGRAM) &&
+        lstat(host, &stream->unix_socket) != 0) {
+        return -2;
+    }
+#endif
 
     if (config != NULL) {
         /*
@@ -620,6 +721,11 @@ void flb_downstream_destroy(struct flb_downstream *stream)
         }
 
         if (stream->host != NULL) {
+#ifdef FLB_HAVE_UNIX_SOCKET
+            if (S_ISSOCK(stream->unix_socket.st_mode)) {
+                unlink_unix_socket(stream->host, &stream->unix_socket);
+            }
+#endif
             flb_free(stream->host);
         }
 

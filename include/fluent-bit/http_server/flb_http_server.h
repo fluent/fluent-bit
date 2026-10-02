@@ -70,6 +70,8 @@ struct flb_input_instance;
 #define FLB_HTTP_SERVER_INGRESS_QUEUE_BYTE_LIMIT  (256 * 1024 * 1024)
 
 struct flb_http_server_config {
+    char  *unix_path;
+    char  *unix_perm;
     int    http2;
     int    idle_timeout; /* seconds */
     size_t buffer_max_size;
@@ -88,6 +90,8 @@ struct flb_http_server_options {
 
     char                                *address;
     unsigned short int                   port;
+    char                                *unix_path;
+    char                                *unix_perm;
     struct flb_tls                      *tls_provider;
     int                                  networking_flags;
     struct flb_net_setup                *networking_setup;
@@ -125,6 +129,8 @@ struct flb_http_server {
     struct mk_event        listener_event;
     char                  *address;
     unsigned short int     port;
+    char                  *unix_path;
+    char                  *unix_perm;
     struct flb_tls        *tls_provider;
     int                    networking_flags;
     struct flb_net_setup  *networking_setup;

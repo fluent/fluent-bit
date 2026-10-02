@@ -46,57 +46,8 @@ static int setup_users(struct flb_in_fw_config *ctx,
                        struct flb_input_instance *ins);
 
 #ifdef FLB_HAVE_UNIX_SOCKET
-static int remove_existing_socket_file(char *socket_path)
-{
-    struct stat file_data;
-    int         result;
-
-    result = stat(socket_path, &file_data);
-
-    if (result == -1) {
-        if (errno == ENOENT) {
-            return 0;
-        }
-
-        flb_errno();
-
-        return -1;
-    }
-
-    if (S_ISSOCK(file_data.st_mode) == 0) {
-        return -2;
-    }
-
-    result = unlink(socket_path);
-
-    if (result != 0) {
-        return -3;
-    }
-
-    return 0;
-}
-
 static int fw_unix_create(struct flb_in_fw_config *ctx)
 {
-    int ret;
-
-    ret = remove_existing_socket_file(ctx->unix_path);
-
-    if (ret != 0) {
-        if (ret == -2) {
-            flb_plg_error(ctx->ins,
-                          "%s exists and it is not a unix socket. Aborting",
-                          ctx->unix_path);
-        }
-        else {
-            flb_plg_error(ctx->ins,
-                          "could not remove existing unix socket %s. Aborting",
-                          ctx->unix_path);
-        }
-
-        return -1;
-    }
-
     ctx->downstream = flb_downstream_create(FLB_TRANSPORT_UNIX_STREAM,
                                             ctx->ins->flags,
                                             ctx->unix_path,
