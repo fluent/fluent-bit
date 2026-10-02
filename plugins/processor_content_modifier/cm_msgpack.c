@@ -146,6 +146,7 @@ int cm_logs_process_raw(struct flb_processor_instance **instances, size_t instan
         if (required > capacity) {
             resized = flb_realloc(pairs, required * sizeof(msgpack_object_kv));
             if (resized == NULL) {
+                flb_errno();
                 result = FLB_PROCESSOR_FAILURE;
                 goto cleanup;
             }
