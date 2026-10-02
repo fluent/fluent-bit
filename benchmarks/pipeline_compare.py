@@ -39,11 +39,17 @@ def free_port():
         return listener.getsockname()[1]
 
 
+class MetricsNotReady(RuntimeError):
+    pass
+
+
 def get_metrics(port):
     connection = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
     try:
         connection.request("GET", "/api/v1/metrics")
         response = connection.getresponse()
+        if response.status == 404:
+            raise MetricsNotReady("Metrics snapshot is not available yet")
         if response.status != 200:
             raise RuntimeError(f"Metrics HTTP status: {response.status}")
         return json.loads(response.read())
@@ -56,7 +62,11 @@ def wait_for_count(port, expected, process):
     while time.monotonic() < deadline:
         if process.poll() is not None:
             raise RuntimeError("Fluent Bit exited before output completion")
-        metrics = get_metrics(port)
+        try:
+            metrics = get_metrics(port)
+        except MetricsNotReady:
+            time.sleep(0.01)
+            continue
         output = metrics.get("output", {}).get("null.0", {})
         count = output.get("proc_records", 0)
         if count >= expected:
