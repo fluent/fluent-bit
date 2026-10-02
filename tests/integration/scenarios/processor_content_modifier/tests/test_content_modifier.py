@@ -35,7 +35,8 @@ def processor_metrics(text, scope, owner="http.0"):
 
 
 def run_pipeline(tmp_path, processors, expected, *, location="input", storage="memory",
-                 records=None, copies=1, stage_counts=None):
+                 records=None, copies=1, stage_counts=None, input_workers=1,
+                 output_workers=2, input_threaded=False, clients=4, unique_copies=False):
     records = RECORDS if records is None else records
     total_records = len(records) * copies
     stage_counts = ([(len(records), len(records))] * len(processors)
@@ -47,6 +48,8 @@ def run_pipeline(tmp_path, processors, expected, *, location="input", storage="m
     lock = threading.Lock()
 
     class Sink(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
         def do_POST(self):
             records = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             with lock:
@@ -58,18 +61,21 @@ def run_pipeline(tmp_path, processors, expected, *, location="input", storage="m
         def log_message(self, *_args):
             pass
 
-    sink = ThreadingHTTPServer(("127.0.0.1", 0), Sink)
+    class SinkServer(ThreadingHTTPServer):
+        request_queue_size = 128
+
+    sink = SinkServer(("127.0.0.1", 0), Sink)
     thread = threading.Thread(target=sink.serve_forever, daemon=True)
     thread.start()
     input_config = {
         "name": "http", "listen": "127.0.0.1",
         "port": "${FLUENT_BIT_TEST_LISTENER_PORT}", "tag": "test",
-        "storage.type": storage,
+        "storage.type": storage, "workers": input_workers, "threaded": input_threaded,
     }
     outputs = [{
         "name": "http", "match": "*", "host": "127.0.0.1",
         "port": sink.server_port, "uri": f"/{route}", "format": "json",
-        "json_date_key": False, "workers": 2,
+        "json_date_key": False, "workers": output_workers,
     } for route in range(2)]
     if location == "input":
         input_config["processors"] = {"logs": processors}
@@ -88,11 +94,16 @@ def run_pipeline(tmp_path, processors, expected, *, location="input", storage="m
     try:
         service.start()
         def send(index):
+            batch = deepcopy(records)
+            if unique_copies:
+                for record in batch:
+                    record["id"] += index * len(records)
+                    record["request"] = index
             response = requests.post(f"http://127.0.0.1:{service.flb_listener_port}/test.{index}",
-                                     json=records, timeout=30)
+                                     json=batch, timeout=30)
             assert response.status_code == 201, response.text
 
-        with ThreadPoolExecutor(max_workers=min(copies, 4)) as pool:
+        with ThreadPoolExecutor(max_workers=min(copies, clients)) as pool:
             list(pool.map(send, range(copies)))
         service.wait_for_condition(
             lambda: all(len(route_records) >= count
@@ -106,6 +117,8 @@ def run_pipeline(tmp_path, processors, expected, *, location="input", storage="m
                 f"http://127.0.0.1:{service.flb.http_monitoring_port}/api/v2/metrics/prometheus",
                 timeout=10,
             )
+            if response.status_code == 404:
+                return None
             response.raise_for_status()
             values = processor_metrics(response.text, scope)
             for stage, counts in enumerate(stage_counts):
@@ -117,7 +130,7 @@ def run_pipeline(tmp_path, processors, expected, *, location="input", storage="m
         values = service.wait_for_condition(metrics_ready, timeout=30, interval=0.2,
                                              description="per-processor accounting")
         invocations = values[("fluentbit_processor_invocations_total", 0)]
-        if location == "input":
+        if location == "input" and input_workers == 1:
             assert invocations == total_records
         elif copies == 1:
             assert invocations == 1
@@ -141,13 +154,20 @@ def run_pipeline(tmp_path, processors, expected, *, location="input", storage="m
             sink.shutdown()
             sink.server_close()
             thread.join(timeout=5)
-    assert sorted(received[0], key=lambda record: record["id"]) == sorted(
-        expected * copies, key=lambda record: record["id"]
-    )
+    def copied_records(source):
+        result = []
+        for index in range(copies):
+            batch = deepcopy(source)
+            if unique_copies:
+                for record in batch:
+                    record["id"] += index * len(records)
+                    record["request"] = index
+            result.extend(batch)
+        return sorted(result, key=lambda record: record["id"])
+
+    assert sorted(received[0], key=lambda record: record["id"]) == copied_records(expected)
     control = expected if location == "input" else records
-    assert sorted(received[1], key=lambda record: record["id"]) == sorted(
-        control * copies, key=lambda record: record["id"]
-    )
+    assert sorted(received[1], key=lambda record: record["id"]) == copied_records(control)
 
 
 @pytest.mark.parametrize("action", ["insert", "upsert", "delete", "rename"])
@@ -325,3 +345,24 @@ def test_fused_mixed_noop_and_growing_maps(tmp_path, location):
             record["renamed"] = record.pop("target")
     run_pipeline(tmp_path, processors, expected, location=location, storage="filesystem",
                  records=records)
+
+
+@pytest.mark.parametrize("location", ["input", "output"])
+@pytest.mark.parametrize("threaded", [False, True], ids=["engine-input", "threaded-input"])
+@pytest.mark.parametrize("chain", ["fused", "filter-boundary"])
+def test_worker_threads_preserve_independent_batches(tmp_path, location, threaded, chain):
+    records = [dict({"id": index, "target": f"record-{index}"},
+                    **{f"field{field}": "payload" * 16 for field in range(32)})
+               for index in range(128)]
+    processors = [{"name": "content_modifier", "action": "upsert", "key": f"stage{index}",
+                   "value": f"value{index}"} for index in range(6)]
+    expected = deepcopy(records)
+    for record in expected:
+        record.update({f"stage{index}": f"value{index}" for index in range(6)})
+    if chain == "filter-boundary":
+        processors.insert(3, {"name": "modify", "add": "boundary yes"})
+        for record in expected:
+            record["boundary"] = "yes"
+    run_pipeline(tmp_path, processors, expected, location=location, storage="filesystem",
+                 records=records, copies=32, clients=8, unique_copies=True,
+                 input_workers=4, output_workers=4, input_threaded=threaded)
