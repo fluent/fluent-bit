@@ -1357,6 +1357,7 @@ static int run_logs_raw_segment(struct flb_processor *proc,
     if (count > 1) {
         instances = flb_calloc(count, sizeof(struct flb_processor_instance *));
         if (instances == NULL) {
+            flb_errno();
             return FLB_PROCESSOR_RAW_UNSUPPORTED;
         }
     }
