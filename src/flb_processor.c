@@ -1309,11 +1309,117 @@ int flb_processor_is_active(struct flb_processor *proc)
 #include <fluent-bit/flb_pack.h>
 
 /*
- * This function will run all the processor units for the given tag and data, note
- * that depending of the 'type', 'data' can reference a msgpack for logs, a CMetrics
- * context for metrics, a 'CTraces' context for traces or a 'CProfiles' context for
- * profiles.
+ * A native segment shares one representation. Only optimize it when every
+ * unit accepts the same raw callback; otherwise keep the existing CFL chain.
  */
+static int run_logs_raw_segment(struct flb_processor *proc,
+                                struct flb_processor_unit *first,
+                                const void *data, size_t bytes, int records,
+                                const char *tag, size_t tag_len,
+                                void **out_buf, size_t *out_size,
+                                struct mk_list **last)
+{
+    int result;
+    int out_records;
+    int error;
+    size_t count;
+    size_t index;
+    size_t locked;
+    struct mk_list *head;
+    struct flb_processor_unit *unit;
+    struct flb_processor_instance *initial;
+    struct flb_processor_instance *single;
+    struct flb_processor_instance **instances;
+    const char *scope;
+    const char *owner;
+
+    initial = first->ctx;
+    if (first->condition != NULL || !initial->logs_raw_enabled ||
+        initial->p->cb_process_logs_raw == NULL) {
+        return FLB_PROCESSOR_RAW_UNSUPPORTED;
+    }
+    count = 0;
+    for (head = &first->_head; head != &proc->logs; head = head->next) {
+        unit = mk_list_entry(head, struct flb_processor_unit, _head);
+        if (unit->unit_type == FLB_PROCESSOR_UNIT_FILTER) {
+            break;
+        }
+        if (unit->condition != NULL ||
+            !((struct flb_processor_instance *) unit->ctx)->logs_raw_enabled ||
+            ((struct flb_processor_instance *) unit->ctx)->p->cb_process_logs_raw !=
+            initial->p->cb_process_logs_raw) {
+            return FLB_PROCESSOR_RAW_UNSUPPORTED;
+        }
+        count++;
+    }
+    single = initial;
+    instances = &single;
+    if (count > 1) {
+        instances = flb_calloc(count, sizeof(struct flb_processor_instance *));
+        if (instances == NULL) {
+            flb_errno();
+            return FLB_PROCESSOR_RAW_UNSUPPORTED;
+        }
+    }
+    index = 0;
+    locked = 0;
+    result = FLB_PROCESSOR_FAILURE;
+    for (head = &first->_head; index < count; head = head->next) {
+        unit = mk_list_entry(head, struct flb_processor_unit, _head);
+        instances[index] = unit->ctx;
+        if (acquire_lock(&unit->lock, FLB_PROCESSOR_LOCK_RETRY_LIMIT,
+                         FLB_PROCESSOR_LOCK_RETRY_DELAY) != FLB_TRUE) {
+            goto cleanup;
+        }
+        locked++;
+        index++;
+        *last = head;
+    }
+    result = initial->p->cb_process_logs_raw(instances, count, data, bytes,
+                                            out_buf, out_size, tag, tag_len);
+    if (result == FLB_PROCESSOR_RAW_MODIFIED) {
+        /* A fused segment cannot attribute additions/drops to individual units. */
+        if (*out_buf == NULL || *out_buf == data ||
+            flb_mp_count_log_records(*out_buf, *out_size) != records) {
+            if (*out_buf != data) {
+                flb_free(*out_buf);
+            }
+            *out_buf = NULL;
+            *out_size = 0;
+            result = FLB_PROCESSOR_FAILURE;
+        }
+    }
+    else if (*out_buf != NULL || *out_size != 0 ||
+             (result != FLB_PROCESSOR_RAW_NOTOUCH &&
+              result != FLB_PROCESSOR_RAW_UNSUPPORTED)) {
+        if (*out_buf != data) {
+            flb_free(*out_buf);
+        }
+        *out_buf = NULL;
+        *out_size = 0;
+        result = FLB_PROCESSOR_FAILURE;
+    }
+
+cleanup:
+    scope = processor_metrics_scope(proc);
+    owner = processor_metrics_owner(proc);
+    error = (result == FLB_PROCESSOR_FAILURE);
+    out_records = records;
+    for (index = 0; index < locked; index++) {
+        unit = instances[index]->pu;
+        if (result != FLB_PROCESSOR_RAW_UNSUPPORTED) {
+            processor_metrics_update(proc, unit, scope, owner, "logs",
+                                     records, out_records, FLB_TRUE, error);
+        }
+        release_lock(&unit->lock, FLB_PROCESSOR_LOCK_RETRY_LIMIT,
+                     FLB_PROCESSOR_LOCK_RETRY_DELAY);
+    }
+    if (count > 1) {
+        flb_free(instances);
+    }
+    return result;
+}
+
 /*
  * Decoder and encoder owned by one processor run. The decoded chunk lives
  * across several units, so it must not borrow the first unit's decoder: its
@@ -1666,6 +1772,10 @@ int flb_processor_run(struct flb_processor *proc,
                                         data, data_size, out_buf, out_size, -1, NULL);
 }
 
+/*
+ * Run processor units for a tag and signal. Data contains MessagePack logs,
+ * or a CMetrics, CTraces or CProfiles context for the other signal types.
+ */
 static int processor_run(struct flb_processor *proc, struct chunk_codec *codec,
                                  size_t starting_stage,
                                  int type,
@@ -1680,6 +1790,7 @@ static int processor_run(struct flb_processor *proc, struct chunk_codec *codec,
     int unit_out_items;
     int item_metrics_available;
     int finalize;
+    int raw_result;
     int log_buffer_normalized = FLB_FALSE;
     int log_buffer_records = input_records;
     void *cur_buf = NULL;
@@ -1693,6 +1804,7 @@ static int processor_run(struct flb_processor *proc, struct chunk_codec *codec,
     struct flb_filter_instance *f_ins;
     struct flb_processor_instance *p_ins;
     struct flb_mp_chunk_cobj *chunk_cobj = NULL;
+    struct mk_list *raw_last;
     struct mk_list *run_end;
     int run_units;
     int window_records;
@@ -1759,7 +1871,11 @@ static int processor_run(struct flb_processor *proc, struct chunk_codec *codec,
         item_metrics_available = FLB_FALSE;
 
         if (type == FLB_PROCESSOR_LOGS) {
-            if (!chunk_cobj && log_buffer_records >= 0) {
+            if (chunk_cobj != NULL &&
+                chunk_cobj->log_decoder->offset == chunk_cobj->log_decoder->length) {
+                unit_in_items = flb_mp_chunk_cobj_count_log_records(chunk_cobj);
+            }
+            else if (!chunk_cobj && log_buffer_records >= 0) {
                 unit_in_items = log_buffer_records;
             }
             else {
@@ -1767,6 +1883,31 @@ static int processor_run(struct flb_processor *proc, struct chunk_codec *codec,
             }
             unit_out_items = unit_in_items;
             item_metrics_available = FLB_TRUE;
+        }
+
+        if (type == FLB_PROCESSOR_LOGS && chunk_cobj == NULL &&
+            pu->unit_type == FLB_PROCESSOR_UNIT_NATIVE) {
+            raw_last = head;
+            raw_result = run_logs_raw_segment(proc, pu, cur_buf, cur_size, unit_in_items,
+                                              tag, tag_len, &tmp_buf, &tmp_size, &raw_last);
+            if (raw_result == FLB_PROCESSOR_FAILURE) {
+                if (cur_buf != data) {
+                    flb_free(cur_buf);
+                }
+                return -1;
+            }
+            if (raw_result != FLB_PROCESSOR_RAW_UNSUPPORTED) {
+                if (raw_result == FLB_PROCESSOR_RAW_MODIFIED) {
+                    if (cur_buf != data) {
+                        flb_free(cur_buf);
+                    }
+                    cur_buf = tmp_buf;
+                    cur_size = tmp_size;
+                }
+                log_buffer_records = unit_in_items;
+                head = raw_last;
+                continue;
+            }
         }
 
         /* large buffers run record local native units in bounded windows */
