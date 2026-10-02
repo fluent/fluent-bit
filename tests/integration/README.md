@@ -454,6 +454,18 @@ Covers:
 
 - Azure Logs Ingestion delivery with OAuth2
 - token and data-plane request validation
+- uncompressed and HTTP request payload-size histograms
+- opt-in SQLite-only whole-chunk spooling and batching across engine flushes
+- required unlimited engine retry ownership before SQLite admission
+- exact persisted gzip BLOBs, bounded whole-chunk probes, rollover, and timeout flushing
+- byte-identical retry across SIGKILL, durable terminal quarantine, and recovery
+- aggregate quota enforcement, reservation safety, and spool ownership exclusion
+- admission, delivery, quarantine, queue, quota, and uploader lifecycle metrics
+  (counters are process-lifetime; durable-state gauges reconstruct after restart)
+- fail-closed rejection of the incompatible record-range prototype spool schema
+- queued, repeated, suspended-upload, and high-volume hot-reload handoff
+- bounded buffered OAuth and data-plane shutdown during suspended responses
+- 100,000-record high-volume delivery and bounded suspended-upload shutdown
 
 ### `out_kafka`
 
