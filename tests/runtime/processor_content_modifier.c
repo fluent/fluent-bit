@@ -1876,7 +1876,312 @@ static void flb_logs_otel_log_attributes_invalid_otlp_metadata()
     processor_test_destroy(ctx);
 }
 
+/* Compare the optimized path with the existing CFL path on identical batches. */
+static void check_raw_chain_equivalence(const char *action, const char *json,
+                                        int expected_result, size_t modifiers)
+{
+    int ret;
+    int root_type;
+    int raw_result;
+    int expected_ret;
+    char *data;
+    char *saved;
+    char *actual_json;
+    char *expected_json;
+    size_t bytes;
+    size_t actual_size;
+    size_t expected_size;
+    size_t probe_size;
+    size_t index;
+    struct flb_processor_instance *instances[6];
+    void *actual;
+    void *expected;
+    void *probe;
+    flb_ctx_t *flb;
+    struct flb_processor *proc;
+    struct flb_processor_unit *unit;
+    struct flb_processor_instance *ins;
+    struct flb_processor_plugin *original;
+    struct flb_processor_plugin fallback;
+    struct flb_log_event_decoder actual_decoder;
+    struct flb_log_event_decoder expected_decoder;
+    struct flb_log_event actual_event;
+    struct flb_log_event expected_event;
+
+    flb = flb_create();
+    TEST_CHECK(flb != NULL);
+    proc = flb_processor_create(flb->config, "raw_equivalence", NULL, 0);
+    TEST_CHECK(proc != NULL);
+    TEST_CHECK(modifiers > 0 && modifiers <= 6);
+    for (index = 0; index < modifiers; index++) {
+        unit = flb_processor_unit_create(proc, FLB_PROCESSOR_LOGS, "content_modifier");
+        TEST_CHECK(unit != NULL);
+        TEST_CHECK(flb_processor_unit_set_property_str(unit, "action", action) == 0);
+        TEST_CHECK(flb_processor_unit_set_property_str(unit, "context", "body") == 0);
+        TEST_CHECK(flb_processor_unit_set_property_str(unit, "key", "target") == 0);
+        if (strcmp(action, "delete") != 0) {
+            TEST_CHECK(flb_processor_unit_set_property_str(unit, "value", "replacement") == 0);
+        }
+        instances[index] = unit->ctx;
+    }
+    TEST_CHECK(flb_processor_init(proc) == 0);
+    ins = unit->ctx;
+    original = ins->p;
+    fallback = *original;
+    fallback.cb_process_logs_raw = NULL;
+
+    ret = flb_pack_json(json, strlen(json), &data, &bytes, &root_type, NULL);
+    TEST_CHECK(ret == 0);
+    saved = flb_malloc(bytes);
+    TEST_CHECK(saved != NULL);
+    memcpy(saved, data, bytes);
+    probe = NULL;
+    probe_size = 0;
+    raw_result = original->cb_process_logs_raw(instances, modifiers, data, bytes,
+                                               &probe, &probe_size, "test", 4);
+    TEST_CHECK(raw_result == expected_result);
+    TEST_CHECK(memcmp(data, saved, bytes) == 0);
+    flb_free(probe);
+
+    actual = NULL;
+    expected = NULL;
+    TEST_CHECK(flb_processor_run(proc, 0, FLB_PROCESSOR_LOGS, "test", 4,
+                                data, bytes, &actual, &actual_size) == 0);
+    ins->p = &fallback;
+    TEST_CHECK(flb_processor_run(proc, 0, FLB_PROCESSOR_LOGS, "test", 4,
+                                data, bytes, &expected, &expected_size) == 0);
+    ins->p = original;
+    TEST_CHECK(memcmp(data, saved, bytes) == 0);
+
+    TEST_CHECK(flb_log_event_decoder_init(&actual_decoder, actual, actual_size) == 0);
+    TEST_CHECK(flb_log_event_decoder_init(&expected_decoder, expected, expected_size) == 0);
+    flb_log_event_decoder_read_groups(&actual_decoder, FLB_TRUE);
+    flb_log_event_decoder_read_groups(&expected_decoder, FLB_TRUE);
+    while ((ret = flb_log_event_decoder_next(&actual_decoder, &actual_event)) == 0) {
+        expected_ret = flb_log_event_decoder_next(&expected_decoder, &expected_event);
+        TEST_CHECK(expected_ret == 0);
+        if (expected_ret != 0) {
+            break;
+        }
+        TEST_CHECK(actual_event.timestamp.tm.tv_sec == expected_event.timestamp.tm.tv_sec);
+        TEST_CHECK(actual_event.timestamp.tm.tv_nsec == expected_event.timestamp.tm.tv_nsec);
+        actual_json = flb_msgpack_to_json_str(4096, actual_event.body, FLB_TRUE);
+        expected_json = flb_msgpack_to_json_str(4096, expected_event.body, FLB_TRUE);
+        TEST_CHECK(actual_json != NULL && expected_json != NULL);
+        TEST_CHECK(strcmp(actual_json, expected_json) == 0);
+        flb_free(actual_json);
+        flb_free(expected_json);
+        actual_json = flb_msgpack_to_json_str(4096, actual_event.metadata, FLB_TRUE);
+        expected_json = flb_msgpack_to_json_str(4096, expected_event.metadata, FLB_TRUE);
+        TEST_CHECK(actual_json != NULL && expected_json != NULL);
+        TEST_CHECK(strcmp(actual_json, expected_json) == 0);
+        flb_free(actual_json);
+        flb_free(expected_json);
+    }
+    TEST_CHECK(flb_log_event_decoder_get_last_result(&actual_decoder) == 0);
+    TEST_CHECK(flb_log_event_decoder_next(&expected_decoder, &expected_event) != 0);
+    TEST_CHECK(flb_log_event_decoder_get_last_result(&expected_decoder) == 0);
+    flb_log_event_decoder_destroy(&actual_decoder);
+    flb_log_event_decoder_destroy(&expected_decoder);
+    if (actual != data) {
+        flb_free(actual);
+    }
+    if (expected != data) {
+        flb_free(expected);
+    }
+    flb_free(saved);
+    flb_free(data);
+    flb_processor_destroy(proc);
+    flb_destroy(flb);
+}
+
+static void check_raw_equivalence(const char *action, const char *json, int expected_result)
+{
+    check_raw_chain_equivalence(action, json, expected_result, 1);
+}
+
+static void flb_logs_raw_chain_equivalence(void)
+{
+    const char *actions[] = {"insert", "upsert", "delete", "rename"};
+    const char *json =
+        "[[1700000000,{\"origin\":\"test\"}],"
+        "{\"target\":\"first\",\"target\":\"second\",\"replacement\":\"collision\"}]"
+        "[[1700000001,{}],{\"nested\":{\"values\":[true,null,1,1.5]}}]"
+        "[[1700000002,{}],{}]";
+    size_t index;
+    size_t count;
+
+    for (index = 0; index < sizeof(actions) / sizeof(actions[0]); index++) {
+        for (count = 3; count <= 6; count += 3) {
+            check_raw_chain_equivalence(actions[index], json, FLB_PROCESSOR_RAW_MODIFIED, count);
+            check_raw_chain_equivalence(actions[index],
+                                        "[[1700000000,{}],{\"target\":\"plain\"}]"
+                                        "[[-1,{}],{}]"
+                                        "[[1700000001,{}],{\"target\":\"grouped\"}]"
+                                        "[[-2,{}],{}]", FLB_PROCESSOR_RAW_UNSUPPORTED, count);
+        }
+    }
+}
+
+static void flb_logs_raw_equivalence(void)
+{
+    const char *actions[] = {"insert", "upsert", "delete", "rename"};
+    const char *batch =
+        "[[1700000000.125,{\"source\":\"test\"}],"
+        "{\"target\":\"first\",\"target\":\"second\",\"replacement\":\"existing\",\"nested\":{\"x\":[null,true,1,1.5]}}]"
+        "[[1700000001,{}],{\"other\":\"unchanged\"}]"
+        "[[1700000002,{}],{}]";
+    size_t index;
+
+    for (index = 0; index < sizeof(actions) / sizeof(actions[0]); index++) {
+        check_raw_equivalence(actions[index], batch, FLB_PROCESSOR_RAW_MODIFIED);
+        check_raw_equivalence(actions[index], "[1700000000,{\"target\":\"legacy\"}]",
+                              FLB_PROCESSOR_RAW_UNSUPPORTED);
+        check_raw_equivalence(actions[index],
+                              "[[-1,{\"resource\":\"test\"}],{\"scope\":\"group\"}]"
+                              "[[1700000000,{}],{\"target\":\"grouped\"}]"
+                              "[[-2,{}],{}]", FLB_PROCESSOR_RAW_UNSUPPORTED);
+        /* Unsupported records after a modified prefix must discard the private output. */
+        check_raw_equivalence(actions[index],
+                              "[[1700000000,{}],{\"target\":\"plain\"}]"
+                              "[[-1,{}],{}]"
+                              "[[1700000001,{}],{\"target\":\"grouped\"}]"
+                              "[[-2,{}],{}]", FLB_PROCESSOR_RAW_UNSUPPORTED);
+        check_raw_equivalence(actions[index],
+                              "[[1700000000,{}],{\"target\":\"valid\"}]"
+                              "[[-3,{}],{\"target\":\"invalid marker\"}]",
+                              FLB_PROCESSOR_RAW_UNSUPPORTED);
+    }
+    check_raw_equivalence("insert", "[[1700000000,{}],{\"target\":\"keep\"}]",
+                          FLB_PROCESSOR_RAW_NOTOUCH);
+    check_raw_equivalence("delete", "[[1700000000,{}],{\"other\":\"keep\"}]",
+                          FLB_PROCESSOR_RAW_NOTOUCH);
+    check_raw_equivalence("rename", "[[1700000000,{}],{}]", FLB_PROCESSOR_RAW_NOTOUCH);
+}
+
+static void flb_logs_raw_invalid_batch(void)
+{
+    int ret;
+    size_t bytes;
+    size_t out_size;
+    int root_type;
+    char *data;
+    void *out;
+    flb_ctx_t *flb;
+    struct flb_processor *proc;
+    struct flb_processor_unit *unit;
+    struct flb_processor_instance *ins;
+    const char *json = "[[1700000000,{}],{\"target\":\"valid\"}]"
+                       "[[1700000001,{}],{\"target\":\"truncated\"}]";
+
+    flb = flb_create();
+    proc = flb_processor_create(flb->config, "raw_invalid", NULL, 0);
+    unit = flb_processor_unit_create(proc, FLB_PROCESSOR_LOGS, "content_modifier");
+    TEST_CHECK(flb_processor_unit_set_property_str(unit, "action", "upsert") == 0);
+    TEST_CHECK(flb_processor_unit_set_property_str(unit, "key", "target") == 0);
+    TEST_CHECK(flb_processor_unit_set_property_str(unit, "value", "replacement") == 0);
+    TEST_CHECK(flb_processor_init(proc) == 0);
+    ins = unit->ctx;
+    TEST_CHECK(flb_pack_json(json, strlen(json), &data, &bytes, &root_type, NULL) == 0);
+    out = NULL;
+    out_size = 0;
+    ret = ins->p->cb_process_logs_raw(&ins, 1, data, bytes - 1, &out, &out_size, "test", 4);
+    TEST_CHECK(ret == FLB_PROCESSOR_RAW_UNSUPPORTED);
+    TEST_CHECK(out == NULL && out_size == 0);
+    flb_free(data);
+    flb_processor_destroy(proc);
+    flb_destroy(flb);
+}
+
+static int raw_test_result;
+
+static int raw_test_callback(struct flb_processor_instance **instances, size_t count,
+                             const void *data, size_t bytes,
+                             void **out_buf, size_t *out_size,
+                             const char *tag, int tag_len)
+{
+    *out_buf = NULL;
+    *out_size = 0;
+    return raw_test_result;
+}
+
+static void flb_logs_raw_results(void)
+{
+    int ret;
+    int root_type;
+    size_t bytes;
+    size_t out_size;
+    size_t index;
+    char *data;
+    char *json;
+    void *out;
+    flb_ctx_t *flb;
+    struct flb_processor *proc;
+    struct flb_processor_unit *unit;
+    struct flb_processor_instance *ins;
+    struct flb_processor_plugin *original;
+    struct flb_processor_plugin mock;
+    int results[] = {FLB_PROCESSOR_RAW_NOTOUCH, FLB_PROCESSOR_RAW_UNSUPPORTED,
+                     FLB_PROCESSOR_RAW_MODIFIED, FLB_PROCESSOR_FAILURE};
+    const char *input = "[[1700000000,{}],{\"message\":\"test\"}]";
+
+    for (index = 0; index < sizeof(results) / sizeof(results[0]); index++) {
+        flb = flb_create();
+        proc = flb_processor_create(flb->config, "raw_results", NULL, 0);
+        unit = flb_processor_unit_create(proc, FLB_PROCESSOR_LOGS, "modify");
+        TEST_CHECK(flb_processor_unit_set_property_str(unit, "add", "first yes") == 0);
+        unit = flb_processor_unit_create(proc, FLB_PROCESSOR_LOGS, "content_modifier");
+        TEST_CHECK(flb_processor_unit_set_property_str(unit, "action", "insert") == 0);
+        TEST_CHECK(flb_processor_unit_set_property_str(unit, "key", "second") == 0);
+        TEST_CHECK(flb_processor_unit_set_property_str(unit, "value", "yes") == 0);
+        TEST_CHECK(flb_processor_init(proc) == 0);
+        ins = unit->ctx;
+        original = ins->p;
+        mock = *original;
+        mock.cb_process_logs_raw = raw_test_callback;
+        ins->p = &mock;
+        raw_test_result = results[index];
+        TEST_CHECK(flb_pack_json(input, strlen(input), &data, &bytes, &root_type, NULL) == 0);
+        out = NULL;
+        out_size = 0;
+        ret = flb_processor_run(proc, 0, FLB_PROCESSOR_LOGS, "test", 4,
+                               data, bytes, &out, &out_size);
+        if (raw_test_result == FLB_PROCESSOR_FAILURE) {
+            TEST_CHECK(ret == -1);
+            TEST_CHECK(out == NULL);
+        }
+        else if (raw_test_result == FLB_PROCESSOR_RAW_MODIFIED) {
+            TEST_CHECK(ret == -1);
+            TEST_CHECK(out == NULL && out_size == 0);
+        }
+        else {
+            TEST_CHECK(ret == 0);
+            json = flb_msgpack_raw_to_json_sds(out, out_size, FLB_TRUE);
+            TEST_CHECK(json != NULL);
+            TEST_CHECK(strstr(json, "first") != NULL);
+            if (raw_test_result == FLB_PROCESSOR_RAW_UNSUPPORTED) {
+                TEST_CHECK(strstr(json, "second") != NULL);
+            }
+            else {
+                TEST_CHECK(strstr(json, "second") == NULL);
+            }
+            flb_sds_destroy(json);
+        }
+        ins->p = original;
+        if (out != data) {
+            flb_free(out);
+        }
+        flb_free(data);
+        flb_processor_destroy(proc);
+        flb_destroy(flb);
+    }
+}
+
 TEST_LIST = {
+    {"logs.raw.chain_equivalence", flb_logs_raw_chain_equivalence},
+    {"logs.raw.results", flb_logs_raw_results},
+    {"logs.raw.equivalence", flb_logs_raw_equivalence},
+    {"logs.raw.invalid_batch", flb_logs_raw_invalid_batch},
     {"logs.action.insert"           , flb_logs_action_insert },
     {"logs.action.delete"           , flb_logs_action_delete },
     {"logs.action.rename"           , flb_logs_action_rename },
