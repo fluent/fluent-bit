@@ -313,4 +313,5 @@ struct flb_output_plugin out_prometheus_exporter_plugin = {
     .flags       = FLB_OUTPUT_NET | FLB_OUTPUT_HTTP_SERVER,
     .event_type  = FLB_OUTPUT_METRICS,
     .config_map  = config_map,
+    .workers     = 1,
 };
