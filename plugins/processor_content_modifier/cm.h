@@ -107,6 +107,13 @@ struct content_modifier_ctx {
 };
 
 /* Export telemetry functions */
+int cm_logs_raw_supported(struct flb_processor_instance *ins);
+
+int cm_logs_process_raw(struct flb_processor_instance **instances, size_t instance_count,
+                         const void *data, size_t bytes,
+                         void **out_buf, size_t *out_size,
+                         const char *tag, int tag_len);
+
 int cm_logs_process(struct flb_processor_instance *ins,
                     struct content_modifier_ctx *ctx,
                     struct flb_mp_chunk_cobj *chunk_cobj,
