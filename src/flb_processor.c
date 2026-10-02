@@ -824,6 +824,7 @@ static int flb_processor_unit_set_condition(struct flb_processor_unit *pu, struc
     const char *field;
     const char *operator;
     void *value = NULL;
+    double numeric_rule_value;
     int value_count;
     enum record_context_type context;
     int i;
@@ -976,12 +977,14 @@ static int flb_processor_unit_set_condition(struct flb_processor_unit *pu, struc
                         (char *)value);
         }
         else if (rule_val->type == CFL_VARIANT_INT) {
-            value = &rule_val->data.as_int64;
+            numeric_rule_value = (double) rule_val->data.as_int64;
+            value = &numeric_rule_value;
             flb_debug("[processor] condition rule value (int): %lld",
                     rule_val->data.as_int64);
         }
         else if (rule_val->type == CFL_VARIANT_UINT) {
-            value = &rule_val->data.as_uint64;
+            numeric_rule_value = (double) rule_val->data.as_uint64;
+            value = &numeric_rule_value;
             flb_debug("[processor] condition rule value (uint): %lu",
                     (unsigned long)rule_val->data.as_uint64);
         }
