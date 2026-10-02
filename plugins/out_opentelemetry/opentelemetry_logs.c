@@ -558,6 +558,27 @@ static int pack_span_id(struct opentelemetry_context *ctx,
     return 0;
 }
 
+/* Native OTLP metadata stores dropped counts alongside attributes. */
+static uint32_t nested_dropped_attributes_count(msgpack_object *map, const char *container)
+{
+    msgpack_object *object;
+    msgpack_object *count;
+
+    if (map == NULL || map->type != MSGPACK_OBJECT_MAP) {
+        return 0;
+    }
+    object = msgpack_map_get_object(&map->via.map, container);
+    if (object == NULL || object->type != MSGPACK_OBJECT_MAP) {
+        return 0;
+    }
+    count = msgpack_map_get_object(&object->via.map, "dropped_attributes_count");
+    if (count == NULL || count->type != MSGPACK_OBJECT_POSITIVE_INTEGER ||
+        count->via.u64 > UINT32_MAX) {
+        return 0;
+    }
+    return (uint32_t) count->via.u64;
+}
+
 static int append_v1_logs_metadata_and_fields(struct opentelemetry_context *ctx,
                                               struct flb_log_event *event,
                                               Opentelemetry__Proto__Logs__V1__LogRecord  *log_record)
@@ -575,6 +596,9 @@ static int append_v1_logs_metadata_and_fields(struct opentelemetry_context *ctx,
     if (ctx == NULL || event == NULL || log_record == NULL) {
         return -1;
     }
+
+    log_record->dropped_attributes_count =
+        nested_dropped_attributes_count(event->metadata, "otlp");
 
     /* ObservedTimestamp */
     ra_val = flb_ra_get_value_object(ctx->ra_log_meta_otlp_observed_ts, *event->metadata);
@@ -1353,6 +1377,9 @@ start_resource:
                 }
                 opentelemetry__proto__resource__v1__resource__init(resource_log->resource);
 
+                resource_log->resource->dropped_attributes_count =
+                    nested_dropped_attributes_count(event.body, "resource");
+
                 /* group body: $resource['attributes'] */
                 set_resource_attributes(ctx->ra_resource_attr, event.body, resource_log->resource);
 
@@ -1467,6 +1494,9 @@ start_resource:
                 scope_log->log_records = log_records;
                 resource_log->scope_logs[resource_log->n_scope_logs] = scope_log;
                 resource_log->n_scope_logs++;
+
+                scope_log->scope->dropped_attributes_count =
+                    nested_dropped_attributes_count(event.body, "scope");
 
                 /* group body: $scope['name'] */
                 set_scope_name(ctx->ra_scope_name, event.body, scope_log->scope);
