@@ -54,6 +54,7 @@ static int cb_pgsql_init(struct flb_output_instance *ins,
     char *temp = NULL;
     const char *tmp = NULL;
     int ret;
+    int daemon;
 
     /* set default network configuration */
     flb_output_net_default(FLB_PGSQL_HOST, FLB_PGSQL_PORT, ins);
@@ -171,8 +172,20 @@ static int cb_pgsql_init(struct flb_output_instance *ins,
         ctx->cockroachdb = FLB_FALSE;
     }
 
+    /* daemon mode so that fluenbit will not exit if pgsql error */
+    tmp = flb_output_get_property("daemon", ins);
+    if (tmp && flb_utils_bool(tmp)) {
+        daemon = FLB_TRUE;
+    }
+    else {
+        daemon = FLB_FALSE;
+    }
+
     ret = pgsql_start_connections(ctx);
     if (ret) {
+        if (daemon) {
+            return 0;
+        }
         return -1;
     }
 
@@ -187,6 +200,9 @@ static int cb_pgsql_init(struct flb_output_instance *ins,
         flb_plg_error(ctx->ins, "failed to parse table name: %s",
                       PQerrorMessage(ctx->conn_current->conn));
         pgsql_conf_destroy(ctx);
+        if (daemon) {
+            return 0;
+        }
         return -1;
     }
 
@@ -197,6 +213,9 @@ static int cb_pgsql_init(struct flb_output_instance *ins,
     if (!ctx->db_table) {
         flb_errno();
         pgsql_conf_destroy(ctx);
+        if (daemon) {
+            return 0;
+        }
         return -1;
     }
 
@@ -209,6 +228,9 @@ static int cb_pgsql_init(struct flb_output_instance *ins,
     if (query == NULL) {
         flb_errno();
         pgsql_conf_destroy(ctx);
+        if (daemon) {
+            return 0;
+        }
         return -1;
     }
 
@@ -227,6 +249,9 @@ static int cb_pgsql_init(struct flb_output_instance *ins,
         flb_plg_error(ctx->ins, "%s",
                       PQerrorMessage(ctx->conn_current->conn));
         pgsql_conf_destroy(ctx);
+        if (daemon) {
+            return 0;
+        }
         return -1;
     }
 
@@ -250,6 +275,9 @@ static void cb_pgsql_flush(struct flb_event_chunk *event_chunk,
     flb_sds_t tag_escaped = NULL;
     size_t str_len;
 
+    if (ctx == NULL) {
+        FLB_OUTPUT_RETURN(FLB_ERROR);
+    }
 
     if (pgsql_next_connection(ctx) == 1) {
         FLB_OUTPUT_RETURN(FLB_RETRY);
