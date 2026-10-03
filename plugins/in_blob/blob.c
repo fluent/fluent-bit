@@ -43,7 +43,9 @@
 #include "blob_db.h"
 #include "blob_file.h"
 
-#include "win32_glob.c"
+#ifdef FLB_SYSTEM_WINDOWS
+#include <fluent-bit/flb_glob_win32.h>
+#endif
 
 /* Define missing GLOB_TILDE if not exists */
 #ifndef GLOB_TILDE
