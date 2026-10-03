@@ -8,6 +8,7 @@ set(src
   flb_api.c
   flb_csv.c
   flb_lib.c
+  flb_event_loop.c
   flb_log.c
   flb_env.c
   flb_file.c
