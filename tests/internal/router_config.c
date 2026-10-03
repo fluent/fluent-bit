@@ -1300,6 +1300,105 @@ void test_router_apply_config_success()
     flb_sds_destroy(route_output.name);
 }
 
+/* Two distinct routes that merge into the same output instance must each be
+ * wired as an independent direct path. Deduplicating on the output instance
+ * alone would keep only the first route and silently drop the rest, which
+ * breaks per-route conditions targeting a shared output. A single route that
+ * lists the same output twice must still collapse to one path, exercising the
+ * identical (route, output) dedup branch. */
+void test_router_apply_config_merged_output_keeps_all_routes()
+{
+    struct flb_config config;
+    struct flb_input_instance input;
+    struct flb_output_instance output;
+    struct flb_input_routes input_routes;
+    struct flb_route route_one;
+    struct flb_route route_two;
+    struct flb_route_output route_output_one;
+    struct flb_route_output route_output_one_dup;
+    struct flb_route_output route_output_two;
+    struct flb_input_plugin input_plugin;
+    struct flb_output_plugin output_plugin;
+    struct cfl_list *head;
+    struct flb_router_path *path;
+    int seen_one = FLB_FALSE;
+    int seen_two = FLB_FALSE;
+
+    setup_test_instances(&config, &input, &input_plugin, "dummy", "dummy",
+                         &output, &output_plugin, "printme", "stdout");
+
+    memset(&input_routes, 0, sizeof(input_routes));
+    cfl_list_init(&input_routes._head);
+    cfl_list_init(&input_routes.routes);
+    input_routes.input_name = flb_sds_create("dummy");
+    input_routes.plugin_name = flb_sds_create("dummy");
+    input_routes.has_alias = FLB_FALSE;
+    cfl_list_add(&input_routes._head, &config.input_routes);
+
+    memset(&route_one, 0, sizeof(route_one));
+    cfl_list_init(&route_one._head);
+    cfl_list_init(&route_one.outputs);
+    route_one.name = flb_sds_create("error_logs");
+    route_one.signals = FLB_ROUTER_SIGNAL_LOGS;
+    cfl_list_add(&route_one._head, &input_routes.routes);
+
+    memset(&route_output_one, 0, sizeof(route_output_one));
+    cfl_list_init(&route_output_one._head);
+    route_output_one.name = flb_sds_create("printme");
+    cfl_list_add(&route_output_one._head, &route_one.outputs);
+
+    /* Same route, same output listed twice: must collapse to one path */
+    memset(&route_output_one_dup, 0, sizeof(route_output_one_dup));
+    cfl_list_init(&route_output_one_dup._head);
+    route_output_one_dup.name = flb_sds_create("printme");
+    cfl_list_add(&route_output_one_dup._head, &route_one.outputs);
+
+    memset(&route_two, 0, sizeof(route_two));
+    cfl_list_init(&route_two._head);
+    cfl_list_init(&route_two.outputs);
+    route_two.name = flb_sds_create("checkout_logs");
+    route_two.signals = FLB_ROUTER_SIGNAL_LOGS;
+    cfl_list_add(&route_two._head, &input_routes.routes);
+
+    memset(&route_output_two, 0, sizeof(route_output_two));
+    cfl_list_init(&route_output_two._head);
+    route_output_two.name = flb_sds_create("printme");
+    cfl_list_add(&route_output_two._head, &route_two.outputs);
+
+    TEST_CHECK(flb_router_apply_config(&config) == 0);
+
+    /*
+     * route_one lists printme twice (collapses to one path) and route_two adds
+     * a second distinct path to the same output: two paths total.
+     */
+    TEST_CHECK(cfl_list_size(&input.routes_direct) == 2);
+
+    cfl_list_foreach(head, &input.routes_direct) {
+        path = cfl_list_entry(head, struct flb_router_path, _head);
+        TEST_CHECK(path->ins == &output);
+        if (path->route == &route_one) {
+            seen_one = FLB_TRUE;
+        }
+        else if (path->route == &route_two) {
+            seen_two = FLB_TRUE;
+        }
+    }
+    TEST_CHECK(seen_one == FLB_TRUE);
+    TEST_CHECK(seen_two == FLB_TRUE);
+
+    flb_router_exit(&config);
+
+    flb_sds_destroy(input.alias);
+    flb_sds_destroy(output.alias);
+    flb_sds_destroy(input_routes.input_name);
+    flb_sds_destroy(input_routes.plugin_name);
+    flb_sds_destroy(route_one.name);
+    flb_sds_destroy(route_two.name);
+    flb_sds_destroy(route_output_one.name);
+    flb_sds_destroy(route_output_one_dup.name);
+    flb_sds_destroy(route_output_two.name);
+}
+
 void test_router_apply_config_missing_output()
 {
     struct flb_config config;
@@ -2637,6 +2736,7 @@ TEST_LIST = {
     { "parse_metrics_file", test_router_config_parse_file_metrics },
     { "parse_contexts_file", test_router_config_parse_file_contexts },
     { "apply_config_success", test_router_apply_config_success },
+    { "apply_config_merged_output_keeps_all_routes", test_router_apply_config_merged_output_keeps_all_routes },
     { "apply_config_missing_output", test_router_apply_config_missing_output },
     { "apply_config_rejects_incompatible_output_signal", test_router_apply_config_rejects_incompatible_output_signal },
     { "apply_config_uses_input_alias", test_router_apply_config_uses_input_alias },
