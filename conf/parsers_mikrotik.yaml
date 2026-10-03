@@ -1,0 +1,254 @@
+# parsing rules for Mikrotik firewalls
+# https://forum.mikrotik.com/
+
+parsers:
+
+  - name: mikrotik-firewall
+    # Firewall logs from Mikrotiks
+    # https://regex101.com/r/k32H3p/1
+    format: regex
+    regex: |
+      (?x)
+
+       (?<ident>firewall) ,info \s
+
+       # labels are optional, and user-defined
+       (?: catchall \s )?
+       (?:
+        (?<fw_action>
+         (?:
+           accept (?:keepalive) ?
+         | allow (?: \s [-A-Za-z]+ )?
+         | (?: [-A-Za-z]+ \s ) ? drop (?: \s invalid ) ?
+         | [a-z0-9]+_scanhost
+         | masq
+         )
+        )
+        \s
+       )?
+
+       (?<fw_direction> (?: forward | input | output | srcnat ) ) :\s
+       (?: in: (?: \(unknown\s [0-9]\) | (?<in_interface>[^ ]+) ) ) \s
+       (?: out: (?: \(unknown\s [0-9]\) | (?<out_interface>[^ ,]+) ) ) ,\s
+
+       (?: connection-state: (?<conn_state>[^\s]+) \s )?
+
+       (?: src-mac\s (?<macsrc>[A-Fa-f0-9]{2} (?: :[A-Fa-f0-9]{2}){5} ) ,\s )?
+
+       proto\s
+
+       (?:
+        (?<proto>TCP)
+        \s\(
+        (?: (?<tcp_syn>SYN) ,? )?
+        (?: (?<tcp_ack>ACK) ,? )?
+        (?: (?<tcp_rst>RST) ,? )?
+        (?: (?<tcp_fin>FIN) ,? )?
+        (?: (?<tcp_psh>PSH) ,? )?
+        (?: (?<tcp_urg>URG) ,? )?
+        \)
+       |
+        (?<proto>UDP)
+       |
+        (?<proto>ICMP)
+        \s \(
+        type\s (?<icmp_type>\d+),\s
+        code\s (?<icmp_code>\d+) \)
+       |
+        (?<proto>[^\s,]+)
+       )
+       ,\s
+       (?<source>(?:[0-9]{1,3}\.){3}[0-9]{1,3})
+       (?: : (?<src_port>\d+) )?
+       ->
+       (?<dest>(?:[0-9]{1,3}\.){3}[0-9]{1,3})
+       (?: : (?<dst_port>\d+) )?
+       ,\s
+
+       # NAT logs:
+       # - parens-tuple for source or dest
+       # - apparently *both* could be rewritten
+       # - NAT IPs are not necessarily 1:1
+       (?:
+        NAT\s
+        (?:
+         \(
+         (?<nat_source_orig>(?:[0-9]{1,3}\.){3}[0-9]{1,3})
+         (?: : \k<src_port> )?
+         ->
+         (?<nat_source>(?:[0-9]{1,3}\.){3}[0-9]{1,3})
+         (?: : (?<nat_src_port>\d+) )?
+         \)
+         ->
+         \k<dest>
+         (?: : \k<dst_port> )?
+        |
+         (?: \k<source> | (?<nat_source_orig>(?:[0-9]{1,3}\.){3}[0-9]{1,3}) )
+         (?: : \k<src_port> )?
+         ->
+         \(
+          (?<nat_dest_orig>(?:[0-9]{1,3}\.){3}[0-9]{1,3})
+          (?: : (?<nat_dst_port>\d+) )?
+          ->
+          (?<nat_dest>(?:[0-9]{1,3}\.){3}[0-9]{1,3})
+          (?: : \k<dst_port> )?
+         \)
+        )
+        , \s
+       )?
+
+       len\s (?<pkt_len>\d+)
+    types: 'src_port:integer,dst_port:integer,pkt_len:integer'
+
+  - name: mikrotik-proxy
+    # Proxy logs from Mikrotiks
+    # https://regex101.com/r/C3Odc7/1
+    format: regex
+    regex: |
+      (?x)
+
+       (?<ident>web-proxy) ,account \s
+
+       (?<host>[^\s]+) \s
+       (?<method>[^\s]+) \s
+       (?<url>\S+) \s+
+
+       action=(?<proxy_action>\S+)
+
+       # Only permitted requests will show a cache status
+       (?:
+        \s cache=(?<cache_status>\S+)
+        (?: \s \([^)]*\) )?
+       )?
+      $
+
+  - name: mikrotik-dhcp
+    # DHCP logs from Mikrotiks
+    # https://regex101.com/r/jBqBIg/1
+    format: regex
+    regex: |
+      (?x)
+
+       (?<ident>dhcp) ,info \s
+
+       (?:
+        dhcp-client\s on\s
+        (?<fw_netname>[-_.A-Za-z0-9]+) \s
+        (?<dhcp_action>(?: got | lost ) )\s
+        IP\s address\s
+        (?<src_ip>(?:[0-9]{1,3}\.){3}[0-9]{1,3})
+        (?: \s - \s .*) ?
+       |
+        (?<fw_netname>[-_.A-Za-z0-9]+) \s
+        (?<dhcp_action> (?: de )? assigned ) \s
+        (?<src_ip>(?:[0-9]{1,3}\.){3}[0-9]{1,3}) \s
+        (?: for | from | to ) \s
+        (?<macsrc>[A-Fa-f0-9]{2} (?: :[A-Fa-f0-9]{2}){5} )
+        (?: \s (?<hostname>\S+) )?
+       )
+       \s?
+       $
+
+  - name: mikrotik-ovpn
+    # OpenVPN logs from Mikrotiks
+    # https://regex101.com/r/hoEBSE/1
+    format: regex
+    regex: |
+      (?x)
+
+       ovpn,info\s
+
+       (?:
+        connection\s established\s from\s
+        (?<src_ip>(?:[0-9]{1,3}\.){3}[0-9]{1,3})
+        ,\s port: \s
+        (?<src_port>\d+)
+        \s to \s
+        (?<dst_ip>(?:[0-9]{1,3}\.){3}[0-9]{1,3})
+       |
+        < (?<src_ip>(?:[0-9]{1,3}\.){3}[0-9]{1,3}) >:\s
+        disconnected
+        (?: \s <[^>]+>)?
+       |
+        (?<vpn_name>[^ :]+) :\s
+        (?:
+         initializing\.\.\.
+        |
+         connect (?: ed | ing\.\.\. )
+        |
+         disconnected
+         (?: \s <[^>]+>)?
+        |
+         terminating\.\.\. .*
+        |
+         using\s encoding\s -\s
+         (?<cipher>[-_/A-Z0-9]+)
+        )
+       )
+
+  - name: mikrotik-logins
+    # Login/logout events from Mikrotiks
+    # https://regex101.com/r/LpmF15/1
+    format: regex
+    regex: |
+      (?x)
+
+       system,info,account\s
+
+       user\s 
+       (?<user>[^\s]+)
+       \s logged\s (?: in | out ) \s
+
+       (?:
+        from \s
+        (?:
+         (?<source>(?:[0-9]{1,3}\.){3}[0-9]{1,3})
+        |
+         (?<srcmac>[A-Fa-f0-9]{2} (?: :[A-Fa-f0-9]{2}){5} )
+        )
+        \s
+       )?
+
+       # remote protocol or local
+       via \s
+       (?<access_method>.*)
+
+  - name: mikrotik-other
+    # Other logs from Mikrotiks
+    # https://regex101.com/r/kaPYeX/1
+    format: regex
+    regex: |
+      (?x)
+
+       # list of topics obtained from CLI: /system/logging/add topics=<tab>
+       # include the whole list; as long as this is the last Mikrotik parser,
+       # more specific ones that matched will have already consumed the message.
+       (?<ident>
+        (?:
+         account        |dot1x         |l2tp          |pptp         |store
+        |acme-client    |dude          |ldp           |ptp          |stp
+        |amt            |e-mail        |lora          |queue        |system
+        |async          |error         |lte           |radius       |telephony
+        |backup         |event         |manager       |radvd        |tftp
+        |bfd            |evpn          |mme           |raw          |timer
+        |bgp            |fetch         |mpls          |read         |tr069
+        |bridge         |firewall      |mqtt          |rip          |update
+        |calc           |gps           |mvrp          |route        |upnp
+        |caps           |gsm           |natpmp        |rpki         |ups
+        |certificate    |health        |netinstall    |rsvp         |vpls
+        |clock          |hotspot       |netwatch      |script       |vrrp
+        |cmr            |igmp-proxy    |ntp           |sertcp       |warning
+        |container      |info          |ospf          |simulator    |watchdog
+        |critical       |interface     |ovpn          |smb          |web-proxy
+        |ddns           |ipsec         |packet        |snmp         |wireguard
+        |debug          |iscsi         |pim           |socksify     |wireless
+        |dhcp           |isdn          |poe-out       |ssh          |write
+        |disk           |isis          |ppp           |sstp         |zerotier
+        |dns            |kvm           |pppoe         |state
+        )
+       )
+       , [^\s]+
+       \s
+
+       # remaining message contents
+       (?<mikrotik_remainder>.*)
