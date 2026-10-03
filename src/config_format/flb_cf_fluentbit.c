@@ -742,7 +742,6 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
         flb_sds_destroy(indent);
         indent = NULL;
     }
-    flb_free(buf);
 
     /* Append this file to the list */
     file = flb_malloc(sizeof(struct local_file));
@@ -751,6 +750,8 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
         ctx->level--;
         goto error;
     }
+
+    flb_free(buf);
     file->path = flb_sds_create(cfg_file);
     mk_list_add(&file->_head, &ctx->includes);
     ctx->level--;
