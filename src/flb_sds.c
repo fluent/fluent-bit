@@ -404,12 +404,12 @@ int flb_sds_snprintf(flb_sds_t *str, size_t size, const char *fmt, ...)
     va_start(va, fmt);
     ret = vsnprintf(*str, size, fmt, va);
     if (ret > size) {
-        tmp = flb_sds_increase(*str, ret-size);
+        tmp = flb_sds_increase(*str, ret-size + 1);
         if (tmp == NULL) {
             return -1;
         }
         *str = tmp;
-        size = ret;
+        size = ret + 1;
         va_end(va);
         goto retry_snprintf;
     }
