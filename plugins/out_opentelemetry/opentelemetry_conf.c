@@ -414,6 +414,11 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
     }
 
     if (ctx->oauth2_config.enabled == FLB_TRUE) {
+        if (flb_oauth2_config_resolve_token_source(&ctx->oauth2_config) != 0) {
+            flb_opentelemetry_context_destroy(ctx);
+            return NULL;
+        }
+
         tmp = ctx->oauth2_auth_method ? ctx->oauth2_auth_method :
               flb_output_get_property("oauth2.auth_method", ins);
 
@@ -435,24 +440,26 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
             }
         }
 
-        if (!ctx->oauth2_config.token_url || !ctx->oauth2_config.client_id) {
-            flb_plg_error(ctx->ins, "oauth2 requires token_url and client_id");
-            flb_opentelemetry_context_destroy(ctx);
-            return NULL;
-        }
-
-        if (ctx->oauth2_config.auth_method == FLB_OAUTH2_AUTH_METHOD_PRIVATE_KEY_JWT) {
-            if (!ctx->oauth2_config.jwt_key_file ||
-                !ctx->oauth2_config.jwt_cert_file) {
-                flb_plg_error(ctx->ins, "oauth2 private_key_jwt requires jwt_key_file and jwt_cert_file");
+        if (ctx->oauth2_config.token_source == FLB_OAUTH2_TOKEN_SOURCE_CLIENT_CREDENTIALS) {
+            if (!ctx->oauth2_config.token_url || !ctx->oauth2_config.client_id) {
+                flb_plg_error(ctx->ins, "oauth2 requires token_url and client_id");
                 flb_opentelemetry_context_destroy(ctx);
                 return NULL;
             }
-        }
-        else if (!ctx->oauth2_config.client_secret) {
-            flb_plg_error(ctx->ins, "oauth2 basic/post require client_secret");
-            flb_opentelemetry_context_destroy(ctx);
-            return NULL;
+
+            if (ctx->oauth2_config.auth_method == FLB_OAUTH2_AUTH_METHOD_PRIVATE_KEY_JWT) {
+                if (!ctx->oauth2_config.jwt_key_file ||
+                    !ctx->oauth2_config.jwt_cert_file) {
+                    flb_plg_error(ctx->ins, "oauth2 private_key_jwt requires jwt_key_file and jwt_cert_file");
+                    flb_opentelemetry_context_destroy(ctx);
+                    return NULL;
+                }
+            }
+            else if (!ctx->oauth2_config.client_secret) {
+                flb_plg_error(ctx->ins, "oauth2 basic/post require client_secret");
+                flb_opentelemetry_context_destroy(ctx);
+                return NULL;
+            }
         }
 
         ctx->oauth2_ctx = flb_oauth2_create_from_config(config, &ctx->oauth2_config);
@@ -758,6 +765,9 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
 
         ctx = NULL;
     }
+    else {
+        ctx->http_client_initialized = FLB_TRUE;
+    }
 
     return ctx;
 }
@@ -768,7 +778,9 @@ void flb_opentelemetry_context_destroy(struct opentelemetry_context *ctx)
         return;
     }
 
-    flb_http_client_ng_destroy(&ctx->http_client);
+    if (ctx->http_client_initialized) {
+        flb_http_client_ng_destroy(&ctx->http_client);
+    }
 
     flb_kv_release(&ctx->kv_labels);
 
