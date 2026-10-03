@@ -211,6 +211,7 @@ Various workflows are run for PRs automatically:
 * [Compile checks on CentOS 7 compilers](./pr-compile-check.yaml)
 * [Linting](./pr-lint.yaml)
 * [Windows builds](./pr-windows-build.yaml)
+* [MacOS builds](./pr-macos-build.yaml)
 * [Fuzzing](./pr-fuzz.yaml)
 * [Container image builds](./pr-image-tests.yaml)
 * [Install script checks](./pr-install-script.yaml)
