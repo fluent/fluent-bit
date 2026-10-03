@@ -46,6 +46,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
+#include <time.h>
 
 #ifdef FLB_SYSTEM_WINDOWS
 struct windows_time_zone {
@@ -1813,11 +1814,22 @@ int flb_parser_tzone_offset(const char *str, int len, int *tmdiff)
     long min;
     const char *end;
     const char *p = str;
+    time_t t = time(NULL);
+    struct tm lt = {0};
 
     /* Check timezones */
     if (*p == 'Z') {
         /* This is UTC, no changes required */
         *tmdiff = 0;
+        return 0;
+    }
+
+    /* Check timezones */
+    if (*p == 'S') {
+        /* This is Timezone of the System */
+
+        localtime_r(&t, &lt);
+        *tmdiff = lt.tm_gmtoff;
         return 0;
     }
 
