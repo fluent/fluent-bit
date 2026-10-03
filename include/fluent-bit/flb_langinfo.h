@@ -26,9 +26,12 @@
 #ifndef FLB_LANGINFO_H
 #define FLB_LANGINFO_H
 
-#ifndef _MSC_VER
-#include <langinfo.h>
-#else
+/*
+ * ucrt on Windows does not have nl_langinfo at all.
+ * bionic libc on Android does not provide this methoid prior to Android O / API Level 26 according to
+ * https://android.googlesource.com/platform/bionic/+/master/docs/status.md
+ */
+#if defined(_MSC_VER) || (defined(__ANDROID__) && __ANDROID_API < 26)
 
 typedef int nl_item;
 
@@ -140,5 +143,7 @@ static inline const char *nl_langinfo(nl_item item)
         return "";
     return lc_time_c[item];
 }
+#else
+#include <langinfo.h>
 #endif
 #endif
