@@ -110,6 +110,7 @@ struct flb_bigquery {
 
     int skip_invalid_rows;
     int ignore_unknown_values;
+    int buffer_size;
 
     flb_sds_t uri;
 
