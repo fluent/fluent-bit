@@ -74,7 +74,7 @@ static int tail_fs_event(struct flb_input_instance *ins,
         fst = file->fs_backend;
 
         /* Check current status of the file */
-        ret = fstat(file->fd, &st);
+        ret = flb_tail_file_stat(file, &st);
         if (ret == -1) {
             flb_errno();
             continue;
@@ -97,7 +97,6 @@ static int tail_fs_check(struct flb_input_instance *ins,
                          struct flb_config *config, void *in_context)
 {
     int ret;
-    int64_t offset;
     char *name;
     struct mk_list *tmp;
     struct mk_list *head;
@@ -111,9 +110,9 @@ static int tail_fs_check(struct flb_input_instance *ins,
         file = mk_list_entry(head, struct flb_tail_file, _head);
         fst = file->fs_backend;
 
-        ret = fstat(file->fd, &st);
+        ret = flb_tail_file_stat(file, &st);
         if (ret == -1) {
-            flb_plg_debug(ctx->ins, "error stat(2) %s, removing", file->name);
+            flb_plg_debug(ctx->ins, "check: error stat(2) %s, removing", file->name);
             flb_tail_file_remove(file);
             continue;
         }
@@ -138,24 +137,11 @@ static int tail_fs_check(struct flb_input_instance *ins,
 
         /* Check if the file was truncated */
         if (size_delta < 0) {
-            offset = lseek(file->fd, 0, SEEK_SET);
-            if (offset == -1) {
-                flb_errno();
+            if (flb_tail_file_reset_on_truncate(file, size_delta,
+                                                "tail_fs_check") == -1) {
                 return -1;
             }
-
-            flb_plg_debug(ctx->ins, "tail_fs_check: file truncated %s (diff: %"PRId64" bytes)", 
-                         file->name, size_delta);
-            file->offset = offset;
-            file->buf_len = 0;
             memcpy(&fst->st, &st, sizeof(struct stat));
-
-#ifdef FLB_HAVE_SQLDB
-            /* Update offset in database file */
-            if (ctx->db) {
-                flb_tail_db_file_offset(file, ctx);
-            }
-#endif
         }
 
         if (file->offset < st.st_size) {
@@ -166,6 +152,17 @@ static int tail_fs_check(struct flb_input_instance *ins,
             file->pending_bytes = 0;
         }
 
+        /*
+         * Skip rotation detection when keep_file_handle is false.
+         * Rotation detection requires persistent open handles to work reliably.
+         * Without keeping handles open, calling flb_tail_file_name() would
+         * unnecessarily open and close handles multiple times per check cycle.
+         * Because we are not keeping a handle, a rotation would be interpreted
+         * as a truncation and handled by the truncation management logic.
+         */
+        if (ctx->keep_file_handle == FLB_FALSE) {
+            continue;
+        }
 
         /* Discover the current file name for the open file descriptor */
         name = flb_tail_file_name(file);
@@ -188,7 +185,6 @@ static int tail_fs_check(struct flb_input_instance *ins,
             flb_tail_file_rotated(file);
         }
         flb_free(name);
-
     }
 
     return 0;
@@ -202,9 +198,12 @@ int flb_tail_fs_stat_init(struct flb_input_instance *in,
 
     flb_plg_debug(ctx->ins, "flb_tail_fs_stat_init() initializing stat tail input");
 
-    /* Set a manual timer to collect events every 0.250 seconds */
+    /* Set a manual timer to collect events using configured interval */
+    /* Convert nanoseconds to seconds and nanoseconds for the API */
     ret = flb_input_set_collector_time(in, tail_fs_event,
-                                       0, 250000000, config);
+                                       (int)(ctx->fstat_interval_nsec / 1000000000L),
+                                       (long)(ctx->fstat_interval_nsec % 1000000000L),
+                                       config);
     if (ret < 0) {
         return -1;
     }
