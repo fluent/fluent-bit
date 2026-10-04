@@ -272,33 +272,121 @@ int flb_tail_file_reset_on_truncate(struct flb_tail_file *file,
     return 0;
 }
 
+static int stat_to_hash_bits(struct flb_tail_config *ctx, struct stat *st,
+                             uint64_t *out_hash);
+static int stat_to_hash_key(struct flb_tail_config *ctx, struct stat *st,
+                            flb_sds_t *key);
+
 /* Ensure file handle is open (opens if closed). Returns 0 on success, FLB_TAIL_ERROR on failure. */
 int flb_tail_file_ensure_open_handle(struct flb_tail_file *file)
 {
     int fd;
-    int64_t ret;
+    int ret;
+    int64_t off;
+    uint64_t hash_bits;
+    uint64_t opened_ino;
+    flb_sds_t hash_key;
+    struct stat st;
+    struct flb_hash_table *ht;
+    struct flb_tail_config *ctx;
 
     /* If already open, nothing to do */
     if (file->fd != -1) {
         return 0;
     }
 
-    fd = tail_file_open(file->config, file->name, O_RDONLY);
+    ctx = file->config;
+    fd = tail_file_open(ctx, file->name, O_RDONLY);
     if (fd == -1) {
         flb_errno();
-        flb_plg_error(file->config->ins, "cannot open %s", file->name);
+        flb_plg_error(ctx->ins, "cannot open %s", file->name);
         return FLB_TAIL_ERROR;
     }
 
-    /* Seek to the current offset */
-    if (file->offset > 0) {
-        ret = lseek(fd, file->offset, SEEK_SET);
-        if (ret == -1) {
-            flb_errno();
+    if (fstat(fd, &st) == -1) {
+        flb_errno();
+        close(fd);
+        return FLB_TAIL_ERROR;
+    }
+
+    ret = stat_to_hash_bits(ctx, &st, &hash_bits);
+    if (ret != 0) {
+        close(fd);
+        return FLB_TAIL_ERROR;
+    }
+
+    opened_ino = (uint64_t) st.st_ino;
+    if (opened_ino == file->inode && hash_bits == file->hash_bits) {
+        /* Same file: resume at the saved offset. */
+        if (file->offset > 0) {
+            off = lseek(fd, file->offset, SEEK_SET);
+            if (off == -1) {
+                flb_errno();
+                close(fd);
+                return FLB_TAIL_ERROR;
+            }
+        }
+
+        file->fd = fd;
+        return 0;
+    }
+
+    /*
+     * The path now names a different file. Follow that inode and read it
+     * from the start instead of seeking into the replacement content.
+     */
+    ret = stat_to_hash_key(ctx, &st, &hash_key);
+    if (ret != 0) {
+        close(fd);
+        return FLB_TAIL_ERROR;
+    }
+
+    ht = NULL;
+    if (file->tail_mode == FLB_TAIL_STATIC) {
+        ht = ctx->static_hash;
+    }
+    else if (file->tail_mode == FLB_TAIL_EVENT) {
+        ht = ctx->event_hash;
+    }
+
+    if (ht != NULL && file->hash_key != NULL) {
+        if (flb_hash_table_del(ht, file->hash_key) != 0) {
+            flb_sds_destroy(hash_key);
+            close(fd);
+            return FLB_TAIL_ERROR;
+        }
+
+        ret = flb_hash_table_add(ht, hash_key, flb_sds_len(hash_key),
+                                 file, sizeof(file));
+        if (ret < 0) {
+            flb_hash_table_add(ht, file->hash_key,
+                               flb_sds_len(file->hash_key),
+                               file, sizeof(file));
+            flb_sds_destroy(hash_key);
             close(fd);
             return FLB_TAIL_ERROR;
         }
     }
+
+    flb_plg_debug(ctx->ins,
+                  "inode=%" PRIu64 " path now refers to inode=%" PRIu64
+                  ", read %s from the beginning",
+                  file->inode, opened_ino, file->name);
+
+    if (file->hash_key != NULL) {
+        flb_sds_destroy(file->hash_key);
+    }
+    file->hash_key = hash_key;
+    file->hash_bits = hash_bits;
+    file->inode = opened_ino;
+    file->size = st.st_size;
+    file->offset = 0;
+    file->stream_offset = 0;
+    file->buf_len = 0;
+    file->pending_bytes = st.st_size;
+    file->last_processed_bytes = 0;
+    file->db_offset_marker = 0;
+    file->db_offset_marker_size = 0;
 
     file->fd = fd;
     return 0;
