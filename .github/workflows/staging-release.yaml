@@ -38,6 +38,16 @@ jobs:
     permissions:
       contents: read
     steps:
+    - name: Validate release version
+      run: |
+        if [[ ! "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]]; then
+          echo "::error::Release version must be numeric without the v prefix: $RELEASE_VERSION"
+          exit 1
+        fi
+      env:
+        RELEASE_VERSION: ${{ inputs.version }}
+      shell: bash
+
     - name: Get the version on staging
       run: |
         curl --fail -LO "$AWS_URL/latest-version.txt"
@@ -66,6 +76,104 @@ jobs:
 
     - name: Checkout repository
       uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+  staging-release-validate-schema:
+    name: Validate staged metadata against the release image
+    needs: staging-release-version-check
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      digest: ${{ steps.image.outputs.digest }}
+      debug-digest: ${{ steps.image.outputs.debug-digest }}
+    steps:
+      - name: Checkout release tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003 # v4.4.0
+
+      - name: Resolve immutable release images
+        id: image
+        run: |
+          DIGEST=$(docker buildx imagetools inspect "$STAGING_IMAGE_NAME:$VERSION" --format '{{.Manifest.Digest}}')
+          DEBUG_DIGEST=$(docker buildx imagetools inspect "$STAGING_IMAGE_NAME:$VERSION-debug" --format '{{.Manifest.Digest}}')
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "debug-digest=$DEBUG_DIGEST" >> "$GITHUB_OUTPUT"
+          python3 .github/scripts/release_metadata.py generate \
+            --version "$VERSION" --image "$STAGING_IMAGE_NAME@$DIGEST" --directory generated
+        env:
+          VERSION: ${{ inputs.version }}
+        shell: bash
+
+      - name: Download and validate both staged metadata files
+        run: |
+          mkdir -p staged
+          for FILE in "fluent-bit-schema-$VERSION.json" "fluent-bit-schema-pretty-$VERSION.json"; do
+            aws s3 cp "s3://$AWS_S3_BUCKET_STAGING/$VERSION/$FILE" "staged/$FILE" --no-progress
+          done
+          python3 .github/scripts/release_metadata.py compare --version "$VERSION" \
+            --directory staged --reference-directory generated
+        env:
+          VERSION: ${{ inputs.version }}
+          AWS_S3_BUCKET_STAGING: ${{ secrets.AWS_S3_BUCKET_STAGING }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: us-east-1
+        shell: bash
+
+      - name: Retain validated publication files
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-metadata-${{ inputs.version }}
+          path: |
+            staged/fluent-bit-schema-${{ inputs.version }}.json
+            staged/fluent-bit-schema-pretty-${{ inputs.version }}.json
+          if-no-files-found: error
+          overwrite: true
+
+  staging-release-publish-schema:
+    name: Publish and verify public configuration metadata
+    needs: staging-release-validate-schema
+    runs-on: ubuntu-latest
+    environment: release
+    # The documented packages-server sync interval is one hour.
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout release tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download validated publication files
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-metadata-${{ inputs.version }}
+          path: metadata
+
+      - name: Publish the two expected files
+        run: |
+          python3 .github/scripts/release_metadata.py validate --version "$VERSION" --directory metadata
+          for FILE in "fluent-bit-schema-$VERSION.json" "fluent-bit-schema-pretty-$VERSION.json"; do
+            aws s3 cp "metadata/$FILE" "s3://$AWS_S3_BUCKET_RELEASE/$VERSION/$FILE" \
+              --no-progress --content-type application/json
+          done
+        env:
+          VERSION: ${{ inputs.version }}
+          AWS_S3_BUCKET_RELEASE: ${{ secrets.AWS_S3_BUCKET_RELEASE }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: us-east-1
+        shell: bash
+
+      - name: Verify anonymous public downloads
+        run: |
+          python3 .github/scripts/release_metadata.py verify --version "$VERSION" --directory metadata
+        env:
+          VERSION: ${{ inputs.version }}
+        shell: bash
 
   staging-release-generate-package-matrix:
     name: Get package matrix
@@ -103,6 +211,7 @@ jobs:
     environment: release
     needs:
       - staging-release-version-check
+      - staging-release-publish-schema
       - staging-release-generate-package-matrix
     permissions:
       contents: read
@@ -193,6 +302,7 @@ jobs:
     environment: release
     needs:
       - staging-release-version-check
+      - staging-release-publish-schema
       - staging-release-generate-package-matrix
     permissions:
       contents: read
@@ -288,6 +398,7 @@ jobs:
     environment: release
     needs:
       - staging-release-version-check
+      - staging-release-publish-schema
     permissions:
       contents: none
     strategy:
@@ -346,18 +457,6 @@ jobs:
         AWS_REGION: "us-east-1"
       shell: bash
 
-    - name: JSON schema
-      continue-on-error: true
-      run: |
-        aws s3 sync "s3://${AWS_STAGING_S3_BUCKET}/${VERSION}" "s3://${AWS_RELEASE_S3_BUCKET}/${VERSION}" --no-progress --exclude "*" --include "*.json"
-      env:
-          VERSION: ${{ github.event.inputs.version }}
-          AWS_REGION: "us-east-1"
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_STAGING_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET_STAGING }}
-          AWS_RELEASE_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET_RELEASE }}
-      shell: bash
 
   staging-release-source-s3:
     name: S3 - update source bucket
@@ -365,6 +464,7 @@ jobs:
     environment: release
     needs:
       - staging-release-version-check
+      - staging-release-publish-schema
     permissions:
       contents: read
     steps:
@@ -412,7 +512,11 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - staging-release-version-check
+      - staging-release-publish-schema
+      - staging-release-validate-schema
     environment: release
+    env:
+      SOURCE_DIGEST: ${{ endsWith(matrix.tag, '-debug') && needs.staging-release-validate-schema.outputs.debug-digest || needs.staging-release-validate-schema.outputs.digest }}
     strategy:
       fail-fast: false
       matrix:
@@ -429,7 +533,7 @@ jobs:
       # Primarily because the skopeo errors are hard to parse and non-obvious
       - name: Check the image exists
         run: |
-          docker pull "$STAGING_IMAGE_NAME:$TAG"
+          docker pull "$STAGING_IMAGE_NAME@$SOURCE_DIGEST"
         env:
           TAG: ${{ matrix.tag }}
         shell: bash
@@ -444,7 +548,7 @@ jobs:
               --retry-times 10 \
               --src-no-creds \
               --dest-creds "$RELEASE_CREDS" \
-              "docker://$STAGING_IMAGE_NAME:$TAG" \
+              "docker://$STAGING_IMAGE_NAME@$SOURCE_DIGEST" \
               "docker://$RELEASE_IMAGE_NAME:$TAG"
         env:
           RELEASE_IMAGE_NAME: docker.io/${{ github.event.inputs.docker-image || secrets.DOCKERHUB_ORGANIZATION }}
@@ -462,7 +566,7 @@ jobs:
               --retry-times 10 \
               --src-no-creds \
               --dest-creds "$RELEASE_CREDS" \
-              "docker://$STAGING_IMAGE_NAME:$TAG" \
+              "docker://$STAGING_IMAGE_NAME@$SOURCE_DIGEST" \
               "docker://$RELEASE_IMAGE_NAME:$TAG"
         env:
           RELEASE_IMAGE_NAME: ghcr.io/${{ github.event.inputs.github-image || github.repository }}
@@ -542,7 +646,10 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - staging-release-images
+      - staging-release-validate-schema
     environment: release
+    env:
+      SOURCE_DIGEST: ${{ endsWith(matrix.tag, '-debug') && needs.staging-release-validate-schema.outputs.debug-digest || needs.staging-release-validate-schema.outputs.digest }}
     strategy:
       fail-fast: false
       matrix:
@@ -556,7 +663,7 @@ jobs:
       # Primarily because the skopeo errors are hard to parse and non-obvious
       - name: Check the image exists
         run: |
-          docker pull "$STAGING_IMAGE_NAME:$TAG"
+          docker pull "$STAGING_IMAGE_NAME@$SOURCE_DIGEST"
         env:
           TAG: ${{ matrix.tag }}
         shell: bash
@@ -571,7 +678,7 @@ jobs:
               --retry-times 10 \
               --src-no-creds \
               --dest-creds "$RELEASE_CREDS" \
-              "docker://$STAGING_IMAGE_NAME:$TAG" \
+              "docker://$STAGING_IMAGE_NAME@$SOURCE_DIGEST" \
               "docker://$RELEASE_IMAGE_NAME:$TAG"
         env:
           RELEASE_IMAGE_NAME: docker.io/${{ github.event.inputs.docker-image || secrets.DOCKERHUB_ORGANIZATION }}
@@ -588,7 +695,7 @@ jobs:
               --retry-times 10 \
               --src-no-creds \
               --dest-creds "$RELEASE_CREDS" \
-              "docker://$STAGING_IMAGE_NAME:$TAG" \
+              "docker://$STAGING_IMAGE_NAME@$SOURCE_DIGEST" \
               "docker://$RELEASE_IMAGE_NAME:$TAG"
         env:
           RELEASE_IMAGE_NAME: ghcr.io/${{ github.event.inputs.github-image || github.repository }}
@@ -602,6 +709,7 @@ jobs:
     runs-on: ${{ matrix.runs_on }}
     needs:
       - staging-release-version-check
+      - staging-release-publish-schema
     environment: release
     permissions:
       packages: write
@@ -797,6 +905,7 @@ jobs:
   staging-release-create-release:
     name: Create the Github Release once packages and containers are up
     needs:
+      - staging-release-publish-schema
       - staging-release-images
       - staging-release-apt-packages
       - staging-release-yum-packages
@@ -805,11 +914,31 @@ jobs:
     environment: release
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout release tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download validated metadata release assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-metadata-${{ inputs.version }}
+          path: metadata
+
+      - name: Validate metadata release assets
+        run: python3 .github/scripts/release_metadata.py validate --version "$VERSION" --directory metadata
+        env:
+          VERSION: ${{ inputs.version }}
+        shell: bash
+
       - name: Release 2.0 - not latest
         uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         if: startsWith(inputs.version, '2.0')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
+          files: |
+            metadata/fluent-bit-schema-${{ inputs.version }}.json
+            metadata/fluent-bit-schema-pretty-${{ inputs.version }}.json
+          fail_on_unmatched_files: true
+          overwrite_files: true
           draft: false
           generate_release_notes: true
           name: "Fluent Bit ${{ inputs.version }}"
@@ -822,6 +951,11 @@ jobs:
         if: startsWith(inputs.version, '2.1')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
+          files: |
+            metadata/fluent-bit-schema-${{ inputs.version }}.json
+            metadata/fluent-bit-schema-pretty-${{ inputs.version }}.json
+          fail_on_unmatched_files: true
+          overwrite_files: true
           draft: false
           generate_release_notes: true
           name: "Fluent Bit ${{ inputs.version }}"
@@ -834,6 +968,11 @@ jobs:
         if: startsWith(inputs.version, '3.0')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
+          files: |
+            metadata/fluent-bit-schema-${{ inputs.version }}.json
+            metadata/fluent-bit-schema-pretty-${{ inputs.version }}.json
+          fail_on_unmatched_files: true
+          overwrite_files: true
           draft: false
           generate_release_notes: true
           name: "Fluent Bit ${{ inputs.version }}"
@@ -846,6 +985,11 @@ jobs:
         if: startsWith(inputs.version, '3.1')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
+          files: |
+            metadata/fluent-bit-schema-${{ inputs.version }}.json
+            metadata/fluent-bit-schema-pretty-${{ inputs.version }}.json
+          fail_on_unmatched_files: true
+          overwrite_files: true
           draft: false
           generate_release_notes: true
           name: "Fluent Bit ${{ inputs.version }}"
@@ -858,6 +1002,11 @@ jobs:
         if: startsWith(inputs.version, '3.2')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
+          files: |
+            metadata/fluent-bit-schema-${{ inputs.version }}.json
+            metadata/fluent-bit-schema-pretty-${{ inputs.version }}.json
+          fail_on_unmatched_files: true
+          overwrite_files: true
           draft: false
           generate_release_notes: true
           name: "Fluent Bit ${{ inputs.version }}"
@@ -870,6 +1019,11 @@ jobs:
         if: startsWith(inputs.version, '4.0')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
+          files: |
+            metadata/fluent-bit-schema-${{ inputs.version }}.json
+            metadata/fluent-bit-schema-pretty-${{ inputs.version }}.json
+          fail_on_unmatched_files: true
+          overwrite_files: true
           draft: false
           generate_release_notes: true
           name: "Fluent Bit ${{ inputs.version }}"
@@ -882,6 +1036,11 @@ jobs:
         if: startsWith(inputs.version, '4.1')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
+          files: |
+            metadata/fluent-bit-schema-${{ inputs.version }}.json
+            metadata/fluent-bit-schema-pretty-${{ inputs.version }}.json
+          fail_on_unmatched_files: true
+          overwrite_files: true
           draft: false
           generate_release_notes: true
           name: "Fluent Bit ${{ inputs.version }}"
@@ -894,6 +1053,11 @@ jobs:
         if: startsWith(inputs.version, '4.2')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
+          files: |
+            metadata/fluent-bit-schema-${{ inputs.version }}.json
+            metadata/fluent-bit-schema-pretty-${{ inputs.version }}.json
+          fail_on_unmatched_files: true
+          overwrite_files: true
           draft: false
           generate_release_notes: true
           name: "Fluent Bit ${{ inputs.version }}"
@@ -905,6 +1069,11 @@ jobs:
         if: startsWith(inputs.version, '5.0')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
+          files: |
+            metadata/fluent-bit-schema-${{ inputs.version }}.json
+            metadata/fluent-bit-schema-pretty-${{ inputs.version }}.json
+          fail_on_unmatched_files: true
+          overwrite_files: true
           draft: false
           generate_release_notes: true
           name: "Fluent Bit ${{ inputs.version }}"
@@ -917,11 +1086,25 @@ jobs:
         if: startsWith(inputs.version, '5.1')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
+          files: |
+            metadata/fluent-bit-schema-${{ inputs.version }}.json
+            metadata/fluent-bit-schema-pretty-${{ inputs.version }}.json
+          fail_on_unmatched_files: true
+          overwrite_files: true
           draft: false
           generate_release_notes: true
           name: "Fluent Bit ${{ inputs.version }}"
           tag_name: v${{ inputs.version }}
           make_latest: true
+
+      - name: Verify anonymous GitHub release asset downloads
+        run: |
+          python3 .github/scripts/release_metadata.py verify --version "$VERSION" \
+            --directory metadata --github-repository "$REPOSITORY" --attempts 10 --delay 30
+        env:
+          VERSION: ${{ inputs.version }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
 
   staging-release-windows-checksums:
     name: Get Windows checksums for new release
@@ -976,6 +1159,8 @@ jobs:
   staging-release-create-docs-pr:
     name: Create docs updates for new release
     needs:
+      - staging-release-publish-schema
+      - staging-release-create-release
       - staging-release-images
       - staging-release-windows-checksums
     permissions:

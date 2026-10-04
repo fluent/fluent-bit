@@ -161,6 +161,7 @@ jobs:
       - call-build-single-arch-container-images
     outputs:
       version: ${{ steps.meta.outputs.version }}
+      digest: ${{ steps.release-digest.outputs.digest }}
     steps:
       - name: Extract metadata from Github
         id: meta
@@ -199,6 +200,16 @@ jobs:
       - name: Inspect image
         run: |
           docker buildx imagetools inspect ${{ inputs.registry }}/${{ inputs.image }}:${{ steps.meta.outputs.version }}
+        shell: bash
+
+      - name: Resolve immutable production manifest
+        id: release-digest
+        run: |
+          DIGEST=$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{.Manifest.Digest}}')
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+        env:
+          IMAGE: ${{ inputs.registry }}/${{ inputs.image }}
+          VERSION: ${{ inputs.version }}
         shell: bash
 
   # Take the digests and produce a multi-arch manifest from them.
@@ -271,18 +282,34 @@ jobs:
           username: ${{ inputs.username }}
           password: ${{ secrets.token }}
 
-      - name: Generate schema
+      - name: Checkout release tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Generate and validate configuration metadata
         run: |
-          docker run --rm -t ${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }} -J > fluent-bit-schema-${{ inputs.version }}.json
-          cat fluent-bit-schema-${{ inputs.version }}.json | jq -M > fluent-bit-schema-pretty-${{ inputs.version }}.json
+          ARGS=()
+          # PR/nightly labels are not release versions. Official staging is strict.
+          if [[ "$ENVIRONMENT" != staging && ! "$VERSION" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            ARGS+=(--development)
+          fi
+          python3 .github/scripts/release_metadata.py generate \
+            --image "$IMAGE@$DIGEST" --version "$VERSION" "${ARGS[@]}"
+        env:
+          IMAGE: ${{ inputs.registry }}/${{ inputs.image }}
+          DIGEST: ${{ needs.call-build-container-image-manifests.outputs.digest }}
+          VERSION: ${{ inputs.version }}
+          ENVIRONMENT: ${{ inputs.environment }}
         shell: bash
 
       - name: Upload the schema
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          path: ./fluent-bit-schema*.json
+          path: |
+            ./fluent-bit-schema-${{ inputs.version }}.json
+            ./fluent-bit-schema-pretty-${{ inputs.version }}.json
           name: fluent-bit-schema-${{ inputs.version }}
           if-no-files-found: error
+          overwrite: true
 
   call-build-images-scan:
     if: inputs.push
