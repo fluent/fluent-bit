@@ -1,0 +1,41 @@
+---
+name: Test release configuration metadata
+on:
+  pull_request:
+    paths:
+      - '.github/scripts/release_metadata.py'
+      - '.github/scripts/tests/test_release_*.py'
+      - '.github/workflows/call-build-images.yaml'
+      - '.github/workflows/staging-build.yaml'
+      - '.github/workflows/staging-release.yaml'
+      - '.github/workflows/test-release-metadata.yaml'
+      - 'packaging/update-repos.sh'
+  push:
+    branches: [master]
+    paths:
+      - '.github/scripts/release_metadata.py'
+      - '.github/scripts/tests/test_release_*.py'
+      - '.github/workflows/call-build-images.yaml'
+      - '.github/workflows/staging-build.yaml'
+      - '.github/workflows/staging-release.yaml'
+      - '.github/workflows/test-release-metadata.yaml'
+      - 'packaging/update-repos.sh'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  metadata:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Test metadata validation, anonymous downloads and release dependencies
+        run: |
+          python3 -m pip install PyYAML==6.0.2
+          python3 -m unittest discover -s .github/scripts/tests -p 'test_release_*.py' -v
+      - name: Validate release workflow syntax
+        run: |
+          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -shellcheck='' \
+            .github/workflows/call-build-images.yaml \
+            .github/workflows/staging-build.yaml \
+            .github/workflows/staging-release.yaml \
+            .github/workflows/test-release-metadata.yaml
