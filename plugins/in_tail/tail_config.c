@@ -24,6 +24,8 @@
 
 #include <stdlib.h>
 #include <fcntl.h>
+#include <limits.h>
+#include <math.h>
 
 #include "tail_fs.h"
 #include "tail_db.h"
@@ -199,8 +201,12 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
     if (tmp) {
         /* Support suffixes: s, ms, us, ns; also allow plain seconds and fractional seconds */
         char *end = NULL;
-        double val = strtod(tmp, &end);
+        double val;
+        double nsec_d;
         uint64_t mult = 1000000000ULL; /* default: seconds */
+        uint64_t nsec_u;
+
+        val = strtod(tmp, &end);
 
         if (end != NULL && *end != '\0') {
             if (strcasecmp(end, "s") == 0)        mult = 1000000000ULL;
@@ -214,20 +220,34 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
             }
         }
 
-        if (val <= 0) {
+        /* Reject NaN, inf, and non-positive values before scaling. */
+        if (!isfinite(val) || val <= 0.0) {
             flb_plg_error(ctx->ins, "invalid 'fstat_interval' value (%s)", tmp);
             flb_tail_config_destroy(ctx);
             return NULL;
         }
 
-        /* Convert to nanoseconds with clamping to reasonable bounds */
-        double nsec_d = val * (double) mult;
+        /* Convert to nanoseconds. 2^64 is the first value that does not fit uint64_t. */
+        nsec_d = val * (double) mult;
+        if (!isfinite(nsec_d) || nsec_d >= 18446744073709551616.0) {
+            flb_plg_error(ctx->ins, "invalid 'fstat_interval' value (%s)", tmp);
+            flb_tail_config_destroy(ctx);
+            return NULL;
+        }
         if (nsec_d < 1.0) {
             flb_plg_error(ctx->ins, "'fstat_interval' too small (%s)", tmp);
             flb_tail_config_destroy(ctx);
             return NULL;
         }
-        ctx->fstat_interval_nsec = (uint64_t) nsec_d;
+
+        nsec_u = (uint64_t) nsec_d;
+        /* tail_fs_stat casts the seconds component to int for the collector timer. */
+        if ((nsec_u / 1000000000ULL) > (uint64_t) INT_MAX) {
+            flb_plg_error(ctx->ins, "invalid 'fstat_interval' value (%s)", tmp);
+            flb_tail_config_destroy(ctx);
+            return NULL;
+        }
+        ctx->fstat_interval_nsec = nsec_u;
 
         if (ctx->fstat_interval_nsec <= 1000000ULL) {
             flb_plg_warn(ctx->ins, "very low fstat_interval (%" PRIu64 " ns) may cause high CPU usage",
