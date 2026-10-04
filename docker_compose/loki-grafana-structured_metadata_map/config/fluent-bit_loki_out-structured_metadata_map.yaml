@@ -1,5 +1,5 @@
 service:
-  log_level: debug
+  log_level: info
 
 pipeline:
   inputs:
@@ -20,8 +20,22 @@ pipeline:
               "sub_key_1": "hello, world!",
               "sub_key_2": "goodbye, world!"
             }
-          }
+          },
+          "an_unknown_key": "hello, world!",
+          "another_unknown_key": "goodbye, world!"
         }
+
+  filters:
+    - name: nest
+      match: logs
+      nest_under: nested_for_structured_metadata
+      wildcard: '*'
+      wildcard_exclude:
+        - message
+        - logger
+        - hostname
+        - level
+        - 'my_map_of_*'
 
   outputs:
     - name: loki
@@ -31,6 +45,6 @@ pipeline:
       label_keys: $level,$logger
       labels: service_name=test
       structured_metadata: $hostname
-      structured_metadata_map_keys: $my_map_of_attributes_1,$my_map_of_maps_1['root_key']
+      structured_metadata_map_keys: $my_map_of_attributes_1,$my_map_of_maps_1['root_key'],$nested_for_structured_metadata
       line_format: key_value
       drop_single_key: on

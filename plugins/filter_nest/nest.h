@@ -38,6 +38,8 @@ struct filter_nest_ctx
     // nest
     struct mk_list wildcards;
     int wildcards_cnt;
+    struct mk_list wildcard_excludes;
+    int wildcard_excludes_cnt;
     bool remove_prefix;
     // lift
     bool add_prefix;
