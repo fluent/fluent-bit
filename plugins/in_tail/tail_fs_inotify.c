@@ -170,6 +170,7 @@ static int reconcile_file_state(struct flb_tail_config *ctx,
                                 int *pending_data_detected)
 {
     int ret;
+    int release_handle;
     int64_t size_delta;
     struct stat st;
 
@@ -177,7 +178,9 @@ static int reconcile_file_state(struct flb_tail_config *ctx,
         *pending_data_detected = FLB_FALSE;
     }
 
-    ret = fstat(file->fd, &st);
+    release_handle = FLB_FALSE;
+
+    ret = flb_tail_file_stat(file, &st);
     if (ret == -1) {
         flb_plg_debug(ctx->ins, "inode=%"PRIu64" error stat(2) %s, removing",
                       file->inode, file->name);
@@ -190,10 +193,28 @@ static int reconcile_file_state(struct flb_tail_config *ctx,
         file->size = st.st_size;
     }
 
+    /*
+     * Offset-marker checks read through the descriptor. Open a closed handle
+     * only when size alone does not already show truncation, and close it
+     * again when keep_file_handle is off.
+     */
+    if (!(size_delta < 0 || st.st_size < file->offset) &&
+        file->fd == -1 && file->db_offset_marker_size > 0 &&
+        flb_tail_file_db_offset(file) > 0) {
+        ret = flb_tail_file_ensure_open_handle(file);
+        if (ret == 0 && ctx->keep_file_handle == FLB_FALSE) {
+            release_handle = FLB_TRUE;
+        }
+    }
+
     if (size_delta < 0 || st.st_size < file->offset ||
-        flb_tail_file_offset_marker_matches(file) != FLB_TRUE) {
+        (file->fd != -1 &&
+         flb_tail_file_offset_marker_matches(file) != FLB_TRUE)) {
         ret = flb_tail_file_reset_on_truncate(file, size_delta, caller);
         if (ret == -1) {
+            if (release_handle == FLB_TRUE) {
+                flb_tail_file_close_handle(file);
+            }
             return -1;
         }
     }
@@ -210,10 +231,16 @@ static int reconcile_file_state(struct flb_tail_config *ctx,
 
     if (st.st_nlink == 0) {
         if (file->pending_bytes > 0) {
+            if (release_handle == FLB_TRUE) {
+                flb_tail_file_close_handle(file);
+            }
             return 0;
         }
 
         if (file->buf_len > 0) {
+            if (release_handle == FLB_TRUE) {
+                flb_tail_file_close_handle(file);
+            }
             return 0;
         }
 
@@ -229,27 +256,38 @@ static int reconcile_file_state(struct flb_tail_config *ctx,
         return -1;
     }
 
-    ret = flb_tail_file_is_rotated(ctx, file);
-    if (ret == FLB_TRUE) {
-        ret = flb_tail_file_rotated(file);
-        if (ret == -1) {
+    /*
+     * Rotation detection follows the open descriptor to the renamed path.
+     * Without a persistent handle that check is skipped: a replacement at
+     * the same path is handled as a size change instead.
+     */
+    if (ctx->keep_file_handle == FLB_TRUE) {
+        ret = flb_tail_file_is_rotated(ctx, file);
+        if (ret == FLB_TRUE) {
+            ret = flb_tail_file_rotated(file);
+            if (ret == -1) {
+                return -1;
+            }
+
+            ret = flb_tail_fs_remove(ctx, file);
+            if (ret == -1) {
+                return -1;
+            }
+        }
+        else if (ret == -1) {
             return -1;
         }
 
-        ret = flb_tail_fs_remove(ctx, file);
-        if (ret == -1) {
-            return -1;
+        if (file->rotated != 0 && file->watch_fd == -1) {
+            ret = flb_tail_fs_add_rotated(file);
+            if (ret == -1) {
+                return -1;
+            }
         }
-    }
-    else if (ret == -1) {
-        return -1;
     }
 
-    if (file->rotated != 0 && file->watch_fd == -1) {
-        ret = flb_tail_fs_add_rotated(file);
-        if (ret == -1) {
-            return -1;
-        }
+    if (release_handle == FLB_TRUE) {
+        flb_tail_file_close_handle(file);
     }
 
     return 0;
