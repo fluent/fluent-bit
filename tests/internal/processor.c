@@ -22,6 +22,8 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_processor.h>
+#include <fluent-bit/flb_mp_chunk.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_event_loop.h>
@@ -625,7 +627,120 @@ static void processor_metrics_counters()
     flb_sds_destroy(regex_prop_key);
 }
 
+static int native_drop_second_record(struct flb_processor_instance *ins,
+                                      void *data, const char *tag, int tag_len)
+{
+    int ret;
+    int type;
+    int count;
+    struct flb_mp_chunk_cobj *chunk;
+    struct flb_mp_chunk_record *record;
+
+    chunk = data;
+    count = 0;
+    while ((ret = flb_mp_chunk_cobj_record_next(chunk, &record)) == FLB_MP_CHUNK_RECORD_OK) {
+        TEST_CHECK(flb_log_event_decoder_get_record_type(&record->event, &type) == 0);
+        if (type == FLB_LOG_EVENT_NORMAL && ++count == 2) {
+            TEST_CHECK(flb_mp_chunk_cobj_record_destroy(chunk, record) == 0);
+        }
+    }
+    return ret == FLB_MP_CHUNK_RECORD_EOF ? FLB_PROCESSOR_SUCCESS : FLB_PROCESSOR_FAILURE;
+}
+
+static void processor_native_chain_counters(void)
+{
+    int grouped;
+    int root_type;
+    char *data;
+    char *resized;
+    size_t bytes;
+    size_t out_size;
+    void *out;
+    double value;
+    struct flb_config *config;
+    struct flb_processor *proc;
+    struct flb_processor_unit *first;
+    struct flb_processor_unit *second;
+    struct flb_processor_instance *ins;
+    struct flb_processor_plugin *original;
+    struct flb_processor_plugin drop;
+    struct flb_input_instance owner;
+    const char *json = "[[1700000000,{}],{\"message\":\"first\"}]"
+                       "[[1700000001,{}],{\"message\":\"second\"}]";
+
+    flb_init_env();
+    for (grouped = 0; grouped <= 1; grouped++) {
+        config = flb_config_init();
+        TEST_CHECK(config != NULL);
+        memset(&owner, 0, sizeof(owner));
+        snprintf(owner.name, sizeof(owner.name), "unit_input.0");
+        owner.cmt = cmt_create();
+        TEST_CHECK(owner.cmt != NULL);
+        proc = flb_processor_create(config, "native_counters", &owner, FLB_PLUGIN_INPUT);
+        TEST_CHECK(proc != NULL);
+        first = flb_processor_unit_create(proc, FLB_PROCESSOR_LOGS, "content_modifier");
+        second = flb_processor_unit_create(proc, FLB_PROCESSOR_LOGS, "content_modifier");
+        TEST_CHECK(first != NULL && second != NULL);
+        TEST_CHECK(flb_processor_unit_set_property_str(first, "action", "insert") == 0);
+        TEST_CHECK(flb_processor_unit_set_property_str(first, "key", "unused") == 0);
+        TEST_CHECK(flb_processor_unit_set_property_str(first, "value", "unused") == 0);
+        TEST_CHECK(flb_processor_unit_set_property_str(second, "action", "insert") == 0);
+        TEST_CHECK(flb_processor_unit_set_property_str(second, "key", "after_drop") == 0);
+        TEST_CHECK(flb_processor_unit_set_property_str(second, "value", "yes") == 0);
+        TEST_CHECK(flb_processor_init(proc) == 0);
+        ins = first->ctx;
+        original = ins->p;
+        drop = *original;
+        drop.cb_process_logs_raw = NULL;
+        drop.cb_process_logs = native_drop_second_record;
+        ins->p = &drop;
+        if (grouped) {
+            TEST_CHECK(create_grouped_msgpack_records(&data, &bytes) == 0);
+            resized = flb_realloc(data, bytes * 2);
+            TEST_CHECK(resized != NULL);
+            data = resized;
+            memcpy(data + bytes, data, bytes);
+            bytes *= 2;
+        }
+        else {
+            TEST_CHECK(flb_pack_json(json, strlen(json), &data, &bytes, &root_type, NULL) == 0);
+        }
+        TEST_CHECK(flb_mp_count_log_records(data, bytes) == 2);
+        out = NULL;
+        TEST_CHECK(flb_processor_run(proc, 0, FLB_PROCESSOR_LOGS, "test", 4,
+                                    data, bytes, &out, &out_size) == 0);
+        TEST_CHECK(flb_mp_count_log_records(out, out_size) == 1);
+        TEST_CHECK(get_counter_value_5(proc->cmt_items_in, "input", "unit_input.0",
+                                       "content_modifier", "0", "logs", &value) == 0);
+        TEST_CHECK(value == 2.0);
+        TEST_CHECK(get_counter_value_5(proc->cmt_items_out, "input", "unit_input.0",
+                                       "content_modifier", "0", "logs", &value) == 0);
+        TEST_CHECK(value == 1.0);
+        TEST_CHECK(get_counter_value_5(proc->cmt_items_in, "input", "unit_input.0",
+                                       "content_modifier", "1", "logs", &value) == 0);
+        TEST_CHECK(value == 1.0);
+        TEST_CHECK(get_counter_value_5(proc->cmt_items_out, "input", "unit_input.0",
+                                       "content_modifier", "1", "logs", &value) == 0);
+        TEST_CHECK(value == 1.0);
+        TEST_CHECK(get_counter_value_5(proc->cmt_items_drop, "input", "unit_input.0",
+                                       "content_modifier", "0", "logs", &value) == 0);
+        TEST_CHECK(value == 1.0);
+        TEST_CHECK(get_counter_value_5_or_zero(proc->cmt_items_drop, "input", "unit_input.0",
+                                               "content_modifier", "1", "logs", &value) == 0);
+        TEST_CHECK(value == 0.0);
+        ins->p = original;
+        if (out != data) {
+            flb_free(out);
+        }
+        flb_free(data);
+        flb_processor_destroy(proc);
+        cmt_destroy(owner.cmt);
+        flb_config_exit(config);
+    }
+}
+
 TEST_LIST = {
+    { "processor_native_chain_counters", processor_native_chain_counters },
     { "processor_private_inputs_use_main_loop", processor_private_inputs_use_main_loop },
     { "processor", processor },
     { "processor_grouped_filter_counters", processor_grouped_filter_counters },
