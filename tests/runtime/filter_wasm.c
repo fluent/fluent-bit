@@ -19,6 +19,9 @@
 
 #include <fluent-bit.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/wasm/flb_wasm.h>
+#include <fluent-bit/flb_slist.h>
 #include <fluent-bit/flb_http_client.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -948,7 +951,256 @@ void flb_test_wasm_preserve_otlp_group_metadata(void)
     clear_msgpack_output();
 }
 
+/* Exercise repeated calls through the real filter and check every output body. */
+static void run_v2_module(const char *path, const char *function,
+                          const char *format, const char *key, const char *expected, int drop)
+{
+    flb_ctx_t *ctx;
+    struct flb_lib_out_cb callback;
+    struct flb_log_event_decoder decoder;
+    struct flb_log_event event;
+    msgpack_object *value;
+    int input;
+    int filter;
+    int output_id;
+    int ret;
+    int index;
+    int count = 0;
+    const char *record = "[[123, {\"meta\":\"preserved\"}], {\"key\":\"val\"}]";
+
+    clear_msgpack_output();
+    ctx = flb_create();
+    TEST_ASSERT(ctx != NULL);
+    flb_service_set(ctx, "flush", "0.1", "grace", "1", NULL);
+    input = flb_input(ctx, "lib", NULL);
+    TEST_ASSERT(input >= 0);
+    flb_input_set(ctx, input, "tag", "test.wasm", NULL);
+    filter = flb_filter(ctx, "wasm", NULL);
+    TEST_ASSERT(filter >= 0);
+    ret = flb_filter_set(ctx, filter, "match", "*", "abi_version", "2",
+                         "wasm_path", path,
+                         "function_name", function, "event_format", format, NULL);
+    TEST_CHECK(ret == 0);
+    callback.cb = cb_store_msgpack_output;
+    callback.data = NULL;
+    output_id = flb_output(ctx, "lib", &callback);
+    TEST_ASSERT(output_id >= 0);
+    flb_output_set(ctx, output_id, "match", "*", "format", "msgpack", NULL);
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        flb_destroy(ctx);
+        return;
+    }
+    for (index = 0; index < 64; index++) {
+        TEST_CHECK(flb_lib_push(ctx, input, record, strlen(record)) == strlen(record));
+    }
+    flb_time_msleep(500);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    if (drop) {
+        TEST_CHECK(mp_output_size == 0);
+    }
+    else {
+        ret = flb_log_event_decoder_init(&decoder, mp_output, mp_output_size);
+        TEST_CHECK(ret == FLB_EVENT_DECODER_SUCCESS);
+        if (ret == FLB_EVENT_DECODER_SUCCESS) {
+            while (flb_log_event_decoder_next(&decoder, &event) == FLB_EVENT_DECODER_SUCCESS) {
+                count++;
+                TEST_CHECK(event.timestamp.tm.tv_sec == 123);
+                TEST_CHECK(mp_str_eq(mp_map_get(event.metadata, "meta"), "preserved"));
+                value = mp_map_get(event.body, key);
+                if (expected != NULL) {
+                    TEST_CHECK(mp_str_eq(value, expected));
+                }
+                else {
+                    TEST_CHECK(value != NULL && value->type == MSGPACK_OBJECT_POSITIVE_INTEGER &&
+                               value->via.u64 == 0);
+                    if (strcmp(format, "msgpack") == 0) {
+                        value = mp_map_get(event.body, "s");
+                        TEST_CHECK(value != NULL && value->type == MSGPACK_OBJECT_STR &&
+                                   value->via.str.size == 3 &&
+                                   memcmp(value->via.str.ptr, "a\0b", 3) == 0);
+                    }
+                }
+            }
+            TEST_CHECK(count == 64);
+            flb_log_event_decoder_destroy(&decoder);
+        }
+    }
+    clear_msgpack_output();
+}
+
+static void run_v2(const char *function, const char *format,
+                   const char *key, const char *expected, int drop)
+{
+    run_v2_module(DPATH_WASM "/filter_v2.wasm", function, format, key, expected, drop);
+}
+
+static void run_v2_language_module(const char *path)
+{
+    run_v2_module(path, "filter_v2", "json", "key", "val", 0);
+    run_v2_module(path, "filter_v2", "msgpack", "key", "val", 0);
+    run_v2_module(path, "filter_binary_v2", "msgpack", "n", NULL, 0);
+    run_v2_module(path, "filter_drop_v2", "json", NULL, NULL, 1);
+}
+
+static void flb_test_v2_tinygo(void)
+{
+    run_v2_language_module(DPATH_WASM "/filter_go_v2.wasm");
+}
+
+static void flb_test_v2_rust(void)
+{
+    run_v2_language_module(DPATH_WASM "/filter_rust_v2.wasm");
+}
+
+static void flb_test_v2_record(void)
+{
+    run_v2("record_value", "json", "key", "val", 0);
+    run_v2("record_value", "msgpack", "key", "val", 0);
+}
+
+static void flb_test_v2_value_length(void)
+{
+    run_v2("json_value", "json", "n", NULL, 0);
+    run_v2("binary_value", "msgpack", "n", NULL, 0);
+    run_v2("grow_value", "json", "n", NULL, 0);
+}
+
+static void flb_test_v2_drop(void)
+{
+    run_v2("drop_value", "json", NULL, NULL, 1);
+}
+
+static void flb_test_v2_invalid(void)
+{
+    run_v2("invalid_value", "json", "key", "val", 0);
+    run_v2("invalid_length", "json", "key", "val", 0);
+    run_v2("null_value", "json", "key", "val", 0);
+    run_v2("empty_value", "json", "key", "val", 0);
+    run_v2("trap_value", "json", "key", "val", 0);
+    run_v2("malformed_value", "json", "key", "val", 0);
+    run_v2("malformed_value", "msgpack", "key", "val", 0);
+    run_v2("multiple_values", "json", "key", "val", 0);
+    run_v2("array_value", "json", "key", "val", 0);
+}
+
+static void flb_test_v2_signature(void)
+{
+    const char *functions[] = {"wrong_result", "wrong_arguments", "missing"};
+    flb_ctx_t *ctx;
+    int filter;
+    int index;
+
+    for (index = 0; index < 3; index++) {
+        ctx = flb_create();
+        TEST_ASSERT(ctx != NULL);
+        flb_input(ctx, "lib", NULL);
+        filter = flb_filter(ctx, "wasm", NULL);
+        flb_filter_set(ctx, filter, "match", "*", "abi_version", "2",
+                       "wasm_path", DPATH_WASM "/filter_v2.wasm",
+                       "function_name", functions[index], NULL);
+        TEST_CHECK(flb_start(ctx) != 0);
+        flb_destroy(ctx);
+    }
+}
+
+static void run_v2_wrapper(const char *path, const char *record_function,
+                           const char *binary_function, const char *drop_function)
+{
+    flb_ctx_t *ctx;
+    struct flb_wasm_config *wasm_config;
+    struct flb_wasm *wasm;
+    struct mk_list directories;
+    struct flb_time timestamp = {0};
+    /* Deliberately not NUL-terminated host input. */
+    const char tag[] = {'t', 'e', 's', 't', '.', 'w', 'a', 's', 'm'};
+    const char record[] = {'{', '"', 'n', '"', ':', '0', '}'};
+    const char *invalid[] = {"invalid_value", "invalid_length", "null_value",
+                             "empty_value", "trap_value", "wrong_result", "missing"};
+    char *output;
+    size_t length;
+    int ret;
+    int index;
+
+    ctx = flb_create();
+    TEST_ASSERT(ctx != NULL);
+    flb_wasm_init(ctx->config);
+    wasm_config = flb_wasm_config_init(ctx->config);
+    TEST_ASSERT(wasm_config != NULL);
+    flb_slist_create(&directories);
+    TEST_ASSERT(flb_slist_add(&directories, ".") == 0);
+    wasm = flb_wasm_instantiate(ctx->config, path,
+                                &directories, wasm_config);
+    TEST_ASSERT(wasm != NULL);
+    timestamp.tm.tv_sec = 123;
+    for (index = 0; index < 1000; index++) {
+        ret = flb_wasm_call_function_v2(wasm, record_function, tag, sizeof(tag), timestamp,
+                                        record, sizeof(record), &output, &length);
+        TEST_CHECK(ret == 0);
+        TEST_CHECK(length == sizeof(record));
+        if (output != NULL) {
+            TEST_CHECK(memcmp(output, record, sizeof(record)) == 0);
+            flb_free(output);
+        }
+    }
+    for (index = 0; index < sizeof(invalid) / sizeof(invalid[0]); index++) {
+        ret = flb_wasm_call_function_v2(wasm, invalid[index], tag, sizeof(tag), timestamp,
+                                        record, sizeof(record), &output, &length);
+        TEST_CHECK(ret == -1);
+        TEST_CHECK(output == NULL && length == 0);
+    }
+    /* A successful call after exceptions must still work. */
+    ret = flb_wasm_call_function_v2(wasm, binary_function, tag, sizeof(tag), timestamp,
+                                    record, sizeof(record), &output, &length);
+    TEST_CHECK(ret == 0 && length == 10);
+    if (output != NULL) {
+        TEST_CHECK(output[3] == 0 && output[8] == 0);
+        flb_free(output);
+    }
+    ret = flb_wasm_call_function_v2(wasm, drop_function, tag, sizeof(tag), timestamp,
+                                    record, sizeof(record), &output, &length);
+    TEST_CHECK(ret == 1 && output == NULL && length == 0);
+    /* Oversized lengths must fail before reading the host input. */
+    ret = flb_wasm_call_function_v2(wasm, record_function, tag, UINT32_MAX, timestamp,
+                                    record, sizeof(record), &output, &length);
+    TEST_CHECK(ret == -1 && output == NULL && length == 0);
+    flb_wasm_destroy(wasm);
+    flb_wasm_config_destroy(wasm_config);
+    flb_slist_destroy(&directories);
+    flb_destroy(ctx);
+}
+
+static void flb_test_v2_wrapper(void)
+{
+    run_v2_wrapper(DPATH_WASM "/filter_v2.wasm", "record_value", "binary_value", "drop_value");
+}
+
+static void flb_test_v2_tinygo_wrapper(void)
+{
+    run_v2_wrapper(DPATH_WASM "/filter_go_v2.wasm", "filter_v2",
+                    "filter_binary_v2", "filter_drop_v2");
+}
+
+static void flb_test_v2_rust_wrapper(void)
+{
+    run_v2_wrapper(DPATH_WASM "/filter_rust_v2.wasm", "filter_v2",
+                    "filter_binary_v2", "filter_drop_v2");
+}
+
 TEST_LIST = {
+    {"v2_rust", flb_test_v2_rust},
+    {"v2_rust_wrapper", flb_test_v2_rust_wrapper},
+    {"v2_tinygo_wrapper", flb_test_v2_tinygo_wrapper},
+    {"v2_tinygo", flb_test_v2_tinygo},
+    {"v2_wrapper", flb_test_v2_wrapper},
+    {"v2_record", flb_test_v2_record},
+    {"v2_value_length", flb_test_v2_value_length},
+    {"v2_drop", flb_test_v2_drop},
+    {"v2_invalid", flb_test_v2_invalid},
+    {"v2_signature", flb_test_v2_signature},
     {"hello_world", flb_test_helloworld},
     {"append_tag", flb_test_append_tag},
     {"numeric_records", flb_test_numerics_records},

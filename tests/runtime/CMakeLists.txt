@@ -376,6 +376,10 @@ foreach(source_file ${CHECK_PROGRAMS})
       ${source_file_we}
       ${resolved_source_file}
       )
+    if(o_source_file_we STREQUAL "filter_wasm")
+      target_include_directories(${source_file_we} PRIVATE
+        ${CMAKE_SOURCE_DIR}/${FLB_PATH_LIB_WASM_MICRO_RUNTIME}/core/iwasm/include)
+    endif()
     add_sanitizers(${source_file_we})
     if(MSVC AND o_source_file_we STREQUAL "filter_aws")
       target_compile_options(${source_file_we} PRIVATE /Zc:preprocessor)
