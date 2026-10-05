@@ -10,6 +10,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_base64.h>
+#include <fluent-bit/flb_kv.h>
 
 #include <string.h>
 #include <stdlib.h>
@@ -699,6 +700,27 @@ static int test_setup_private_key_jwt_files(char *key_path, size_t key_path_size
     return 0;
 }
 
+static int test_setup_authorization_details_file(char *path, size_t path_size,
+                                                 const char *details)
+{
+    int ret;
+    char *tmpdir;
+
+    tmpdir = flb_test_env_tmpdir();
+    if (!tmpdir) {
+        return -1;
+    }
+
+    ret = snprintf(path, path_size, "%s/oauth2_authorization_details.%d.json",
+                   tmpdir, (int) getpid());
+    flb_free(tmpdir);
+    if (ret < 0 || (size_t) ret >= path_size) {
+        return -1;
+    }
+
+    return write_text_file(path, details);
+}
+
 static void test_cleanup_private_key_jwt_files(const char *key_path,
                                                const char *cert_path)
 {
@@ -1213,6 +1235,161 @@ void test_response_buffer_limit(void)
     flb_config_exit(config);
 }
 
+void test_authorization_details_config(void)
+{
+    int ret;
+    int force_refresh;
+    int requests;
+    size_t index;
+    char path[512];
+    char token_url[128];
+    char form_value[256];
+    char details[] = "[\n{\"type\":\"test\"}\n]\n";
+    const char *encoded_details = "%5B%0A%7B%22type%22%3A%22test%22%7D%0A%5D%0A";
+    flb_sds_t token;
+    struct flb_config *config;
+    struct flb_oauth2_config cfg;
+    struct flb_oauth2 *ctx;
+    struct oauth2_mock_server server;
+    struct mk_list properties;
+    struct mk_list *map;
+    struct {
+        char *property;
+        char *value;
+    } cases[] = {
+        {NULL, NULL},
+        {"oauth2.authorization_details", details},
+        {"oauth2.authorization_details_file", path}
+    };
+
+    config = flb_config_init();
+    if (!TEST_CHECK(config != NULL)) {
+        return;
+    }
+
+    ret = test_setup_authorization_details_file(path, sizeof(path), details);
+    if (!TEST_CHECK(ret == 0)) {
+        flb_config_exit(config);
+        return;
+    }
+
+    ret = oauth2_mock_server_start(&server, 3600, 0);
+    if (!TEST_CHECK(ret == 0)) {
+        unlink(path);
+        flb_config_exit(config);
+        return;
+    }
+    snprintf(token_url, sizeof(token_url), "http://127.0.0.1:%d/token", server.port);
+
+#ifdef FLB_SYSTEM_MACOS
+    ret = oauth2_mock_server_wait_ready(&server);
+    TEST_CHECK(ret == 0);
+#endif
+
+    for (index = 0; index < sizeof(cases) / sizeof(cases[0]); index++) {
+        memset(&cfg, 0, sizeof(cfg));
+        flb_kv_init(&properties);
+        flb_kv_item_create(&properties, "oauth2.enable", "true");
+        flb_kv_item_create(&properties, "oauth2.token_url", token_url);
+        flb_kv_item_create(&properties, "oauth2.client_id", "id");
+        flb_kv_item_create(&properties, "oauth2.client_secret", "secret");
+        if (cases[index].property) {
+            flb_kv_item_create(&properties, cases[index].property, cases[index].value);
+        }
+
+        map = flb_oauth2_get_config_map(config);
+        if (!TEST_CHECK(map != NULL)) {
+            flb_kv_release(&properties);
+            break;
+        }
+        ret = flb_config_map_set(config, &properties, map, &cfg);
+        TEST_CHECK(ret == 0);
+        ctx = flb_oauth2_create_from_config(config, &cfg);
+        if (cfg.authorization_details_file) {
+            /* Both the initial request and refresh must use the cached contents. */
+            TEST_CHECK(unlink(path) == 0);
+        }
+        flb_config_map_destroy(map);
+        flb_kv_release(&properties);
+        if (!TEST_CHECK(ctx != NULL)) {
+            continue;
+        }
+
+        if (cases[index].value) {
+            if (TEST_CHECK(ctx->cfg.authorization_details != NULL)) {
+                TEST_CHECK(strcmp(ctx->cfg.authorization_details, details) == 0);
+            }
+        }
+        else {
+            TEST_CHECK(ctx->cfg.authorization_details == NULL);
+        }
+
+        for (force_refresh = FLB_FALSE; force_refresh <= FLB_TRUE; force_refresh++) {
+            token = NULL;
+            requests = server.token_requests;
+            ret = flb_oauth2_get_access_token(ctx, &token, force_refresh);
+            TEST_CHECK(ret == 0);
+            TEST_CHECK(token != NULL);
+            TEST_CHECK(server.token_requests == requests + 1);
+
+            form_value[0] = '\0';
+            ret = extract_form_value(server.latest_token_request, "authorization_details",
+                                     form_value, sizeof(form_value));
+            if (cases[index].value) {
+                TEST_CHECK(ret == 0);
+                TEST_CHECK(strcmp(form_value, encoded_details) == 0);
+            }
+            else {
+                TEST_CHECK(ret == -1);
+            }
+        }
+        flb_oauth2_destroy(ctx);
+    }
+
+    unlink(path);
+    oauth2_mock_server_stop(&server);
+    flb_config_exit(config);
+}
+
+void test_authorization_details_invalid_config(void)
+{
+    int ret;
+    char path[512];
+    struct flb_config *config;
+    struct flb_oauth2_config cfg = {0};
+    struct flb_oauth2 *ctx;
+
+    config = flb_config_init();
+    if (!TEST_CHECK(config != NULL)) {
+        return;
+    }
+
+    ret = test_setup_authorization_details_file(path, sizeof(path), "[]");
+    if (!TEST_CHECK(ret == 0)) {
+        flb_config_exit(config);
+        return;
+    }
+    cfg.token_url = flb_sds_create("http://127.0.0.1:1/token");
+    cfg.authorization_details = flb_sds_create("[]");
+    cfg.authorization_details_file = flb_sds_create(path);
+
+    /* Both sources must be rejected even when the file is readable. */
+    ctx = flb_oauth2_create_from_config(config, &cfg);
+    TEST_CHECK(ctx == NULL);
+    flb_oauth2_destroy(ctx);
+
+    /* A missing file must fail initialization, not silently omit the parameter. */
+    TEST_CHECK(unlink(path) == 0);
+    flb_sds_destroy(cfg.authorization_details);
+    cfg.authorization_details = NULL;
+    ctx = flb_oauth2_create_from_config(config, &cfg);
+    TEST_CHECK(ctx == NULL);
+    flb_oauth2_destroy(ctx);
+
+    flb_oauth2_config_destroy(&cfg);
+    flb_config_exit(config);
+}
+
 void test_caching_and_refresh(void)
 {
     int ret;
@@ -1468,6 +1645,8 @@ TEST_LIST = {
      test_parse_rejects_missing_required_fields},
     {"parse_rejects_invalid_expires_in", test_parse_rejects_invalid_expires_in},
     {"response_buffer_limit", test_response_buffer_limit},
+    {"authorization_details_config", test_authorization_details_config},
+    {"authorization_details_invalid_config", test_authorization_details_invalid_config},
     {"caching_and_refresh", test_caching_and_refresh},
     {"user_agent_header_optional", test_user_agent_header_optional},
     {"legacy_create_manual_payload_flow", test_legacy_create_manual_payload_flow},
