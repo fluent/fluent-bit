@@ -22,13 +22,14 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_socket.h>
+#include <fluent-bit/flb_time.h>
 #include <arpa/inet.h>
 #include <errno.h>
 #include <sys/time.h>
 #include "../../plugins/out_gelf/gelf.h"
 #include "flb_tests_runtime.h"
 
-static void test_udp_recovery(int compress, int chunked)
+static void test_udp_recovery(int compress, int chunked, int workers, int oversized)
 {
     flb_ctx_t *ctx;
     struct flb_output_instance *ins;
@@ -43,6 +44,10 @@ static void test_udp_recovery(int compress, int chunked)
     int ret;
     int sequence;
     int count = 1;
+    int index;
+    unsigned int random_state = 12345;
+    char *batch = NULL;
+    char large_message[20001];
     ssize_t received;
     size_t length = 0;
     size_t decoded_size;
@@ -88,7 +93,8 @@ static void test_udp_recovery(int compress, int chunked)
     TEST_CHECK(flb_output_set(ctx, output, "match", "*", "host", "127.0.0.1",
                              "port", port, "mode", "udp", "retry_limit", "false",
                              "compress", compress ? "true" : "false",
-                             "packet_size", chunked ? "32" : "1420", NULL) == 0);
+                             "packet_size", chunked ? "32" : "1420",
+                             "workers", workers ? "2" : "0", NULL) == 0);
     if (!TEST_CHECK(flb_start(ctx) == 0)) {
         goto destroy;
     }
@@ -99,23 +105,53 @@ static void test_udp_recovery(int compress, int chunked)
         goto stop;
     }
     gelf = ins->context;
-    disconnected.sa_family = AF_UNSPEC;
-    ret = connect(gelf->fd, &disconnected, sizeof(disconnected));
-    if (!TEST_CHECK(ret == 0)) {
-        goto stop;
+    if (oversized) {
+        /* Incompressible enough to exceed 128 packets of 32 bytes. */
+        for (index = 0; index < sizeof(large_message) - 1; index++) {
+            random_state = random_state * 1664525u + 1013904223u;
+            large_message[index] = 'a' + ((random_state >> 16) % 26);
+        }
+        large_message[index] = '\0';
+        batch = flb_malloc(sizeof(large_message) + strlen(record) + 128);
+        if (!TEST_CHECK(batch != NULL)) {
+            goto stop;
+        }
+        sprintf(batch, "[1448403340,{\"host\":\"test-host\",\"short_message\":\"%s\"}]%s",
+                large_message, record);
+        ret = flb_lib_push(ctx, input, batch, strlen(batch));
+        TEST_CHECK(ret == strlen(batch));
+        flb_free(batch);
+    }
+    else if (workers) {
+        /* A worker must not recreate the socket while the instance lock is held. */
+        pthread_mutex_lock(&gelf->udp_mutex);
+        flb_socket_close(gelf->fd);
+        gelf->fd = FLB_INVALID_SOCKET;
+        ret = flb_lib_push(ctx, input, record, strlen(record));
+        TEST_CHECK(ret == strlen(record));
+        flb_time_msleep(500);
+        TEST_CHECK(gelf->fd == FLB_INVALID_SOCKET);
+        pthread_mutex_unlock(&gelf->udp_mutex);
+    }
+    else {
+        disconnected.sa_family = AF_UNSPEC;
+        ret = connect(gelf->fd, &disconnected, sizeof(disconnected));
+        if (!TEST_CHECK(ret == 0)) {
+            goto stop;
+        }
+
+        /* Verify the actual kernel failure without replacing or closing the fd. */
+        ret = send(gelf->fd, "probe", 5, 0);
+        if (!TEST_CHECK(ret == -1 && errno == EDESTADDRREQ)) {
+            goto stop;
+        }
+        ret = flb_lib_push(ctx, input, record, strlen(record));
+        if (!TEST_CHECK(ret == strlen(record))) {
+            goto stop;
+        }
     }
 
-    /* Verify the actual kernel failure without replacing or closing the fd. */
-    ret = send(gelf->fd, "probe", 5, 0);
-    if (!TEST_CHECK(ret == -1 && errno == EDESTADDRREQ)) {
-        goto stop;
-    }
-    ret = flb_lib_push(ctx, input, record, strlen(record));
-    if (!TEST_CHECK(ret == strlen(record))) {
-        goto stop;
-    }
-
-    /* Only one record is pushed: successful delivery must come from retry. */
+    /* Reassemble and validate the deliverable record. */
     for (sequence = 0; sequence < count; sequence++) {
         received = recv(receiver, packet, sizeof(packet), 0);
         if (!TEST_CHECK(received > 0)) {
@@ -172,22 +208,34 @@ close_receiver:
 
 static void test_udp_uncompressed_recovery(void)
 {
-    test_udp_recovery(FLB_FALSE, FLB_FALSE);
+    test_udp_recovery(FLB_FALSE, FLB_FALSE, 0, 0);
 }
 
 static void test_udp_compressed_recovery(void)
 {
-    test_udp_recovery(FLB_TRUE, FLB_FALSE);
+    test_udp_recovery(FLB_TRUE, FLB_FALSE, 0, 0);
 }
 
 static void test_udp_chunked_recovery(void)
 {
-    test_udp_recovery(FLB_TRUE, FLB_TRUE);
+    test_udp_recovery(FLB_TRUE, FLB_TRUE, 0, 0);
+}
+
+static void test_udp_workers_serialized(void)
+{
+    test_udp_recovery(FLB_TRUE, FLB_TRUE, 2, 0);
+}
+
+static void test_udp_oversized_record(void)
+{
+    test_udp_recovery(FLB_TRUE, FLB_TRUE, 2, 1);
 }
 
 TEST_LIST = {
     {"udp_uncompressed_recovery", test_udp_uncompressed_recovery},
     {"udp_compressed_recovery", test_udp_compressed_recovery},
     {"udp_chunked_recovery", test_udp_chunked_recovery},
+    {"udp_workers_serialized", test_udp_workers_serialized},
+    {"udp_oversized_record", test_udp_oversized_record},
     {NULL, NULL}
 };
