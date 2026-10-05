@@ -34,6 +34,7 @@
 #include <errno.h>
 #include <string.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <limits.h>
 
@@ -458,7 +459,7 @@ int flb_oauth2_parse_json_response(const char *json_data, size_t json_size,
     int key_len;
     int val_len;
     char *end;
-    int tokens_size = 32;
+    size_t tokens_size = 32;
     const char *key;
     const char *val;
     unsigned long long parsed_expires_in;
@@ -467,8 +468,14 @@ int flb_oauth2_parse_json_response(const char *json_data, size_t json_size,
     flb_sds_t new_token_type = NULL;
     jsmntok_t *t;
     jsmntok_t *tokens;
+    jsmntok_t *tmp_tokens;
     char tmp_num[32];
     uint64_t new_expires_in = 0;
+
+    if (json_size > INT_MAX) {
+        flb_error("[oauth2] response is too large (size=%zu)", json_size);
+        return -1;
+    }
 
     jsmn_init(&parser);
     tokens = flb_calloc(1, sizeof(jsmntok_t) * tokens_size);
@@ -478,6 +485,21 @@ int flb_oauth2_parse_json_response(const char *json_data, size_t json_size,
     }
 
     ret = jsmn_parse(&parser, json_data, json_size, tokens, tokens_size);
+    while (ret == JSMN_ERROR_NOMEM && tokens_size < json_size) {
+        tokens_size *= 2;
+        if (tokens_size > SIZE_MAX / sizeof(*tokens)) {
+            break;
+        }
+
+        tmp_tokens = flb_realloc(tokens, sizeof(*tokens) * tokens_size);
+        if (!tmp_tokens) {
+            flb_errno();
+            flb_free(tokens);
+            return -1;
+        }
+        tokens = tmp_tokens;
+        ret = jsmn_parse(&parser, json_data, json_size, tokens, tokens_size);
+    }
     if (ret <= 0) {
         flb_error("[oauth2] cannot parse payload (size=%zu)", json_size);
         flb_free(tokens);
@@ -1080,6 +1102,8 @@ static int oauth2_http_request(struct flb_oauth2 *ctx, flb_sds_t body)
         flb_upstream_conn_release(u_conn);
         return -1;
     }
+
+    flb_http_buffer_size(c, 64 * 1024);
 
     if (ctx->cfg.timeout > 0) {
         flb_http_set_response_timeout(c, ctx->cfg.timeout);
