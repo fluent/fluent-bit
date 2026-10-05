@@ -644,6 +644,46 @@ int flb_oauth2_parse_json_response(const char *json_data, size_t json_size,
     return 0;
 }
 
+static flb_sds_t oauth2_form_encode(const char *value, size_t len)
+{
+    char *start;
+    char *ampersand;
+    flb_sds_t encoded;
+    flb_sds_t escaped;
+
+    encoded = flb_uri_encode(value, len);
+    if (!encoded || !strchr(encoded, '&')) {
+        return encoded;
+    }
+
+    escaped = flb_sds_create_size(flb_sds_len(encoded));
+    if (!escaped) {
+        goto error;
+    }
+
+    /* URI encoding preserves '&', escape it within individual form values. */
+    start = encoded;
+    while ((ampersand = strchr(start, '&')) != NULL) {
+        if (flb_sds_cat_safe(&escaped, start, ampersand - start) == -1 ||
+            flb_sds_cat_safe(&escaped, "%26", 3) == -1) {
+            goto error;
+        }
+        start = ampersand + 1;
+    }
+
+    if (flb_sds_cat_safe(&escaped, start, strlen(start)) == -1) {
+        goto error;
+    }
+    flb_sds_destroy(encoded);
+
+    return escaped;
+
+error:
+    flb_sds_destroy(encoded);
+    flb_sds_destroy(escaped);
+    return NULL;
+}
+
 static int oauth2_append_kv(flb_sds_t *buffer, const char *key,
                             const char *value)
 {
@@ -653,7 +693,7 @@ static int oauth2_append_kv(flb_sds_t *buffer, const char *key,
         return 0;
     }
 
-    tmp = flb_uri_encode(value, strlen(value));
+    tmp = oauth2_form_encode(value, strlen(value));
     if (!tmp) {
         flb_errno();
         return -1;
