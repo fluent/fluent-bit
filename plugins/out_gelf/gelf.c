@@ -123,6 +123,24 @@ static void init_chunk_header(uint8_t *buf, int count)
     buf[11] = count;
 }
 
+static int gelf_send_udp_datagram(struct flb_out_gelf_config *ctx,
+                                  const void *msg, size_t msg_size)
+{
+    int ret;
+
+    ret = send(ctx->fd, msg, msg_size, MSG_DONTWAIT | MSG_NOSIGNAL);
+    if (ret == -1) {
+        flb_errno();
+
+        /* Reconnect on the next attempt instead of reusing a failed socket. */
+        flb_socket_close(ctx->fd);
+        ctx->fd = FLB_INVALID_SOCKET;
+        return -1;
+    }
+
+    return 0;
+}
+
 /*
  * Chunked GELF
  * Prepend the following structure to your GELF message to make it chunked:
@@ -169,10 +187,9 @@ static int gelf_send_udp_chunked(struct flb_out_gelf_config *ctx, void *msg,
         }
         memcpy(buf + GELF_HEADER_SIZE, (char *) msg + offset, len);
 
-        ret = send(ctx->fd, buf, len + GELF_HEADER_SIZE,
-                   MSG_DONTWAIT | MSG_NOSIGNAL);
+        ret = gelf_send_udp_datagram(ctx, buf, len + GELF_HEADER_SIZE);
         if (ret == -1) {
-            flb_errno();
+            return -1;
         }
         offset += ctx->pckt_size;
     }
@@ -182,20 +199,11 @@ static int gelf_send_udp_chunked(struct flb_out_gelf_config *ctx, void *msg,
 static int gelf_send_udp_pckt (struct flb_out_gelf_config *ctx, char *msg,
                                size_t msg_size)
 {
-    int ret;
-
     if (msg_size > ctx->pckt_size) {
-        gelf_send_udp_chunked(ctx, msg, msg_size);
-    }
-    else {
-        ret = send(ctx->fd, msg, msg_size, MSG_DONTWAIT | MSG_NOSIGNAL);
-        if (ret == -1) {
-            flb_errno();
-            return -1;
-        }
+        return gelf_send_udp_chunked(ctx, msg, msg_size);
     }
 
-    return 0;
+    return gelf_send_udp_datagram(ctx, msg, msg_size);
 }
 
 static int gelf_send_udp(struct flb_out_gelf_config *ctx, char *msg,
@@ -205,6 +213,14 @@ static int gelf_send_udp(struct flb_out_gelf_config *ctx, char *msg,
     int status;
     void *zdata;
     size_t zdata_len;
+
+    if (ctx->fd == FLB_INVALID_SOCKET) {
+        ctx->fd = flb_net_udp_connect(ctx->ins->host.name, ctx->ins->host.port,
+                                      ctx->ins->net_setup.source_address);
+        if (ctx->fd == FLB_INVALID_SOCKET) {
+            return -1;
+        }
+    }
 
     if (ctx->compress == FLB_TRUE || (msg_size > ctx->pckt_size)) {
         ret = flb_gzip_compress(msg, msg_size, &zdata, &zdata_len);
@@ -219,7 +235,7 @@ static int gelf_send_udp(struct flb_out_gelf_config *ctx, char *msg,
         }
     }
     else {
-        status = send(ctx->fd, msg, msg_size, MSG_DONTWAIT | MSG_NOSIGNAL);
+        status = gelf_send_udp_datagram(ctx, msg, msg_size);
         if (status < 0) {
             return status;
         }
@@ -527,7 +543,7 @@ static int cb_gelf_exit(void *data, struct flb_config *config)
         flb_upstream_destroy(ctx->u);
     }
     if (ctx->fd >= 0) {
-        close(ctx->fd);
+        flb_socket_close(ctx->fd);
     }
 
     flb_sds_destroy(ctx->fields.timestamp_key);
