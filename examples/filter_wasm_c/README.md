@@ -67,3 +67,38 @@ Create fluent-bit configuration file as follows:
     Match *
 
 ```
+
+## ABI v2: value-length return
+
+`c_filter_v2.c` demonstrates the six-argument calling convention:
+
+```c
+uint64_t c_filter_v2(const char *tag, uint32_t tag_length,
+                     uint32_t seconds, uint32_t nanoseconds,
+                     const char *record, uint32_t record_length)
+{
+    return ((uint64_t) record_length << 32) | (uint32_t) (uintptr_t) record;
+}
+```
+
+Build with `make v2`, using the same WASI SDK as the legacy example. Select it
+with:
+
+```ini
+[FILTER]
+    Name          wasm
+    Match         *
+    WASM_Path     c_filter_v2.wasm
+    Function_Name c_filter_v2
+    ABI_Version   2
+    Event_Format  json
+```
+
+The low 32 bits are the value (a WASM memory offset), and the high 32 bits are
+its byte length. Return zero to drop a record. Output does not need a trailing
+NUL, so the same convention also supports binary MessagePack. This example
+borrows the input buffer; Fluent Bit copies it before freeing the input.
+For module-owned output, keep the storage alive until the next call and reuse
+or release it yourself. Do not return stack-local storage.
+
+See [the full value-length specification](../../plugins/filter_wasm/README.md).
