@@ -55,6 +55,9 @@
 /* Upstream handler */
 struct flb_upstream {
     struct flb_stream          base;
+#ifdef __EMSCRIPTEN__
+    const char               *browser_url; /* borrowed from owning output */
+#endif
 
     char                      *tcp_host;
     int                        tcp_port;

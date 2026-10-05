@@ -23,7 +23,10 @@
 #include <fluent-bit/flb_hash_table.h>
 
 #include <monkey/mk_core.h>
+#include <monkey/mk_http_protocol.h>
+#ifdef FLB_HAVE_HTTP_SERVER
 #include <monkey/mk_http.h>
+#endif
 
 #include <cfl/cfl_list.h>
 #include <cfl/cfl_sds.h>

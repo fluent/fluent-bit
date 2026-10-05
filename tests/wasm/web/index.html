@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fluent Bit · WASM test bench</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main>
+    <header>
+      <span class="eyebrow">FLUENT BIT / EXPERIMENTAL</span>
+      <h1>WASM test bench</h1>
+      <p>Real C pipelines, running locally in browser workers. No external database or service.</p>
+    </header>
+    <section class="requirements" aria-label="Browser requirements">
+      <h2>Browser readiness</h2>
+      <ul id="checks"></ul>
+      <p id="requirements-note"></p>
+    </section>
+    <div class="playground">
+    <section class="demo" aria-labelledby="demo-title">
+      <h2 id="demo-title">Live pipeline playground</h2>
+      <p>Edit YAML, press Start, and watch real stdout in the output panel. Stop, adjust, and run again—no rebuild needed.</p>
+      <div class="demo-controls">
+        <label for="demo-seconds">Auto-stop after
+          <input id="demo-seconds" type="number" min="1" max="300" value="10"> seconds</label>
+        <button id="start-demo" disabled>Start demo</button>
+        <button id="stop-demo" class="secondary" disabled>Stop</button>
+        <button id="release-demo" class="secondary" disabled>Release runtime</button>
+        <button id="reset-demo" class="secondary" disabled>Reset example</button>
+        <button id="load-lua-demo" class="secondary" disabled>Load Lua example</button>
+        <button id="load-http-demo" class="secondary" disabled>Load HTTPS example</button>
+      </div>
+      <label for="demo-config">Pipeline configuration (YAML)</label>
+      <textarea id="demo-config" spellcheck="false" rows="24" disabled aria-describedby="demo-note">Loading example…</textarea>
+      <p id="demo-note" class="small">Changes apply on the next Start. Max 64 KiB YAML and 300 seconds per run;
+        shutdown grace is fixed at 1 second. Config stays in this page and a temporary browser filesystem,
+        not on the server. The HTTP output sends records to its configured HTTPS destination.
+        Only plugins in the browser build are available; no raw TCP/UDP outputs or TDA.
+        Use <code>threaded: false</code> for <code>event_type</code> inputs.
+        Browser Lua uses Lua 5.4, not LuaJIT: no <code>jit</code>, <code>ffi</code>, or native modules.
+        Edit scripts inline with YAML <code>code: |</code>. Run only scripts you trust.</p>
+    </section>
+    <section class="results" aria-labelledby="result-title">
+      <div class="result-heading">
+        <h2 id="result-title">Live output</h2>
+        <span id="status" role="status" data-state="idle">Ready</span>
+      </div>
+      <pre id="output" tabindex="0" aria-label="Test log">Start the demo or choose a test to begin.</pre>
+      <button id="recover-storage" data-test="recover" class="secondary" disabled>Recover &amp; delete interrupted test chunk</button>
+      <p class="small">Recovery touches only <code>/storage/chunkio-regression</code>. Use one test tab at a time.
+        Do not reload or close this page during a run; an interrupted write may need recovery.</p>
+    </section>
+    </div>
+    <details id="http-receiver">
+      <summary>HTTP receiver — records delivered to this server</summary>
+      <p>The HTTPS example uses a unique random URL on this test server. Captures stay in server memory
+        for up to 10 minutes (last 20 requests, 8 KiB preview each; at most 16 capture URLs).
+        Authorization values are not stored. Add <code>?fail=1</code> to the destination URL to test a 503 retry.</p>
+      <pre id="received-output">Load the HTTPS example to inspect delivered requests.</pre>
+    </details>
+    <section class="tests" aria-label="Available tests">
+      <article>
+        <span class="number">01 / PROCESSORS</span>
+        <h2>YAML pipeline</h2>
+        <p>Validate configuration and seven processors across logs, metrics, and traces.</p>
+        <button id="run-yaml" data-test="yaml" disabled>Run YAML pipeline</button>
+      </article>
+      <article>
+        <span class="number">02 / FILTERS</span>
+        <h2>Filter pipeline</h2>
+        <p>Modify and grep records, fan out to two outputs, then repeat engine startup and shutdown.</p>
+        <button id="run-pipeline" data-test="pipeline" disabled>Run filter pipeline</button>
+      </article>
+      <article>
+        <span class="number">03 / PERSISTENCE</span>
+        <h2>Local storage</h2>
+        <p>Write ChunkIO files to IndexedDB, reload the test frame, recover them, and verify deletion.</p>
+        <button id="run-storage" data-test="storage" disabled>Test storage across reloads</button>
+      </article>
+    </section>
+    <details>
+      <summary>YAML fixture and prototype limits</summary>
+      <p>This read-only fixture is embedded when <code>flb-wasm-yaml</code> is built.
+        The source shown below may be newer than your binary; rebuild after editing it.</p>
+      <pre id="yaml-source">Loading fixture…</pre>
+      <p>The three acceptance-test buttons run fixed C tests; the playground above runs your edited YAML.
+        Applications can use the browser SDK's <code>push()</code> API with a configured lib input.
+        TDA is disabled pending a Ripser fix. The YAML test deliberately rejects malformed YAML,
+        so an expected parser error appears in its log before the valid pipeline runs.</p>
+      <p>Storage uses a browser-local virtual filesystem, not a user-selected host directory.
+        Only the storage test commits IndexedDB; the other tests use an ephemeral filesystem.
+        Clearing site data removes persisted test files.</p>
+    </details>
+    <footer>Emscripten 6.0.9 · HTTPS + COOP/COEP required · Fetch HTTPS output, no raw sockets</footer>
+    <div id="runner-host" hidden></div>
+  </main>
+</body>
+</html>
