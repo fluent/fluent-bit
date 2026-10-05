@@ -25,54 +25,84 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/socket.h>
+#include <unistd.h>
 
 static int disconnected_once;
+static int active_calls;
+
+static void enter_udp_call(void)
+{
+    if (getenv("GELF_TEST_SERIALIZE") != NULL) {
+        if (__sync_add_and_fetch(&active_calls, 1) != 1) {
+            fprintf(stderr, "GELF test: overlapping UDP socket operations\n");
+            abort();
+        }
+        /* Widen the race window without synchronizing the output workers. */
+        usleep(10000);
+    }
+}
+
+static void leave_udp_call(void)
+{
+    if (getenv("GELF_TEST_SERIALIZE") != NULL) {
+        __sync_sub_and_fetch(&active_calls, 1);
+    }
+}
 
 int connect(int fd, const struct sockaddr *address, socklen_t address_size)
 {
-    static int (*real_connect)(int, const struct sockaddr *, socklen_t);
+    int (*real_connect)(int, const struct sockaddr *, socklen_t);
     static int failed_reconnect;
     const struct sockaddr_in *peer = (const struct sockaddr_in *) address;
     const char *port;
     const char *fail_reconnect;
+    int tracked;
+    int ret;
 
-    if (real_connect == NULL) {
-        real_connect = dlsym(RTLD_NEXT, "connect");
-    }
+    real_connect = dlsym(RTLD_NEXT, "connect");
 
     port = getenv("GELF_TEST_PORT");
     fail_reconnect = getenv("GELF_TEST_FAIL_RECONNECT");
-    if (disconnected_once && !failed_reconnect && port != NULL &&
-        fail_reconnect != NULL && atoi(fail_reconnect) != 0 &&
-        address->sa_family == AF_INET && ntohs(peer->sin_port) == atoi(port)) {
+    tracked = port != NULL && address->sa_family == AF_INET &&
+              ntohs(peer->sin_port) == atoi(port);
+    if (tracked) {
+        enter_udp_call();
+    }
+    if (tracked && disconnected_once && !failed_reconnect &&
+        fail_reconnect != NULL && atoi(fail_reconnect) != 0) {
         failed_reconnect = 1;
         fprintf(stderr, "GELF test: failed reconnect\n");
+        leave_udp_call();
         errno = EHOSTUNREACH;
         return -1;
     }
 
-    return real_connect(fd, address, address_size);
+    ret = real_connect(fd, address, address_size);
+    if (tracked) {
+        leave_udp_call();
+    }
+    return ret;
 }
 
 ssize_t send(int fd, const void *buffer, size_t length, int flags)
 {
-    static ssize_t (*real_send)(int, const void *, size_t, int);
+    ssize_t (*real_send)(int, const void *, size_t, int);
     static int sends;
     struct sockaddr_in peer;
     struct sockaddr disconnected = {0};
     socklen_t peer_size = sizeof(peer);
     const char *port;
     const char *fail_at;
+    ssize_t ret;
 
-    if (real_send == NULL) {
-        real_send = dlsym(RTLD_NEXT, "send");
-    }
+    real_send = dlsym(RTLD_NEXT, "send");
 
     port = getenv("GELF_TEST_PORT");
     fail_at = getenv("GELF_TEST_FAIL_AT");
     if (port != NULL && fail_at != NULL &&
         getpeername(fd, (struct sockaddr *) &peer, &peer_size) == 0 &&
         peer.sin_family == AF_INET && ntohs(peer.sin_port) == atoi(port)) {
+        enter_udp_call();
         sends++;
         if (sends == atoi(fail_at)) {
             disconnected.sa_family = AF_UNSPEC;
@@ -82,6 +112,9 @@ ssize_t send(int fd, const void *buffer, size_t length, int flags)
             disconnected_once = 1;
             fprintf(stderr, "GELF test: disconnected UDP socket\n");
         }
+        ret = real_send(fd, buffer, length, flags);
+        leave_udp_call();
+        return ret;
     }
 
     return real_send(fd, buffer, length, flags);
