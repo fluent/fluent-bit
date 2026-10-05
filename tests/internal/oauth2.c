@@ -1244,8 +1244,10 @@ void test_authorization_details_config(void)
     char path[512];
     char token_url[128];
     char form_value[256];
-    char details[] = "[\n{\"type\":\"test\"}\n]\n";
-    const char *encoded_details = "%5B%0A%7B%22type%22%3A%22test%22%7D%0A%5D%0A";
+    char details[] = "[\n{\"type\":\"test\",\"name\":\"R&D && %26+\"}\n]\n";
+    const char *encoded_details =
+        "%5B%0A%7B%22type%22%3A%22test%22%2C%22name%22%3A%22"
+        "R%26D%20%26%26%20%2526%2B%22%7D%0A%5D%0A";
     flb_sds_t token;
     struct flb_config *config;
     struct flb_oauth2_config cfg;
