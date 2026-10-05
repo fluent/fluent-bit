@@ -389,6 +389,10 @@ foreach(source_file ${CHECK_PROGRAMS})
       ${CMAKE_THREAD_LIBS_INIT}
       ${SYSTEMD_LIB}
       )
+    if(o_source_file_we STREQUAL "filter_wasm")
+      # Direct wrapper calls require an explicit WASM runtime dependency.
+      target_link_libraries(${source_file_we} flb-wasm-static)
+    endif()
     if(o_source_file_we STREQUAL "in_windows_exporter_metrics_tcp")
       target_link_libraries(${source_file_we}
         flb-plugin-in_windows_exporter_metrics

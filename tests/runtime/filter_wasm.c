@@ -762,7 +762,7 @@ void flb_test_wasm_preserve_otlp_group_metadata(void)
     size_t off = 0;
     int32_t seconds = 0;
     msgpack_object *ts_obj;
-    unsigned char *p;
+    const unsigned char *p;
     int32_t tmp;
     int free_port;
     char port[16] = {0};
@@ -1114,7 +1114,7 @@ static void run_v2_wrapper(const char *path, const char *record_function,
     struct flb_wasm_config *wasm_config;
     struct flb_wasm *wasm;
     struct mk_list directories;
-    struct flb_time timestamp = {0};
+    struct flb_time timestamp;
     /* Deliberately not NUL-terminated host input. */
     const char tag[] = {'t', 'e', 's', 't', '.', 'w', 'a', 's', 'm'};
     const char record[] = {'{', '"', 'n', '"', ':', '0', '}'};
@@ -1135,7 +1135,7 @@ static void run_v2_wrapper(const char *path, const char *record_function,
     wasm = flb_wasm_instantiate(ctx->config, path,
                                 &directories, wasm_config);
     TEST_ASSERT(wasm != NULL);
-    timestamp.tm.tv_sec = 123;
+    flb_time_set(&timestamp, 123, 0);
     for (index = 0; index < 1000; index++) {
         ret = flb_wasm_call_function_v2(wasm, record_function, tag, sizeof(tag), timestamp,
                                         record, sizeof(record), &output, &length);
