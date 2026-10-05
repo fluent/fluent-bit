@@ -20,6 +20,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_file.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_uri.h>
 #include <fluent-bit/flb_oauth2.h>
@@ -87,6 +88,18 @@ struct flb_config_map oauth2_config_map[] = {
      FLB_CONFIG_MAP_STR, "oauth2.resource", NULL,
      0, FLB_TRUE, offsetof(struct flb_oauth2_config, resource),
      "Optional OAuth2 resource parameter"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.authorization_details", NULL,
+     0, FLB_TRUE, offsetof(struct flb_oauth2_config, authorization_details),
+     "Optional OAuth2 authorization_details JSON parameter; mutually exclusive "
+     "with oauth2.authorization_details_file"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.authorization_details_file", NULL,
+     0, FLB_TRUE, offsetof(struct flb_oauth2_config, authorization_details_file),
+     "Path to an authorization_details JSON file, read at initialization; "
+     "mutually exclusive with oauth2.authorization_details"
     },
     {
      FLB_CONFIG_MAP_STR, "oauth2.auth_method", "basic",
@@ -195,6 +208,8 @@ static void oauth2_apply_defaults(struct flb_oauth2_config *cfg)
     cfg->scope = NULL;
     cfg->audience = NULL;
     cfg->resource = NULL;
+    cfg->authorization_details = NULL;
+    cfg->authorization_details_file = NULL;
     cfg->jwt_key_file = NULL;
     cfg->jwt_cert_file = NULL;
     cfg->jwt_aud = NULL;
@@ -208,6 +223,12 @@ static int oauth2_clone_config(struct flb_oauth2_config *dst,
 
     if (!src) {
         return 0;
+    }
+
+    if (src->authorization_details && src->authorization_details_file) {
+        flb_error("[oauth2] oauth2.authorization_details and "
+                  "oauth2.authorization_details_file are mutually exclusive");
+        return -1;
     }
 
     dst->enabled = src->enabled;
@@ -286,6 +307,24 @@ static int oauth2_clone_config(struct flb_oauth2_config *dst,
         }
     }
 
+    if (src->authorization_details) {
+        dst->authorization_details = flb_sds_create(src->authorization_details);
+        if (!dst->authorization_details) {
+            flb_errno();
+            flb_oauth2_config_destroy(dst);
+            return -1;
+        }
+    }
+    else if (src->authorization_details_file) {
+        dst->authorization_details = flb_file_read(src->authorization_details_file);
+        if (!dst->authorization_details) {
+            flb_error("[oauth2] cannot read authorization details file '%s'",
+                      src->authorization_details_file);
+            flb_oauth2_config_destroy(dst);
+            return -1;
+        }
+    }
+
     if (src->jwt_key_file) {
         dst->jwt_key_file =
             flb_sds_create(src->jwt_key_file);
@@ -348,6 +387,10 @@ void flb_oauth2_config_destroy(struct flb_oauth2_config *cfg)
     cfg->audience = NULL;
     flb_sds_destroy(cfg->resource);
     cfg->resource = NULL;
+    flb_sds_destroy(cfg->authorization_details);
+    cfg->authorization_details = NULL;
+    flb_sds_destroy(cfg->authorization_details_file);
+    cfg->authorization_details_file = NULL;
     flb_sds_destroy(cfg->jwt_key_file);
     cfg->jwt_key_file = NULL;
     flb_sds_destroy(cfg->jwt_cert_file);
@@ -1023,6 +1066,14 @@ static flb_sds_t oauth2_build_body(struct flb_oauth2 *ctx)
 
     if (ctx->cfg.resource) {
         if (oauth2_append_kv(&body, "resource", ctx->cfg.resource) == -1) {
+            flb_sds_destroy(body);
+            return NULL;
+        }
+    }
+
+    if (ctx->cfg.authorization_details) {
+        if (oauth2_append_kv(&body, "authorization_details",
+                             ctx->cfg.authorization_details) == -1) {
             flb_sds_destroy(body);
             return NULL;
         }
