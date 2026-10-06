@@ -1244,10 +1244,11 @@ void test_authorization_details_config(void)
     char path[512];
     char token_url[128];
     char form_value[256];
-    char details[] = "[\n{\"type\":\"test\",\"name\":\"R&D && %26+\"}\n]\n";
+    char details[] = "[\n{\"type\":\"test\",\"name\":\"R&D && %26+\"}\n]";
+    char file_details[] = " \t\r\n[\n{\"type\":\"test\",\"name\":\"R&D && %26+\"}\n]\r\n\t ";
     const char *encoded_details =
         "%5B%0A%7B%22type%22%3A%22test%22%2C%22name%22%3A%22"
-        "R%26D%20%26%26%20%2526%2B%22%7D%0A%5D%0A";
+        "R%26D%20%26%26%20%2526%2B%22%7D%0A%5D";
     flb_sds_t token;
     struct flb_config *config;
     struct flb_oauth2_config cfg;
@@ -1269,7 +1270,7 @@ void test_authorization_details_config(void)
         return;
     }
 
-    ret = test_setup_authorization_details_file(path, sizeof(path), details);
+    ret = test_setup_authorization_details_file(path, sizeof(path), file_details);
     if (!TEST_CHECK(ret == 0)) {
         flb_config_exit(config);
         return;
@@ -1356,7 +1357,9 @@ void test_authorization_details_config(void)
 void test_authorization_details_invalid_config(void)
 {
     int ret;
+    size_t index;
     char path[512];
+    const char *empty_contents[] = {"", " \t\r\n"};
     struct flb_config *config;
     struct flb_oauth2_config cfg = {0};
     struct flb_oauth2 *ctx;
@@ -1387,6 +1390,16 @@ void test_authorization_details_invalid_config(void)
     ctx = flb_oauth2_create_from_config(config, &cfg);
     TEST_CHECK(ctx == NULL);
     flb_oauth2_destroy(ctx);
+
+    /* Empty and whitespace-only files must fail initialization. */
+    for (index = 0; index < sizeof(empty_contents) / sizeof(empty_contents[0]); index++) {
+        ret = write_text_file(path, empty_contents[index]);
+        TEST_CHECK(ret == 0);
+        ctx = flb_oauth2_create_from_config(config, &cfg);
+        TEST_CHECK(ctx == NULL);
+        flb_oauth2_destroy(ctx);
+    }
+    TEST_CHECK(unlink(path) == 0);
 
     flb_oauth2_config_destroy(&cfg);
     flb_config_exit(config);
