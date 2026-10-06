@@ -359,6 +359,7 @@ static int in_kafka_init(struct flb_input_instance *ins,
         ctx->msk_iam = flb_aws_msk_iam_register_oauth_cb(config,
                                                          kafka_conf,
                                                          ctx->aws_msk_iam_cluster_arn,
+                                                         NULL, NULL, NULL,
                                                          ctx->opaque);
         if (!ctx->msk_iam) {
             flb_plg_error(ins, "failed to setup MSK IAM authentication");

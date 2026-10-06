@@ -36,11 +36,16 @@ struct flb_msk_iam_cb {
 
 /*
  * Register the oauthbearer refresh callback for MSK IAM authentication.
+ * Optionally accepts role_arn, sts_endpoint, and external_id for STS
+ * Assume Role support. Pass NULL for any unused optional parameter.
  * Returns context pointer on success or NULL on failure.
  */
 struct flb_aws_msk_iam *flb_aws_msk_iam_register_oauth_cb(struct flb_config *config,
                                                           rd_kafka_conf_t *kconf,
                                                           const char *cluster_arn,
+                                                          const char *role_arn,
+                                                          const char *sts_endpoint,
+                                                          const char *external_id,
                                                           struct flb_kafka_opaque *opaque);
 void flb_aws_msk_iam_destroy(struct flb_aws_msk_iam *ctx);
 
