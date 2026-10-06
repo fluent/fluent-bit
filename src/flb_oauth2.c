@@ -317,8 +317,8 @@ static int oauth2_clone_config(struct flb_oauth2_config *dst,
     }
     else if (src->authorization_details_file) {
         dst->authorization_details = flb_file_read(src->authorization_details_file);
-        if (!dst->authorization_details) {
-            flb_error("[oauth2] cannot read authorization details file '%s'",
+        if (!dst->authorization_details || flb_sds_trim(dst->authorization_details) <= 0) {
+            flb_error("[oauth2] authorization details file '%s' is unreadable or empty",
                       src->authorization_details_file);
             flb_oauth2_config_destroy(dst);
             return -1;
