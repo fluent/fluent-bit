@@ -22,9 +22,7 @@
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_time.h>
-#include <fluent-bit/flb_gzip.h>
-#include <fluent-bit/flb_snappy.h>
-#include <fluent-bit/flb_zstd.h>
+#include <fluent-bit/flb_compression.h>
 #include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 #include <fluent-bit/flb_opentelemetry.h>
@@ -72,95 +70,6 @@ static int is_profiles_export_path(const char *path)
     }
 
     return FLB_FALSE;
-}
-
-static \
-int uncompress_zlib(struct flb_opentelemetry *ctx,
-                    char **output_buffer,
-                    size_t *output_size,
-                    char *input_buffer,
-                    size_t input_size)
-{
-    flb_plg_warn(ctx->ins, "zlib decompression is not supported");
-    return -1;
-}
-
-static \
-int uncompress_zstd(struct flb_opentelemetry *ctx,
-                    char **output_buffer,
-                    size_t *output_size,
-                    char *input_buffer,
-                    size_t input_size)
-{
-    int ret;
-
-    ret = flb_zstd_uncompress(input_buffer,
-                              input_size,
-                              (void *) output_buffer,
-                              output_size);
-
-    if (ret != 0) {
-        flb_plg_error(ctx->ins, "zstd decompression failed");
-        return -1;
-    }
-
-    return 1;
-}
-
-static \
-int uncompress_deflate(struct flb_opentelemetry *ctx,
-                       char **output_buffer,
-                       size_t *output_size,
-                       char *input_buffer,
-                       size_t input_size)
-{
-    flb_plg_warn(ctx->ins, "deflate decompression is not supported");
-    return -1;
-}
-
-static \
-int uncompress_snappy(struct flb_opentelemetry *ctx,
-                      char **output_buffer,
-                      size_t *output_size,
-                      char *input_buffer,
-                      size_t input_size)
-{
-    int ret;
-
-    ret = flb_snappy_uncompress_framed_data(input_buffer,
-                                            input_size,
-                                            output_buffer,
-                                            output_size);
-
-    if (ret != 0) {
-        flb_plg_error(ctx->ins, "snappy decompression failed");
-        return -1;
-    }
-
-    return 1;
-}
-
-static \
-int uncompress_gzip(struct flb_opentelemetry *ctx,
-                    char **output_buffer,
-                    size_t *output_size,
-                    char *input_buffer,
-                    size_t input_size)
-{
-    int ret;
-
-    ret = flb_gzip_uncompress(input_buffer,
-                              input_size,
-                              (void *) output_buffer,
-                              output_size);
-
-    if (ret == -1) {
-        flb_error("[opentelemetry] gzip decompression failed");
-
-        return -1;
-    }
-
-    return 1;
 }
 
 /*
@@ -788,6 +697,128 @@ static int send_ingress_busy_response_ng(struct flb_http_response *response,
                             "server overloaded: deferred ingress queue is full\n");
 }
 
+struct otlp_grpc_frame {
+    char *payload;
+    size_t size;
+    int allocated;
+    struct cfl_list _head;
+};
+
+static void destroy_grpc_frames(struct cfl_list *frames)
+{
+    struct cfl_list *head;
+    struct cfl_list *tmp;
+    struct otlp_grpc_frame *frame;
+
+    cfl_list_foreach_safe(head, tmp, frames) {
+        frame = cfl_list_entry(head, struct otlp_grpc_frame, _head);
+        if (frame->allocated) {
+            flb_free(frame->payload);
+        }
+        cfl_list_del(head);
+        flb_free(frame);
+    }
+}
+
+static int prepare_grpc_frames(struct flb_opentelemetry *context,
+                               struct flb_http_request *request,
+                               struct flb_http_response *response,
+                               struct cfl_list *frames)
+{
+    size_t offset = 0;
+    size_t body_size = cfl_sds_len(request->body);
+    size_t remaining = flb_http_server_get_buffer_max_size(&context->http_server);
+    size_t message_limit = 16 * 1024 * 1024;
+    size_t limit;
+    size_t size;
+    size_t encoding_size;
+    char *encoding;
+    unsigned char *header;
+    struct otlp_grpc_frame *frame;
+    int ret;
+    int algorithm;
+    int status = 3;
+    const char *message = "invalid gRPC packet";
+
+    if (body_size == 0) {
+        goto error;
+    }
+
+    while (offset < body_size) {
+        if (body_size - offset < 5) {
+            goto error;
+        }
+        header = (unsigned char *) request->body + offset;
+        size = ((uint32_t) header[1] << 24) | ((uint32_t) header[2] << 16) |
+               ((uint32_t) header[3] << 8) | ((uint32_t) header[4]);
+        if (header[0] > 1 || size == 0 || size > body_size - offset - 5) {
+            goto error;
+        }
+        if (size > message_limit) {
+            status = 8;
+            message = "gRPC message size exceeds limit";
+            goto error;
+        }
+
+        frame = flb_calloc(1, sizeof(*frame));
+        if (frame == NULL) {
+            status = 13;
+            message = "cannot allocate gRPC frame";
+            goto error;
+        }
+        cfl_list_add(&frame->_head, frames);
+        limit = remaining < message_limit ? remaining : message_limit;
+        if (header[0] == 1) {
+            frame->allocated = FLB_TRUE;
+            ret = http_header_lookup(HTTP_PROTOCOL_VERSION_20, request,
+                                     "grpc-encoding", &encoding, &encoding_size);
+            if (ret == -1) {
+                message = "missing gRPC encoding";
+                goto error;
+            }
+            if (encoding_size == 4 && strncasecmp(encoding, "gzip", 4) == 0) {
+                algorithm = FLB_COMPRESSION_ALGORITHM_GZIP;
+            }
+            else if (encoding_size == 4 && strncasecmp(encoding, "zstd", 4) == 0) {
+                algorithm = FLB_COMPRESSION_ALGORITHM_ZSTD;
+            }
+            else if (encoding_size == 6 && strncasecmp(encoding, "snappy", 6) == 0) {
+                algorithm = FLB_COMPRESSION_ALGORITHM_SNAPPY;
+            }
+            else {
+                status = 12;
+                message = "unsupported gRPC encoding";
+                goto error;
+            }
+            ret = flb_decompress_buffer(algorithm, header + 5, size, limit,
+                                         (void **) &frame->payload, &frame->size);
+            if (ret != FLB_DECOMPRESSOR_SUCCESS) {
+                status = ret == FLB_DECOMPRESSOR_LIMIT_EXCEEDED ? 8 : 13;
+                message = ret == FLB_DECOMPRESSOR_LIMIT_EXCEEDED ?
+                          "expanded gRPC payload size exceeds limit" : "decompression error";
+                goto error;
+            }
+        }
+        else {
+            frame->payload = (char *) header + 5;
+            frame->size = size;
+        }
+        if (frame->size > limit) {
+            status = 8;
+            message = "expanded gRPC payload size exceeds limit";
+            goto error;
+        }
+        remaining -= frame->size;
+        offset += 5 + size;
+    }
+    return 0;
+
+error:
+    destroy_grpc_frames(frames);
+    send_grpc_error_response_ng(response, status, message);
+    return -1;
+}
+
 /*
  * Protocol handle for requests coming from HTTP/2 server backend. Note that
  * if the payload is compressed (Content-Encoding) it will be decompressed
@@ -802,21 +833,16 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
     int ret = -1;
     size_t auth_len = 0;
     int grpc_request = FLB_FALSE;
-    int grpc_uncompressed = FLB_FALSE;
-    size_t grpc_offset = 0;
-    uint64_t  grpc_size = 0;
     flb_sds_t tag = NULL;
     char *auth_header = NULL;
     char payload_type;
-    char *encoding = NULL;
-    size_t encoding_size = 0;
-    char *buf = (char *) request->body;
-    size_t request_body_size = 0;
     char *payload = NULL;
     size_t payload_size = 0;
-    size_t max_grpc_size = 16 * 1024 * 1024; /* 16M limit per message */
     struct flb_opentelemetry *context;
+    struct cfl_list frames;
+    struct otlp_grpc_frame *frame;
 
+    cfl_list_init(&frames);
     context = (struct flb_opentelemetry *) response->stream->user_data;
 
     if (request->path == NULL || request->path[0] != '/') {
@@ -910,7 +936,6 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
         }
         return -1;
     }
-    request_body_size = cfl_sds_len(request->body);
 
     /* If this is a gRPC request validate the content-type */
     if (grpc_request && request->content_type == NULL) {
@@ -922,91 +947,15 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
     if (grpc_request &&
         opentelemetry_is_grpc_content_type(request->content_type) == FLB_TRUE) {
 
+        /* No signal is ingested until all frames pass bounded decompression. */
+        if (prepare_grpc_frames(context, request, response, &frames) != 0) {
+            return -1;
+        }
+
 next_grpc_message:
-
-        if (grpc_offset > request_body_size ||
-            request_body_size - grpc_offset < 5) {
-            send_grpc_error_response_ng(response, 3, "invalid gRPC packet");
-            return -1;
-        }
-
-        /* gRPC message size */
-        grpc_size = ((uint64_t) (uint8_t) buf[1] << 24) |
-                    ((uint64_t) (uint8_t) buf[2] << 16) |
-                    ((uint64_t) (uint8_t) buf[3] << 8)  |
-                    ((uint64_t) (uint8_t) buf[4]);
-
-        if (grpc_size == 0 || grpc_size > max_grpc_size) {
-            send_grpc_error_response_ng(response, 3, "gRPC message size out of valid range");
-            return -1;
-        }
-
-        if (request_body_size - grpc_offset < grpc_size + 5) {
-            send_grpc_error_response_ng(response, 3, "invalid gRPC packet");
-            return -1;
-        }
-
-        /* check if the message is compressed */
-        if (buf[0] == 0x1) {
-            /* get compression type */
-            ret = http_header_lookup(HTTP_PROTOCOL_VERSION_20, request,
-                                     "grpc-encoding", &encoding, &encoding_size);
-
-            /* malformed gRPC message */
-            if (ret == -1) {
-                send_grpc_error_response_ng(response, 3, "missing gRPC encoding");
-                return -1;
-            }
-
-            /* buf: skip header */
-            buf += 5;
-
-            if (strncasecmp(encoding, "gzip", 4) == 0 && encoding_size == 4) {
-                ret = uncompress_gzip(context,
-                                      &payload, &payload_size,
-                                      buf, grpc_size);
-            }
-            else if (strncasecmp(encoding, "zlib", 4) == 0 && encoding_size == 4) {
-                ret = uncompress_zlib(context,
-                                      &payload, &payload_size,
-                                      buf, grpc_size);
-            }
-            else if (strncasecmp(encoding, "zstd", 4) == 0 && encoding_size == 4) {
-                ret = uncompress_zstd(context,
-                                      &payload, &payload_size,
-                                      buf, grpc_size);
-            }
-            else if (strncasecmp(encoding, "snappy", 6) == 0 && encoding_size == 6) {
-                ret = uncompress_snappy(context,
-                                        &payload, &payload_size,
-                                        buf, grpc_size);
-            }
-            else if (strncasecmp(encoding, "deflate", 7) == 0 && encoding_size == 7) {
-                ret = uncompress_deflate(context,
-                                        &payload, &payload_size,
-                                        buf, grpc_size);
-            }
-            else {
-                send_grpc_error_response_ng(response, 12, "unsupported gRPC encoding");
-                return -1;
-            }
-
-            if (ret <= 0) {
-                send_grpc_error_response_ng(response, 13, "decompression error");
-                return -1;
-            }
-
-            grpc_uncompressed = FLB_TRUE;
-        }
-        else {
-            /* uncompressed payload */
-            payload = buf + 5;
-            payload_size = grpc_size;
-            grpc_uncompressed = FLB_FALSE;
-        }
-
-        /* mark the end of this gRPC message */
-        grpc_offset += grpc_size + 5;
+        frame = cfl_list_entry_first(&frames, struct otlp_grpc_frame, _head);
+        payload = frame->payload;
+        payload_size = frame->size;
     }
     else {
         grpc_request = FLB_FALSE;
@@ -1091,21 +1040,19 @@ next_grpc_message:
 
 cleanup:
     if (grpc_request) {
-        /* check if we have uncompressed a gRPC message, if so, release it */
-        if (grpc_uncompressed == FLB_TRUE) {
-            flb_free(payload);
-            grpc_uncompressed = FLB_FALSE;
+        frame = cfl_list_entry_first(&frames, struct otlp_grpc_frame, _head);
+        if (frame->allocated) {
+            flb_free(frame->payload);
         }
+        cfl_list_del(&frame->_head);
+        flb_free(frame);
 
-        /* check if we have more gRPC messages to process */
-        if (grpc_offset < request_body_size) {
-            /* release the tag of this message, the next one creates its own */
+        if (ret == 0 && !cfl_list_is_empty(&frames)) {
             flb_sds_destroy(tag);
             tag = NULL;
-
-            buf = (char *) request->body + grpc_offset;
             goto next_grpc_message;
         }
+        destroy_grpc_frames(&frames);
 
         if (ret == FLB_INPUT_INGRESS_BUSY) {
             send_ingress_busy_response_ng(response, grpc_request);
