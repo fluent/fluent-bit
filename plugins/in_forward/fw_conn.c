@@ -294,6 +294,7 @@ static void fw_conn_release(struct fw_conn *conn)
         }
         flb_free(conn->helo);
     }
+    flb_mp_preflight_destroy(conn->preflight);
     flb_free(conn->buf);
     flb_free(conn);
 }

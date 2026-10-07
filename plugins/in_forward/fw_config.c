@@ -59,6 +59,7 @@ struct flb_in_fw_config *fw_config_init(struct flb_input_instance *i_ins)
 {
     char tmp[16];
     int ret = -1;
+    int64_t memory_limit;
     const char *p;
     struct flb_in_fw_config *config;
 
@@ -124,6 +125,32 @@ struct flb_in_fw_config *fw_config_init(struct flb_input_instance *i_ins)
         }
         config->owns_shared_key = FLB_TRUE;
     }
+
+    p = flb_input_get_property("msgpack_memory_limit", i_ins);
+    if (p != NULL) {
+        memory_limit = flb_utils_size_to_bytes(p);
+        if (memory_limit < 0 || (uint64_t) memory_limit > SIZE_MAX) {
+            flb_plg_error(i_ins, "msgpack_memory_limit must be zero or a positive size");
+            fw_config_destroy(config);
+            return NULL;
+        }
+    }
+    if (config->msgpack_memory_limit == 0) {
+        /* Leave bounded headroom for compact records and zone rounding. The
+         * floor accommodates initial zones when the receive buffer is small.
+         * This is a default policy, not a worst-case MessagePack size bound. */
+        if (config->buffer_max_size > SIZE_MAX / 16) {
+            flb_plg_error(i_ins, "automatic msgpack_memory_limit overflows; set an explicit size");
+            fw_config_destroy(config);
+            return NULL;
+        }
+        config->msgpack_memory_limit = config->buffer_max_size * 16;
+        if (config->msgpack_memory_limit < 65536) {
+            config->msgpack_memory_limit = 65536;
+        }
+    }
+    flb_plg_debug(i_ins, "MessagePack zone memory limit: %zu bytes",
+                  config->msgpack_memory_limit);
 
     p = flb_input_get_property("unix_path", i_ins);
     if (p == NULL) {
