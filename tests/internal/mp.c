@@ -5,6 +5,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_mp.h>
+#include <fluent-bit/flb_mp_preflight.h>
 #include <msgpack.h>
 #include <ctraces/ctraces.h>
 
@@ -600,7 +601,150 @@ void test_validate_trace_chunk()
     msgpack_sbuffer_destroy(&buffer);
 }
 
+/* Budget checks must run before msgpack-c sees attacker-controlled counts. */
+static void test_preflight(void)
+{
+    struct flb_mp_preflight *scan;
+    size_t consumed;
+    size_t cost;
+    size_t required;
+    size_t i;
+    int ret;
+    char deep[MSGPACK_EMBED_STACK_SIZE + 1];
+    char large_string[16387];
+    const char array[] = "\xdd\xff\xff\xff\xff";
+    const char map[] = "\xdf\xff\xff\xff\xff";
+    const char valid[] = "\x92\x01\x81\xa1k\x02";
+    const char nested[] = "\x92\xdd\x00\x00\x00\x64";
+    const char invalid[] = "\xc1";
+    const char sequence[] = "\x91\x01\x91\x02";
+    const char long_string[] = "\xdb\xff\xff\xff\xff";
+
+    scan = flb_mp_preflight_create(6144000, 6144000);
+    TEST_ASSERT(scan != NULL);
+    ret = flb_mp_preflight_scan(scan, array, 5, &consumed, &cost);
+    TEST_CHECK(ret == -1);
+    flb_mp_preflight_reset(scan, 6144000, 6144000);
+    TEST_CHECK(flb_mp_preflight_scan(scan, map, 5, &consumed, &cost) == -1);
+
+    flb_mp_preflight_reset(scan, 6144000, 6144000);
+    TEST_CHECK(flb_mp_preflight_scan(scan, array, 2, &consumed, &cost) == 0);
+    TEST_CHECK(flb_mp_preflight_scan(scan, array, 5, &consumed, &cost) == -1);
+
+    flb_mp_preflight_reset(scan, 6144000, 6144000);
+    for (i = 1; i < sizeof(valid); i++) {
+        ret = flb_mp_preflight_scan(scan, valid, i, &consumed, &cost);
+        TEST_CHECK(ret == (i == sizeof(valid) - 1 ? 1 : 0));
+    }
+    required = cost;
+    TEST_CHECK(consumed == sizeof(valid) - 1);
+    TEST_CHECK(required >= MSGPACK_ZONE_CHUNK_SIZE);
+    flb_mp_preflight_reset(scan, required, 6144000);
+    TEST_CHECK(flb_mp_preflight_scan(scan, valid, sizeof(valid) - 1, &consumed, &cost) == 1);
+    flb_mp_preflight_reset(scan, required - 1, 6144000);
+    TEST_CHECK(flb_mp_preflight_scan(scan, valid, sizeof(valid) - 1, &consumed, &cost) == -1);
+
+    flb_mp_preflight_reset(scan, 128, 6144000);
+    TEST_CHECK(flb_mp_preflight_scan(scan, nested, sizeof(nested) - 1, &consumed, &cost) == -1);
+    flb_mp_preflight_reset(scan, 6144000, 6144000);
+    memset(deep, 0x91, sizeof(deep));
+    TEST_CHECK(flb_mp_preflight_scan(scan, deep, sizeof(deep), &consumed, &cost) == -1);
+    flb_mp_preflight_reset(scan, 6144000, 6144000);
+    TEST_CHECK(flb_mp_preflight_scan(scan, invalid, 1, &consumed, &cost) == -1);
+    TEST_CHECK(flb_mp_preflight_sequence(valid, sizeof(valid) - 1, required) == 0);
+    TEST_CHECK(flb_mp_preflight_sequence(valid, sizeof(valid) - 2, required) == -1);
+    TEST_CHECK(flb_mp_preflight_sequence(array, 5, 6144000) == -1);
+    TEST_CHECK(flb_mp_preflight_sequence(sequence, sizeof(sequence) - 1, required) == -1);
+    TEST_CHECK(flb_mp_preflight_sequence(sequence, sizeof(sequence) - 1, 2 * required) == 0);
+    flb_mp_preflight_reset(scan, 6144000, 6144000);
+    TEST_CHECK(flb_mp_preflight_scan(scan, long_string, 5, &consumed, &cost) == -1);
+    memset(large_string, 'a', sizeof(large_string));
+    large_string[0] = (char) 0xda;
+    large_string[1] = 0x40;
+    large_string[2] = 0;
+    flb_mp_preflight_reset(scan, required, sizeof(large_string));
+    TEST_CHECK(flb_mp_preflight_scan(scan, large_string, sizeof(large_string),
+                                     &consumed, &cost) == 1);
+    flb_mp_preflight_reset(scan, required, sizeof(large_string) - 1);
+    TEST_CHECK(flb_mp_preflight_scan(scan, large_string, sizeof(large_string),
+                                     &consumed, &cost) == -1);
+    flb_mp_preflight_destroy(scan);
+}
+
+static void test_preflight_formats(void)
+{
+    struct flb_mp_preflight *scan;
+    msgpack_sbuffer buffer;
+    msgpack_packer packer;
+    msgpack_unpacked result;
+    size_t consumed;
+    size_t cost;
+    size_t offset;
+    size_t i;
+    size_t limit;
+    int ret;
+    char bytes[300];
+
+    memset(bytes, 'a', sizeof(bytes));
+    scan = flb_mp_preflight_create(6144000, 6144000);
+    TEST_ASSERT(scan != NULL);
+    msgpack_sbuffer_init(&buffer);
+    msgpack_packer_init(&packer, &buffer, msgpack_sbuffer_write);
+    msgpack_pack_array(&packer, 20);
+    msgpack_pack_nil(&packer);
+    msgpack_pack_true(&packer);
+    msgpack_pack_false(&packer);
+    msgpack_pack_uint8(&packer, 200);
+    msgpack_pack_uint16(&packer, 1000);
+    msgpack_pack_uint32(&packer, 100000);
+    msgpack_pack_uint64(&packer, UINT64_MAX);
+    msgpack_pack_int8(&packer, -100);
+    msgpack_pack_int16(&packer, -1000);
+    msgpack_pack_int32(&packer, -100000);
+    msgpack_pack_int64(&packer, INT64_MIN);
+    msgpack_pack_float(&packer, 1.5);
+    msgpack_pack_double(&packer, 2.5);
+    msgpack_pack_str(&packer, sizeof(bytes));
+    msgpack_pack_str_body(&packer, bytes, sizeof(bytes));
+    msgpack_pack_bin(&packer, sizeof(bytes));
+    msgpack_pack_bin_body(&packer, bytes, sizeof(bytes));
+    msgpack_pack_ext(&packer, sizeof(bytes), 1);
+    msgpack_pack_ext_body(&packer, bytes, sizeof(bytes));
+    msgpack_pack_ext(&packer, 0, 1);
+    msgpack_pack_ext(&packer, 8, 0);
+    msgpack_pack_ext_body(&packer, bytes, 8);
+    msgpack_pack_map(&packer, 0);
+    msgpack_pack_array(&packer, 2000);
+    for (i = 0; i < 2000; i++) {
+        msgpack_pack_map(&packer, 1);
+        msgpack_pack_str(&packer, 1);
+        msgpack_pack_str_body(&packer, "k", 1);
+        msgpack_pack_nil(&packer);
+    }
+    for (i = 1; i <= buffer.size; i++) {
+        ret = flb_mp_preflight_scan(scan, buffer.data, i, &consumed, &cost);
+        TEST_CHECK(ret == (i == buffer.size ? 1 : 0));
+    }
+    TEST_CHECK(consumed == buffer.size);
+    limit = cost;
+    TEST_CHECK(limit > MSGPACK_ZONE_CHUNK_SIZE);
+    flb_mp_preflight_reset(scan, limit, 6144000);
+    TEST_CHECK(flb_mp_preflight_scan(scan, buffer.data, buffer.size, &consumed, &cost) == 1);
+    flb_mp_preflight_reset(scan, limit - 1, 6144000);
+    TEST_CHECK(flb_mp_preflight_scan(scan, buffer.data, buffer.size, &consumed, &cost) == -1);
+    msgpack_unpacked_init(&result);
+    offset = 0;
+    TEST_CHECK(msgpack_unpack_next(&result, buffer.data, buffer.size, &offset) ==
+               MSGPACK_UNPACK_SUCCESS);
+    TEST_CHECK(offset == buffer.size);
+    msgpack_unpacked_destroy(&result);
+    msgpack_sbuffer_destroy(&buffer);
+    flb_mp_preflight_destroy(scan);
+}
+
 TEST_LIST = {
+    {"preflight", test_preflight},
+    {"preflight_formats", test_preflight_formats},
     {"validate_trace_chunk" , test_validate_trace_chunk},
     {"count"                , test_count},
     {"map_header"           , test_map_header},
