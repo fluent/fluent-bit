@@ -829,6 +829,14 @@ static struct flb_config_map config_map[] = {
     "The maximum buffer memory size used to receive a Forward message."
    },
    {
+    FLB_CONFIG_MAP_SIZE, "msgpack_memory_limit", "0",
+    0, FLB_TRUE, offsetof(struct flb_in_fw_config, msgpack_memory_limit),
+    "Maximum decoded MessagePack zone memory. Zero uses the greater of 65536 "
+    "bytes and 16 times buffer_max_size; an explicit size overrides this budget. "
+    "Includes the outer frame and cumulative PackedForward log entry zones, "
+    "including retained group records and zone overhead."
+   },
+   {
     FLB_CONFIG_MAP_BOOL, "empty_shared_key", "false",
     0, FLB_TRUE, offsetof(struct flb_in_fw_config, empty_shared_key),
     "Enable an empty string as the shared key for authentication."

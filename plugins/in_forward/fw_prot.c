@@ -43,9 +43,6 @@
 #include "fw_prot.h"
 #include "fw_conn.h"
 
-/* Try parsing rounds up-to 32 bytes */
-#define EACH_RECV_SIZE 32
-
 static int get_chunk_event_type(struct flb_input_instance *ins, msgpack_object options)
 {
     int i;
@@ -1208,50 +1205,36 @@ static int fw_process_message_mode_entry(
     return 0;
 }
 
-static size_t receiver_recv(struct fw_conn *conn, char *buf, size_t try_size) {
-    size_t off;
-    size_t actual_size;
-    size_t buf_len;
-
-    if (conn->rest > conn->buf_len) {
-        return 0;
-    }
-
-    buf_len = conn->buf_len;
-    off = buf_len - conn->rest;
-
-    if (off > buf_len) {
-        return 0;
-    }
-
-    actual_size = try_size;
-
-    if (actual_size > conn->rest) {
-        actual_size = conn->rest;
-    }
-
-    memcpy(buf, conn->buf + off, actual_size);
-    conn->rest -= actual_size;
-
-    return actual_size;
-}
-
-static int receiver_to_unpacker(struct fw_conn *conn, size_t request_size,
-                                msgpack_unpacker *unpacker, size_t *recv_len)
+/* Never let the allocating decoder see an unvalidated or incomplete frame. */
+static int fw_unpack_next(struct fw_conn *conn, msgpack_unpacked *result, size_t *bytes)
 {
-    *recv_len = 0;
+    const char *data;
+    size_t consumed;
+    size_t cost;
+    size_t offset;
+    int ret;
 
-    /* make sure there's enough room, or expand the unpacker accordingly */
-    if (msgpack_unpacker_buffer_capacity(unpacker) < request_size) {
-        if (!msgpack_unpacker_reserve_buffer(unpacker, request_size)) {
-            return -1;
-        }
+    msgpack_unpacked_destroy(result);
+    data = conn->buf + (conn->buf_len - conn->rest);
+    ret = flb_mp_preflight_scan(conn->preflight, data, conn->rest, &consumed, &cost);
+    if (ret < 0) {
+        flb_plg_warn(conn->ctx->ins, "invalid frame or MessagePack allocation budget exceeded");
+        return MSGPACK_UNPACK_PARSE_ERROR;
     }
-    *recv_len = receiver_recv(conn, msgpack_unpacker_buffer(unpacker),
-                              request_size);
-    msgpack_unpacker_buffer_consumed(unpacker, *recv_len);
-
-    return 0;
+    if (ret == 0) {
+        return MSGPACK_UNPACK_CONTINUE;
+    }
+    offset = 0;
+    ret = msgpack_unpack_next(result, data, consumed, &offset);
+    if (ret != MSGPACK_UNPACK_SUCCESS || offset != consumed) {
+        return MSGPACK_UNPACK_PARSE_ERROR;
+    }
+    *bytes = consumed;
+    conn->rest -= consumed;
+    conn->frame_zone_cost = cost;
+    flb_mp_preflight_reset(conn->preflight, conn->ctx->msgpack_memory_limit,
+                           conn->ctx->buffer_max_size);
+    return ret;
 }
 
 static void destroy_metrics_contexts(struct cfl_list *contexts)
@@ -1369,7 +1352,17 @@ static int append_log(struct flb_input_instance *ins, struct fw_conn *conn,
 {
     int ret;
     size_t off = 0;
+    size_t preflight_limit = SIZE_MAX;
     struct ctrace *ctr;
+
+    /* Metrics and traces use mpack readers, not msgpack-c object zones. */
+    if (event_type == FLB_EVENT_TYPE_LOGS) {
+        preflight_limit = conn->ctx->msgpack_memory_limit - conn->frame_zone_cost;
+    }
+    if (flb_mp_preflight_sequence(data, len, preflight_limit) != 0) {
+        flb_plg_warn(ins, "invalid PackedForward payload or MessagePack allocation budget exceeded");
+        return -1;
+    }
 
     if (event_type == FLB_EVENT_TYPE_LOGS) {
         if (fw_validate_packed_forward_entries(ins, data, len) != 0) {
@@ -1509,14 +1502,12 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
     const char *stag;
     flb_sds_t out_tag = NULL;
     size_t bytes;
-    size_t recv_len;
     msgpack_object tag;
     msgpack_object entry;
     msgpack_object map;
     msgpack_object root;
     msgpack_object chunk;
     msgpack_unpacked result;
-    msgpack_unpacker *unp;
     size_t all_used = 0;
     struct flb_in_fw_config *ctx = conn->ctx;
 
@@ -1530,486 +1521,412 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
         return -1;
     }
 
-    unp = msgpack_unpacker_new(1024);
-    if (!unp) {
-        flb_plg_error(ctx->ins, "could not allocate msgpack unpacker");
-        flb_sds_destroy(out_tag);
-        return -1;
+    if (conn->preflight == NULL) {
+        conn->preflight = flb_mp_preflight_create(ctx->msgpack_memory_limit,
+                                                    ctx->buffer_max_size);
+        if (conn->preflight == NULL) {
+            flb_sds_destroy(out_tag);
+            return -1;
+        }
     }
-
     msgpack_unpacked_init(&result);
     conn->rest = conn->buf_len;
+    ret = fw_unpack_next(conn, &result, &bytes);
 
-    while (1) {
-        ret = receiver_to_unpacker(conn, EACH_RECV_SIZE, unp, &recv_len);
-        if (ret == -1) {
-            flb_plg_error(ctx->ins, "could not allocate msgpack unpacker buffer");
+    while (ret == MSGPACK_UNPACK_SUCCESS) {
+        /* Account for complete frames before compacting the receive buffer. */
+        if (bytes > 0 && all_used > SIZE_MAX - bytes) {
+            flb_plg_error(ctx->ins, "incoming frame size accounting overflow");
+            goto cleanup_msgpack;
+        }
+
+        all_used += bytes;
+
+        /* Map the array */
+        root = result.data;
+        contain_options = FLB_FALSE;
+
+        if (root.type != MSGPACK_OBJECT_ARRAY) {
+            flb_plg_debug(ctx->ins,
+                          "parser: expecting an array (type=%i), skip.",
+                          root.type);
             msgpack_unpacked_destroy(&result);
-            msgpack_unpacker_free(unp);
             flb_sds_destroy(out_tag);
 
             return -1;
         }
 
-        if (recv_len == 0) {
-            /* No more data */
-            msgpack_unpacker_free(unp);
+        if (root.via.array.size < 2) {
+            flb_plg_debug(ctx->ins,
+                          "parser: array of invalid size, skip.");
             msgpack_unpacked_destroy(&result);
-
-            /* Adjust buffer data */
-            if (conn->buf_len >= all_used && all_used > 0) {
-                memmove(conn->buf, conn->buf + all_used,
-                        conn->buf_len - all_used);
-                conn->buf_len -= all_used;
-            }
             flb_sds_destroy(out_tag);
 
-            return 0;
+            return -1;
         }
 
-        /* Always summarize the total number of bytes requested to parse */
-        ret = msgpack_unpacker_next_with_size(unp, &result, &bytes);
+        if (root.via.array.size == 3) {
+            contain_options = FLB_TRUE;
+        }
 
-        /*
-         * Upon parsing or memory errors, break the loop, return the error
-         * and expect the connection to be closed.
-         */
-        if (ret == MSGPACK_UNPACK_PARSE_ERROR ||
-            ret == MSGPACK_UNPACK_NOMEM_ERROR) {
-            /* A bit redunant, print out the real error */
-            if (ret == MSGPACK_UNPACK_PARSE_ERROR) {
-                flb_plg_debug(ctx->ins, "err=MSGPACK_UNPACK_PARSE_ERROR");
+        /* Get the tag */
+        tag = root.via.array.ptr[0];
+        if (tag.type != MSGPACK_OBJECT_STR) {
+            flb_plg_debug(ctx->ins,
+                          "parser: invalid tag format, skip.");
+            msgpack_unpacked_destroy(&result);
+            flb_sds_destroy(out_tag);
+            return -1;
+        }
+
+        /* reference the tag associated with the record */
+        stag     = tag.via.str.ptr;
+        stag_len = tag.via.str.size;
+
+        /* clear out_tag before using */
+        flb_sds_len_set(out_tag, 0);
+
+        /* Prefix the incoming record tag with a custom prefix */
+        if (ctx->tag_prefix) {
+            /* prefix */
+            flb_sds_cat_safe(&out_tag,
+                             ctx->tag_prefix, flb_sds_len(ctx->tag_prefix));
+            /* record tag */
+            flb_sds_cat_safe(&out_tag, stag, stag_len);
+        }
+        else if (ins->tag && !ins->tag_default) {
+            /* if the input plugin instance Tag has been manually set, use it */
+            flb_sds_cat_safe(&out_tag, ins->tag, flb_sds_len(ins->tag));
+        }
+        else if (stag_len > 0) {
+            /* use the tag from the record */
+            flb_sds_cat_safe(&out_tag, stag, stag_len);
+        }
+        else {
+            /*
+             * An empty tag cannot be used to look up, dispatch or
+             * release a chunk: use the instance tag instead.
+             */
+            if (ins->tag != NULL && ins->tag_len > 0) {
+                flb_sds_cat_safe(&out_tag, ins->tag, ins->tag_len);
             }
             else {
-                flb_plg_error(ctx->ins, "err=MSGPACK_UNPACK_NOMEM_ERROR");
+                flb_sds_cat_safe(&out_tag, ins->name, strlen(ins->name));
             }
-
-            /* Cleanup buffers */
-            msgpack_unpacked_destroy(&result);
-            msgpack_unpacker_free(unp);
-            flb_sds_destroy(out_tag);
-
-            return -1;
         }
 
-        while (ret == MSGPACK_UNPACK_SUCCESS) {
+        entry = root.via.array.ptr[1];
+
+        if (entry.type == MSGPACK_OBJECT_ARRAY) {
             /*
-             * For buffering optimization we always want to know the total
-             * number of bytes involved on the new object returned. Despites
-             * buf_off always know the given bytes, it's likely we used a bit
-             * less. This 'all_used' field keep a reference per object so
-             * when returning to the caller we can adjust the source buffer
-             * and deprecated consumed data.
-             *
-             * The 'last_parsed' field is Fluent Bit specific and is documented
-             * in:
-             *
-             *  lib/msgpack-c/include/msgpack/unpack.h
-             *
-             * Other references:
-             *
-             *  https://github.com/msgpack/msgpack-c/issues/514
+             * Forward format 1 (forward mode: [tag, [[time, map], ...]]
              */
-            if (bytes > 0 && all_used > SIZE_MAX - bytes) {
-                flb_plg_error(ctx->ins, "incoming frame size accounting overflow");
+
+            /* Check for options */
+            chunk_id = -1;
+            ret = get_options_chunk(&root, 2, &chunk_id);
+            if (ret == -1) {
+                flb_plg_debug(ctx->ins, "invalid options field");
+                msgpack_unpacked_destroy(&result);
+                flb_sds_destroy(out_tag);
+
+                return -1;
+            }
+
+            /* Encode and ingest the complete Forward mode frame. */
+            ret = fw_process_forward_mode(
+                      conn,
+                      out_tag,
+                      flb_sds_len(out_tag),
+                      &entry);
+
+            if (ret == 0 && chunk_id != -1) {
+                msgpack_object options;
+                msgpack_object chunk;
+
+                options = root.via.array.ptr[2];
+                chunk = options.via.map.ptr[chunk_id].val;
+
+                send_ack(conn->in, conn, chunk);
+            }
+
+            if (ret != 0) {
                 goto cleanup_msgpack;
             }
-
-            all_used += bytes;
-
-
-            /* Map the array */
-            root = result.data;
-            contain_options = FLB_FALSE;
-
-            if (root.type != MSGPACK_OBJECT_ARRAY) {
-                flb_plg_debug(ctx->ins,
-                              "parser: expecting an array (type=%i), skip.",
-                              root.type);
+        }
+        else if (entry.type == MSGPACK_OBJECT_POSITIVE_INTEGER ||
+                 entry.type == MSGPACK_OBJECT_EXT) {
+            /*
+             * Forward format 2 (message mode) : [tag, time, map, ...]
+             */
+            if (root.via.array.size < 3) {
+                flb_plg_warn(ctx->ins,
+                             "message mode requires at least 3 elements");
                 msgpack_unpacked_destroy(&result);
-                msgpack_unpacker_free(unp);
                 flb_sds_destroy(out_tag);
-
                 return -1;
             }
-
-            if (root.via.array.size < 2) {
-                flb_plg_debug(ctx->ins,
-                              "parser: array of invalid size, skip.");
+            map = root.via.array.ptr[2];
+            if (map.type != MSGPACK_OBJECT_MAP) {
+                flb_plg_warn(ctx->ins, "invalid data format, map expected");
                 msgpack_unpacked_destroy(&result);
-                msgpack_unpacker_free(unp);
-                flb_sds_destroy(out_tag);
-
-                return -1;
-            }
-
-            if (root.via.array.size == 3) {
-                contain_options = FLB_TRUE;
-            }
-
-            /* Get the tag */
-            tag = root.via.array.ptr[0];
-            if (tag.type != MSGPACK_OBJECT_STR) {
-                flb_plg_debug(ctx->ins,
-                              "parser: invalid tag format, skip.");
-                msgpack_unpacked_destroy(&result);
-                msgpack_unpacker_free(unp);
                 flb_sds_destroy(out_tag);
                 return -1;
             }
 
-            /* reference the tag associated with the record */
-            stag     = tag.via.str.ptr;
-            stag_len = tag.via.str.size;
-
-            /* clear out_tag before using */
-            flb_sds_len_set(out_tag, 0);
-
-            /* Prefix the incoming record tag with a custom prefix */
-            if (ctx->tag_prefix) {
-                /* prefix */
-                flb_sds_cat_safe(&out_tag,
-                                 ctx->tag_prefix, flb_sds_len(ctx->tag_prefix));
-                /* record tag */
-                flb_sds_cat_safe(&out_tag, stag, stag_len);
-            }
-            else if (ins->tag && !ins->tag_default) {
-                /* if the input plugin instance Tag has been manually set, use it */
-                flb_sds_cat_safe(&out_tag, ins->tag, flb_sds_len(ins->tag));
-            }
-            else if (stag_len > 0) {
-                /* use the tag from the record */
-                flb_sds_cat_safe(&out_tag, stag, stag_len);
-            }
-            else {
-                /*
-                 * An empty tag cannot be used to look up, dispatch or
-                 * release a chunk: use the instance tag instead.
-                 */
-                if (ins->tag != NULL && ins->tag_len > 0) {
-                    flb_sds_cat_safe(&out_tag, ins->tag, ins->tag_len);
-                }
-                else {
-                    flb_sds_cat_safe(&out_tag, ins->name, strlen(ins->name));
-                }
+            /* Check for options */
+            chunk_id = -1;
+            ret = get_options_chunk(&root, 3, &chunk_id);
+            if (ret == -1) {
+                flb_plg_debug(ctx->ins, "invalid options field");
+                msgpack_unpacked_destroy(&result);
+                flb_sds_destroy(out_tag);
+                return -1;
             }
 
-            entry = root.via.array.ptr[1];
+            metadata_id = -1;
+            ret = get_options_metadata(&root, 3, &metadata_id);
+            if (ret == -1) {
+                flb_plg_debug(ctx->ins, "invalid options field");
+                msgpack_unpacked_destroy(&result);
+                flb_sds_destroy(out_tag);
+                return -1;
+            }
 
-            if (entry.type == MSGPACK_OBJECT_ARRAY) {
-                /*
-                 * Forward format 1 (forward mode: [tag, [[time, map], ...]]
-                 */
+            /* Process map */
+            ret = fw_process_message_mode_entry(
+                conn->in, conn,
+                out_tag, flb_sds_len(out_tag),
+                &root, &entry, &map, chunk_id,
+                metadata_id);
+            if (ret != 0) {
+                goto cleanup_msgpack;
+            }
+        }
+        else if (entry.type == MSGPACK_OBJECT_STR ||
+                 entry.type == MSGPACK_OBJECT_BIN) {
+            /* PackedForward Mode */
+            const char *data = NULL;
+            size_t len = 0;
 
-                /* Check for options */
-                chunk_id = -1;
-                ret = get_options_chunk(&root, 2, &chunk_id);
-                if (ret == -1) {
-                    flb_plg_debug(ctx->ins, "invalid options field");
-                    msgpack_unpacked_destroy(&result);
-                    msgpack_unpacker_free(unp);
-                    flb_sds_destroy(out_tag);
+            /* Check for options */
+            chunk_id = -1;
+            ret = get_options_chunk(&root, 2, &chunk_id);
+            if (ret == -1) {
+                flb_plg_debug(ctx->ins, "invalid options field");
+                msgpack_unpacked_destroy(&result);
+                flb_sds_destroy(out_tag);
+                return -1;
+            }
 
-                    return -1;
-                }
+            if (entry.type == MSGPACK_OBJECT_STR) {
+                data = entry.via.str.ptr;
+                len = entry.via.str.size;
+            }
+            else if (entry.type == MSGPACK_OBJECT_BIN) {
+                data = entry.via.bin.ptr;
+                len = entry.via.bin.size;
+            }
 
-                /* Encode and ingest the complete Forward mode frame. */
-                ret = fw_process_forward_mode(
-                          conn,
-                          out_tag,
-                          flb_sds_len(out_tag),
-                          &entry);
-
-                if (ret == 0 && chunk_id != -1) {
-                    msgpack_object options;
-                    msgpack_object chunk;
-
-                    options = root.via.array.ptr[2];
-                    chunk = options.via.map.ptr[chunk_id].val;
-
-                    send_ack(conn->in, conn, chunk);
-                }
-
-                if (ret != 0) {
+            if (data) {
+                if (len > ctx->buffer_max_size) {
+                    flb_plg_error(ctx->ins,
+                                  "packedforward payload too large (%zu bytes), limit=%zu",
+                                  len, ctx->buffer_max_size);
                     goto cleanup_msgpack;
                 }
-            }
-            else if (entry.type == MSGPACK_OBJECT_POSITIVE_INTEGER ||
-                     entry.type == MSGPACK_OBJECT_EXT) {
-                /*
-                 * Forward format 2 (message mode) : [tag, time, map, ...]
-                 */
-                if (root.via.array.size < 3) {
-                    flb_plg_warn(ctx->ins,
-                                 "message mode requires at least 3 elements");
-                    msgpack_unpacked_destroy(&result);
-                    msgpack_unpacker_free(unp);
-                    flb_sds_destroy(out_tag);
-                    return -1;
-                }
-                map = root.via.array.ptr[2];
-                if (map.type != MSGPACK_OBJECT_MAP) {
-                    flb_plg_warn(ctx->ins, "invalid data format, map expected");
-                    msgpack_unpacked_destroy(&result);
-                    msgpack_unpacker_free(unp);
-                    flb_sds_destroy(out_tag);
-                    return -1;
-                }
 
-                /* Check for options */
-                chunk_id = -1;
-                ret = get_options_chunk(&root, 3, &chunk_id);
-                if (ret == -1) {
-                    flb_plg_debug(ctx->ins, "invalid options field");
-                    msgpack_unpacked_destroy(&result);
-                    msgpack_unpacker_free(unp);
-                    flb_sds_destroy(out_tag);
-                    return -1;
-                }
-
-                metadata_id = -1;
-                ret = get_options_metadata(&root, 3, &metadata_id);
-                if (ret == -1) {
-                    flb_plg_debug(ctx->ins, "invalid options field");
-                    msgpack_unpacked_destroy(&result);
-                    msgpack_unpacker_free(unp);
-                    flb_sds_destroy(out_tag);
-                    return -1;
-                }
-
-                /* Process map */
-                ret = fw_process_message_mode_entry(
-                    conn->in, conn,
-                    out_tag, flb_sds_len(out_tag),
-                    &root, &entry, &map, chunk_id,
-                    metadata_id);
-                if (ret != 0) {
-                    goto cleanup_msgpack;
-                }
-            }
-            else if (entry.type == MSGPACK_OBJECT_STR ||
-                     entry.type == MSGPACK_OBJECT_BIN) {
-                /* PackedForward Mode */
-                const char *data = NULL;
-                size_t len = 0;
-
-                /* Check for options */
-                chunk_id = -1;
-                ret = get_options_chunk(&root, 2, &chunk_id);
-                if (ret == -1) {
-                    flb_plg_debug(ctx->ins, "invalid options field");
-                    msgpack_unpacked_destroy(&result);
-                    msgpack_unpacker_free(unp);
-                    flb_sds_destroy(out_tag);
-                    return -1;
-                }
-
-                if (entry.type == MSGPACK_OBJECT_STR) {
-                    data = entry.via.str.ptr;
-                    len = entry.via.str.size;
-                }
-                else if (entry.type == MSGPACK_OBJECT_BIN) {
-                    data = entry.via.bin.ptr;
-                    len = entry.via.bin.size;
-                }
-
-                if (data) {
-                    if (len > ctx->buffer_max_size) {
-                        flb_plg_error(ctx->ins,
-                                      "packedforward payload too large (%zu bytes), limit=%zu",
-                                      len, ctx->buffer_max_size);
-                        goto cleanup_msgpack;
+                /* Get event type early for use in both compressed/uncompressed paths */
+                event_type = FLB_EVENT_TYPE_LOGS;
+                if (contain_options) {
+                    ret = get_chunk_event_type(ins, root.via.array.ptr[2]);
+                    if (ret == -1) {
+                        flb_plg_error(ctx->ins, "invalid chunk event type");
+                        msgpack_unpacked_destroy(&result);
+                        flb_sds_destroy(out_tag);
+                        return -1;
                     }
+                    event_type = ret;
+                }
 
-                    /* Get event type early for use in both compressed/uncompressed paths */
-                    event_type = FLB_EVENT_TYPE_LOGS;
-                    if (contain_options) {
-                        ret = get_chunk_event_type(ins, root.via.array.ptr[2]);
-                        if (ret == -1) {
-                            flb_plg_error(ctx->ins, "invalid chunk event type");
-                            msgpack_unpacked_destroy(&result);
-                            flb_sds_destroy(out_tag);
-                            msgpack_unpacker_free(unp);
-                            return -1;
-                        }
-                        event_type = ret;
+                /* Initialize decompressor on first compressed chunk */
+                if (conn->d_ctx == NULL && contain_options) {
+                    int opt_type = contain_options ? get_compression_type(root.via.array.ptr[2]) : FLB_COMPRESSION_ALGORITHM_NONE;
+                    int sniff = sniff_magic((const uint8_t *)data, len);
+                    int type = opt_type;
+
+                    if (sniff != FLB_COMPRESSION_ALGORITHM_NONE &&
+                        opt_type != FLB_COMPRESSION_ALGORITHM_NONE &&
+                        sniff != opt_type) {
+                        flb_plg_warn(ctx->ins, "compressed=%s but magic says %s; using magic",
+                                     opt_type == FLB_COMPRESSION_ALGORITHM_ZSTD ? "zstd" : "gzip",
+                                     sniff    == FLB_COMPRESSION_ALGORITHM_ZSTD ? "zstd" : "gzip");
+                        type = sniff;
                     }
-
-                    /* Initialize decompressor on first compressed chunk */
-                    if (conn->d_ctx == NULL && contain_options) {
-                        int opt_type = contain_options ? get_compression_type(root.via.array.ptr[2]) : FLB_COMPRESSION_ALGORITHM_NONE;
-                        int sniff = sniff_magic((const uint8_t *)data, len);
-                        int type = opt_type;
-
-                        if (sniff != FLB_COMPRESSION_ALGORITHM_NONE &&
-                            opt_type != FLB_COMPRESSION_ALGORITHM_NONE &&
-                            sniff != opt_type) {
-                            flb_plg_warn(ctx->ins, "compressed=%s but magic says %s; using magic",
-                                         opt_type == FLB_COMPRESSION_ALGORITHM_ZSTD ? "zstd" : "gzip",
-                                         sniff    == FLB_COMPRESSION_ALGORITHM_ZSTD ? "zstd" : "gzip");
-                            type = sniff;
-                        }
-                        else if (opt_type == FLB_COMPRESSION_ALGORITHM_NONE) {
-                            type = sniff;
-                        }
-                        if (type > 0) {
-                            conn->compression_type = type;
-                            conn->d_ctx = flb_decompression_context_create(
-                                                conn->compression_type,
-                                                FLB_DECOMPRESSION_BUFFER_SIZE);
-                            if (!conn->d_ctx) {
-                                flb_plg_error(ctx->ins, "failed to create decompression context");
-
-                                goto cleanup_msgpack;
-                            }
-                        }
+                    else if (opt_type == FLB_COMPRESSION_ALGORITHM_NONE) {
+                        type = sniff;
                     }
+                    if (type > 0) {
+                        conn->compression_type = type;
+                        conn->d_ctx = flb_decompression_context_create(
+                                            conn->compression_type,
+                                            FLB_DECOMPRESSION_BUFFER_SIZE);
+                        if (!conn->d_ctx) {
+                            flb_plg_error(ctx->ins, "failed to create decompression context");
 
-                    if (conn->compression_type != FLB_COMPRESSION_ALGORITHM_NONE) {
-                        char *decoded_payload = NULL;
-                        char *decomp_buf = NULL;
-                        uint8_t *append_ptr;
-                        size_t available_space;
-                        size_t decomp_len;
-                        size_t total_decompressed;
-                        int decomp_ret;
-                        size_t required_size;
-
-                        total_decompressed = 0;
-
-                        available_space = flb_decompression_context_get_available_space(conn->d_ctx);
-                        if (len > available_space) {
-                            if (conn->d_ctx->input_buffer_length > SIZE_MAX - len) {
-                                flb_plg_error(ctx->ins,
-                                              "decompression input size overflow");
-
-                                goto cleanup_decompress;
-                            }
-
-                            required_size = conn->d_ctx->input_buffer_length + len;
-                            if (required_size > ctx->buffer_max_size) {
-                                flb_plg_error(ctx->ins,
-                                              "compressed payload exceeds limit (%zu bytes)",
-                                              ctx->buffer_max_size);
-
-                                goto cleanup_decompress;
-                            }
-
-                            if (flb_decompression_context_resize_buffer(conn->d_ctx, required_size) != 0) {
-                                flb_plg_error(ctx->ins, "cannot resize decompression buffer");
-
-                                goto cleanup_decompress;
-                            }
-                        }
-                        append_ptr = flb_decompression_context_get_append_buffer(conn->d_ctx);
-                        memcpy(append_ptr, data, len);
-                        conn->d_ctx->input_buffer_length += len;
-
-                        decomp_buf = flb_malloc(ctx->buffer_chunk_size);
-                        if (!decomp_buf) {
-                            flb_errno();
-
-                            goto cleanup_decompress;
-                        }
-
-                        decoded_payload = flb_malloc(ctx->buffer_max_size);
-                        if (!decoded_payload) {
-                            flb_errno();
-                            flb_free(decomp_buf);
-
-                            goto cleanup_decompress;
-                        }
-
-                        do {
-                            decomp_len = ctx->buffer_chunk_size;
-                            decomp_ret = flb_decompress(conn->d_ctx, decomp_buf, &decomp_len);
-
-                            if (decomp_ret == FLB_DECOMPRESSOR_FAILURE) {
-                                if (decomp_len > 0) {
-                                    flb_plg_error(ctx->ins, "decompression failed, data may be corrupt");
-                                    flb_free(decoded_payload);
-                                    flb_free(decomp_buf);
-
-                                    goto cleanup_decompress;
-                                }
-                                break;
-                            }
-
-                            if (decomp_len > 0) {
-                                if (total_decompressed > SIZE_MAX - decomp_len) {
-                                    flb_plg_error(ctx->ins,
-                                                  "decompressed output size overflow");
-                                    flb_free(decoded_payload);
-                                    flb_free(decomp_buf);
-
-                                    goto cleanup_decompress;
-                                }
-
-                                total_decompressed += decomp_len;
-
-                                if (total_decompressed > ctx->buffer_max_size) {
-                                    flb_plg_error(ctx->ins,
-                                                  "decompressed payload exceeds limit (%zu bytes)",
-                                                  ctx->buffer_max_size);
-                                    flb_free(decoded_payload);
-                                    flb_free(decomp_buf);
-
-                                    goto cleanup_decompress;
-                                }
-
-                                memcpy(decoded_payload + (total_decompressed - decomp_len),
-                                       decomp_buf,
-                                       decomp_len);
-                            }
-                        } while (decomp_len > 0);
-
-                        flb_free(decomp_buf);
-
-                        if (total_decompressed > 0) {
-                            if (append_log(ins,
-                                           conn,
-                                           event_type,
-                                           out_tag,
-                                           decoded_payload,
-                                           total_decompressed) == -1) {
-                                flb_free(decoded_payload);
-
-                                goto cleanup_decompress;
-                            }
-                        }
-
-                        flb_free(decoded_payload);
-
-                        flb_decompression_context_destroy(conn->d_ctx);
-                        conn->d_ctx = NULL;
-                        conn->compression_type = FLB_COMPRESSION_ALGORITHM_NONE;
-                    }
-                    else {
-                        if (append_log(ins, conn, event_type, out_tag, data, len) == -1) {
                             goto cleanup_msgpack;
                         }
                     }
                 }
 
-                /* Handle ACK response (common to all paths) */
-                if (chunk_id != -1) {
-                    chunk = root.via.array.ptr[2].via.map.ptr[chunk_id].val;
-                    send_ack(ctx->ins, conn, chunk);
+                if (conn->compression_type != FLB_COMPRESSION_ALGORITHM_NONE) {
+                    char *decoded_payload = NULL;
+                    char *decomp_buf = NULL;
+                    uint8_t *append_ptr;
+                    size_t available_space;
+                    size_t decomp_len;
+                    size_t total_decompressed;
+                    int decomp_ret;
+                    size_t required_size;
+
+                    total_decompressed = 0;
+
+                    available_space = flb_decompression_context_get_available_space(conn->d_ctx);
+                    if (len > available_space) {
+                        if (conn->d_ctx->input_buffer_length > SIZE_MAX - len) {
+                            flb_plg_error(ctx->ins,
+                                          "decompression input size overflow");
+
+                            goto cleanup_decompress;
+                        }
+
+                        required_size = conn->d_ctx->input_buffer_length + len;
+                        if (required_size > ctx->buffer_max_size) {
+                            flb_plg_error(ctx->ins,
+                                          "compressed payload exceeds limit (%zu bytes)",
+                                          ctx->buffer_max_size);
+
+                            goto cleanup_decompress;
+                        }
+
+                        if (flb_decompression_context_resize_buffer(conn->d_ctx, required_size) != 0) {
+                            flb_plg_error(ctx->ins, "cannot resize decompression buffer");
+
+                            goto cleanup_decompress;
+                        }
+                    }
+                    append_ptr = flb_decompression_context_get_append_buffer(conn->d_ctx);
+                    memcpy(append_ptr, data, len);
+                    conn->d_ctx->input_buffer_length += len;
+
+                    decomp_buf = flb_malloc(ctx->buffer_chunk_size);
+                    if (!decomp_buf) {
+                        flb_errno();
+
+                        goto cleanup_decompress;
+                    }
+
+                    decoded_payload = flb_malloc(ctx->buffer_max_size);
+                    if (!decoded_payload) {
+                        flb_errno();
+                        flb_free(decomp_buf);
+
+                        goto cleanup_decompress;
+                    }
+
+                    do {
+                        decomp_len = ctx->buffer_chunk_size;
+                        decomp_ret = flb_decompress(conn->d_ctx, decomp_buf, &decomp_len);
+
+                        if (decomp_ret == FLB_DECOMPRESSOR_FAILURE) {
+                            if (decomp_len > 0) {
+                                flb_plg_error(ctx->ins, "decompression failed, data may be corrupt");
+                                flb_free(decoded_payload);
+                                flb_free(decomp_buf);
+
+                                goto cleanup_decompress;
+                            }
+                            break;
+                        }
+
+                        if (decomp_len > 0) {
+                            if (total_decompressed > SIZE_MAX - decomp_len) {
+                                flb_plg_error(ctx->ins,
+                                              "decompressed output size overflow");
+                                flb_free(decoded_payload);
+                                flb_free(decomp_buf);
+
+                                goto cleanup_decompress;
+                            }
+
+                            total_decompressed += decomp_len;
+
+                            if (total_decompressed > ctx->buffer_max_size) {
+                                flb_plg_error(ctx->ins,
+                                              "decompressed payload exceeds limit (%zu bytes)",
+                                              ctx->buffer_max_size);
+                                flb_free(decoded_payload);
+                                flb_free(decomp_buf);
+
+                                goto cleanup_decompress;
+                            }
+
+                            memcpy(decoded_payload + (total_decompressed - decomp_len),
+                                   decomp_buf,
+                                   decomp_len);
+                        }
+                    } while (decomp_len > 0);
+
+                    flb_free(decomp_buf);
+
+                    if (total_decompressed > 0) {
+                        if (append_log(ins,
+                                       conn,
+                                       event_type,
+                                       out_tag,
+                                       decoded_payload,
+                                       total_decompressed) == -1) {
+                            flb_free(decoded_payload);
+
+                            goto cleanup_decompress;
+                        }
+                    }
+
+                    flb_free(decoded_payload);
+
+                    flb_decompression_context_destroy(conn->d_ctx);
+                    conn->d_ctx = NULL;
+                    conn->compression_type = FLB_COMPRESSION_ALGORITHM_NONE;
+                }
+                else {
+                    if (append_log(ins, conn, event_type, out_tag, data, len) == -1) {
+                        goto cleanup_msgpack;
+                    }
                 }
             }
-            else {
-                flb_plg_warn(ctx->ins, "invalid data format, type=%i",
-                             entry.type);
-                goto cleanup_msgpack;
-            }
 
-            ret = msgpack_unpacker_next_with_size(unp, &result, &bytes);
+            /* Handle ACK response (common to all paths) */
+            if (chunk_id != -1) {
+                chunk = root.via.array.ptr[2].via.map.ptr[chunk_id].val;
+                send_ack(ctx->ins, conn, chunk);
+            }
         }
+        else {
+            flb_plg_warn(ctx->ins, "invalid data format, type=%i",
+                         entry.type);
+            goto cleanup_msgpack;
+        }
+
+        ret = fw_unpack_next(conn, &result, &bytes);
     }
 
     msgpack_unpacked_destroy(&result);
-    msgpack_unpacker_free(unp);
     flb_sds_destroy(out_tag);
+
+    if (all_used > 0) {
+        memmove(conn->buf, conn->buf + all_used, conn->buf_len - all_used);
+        conn->buf_len -= all_used;
+    }
 
     switch (ret) {
     case MSGPACK_UNPACK_EXTRA_BYTES:
@@ -2035,7 +1952,6 @@ cleanup_decompress:
     /* FALLTHRU */
 cleanup_msgpack:
     msgpack_unpacked_destroy(&result);
-    msgpack_unpacker_free(unp);
     flb_sds_destroy(out_tag);
 
     return -1;
