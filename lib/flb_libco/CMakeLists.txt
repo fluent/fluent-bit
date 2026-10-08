@@ -121,6 +121,20 @@ if(LIBCO_TESTS AND NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   endif()
 endif()
 
+# The kernel enforces BTI only when every object in the binary is marked, so
+# the C library's startup objects must be built with branch protection too.
+if(LIBCO_TESTS AND CMAKE_SYSTEM_NAME STREQUAL "Linux"
+   AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
+  include(CheckCCompilerFlag)
+  check_c_compiler_flag(-mbranch-protection=standard LIBCO_HAVE_BRANCH_PROTECTION)
+  if(LIBCO_HAVE_BRANCH_PROTECTION)
+    add_library(co-test-bti STATIC libco.c)
+    target_compile_options(co-test-bti PRIVATE -mbranch-protection=standard)
+    libco_runtime_test(co-runtime-bti co-test-bti)
+    target_compile_options(co-runtime-bti PRIVATE -mbranch-protection=standard)
+  endif()
+endif()
+
 if(LIBCO_TESTS AND CMAKE_SYSTEM_PROCESSOR MATCHES "^riscv64")
   enable_testing()
   add_executable(co-riscv64-stack tests/riscv64_stack.c)
