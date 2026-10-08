@@ -41,6 +41,7 @@
 #include <sys/stat.h>
 
 #include <msgpack.h>
+#include <monkey/mk_core/mk_dirent.h>
 
 #include "s3.h"
 #include "s3_store.h"
@@ -713,6 +714,90 @@ static flb_sds_t create_buffer_path(struct flb_s3 *ctx)
     return concat_path(ctx->store_dir, ctx->bucket);
 }
 
+/* Each mode has its own root. Never reinterpret buffers from the other mode. */
+static void s3_warn_other_buffer_mode(struct flb_s3 *ctx, char *root)
+{
+    DIR *dir;
+    struct dirent *entry;
+    flb_sds_t path;
+    const char *mode;
+    struct stat st;
+    int is_msgpack;
+
+    dir = opendir(root);
+    if (dir == NULL) {
+        return;
+    }
+    while ((entry = readdir(dir)) != NULL) {
+        if (entry->d_name[0] == '.') {
+            continue;
+        }
+        is_msgpack = strcmp(entry->d_name, "msgpack") == 0;
+        if ((ctx->arrow_schema != NULL) == is_msgpack) {
+            continue;
+        }
+        path = concat_path(root, entry->d_name);
+        if (path == NULL) {
+            break;
+        }
+        if (stat(path, &st) == 0 && (st.st_mode & S_IFMT) == S_IFDIR) {
+            mode = is_msgpack ? "MessagePack" : "JSON-lines";
+            flb_plg_warn(ctx->ins,
+                         "%s buffer directory exists at %s; buffers from the other mode "
+                         "will not be read. Restore the corresponding schema configuration "
+                         "to drain pending data", mode, path);
+            flb_sds_destroy(path);
+            break;
+        }
+        flb_sds_destroy(path);
+    }
+    closedir(dir);
+}
+
+/* Load the schema once; buffered MessagePack is interpreted at upload time. */
+static int s3_schema_init(struct flb_s3 *ctx)
+{
+#ifdef FLB_HAVE_ARROW
+    char *json;
+    size_t size;
+    int ret;
+
+    if (!s3_format_is_columnar(ctx->s3_format)) {
+        flb_plg_error(ctx->ins, "parquet.schema_file requires format arrow or parquet");
+        return -1;
+    }
+    ret = flb_utils_read_file(ctx->schema_file, &json, &size);
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "cannot read schema file '%s'", ctx->schema_file);
+        return -1;
+    }
+    ctx->arrow_schema = flb_arrow_schema_create(json, size);
+    flb_free(json);
+    if (ctx->arrow_schema == NULL) {
+        return -1;
+    }
+    return 0;
+#else
+    flb_plg_error(ctx->ins, "parquet.schema_file requires arrow-glib at compile time");
+    return -1;
+#endif
+}
+
+#ifdef FLB_HAVE_ARROW
+static int s3_convert_columnar(struct flb_s3 *ctx, void *data, size_t size,
+                               void **out, size_t *out_size)
+{
+    if (ctx->arrow_schema != NULL) {
+        return flb_aws_compression_compress_columnar_msgpack(
+                    s3_format_to_aws_compress_format(ctx->s3_format),
+                    data, size, out, out_size, ctx->compression, ctx->arrow_schema);
+    }
+    return flb_aws_compression_compress_columnar(
+                s3_format_to_aws_compress_format(ctx->s3_format),
+                data, size, out, out_size, ctx->compression);
+}
+#endif
+
 /* Reads in index value from metadata file and sets seq_index to value */
 static int read_seq_index(char *seq_index_file, uint64_t *seq_index)
 {
@@ -885,6 +970,10 @@ static void s3_context_destroy(struct flb_s3 *ctx)
         return;
     }
 
+#ifdef FLB_HAVE_ARROW
+    flb_arrow_schema_destroy(ctx->arrow_schema);
+#endif
+
     if (ctx->base_provider) {
         flb_aws_provider_destroy(ctx->base_provider);
     }
@@ -972,7 +1061,7 @@ static int s3_init_user_agent(struct flb_config *config)
     return flb_env_set(config->env, "FLB_AWS_USER_AGENT", value);
 }
 
-static int cb_s3_init(struct flb_output_instance *ins,
+static int s3_init(struct flb_output_instance *ins,
                       struct flb_config *config, void *data)
 {
     int ret;
@@ -1129,6 +1218,10 @@ static int cb_s3_init(struct flb_output_instance *ins,
         }
     }
 
+    if (ctx->schema_file != NULL && s3_schema_init(ctx) != 0) {
+        return -1;
+    }
+
     /* Date key */
     ctx->date_key = ctx->json_date_key;
     tmp = flb_output_get_property("json_date_key", ins);
@@ -1169,7 +1262,15 @@ static int cb_s3_init(struct flb_output_instance *ins,
         flb_plg_error(ctx->ins, "Could not construct buffer path");
         return -1;
     }
+    s3_warn_other_buffer_mode(ctx, tmp_sds);
     ctx->buffer_dir = tmp_sds;
+    if (ctx->arrow_schema != NULL) {
+        tmp_sds = flb_sds_cat(ctx->buffer_dir, "/msgpack", 8);
+        if (tmp_sds == NULL) {
+            return -1;
+        }
+        ctx->buffer_dir = tmp_sds;
+    }
 
     /* Initialize local storage */
     ret = s3_store_init(ctx);
@@ -1638,6 +1739,26 @@ skip_size_validation:
     return 0;
 }
 
+/* The engine does not call cb_exit when initialization fails. */
+static int cb_s3_init(struct flb_output_instance *ins,
+                      struct flb_config *config, void *data)
+{
+    struct flb_s3 *ctx;
+    int ret;
+
+    ret = s3_init(ins, config, data);
+    if (ret != 0 && ins->context != NULL) {
+        ctx = ins->context;
+        if (ctx->blob_db.db != NULL) {
+            flb_blob_db_close(&ctx->blob_db);
+        }
+        s3_store_exit(ctx);
+        s3_context_destroy(ctx);
+        flb_output_set_context(ins, NULL);
+    }
+    return ret;
+}
+
 /* worker initialization, used for our internal timers */
 static int cb_s3_worker_init(void *data, struct flb_config *config)
 {
@@ -1729,10 +1850,7 @@ static int upload_data_owned(struct flb_s3 *ctx, struct s3_file *chunk,
 #ifdef FLB_HAVE_ARROW
     if (s3_format_is_columnar(ctx->s3_format)) {
         pthread_mutex_unlock(&ctx->files_mutex);
-        ret = flb_aws_compression_compress_columnar(
-                    s3_format_to_aws_compress_format(ctx->s3_format),
-                    body, body_size, &payload_buf,
-                    &payload_size, ctx->compression);
+        ret = s3_convert_columnar(ctx, body, body_size, &payload_buf, &payload_size);
         pthread_mutex_lock(&ctx->files_mutex);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "Failed to convert data to columnar "
@@ -2014,11 +2132,21 @@ restart:
             pthread_mutex_unlock(&ctx->files_mutex);
 #ifdef FLB_HAVE_ARROW
             if (s3_format_is_columnar(ctx->s3_format)) {
-                ret = flb_aws_compression_compress_columnar(
-                            s3_format_to_aws_compress_format(ctx->s3_format),
-                            buffer, buffer_size,
-                            &payload_buf, &payload_size,
-                            ctx->compression);
+                ret = s3_convert_columnar(ctx, buffer, buffer_size, &payload_buf, &payload_size);
+                if (ret == -1 && ctx->arrow_schema != NULL) {
+                    flb_plg_error(ctx->ins, "schema conversion failed; retaining buffered MessagePack");
+                    flb_free(buffer);
+                    pthread_mutex_lock(&ctx->files_mutex);
+                    s3_claim_end(&claim);
+                    s3_store_file_unlock(chunk);
+                    chunk->failures += 1;
+                    result = -1;
+                    if (ctx->preserve_data_ordering == FLB_TRUE ||
+                        ctx->key_fmt_has_seq_index == FLB_TRUE) {
+                        return result;
+                    }
+                    goto restart;
+                }
                 if (ret == -1) {
                     flb_plg_error(ctx->ins,
                                   "Failed to convert to columnar format, "
@@ -4841,6 +4969,10 @@ static flb_sds_t s3_format_event_chunk(struct flb_s3 *ctx,
     static const char *default_logs_body_keys[] = {"log", "message"};
     struct flb_opentelemetry_otlp_logs_options options;
 
+    if (ctx->arrow_schema != NULL) {
+        return flb_sds_create_len(event_chunk->data, event_chunk->size);
+    }
+
     if (ctx->out_format == FLB_PACK_JSON_FORMAT_OTLP) {
         if (event_chunk->type == FLB_EVENT_TYPE_LOGS) {
             memset(&options, 0, sizeof(options));
@@ -5131,6 +5263,12 @@ static int cb_s3_exit(void *data, struct flb_config *config)
 
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "parquet.schema_file", NULL,
+     0, FLB_TRUE, offsetof(struct flb_s3, schema_file),
+     "Arrow JSON schema file for direct MessagePack conversion with format arrow or parquet. "
+     "Selects record body fields only; JSON date options do not apply."
+    },
     {
      FLB_CONFIG_MAP_STR, "format", "json_lines",
      0, FLB_FALSE, 0,
