@@ -1758,6 +1758,41 @@ static int merge_pod_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
     return 0;
 }
 
+/*
+ * Kubernetes namespaces are DNS labels (63 bytes); pod names are DNS
+ * subdomains (253 bytes). Validate the captured lengths, including embedded
+ * NULs, before using names in cache filenames or authenticated API paths.
+ * Every accepted byte is an unreserved URI character.
+ */
+static int kube_name_valid(const char *name, int len, int subdomain)
+{
+    int i;
+    int label_start = FLB_TRUE;
+    unsigned char ch;
+
+    if (name == NULL || len <= 0 || len > (subdomain ? 253 : 63)) {
+        return FLB_FALSE;
+    }
+
+    for (i = 0; i < len; i++) {
+        ch = name[i];
+        if ((ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9')) {
+            label_start = FLB_FALSE;
+        }
+        else if (ch == '-' && !label_start && i + 1 < len) {
+            continue;
+        }
+        else if (ch == '.' && subdomain && !label_start && name[i - 1] != '-') {
+            label_start = FLB_TRUE;
+        }
+        else {
+            return FLB_FALSE;
+        }
+    }
+
+    return !label_start;
+}
+
 static inline int parse_regex_tag_data(struct flb_kube *ctx,
                                 const char *tag, int tag_len,
                                 const char *data, size_t data_size,
@@ -1854,6 +1889,14 @@ static inline int parse_regex_tag_data(struct flb_kube *ctx,
 
     /* Parse the regex results */
     flb_regex_parse(ctx->regex, &result, cb_results, meta);
+
+    if ((meta->namespace && !kube_name_valid(meta->namespace, meta->namespace_len, FLB_FALSE)) ||
+        (meta->podname && !kube_name_valid(meta->podname, meta->podname_len, FLB_TRUE))) {
+        flb_plg_warn(ctx->ins, "invalid Kubernetes namespace or pod name");
+        flb_kube_meta_release(meta);
+        memset(meta, 0, sizeof(*meta));
+        return -1;
+    }
 
     return 0;
 }
