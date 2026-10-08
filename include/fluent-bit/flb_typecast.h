@@ -33,6 +33,8 @@ typedef enum {
     FLB_TYPECAST_TYPE_BOOL,
     FLB_TYPECAST_TYPE_STR,
     FLB_TYPECAST_TYPE_HEX,
+    FLB_TYPECAST_TYPE_JSON_STR,
+    FLB_TYPECAST_TYPE_MAP,
     FLB_TYPECAST_TYPE_ERROR,
 } flb_typecast_type_t;
 
@@ -48,7 +50,7 @@ struct flb_typecast_value {
         int64_t   i_num;   /* int  */
         uint64_t  ui_num;  /* uint, hex */
         double    d_num;   /* float */
-        flb_sds_t str;     /* string */
+        flb_sds_t str;     /* string, json_str */
     } val;
 };
 
