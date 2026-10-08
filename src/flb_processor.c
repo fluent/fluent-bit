@@ -1308,18 +1308,44 @@ int flb_processor_is_active(struct flb_processor *proc)
 
 #include <fluent-bit/flb_pack.h>
 
+/* CFL codecs belong to one invocation, even when native stages release their locks. */
+struct flb_processor_log_context {
+    struct flb_log_event_decoder *decoder;
+    struct flb_log_event_encoder *encoder;
+    struct flb_mp_chunk_cobj *chunk;
+};
+
+static int processor_log_context_init(struct flb_processor_log_context *context)
+{
+    context->decoder = flb_log_event_decoder_create(NULL, 0);
+    if (context->decoder == NULL) {
+        flb_errno();
+        return -1;
+    }
+
+    context->encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+    if (context->encoder == NULL) {
+        flb_errno();
+        return -1;
+    }
+
+    flb_log_event_decoder_read_groups(context->decoder, FLB_TRUE);
+    return 0;
+}
+
 /*
  * This function will run all the processor units for the given tag and data, note
  * that depending of the 'type', 'data' can reference a msgpack for logs, a CMetrics
  * context for metrics, a 'CTraces' context for traces or a 'CProfiles' context for
  * profiles.
  */
-int flb_processor_run(struct flb_processor *proc,
+static int processor_run(struct flb_processor *proc,
                       size_t starting_stage,
                       int type,
                       const char *tag, size_t tag_len,
                       void *data, size_t data_size,
-                      void **out_buf, size_t *out_size)
+                      void **out_buf, size_t *out_size,
+                      struct flb_processor_log_context *log_context)
 {
     int ret;
     int pu_error;
@@ -1546,12 +1572,29 @@ int flb_processor_run(struct flb_processor *proc,
                      * until no more processors exists or the next one is a "filter" type processor.
                      */
                     if (!chunk_cobj) {
-                        flb_log_event_decoder_reset(p_ins->log_decoder, cur_buf, cur_size);
+                        if (log_context->decoder == NULL) {
+                            if (processor_log_context_init(log_context) != 0) {
+                                processor_metrics_update(proc, pu,
+                                                         metrics_scope, metrics_owner,
+                                                         metrics_signal, unit_in_items,
+                                                         unit_out_items, item_metrics_available,
+                                                         FLB_TRUE);
+                                if (cur_buf != data) {
+                                    flb_free(cur_buf);
+                                }
+                                release_lock(&pu->lock, FLB_PROCESSOR_LOCK_RETRY_LIMIT,
+                                             FLB_PROCESSOR_LOCK_RETRY_DELAY);
+                                return -1;
+                            }
+                        }
+                        flb_log_event_encoder_reset(log_context->encoder);
+                        flb_log_event_decoder_reset(log_context->decoder, cur_buf, cur_size);
 
                         /* create the context */
-                        chunk_cobj = flb_mp_chunk_cobj_create(p_ins->log_encoder, p_ins->log_decoder);
+                        chunk_cobj = flb_mp_chunk_cobj_create(log_context->encoder, log_context->decoder);
+                        log_context->chunk = chunk_cobj;
                         if (chunk_cobj == NULL) {
-                            flb_log_event_decoder_reset(p_ins->log_decoder, NULL, 0);
+                            flb_log_event_decoder_reset(log_context->decoder, NULL, 0);
                             if (cur_buf != data) {
                                 flb_free(cur_buf);
                             }
@@ -1613,8 +1656,9 @@ int flb_processor_run(struct flb_processor *proc,
                         flb_mp_chunk_cobj_normalize_groups(chunk_cobj);
 
                         if (cfl_list_size(&chunk_cobj->records) == 0) {
-                            flb_log_event_encoder_reset(p_ins->log_encoder);
+                            flb_log_event_encoder_reset(log_context->encoder);
                             flb_mp_chunk_cobj_destroy(chunk_cobj);
+                            log_context->chunk = NULL;
 
                             *out_buf = NULL;
                             *out_size = 0;
@@ -1637,7 +1681,7 @@ int flb_processor_run(struct flb_processor *proc,
                         /* encode chunk_cobj as msgpack */
                         ret = flb_mp_chunk_cobj_encode(chunk_cobj, (char **) &tmp_buf, &tmp_size);
                         if (ret != 0) {
-                            flb_log_event_decoder_reset(p_ins->log_decoder, NULL, 0);
+                            flb_log_event_decoder_reset(log_context->decoder, NULL, 0);
 
                             if (cur_buf != data) {
                                 flb_free(cur_buf);
@@ -1667,9 +1711,10 @@ int flb_processor_run(struct flb_processor *proc,
                         cur_size = tmp_size;
 
 
-                        flb_log_event_decoder_reset(p_ins->log_decoder, NULL, 0);
-                        flb_log_event_encoder_claim_internal_buffer_ownership(p_ins->log_encoder);
+                        flb_log_event_decoder_reset(log_context->decoder, NULL, 0);
+                        flb_log_event_encoder_claim_internal_buffer_ownership(log_context->encoder);
                         flb_mp_chunk_cobj_destroy(chunk_cobj);
+                        log_context->chunk = NULL;
                         chunk_cobj = NULL;
                     }
 
@@ -1851,6 +1896,31 @@ int flb_processor_run(struct flb_processor *proc,
 
     return 0;
 }
+
+int flb_processor_run(struct flb_processor *proc,
+                      size_t starting_stage,
+                      int type,
+                      const char *tag, size_t tag_len,
+                      void *data, size_t data_size,
+                      void **out_buf, size_t *out_size)
+{
+    int ret;
+    struct flb_processor_log_context log_context = {0};
+
+    ret = processor_run(proc, starting_stage, type, tag, tag_len, data, data_size,
+                        out_buf, out_size, &log_context);
+    if (log_context.chunk != NULL) {
+        flb_mp_chunk_cobj_destroy(log_context.chunk);
+    }
+    if (log_context.decoder != NULL) {
+        flb_log_event_decoder_destroy(log_context.decoder);
+    }
+    if (log_context.encoder != NULL) {
+        flb_log_event_encoder_destroy(log_context.encoder);
+    }
+    return ret;
+}
+
 
 void flb_processor_destroy(struct flb_processor *proc)
 {
