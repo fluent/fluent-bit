@@ -30,7 +30,10 @@ and ucontext backends independently; on Windows it also builds fibers. Disable
 these extra variants with `-DLIBCO_TESTS_PORTABLE=OFF`. SJLJ tests disable
 `_FORTIFY_SOURCE` for that backend because glibc's checked `longjmp` rejects its
 intentional alternate-stack jumps. Coroutine creation is serialized because
-SJLJ temporarily installs a process-wide signal handler.
+SJLJ temporarily installs a process-wide signal handler. On AArch64 Linux the
+runtime test is also built with `-mbranch-protection=standard`; on a CPU or
+emulator that implements BTI this checks that coroutine switches land only where
+branch target identification allows.
 
 [GitHub Actions](.github/workflows/ci.yml) runs on pushes, pull requests, and manual
 requests. Every matrix entry builds and executes tests; QEMU entries are runtime
