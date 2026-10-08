@@ -1,0 +1,30 @@
+[2017-10-26T11:11:37+00:00] INFO: Processing directory[/var/lib/nova/instances] action create (nfs-client::default line 147)
+[2017-10-26T11:11:37+00:00] INFO: directory[/var/lib/nova/instances] created directory /var/lib/nova/instances
+[2017-10-26T11:11:37+00:00] INFO: directory[/var/lib/nova/instances] owner changed to 0
+[2017-10-26T11:11:37+00:00] INFO: directory[/var/lib/nova/instances] group changed to 0
+[2017-10-26T11:11:37+00:00] INFO: directory[/var/lib/nova/instances] mode changed to 755
+[2017-10-26T11:11:37+00:00] INFO: Processing mount[Configuring mount: 192.168.131.243:/nova_nfs__vol_1/nova_1 -> /var/lib/nova/instances] action mount (nfs-client::default line 168)
+================================================================================
+Error executing action `mount` on resource 'mount[Configuring mount: 192.1.1.243:/nova_nfs_rot_2vol_1/nova_1 -> /var/lib/nova/instances]'
+================================================================================
+Mixlib::ShellOut::ShellCommandFailed
+------------------------------------
+Expected process to exit with [0], but received '32'
+---- Begin output of mount -t nfs -o vers=3,sec=sys,nofail,comment="managed-by-crowbar-barclamp-nfs-client" 192.18.11.243:/nova_nfs_vol_1/nova_1 /var/lib/nova/instances ----
+STDOUT:
+STDERR: mount.nfs: Connection timed out
+---- End output of mount -t nfs -o vers=3,sec=sys,nofail,comment="managed-by-crowbar-barclamp-nfs-client" 192.168.1.243:/nova_nfs_vol_1/nova_1 /var/lib/nova/instances ----
+Ran mount -t nfs -o vers=3,sec=sys,nofail,comment="managed-by-crowbar-barclamp-nfs-client" 192.16.1.243:/nova_nfs_rot_2_1_vsos211_vol_1/nova_1 /var/lib/nova/instances returned 32
+Resource Declaration:
+---------------------
+# In /var/chef/cache/cookbooks/nfs-client/recipes/default.rb
+168:   mount "Configuring mount: #{nfs_mount} -> #{mount_path}" do
+169:     mount_point mount_path
+170:     device nfs_mount
+171:     fstype "nfs"
+172:     options options
+173:     dump 0
+174:     pass 0
+175:     action [:mount, :enable]
+176:   end
+177: end
