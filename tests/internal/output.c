@@ -77,6 +77,8 @@ void test_output_exit_destroys_pending_flushes(void)
     }
 
     memset(&task, 0, sizeof(task));
+    /* Output shutdown checks route status even for flushes that never ran. */
+    mk_list_init(&task.routes);
     memset(&event_chunk, 0, sizeof(event_chunk));
     event_chunk.type = FLB_EVENT_TYPE_LOGS;
     event_chunk.data = "original";

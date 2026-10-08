@@ -27,6 +27,7 @@
 #define FLB_COMPRESSION_ALGORITHM_NONE                    0
 #define FLB_COMPRESSION_ALGORITHM_GZIP                    1
 #define FLB_COMPRESSION_ALGORITHM_ZSTD                    2
+#define FLB_COMPRESSION_ALGORITHM_SNAPPY                  3
 
 #define FLB_DECOMPRESSOR_STATE_FAILED                    -1
 #define FLB_DECOMPRESSOR_STATE_EXPECTING_HEADER           0
@@ -34,6 +35,7 @@
 #define FLB_DECOMPRESSOR_STATE_EXPECTING_BODY             2
 #define FLB_DECOMPRESSOR_STATE_EXPECTING_FOOTER           3
 
+#define FLB_DECOMPRESSOR_LIMIT_EXCEEDED                  -4
 #define FLB_DECOMPRESSOR_FAILURE                         -1
 #define FLB_DECOMPRESSOR_CORRUPTED_HEADER                -2
 #define FLB_DECOMPRESSOR_INVALID_STATE                   -3
@@ -49,6 +51,11 @@ struct flb_decompression_context {
     uint8_t   *read_buffer;
     int        algorithm;
     int        state;
+    /* Expanded output budget, SIZE_MAX by default, and bytes produced so far. */
+    size_t     output_limit;
+    size_t     output_size;
+    /* The caller has supplied all compressed bytes for this payload. */
+    int        input_complete;
 
     /* Compression backend specific context (opaque) */
     void      *inner_context;
@@ -73,5 +80,15 @@ void flb_decompression_context_destroy(
 int flb_decompress(struct flb_decompression_context *context,
                    void *output_buffer,
                    size_t *output_length);
+
+/*
+ * Decode one complete payload using bounded output chunks. The returned buffer
+ * preserves the full payload for protocols with grouped records. The caller
+ * owns the buffer and must flb_free it. On failure output is NULL/0; an expanded
+ * size rejection returns FLB_DECOMPRESSOR_LIMIT_EXCEEDED. Codec workspace is
+ * separate from the expanded-output budget.
+ */
+int flb_decompress_buffer(int algorithm, void *input, size_t input_size,
+                          size_t limit, void **payload, size_t *payload_size);
 
 #endif

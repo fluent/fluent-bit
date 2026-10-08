@@ -422,6 +422,36 @@ static int process_record(const char *tag, int tag_len, msgpack_object map,
     return FLB_TRUE;
 }
 
+/* Each emitted record must carry a complete group, independent of its tag. */
+static int encode_grouped_record(struct flb_log_event_encoder *encoder,
+                                 struct flb_log_event *event,
+                                 const char *record, size_t length)
+{
+    int ret;
+
+    flb_log_event_encoder_reset(encoder);
+    ret = flb_log_event_encoder_group_init(encoder);
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_set_metadata_from_msgpack_object(
+                encoder, event->group_metadata);
+    }
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_set_body_from_msgpack_object(
+                encoder, event->group_attributes);
+    }
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_group_header_end(encoder);
+    }
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_emit_raw_record(encoder, record, length);
+    }
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_group_end(encoder);
+    }
+
+    return ret;
+}
+
 static int cb_rewrite_tag_filter(const void *data, size_t bytes,
                                  const char *tag, int tag_len,
                                  void **out_buf, size_t *out_bytes,
@@ -434,8 +464,8 @@ static int cb_rewrite_tag_filter(const void *data, size_t bytes,
     int emitted_num = 0;
     int is_matched = FLB_FALSE;
     int is_emitted = FLB_FALSE;
-    size_t pre = 0;
-    size_t off = 0;
+    const char *record;
+    size_t record_length;
 #ifdef FLB_HAVE_METRICS
     uint64_t ts;
     char *name;
@@ -443,6 +473,7 @@ static int cb_rewrite_tag_filter(const void *data, size_t bytes,
     msgpack_object map;
     struct flb_rewrite_tag *ctx;
     struct flb_log_event_encoder log_encoder;
+    struct flb_log_event_encoder group_encoder;
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
     int ret;
@@ -478,10 +509,27 @@ static int cb_rewrite_tag_filter(const void *data, size_t bytes,
         return FLB_FILTER_NOTOUCH;
     }
 
+    ret = flb_log_event_encoder_init(&group_encoder, FLB_LOG_EVENT_FORMAT_DEFAULT);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_decoder_destroy(&log_decoder);
+        flb_log_event_encoder_destroy(&log_encoder);
+        return FLB_FILTER_NOTOUCH;
+    }
+
     while ((ret = flb_log_event_decoder_next(
                     &log_decoder,
                     &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
-        off = log_decoder.offset;
+        record = log_decoder.record_base;
+        record_length = log_decoder.record_length;
+        if (log_event.group_metadata != NULL && log_event.group_attributes != NULL) {
+            ret = encode_grouped_record(&group_encoder, &log_event, record, record_length);
+            if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+                break;
+            }
+            record = group_encoder.output_buffer;
+            record_length = group_encoder.output_length;
+        }
+        keep = FLB_FALSE;
         map = *log_event.body;
         is_matched = FLB_FALSE;
         /*
@@ -491,7 +539,8 @@ static int cb_rewrite_tag_filter(const void *data, size_t bytes,
          * If a record was emitted, the variable 'keep' will define if the record must
          * be preserved or not.
          */
-        is_emitted = process_record(tag, tag_len, map, (char *) data + pre, off - pre, &keep, ctx, &is_matched, i_ins);
+        is_emitted = process_record(tag, tag_len, map, record, record_length,
+                                    &keep, ctx, &is_matched, i_ins);
         if (is_emitted == FLB_TRUE) {
             /* A record with the new tag was emitted */
             emitted_num++;
@@ -506,13 +555,14 @@ static int cb_rewrite_tag_filter(const void *data, size_t bytes,
         if (keep == FLB_TRUE || is_matched != FLB_TRUE) {
             ret = flb_log_event_encoder_emit_raw_record(
                     &log_encoder,
-                    log_decoder.record_base,
-                    log_decoder.record_length);
+                    record, record_length);
+            if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+                break;
+            }
         }
-
-        /* Adjust previous offset */
-        pre = off;
     }
+
+    flb_log_event_encoder_destroy(&group_encoder);
 
     if (emitted_num == 0) {
         flb_log_event_decoder_destroy(&log_decoder);

@@ -946,6 +946,17 @@ struct flb_http_client *create_http_client(struct flb_connection *u_conn,
 
     struct flb_http_client *c;
 
+    /* Request targets must not contain HTTP whitespace or control bytes. */
+    if (uri == NULL) {
+        return NULL;
+    }
+    for (p = (char *) uri; *p; p++) {
+        if ((unsigned char) *p <= 0x20 || (unsigned char) *p == 0x7f) {
+            flb_error("[http_client] invalid character in request target");
+            return NULL;
+        }
+    }
+
     switch (method) {
     case FLB_HTTP_GET:
         str_method = "GET";
