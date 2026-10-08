@@ -18,7 +18,7 @@
  *  limitations under the License.
  */
 
-#if defined(FLB_SYSTEM_WINDOWS) && !defined(FLB_FILE_GLOB_ERROR_SUCCESS)
+#if defined(FLB_SYSTEM_WINDOWS)
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_file.h>
@@ -28,72 +28,13 @@
 #include <fluent-bit/flb_str.h>
 #include <cfl/cfl.h>
 #include <cfl/cfl_list.h>
+#include <fluent-bit/flb_glob_win32.h>
 
 #include <lmaccess.h>
 #include <sys/stat.h>
 #include <stdio.h>
 
-#define FLB_FILE_GLOB_ABORT_ON_ERROR   (((uint64_t) 1) << 0)
-#define FLB_FILE_GLOB_MARK_DIRECTORIES (((uint64_t) 1) << 1)
-#define FLB_FILE_GLOB_DO_NOT_SORT      (((uint64_t) 1) << 2)
-#define FLB_FILE_GLOB_EXPAND_TILDE     (((uint64_t) 1) << 3)
-
-#define FLB_FILE_GLOB_ERROR_SUCCESS          0
-#define FLB_FILE_GLOB_ERROR_ABORTED          1
-#define FLB_FILE_GLOB_ERROR_NO_MEMORY        2
-#define FLB_FILE_GLOB_ERROR_NO_FILE          3
-#define FLB_FILE_GLOB_ERROR_NO_ACCESS        4
-#define FLB_FILE_GLOB_ERROR_NO_MATCHES       5
-#define FLB_FILE_GLOB_ERROR_NO_MORE_RESULTS  6
-#define FLB_FILE_GLOB_ERROR_OVERSIZED_PATH   7
-#define FLB_FILE_GLOB_ERROR_INVALID_ARGUMENT 8
-
-#ifndef GLOB_NOSPACE
-#define GLOB_NOSPACE FLB_FILE_GLOB_ERROR_NO_MEMORY
-#endif
-
-#ifndef GLOB_ABORTED
-#define GLOB_ABORTED FLB_FILE_GLOB_ERROR_ABORTED
-#endif
-
-#ifndef GLOB_NOMATCH
-#define GLOB_NOMATCH FLB_FILE_GLOB_ERROR_NO_MATCHES
-#endif
-
-#ifndef GLOB_ERR
-#define GLOB_ERR FLB_FILE_GLOB_ABORT_ON_ERROR
-#endif
-
-#define FLB_FILE_MAX_PATH_LENGTH PATH_MAX
-
 #define FLB_FILE_ISTYPE(m, t) (((m) & 0170000) == t)
-
-struct flb_file_glob_inner_entry {
-    char           *path;
-    struct cfl_list _head;
-};
-
-struct flb_file_glob_inner_context {
-    struct flb_file_glob_inner_entry *current_entry;
-    struct cfl_list                   results;
-    size_t                            entries;
-    size_t                            index;
-    uint64_t                          flags;
-};
-
-struct flb_file_glob_context {
-   struct flb_file_glob_inner_context *inner_context;
-   uint64_t                            flags;
-   char                               *path;
-};
-
-struct glob_t {
-    struct flb_file_glob_context inner_context;
-    char                       **gl_pathv;
-    size_t                       gl_pathc;
-};
-
-typedef struct glob_t glob_t;
 
 static int flb_file_glob_start(struct flb_file_glob_context *context,
                                const char *path,
@@ -104,7 +45,7 @@ static void flb_file_glob_clean(struct flb_file_glob_context *context);
 static int flb_file_glob_fetch(struct flb_file_glob_context *context,
                                char **result);
 
-static void globfree(glob_t *context)
+void globfree(glob_t *context)
 {
     size_t index;
 
@@ -116,7 +57,7 @@ static void globfree(glob_t *context)
     flb_file_glob_clean(&context->inner_context);
 }
 
-static int glob(const char *path,
+int glob(const char *path,
                 uint64_t flags,
                 void *unused,
                 glob_t *context)
@@ -127,7 +68,7 @@ static int glob(const char *path,
 
     (void) unused;
 
-    result = flb_file_glob_start(context, path, flags);
+    result = flb_file_glob_start(&context->inner_context, path, flags);
 
     if (result == FLB_FILE_GLOB_ERROR_SUCCESS) {
         entries = cfl_list_size(&context->inner_context.inner_context->results);
@@ -150,14 +91,15 @@ static int glob(const char *path,
                 return result;
             }
         }
+        context->gl_pathc = entries;
     }
 
     return result;
 }
 
-static int is_directory(char *path, struct stat *fs_entry_metadata)
+int is_directory(char *path, struct stat *fs_entry_metadata)
 {
-    return (fs_entry_metadata->st_mode & S_IFDIR != 0);
+    return ((fs_entry_metadata->st_mode & S_IFDIR) != 0);
 }
 
 static void reset_errno()
@@ -485,9 +427,9 @@ static int limited_win32_glob(struct flb_file_glob_inner_context *context,
     return ret;
 }
 
-int flb_file_glob_start(struct flb_file_glob_context *context,
-                        const char *path,
-                        uint64_t flags)
+static int flb_file_glob_start(struct flb_file_glob_context *context,
+                               const char *path,
+                               uint64_t flags)
 {
 
     int         tilde_expansion_attempted;
@@ -528,7 +470,7 @@ int flb_file_glob_start(struct flb_file_glob_context *context,
                               context->path);
 }
 
-void flb_file_glob_clean(struct flb_file_glob_context *context)
+static void flb_file_glob_clean(struct flb_file_glob_context *context)
 {
     struct cfl_list                  *iterator_backup;
     struct cfl_list                  *iterator;
@@ -564,8 +506,8 @@ void flb_file_glob_clean(struct flb_file_glob_context *context)
 
 }
 
-int flb_file_glob_fetch(struct flb_file_glob_context *context,
-                        char **result)
+static int flb_file_glob_fetch(struct flb_file_glob_context *context,
+                               char **result)
 {
 
     if (context == NULL) {
