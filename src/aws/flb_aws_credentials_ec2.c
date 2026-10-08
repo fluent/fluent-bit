@@ -34,9 +34,11 @@
 #define AWS_IMDS_ROLE_PATH_LEN  43
 
 struct flb_aws_provider_ec2;
-static int get_creds_ec2(struct flb_aws_provider_ec2 *implementation);
-static int ec2_credentials_request(struct flb_aws_provider_ec2
-                                   *implementation, char *cred_path);
+static int get_creds_ec2(struct flb_aws_provider *provider,
+                         struct flb_aws_provider_ec2 *implementation);
+static int ec2_credentials_request(struct flb_aws_provider *provider,
+                                   struct flb_aws_provider_ec2 *implementation,
+                                   char *cred_path);
 
 /* EC2 IMDS Provider */
 
@@ -58,25 +60,34 @@ struct flb_aws_credentials *get_credentials_fn_ec2(struct flb_aws_provider
                                                    *provider)
 {
     struct flb_aws_credentials *creds;
+    time_t next_refresh;
     int refresh = FLB_FALSE;
     struct flb_aws_provider_ec2 *implementation = provider->implementation;
 
     flb_debug("[aws_credentials] Requesting credentials from the "
               "EC2 provider..");
 
+    next_refresh = flb_aws_cache_get_refresh_time(provider,
+                                                  &implementation->next_refresh);
+
     /* a negative next_refresh means that auto-refresh is disabled */
-    if (implementation->next_refresh > 0
-        && time(NULL) > implementation->next_refresh) {
+    if (next_refresh > 0 && time(NULL) > next_refresh) {
         refresh = FLB_TRUE;
     }
-    if (!implementation->creds || refresh == FLB_TRUE) {
+
+    creds = flb_aws_cache_get_credentials(provider, &implementation->creds);
+    if (!creds || refresh == FLB_TRUE) {
         if (try_lock_provider(provider)) {
-            get_creds_ec2(implementation);
+            get_creds_ec2(provider, implementation);
             unlock_provider(provider);
+
+            flb_aws_credentials_destroy(creds);
+            creds = flb_aws_cache_get_credentials(provider,
+                                                  &implementation->creds);
         }
     }
 
-    if (!implementation->creds) {
+    if (!creds) {
         /*
          * We failed to lock the provider and creds are unset. This means that
          * another co-routine is performing the refresh.
@@ -88,40 +99,6 @@ struct flb_aws_credentials *get_credentials_fn_ec2(struct flb_aws_provider
         return NULL;
     }
 
-    creds = flb_calloc(1, sizeof(struct flb_aws_credentials));
-    if (!creds) {
-        flb_errno();
-        return NULL;
-    }
-
-    creds->access_key_id = flb_sds_create(implementation->creds->access_key_id);
-    if (!creds->access_key_id) {
-        flb_errno();
-        flb_aws_credentials_destroy(creds);
-        return NULL;
-    }
-
-    creds->secret_access_key = flb_sds_create(implementation->creds->
-                                              secret_access_key);
-    if (!creds->secret_access_key) {
-        flb_errno();
-        flb_aws_credentials_destroy(creds);
-        return NULL;
-    }
-
-    if (implementation->creds->session_token) {
-        creds->session_token = flb_sds_create(implementation->creds->
-                                              session_token);
-        if (!creds->session_token) {
-            flb_errno();
-            flb_aws_credentials_destroy(creds);
-            return NULL;
-        }
-
-    } else {
-        creds->session_token = NULL;
-    }
-
     return creds;
 }
 
@@ -131,7 +108,7 @@ int refresh_fn_ec2(struct flb_aws_provider *provider) {
 
     flb_debug("[aws_credentials] Refresh called on the EC2 IMDS provider");
     if (try_lock_provider(provider)) {
-        ret = get_creds_ec2(implementation);
+        ret = get_creds_ec2(provider, implementation);
         unlock_provider(provider);
     }
     return ret;
@@ -145,7 +122,7 @@ int init_fn_ec2(struct flb_aws_provider *provider) {
 
     flb_debug("[aws_credentials] Init called on the EC2 IMDS provider");
     if (try_lock_provider(provider)) {
-        ret = get_creds_ec2(implementation);
+        ret = get_creds_ec2(provider, implementation);
         unlock_provider(provider);
     }
 
@@ -241,6 +218,7 @@ struct flb_aws_provider *flb_ec2_provider_create(struct flb_config *config,
     }
 
     pthread_mutex_init(&provider->lock, NULL);
+    pthread_mutex_init(&provider->cache_lock, NULL);
 
     implementation = flb_calloc(1, sizeof(struct flb_aws_provider_ec2));
 
@@ -296,7 +274,8 @@ struct flb_aws_provider *flb_ec2_provider_create(struct flb_config *config,
 }
 
 /* Requests creds from IMDSv1 and sets them on the provider */
-static int get_creds_ec2(struct flb_aws_provider_ec2 *implementation)
+static int get_creds_ec2(struct flb_aws_provider *provider,
+                         struct flb_aws_provider_ec2 *implementation)
 {
     int ret;
     flb_sds_t instance_role;
@@ -337,7 +316,7 @@ static int get_creds_ec2(struct flb_aws_provider_ec2 *implementation)
     }
 
     /* request creds */
-    ret = ec2_credentials_request(implementation, cred_path);
+    ret = ec2_credentials_request(provider, implementation, cred_path);
 
     flb_sds_destroy(instance_role);
     flb_free(cred_path);
@@ -345,8 +324,9 @@ static int get_creds_ec2(struct flb_aws_provider_ec2 *implementation)
 
 }
 
-static int ec2_credentials_request(struct flb_aws_provider_ec2
-                                   *implementation, char *cred_path)
+static int ec2_credentials_request(struct flb_aws_provider *provider,
+                                   struct flb_aws_provider_ec2 *implementation,
+                                   char *cred_path)
 {
     int ret;
     flb_sds_t credentials_response;
@@ -370,12 +350,10 @@ static int ec2_credentials_request(struct flb_aws_provider_ec2
         return -1;
     }
 
-    /* destroy existing credentials first */
-    flb_aws_credentials_destroy(implementation->creds);
-    implementation->creds = NULL;
-    /* set new creds */
-    implementation->creds = creds;
-    implementation->next_refresh = expiration - FLB_AWS_REFRESH_WINDOW;
+    /* publish the new credentials; the old ones are freed for us */
+    flb_aws_cache_set_credentials(provider, &implementation->creds, creds,
+                                  &implementation->next_refresh,
+                                  expiration - FLB_AWS_REFRESH_WINDOW);
 
     flb_sds_destroy(credentials_response);
     return 0;
