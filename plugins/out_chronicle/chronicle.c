@@ -906,6 +906,30 @@ static int chronicle_metadata_resolve(struct flb_chronicle *ctx,
     return 0;
 }
 
+/* Format a timestamp as an RFC 3339 UTC string with nanosecond precision */
+static int chronicle_format_rfc3339(struct flb_time *tms, char *buf, size_t size)
+{
+    int len;
+    size_t s;
+    struct tm tm;
+
+    if (gmtime_r(&tms->tm.tv_sec, &tm) == NULL) {
+        return -1;
+    }
+
+    s = strftime(buf, size, FLB_STD_TIME_FMT, &tm);
+    if (s == 0) {
+        return -1;
+    }
+
+    len = snprintf(buf + s, size - s, ".%09" PRIu64 "Z", (uint64_t) tms->tm.tv_nsec);
+    if (len < 0 || len >= size - s) {
+        return -1;
+    }
+
+    return s + len;
+}
+
 static int chronicle_format(const void *data, size_t bytes,
                             const char *tag, size_t tag_len,
                             char **out_data, size_t *out_size,
@@ -921,10 +945,7 @@ static int chronicle_format(const void *data, size_t bytes,
     size_t off = 0;
     size_t last_off = last_offset;
     size_t alloc_size = 0;
-    size_t s;
     char time_formatted[255];
-    /* Parameters for Timestamp */
-    struct tm tm;
     flb_sds_t out_buf;
     struct flb_log_event log_event;
     msgpack_sbuffer mp_sbuf;
@@ -1196,20 +1217,22 @@ static int chronicle_format(const void *data, size_t bytes,
         msgpack_pack_str_body(&mp_pck, entry->log_text, entry->log_text_size);
 
         /* timestamp */
+        len = chronicle_format_rfc3339(&entry->timestamp, time_formatted,
+                                       sizeof(time_formatted));
+        if (len < 0) {
+            flb_plg_error(ctx->ins, "could not format the record timestamp");
+            msgpack_sbuffer_destroy(&mp_sbuf);
+            chronicle_resolved_labels_destroy(&resolved_labels);
+            flb_sds_destroy(namespace);
+            chronicle_entries_destroy(&entry_list);
+            return -1;
+        }
+
         msgpack_pack_str(&mp_pck, 10);
         msgpack_pack_str_body(&mp_pck, "ts_rfc3339", 10);
 
-        gmtime_r(&entry->timestamp.tm.tv_sec, &tm);
-        s = strftime(time_formatted, sizeof(time_formatted) - 1,
-                        FLB_STD_TIME_FMT, &tm);
-        len = snprintf(time_formatted + s, sizeof(time_formatted) - 1 - s,
-                       ".%03" PRIu64 "Z",
-                       (uint64_t) entry->timestamp.tm.tv_nsec);
-        s += len;
-
-        msgpack_pack_str(&mp_pck, s);
-        msgpack_pack_str_body(&mp_pck, time_formatted, s);
-
+        msgpack_pack_str(&mp_pck, len);
+        msgpack_pack_str_body(&mp_pck, time_formatted, len);
     }
 
     /* Convert from msgpack to JSON */
