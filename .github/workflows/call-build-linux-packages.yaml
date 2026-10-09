@@ -245,7 +245,7 @@ jobs:
       - name: Create repositories on staging now
         # We sync down what we have for the release directories.
         # Create the repo metadata then upload to the root of the bucket.
-        # This will wipe out any versioned directories in the process.
+        # Remove versioned package directories, but retain the schema files used by promotion.
         run: |
           rm -rf ./latest/
           mkdir -p ./latest/
@@ -259,7 +259,9 @@ jobs:
 
           ./update-repos.sh "./latest/"
           echo "${{ inputs.version }}" > "./latest/latest-version.txt"
-          aws s3 sync "./latest/" "s3://$AWS_S3_BUCKET" --delete --follow-symlinks --no-progress ${ENDPOINT}
+          aws s3 sync "./latest/" "s3://$AWS_S3_BUCKET" --delete --follow-symlinks --no-progress \
+            --exclude "${{ inputs.version }}/fluent-bit-schema-${{ inputs.version }}.json" \
+            --exclude "${{ inputs.version }}/fluent-bit-schema-pretty-${{ inputs.version }}.json" ${ENDPOINT}
         env:
           GPG_KEY: ${{ steps.import_gpg.outputs.name }}
           AWS_REGION: "us-east-1"
