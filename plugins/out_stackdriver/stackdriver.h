@@ -43,6 +43,13 @@
 #define FLB_STD_WRITE_URI_SIZE 17
 #define FLB_STD_WRITE_URL "https://logging.googleapis.com" FLB_STD_WRITE_URI
 
+/*
+ * HTTP response buffer for Cloud Logging write responses. Matches the
+ * out_es / out_opensearch / out_loki default. Set buffer_size to 'false'
+ * (0) for an unlimited buffer.
+ */
+#define FLB_STD_DEFAULT_HTTP_MAX "512k"
+
 /* Timestamp format */
 #define FLB_STD_TIME_FMT  "%Y-%m-%dT%H:%M:%S"
 
@@ -216,6 +223,9 @@ struct flb_stackdriver {
     /* config key to allow an alternate Cloud Logging URL */
     flb_sds_t cloud_logging_base_url;
     flb_sds_t cloud_logging_write_url;
+
+    /* HTTP response buffer size in bytes (0 == unlimited) */
+    size_t buffer_size;
 
 #ifdef FLB_HAVE_METRICS
     /* metrics */

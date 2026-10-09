@@ -1359,6 +1359,14 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
         goto error;
     }
 
+    /*
+     * HTTP response buffer. flb_utils_size_to_bytes("false") is 0 (unlimited).
+     * An unparsable size is -1; treat that as unlimited, same as out_es.
+     */
+    if (ctx->buffer_size == (size_t) -1) {
+        ctx->buffer_size = 0;
+    }
+
     /* Set context */
     flb_output_set_context(ins, ctx);
 
@@ -3104,7 +3112,8 @@ static void cb_stackdriver_flush(struct flb_event_chunk *event_chunk,
     c = flb_http_client(u_conn, FLB_HTTP_POST, FLB_STD_WRITE_URI,
                         compressed_payload_buffer, compressed_payload_size, NULL, 0, NULL, 0);
 
-    flb_http_buffer_size(c, 4192);
+    /* 0 means unlimited. Default is large enough for Cloud Logging error bodies. */
+    flb_http_buffer_size(c, ctx->buffer_size);
 
     if (ctx->stackdriver_agent) {
         flb_http_add_header(c, "User-Agent", 10,
@@ -3408,6 +3417,15 @@ static struct flb_config_map config_map[] = {
       FLB_CONFIG_MAP_STR, "cloud_logging_base_url", (char *)NULL,
       0, FLB_TRUE, offsetof(struct flb_stackdriver, cloud_logging_base_url),
       "The base Cloud Logging API URL to use for the /v2/entries:write API request. Default: https://logging.googleapis.com"
+    },
+    {
+      FLB_CONFIG_MAP_SIZE, "buffer_size", FLB_STD_DEFAULT_HTTP_MAX,
+      0, FLB_TRUE, offsetof(struct flb_stackdriver, buffer_size),
+      "Specify the buffer size used to read the response from the Cloud Logging "
+      "HTTP service. This option is useful for debugging purposes where is required to read "
+      "full responses, note that response size grows depending of the number of records "
+      "inserted. To set an unlimited amount of memory set this value to 'false', "
+      "otherwise the value must be according to the Unit Size specification"
     },
 
 
