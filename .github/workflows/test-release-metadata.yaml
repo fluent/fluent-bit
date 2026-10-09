@@ -11,7 +11,7 @@ on:
       - '.github/workflows/test-release-metadata.yaml'
       - 'packaging/update-repos.sh'
   push:
-    branches: [master]
+    branches: ['5.0']
     paths:
       - '.github/scripts/release_metadata.py'
       - '.github/scripts/tests/test_release_*.py'
