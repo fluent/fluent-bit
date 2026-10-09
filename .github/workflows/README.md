@@ -187,7 +187,7 @@ It resolves version-specific immutable production/debug manifests, regenerates
 metadata from the production image and compares it with both staged files.
 It retains the validated staging files as a run artifact before any publication.
 Version, series and latest Linux tags are promoted from those pinned manifests.
-The public metadata gate precedes Linux, Windows, macOS, source, package-index and
+The public metadata gate precedes Linux, Windows, macOS, source and
 container publication. GitHub release creation has an explicit dependency on that
 gate, independent of the selected maintenance-series condition.
 
@@ -198,8 +198,8 @@ https://packages.fluentbit.io/<version>/fluent-bit-schema-<version>.json
 https://packages.fluentbit.io/<version>/fluent-bit-schema-pretty-<version>.json
 ```
 
-This follows `staging-release-packages-index`'s `BASE_URL` and the version-directory
-keys in `AWS_S3_BUCKET_RELEASE`. `releases.fluentbit.io` serves the separate source
+This follows the version-directory keys in `AWS_S3_BUCKET_RELEASE` and the
+public packages-server URL. `releases.fluentbit.io` serves the separate source
 release bucket and is not the configured destination for these metadata files.
 The [infra sync configuration](https://github.com/fluent/fluent-bit-infra/blob/main/terraform/provision/package-server-provision.sh.tftpl)
 and packages-server sync description above are operational references, not a reason
