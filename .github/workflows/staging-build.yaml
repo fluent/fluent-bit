@@ -96,6 +96,12 @@ jobs:
     needs:
       - staging-build-get-meta
       - staging-build-images
+    # A Windows image failure must not discard successfully generated Linux metadata.
+    # The required artifact download and validation below still fail closed.
+    if: >-
+      ${{ !cancelled() && needs.staging-build-get-meta.result == 'success' &&
+          (needs.staging-build-images.result == 'success' ||
+           needs.staging-build-images.result == 'failure') }}
     runs-on: ubuntu-latest
     environment: staging
     permissions:
