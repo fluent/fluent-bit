@@ -1,0 +1,86 @@
+[package]
+name = "databricks-zerobus-ingest-sdk"
+version = "2.2.2"
+authors = ["Databricks"]
+edition = "2021"
+rust-version = "1.70"
+license = "Apache-2.0"
+description = "A high-performance Rust client for streaming data ingestion into Databricks Delta tables using the Zerobus service"
+readme = "../README.md"
+repository = "https://github.com/databricks/zerobus-sdk"
+keywords = ["databricks", "delta", "streaming", "ingestion", "zerobus"]
+categories = ["database", "api-bindings"]
+documentation = "https://docs.rs/databricks-zerobus-ingest-sdk"
+
+# Build docs on docs.rs with all optional features enabled so feature-gated
+# modules (arrow-flight, zeroparser) are visible on the rendered page.
+[package.metadata.docs.rs]
+all-features = true
+
+[dependencies]
+async-trait.workspace = true
+prost.workspace = true
+prost-types.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "fs", "sync"] }
+tokio-retry.workspace = true
+tokio-stream.workspace = true
+tokio-util = { workspace = true, features = ["rt"] }
+tonic = { workspace = true, features = ["tls-native-roots", "transport"] }
+tonic-prost.workspace = true
+tracing.workspace = true
+hyper-http-proxy.workspace = true
+hyper-util.workspace = true
+smallvec.workspace = true
+bytes.workspace = true
+self_cell = { version = "1.2", optional = true }
+
+# Arrow Flight dependencies
+arrow-flight = { workspace = true, optional = true }
+arrow-array = { workspace = true, optional = true }
+arrow-schema = { workspace = true, optional = true }
+arrow-ipc = { workspace = true, optional = true, features = ["lz4", "zstd"] }
+futures = { workspace = true, optional = true }
+
+[dev-dependencies]
+tracing-subscriber.workspace = true
+# zeroparser e2e + bench dev-deps
+criterion = { version = "0.5", default-features = false, features = ["html_reports"] }
+plotters = { version = "0.3", default-features = false, features = ["svg_backend"] }
+prost-reflect = { workspace = true, features = ["serde"] }
+rstest = "0.24"
+strum = { version = "0.27", features = ["derive"] }
+
+[build-dependencies]
+tonic-prost-build.workspace = true
+protoc-bin-vendored.workspace = true
+prost-build = { version = "0.14", optional = true }
+
+[features]
+default = []
+# Arrow Flight is in Beta
+arrow-flight = ["dep:arrow-flight", "dep:arrow-array", "dep:arrow-schema", "dep:arrow-ipc", "dep:futures"]
+# Zero-copy protobuf parser.
+zeroparser = ["dep:self_cell", "dep:prost-build"]
+testing = []
+
+[[test]]
+name = "zeroparser_e2e"
+path = "src/zeroparser/tests/e2e.rs"
+required-features = ["zeroparser"]
+
+[[bench]]
+name = "zeroparser_parser_bench"
+path = "src/zeroparser/benches/parser_bench.rs"
+harness = false
+required-features = ["zeroparser"]
+
+[[bench]]
+name = "zeroparser_bench_plot"
+path = "src/zeroparser/benches/bench_plot.rs"
+harness = false
+required-features = ["zeroparser"]
