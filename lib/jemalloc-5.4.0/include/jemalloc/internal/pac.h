@@ -1,0 +1,310 @@
+#ifndef JEMALLOC_INTERNAL_PAC_H
+#define JEMALLOC_INTERNAL_PAC_H
+
+#include "jemalloc/internal/jemalloc_preamble.h"
+#include "jemalloc/internal/decay.h"
+#include "jemalloc/internal/ecache.h"
+#include "jemalloc/internal/edata.h"
+#include "jemalloc/internal/edata_cache.h"
+#include "jemalloc/internal/exp_grow.h"
+#include "jemalloc/internal/lockedint.h"
+#include "jemalloc/internal/sec.h"
+#include "jemalloc/internal/tsd_types.h"
+#include "san_bump.h"
+
+/*
+ * Page allocator classic (PAC), a page-level allocator that:
+ * - Can be used for arenas with custom extent hooks.
+ * - Can always satisfy any allocation request (including highly-fragmentary
+ *   ones).
+ * - Can use efficient OS-level zeroing primitives for demand-filled pages.
+ */
+
+/* How "eager" decay/purging should be. */
+enum pac_purge_eagerness_e {
+	PAC_PURGE_ALWAYS,
+	PAC_PURGE_NEVER,
+	PAC_PURGE_ON_EPOCH_ADVANCE
+};
+typedef enum pac_purge_eagerness_e pac_purge_eagerness_t;
+
+/*
+ * When a decay sweep would purge more than this many pages, its purge is
+ * treated as due (worth waking the background thread for) instead of left
+ * to accumulate.  PAC decay policy; the HPA defers on time intervals, not
+ * on a page count, so this constant is PAC-only.
+ */
+#define PAC_DECAY_PURGE_NPAGES_THRESHOLD UINT64_C(1024)
+
+typedef struct pac_decay_stats_s pac_decay_stats_t;
+struct pac_decay_stats_s {
+	/* Total number of purge sweeps. */
+	locked_u64_t npurge;
+	/* Total number of madvise calls made. */
+	locked_u64_t nmadvise;
+	/* Total number of pages purged. */
+	locked_u64_t purged;
+};
+
+typedef struct pac_estats_s pac_estats_t;
+struct pac_estats_s {
+	/*
+	 * Stats for a given index in the range [0, SC_NPSIZES] in the various
+	 * ecache_ts.
+	 * We track both bytes and # of extents: two extents in the same bucket
+	 * may have different sizes if adjacent size classes differ by more than
+	 * a page, so bytes cannot always be derived from # of extents.
+	 */
+	size_t ndirty;
+	size_t dirty_bytes;
+	size_t nmuzzy;
+	size_t muzzy_bytes;
+	size_t nretained;
+	size_t retained_bytes;
+	size_t npinned;
+	size_t pinned_bytes;
+};
+
+typedef struct pac_stats_s pac_stats_t;
+struct pac_stats_s {
+	pac_decay_stats_t decay_dirty;
+	pac_decay_stats_t decay_muzzy;
+
+	/*
+	 * Number of unused virtual memory bytes currently retained.  Retained
+	 * bytes are technically mapped (though always decommitted or purged),
+	 * but they are excluded from pac_mapped.
+	 */
+	size_t retained; /* Derived. */
+	/*
+	 * Number of bytes in pinned (non-reclaimable) extents currently
+	 * cached.  Unlike retained, pinned bytes count toward pac_mapped.
+	 */
+	size_t pinned;   /* Derived. */
+
+	/*
+	 * Number of bytes currently mapped, excluding retained memory (and any
+	 * base-allocated memory, which is tracked by the arena stats).
+	 *
+	 * We name this "pac_mapped" to avoid confusion with the arena_stats
+	 * "mapped".
+	 */
+	atomic_zu_t pac_mapped;
+
+	/* VM space had to be leaked (undocumented).  Normally 0. */
+	atomic_zu_t abandoned_vm;
+
+	/* PAC SEC stats.  Derived. */
+	sec_stats_t pac_sec_stats;
+};
+
+typedef struct pac_s pac_t;
+struct pac_s {
+	/* Small extent cache in front of PAC ecaches to reduce contention. */
+	sec_t sec;
+	/*
+	 * Runtime gate for PAC SEC.  0 disables (when SEC is not configured or
+	 * dirty_decay_ms == 0); otherwise mirrors sec.opts.max_alloc.
+	 */
+	atomic_zu_t sec_max_alloc;
+
+	/* True once pinned memory has been seen. */
+	atomic_b_t has_pinned;
+
+	/*
+	 * Collections of extents that were previously allocated.  These are
+	 * used when allocating extents, in an attempt to re-use address space.
+	 *
+	 * Synchronization: internal.
+	 */
+	ecache_t ecache_dirty;
+	ecache_t ecache_muzzy;
+	ecache_t ecache_retained;
+	ecache_t ecache_pinned;
+
+	base_t        *base;
+	emap_t        *emap;
+	edata_cache_t *edata_cache;
+
+	/* The grow info for the retained ecache. */
+	exp_grow_t     exp_grow;
+	malloc_mutex_t grow_mtx;
+
+	/* Special allocator for guarded frequently reused extents. */
+	san_bump_alloc_t sba;
+
+	/* How large extents should be before getting auto-purged. */
+	atomic_zu_t oversize_threshold;
+
+	/*
+	 * Decay-based purging state, responsible for scheduling extent state
+	 * transitions.
+	 *
+	 * Synchronization: via the internal mutex.
+	 */
+	decay_t decay_dirty; /* dirty --> muzzy */
+	decay_t decay_muzzy; /* muzzy --> retained */
+
+	malloc_mutex_t *stats_mtx;
+	pac_stats_t    *stats;
+
+	/* Extent serial number generator state. */
+	atomic_zu_t extent_sn_next;
+};
+
+typedef struct pac_thp_s pac_thp_t;
+struct pac_thp_s {
+	/*
+	 * opt_thp controls THP for user requested allocations. Settings
+	 * "always", "never" and "default" are available if THP is supported
+	 * by the OS and the default extent hooks are used:
+	 * - "always" and "never" are covered by pages_set_thp_state() in
+	 *   ehooks_default_alloc_impl().
+	 * - "default" makes no change for all the other auto arenas except
+	 *   the huge arena. For the huge arena, we might also look at
+	 *   opt_metadata_thp to decide whether to use THP or not.
+	 *   This is a temporary remedy before HPA is fully supported.
+	 */
+	bool thp_madvise;
+	/* Below fields are protected by the lock. */
+	malloc_mutex_t lock;
+	bool           auto_thp_switched;
+	atomic_u_t     n_thp_lazy;
+	/*
+	 * List that tracks HUGEPAGE aligned regions that're lazily hugified
+	 * in auto thp mode.
+	 */
+	edata_list_active_t thp_lazy_list;
+};
+
+bool pac_init(tsdn_t *tsdn, pac_t *pac, base_t *base, emap_t *emap,
+    edata_cache_t *edata_cache, nstime_t *cur_time, size_t oversize_threshold,
+    ssize_t dirty_decay_ms, ssize_t muzzy_decay_ms, pac_stats_t *pac_stats,
+    malloc_mutex_t *stats_mtx);
+
+edata_t *pac_alloc(tsdn_t *tsdn, pac_t *pac, size_t size, size_t alignment,
+    bool zero, bool guarded, bool frequent_reuse,
+    bool *deferred_work_generated);
+bool pac_expand(tsdn_t *tsdn, pac_t *pac, edata_t *edata, size_t old_size,
+    size_t new_size, bool zero, bool *deferred_work_generated);
+bool pac_shrink(tsdn_t *tsdn, pac_t *pac, edata_t *edata, size_t old_size,
+    size_t new_size, bool *deferred_work_generated);
+void pac_dalloc(tsdn_t *tsdn, pac_t *pac, edata_t *edata,
+    bool *deferred_work_generated);
+uint64_t pac_time_until_deferred_work(tsdn_t *tsdn, pac_t *pac);
+
+static inline size_t
+pac_mapped(const pac_t *pac) {
+	return atomic_load_zu(&pac->stats->pac_mapped, ATOMIC_RELAXED);
+}
+
+void extent_record(tsdn_t *tsdn, pac_t *pac, ehooks_t *ehooks,
+    ecache_t *ecache, edata_t *edata);
+
+static inline void
+pac_record_grown(tsdn_t *tsdn, pac_t *pac, ehooks_t *ehooks,
+    edata_t *edata) {
+	bool pinned = edata_pinned_get(edata);
+	if (pinned && config_stats) {
+		atomic_fetch_add_zu(&pac->stats->pac_mapped,
+		    edata_size_get(edata), ATOMIC_RELAXED);
+	}
+	extent_record(tsdn, pac, ehooks,
+	    pinned ? &pac->ecache_pinned : &pac->ecache_retained, edata);
+}
+
+static inline ehooks_t *
+pac_ehooks_get(const pac_t *pac) {
+	return base_ehooks_get(pac->base);
+}
+
+/*
+ * All purging functions require holding decay->mtx.  This is one of the few
+ * places external modules are allowed to peek inside pa_shard_t internals.
+ */
+
+/*
+ * Decays the number of pages currently in the ecache.  This might not leave the
+ * ecache empty if other threads are inserting dirty objects into it
+ * concurrently with the call.
+ */
+void pac_decay_all(tsdn_t *tsdn, pac_t *pac, decay_t *decay,
+    pac_decay_stats_t *decay_stats, ecache_t *ecache, bool fully_decay);
+/*
+ * Updates decay settings for the current time, and conditionally purges in
+ * response (depending on decay_purge_setting).  Returns whether or not the
+ * epoch advanced.
+ */
+bool pac_maybe_decay_purge(tsdn_t *tsdn, pac_t *pac, decay_t *decay,
+    pac_decay_stats_t *decay_stats, ecache_t *ecache,
+    pac_purge_eagerness_t eagerness);
+
+/*
+ * Result of a pac_decay_deferred() pass.  Reported per decay state so
+ * pac_do_deferred_work can decide, per state, whether to notify the background
+ * thread.  npages_new is the per-state epoch backlog delta, only meaningful when
+ * the corresponding *_epoch_advanced is true.
+ */
+typedef struct pac_deferred_work_result_s pac_deferred_work_result_t;
+struct pac_deferred_work_result_s {
+	size_t dirty_npages_new;
+	size_t muzzy_npages_new;
+	bool   dirty_epoch_advanced;
+	bool   muzzy_epoch_advanced;
+};
+
+/*
+ * All deferred decay-purge work for a PAC shard: decide the eagerness from the
+ * caller context, run pac_decay_deferred, and (application path only) notify the
+ * background thread for any decay epoch that advanced.  The bg-thread driver
+ * passes is_background_thread=true and is never self-notified.
+ */
+void pac_do_deferred_work(
+    tsdn_t *tsdn, pac_t *pac, bool is_background_thread);
+
+/*
+ * Application-path hook (after deferred_work_generated): wake the background
+ * thread if it is sleeping idle.  Runs the same early-wake logic as the notify
+ * path (pac_maybe_wake_bg), gated on the thread being idle.
+ */
+void pac_wake_bg_on_deferred(tsdn_t *tsdn, pac_t *pac);
+
+/*
+ * Fully decay the extents of the given state, acquiring decay->mtx internally.
+ */
+void pac_decay_all_now(tsdn_t *tsdn, pac_t *pac, extent_state_t state);
+
+/*
+ * Gets / sets the maximum amount that we'll grow an arena down the
+ * grow-retained pathways (unless forced to by an allocaction request).
+ *
+ * Set new_limit to NULL if it's just a query, or old_limit to NULL if you don't
+ * care about the previous value.
+ *
+ * Returns true on error (if the new limit is not valid).
+ */
+bool pac_retain_grow_limit_get_set(
+    tsdn_t *tsdn, pac_t *pac, size_t *old_limit, size_t *new_limit);
+
+bool    pac_decay_ms_set(tsdn_t *tsdn, pac_t *pac, extent_state_t state,
+       ssize_t decay_ms);
+ssize_t pac_decay_ms_get(pac_t *pac, extent_state_t state);
+
+/* Whether the muzzy decay path is relevant (muzzy pages exist, or decay is on). */
+static inline bool
+pac_should_decay_muzzy(pac_t *pac) {
+	return ecache_npages_get(&pac->ecache_muzzy) != 0
+	    || pac_decay_ms_get(pac, extent_state_muzzy) > 0;
+}
+
+/* Whether dirty decay is immediate (dirty_decay_ms == 0). */
+static inline bool
+pac_decay_immediately(pac_t *pac) {
+	return decay_immediately(&pac->decay_dirty);
+}
+
+void pac_destroy(tsdn_t *tsdn, pac_t *pac);
+
+void pac_sec_flush(tsdn_t *tsdn, pac_t *pac);
+
+#endif /* JEMALLOC_INTERNAL_PAC_H */
