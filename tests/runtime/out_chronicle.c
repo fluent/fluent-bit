@@ -119,6 +119,29 @@ static void cb_check_format_no_log_key(void *ctx, int ffd,
     flb_sds_destroy(res_data);
 }
 
+static void cb_check_format_subsecond_timestamp(void *ctx, int ffd,
+                                                int res_ret, void *res_data,
+                                                size_t res_size, void *data)
+{
+    char *out_json = res_data;
+    char *p;
+
+    if (res_ret != 0 || out_json == NULL) {
+        set_callback_error("formatter returned an error or no output");
+        flb_sds_destroy(res_data);
+        return;
+    }
+
+    /* The fraction of 1700000000.0625 must keep its leading zero */
+    p = strstr(out_json, "\"ts_rfc3339\":\"2023-11-14T22:13:20.062500000Z\"");
+    if (p == NULL) {
+        set_callback_error("expected sub-second timestamp was not found");
+    }
+
+    increment_output_invoked();
+    flb_sds_destroy(res_data);
+}
+
 static void cb_check_format_with_log_key(void *ctx, int ffd,
                                          int res_ret, void *res_data,
                                          size_t res_size, void *data)
@@ -392,6 +415,39 @@ void test_format_no_log_key()
     clear_output_invoked();
 
     snprintf(record, sizeof(record) - 1, "[%ld, {\"message\": \"hello world\"}]", (long) time(NULL));
+    flb_lib_push(ctx, in_ffd, record, strlen(record));
+
+    sleep(1);
+
+    stop_and_check(ctx, 1);
+}
+
+void test_format_subsecond_timestamp()
+{
+    flb_ctx_t *ctx;
+    int in_ffd, out_ffd;
+    char *record = "[1700000000.0625, {\"message\": \"hello world\"}]";
+
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", "log_level", "error", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "chronicle", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "customer_id", "test-customer",
+                   "project_id", "TESTING_FORMAT",
+                   "log_type", "TEST_LOG",
+                   NULL);
+
+    flb_output_set_test(ctx, out_ffd, "formatter",
+                        cb_check_format_subsecond_timestamp, NULL, NULL);
+
+    flb_start(ctx);
+    clear_output_invoked();
+
     flb_lib_push(ctx, in_ffd, record, strlen(record));
 
     sleep(1);
@@ -731,6 +787,7 @@ void test_format_split_on_metadata_change()
 
 TEST_LIST = {
     { "format_no_log_key",           test_format_no_log_key },
+    { "format_subsecond_timestamp",  test_format_subsecond_timestamp },
     { "format_with_log_key_found",   test_format_with_log_key_found },
     { "format_with_log_key_not_found", test_format_with_log_key_not_found },
     { "format_with_log_key_conversion_error", test_format_with_log_key_conversion_error },
