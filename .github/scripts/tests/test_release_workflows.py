@@ -1,4 +1,6 @@
 """Guard required release metadata dependencies and explicit file transfers."""
+import fnmatch
+import shlex
 import unittest
 from pathlib import Path
 
@@ -115,6 +117,37 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn('"$METADATA_TOOL" compare', script)
         self.assertIn('"$METADATA_TOOL" verify', script)
         self.assertLess(script.index('"$METADATA_TOOL" verify'), script.index('aws s3 sync'))
+
+    def test_repository_cleanup_preserves_versioned_schema(self):
+        job = workflow("call-build-linux-packages.yaml")["jobs"]["call-build-linux-packages-repo"]
+        script = next(step["run"] for step in job["steps"]
+                      if "--delete" in step.get("run", ""))
+        for version in ("5.0.11", "5.1.3", "5.0.12-rc.1"):
+            rendered = script.replace("${{ inputs.version }}", version).replace("\\\n", " ")
+            commands = [shlex.split(line) for line in rendered.splitlines()
+                        if line.strip().startswith("aws s3 sync")]
+            cleanup = next(command for command in commands if "--delete" in command)
+            self.assertEqual(cleanup[3:5], ["./latest/", "s3://$AWS_S3_BUCKET"])
+            filters = [(arg, cleanup[index + 1]) for index, arg in enumerate(cleanup)
+                       if arg in ("--exclude", "--include")]
+
+            def selected(key):
+                included = True
+                for option, pattern in filters:
+                    if fnmatch.fnmatchcase(key, pattern):
+                        included = option == "--include"
+                return included
+
+            # Excluded destination keys survive --delete, whether uploaded before
+            # or after repository construction, including on a job retry.
+            for name in (f"fluent-bit-schema-{version}.json",
+                         f"fluent-bit-schema-pretty-{version}.json"):
+                with self.subTest(version=version, name=name):
+                    self.assertFalse(selected(f"{version}/{name}"))
+            for key in (f"{version}/rockylinux/9/package.rpm", "rockylinux/9/repodata/old.xml",
+                        f"{version}/unexpected.json", "latest-version.txt"):
+                with self.subTest(version=version, key=key):
+                    self.assertTrue(selected(key))
 
 
 if __name__ == "__main__":
