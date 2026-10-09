@@ -1562,7 +1562,8 @@ static void cb_chronicle_flush(struct flb_event_chunk *event_chunk,
     (void) i_ins;
     (void) config;
     int ret;
-    int ret_code = FLB_RETRY;
+    int result;
+    int ret_code = FLB_OK;
     size_t b_sent;
     flb_sds_t token;
     flb_sds_t payload_buf;
@@ -1699,19 +1700,19 @@ static void cb_chronicle_flush(struct flb_event_chunk *event_chunk,
         /* validate response */
         if (ret != 0) {
             flb_plg_warn(ctx->ins, "http_do=%i", ret);
-            ret_code = FLB_RETRY;
+            result = FLB_RETRY;
         }
         else {
             /* The request was issued successfully, validate the 'error' field */
             flb_plg_debug(ctx->ins, "HTTP Status=%i", c->resp.status);
-            ret_code = chronicle_response_result(ctx, c->resp.status);
-            if (ret_code != FLB_OK) {
+            result = chronicle_response_result(ctx, c->resp.status);
+            if (result != FLB_OK) {
                 if (c->resp.payload && c->resp.payload_size > 0) {
                     /* we got an error */
                     flb_plg_warn(ctx->ins, "response\n%s", c->resp.payload);
                 }
             }
-            if (ret_code == FLB_ERROR) {
+            if (result == FLB_ERROR) {
                 flb_plg_error(ctx->ins, "request rejected with HTTP status %i, "
                               "the records will not be retried", c->resp.status);
             }
@@ -1724,6 +1725,21 @@ static void cb_chronicle_flush(struct flb_event_chunk *event_chunk,
         /* Clean up HTTP client stuffs */
         flb_sds_destroy(payload_buf);
         flb_http_client_destroy(c);
+
+        /*
+         * A chunk can be sent in several requests, so a later success must
+         * not hide a failed request. A retry sends the whole chunk again,
+         * so stop at the first request to retry. A rejected request is not
+         * retried, so keep sending the rest of the chunk and report the
+         * error once done.
+         */
+        if (result == FLB_RETRY) {
+            ret_code = FLB_RETRY;
+            break;
+        }
+        if (result == FLB_ERROR) {
+            ret_code = FLB_ERROR;
+        }
 
         /* The next loop uses the returned offset */
         offset = out_offset;
