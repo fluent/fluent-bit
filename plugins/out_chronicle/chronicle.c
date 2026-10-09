@@ -193,9 +193,14 @@ static int chronicle_get_oauth2_token(struct flb_chronicle *ctx)
     time_t issued;
     time_t expires;
     char payload[1024];
+    const char *scope = FLB_CHRONICLE_SCOPE;
 
     /* Clear any previous oauth2 payload content */
     flb_oauth2_payload_clear(ctx->o);
+
+    if (ctx->api == FLB_CHRONICLE_API_CHRONICLE) {
+        scope = FLB_CHRONICLE_API_SCOPE;
+    }
 
     /* JWT encode for oauth2 */
     issued = time(NULL);
@@ -204,7 +209,7 @@ static int chronicle_get_oauth2_token(struct flb_chronicle *ctx)
     snprintf(payload, sizeof(payload) - 1,
              "{\"iss\": \"%s\", \"scope\": \"%s\", "
              "\"aud\": \"%s\", \"exp\": %lu, \"iat\": %lu}",
-             ctx->oauth_credentials->client_email, FLB_CHRONICLE_SCOPE,
+             ctx->oauth_credentials->client_email, scope,
              FLB_CHRONICLE_AUTH_URL,
              expires, issued);
 
@@ -504,11 +509,17 @@ static int cb_chronicle_init(struct flb_output_instance *ins,
             flb_sds_destroy(token);
         }
 
-        ret = check_chronicle_log_type(ctx, config);
-        if (ret != 0) {
-            flb_plg_error(ctx->ins, "Validate log_type failed. '%s' is not supported. ret = %d",
-                          ctx->log_type, ret);
-            return -1;
+        /*
+         * The supported log types can only be validated with the legacy API.
+         * The Chronicle API rejects unknown log types on logs:import.
+         */
+        if (ctx->api == FLB_CHRONICLE_API_LEGACY) {
+            ret = check_chronicle_log_type(ctx, config);
+            if (ret != 0) {
+                flb_plg_error(ctx->ins, "Validate log_type failed. '%s' is not supported. ret = %d",
+                              ctx->log_type, ret);
+                return -1;
+            }
         }
     }
 
@@ -930,6 +941,300 @@ static int chronicle_format_rfc3339(struct flb_time *tms, char *buf, size_t size
     return s + len;
 }
 
+/*
+ * Pack root map (unstructured log) for the legacy Ingestion API:
+ * see: https://cloud.google.com/chronicle/docs/reference/ingestion-api#request_body_2
+ * {
+ *   "customer_id": "c8c65bfa-5f2c-42d4-9189-64bb7b939f2c",
+ *   "log_type": "BIND_DNS",
+ *   "entries": [
+ *     {
+ *       "log_text": "26-Feb-2019 13:35:02.187 client 10.120.20.32#4238: query: altostrat.com IN A + (203.0.113.102)",
+ *       "ts_epoch_microseconds": 1551188102187000
+ *     },
+ *     {
+ *       "log_text": "26-Feb-2019 13:37:04.523 client 10.50.100.33#1116: query: examplepetstore.com IN A + (203.0.113.102)",
+ *       "ts_rfc3339": "2019-26-02T13:37:04.523-08:00"
+ *     },
+ *     {
+ *       "log_text": "26-Feb-2019 13:39:01.115 client 10.1.2.3#3333: query: www.example.com IN A + (203.0.113.102)"
+ *     },
+ *   ]
+ * }
+ */
+static int chronicle_pack_unstructured_logs(struct flb_chronicle *ctx,
+                                            msgpack_packer *mp_pck,
+                                            struct cfl_list *entry_list,
+                                            flb_sds_t namespace,
+                                            struct mk_list *labels,
+                                            int label_count)
+{
+    int len;
+    int map_size = 3;
+    char time_formatted[255];
+    struct cfl_list *head;
+    struct mk_list *label_head;
+    struct chronicle_entry *entry;
+    struct chronicle_resolved_label *label;
+
+    if (namespace) {
+        map_size++;
+    }
+
+    if (label_count > 0) {
+        map_size++;
+    }
+
+    msgpack_pack_map(mp_pck, map_size);
+
+    msgpack_pack_str(mp_pck, 11);
+    msgpack_pack_str_body(mp_pck, "customer_id", 11);
+
+    msgpack_pack_str(mp_pck, strlen(ctx->customer_id));
+    msgpack_pack_str_body(mp_pck, ctx->customer_id, strlen(ctx->customer_id));
+
+    msgpack_pack_str(mp_pck, 8);
+    msgpack_pack_str_body(mp_pck, "log_type", 8);
+
+    msgpack_pack_str(mp_pck, strlen(ctx->log_type));
+    msgpack_pack_str_body(mp_pck, ctx->log_type, strlen(ctx->log_type));
+
+    if (namespace) {
+        msgpack_pack_str(mp_pck, 9);
+        msgpack_pack_str_body(mp_pck, "namespace", 9);
+
+        msgpack_pack_str(mp_pck, flb_sds_len(namespace));
+        msgpack_pack_str_body(mp_pck, namespace, flb_sds_len(namespace));
+    }
+
+    if (label_count > 0) {
+        msgpack_pack_str(mp_pck, 6);
+        msgpack_pack_str_body(mp_pck, "labels", 6);
+
+        msgpack_pack_array(mp_pck, label_count);
+
+        mk_list_foreach(label_head, labels) {
+            label = mk_list_entry(label_head, struct chronicle_resolved_label, _head);
+
+            msgpack_pack_map(mp_pck, 2);
+
+            msgpack_pack_str(mp_pck, 3);
+            msgpack_pack_str_body(mp_pck, "key", 3);
+            msgpack_pack_str(mp_pck, flb_sds_len(label->key));
+            msgpack_pack_str_body(mp_pck, label->key, flb_sds_len(label->key));
+
+            msgpack_pack_str(mp_pck, 5);
+            msgpack_pack_str_body(mp_pck, "value", 5);
+            msgpack_pack_str(mp_pck, flb_sds_len(label->value));
+            msgpack_pack_str_body(mp_pck, label->value, flb_sds_len(label->value));
+        }
+    }
+
+    msgpack_pack_str(mp_pck, 7);
+    msgpack_pack_str_body(mp_pck, "entries", 7);
+
+    /* Append entries */
+    msgpack_pack_array(mp_pck, cfl_list_size(entry_list));
+
+    /* Iterate the list of valid entries and pack them */
+    cfl_list_foreach(head, entry_list) {
+        entry = cfl_list_entry(head, struct chronicle_entry, _head);
+        /*
+         * Pack entries
+         *
+         * {
+         *  "log_text": {...},
+         *  "ts_rfc3339": "..."
+         * }
+         *
+         */
+        msgpack_pack_map(mp_pck, 2);
+
+        /* log_text */
+        msgpack_pack_str(mp_pck, 8);
+        msgpack_pack_str_body(mp_pck, "log_text", 8);
+        msgpack_pack_str(mp_pck, entry->log_text_size);
+        msgpack_pack_str_body(mp_pck, entry->log_text, entry->log_text_size);
+
+        /* timestamp */
+        len = chronicle_format_rfc3339(&entry->timestamp, time_formatted,
+                                       sizeof(time_formatted));
+        if (len < 0) {
+            flb_plg_error(ctx->ins, "could not format the record timestamp");
+            return -1;
+        }
+
+        msgpack_pack_str(mp_pck, 10);
+        msgpack_pack_str_body(mp_pck, "ts_rfc3339", 10);
+
+        msgpack_pack_str(mp_pck, len);
+        msgpack_pack_str_body(mp_pck, time_formatted, len);
+    }
+
+    return 0;
+}
+
+/*
+ * Pack root map for the Chronicle API logs:import method:
+ * see: https://cloud.google.com/chronicle/docs/reference/rest/v1/projects.locations.instances.logTypes.logs/import
+ * {
+ *   "inlineSource": {
+ *     "logs": [
+ *       {
+ *         "data": "<base64 encoded log_text>",
+ *         "logEntryTime": "2019-02-26T13:35:02.187000000Z",
+ *         "collectionTime": "2019-02-26T13:35:03.000000000Z",
+ *         "environmentNamespace": "namespace",
+ *         "labels": {
+ *           "key": {"value": "value"}
+ *         }
+ *       }
+ *     ]
+ *   }
+ * }
+ */
+static int chronicle_pack_import_logs(struct flb_chronicle *ctx,
+                                      msgpack_packer *mp_pck,
+                                      struct cfl_list *entry_list,
+                                      flb_sds_t namespace,
+                                      struct mk_list *labels,
+                                      int label_count)
+{
+    int ret;
+    int len;
+    int map_size;
+    size_t olen;
+    size_t data_size;
+    char *data;
+    char entry_time[64];
+    char collection_time[64];
+    uint64_t entry_ns;
+    struct flb_time now;
+    struct flb_time collected;
+    struct cfl_list *head;
+    struct mk_list *label_head;
+    struct chronicle_entry *entry;
+    struct chronicle_resolved_label *label;
+
+    flb_time_get(&now);
+
+    msgpack_pack_map(mp_pck, 1);
+    msgpack_pack_str(mp_pck, 12);
+    msgpack_pack_str_body(mp_pck, "inlineSource", 12);
+
+    msgpack_pack_map(mp_pck, 1);
+    msgpack_pack_str(mp_pck, 4);
+    msgpack_pack_str_body(mp_pck, "logs", 4);
+
+    msgpack_pack_array(mp_pck, cfl_list_size(entry_list));
+
+    cfl_list_foreach(head, entry_list) {
+        entry = cfl_list_entry(head, struct chronicle_entry, _head);
+
+        map_size = 3;
+        if (namespace) {
+            map_size++;
+        }
+        if (label_count > 0) {
+            map_size++;
+        }
+
+        msgpack_pack_map(mp_pck, map_size);
+
+        /* data: the raw log line must be base64 encoded */
+        data_size = ((entry->log_text_size + 2) / 3) * 4 + 1;
+        data = flb_malloc(data_size);
+        if (!data) {
+            flb_errno();
+            return -1;
+        }
+
+        ret = flb_base64_encode((unsigned char *) data, data_size, &olen,
+                                (unsigned char *) entry->log_text,
+                                entry->log_text_size);
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "could not base64 encode the log entry");
+            flb_free(data);
+            return -1;
+        }
+
+        msgpack_pack_str(mp_pck, 4);
+        msgpack_pack_str_body(mp_pck, "data", 4);
+        msgpack_pack_str(mp_pck, olen);
+        msgpack_pack_str_body(mp_pck, data, olen);
+        flb_free(data);
+
+        /* logEntryTime */
+        len = chronicle_format_rfc3339(&entry->timestamp, entry_time,
+                                       sizeof(entry_time));
+        if (len < 0) {
+            flb_plg_error(ctx->ins, "could not format the record timestamp");
+            return -1;
+        }
+
+        msgpack_pack_str(mp_pck, 12);
+        msgpack_pack_str_body(mp_pck, "logEntryTime", 12);
+        msgpack_pack_str(mp_pck, len);
+        msgpack_pack_str_body(mp_pck, entry_time, len);
+
+        /*
+         * collectionTime: it must be later than the log entry time, so records
+         * that are not in the past are collected one millisecond after them.
+         */
+        collected = now;
+        entry_ns = flb_time_to_nanosec(&entry->timestamp);
+        if (entry_ns >= flb_time_to_nanosec(&now)) {
+            ret = flb_time_from_uint64(&collected,
+                                       entry_ns + FLB_CHRONICLE_API_COLLECTION_DELAY_NS);
+            if (ret != 0) {
+                flb_plg_error(ctx->ins, "could not compute the collection timestamp");
+                return -1;
+            }
+        }
+
+        len = chronicle_format_rfc3339(&collected, collection_time,
+                                       sizeof(collection_time));
+        if (len < 0) {
+            flb_plg_error(ctx->ins, "could not format the collection timestamp");
+            return -1;
+        }
+
+        msgpack_pack_str(mp_pck, 14);
+        msgpack_pack_str_body(mp_pck, "collectionTime", 14);
+        msgpack_pack_str(mp_pck, len);
+        msgpack_pack_str_body(mp_pck, collection_time, len);
+
+        if (namespace) {
+            msgpack_pack_str(mp_pck, 20);
+            msgpack_pack_str_body(mp_pck, "environmentNamespace", 20);
+            msgpack_pack_str(mp_pck, flb_sds_len(namespace));
+            msgpack_pack_str_body(mp_pck, namespace, flb_sds_len(namespace));
+        }
+
+        if (label_count > 0) {
+            msgpack_pack_str(mp_pck, 6);
+            msgpack_pack_str_body(mp_pck, "labels", 6);
+
+            msgpack_pack_map(mp_pck, label_count);
+
+            mk_list_foreach(label_head, labels) {
+                label = mk_list_entry(label_head, struct chronicle_resolved_label, _head);
+
+                msgpack_pack_str(mp_pck, flb_sds_len(label->key));
+                msgpack_pack_str_body(mp_pck, label->key, flb_sds_len(label->key));
+
+                msgpack_pack_map(mp_pck, 1);
+                msgpack_pack_str(mp_pck, 5);
+                msgpack_pack_str_body(mp_pck, "value", 5);
+                msgpack_pack_str(mp_pck, flb_sds_len(label->value));
+                msgpack_pack_str_body(mp_pck, label->value, flb_sds_len(label->value));
+            }
+        }
+    }
+
+    return 0;
+}
+
 static int chronicle_format(const void *data, size_t bytes,
                             const char *tag, size_t tag_len,
                             char **out_data, size_t *out_size,
@@ -939,13 +1244,11 @@ static int chronicle_format(const void *data, size_t bytes,
                             struct flb_chronicle *ctx,
                             struct flb_config *config)
 {
-    int len;
     int ret;
     int array_size = 0;
     size_t off = 0;
     size_t last_off = last_offset;
     size_t alloc_size = 0;
-    char time_formatted[255];
     flb_sds_t out_buf;
     struct flb_log_event log_event;
     msgpack_sbuffer mp_sbuf;
@@ -955,16 +1258,12 @@ static int chronicle_format(const void *data, size_t bytes,
     char *json_str;
     struct cfl_list entry_list;
     struct chronicle_entry *entry;
-    struct cfl_list *head;
     struct mk_list resolved_labels;
     struct mk_list record_labels;
-    struct mk_list *label_head;
-    struct chronicle_resolved_label *label;
     flb_sds_t namespace = NULL;
     flb_sds_t record_namespace = NULL;
     int label_count = 0;
     int record_label_count = 0;
-    int map_size = 3;
     int metadata_resolved = FLB_FALSE;
     size_t record_start;
 
@@ -1116,132 +1415,30 @@ static int chronicle_format(const void *data, size_t bytes,
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-    /*
-     * Pack root map (unstructured log):
-     * see: https://cloud.google.com/chronicle/docs/reference/ingestion-api#request_body_2
-     * {
-     *   "customer_id": "c8c65bfa-5f2c-42d4-9189-64bb7b939f2c",
-     *   "log_type": "BIND_DNS",
-     *   "entries": [
-     *     {
-     *       "log_text": "26-Feb-2019 13:35:02.187 client 10.120.20.32#4238: query: altostrat.com IN A + (203.0.113.102)",
-     *       "ts_epoch_microseconds": 1551188102187000
-     *     },
-     *     {
-     *       "log_text": "26-Feb-2019 13:37:04.523 client 10.50.100.33#1116: query: examplepetstore.com IN A + (203.0.113.102)",
-     *       "ts_rfc3339": "2019-26-02T13:37:04.523-08:00"
-     *     },
-     *     {
-     *       "log_text": "26-Feb-2019 13:39:01.115 client 10.1.2.3#3333: query: www.example.com IN A + (203.0.113.102)"
-     *     },
-     *   ]
-     * }
-     */
-    if (namespace) {
-        map_size++;
+    if (ctx->api == FLB_CHRONICLE_API_CHRONICLE) {
+        ret = chronicle_pack_import_logs(ctx, &mp_pck, &entry_list,
+                                         namespace, &resolved_labels,
+                                         label_count);
+    }
+    else {
+        ret = chronicle_pack_unstructured_logs(ctx, &mp_pck, &entry_list,
+                                               namespace, &resolved_labels,
+                                               label_count);
     }
 
-    if (label_count > 0) {
-        map_size++;
-    }
+    chronicle_resolved_labels_destroy(&resolved_labels);
+    flb_sds_destroy(namespace);
+    chronicle_entries_destroy(&entry_list);
 
-    msgpack_pack_map(&mp_pck, map_size);
-
-    msgpack_pack_str(&mp_pck, 11);
-    msgpack_pack_str_body(&mp_pck, "customer_id", 11);
-
-    msgpack_pack_str(&mp_pck, strlen(ctx->customer_id));
-    msgpack_pack_str_body(&mp_pck, ctx->customer_id, strlen(ctx->customer_id));
-
-    msgpack_pack_str(&mp_pck, 8);
-    msgpack_pack_str_body(&mp_pck, "log_type", 8);
-
-    msgpack_pack_str(&mp_pck, strlen(ctx->log_type));
-    msgpack_pack_str_body(&mp_pck, ctx->log_type, strlen(ctx->log_type));
-
-    if (namespace) {
-        msgpack_pack_str(&mp_pck, 9);
-        msgpack_pack_str_body(&mp_pck, "namespace", 9);
-
-        msgpack_pack_str(&mp_pck, flb_sds_len(namespace));
-        msgpack_pack_str_body(&mp_pck, namespace, flb_sds_len(namespace));
-    }
-
-    if (label_count > 0) {
-        msgpack_pack_str(&mp_pck, 6);
-        msgpack_pack_str_body(&mp_pck, "labels", 6);
-
-        msgpack_pack_array(&mp_pck, label_count);
-
-        mk_list_foreach(label_head, &resolved_labels) {
-            label = mk_list_entry(label_head, struct chronicle_resolved_label, _head);
-
-            msgpack_pack_map(&mp_pck, 2);
-
-            msgpack_pack_str(&mp_pck, 3);
-            msgpack_pack_str_body(&mp_pck, "key", 3);
-            msgpack_pack_str(&mp_pck, flb_sds_len(label->key));
-            msgpack_pack_str_body(&mp_pck, label->key, flb_sds_len(label->key));
-
-            msgpack_pack_str(&mp_pck, 5);
-            msgpack_pack_str_body(&mp_pck, "value", 5);
-            msgpack_pack_str(&mp_pck, flb_sds_len(label->value));
-            msgpack_pack_str_body(&mp_pck, label->value, flb_sds_len(label->value));
-        }
-    }
-
-    msgpack_pack_str(&mp_pck, 7);
-    msgpack_pack_str_body(&mp_pck, "entries", 7);
-
-    /* Append entries */
-    msgpack_pack_array(&mp_pck, cfl_list_size(&entry_list));
-
-    /* Iterate the list of valid entries and pack them */
-    cfl_list_foreach(head, &entry_list) {
-        entry = cfl_list_entry(head, struct chronicle_entry, _head);
-        /*
-         * Pack entries
-         *
-         * {
-         *  "log_text": {...},
-         *  "ts_rfc3339": "..."
-         * }
-         *
-         */
-        msgpack_pack_map(&mp_pck, 2);
-
-        /* log_text */
-        msgpack_pack_str(&mp_pck, 8);
-        msgpack_pack_str_body(&mp_pck, "log_text", 8);
-        msgpack_pack_str(&mp_pck, entry->log_text_size);
-        msgpack_pack_str_body(&mp_pck, entry->log_text, entry->log_text_size);
-
-        /* timestamp */
-        len = chronicle_format_rfc3339(&entry->timestamp, time_formatted,
-                                       sizeof(time_formatted));
-        if (len < 0) {
-            flb_plg_error(ctx->ins, "could not format the record timestamp");
-            msgpack_sbuffer_destroy(&mp_sbuf);
-            chronicle_resolved_labels_destroy(&resolved_labels);
-            flb_sds_destroy(namespace);
-            chronicle_entries_destroy(&entry_list);
-            return -1;
-        }
-
-        msgpack_pack_str(&mp_pck, 10);
-        msgpack_pack_str_body(&mp_pck, "ts_rfc3339", 10);
-
-        msgpack_pack_str(&mp_pck, len);
-        msgpack_pack_str_body(&mp_pck, time_formatted, len);
+    if (ret != 0) {
+        msgpack_sbuffer_destroy(&mp_sbuf);
+        return -1;
     }
 
     /* Convert from msgpack to JSON */
     out_buf = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size,
                                           config->json_escape_unicode);
     msgpack_sbuffer_destroy(&mp_sbuf);
-    chronicle_resolved_labels_destroy(&resolved_labels);
-    flb_sds_destroy(namespace);
-    chronicle_entries_destroy(&entry_list);
 
     if (!out_buf) {
         flb_plg_error(ctx->ins, "error formatting JSON payload");
@@ -1318,6 +1515,44 @@ static int cb_chronicle_format_test(struct flb_config *config,
 }
 
 
+/*
+ * Map the HTTP status of an ingestion request to a flush result. With the
+ * Chronicle API, client errors such as an unknown log type or missing
+ * permissions fail again on every retry, so they are not retried, except for
+ * authentication, timeout and rate limit errors.
+ */
+static int chronicle_response_result(struct flb_chronicle *ctx, int status)
+{
+    if (ctx->api == FLB_CHRONICLE_API_LEGACY) {
+        if (status == 200) {
+            return FLB_OK;
+        }
+        return FLB_RETRY;
+    }
+
+    if (status >= 200 && status < 300) {
+        return FLB_OK;
+    }
+
+    if (status >= 400 && status < 500 &&
+        status != 401 && status != 408 && status != 429) {
+        return FLB_ERROR;
+    }
+
+    return FLB_RETRY;
+}
+
+static int cb_chronicle_response_test(struct flb_config *config,
+                                      void *plugin_context,
+                                      int status,
+                                      const void *data, size_t bytes,
+                                      void **out_data, size_t *out_size)
+{
+    struct flb_chronicle *ctx = plugin_context;
+
+    return chronicle_response_result(ctx, status);
+}
+
 static void cb_chronicle_flush(struct flb_event_chunk *event_chunk,
                               struct flb_output_flush *out_flush,
                               struct flb_input_instance *i_ins,
@@ -1336,13 +1571,13 @@ static void cb_chronicle_flush(struct flb_event_chunk *event_chunk,
     struct flb_connection *u_conn;
     struct flb_http_client *c;
     struct flb_log_event_decoder log_decoder;
-    size_t threshold = 0.8 * 1024 * 1024;
+    size_t threshold = 0.8 * ctx->max_payload_size;
     size_t offset = 0;
     size_t out_offset = 0;
     int need_loop = FLB_TRUE;
     const int retry_limit = 8;
     int retries = 0;
-    const size_t one_mebibyte = 1024 * 1024;
+    const size_t max_payload_size = ctx->max_payload_size;
 
     flb_plg_trace(ctx->ins, "flushing bytes %zu", event_chunk->size);
 
@@ -1393,7 +1628,7 @@ static void cb_chronicle_flush(struct flb_event_chunk *event_chunk,
              * For 8th attempt, it won't happen. Just give up for
              * formating though. :)
              */
-            threshold = (retry_limit - retries)/10.0 * one_mebibyte;
+            threshold = (retry_limit - retries)/10.0 * max_payload_size;
         }
 
         /* Reformat msgpack to chronicle JSON payload */
@@ -1414,7 +1649,7 @@ static void cb_chronicle_flush(struct flb_event_chunk *event_chunk,
 
         flb_plg_debug(ctx->ins, "the last offset of msgpack decoder is %zu", out_offset);
 
-        if (payload_size >= one_mebibyte) {
+        if (payload_size >= max_payload_size) {
             retries++;
             if (retries >= retry_limit) {
                 flb_plg_error(ctx->ins, "Retry limit is exeeced for chronicle_format");
@@ -1429,7 +1664,7 @@ static void cb_chronicle_flush(struct flb_event_chunk *event_chunk,
 
             flb_plg_debug(ctx->ins,
                           "HTTP request body is exeeded to %zd bytes. actual: %zu. left attempt(s): %d",
-                          one_mebibyte, payload_size, retry_limit - retries);
+                          max_payload_size, payload_size, retry_limit - retries);
             flb_sds_destroy(payload_buf);
 
             goto retry;
@@ -1469,15 +1704,16 @@ static void cb_chronicle_flush(struct flb_event_chunk *event_chunk,
         else {
             /* The request was issued successfully, validate the 'error' field */
             flb_plg_debug(ctx->ins, "HTTP Status=%i", c->resp.status);
-            if (c->resp.status == 200) {
-                ret_code = FLB_OK;
-            }
-            else {
+            ret_code = chronicle_response_result(ctx, c->resp.status);
+            if (ret_code != FLB_OK) {
                 if (c->resp.payload && c->resp.payload_size > 0) {
                     /* we got an error */
                     flb_plg_warn(ctx->ins, "response\n%s", c->resp.payload);
                 }
-                ret_code = FLB_RETRY;
+            }
+            if (ret_code == FLB_ERROR) {
+                flb_plg_error(ctx->ins, "request rejected with HTTP status %i, "
+                              "the records will not be retried", c->resp.status);
             }
         }
 
@@ -1557,7 +1793,15 @@ static struct flb_config_map config_map[] = {
     {
       FLB_CONFIG_MAP_STR, "region", (char *)NULL,
       0, FLB_TRUE, offsetof(struct flb_chronicle, region),
-      "Set the region"
+      "Set the region. With the legacy API: US, EU, UK or ASIA. With the "
+      "Chronicle API: the location of the Google SecOps instance, e.g: us, "
+      "europe or europe-west2 (default: us)"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "api", "legacy",
+      0, FLB_TRUE, offsetof(struct flb_chronicle, api_str),
+      "Set the ingestion API: 'legacy' for the deprecated Ingestion API or "
+      "'chronicle' for the Chronicle API (logs:import)"
     },
     {
       FLB_CONFIG_MAP_STR, "log_key", NULL,
@@ -1593,6 +1837,7 @@ struct flb_output_plugin out_chronicle_plugin = {
 
     /* Test*/
     .test_formatter.callback = cb_chronicle_format_test,
+    .test_response.callback = cb_chronicle_response_test,
     /* Plugin flags */
     .flags          = FLB_OUTPUT_NET | FLB_IO_TLS,
 };
