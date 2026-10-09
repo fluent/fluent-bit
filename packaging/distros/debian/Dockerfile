@@ -76,14 +76,13 @@ ENV DEBIAN_FRONTEND="noninteractive" \
 
 ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
-ARG BULLSEYE_SECURITY_SNAPSHOT="20260904T000000Z"
-
-# Bullseye LTS ended on 2026-08-31. Pin its security repository to an
-# immutable snapshot so package indexes cannot race package removal.
+# Bullseye LTS ended on 2026-08-31. Use the archived main and security
+# repositories and allow their expired Release metadata.
 RUN sed -i \
-    "s#deb.debian.org/debian-security#snapshot.debian.org/archive/debian-security/${BULLSEYE_SECURITY_SNAPSHOT}#g" \
+    -e 's#deb\.debian\.org#archive.debian.org#g' \
+    -e 's#security\.debian\.org#archive.debian.org#g' \
     /etc/apt/sources.list && \
-    echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99snapshot
+    echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99archive
 
 # hadolint ignore=DL3008,DL3015
 RUN apt-get -qq update && \
@@ -110,14 +109,13 @@ COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64
 
 ARG CMAKE_VERSION="3.31.6"
 ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
-ARG BULLSEYE_SECURITY_SNAPSHOT="20260904T000000Z"
-
-# Bullseye LTS ended on 2026-08-31. Pin its security repository to an
-# immutable snapshot so package indexes cannot race package removal.
+# Bullseye LTS ended on 2026-08-31. Use the archived main and security
+# repositories and allow their expired Release metadata.
 RUN sed -i \
-    "s#deb.debian.org/debian-security#snapshot.debian.org/archive/debian-security/${BULLSEYE_SECURITY_SNAPSHOT}#g" \
+    -e 's#deb\.debian\.org#archive.debian.org#g' \
+    -e 's#security\.debian\.org#archive.debian.org#g' \
     /etc/apt/sources.list && \
-    echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99snapshot
+    echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99archive
 
 # hadolint ignore=DL3008,DL3015
 RUN apt-get -qq update && \
