@@ -300,6 +300,17 @@ static int cb_parser_filter(const void *data, size_t bytes,
                             fp = mk_list_entry(head, struct filter_parser, _head);
                             flb_time_zero(&parsed_time);
 
+                            /*
+                             * flb_parser_do() replaces *out_buf and does not
+                             * free the previous allocation. Key_Name can occur
+                             * more than once; release the prior buffer so the
+                             * last successful value does not leak it.
+                             */
+                            if (out_buf != NULL) {
+                                flb_free(out_buf);
+                                out_buf = NULL;
+                            }
+
                             parse_ret = flb_parser_do(fp->parser, val_str, val_len,
                                                       (void **) &out_buf, &out_size,
                                                       &parsed_time);
