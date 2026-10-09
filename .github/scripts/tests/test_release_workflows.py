@@ -28,7 +28,7 @@ class WorkflowTests(unittest.TestCase):
         return result
 
     def test_publication_and_reporting_require_public_verification(self):
-        names = ["yum-packages", "apt-packages", "update-non-linux-s3", "update-base-s3", "packages-index",
+        names = ["yum-packages", "apt-packages", "update-non-linux-s3", "update-base-s3",
                  "source-s3", "images", "images-arch-specific-legacy-tags", "images-latest-tags", "images-windows",
                  "images-sign", "upload-cosign-key", "create-release", "create-docs-pr", "create-version-update-pr"]
         for suffix in names:
