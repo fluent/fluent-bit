@@ -90,6 +90,25 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("--image \"$IMAGE@$DIGEST\"", str(generate["steps"]))
         self.assertNotIn("*.json", str(generate["steps"]))
 
+    def test_staging_upload_survives_unrelated_image_failure(self):
+        upload = workflow("staging-build.yaml")["jobs"]["staging-build-upload-schema-s3"]
+        condition = upload["if"]
+        self.assertIn("!cancelled()", condition)
+        self.assertIn("needs.staging-build-get-meta.result == 'success'", condition)
+        self.assertIn("needs.staging-build-images.result == 'success'", condition)
+        self.assertIn("needs.staging-build-images.result == 'failure'", condition)
+        self.assertFalse(upload.get("continue-on-error", False))
+        downloads = [step for step in upload["steps"]
+                     if step.get("uses", "").startswith("actions/download-artifact@")]
+        self.assertEqual(len(downloads), 1)
+        self.assertEqual(downloads[0]["with"]["name"],
+                         "fluent-bit-schema-${{ needs.staging-build-get-meta.outputs.version }}")
+        # Without a run-id override, the required artifact comes from this run.
+        self.assertNotIn("run-id", downloads[0]["with"])
+        transfer = next(step["run"] for step in upload["steps"]
+                        if "aws s3 cp" in step.get("run", ""))
+        self.assertLess(transfer.index("release_metadata.py validate"), transfer.index("aws s3 cp"))
+
     def test_manual_recovery_uses_same_gate_before_sync(self):
         script = (ROOT / "packaging/update-repos.sh").read_text()
         self.assertIn("RELEASE_VERSION:?", script)
