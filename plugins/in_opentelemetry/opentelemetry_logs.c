@@ -26,6 +26,7 @@
 #include <fluent-otel-proto/fluent-otel.h>
 
 
+#include "opentelemetry_protobuf.h"
 #include "opentelemetry.h"
 #include "opentelemetry_utils.h"
 
@@ -347,6 +348,14 @@ static int binary_payload_to_msgpack(struct flb_opentelemetry *ctx,
 
     mp_pck = &encoder->body.packer;
     mp_pck_meta = &encoder->metadata.packer;
+
+    /* Validate wire depth before protobuf-c recursively unpacks the request. */
+    if (opentelemetry_protobuf_validate(
+            &opentelemetry__proto__collector__logs__v1__export_logs_service_request__descriptor,
+            in_buf, in_size) != 0) {
+        flb_plg_warn(ctx->ins, "invalid OpenTelemetry log protobuf payload");
+        return -1;
+    }
 
     /* unpack logs from protobuf payload */
     input_logs = opentelemetry__proto__collector__logs__v1__export_logs_service_request__unpack(NULL, in_size, in_buf);
