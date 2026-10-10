@@ -45,6 +45,26 @@
 #define FLB_CHRONICLE_URL_BASE_UK           "https://europe-west2-malachiteingestion-pa.googleapis.com"
 #define FLB_CHRONICLE_URL_BASE_ASIA         "https://asia-southeast1-malachiteingestion-pa.googleapis.com"
 
+/* Maximum size of a request body for the legacy Ingestion API */
+#define FLB_CHRONICLE_MAX_PAYLOAD_SIZE      (1024 * 1024)
+
+/* Ingestion APIs */
+#define FLB_CHRONICLE_API_LEGACY            0
+#define FLB_CHRONICLE_API_CHRONICLE         1
+
+/* Chronicle API (logs:import) */
+#define FLB_CHRONICLE_API_SCOPE             "https://www.googleapis.com/auth/cloud-platform"
+#define FLB_CHRONICLE_API_DEFAULT_LOCATION  "us"
+#define FLB_CHRONICLE_API_URL_BASE          "https://%s-chronicle.googleapis.com"
+#define FLB_CHRONICLE_API_IMPORT_ENDPOINT   \
+    "/v1/projects/%s/locations/%s/instances/%s/logTypes/%s/logs:import"
+
+/* Maximum size of a request body for the Chronicle API (4 MB) */
+#define FLB_CHRONICLE_API_MAX_PAYLOAD_SIZE  (4 * 1000 * 1000)
+
+/* Delay added to the collection time of records that are not in the past */
+#define FLB_CHRONICLE_API_COLLECTION_DELAY_NS  1000000
+
 struct flb_chronicle_oauth_credentials {
     /* parsed credentials file */
     flb_sds_t type;
@@ -75,10 +95,16 @@ struct flb_chronicle {
     flb_sds_t customer_id;
     flb_sds_t log_type;
 
+    /* ingestion API: legacy Ingestion API or Chronicle API */
+    flb_sds_t api_str;
+    int api;
+    size_t max_payload_size;
+
     flb_sds_t uri;
     flb_sds_t health_uri;
     flb_sds_t endpoint;
     flb_sds_t region;
+    flb_sds_t location;
     flb_sds_t log_key;
     flb_sds_t namespace;
     flb_sds_t namespace_key;
