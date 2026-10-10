@@ -6,6 +6,7 @@
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_zstd.h>
 #include <fluent-bit/flb_snappy.h>
+#include <fluent-bit/flb_pack.h>
 
 #include <fluent-bit/aws/flb_aws_compress.h>
 #include "flb_tests_internal.h"
@@ -538,7 +539,122 @@ void test_arrow_format_gzip_unsupported()
 }
 #endif
 
+#ifdef FLB_HAVE_ARROW
+static void test_arrow_schema_validation(void)
+{
+    struct flb_arrow_schema *schema;
+    size_t i;
+    const char *invalid[] = {
+        "{}", "[]", "{\"fields\":[]}",
+        "{\"fields\":[{\"name\":\"x\",\"nullable\":true,\"type\":{\"name\":\"list\"}}]}",
+        "{\"fields\":[{\"name\":\"x\",\"nullable\":true,\"type\":{\"name\":\"int\","
+        "\"bitWidth\":7,\"isSigned\":true}}]}",
+        "{\"fields\":[{\"name\":\"x\",\"nullable\":true,\"type\":{\"name\":\"bool\"}},"
+        "{\"name\":\"x\",\"nullable\":false,\"type\":{\"name\":\"bool\"}}]}",
+        "{\"fields\":[{\"name\":\"x\",\"type\":{\"name\":\"bool\"}}]}",
+        "{\"fields\":[],\"fields\":[]}",
+        "{\"fields\":[{\"name\":\"x\",\"nullable\":true,\"type\":{\"name\":\"bool\"}}]} {}"
+    };
+
+    for (i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
+        schema = flb_arrow_schema_create(invalid[i], strlen(invalid[i]));
+        TEST_CHECK(schema == NULL);
+        flb_arrow_schema_destroy(schema);
+    }
+}
+
+static void test_arrow_schema_metadata(void)
+{
+    const char *metadata[] = {"null", "[]", "[{\"key\":\"custom\",\"value\":\"value\"}]"};
+    struct flb_arrow_schema *schema;
+    char json[512];
+    size_t i;
+    size_t j;
+
+    for (i = 0; i < sizeof(metadata) / sizeof(metadata[0]); i++) {
+        for (j = 0; j < sizeof(metadata) / sizeof(metadata[0]); j++) {
+            snprintf(json, sizeof(json),
+                     "{\"metadata\":%s,\"fields\":[{\"name\":\"x\",\"nullable\":true,"
+                     "\"type\":{\"name\":\"bool\"},\"metadata\":%s}]}", metadata[i], metadata[j]);
+            schema = flb_arrow_schema_create(json, strlen(json));
+            TEST_CHECK(schema != NULL);
+            flb_arrow_schema_destroy(schema);
+        }
+    }
+}
+
+static void test_arrow_schema_records(void)
+{
+    const char *json_schema =
+        "{\"fields\":[{\"name\":\"x\",\"nullable\":false,"
+        "\"type\":{\"name\":\"int\",\"bitWidth\":8,\"isSigned\":true}},"
+        "{\"name\":\"nested\",\"nullable\":true,\"type\":{\"name\":\"utf8\"}}]}";
+    const char *records[] = {
+        "[0,{\"x\":127,\"nested\":{\"a\":1}}][1,{\"x\":-128}]",
+        "[0,{\"x\":128}]", "[0,{\"x\":-129}]", "[0,{\"x\":null}]",
+        "[0,{}]", "[0,{\"x\":\"1\"}]", "[0,{\"x\":1.5}]",
+        "[0,{\"x\":1,\"nested\":3}]"
+    };
+    struct flb_arrow_schema *schema;
+    char *packed;
+    void *out = NULL;
+    size_t packed_size;
+    size_t out_size;
+    size_t i;
+    int root_type;
+    int ret;
+
+    schema = flb_arrow_schema_create(json_schema, strlen(json_schema));
+    TEST_ASSERT(schema != NULL);
+    for (i = 0; i < sizeof(records) / sizeof(records[0]); i++) {
+        ret = flb_pack_json(records[i], strlen(records[i]), &packed, &packed_size,
+                            &root_type, NULL);
+        TEST_ASSERT(ret == 0);
+        ret = flb_aws_compression_compress_columnar_msgpack(
+                FLB_AWS_COMPRESS_FORMAT_ARROW, packed, packed_size, &out, &out_size,
+                FLB_AWS_COMPRESS_NONE, schema);
+        TEST_CHECK(ret == (i == 0 ? 0 : -1));
+        if (ret == 0) {
+            TEST_CHECK(out_size > 6 && memcmp(out, "ARROW1", 6) == 0);
+            flb_free(out);
+        }
+        if (i == 0) {
+            ret = flb_aws_compression_compress_columnar_msgpack(
+                    FLB_AWS_COMPRESS_FORMAT_ARROW, packed, packed_size - 1, &out, &out_size,
+                    FLB_AWS_COMPRESS_NONE, schema);
+            TEST_CHECK(ret == -1);
+            if (ret == 0) {
+                flb_free(out);
+            }
+        }
+        flb_free(packed);
+    }
+    ret = flb_aws_compression_compress_columnar_msgpack(
+            FLB_AWS_COMPRESS_FORMAT_ARROW, "", 0, &out, &out_size,
+            FLB_AWS_COMPRESS_NONE, schema);
+    TEST_CHECK(ret == 0);
+    if (ret == 0) {
+        flb_free(out);
+    }
+#ifdef FLB_HAVE_ARROW_PARQUET
+    ret = flb_aws_compression_compress_columnar_msgpack(
+            FLB_AWS_COMPRESS_FORMAT_PARQUET, "", 0, &out, &out_size,
+            FLB_AWS_COMPRESS_NONE, schema);
+    TEST_CHECK(ret == 0);
+    if (ret == 0) {
+        flb_free(out);
+    }
+#endif
+    flb_arrow_schema_destroy(schema);
+}
+#endif
+
 TEST_LIST = {
+#ifdef FLB_HAVE_ARROW
+    { "test_arrow_schema_validation", test_arrow_schema_validation },
+    { "test_arrow_schema_records", test_arrow_schema_records },
+    { "test_arrow_schema_metadata", test_arrow_schema_metadata },
+#endif
     { "test_compression_gzip", test_compression_gzip },
     { "test_compression_zstd", test_compression_zstd },
     { "test_compression_snappy", test_compression_snappy },
