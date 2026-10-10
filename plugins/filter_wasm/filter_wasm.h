@@ -47,6 +47,7 @@ struct flb_filter_wasm {
                                           * accesible from WASM */
     flb_sds_t wasm_function_name;
     int event_format;
+    int abi_version;
     size_t wasm_heap_size;
     size_t wasm_stack_size;
     struct flb_wasm_config *wasm_conf;

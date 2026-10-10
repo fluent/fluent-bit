@@ -13,3 +13,11 @@ wasm:
 
 clean:
 	rm -f *.wasm
+
+.PHONY: v2
+v2:
+	${WASI_SDK_ROOT}/bin/clang -O3 -nostdlib \
+		-z stack-size=${STACK_SIZE} -Wl,--initial-memory=${INITIAL_MEMORY_SIZE} \
+		-o c_filter_v2.wasm c_filter_v2.c \
+		-Wl,--export=__heap_base -Wl,--export=__data_end -Wl,--export=c_filter_v2 \
+		-Wl,--no-entry -Wl,--strip-all

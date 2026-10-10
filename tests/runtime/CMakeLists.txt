@@ -238,7 +238,7 @@ if(FLB_IN_LIB AND FLB_OUT_LIB)
   FLB_RT_TEST(FLB_FILTER_RECORD_MODIFIER "filter_record_modifier.c")
   FLB_RT_TEST(FLB_FILTER_MULTILINE       "filter_multiline.c")
   FLB_RT_TEST(FLB_FILTER_SYSINFO         "filter_sysinfo.c")
-  if (FLB_FILTER_WASM)
+  if (FLB_WASM AND FLB_FILTER_WASM)
     FLB_RT_TEST(FLB_FILTER_WASM            "filter_wasm.c")
   endif ()
   FLB_RT_TEST(FLB_FILTER_ECS       "filter_ecs.c")
@@ -380,6 +380,10 @@ foreach(source_file ${CHECK_PROGRAMS})
       ${source_file_we}
       ${resolved_source_file}
       )
+    if(o_source_file_we STREQUAL "filter_wasm")
+      target_include_directories(${source_file_we} PRIVATE
+        ${CMAKE_SOURCE_DIR}/${FLB_PATH_LIB_WASM_MICRO_RUNTIME}/core/iwasm/include)
+    endif()
     add_sanitizers(${source_file_we})
     if(MSVC AND o_source_file_we STREQUAL "filter_aws")
       target_compile_options(${source_file_we} PRIVATE /Zc:preprocessor)
@@ -389,6 +393,10 @@ foreach(source_file ${CHECK_PROGRAMS})
       ${CMAKE_THREAD_LIBS_INIT}
       ${SYSTEMD_LIB}
       )
+    if(o_source_file_we STREQUAL "filter_wasm")
+      # Direct wrapper calls require an explicit WASM runtime dependency.
+      target_link_libraries(${source_file_we} flb-wasm-static)
+    endif()
     if(o_source_file_we STREQUAL "in_windows_exporter_metrics_tcp")
       target_link_libraries(${source_file_we}
         flb-plugin-in_windows_exporter_metrics
