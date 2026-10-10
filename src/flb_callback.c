@@ -27,15 +27,22 @@ struct flb_callback *flb_callback_create(char *name)
     struct flb_callback *ctx;
 
     /* Create context */
-    ctx = flb_malloc(sizeof(struct flb_callback));
+    ctx = flb_calloc(1, sizeof(struct flb_callback));
     if (!ctx) {
         flb_errno();
+        return NULL;
+    }
+
+    ctx->name = flb_sds_create(name);
+    if (!ctx->name) {
+        flb_free(ctx);
         return NULL;
     }
 
     ctx->ht = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 16, 0);
     if (!ctx->ht) {
         flb_error("[callback] error allocating hash table");
+        flb_sds_destroy(ctx->name);
         flb_free(ctx);
         return NULL;
     }
@@ -130,5 +137,6 @@ void flb_callback_destroy(struct flb_callback *ctx)
         flb_free(entry);
     }
 
+    flb_sds_destroy(ctx->name);
     flb_free(ctx);
 }
