@@ -1,0 +1,29 @@
+service:
+  flush: 1
+  log_level: info
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: azure_logs_ingestion
+      dummy: '{"message":"invalid deferred batching workers"}'
+      samples: 1
+
+  outputs:
+    - name: azure_logs_ingestion
+      match: azure_logs_ingestion
+      tenant_id: suite-tenant
+      client_id: suite-client
+      client_secret: suite-secret
+      auth_url: http://127.0.0.1:${TEST_SUITE_OAUTH_PORT}/oauth/token
+      dce_url: https://localhost:${TEST_SUITE_HTTP_PORT}
+      dcr_id: dcr-suite
+      table_name: suite_CL
+      compress: on
+      batch_chunk_count: 3
+      batch_timeout: 1s
+      workers: 1
+      tls.verify: on
+      tls.verify_hostname: on
+      tls.vhost: localhost
+      tls.ca_file: ${CERTIFICATE_TEST}

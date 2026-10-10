@@ -1,5 +1,6 @@
 set(src
   azure_logs_ingestion.c
+  azure_logs_ingestion_batch.c
   azure_logs_ingestion_conf.c
   )
 
