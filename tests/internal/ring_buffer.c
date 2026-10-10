@@ -6,6 +6,7 @@
 #include <fluent-bit/flb_ring_buffer.h>
 #include <fluent-bit/flb_event_loop.h>
 #include <fluent-bit/flb_bucket_queue.h>
+#include <fluent-bit/flb_input_chunk.h>
 
 #include "flb_tests_internal.h"
 
@@ -157,12 +158,96 @@ static void test_smart_flush()
     n_events = mk_event_wait_2(evl, 0);
     TEST_CHECK(n_events == 0);
 
+    /* A partial drain must request another pass without another write. */
+    flb_ring_buffer_mark_flushed(rb);
+    TEST_CHECK(mk_event_wait_2(evl, 0) == 1);
+    flb_pipe_r(rb->signal_channels[0], signal_buffer, sizeof(signal_buffer));
+
+    /* A full notification pipe already provides a wakeup; do not wait for room. */
+    do {
+        ret = flb_pipe_w(rb->signal_channels[1], ".", 1);
+    } while (ret == 1);
+    TEST_ASSERT(ret == -1);
+    TEST_ASSERT(FLB_PIPE_WOULDBLOCK());
+    flb_ring_buffer_mark_flushed(rb);
+    TEST_CHECK(rb->flush_pending == FLB_TRUE);
+    TEST_CHECK(mk_event_wait_2(evl, 0) == 1);
+    while (flb_pipe_r(rb->signal_channels[0], signal_buffer, sizeof(signal_buffer)) > 0) {
+    }
+
+    while (flb_ring_buffer_read(rb, &tmp, sizeof(tmp)) == 0) {
+    }
+    flb_ring_buffer_mark_flushed(rb);
+    TEST_CHECK(rb->flush_pending == FLB_FALSE);
+    TEST_CHECK(mk_event_wait_2(evl, 0) == 0);
+
+    /* Below the window, a future producer write must still trigger a flush. */
+    for (i = 0; i < elements; i++) {
+        TEST_CHECK(flb_ring_buffer_write(rb, &tmp, sizeof(tmp)) == 0);
+    }
+    flb_ring_buffer_mark_flushed(rb);
+    TEST_CHECK(rb->flush_pending == FLB_FALSE);
+    TEST_CHECK(mk_event_wait_2(evl, 0) == 0);
+    TEST_CHECK(flb_ring_buffer_write(rb, &tmp, sizeof(tmp)) == 0);
+    TEST_CHECK(mk_event_wait_2(evl, 0) == 1);
+
     flb_ring_buffer_destroy(rb);
     flb_bucket_queue_destroy(bktq);
     mk_event_loop_destroy(evl);
 }
+
+static void test_collector_bounded_pass(void)
+{
+    int i;
+    int remaining = 0;
+    void *entry = NULL;
+    struct flb_config config = {0};
+    struct flb_input_instance first = {0};
+    struct flb_input_instance second = {0};
+
+    mk_list_init(&config.inputs);
+    first.mem_buf_status = second.mem_buf_status = FLB_INPUT_RUNNING;
+    first.storage_buf_status = second.storage_buf_status = FLB_INPUT_RUNNING;
+#ifdef FLB_HAVE_METRICS
+    first.rate_gate_status = second.rate_gate_status = FLB_INPUT_RUNNING;
+#endif
+    first.rb = flb_ring_buffer_create(64 * sizeof(entry));
+    second.rb = flb_ring_buffer_create(sizeof(entry));
+    TEST_ASSERT(first.rb != NULL);
+    TEST_ASSERT(second.rb != NULL);
+    mk_list_add(&first._head, &config.inputs);
+    mk_list_add(&second._head, &config.inputs);
+
+    /* Null entries exercise scheduling without invoking storage or filters. */
+    for (i = 0; i < 64; i++) {
+        TEST_CHECK(flb_ring_buffer_write(first.rb, &entry, sizeof(entry)) == 0);
+    }
+    TEST_CHECK(flb_ring_buffer_write(second.rb, &entry, sizeof(entry)) == 0);
+
+    flb_input_chunk_ring_buffer_collector(&config, NULL);
+    TEST_CHECK(flb_ring_buffer_read(second.rb, &entry, sizeof(entry)) == -1);
+    while (flb_ring_buffer_read(first.rb, &entry, sizeof(entry)) == 0) {
+        remaining++;
+    }
+    TEST_CHECK(remaining > 0);
+    TEST_CHECK(remaining < 64);
+
+    first.mem_buf_status = FLB_INPUT_PAUSED;
+    TEST_CHECK(flb_ring_buffer_write(first.rb, &entry, sizeof(entry)) == 0);
+    flb_input_chunk_ring_buffer_collector(&config, NULL);
+    TEST_CHECK(flb_ring_buffer_read(first.rb, &entry, sizeof(entry)) == 0);
+    TEST_CHECK(flb_ring_buffer_write(first.rb, &entry, sizeof(entry)) == 0);
+    first.mem_buf_status = FLB_INPUT_RUNNING;
+    flb_input_chunk_ring_buffer_collector(&config, NULL);
+    TEST_CHECK(flb_ring_buffer_read(first.rb, &entry, sizeof(entry)) == -1);
+
+    flb_ring_buffer_destroy(first.rb);
+    flb_ring_buffer_destroy(second.rb);
+}
+
 TEST_LIST = {
     { "basic",       test_basic},
     { "smart_flush", test_smart_flush},
+    { "collector_bounded_pass", test_collector_bounded_pass},
     { 0 }
 };

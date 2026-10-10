@@ -1681,6 +1681,12 @@ int flb_engine_shutdown(struct flb_config *config)
     /* router */
     flb_router_exit(config);
 
+    /* Detach queued events before their owning plugins release the event memory. */
+    if (config->evl_bktq) {
+        while (flb_bucket_queue_pop_min(config->evl_bktq) != NULL) {
+        }
+    }
+
     /* cleanup plugins */
     flb_filter_exit(config);
     flb_output_exit(config);
