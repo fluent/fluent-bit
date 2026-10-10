@@ -312,6 +312,10 @@ if(FLB_IN_LIB)
 
 endif()
 
+if(FLB_IN_DUMMY)
+  FLB_RT_TEST(FLB_OUT_WEBSOCKET        "out_websocket.c")
+endif()
+
 if (FLB_PROCESSOR_METRICS_SELECTOR)
   FLB_RT_TEST(FLB_PROCESSOR_METRICS_SELECTOR "processor_metrics_selector.c")
 endif()
