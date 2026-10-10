@@ -26,6 +26,18 @@
 
 #include <limits.h>
 
+/*
+ * MinGW-w64's winpthreads, unlike glibc, does not define PTHREAD_STACK_MIN.
+ * MinGW uses the POSIX threading model (the real <pthread.h>), so provide it
+ * here or MK_THREAD_STACK_SIZE below will not compile; 16384 is the glibc
+ * x86-64 minimum, matching the value the other POSIX platforms build with.
+ * MSVC is unaffected: its winpthreads shim (pulled in via mk_pthread.h before
+ * this header) already defines PTHREAD_STACK_MIN, so this guard is a no-op.
+ */
+#ifndef PTHREAD_STACK_MIN
+#define PTHREAD_STACK_MIN 16384
+#endif
+
 #ifdef MK_HAVE_VALGRIND
 #include <valgrind/valgrind.h>
 #endif

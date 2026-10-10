@@ -67,6 +67,7 @@ int we_perflib_update_counters(struct flb_we                   *ctx,
                                we_perflib_instance_filter       filter_hook,
                                we_perflib_label_prepend_hook    label_prepend_hook);
 
-double we_perflib_get_adjusted_counter_value(struct we_perflib_counter *counter);
+double we_perflib_get_adjusted_counter_value(struct we_perflib_counter *counter,
+                                             struct we_perflib_metric_source *source);
 
 #endif
