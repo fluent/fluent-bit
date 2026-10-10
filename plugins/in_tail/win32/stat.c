@@ -45,36 +45,6 @@
 #define WINDOWS_TICKS_TO_SECONDS_RATIO 10000000
 #define WINDOWS_EPOCH_TO_UNIX_EPOCH_DELTA 11644473600
 
-/* 
- * FILETIME timestamps are represented in 100-nanosecond intervals,
- * because of this, that's why we need to divide the number by 10000000
- * in order to convert it to seconds.
- *
- * While UNIX timestamps use January 1, 1970 as epoch Windows FILETIME
- * timestamps use January 1, 1601. Because of this we need to subtract
- * 11644473600 seconds to account for it.
- *
- * Note: Even though this does not account for leap seconds it should be
- * accurate enough.
- */
-
-static uint64_t filetime_to_epoch(FILETIME *ft)
-{
-    ULARGE_INTEGER timestamp;
-
-    if (ft == NULL) {
-        return 0;
-    }
-
-    timestamp.HighPart = ft->dwHighDateTime;
-    timestamp.LowPart = ft->dwLowDateTime;
-
-    timestamp.QuadPart /= WINDOWS_TICKS_TO_SECONDS_RATIO;
-    timestamp.QuadPart -= WINDOWS_EPOCH_TO_UNIX_EPOCH_DELTA;
-
-    return timestamp.QuadPart;
-}
-
 static void reset_errno()
 {
     errno = 0;
@@ -261,6 +231,7 @@ static int hstat(HANDLE h, struct win32_stat *wst)
 {
     BY_HANDLE_FILE_INFORMATION info;
     FILE_STANDARD_INFO std;
+    FILE_BASIC_INFO basic;
 
     SetLastError(0);
     reset_errno();
@@ -278,6 +249,11 @@ static int hstat(HANDLE h, struct win32_stat *wst)
         return -1;
     }
 
+    if (!GetFileInformationByHandleEx(h, FileBasicInfo, &basic, sizeof(basic))) {
+        win32_propagate_last_error_to_errno();
+        return -1;
+    }
+
     wst->st_nlink = std.NumberOfLinks;
     if (std.DeletePending) {
         wst->st_nlink = 0;
@@ -286,7 +262,14 @@ static int hstat(HANDLE h, struct win32_stat *wst)
     wst->st_mode  = get_mode(info.dwFileAttributes);
     wst->st_size  = UINT64(info.nFileSizeHigh, info.nFileSizeLow);
     wst->st_ino   = UINT64(info.nFileIndexHigh, info.nFileIndexLow);
-    wst->st_mtime = filetime_to_epoch(&info.ftLastWriteTime);
+    wst->st_dev   = info.dwVolumeSerialNumber;
+    /* Preserve Windows' 100 ns precision and metadata change time. */
+    wst->st_mtime = basic.LastWriteTime.QuadPart / WINDOWS_TICKS_TO_SECONDS_RATIO -
+                    WINDOWS_EPOCH_TO_UNIX_EPOCH_DELTA;
+    wst->st_ctime = basic.ChangeTime.QuadPart / WINDOWS_TICKS_TO_SECONDS_RATIO -
+                    WINDOWS_EPOCH_TO_UNIX_EPOCH_DELTA;
+    wst->st_mtime_nsec = (basic.LastWriteTime.QuadPart % WINDOWS_TICKS_TO_SECONDS_RATIO) * 100;
+    wst->st_ctime_nsec = (basic.ChangeTime.QuadPart % WINDOWS_TICKS_TO_SECONDS_RATIO) * 100;
 
     return 0;
 }

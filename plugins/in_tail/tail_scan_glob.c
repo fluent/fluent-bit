@@ -207,6 +207,7 @@ static int tail_scan_path(const char *path, struct flb_tail_config *ctx)
     /* Scan the given path */
     ret = do_glob(path, GLOB_TILDE | GLOB_ERR, NULL, &globbuf);
     if (ret != 0) {
+        globfree(&globbuf);
         switch (ret) {
         case GLOB_NOSPACE:
             flb_plg_error(ctx->ins, "no memory space available");
@@ -217,11 +218,15 @@ static int tail_scan_path(const char *path, struct flb_tail_config *ctx)
         case GLOB_NOMATCH:
             ret = stat(path, &st);
             if (ret == -1) {
+                if (errno != ENOENT && errno != ENOTDIR) {
+                    ctx->dormant_scan_failed = FLB_TRUE;
+                }
                 flb_plg_debug(ctx->ins, "cannot read info from: %s", path);
             }
             else {
                 ret = access(path, R_OK);
                 if (ret == -1 && errno == EACCES) {
+                    ctx->dormant_scan_failed = FLB_TRUE;
                     flb_plg_error(ctx->ins, "NO read access for path: %s", path);
                 }
                 else {
@@ -243,6 +248,8 @@ static int tail_scan_path(const char *path, struct flb_tail_config *ctx)
                 flb_plg_debug(ctx->ins, "excluded=%s", globbuf.gl_pathv[i]);
                 continue;
             }
+
+            flb_tail_file_dormant_seen(ctx, globbuf.gl_pathv[i], &st);
 
             if (ctx->ignore_active_older_files &&
                 flb_tail_scan_fetch_aged_out_inode(ctx,
@@ -267,11 +274,6 @@ static int tail_scan_path(const char *path, struct flb_tail_config *ctx)
                         globbuf.gl_pathv[i],
                         strlen(globbuf.gl_pathv[i]));
                 }
-
-                flb_tail_scan_unregister_aged_out_inode(
-                    ctx,
-                    globbuf.gl_pathv[i],
-                    strlen(globbuf.gl_pathv[i]));
             }
 
             if (ctx->ignore_older > 0) {
@@ -298,11 +300,6 @@ static int tail_scan_path(const char *path, struct flb_tail_config *ctx)
                                         globbuf.gl_pathv[i],
                                         strlen(globbuf.gl_pathv[i]));
 
-                flb_tail_scan_unregister_ignored_file_size(
-                    ctx,
-                    globbuf.gl_pathv[i],
-                    strlen(globbuf.gl_pathv[i]));
-
                 /* Discard stale offset if the file was truncated in place. */
                 if (ignored_file_size > (ssize_t) st.st_size) {
                     ignored_file_size = -1;
@@ -316,6 +313,10 @@ static int tail_scan_path(const char *path, struct flb_tail_config *ctx)
                                        ctx);
 
             if (ret == 0) {
+                flb_tail_scan_unregister_ignored_file_size(ctx, globbuf.gl_pathv[i],
+                                                          strlen(globbuf.gl_pathv[i]));
+                flb_tail_scan_unregister_aged_out_inode(ctx, globbuf.gl_pathv[i],
+                                                       strlen(globbuf.gl_pathv[i]));
                 flb_plg_debug(ctx->ins, "scan_glob add(): %s, inode %" PRIu64,
                               globbuf.gl_pathv[i], (uint64_t) st.st_ino);
                 count++;
@@ -326,6 +327,9 @@ static int tail_scan_path(const char *path, struct flb_tail_config *ctx)
             }
         }
         else {
+            if (ret != 0 && errno != ENOENT && errno != ENOTDIR) {
+                ctx->dormant_scan_failed = FLB_TRUE;
+            }
             flb_plg_debug(ctx->ins, "skip (invalid) entry=%s",
                           globbuf.gl_pathv[i]);
         }

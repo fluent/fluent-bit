@@ -17,3 +17,11 @@ target_link_libraries(flb-bench-processor_sampling
   fluent-bit-static
   ${CMAKE_THREAD_LIBS_INIT}
 )
+
+if(FLB_IN_TAIL)
+  add_executable(flb-bench-tail_file_budget flb-bench-tail_file_budget.c)
+  target_link_libraries(flb-bench-tail_file_budget
+    fluent-bit-static
+    ${CMAKE_THREAD_LIBS_INIT}
+  )
+endif()
