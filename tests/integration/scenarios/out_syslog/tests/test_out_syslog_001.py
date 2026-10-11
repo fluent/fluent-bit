@@ -8,6 +8,7 @@ import time
 
 import pytest
 
+from utils.fluent_bit_manager import FluentBitManager, FluentBitStartupError
 from utils.test_service import FluentBitTestService
 
 
@@ -55,10 +56,14 @@ class UdpReceiver:
 
 
 class TcpReceiver:
-    def __init__(self, host, port):
+    def __init__(self, host, port, framing="newline", expected_messages=1):
         self.host = host
         self.port = port
+        self.framing = framing
+        self.expected_messages = expected_messages
         self.message = None
+        self.messages = []
+        self.remaining = b""
         self.error = None
         self._ready = threading.Event()
         self._done = threading.Event()
@@ -75,23 +80,69 @@ class TcpReceiver:
                 conn, _ = server.accept()
 
                 with conn:
-                    conn.settimeout(20)
-                    chunks = []
-
-                    while True:
-                        chunk = conn.recv(4096)
-                        if not chunk:
-                            break
-                        chunks.append(chunk)
-                        if b"\n" in chunk:
-                            break
-
-                    self.message = b"".join(chunks)
-                    self._done.set()
+                    self._read_messages(conn)
         except Exception as exc:
             self.error = exc
             self._ready.set()
             self._done.set()
+
+    def _extract_messages(self, buffer):
+        while len(self.messages) < self.expected_messages:
+            if self.framing == "newline":
+                delimiter = buffer.find(b"\n")
+                if delimiter == -1:
+                    break
+                self.messages.append(bytes(buffer[:delimiter]))
+                del buffer[: delimiter + 1]
+            else:
+                delimiter = buffer.find(b" ")
+                if delimiter == -1:
+                    break
+
+                length_field = bytes(buffer[:delimiter])
+                if not length_field.isdigit():
+                    raise ValueError(f"Invalid RFC 6587 length prefix: {length_field!r}")
+
+                message_length = int(length_field)
+                frame_end = delimiter + 1 + message_length
+                if len(buffer) < frame_end:
+                    break
+
+                self.messages.append(bytes(buffer[delimiter + 1 : frame_end]))
+                del buffer[:frame_end]
+
+    def _read_messages(self, conn):
+        conn.settimeout(20)
+        buffer = bytearray()
+
+        while len(self.messages) < self.expected_messages:
+            chunk = conn.recv(4096)
+            if not chunk:
+                break
+            buffer.extend(chunk)
+            self._extract_messages(buffer)
+
+        if len(self.messages) != self.expected_messages:
+            raise ValueError(
+                f"Expected {self.expected_messages} syslog messages, got {len(self.messages)}"
+            )
+
+        # Give the peer a brief chance to send an invalid delimiter after the
+        # final octet-counted frame without waiting for it to close the stream.
+        conn.settimeout(0.2)
+        try:
+            while True:
+                chunk = conn.recv(4096)
+                if not chunk:
+                    break
+                buffer.extend(chunk)
+        except socket.timeout:
+            pass
+
+        self._extract_messages(buffer)
+        self.remaining = bytes(buffer)
+        self.message = self.messages[0]
+        self._done.set()
 
     def start(self):
         self._thread.start()
@@ -109,10 +160,22 @@ class TcpReceiver:
 
         return self.message
 
+    def wait_messages(self, timeout=10):
+        self.wait_message(timeout)
+        return self.messages
+
 
 class TlsReceiver(TcpReceiver):
-    def __init__(self, host, port, cert_file, key_file):
-        super().__init__(host, port)
+    def __init__(
+        self,
+        host,
+        port,
+        cert_file,
+        key_file,
+        framing="newline",
+        expected_messages=1,
+    ):
+        super().__init__(host, port, framing, expected_messages)
         self.cert_file = cert_file
         self.key_file = key_file
 
@@ -130,19 +193,7 @@ class TlsReceiver(TcpReceiver):
                 conn, _ = server.accept()
 
                 with tls_context.wrap_socket(conn, server_side=True) as tls_conn:
-                    tls_conn.settimeout(20)
-                    chunks = []
-
-                    while True:
-                        chunk = tls_conn.recv(4096)
-                        if not chunk:
-                            break
-                        chunks.append(chunk)
-                        if b"\n" in chunk:
-                            break
-
-                    self.message = b"".join(chunks)
-                    self._done.set()
+                    self._read_messages(tls_conn)
         except Exception as exc:
             self.error = exc
             self._ready.set()
@@ -220,9 +271,17 @@ class DtlsReceiver:
 
 
 class Service:
-    def __init__(self, config_file, receiver_type):
+    def __init__(
+        self,
+        config_file,
+        receiver_type,
+        framing="newline",
+        expected_messages=1,
+    ):
         self.config_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "../config", config_file))
         self.receiver_type = receiver_type
+        self.framing = framing
+        self.expected_messages = expected_messages
         self.receiver = None
 
         cert_dir = os.path.abspath(
@@ -243,13 +302,20 @@ class Service:
         if self.receiver_type == "udp":
             self.receiver = UdpReceiver("127.0.0.1", self.receiver_port)
         elif self.receiver_type == "tcp":
-            self.receiver = TcpReceiver("127.0.0.1", self.receiver_port)
+            self.receiver = TcpReceiver(
+                "127.0.0.1",
+                self.receiver_port,
+                self.framing,
+                self.expected_messages,
+            )
         elif self.receiver_type == "tls":
             self.receiver = TlsReceiver(
                 "127.0.0.1",
                 self.receiver_port,
                 self.tls_crt_file,
                 self.tls_key_file,
+                self.framing,
+                self.expected_messages,
             )
         elif self.receiver_type == "dtls":
             self.receiver = DtlsReceiver(self.receiver_port, self.tls_crt_file, self.tls_key_file)
@@ -279,6 +345,15 @@ def _assert_syslog_payload(payload):
 def _assert_dtls_payload(output):
     assert "ACCEPT" in output
     assert "DONE" in output
+
+
+def _assert_octet_counted_messages(service, messages):
+    assert len(messages) == 2
+    assert service.receiver.remaining == b""
+    for message in messages:
+        assert message.startswith(b"<")
+        assert b"multiline first\nsecond line \xe6\x97\xa5\xe6\x9c\xac\xe8\xaa\x9e" in message
+        assert not message.endswith(b"\n")
 
 
 def test_out_syslog_udp():
@@ -315,6 +390,107 @@ def test_out_syslog_tls_auto_enable():
         service.stop()
 
     _assert_syslog_payload(payload)
+
+
+@pytest.mark.parametrize(
+    ("config_file", "receiver_type"),
+    [
+        ("out_syslog_tcp_octet_counting.yaml", "tcp"),
+        ("out_syslog_tls_octet_counting.yaml", "tls"),
+    ],
+)
+def test_out_syslog_octet_counting_multiline_utf8(config_file, receiver_type):
+    service = Service(
+        config_file,
+        receiver_type,
+        framing="octet_counting",
+        expected_messages=2,
+    )
+    service.start()
+
+    try:
+        messages = service.receiver.wait_messages(timeout=20)
+    finally:
+        service.stop()
+
+    _assert_octet_counted_messages(service, messages)
+
+
+def test_out_syslog_octet_counting_prefix_uses_truncated_size():
+    service = Service(
+        "out_syslog_tcp_octet_counting_truncated.yaml",
+        "tcp",
+        framing="octet_counting",
+    )
+    service.start()
+
+    try:
+        message = service.receiver.wait_message(timeout=15)
+    finally:
+        service.stop()
+
+    assert len(message) == 160
+    assert message.startswith(b"<")
+    assert service.receiver.remaining == b""
+
+
+def test_out_syslog_sd_preset_is_fallback():
+    service = Service("out_syslog_tcp_sd_preset.yaml", "tcp", expected_messages=2)
+    service.start()
+
+    try:
+        messages = service.receiver.wait_messages(timeout=15)
+    finally:
+        service.stop()
+
+    preset_message = next(message for message in messages if b"preset-message" in message)
+    record_message = next(message for message in messages if b"record-message" in message)
+    assert b'[meta@32473 source="preset"]' in preset_message
+    assert b'[sd source="record"]' in record_message
+    assert b"meta@32473" not in record_message
+
+
+@pytest.mark.parametrize("mode", ["udp", "dtls"])
+def test_out_syslog_datagram_rejects_octet_counting(tmp_path, mode):
+    config_file = tmp_path / f"out_syslog_{mode}_octet_counting.yaml"
+    config_file.write_text(
+        f"""service:
+  flush: 1
+  log_level: info
+  http_server: on
+  http_port: ${{FLUENT_BIT_HTTP_MONITORING_PORT}}
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: out_syslog
+      dummy: '{{"message":"must not be sent"}}'
+      samples: 1
+
+  outputs:
+    - name: syslog
+      match: out_syslog
+      host: 127.0.0.1
+      port: 9
+      mode: {mode}
+      syslog_message_key: message
+      syslog_framing: octet_counting
+""",
+        encoding="utf-8",
+    )
+    fluent_bit = FluentBitManager(str(config_file))
+
+    try:
+        with pytest.raises(FluentBitStartupError, match="exited early with code"):
+            fluent_bit.start()
+
+        assert fluent_bit.process.returncode != 0
+        with open(fluent_bit.log_file, encoding="utf-8") as log_file:
+            log_contents = log_file.read()
+        assert "octet_counting" in log_contents
+        assert "requires mode=tcp or mode=tls" in log_contents
+    finally:
+        fluent_bit.stop()
 
 
 @pytest.mark.skipif(not shutil.which("openssl"), reason="openssl is required for DTLS test")

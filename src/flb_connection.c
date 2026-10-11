@@ -26,8 +26,10 @@ int flb_connection_setup(struct flb_connection *connection,
     connection->ts_assigned             = time(NULL);
     connection->busy_flag               = FLB_FALSE;
     connection->shutdown_flag           = FLB_FALSE;
+    connection->event_parent_active      = FLB_FALSE;
     connection->event_wakeup_pending     = FLB_FALSE;
     connection->event_release_pending    = FLB_FALSE;
+    connection->io_timeout_log_error     = FLB_TRUE;
 
     connection->net = &connection->stream->net;
 

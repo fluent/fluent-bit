@@ -22,7 +22,12 @@
 #include <fluent-bit/stream_processor/flb_sp_parser.h>
 #include <fluent-bit/stream_processor/flb_sp_snapshot.h>
 
-static struct flb_sp_snapshot_page *snapshot_page_create()
+/*
+ * Create a snapshot page able to hold at least 'min_size' bytes: pages are
+ * SNAPSHOT_PAGE_SIZE by default, but a record larger than that gets a page
+ * of its own size.
+ */
+static struct flb_sp_snapshot_page *snapshot_page_create(size_t min_size)
 {
     struct flb_sp_snapshot_page *page;
 
@@ -33,7 +38,12 @@ static struct flb_sp_snapshot_page *snapshot_page_create()
         return NULL;
     }
 
-    page->snapshot_page = (char *) flb_malloc(SNAPSHOT_PAGE_SIZE);
+    page->size = SNAPSHOT_PAGE_SIZE;
+    if (min_size > page->size) {
+        page->size = min_size;
+    }
+
+    page->snapshot_page = (char *) flb_malloc(page->size);
     if (!page->snapshot_page) {
         flb_errno();
         flb_free(page);
@@ -110,7 +120,7 @@ static int snapshot_cleanup(struct flb_sp_snapshot *snapshot, struct flb_time *t
 
 static bool snapshot_page_is_full(struct flb_sp_snapshot_page *page, size_t buf_size)
 {
-    return SNAPSHOT_PAGE_SIZE - page->end_pos < buf_size;
+    return page->size - page->end_pos < buf_size;
 }
 
 char *flb_sp_snapshot_name_from_flush(flb_sds_t name)
@@ -140,7 +150,7 @@ int flb_sp_snapshot_update(struct flb_sp_task *task, const char *buf_data,
 
     /* Create a snapshot pgae if the list is empty */
     if (mk_list_is_empty(&snapshot->pages) == 0) {
-        page = snapshot_page_create();
+        page = snapshot_page_create(buf_size);
         if (!page) {
             flb_errno();
             return -1;
@@ -152,7 +162,7 @@ int flb_sp_snapshot_update(struct flb_sp_task *task, const char *buf_data,
         page = mk_list_entry_last(&snapshot->pages, struct flb_sp_snapshot_page, _head);
 
         if (snapshot_page_is_full(page, buf_size)) {
-            page = snapshot_page_create();
+            page = snapshot_page_create(buf_size);
             if (!page) {
                 flb_errno();
                 return -1;

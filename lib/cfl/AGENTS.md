@@ -1,88 +1,136 @@
-# Repository Guidelines
+# Repository Guide
 
-## Preferred Commands
-- Configure with tests: `cmake -S . -B build -DCFL_TESTS=On`
-- Build: `cmake --build build -j8`
-- Run all tests: `ctest --test-dir build --output-on-failure`
-- Run a focused test: `ctest --test-dir build -R <name> --output-on-failure`
-- Check staged or local patches for whitespace before closing a change:
-  `git diff --check`
+This is the canonical operating guide for contributors and coding agents. CFL
+is a compact C library of data structures and low-level utilities embedded by
+Fluent Bit and companion telemetry libraries. Keep it portable, allocation-safe,
+and usable both as a bundled dependency and as an installed library.
 
-## Project Structure & Module Organization
-CFL is a small C library built with CMake.
+## Repository map
 
-- `include/cfl/`: public CFL headers.
-- `src/`: library implementation files.
-- `tests/`: acutest-based unit tests.
-- `lib/xxhash/`: bundled xxHash dependency.
-- `cmake/`: project CMake helpers.
+- `include/cfl/`: public API. Each header must compile on its own.
+- `src/`: implementations and private headers; `src/cfl_arena_internal.h` is
+  not public API.
+- `tests/`: acutest unit tests, public-header tests, and an installed-consumer
+  fixture.
+- `benchmarks/`: arena and mutable-variant performance tools; see
+  [benchmarks/README.md](benchmarks/README.md).
+- `cmake/`, `CMakeLists.txt`: CMake 3.20+ build and packaging definitions.
+- `lib/xxhash/`: bundled third-party xxHash sources. Do not apply CFL style or
+  unrelated edits there.
+- `.github/workflows/`: authoritative cross-platform, sanitizer, Valgrind,
+  installed-consumer, packaging, lint, and downstream validation.
 
-Keep changes scoped to the affected module. Put public declarations in
-`include/cfl/`, implementation in `src/`, and matching unit coverage in
-`tests/` when behavior changes.
+Start architecture work with [README.md](README.md), the relevant public header,
+and its matching source and test file. Arena ownership and tuning are detailed
+in [ARENA.md](ARENA.md).
 
-## Build, Test, and Development Commands
-- `cmake -S . -B build -DCFL_TESTS=On`: configure the project with tests.
-- `cmake --build build -j8`: compile the static library and tests.
-- `ctest --test-dir build --output-on-failure`: run the enabled test suite.
-- `ctest --test-dir build -R cfl-test-<name> --output-on-failure`: run a
-  focused unit test.
+## Generated and bundled files
 
-Prefer targeted test runs while iterating, then run the full enabled suite
-before closing changes that touch shared code or public APIs.
+CMake generates these ignored files; edit their `.in` sources instead:
 
-## Coding Style & Naming Conventions
-- Follow the existing Apache-style C conventions used in this repository.
-- Use 4-space indentation and keep lines readable; avoid unnecessary wrapping.
-- Always use braces for `if/else/while/do` blocks.
-- Put function opening braces on the next line:
-  `int fn(void)\n{ ... }`
-- Declare variables at the start of functions, not mid-block.
-- Prefer descriptive `snake_case` names with the `cfl_` prefix for public APIs.
-- Use `CFL_TRUE` and `CFL_FALSE` for CFL boolean-style return values.
-- Use `/* ... */` comments, and add comments only where they clarify non-obvious
-  behavior.
-- Keep public headers self-contained by including the standard headers they need.
+- `include/cfl/cfl_info.h` from `include/cfl/cfl_info.h.in`
+- `include/cfl/cfl_version.h` from `include/cfl/cfl_version.h.in`
+- `tests/cfl_tests_internal.h` from `tests/cfl_tests_internal.h.in`
 
-## Testing Guidelines
-- Add or update acutest unit coverage for behavior changes.
-- Keep tests close to the affected module and name test binaries through
-  `tests/CMakeLists.txt`.
-- Validate both success and failure paths for parsers, containers, allocation
-  handling, and boundary conditions.
-- Run broader coverage when changing shared headers, CMake wiring, memory
-  ownership, or common data structures.
-- If a relevant test cannot be run, report the exact blocker in the final
-  response.
+Do not edit build directories or generated package output. Treat `lib/xxhash/`
+and `tests/lib/acutest/` as vendored code unless the task explicitly updates the
+dependency.
 
-## Downstream Impact Validation
-- For every modified CFL function, inspect callers in CFL, Fluent Bit,
-  cmetrics, ctraces, and cprofiles before closing the change.
-- Check for side effects from changes to signatures, return values, error
-  handling, ownership, object lifetime, allocation behavior, and mutation
-  semantics.
-- Distinguish production callers from bundled CFL source and test copies when
-  reporting impact.
-- Run relevant downstream builds or tests when a change can affect an existing
-  caller. If a downstream checkout or required test is unavailable, report the
-  exact validation gap.
+## Build and test
 
-## Commit & Pull Request Guidelines
-- Follow observed local history style:
-  `component: short imperative description`
-  Examples: `sds: do not export internal sds_alloc function`,
-  `build: bump to v0.6.2`, `atomic: add atomic operations API`.
-- Keep each commit scoped to one component or interface.
-- Keep subject/body lines concise; use a body when the reason or scope is not
-  obvious from the subject.
-- Do not mix unrelated code and documentation updates in one commit unless the
-  user explicitly asks for a combined commit.
-- Do not rewrite history, amend commits, create remote branches, or open pull
-  requests unless explicitly requested.
+The verified local path is:
 
-## Agent Action Limits
-- Do not modify repositories or files outside this project unless the user
-  explicitly asks.
-- Do not revert user changes outside the requested scope.
-- Preserve unrelated untracked or modified files in the worktree.
-- Prefer minimal patches that avoid unrelated formatting or refactoring churn.
+```sh
+cmake -S . -B build -DCFL_TESTS=On
+cmake --build build -j8
+ctest --test-dir build --output-on-failure
+```
+
+Convenience wrappers run from any directory:
+
+```sh
+scripts/agent-build.sh
+scripts/agent-test.sh
+scripts/agent-test.sh cfl-test-arena
+scripts/agent-verify.sh
+```
+
+`scripts/agent-test.sh` accepts a CTest regular expression. The verification
+wrapper configures, builds, runs all tests, and checks tracked diffs for
+whitespace errors. Set `BUILD_DIR` or `BUILD_JOBS` to override its defaults.
+
+For a focused test without the wrapper:
+
+```sh
+ctest --test-dir build -R cfl-test-<name> --output-on-failure
+```
+
+Build benchmarks separately in release mode:
+
+```sh
+cmake -S . -B build/bench -DCMAKE_BUILD_TYPE=Release -DCFL_BENCHMARKS=On
+cmake --build build/bench -j8
+```
+
+There is no repository-owned formatter or standalone local sanitizer command.
+Always run `git diff --check`. GitHub CI is the canonical extended validation
+for GNU99/GNU17, GCC/Clang, Windows/MSYS2, ARM64, sanitizers, Valgrind, shell
+lint, installed consumers, and downstream consumers.
+
+## Coding and ownership conventions
+
+- Follow the existing Apache-style C: four-space indentation, braces for all
+  control blocks, and function opening braces on the next line.
+- Declare variables at the start of functions, not inside executable blocks.
+- Use descriptive `snake_case`; public symbols use the `cfl_` prefix.
+- Use `CFL_TRUE` and `CFL_FALSE` for CFL boolean-style results.
+- Keep public headers self-contained and include the standard headers they use.
+- Put public declarations in `include/cfl/`, implementation in `src/`, and
+  behavioral coverage in `tests/`.
+- Check allocation failure and partial initialization. Preserve cleanup paths
+  and ownership on every error return.
+- Verify container ownership transfer, arena lifetime, and mutation behavior
+  before changing variants, arrays, kvlists, or SDS storage.
+- Avoid unrelated formatting, refactoring, generated output, or vendor churn.
+
+## Compatibility and downstream boundaries
+
+Public headers and installed library symbols are compatibility-sensitive.
+Before changing a public signature, return value, ownership rule, layout, or
+allocation behavior, inspect all in-repository callers and tests. Maintain C99
+portability and do not introduce compiler-specific behavior without an existing
+compatibility abstraction and cross-platform coverage.
+
+Fluent Bit, cmetrics, ctraces, and cprofiles bundle CFL under `lib/cfl`. CI tests
+the current CFL tree by replacing each consumer's bundled copy. CFL owns its
+generic data structures and APIs; consumer-specific behavior remains in the
+consumer repository. For changes that can affect callers, follow
+[docs/ai/cross-repository.md](docs/ai/cross-repository.md), inspect production
+callers separately from bundled source copies, and report any unavailable
+checkout or validation.
+
+## Change workflow
+
+- Investigation: [docs/ai/investigate.md](docs/ai/investigate.md)
+- Bug fixes: [docs/ai/bug-fix.md](docs/ai/bug-fix.md)
+- Reviews: [docs/ai/code-review.md](docs/ai/code-review.md)
+- Cross-repository changes: [docs/ai/cross-repository.md](docs/ai/cross-repository.md)
+
+Follow local commit history: `component: short imperative description`. Keep
+commits scoped to one component or interface. Do not amend history, create or
+delete remote branches, or open pull requests unless explicitly requested.
+
+## Definition of done
+
+1. The change is minimal and belongs in this repository.
+2. New behavior has success, failure, and boundary tests where applicable.
+3. Relevant focused tests pass, followed by `scripts/agent-verify.sh` for shared
+   code, public APIs, ownership, CMake, or installation changes.
+4. Public API and downstream impact are assessed and documented.
+5. Generated and vendored files remain untouched unless explicitly in scope.
+6. `git diff --check` passes and unrelated user changes remain intact.
+7. The final report lists commands run, compatibility impact, and validation
+   gaps or unresolved risks.
+
+Do not modify repositories outside this checkout without explicit permission.
+Preserve unrelated tracked and untracked work in the shared worktree.

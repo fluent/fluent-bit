@@ -332,6 +332,7 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
         mk_mem_free(timer);
         return -1;
     }
+    pthread_detach(tid);
 
     return fd[0];
 }

@@ -14,15 +14,15 @@ jobs:
     runs-on: ubuntu-latest
     name: build arm64 packages
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         format: [ rpm, deb ]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
-            submodules: true
+          submodules: true
 
-      - uses: uraimo/run-on-arch-action@v3.0.1
+      - uses: uraimo/run-on-arch-action@v3.2.0
         name: Build the ${{matrix.format}} packages
         with:
           arch: aarch64
@@ -48,14 +48,14 @@ jobs:
   build-distro-packages-amd64:
     name: build amd64 packages
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         format: [ rpm, deb ]
     runs-on: [ ubuntu-latest ]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
-            submodules: true
+          submodules: true
 
       - name: Build the ${{matrix.format}} packages
         run:  |
@@ -80,7 +80,7 @@ jobs:
             ext: pkg
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           submodules: true
 
@@ -127,7 +127,7 @@ jobs:
             artifacts/**/*
 
       - name: Release on tag
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         if: startsWith(github.ref, 'refs/tags/')
         with:
           generate_release_notes: true

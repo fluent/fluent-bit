@@ -104,6 +104,7 @@ int opentelemetry_traces_process_raw_traces(struct flb_opentelemetry *ctx,
 {
     int ret;
     int root_type;
+    int records = 0;
     char *out_buf = NULL;
     size_t out_size;
 
@@ -117,10 +118,15 @@ int opentelemetry_traces_process_raw_traces(struct flb_opentelemetry *ctx,
     flb_pack_time_now(&mp_pck);
 
     /* Check if the incoming payload is a valid  message and convert it to msgpack */
-    ret = flb_pack_json(data, size,
-                        &out_buf, &out_size, &root_type, NULL);
+    ret = flb_pack_json_recs(data, size,
+                             &out_buf, &out_size, &root_type, &records, NULL);
 
-    if (ret == 0 && root_type == JSMN_OBJECT) {
+    /*
+     * The packed buffer becomes the body of a single record, so it must be
+     * exactly one JSON object: any extra value in the payload would end up
+     * as a stray top-level object in the chunk.
+     */
+    if (ret == 0 && root_type == JSMN_OBJECT && records == 1) {
         /* JSON found, pack it msgpack representation */
         msgpack_sbuffer_write(&mp_sbuf, out_buf, out_size);
     }

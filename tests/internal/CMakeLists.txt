@@ -4,6 +4,7 @@ include_directories(cutest/)
 
 set(UNIT_TESTS_FILES
   pack.c
+  output.c
   pipe.c
   sds.c
   sds_list.c
@@ -21,6 +22,7 @@ set(UNIT_TESTS_FILES
   http_client.c
   utils.c
   gzip.c
+  compression.c
   zstd.c
   random.c
   thread_storage.c
@@ -159,8 +161,14 @@ if(FLB_AVRO_ENCODER)
   set(UNIT_TESTS_FILES
     ${UNIT_TESTS_FILES}
     avro.c
-    kafka_schema_registry.c
     )
+endif()
+
+if(FLB_AVRO_ENCODER OR FLB_PROTOBUF_ENCODER)
+  list(APPEND UNIT_TESTS_FILES kafka_schema_registry.c)
+endif()
+if(FLB_PROTOBUF_ENCODER)
+  list(APPEND UNIT_TESTS_FILES kafka_protobuf.c)
 endif()
 
 if(FLB_AWS)
@@ -202,6 +210,10 @@ if(FLB_RIPSER)
     ${UNIT_TESTS_FILES}
     ripser.c
     )
+endif()
+
+if(FLB_IN_OPENTELEMETRY)
+  list(APPEND UNIT_TESTS_FILES opentelemetry_protobuf.c)
 endif()
 
 set(UNIT_TESTS_DATA
@@ -343,7 +355,8 @@ if(FLB_METRICS AND FLB_PROCESSOR_CUMULATIVE_TO_DELTA)
     ${CUMULATIVE_TO_DELTA_PLUGIN_DIR})
 endif()
 
-if(FLB_AVRO_ENCODER)
+if(FLB_AVRO_ENCODER OR FLB_PROTOBUF_ENCODER)
+  target_link_libraries(flb-it-kafka_schema_registry jansson)
   target_sources(flb-it-kafka_schema_registry PRIVATE
     ${PROJECT_SOURCE_DIR}/plugins/out_kafka/kafka_schema_registry.c)
   target_include_directories(flb-it-kafka_schema_registry PRIVATE
@@ -356,4 +369,13 @@ endif()
 
 if(FLB_TESTS_INTERNAL_FUZZ)
   add_subdirectory(fuzzers)
+endif()
+
+if(FLB_PROTOBUF_ENCODER)
+  foreach(test_target flb-it-kafka_schema_registry flb-it-kafka_protobuf)
+    target_sources(${test_target} PRIVATE ${PROJECT_SOURCE_DIR}/plugins/out_kafka/kafka_protobuf.cpp)
+    target_include_directories(${test_target} PRIVATE ${PROJECT_SOURCE_DIR}/plugins/out_kafka)
+    target_compile_features(${test_target} PRIVATE cxx_std_11)
+    target_link_libraries(${test_target} protobuf::libprotobuf protobuf::libprotoc)
+  endforeach()
 endif()

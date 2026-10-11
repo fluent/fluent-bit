@@ -138,6 +138,7 @@ struct flb_http_server {
     int                                 idle_timeout; /* seconds */
     struct flb_downstream              *downstream;
     struct cfl_list                     clients;
+    struct cfl_list                     detached_clients;
     flb_http_server_request_processor_callback request_callback;
     void                               *user_data;
     size_t                              buffer_max_size;
@@ -147,6 +148,7 @@ struct flb_http_server {
     uint64_t                           *connection_counter;
     int                                 workers;
     int                                 worker_id;
+    int                                 managed_worker;
     int                                 use_caller_event_loop;
     int                                 reuse_port;
     int                                 tls_alpn_configured;

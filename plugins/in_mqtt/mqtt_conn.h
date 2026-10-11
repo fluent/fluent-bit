@@ -45,6 +45,7 @@ struct mqtt_conn {
     struct mk_list _head;            /* Link to flb_in_mqtt_config->conns */
 };
 
+int mqtt_conn_event(void *data);
 struct mqtt_conn *mqtt_conn_add(struct flb_connection *connection, struct flb_in_mqtt_config *ctx);
 int mqtt_conn_del(struct mqtt_conn *conn);
 int mqtt_conn_destroy_all(struct flb_in_mqtt_config *ctx);

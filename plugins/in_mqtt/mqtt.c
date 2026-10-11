@@ -72,6 +72,9 @@ static int in_mqtt_init(struct flb_input_instance *in,
 
     flb_input_downstream_set(ctx->downstream, ctx->ins);
 
+    /* Connections are accepted and served from event coroutines */
+    flb_stream_enable_async_mode(&ctx->downstream->base);
+
     /* Collect upon data available on the standard input */
     ret = flb_input_set_collector_event(in,
                                         in_mqtt_collect,
@@ -87,6 +90,29 @@ static int in_mqtt_init(struct flb_input_instance *in,
 }
 
 /*
+ * Accept callback: invoked from the connection event coroutine once the
+ * socket has been accepted and the TLS handshake (if any) completed.
+ */
+static int in_mqtt_conn_accept(struct flb_connection *connection,
+                               void *data)
+{
+    struct mqtt_conn          *conn;
+    struct flb_in_mqtt_config *ctx;
+
+    ctx = data;
+
+    flb_plg_debug(ctx->ins, "[fd=%i] new TCP connection", connection->fd);
+
+    conn = mqtt_conn_add(connection, ctx);
+
+    if (!conn) {
+        return -1;
+    }
+
+    return 0;
+}
+
+/*
  * For a server event, the collection event means a new client have arrived, we
  * accept the connection and create a new MQTT instance which will wait for
  * events/data (MQTT control packages)
@@ -94,26 +120,29 @@ static int in_mqtt_init(struct flb_input_instance *in,
 int in_mqtt_collect(struct flb_input_instance *ins,
                     struct flb_config *config, void *in_context)
 {
-    struct flb_connection     *connection;
-    struct mqtt_conn          *conn;
+    int                        ret;
     struct flb_in_mqtt_config *ctx;
 
     ctx = in_context;
 
-    connection = flb_downstream_conn_get(ctx->downstream);
+    /*
+     * Accept the client in its own event coroutine so a TLS handshake that
+     * has to wait for the peer yields back to the event loop instead of
+     * blocking the engine thread until net.accept_timeout expires.
+     */
+    ret = flb_downstream_conn_event_accept(ctx->downstream,
+                                           in_mqtt_conn_accept,
+                                           ctx,
+                                           mqtt_conn_event,
+                                           MK_EVENT_READ);
 
-    if (connection == NULL) {
-        flb_plg_error(ctx->ins, "could not accept new connection");
-
-        return -1;
-    }
-
-    flb_plg_debug(ctx->ins, "[fd=%i] new TCP connection", connection->fd);
-
-    conn = mqtt_conn_add(connection, ctx);
-
-    if (!conn) {
-        flb_downstream_conn_release(connection);
+    /*
+     * A non-zero result also covers a client that was fully served and
+     * closed before this call returned, so it is not necessarily an error;
+     * accept(2) failures are reported by the core.
+     */
+    if (ret != 0) {
+        flb_plg_debug(ctx->ins, "no new connection accepted");
 
         return -1;
     }

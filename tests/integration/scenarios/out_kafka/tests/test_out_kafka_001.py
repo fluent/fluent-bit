@@ -15,6 +15,7 @@ from server.kafka_server import data_storage, kafka_server_run, kafka_server_sto
 from server.schema_registry_server import (
     SCHEMA_ID,
     SCHEMA_SUBJECT,
+    SCHEMA_VERSION,
     data_storage as schema_registry_data_storage,
     schema_registry_server_run,
     schema_registry_server_stop,
@@ -29,9 +30,10 @@ EMPTY_MAP_RECORD_ID = "97789a11215b54828d2c3f50b864afed42543ff8"
 
 
 class Service:
-    def __init__(self, config_file, *, use_schema_registry=False):
+    def __init__(self, config_file, *, use_schema_registry=False, schema_registry_options=None):
         self.config_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "../config", config_file))
         self.use_schema_registry = use_schema_registry
+        self.schema_registry_options = schema_registry_options or {}
         self.service = FluentBitTestService(
             self.config_file,
             data_storage=data_storage,
@@ -45,7 +47,7 @@ class Service:
         kafka_server_run(self.kafka_port)
         if self.use_schema_registry:
             self.schema_registry_port = service.allocate_port_env("TEST_SUITE_SCHEMA_REGISTRY_PORT")
-            schema_registry_server_run(self.schema_registry_port)
+            schema_registry_server_run(self.schema_registry_port, **self.schema_registry_options)
 
     def _stop_receiver(self, service):
         if self.use_schema_registry:
@@ -712,22 +714,25 @@ def test_out_kafka_msgpack_format_sends_msgpack_payload():
 def test_out_kafka_avro_resolves_schema_registry_subject():
     service = Service("out_kafka_avro_schema_registry.yaml", use_schema_registry=True)
     _start_or_skip_without_avro_encoder(service)
+    try:
+        messages = service.wait_for_messages(3, timeout=30)
+    finally:
+        service.stop()
 
-    messages = service.wait_for_messages(1)
-    service.stop()
-
-    message = messages[0]
-    value = message["value"]
-
-    assert message["topic"] == "test"
-    assert value[0] == 0
-    assert int.from_bytes(value[1:5], "big") == SCHEMA_ID
-    assert len(value) > 5
+    for message in messages:
+        value = message["value"]
+        assert message["topic"] == "test"
+        assert value[0] == 0
+        assert int.from_bytes(value[1:5], "big") == SCHEMA_ID
+        body, offset = _decode_avro_string(value, 5)
+        source, offset = _decode_avro_string(value, offset)
+        assert (body, source) == ("hello avro", "dummy")
+        assert offset == len(value)
 
     requests_seen = schema_registry_data_storage["requests"]
     assert len(requests_seen) == 1
     assert requests_seen[0]["method"] == "GET"
-    assert requests_seen[0]["path"] == f"/subjects/{SCHEMA_SUBJECT}/versions/latest"
+    assert requests_seen[0]["path"] == f"/subjects/{SCHEMA_SUBJECT}/versions/{SCHEMA_VERSION}"
     assert "application/vnd.schemaregistry.v1+json" in requests_seen[0]["headers"]["Accept"]
 
 

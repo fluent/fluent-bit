@@ -221,8 +221,9 @@ uint8_t run_server_test(mk_ctx_t *srv, int timeout_sec, test_cb_t cb)
     return result;
 }
 
-int test_cb_sleep() 
+int test_cb_sleep(mk_ctx_t *srv)
 {
+    (void) srv;
     sleep(1);
     return 0;
 }
@@ -284,7 +285,27 @@ void test_server_start_stop_force_fair_balancing(void)
     TEST_CHECK(result == TEST_SUCCESS);
 }
 
+/* Run with Clang -fsanitize=function to check the clock worker adapter as
+ * well as the worker trampoline across repeated startup and cancellation.
+ */
+void test_server_clock_worker_repeated_start_stop(void)
+{
+    mk_ctx_t *srv;
+    uint8_t result;
+    int iteration;
+
+    for (iteration = 0; iteration < 3; iteration++) {
+        srv = mk_create();
+        TEST_ASSERT(srv != NULL);
+        mk_config_set(srv, "Listen", "127.0.0.1:27456", "Workers", "1", NULL);
+        result = run_server_test(srv, 5, test_cb_sleep);
+        mk_destroy(srv);
+        TEST_CHECK(result == TEST_SUCCESS);
+    }
+}
+
 TEST_LIST = {
+    {"server_clock_worker_repeated_start_stop", test_server_clock_worker_repeated_start_stop},
     {
         "core_plain_transport_available",
         test_core_plain_transport_available

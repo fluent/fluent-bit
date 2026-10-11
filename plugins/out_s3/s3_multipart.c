@@ -205,6 +205,8 @@ static struct multipart_upload *upload_from_file(struct flb_s3 *ctx,
     m_upload->init_time = time(NULL);
     m_upload->upload_state = MULTIPART_UPLOAD_STATE_COMPLETE_IN_PROGRESS;
 
+    m_upload->request = s3_request;
+
     ret = upload_data_from_key(m_upload, fsf->meta_buf);
     if (ret < 0) {
         flb_plg_error(ctx->ins, "Could not extract upload data from: %s",
@@ -413,7 +415,6 @@ int complete_multipart_upload(struct flb_s3 *ctx,
     flb_sds_t tmp;
     int ret;
     struct flb_http_client *c = NULL;
-    struct flb_aws_client *s3_client;
 
     if (!m_upload->upload_id) {
         flb_plg_error(ctx->ins, "Cannot complete multipart upload for key %s: "
@@ -448,12 +449,11 @@ int complete_multipart_upload(struct flb_s3 *ctx,
         return -1;
     }
 
-    s3_client = ctx->s3_client;
     if (s3_plugin_under_test() == FLB_TRUE) {
         c = mock_s3_call("TEST_COMPLETE_MULTIPART_UPLOAD_ERROR", "CompleteMultipartUpload");
     }
     else {
-        c = s3_client->client_vtable->request(s3_client, FLB_HTTP_POST,
+        c = m_upload->request(ctx, FLB_HTTP_POST,
                                               uri, body, size,
                                               NULL, 0);
     }
@@ -491,7 +491,6 @@ int abort_multipart_upload(struct flb_s3 *ctx,
     flb_sds_t uri = NULL;
     flb_sds_t tmp;
     struct flb_http_client *c = NULL;
-    struct flb_aws_client *s3_client;
 
     if (!m_upload->upload_id) {
         flb_plg_error(ctx->ins, "Cannot complete multipart upload for key %s: "
@@ -520,12 +519,11 @@ int abort_multipart_upload(struct flb_s3 *ctx,
     }
     uri = tmp;
 
-    s3_client = ctx->s3_client;
     if (s3_plugin_under_test() == FLB_TRUE) {
         c = mock_s3_call("TEST_ABORT_MULTIPART_UPLOAD_ERROR", "AbortMultipartUpload");
     }
     else {
-        c = s3_client->client_vtable->request(s3_client, FLB_HTTP_DELETE,
+        c = m_upload->request(ctx, FLB_HTTP_DELETE,
                                               uri, NULL, 0,
                                               NULL, 0);
     }
@@ -563,7 +561,6 @@ int create_multipart_upload(struct flb_s3 *ctx,
     flb_sds_t uri = NULL;
     flb_sds_t tmp;
     struct flb_http_client *c = NULL;
-    struct flb_aws_client *s3_client;
     struct flb_aws_header *headers = NULL;
     int num_headers = 0;
     int ret;
@@ -587,7 +584,6 @@ int create_multipart_upload(struct flb_s3 *ctx,
     }
     uri = tmp;
 
-    s3_client = ctx->s3_client;
     if (s3_plugin_under_test() == FLB_TRUE) {
         c = mock_s3_call("TEST_CREATE_MULTIPART_UPLOAD_ERROR", "CreateMultipartUpload");
     }
@@ -598,7 +594,7 @@ int create_multipart_upload(struct flb_s3 *ctx,
             flb_sds_destroy(uri);
             return -1;
         }
-        c = s3_client->client_vtable->request(s3_client, FLB_HTTP_POST,
+        c = m_upload->request(ctx, FLB_HTTP_POST,
                                               uri, NULL, 0, headers, num_headers);
         if (headers) {
            flb_free(headers);
@@ -690,7 +686,6 @@ int upload_part(struct flb_s3 *ctx, struct multipart_upload *m_upload,
     flb_sds_t tmp;
     int ret;
     struct flb_http_client *c = NULL;
-    struct flb_aws_client *s3_client;
     struct flb_aws_header *headers = NULL;
     int num_headers = 0;
     char body_md5[25];
@@ -740,12 +735,11 @@ int upload_part(struct flb_s3 *ctx, struct multipart_upload *m_upload,
         headers[0].val_len = strlen(body_md5);
     }
 
-    s3_client = ctx->s3_client;
     if (s3_plugin_under_test() == FLB_TRUE) {
         c = mock_s3_call("TEST_UPLOAD_PART_ERROR", "UploadPart");
     }
     else {
-        c = s3_client->client_vtable->request(s3_client, FLB_HTTP_PUT,
+        c = m_upload->request(ctx, FLB_HTTP_PUT,
                                               uri, body, body_size,
                                               headers, num_headers);
     }

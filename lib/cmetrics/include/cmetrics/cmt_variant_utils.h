@@ -428,6 +428,7 @@ static inline int unpack_cfl_variant_string(mpack_reader_t *reader,
                                             struct cfl_variant **value)
 {
     size_t      value_length;
+    const char *string_data;
     char       *value_data;
     int         result;
     mpack_tag_t tag;
@@ -440,23 +441,34 @@ static inline int unpack_cfl_variant_string(mpack_reader_t *reader,
 
     value_length = mpack_tag_str_length(&tag);
 
+    /* make sure the whole string is present before allocating memory based
+     * on its length field, the decoders use a data backed reader so the
+     * bytes can be accessed in place
+     */
+    string_data = mpack_read_bytes_inplace(reader, value_length);
+
+    mpack_done_str(reader);
+
+    if (mpack_reader_error(reader) != mpack_ok) {
+        return -4;
+    }
+
+    /* strings are handled as C strings, reject embedded NUL bytes */
+    if (value_length > 0 && memchr(string_data, '\0', value_length) != NULL) {
+        return -4;
+    }
+
     value_data = cfl_sds_create_size(value_length + 1);
 
     if (value_data == NULL) {
         return -3;
     }
 
-    cfl_sds_set_len(value_data, value_length);
-
-    mpack_read_cstr(reader, value_data, value_length + 1, value_length);
-
-    mpack_done_str(reader);
-
-    if (mpack_reader_error(reader) != mpack_ok) {
-        cfl_sds_destroy(value_data);
-
-        return -4;
+    if (value_length > 0) {
+        memcpy(value_data, string_data, value_length);
     }
+
+    cfl_sds_set_len(value_data, value_length);
 
     *value = cfl_variant_create_from_reference(value_data);
 
@@ -473,6 +485,7 @@ static inline int unpack_cfl_variant_binary(mpack_reader_t *reader,
                                             struct cfl_variant **value)
 {
     size_t      value_length;
+    const char *binary_data;
     char       *value_data;
     int         result;
     mpack_tag_t tag;
@@ -485,23 +498,28 @@ static inline int unpack_cfl_variant_binary(mpack_reader_t *reader,
 
     value_length = mpack_tag_bin_length(&tag);
 
+    /* make sure the whole payload is present before allocating memory
+     * based on its length field
+     */
+    binary_data = mpack_read_bytes_inplace(reader, value_length);
+
+    mpack_done_bin(reader);
+
+    if (mpack_reader_error(reader) != mpack_ok) {
+        return -4;
+    }
+
     value_data = cfl_sds_create_size(value_length);
 
     if (value_data == NULL) {
         return -3;
     }
 
-    cfl_sds_set_len(value_data, value_length);
-
-    mpack_read_bytes(reader, value_data, value_length);
-
-    mpack_done_bin(reader);
-
-    if (mpack_reader_error(reader) != mpack_ok) {
-        cfl_sds_destroy(value_data);
-
-        return -4;
+    if (value_length > 0) {
+        memcpy(value_data, binary_data, value_length);
     }
+
+    cfl_sds_set_len(value_data, value_length);
 
     *value = cfl_variant_create_from_reference(value_data);
 

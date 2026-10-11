@@ -71,7 +71,26 @@ void test_timeout_tick_destroy(void)
     mk_event_loop_destroy(evl);
 }
 
+static void joinable_worker(void *data)
+{
+    int *result;
+
+    result = data;
+    *result = 42;
+}
+
+static void test_worker_join(void)
+{
+    pthread_t thread;
+    int result = 0;
+
+    TEST_ASSERT(mk_utils_worker_spawn(joinable_worker, &result, &thread) == 0);
+    TEST_ASSERT(pthread_join(thread, NULL) == 0);
+    TEST_CHECK(result == 42);
+}
+
 TEST_LIST = {
+    {"worker_join", test_worker_join},
     {
         "timeout_create_tick_destroy",
         test_timeout_tick_destroy,

@@ -183,6 +183,47 @@ static void wait_for_s3_call_count(const char *api, int expected)
                                         S3_TEST_WAIT_TIMEOUT_MS);
 }
 
+static void wait_for_s3_retry_time(struct flb_s3 *ctx, time_t expected)
+{
+    uint64_t elapsed_ms;
+    struct flb_time start_time;
+    struct flb_time end_time;
+    struct flb_time diff_time;
+
+    elapsed_ms = 0;
+    flb_time_get(&start_time);
+
+    while (ctx->retry_time != expected && elapsed_ms < S3_TEST_WAIT_TIMEOUT_MS) {
+        flb_time_msleep(S3_TEST_WAIT_STEP_MS);
+        flb_time_get(&end_time);
+        flb_time_diff(&end_time, &start_time, &diff_time);
+        elapsed_ms = flb_time_to_nanosec(&diff_time) / 1000000;
+    }
+}
+
+static struct s3_file *wait_for_s3_file(struct flb_s3 *ctx, const char *tag, int tag_len)
+{
+    uint64_t elapsed_ms;
+    struct flb_time start_time;
+    struct flb_time end_time;
+    struct flb_time diff_time;
+    struct s3_file *s3_file;
+
+    elapsed_ms = 0;
+    flb_time_get(&start_time);
+    s3_file = s3_store_file_get(ctx, tag, tag_len);
+
+    while (s3_file == NULL && elapsed_ms < S3_TEST_WAIT_TIMEOUT_MS) {
+        flb_time_msleep(S3_TEST_WAIT_STEP_MS);
+        flb_time_get(&end_time);
+        flb_time_diff(&end_time, &start_time, &diff_time);
+        elapsed_ms = flb_time_to_nanosec(&diff_time) / 1000000;
+        s3_file = s3_store_file_get(ctx, tag, tag_len);
+    }
+
+    return s3_file;
+}
+
 static void wait_for_file_count(const char *path, int expected)
 {
     uint64_t elapsed_ms;
@@ -219,6 +260,110 @@ static void wait_for_file_count_at_most(const char *path, int expected)
         flb_time_diff(&end_time, &start_time, &diff_time);
         elapsed_ms = flb_time_to_nanosec(&diff_time) / 1000000;
     }
+}
+
+static int wait_for_shared_upload_cleanup(struct flb_s3 *ctx,
+                                          char *first_name, char *second_name)
+{
+    uint64_t elapsed_ms;
+    struct flb_time start_time;
+    struct flb_time end_time;
+    struct flb_time diff_time;
+
+    elapsed_ms = 0;
+    flb_time_get(&start_time);
+
+    while (elapsed_ms < S3_TEST_WAIT_TIMEOUT_MS) {
+        pthread_mutex_lock(&ctx->files_mutex);
+        if (flb_fstore_file_get(ctx->fs, ctx->stream_active,
+                               first_name, strlen(first_name)) == NULL &&
+            flb_fstore_file_get(ctx->fs, ctx->stream_active,
+                               second_name, strlen(second_name)) == NULL &&
+            mk_list_is_empty(&ctx->upload_queue) == 0) {
+            pthread_mutex_unlock(&ctx->files_mutex);
+            return 0;
+        }
+        pthread_mutex_unlock(&ctx->files_mutex);
+
+        flb_time_msleep(S3_TEST_WAIT_STEP_MS);
+        flb_time_get(&end_time);
+        flb_time_diff(&end_time, &start_time, &diff_time);
+        elapsed_ms = flb_time_to_nanosec(&diff_time) / 1000000;
+    }
+
+    return -1;
+}
+
+static int wait_for_s3_file_create_time(struct flb_s3 *ctx, const char *tag,
+                                        int tag_len, time_t create_time,
+                                        char *file_name, size_t file_name_size)
+{
+    uint64_t elapsed_ms;
+    struct s3_file *s3_file;
+    struct flb_time start_time;
+    struct flb_time end_time;
+    struct flb_time diff_time;
+
+    elapsed_ms = 0;
+    flb_time_get(&start_time);
+
+    /* The backing file can be visible before its in-memory state is registered. */
+    while (elapsed_ms < S3_TEST_WAIT_TIMEOUT_MS) {
+        pthread_mutex_lock(&ctx->files_mutex);
+        s3_file = s3_store_file_get(ctx, tag, tag_len);
+        if (s3_file != NULL) {
+            if (file_name != NULL) {
+                snprintf(file_name, file_name_size, "%s", s3_file->fsf->name);
+            }
+            s3_file->create_time = create_time;
+            pthread_mutex_unlock(&ctx->files_mutex);
+            return 0;
+        }
+        pthread_mutex_unlock(&ctx->files_mutex);
+
+        flb_time_msleep(S3_TEST_WAIT_STEP_MS);
+        flb_time_get(&end_time);
+        flb_time_diff(&end_time, &start_time, &diff_time);
+        elapsed_ms = flb_time_to_nanosec(&diff_time) / 1000000;
+    }
+
+    return -1;
+}
+
+static int prepare_s3_ordered_files(struct flb_s3 *ctx)
+{
+    uint64_t elapsed_ms;
+    time_t now;
+    struct s3_file *oldest_file;
+    struct s3_file *later_file;
+    struct flb_time start_time;
+    struct flb_time end_time;
+    struct flb_time diff_time;
+
+    elapsed_ms = 0;
+    flb_time_get(&start_time);
+
+    while (elapsed_ms < S3_TEST_WAIT_TIMEOUT_MS) {
+        pthread_mutex_lock(&ctx->files_mutex);
+        oldest_file = s3_store_file_get(ctx, "oldest", 6);
+        later_file = s3_store_file_get(ctx, "later", 5);
+        if (oldest_file != NULL && later_file != NULL) {
+            /* Publish both deadlines together so the timer sees the intended order. */
+            now = time(NULL);
+            oldest_file->create_time = now - 30;
+            later_file->create_time = now - 20;
+            pthread_mutex_unlock(&ctx->files_mutex);
+            return 0;
+        }
+        pthread_mutex_unlock(&ctx->files_mutex);
+
+        flb_time_msleep(S3_TEST_WAIT_STEP_MS);
+        flb_time_get(&end_time);
+        flb_time_diff(&end_time, &start_time, &diff_time);
+        elapsed_ms = flb_time_to_nanosec(&diff_time) / 1000000;
+    }
+
+    return -1;
 }
 
 static int ensure_test_directory(const char *path)
@@ -656,7 +801,6 @@ void flb_test_s3_ordered_retry_uses_backoff_deadline(void)
     flb_ctx_t *ctx;
     char *store_dir;
     struct flb_s3 *s3_ctx;
-    struct s3_file *s3_file;
 
     store_dir = create_test_store_directory("/flb-s3-test-retry-deadline-XXXXXX");
     TEST_CHECK(store_dir != NULL);
@@ -694,17 +838,25 @@ void flb_test_s3_ordered_retry_uses_backoff_deadline(void)
     TEST_CHECK(ret >= 0);
     s3_ctx = get_s3_context(ctx);
     TEST_CHECK(s3_ctx != NULL);
-    wait_for_file_count(s3_ctx->stream_active->path, 1);
-
-    s3_file = s3_store_file_get(s3_ctx, "retry-deadline", 14);
-    TEST_CHECK(s3_file != NULL);
-    s3_file->create_time = time(NULL) - 61;
+    ret = wait_for_s3_file_create_time(s3_ctx, "retry-deadline", 14,
+                                       time(NULL) - 61, NULL, 0);
+    TEST_CHECK_(ret == 0, "Expected retry-deadline chunk to be created");
+    if (ret != 0) {
+        flb_stop(ctx);
+        flb_destroy(ctx);
+        unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
+        unsetenv("TEST_UPLOAD_PART_ERROR");
+        unsetenv("TEST_CreateMultipartUpload_CALL_COUNT");
+        unsetenv("TEST_UploadPart_CALL_COUNT");
+        flb_free(store_dir);
+        return;
+    }
 
     ret = flb_lib_push(ctx, in_ffd, (char *) JSON_TD,
                        (int) sizeof(JSON_TD) - 1);
     TEST_CHECK(ret >= 0);
     wait_for_s3_call_count("UploadPart", 1);
-    flb_time_msleep(100);
+    wait_for_s3_retry_time(s3_ctx, 2);
     TEST_CHECK_(s3_ctx->retry_time == 2,
                 "Expected first retry to add a 2 second timeout offset, got %lld",
                 (long long) s3_ctx->retry_time);
@@ -715,6 +867,8 @@ void flb_test_s3_ordered_retry_uses_backoff_deadline(void)
                 get_s3_call_count("UploadPart"));
     TEST_CHECK_(count_files_recursive(s3_ctx->stream_active->path) == 0,
                 "Expected retry-exhausted chunk to be deleted before periodic timer");
+    /* Unlinking the chunk precedes the worker's retry state reset. */
+    wait_for_s3_retry_time(s3_ctx, 0);
     TEST_CHECK_(s3_ctx->retry_time == 0,
                 "Expected terminal cleanup to reset the timeout offset");
 
@@ -738,8 +892,6 @@ void flb_test_s3_ordered_timer_isolates_tag_backoff(void)
     flb_ctx_t *ctx;
     char *store_dir;
     struct flb_s3 *s3_ctx;
-    struct s3_file *oldest_file;
-    struct s3_file *later_file;
 
     store_dir = create_test_store_directory("/flb-s3-test-timer-order-XXXXXX");
     TEST_CHECK(store_dir != NULL);
@@ -783,15 +935,12 @@ void flb_test_s3_ordered_timer_isolates_tag_backoff(void)
 
     s3_ctx = get_s3_context(ctx);
     TEST_CHECK(s3_ctx != NULL);
-    wait_for_file_count(s3_ctx->stream_active->path, 2);
-    oldest_file = s3_store_file_get(s3_ctx, "oldest", 6);
-    later_file = s3_store_file_get(s3_ctx, "later", 5);
-    TEST_CHECK(oldest_file != NULL);
-    TEST_CHECK(later_file != NULL);
-    oldest_file->create_time = time(NULL) - 30;
-    later_file->create_time = time(NULL) - 20;
-
     setenv("TEST_PUT_OBJECT_ERROR", ERROR_ACCESS_DENIED, 1);
+    ret = prepare_s3_ordered_files(s3_ctx);
+    TEST_CHECK_(ret == 0, "Expected both ordered chunks to be created");
+    if (ret != 0) {
+        goto cleanup;
+    }
     wait_for_s3_call_count("PutObject", 1);
     flb_time_msleep(500);
 
@@ -816,6 +965,7 @@ void flb_test_s3_ordered_timer_isolates_tag_backoff(void)
                 "Expected failed tag to retry at its deadline, got %s",
                 uri ? uri : "(null)");
 
+cleanup:
     flb_stop(ctx);
     flb_destroy(ctx);
 
@@ -838,7 +988,6 @@ void flb_test_s3_ordered_construct_error_exhausts_chunk(void)
     flb_ctx_t *ctx;
     char *store_dir;
     struct flb_s3 *s3_ctx;
-    struct s3_file *s3_file;
 
     store_dir = create_test_store_directory("/flb-s3-test-construct-error-XXXXXX");
     TEST_CHECK(store_dir != NULL);
@@ -873,12 +1022,13 @@ void flb_test_s3_ordered_construct_error_exhausts_chunk(void)
     TEST_CHECK(ret >= 0);
     s3_ctx = get_s3_context(ctx);
     TEST_CHECK(s3_ctx != NULL);
-    wait_for_file_count(s3_ctx->stream_active->path, 1);
-
-    s3_file = s3_store_file_get(s3_ctx, "construct-error", 15);
-    TEST_CHECK(s3_file != NULL);
-    s3_file->create_time = time(NULL) - 61;
     setenv("TEST_CONSTRUCT_REQUEST_BUFFER_ERROR", "true", 1);
+    ret = wait_for_s3_file_create_time(s3_ctx, "construct-error", 15,
+                                       time(NULL) - 61, NULL, 0);
+    TEST_CHECK_(ret == 0, "Expected construct-error chunk to be created");
+    if (ret != 0) {
+        goto cleanup;
+    }
 
     ret = flb_lib_push(ctx, in_ffd, (char *) JSON_TD,
                        (int) sizeof(JSON_TD) - 1);
@@ -887,11 +1037,13 @@ void flb_test_s3_ordered_construct_error_exhausts_chunk(void)
 
     TEST_CHECK_(count_files_recursive(s3_ctx->stream_active->path) == 0,
                 "Expected unreadable queue head to reach terminal cleanup");
+    wait_for_s3_retry_time(s3_ctx, 0);
     TEST_CHECK_(mk_list_is_empty(&s3_ctx->upload_queue) == 0,
                 "Expected queue to be empty after construction retry exhaustion");
     TEST_CHECK_(s3_ctx->retry_time == 0,
                 "Expected retry delay to reset after terminal cleanup");
 
+cleanup:
     unsetenv("TEST_CONSTRUCT_REQUEST_BUFFER_ERROR");
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -950,9 +1102,12 @@ void flb_test_s3_ordered_backoff_does_not_starve_completion(void)
     ret = flb_lib_push(ctx, input_fds[0], (char *) JSON_TD,
                        (int) sizeof(JSON_TD) - 1);
     TEST_CHECK(ret >= 0);
-    wait_for_file_count(s3_ctx->stream_active->path, 1);
-    s3_file = s3_store_file_get(s3_ctx, "completing", 10);
+    /* Wait for the requested tag's initialized chunk, not an on-disk file. */
+    s3_file = wait_for_s3_file(s3_ctx, "completing", 10);
     TEST_CHECK(s3_file != NULL);
+    if (s3_file == NULL) {
+        goto cleanup;
+    }
     s3_file->create_time = time(NULL) - 61;
     ret = flb_lib_push(ctx, input_fds[0], (char *) JSON_TD,
                        (int) sizeof(JSON_TD) - 1);
@@ -962,9 +1117,11 @@ void flb_test_s3_ordered_backoff_does_not_starve_completion(void)
     ret = flb_lib_push(ctx, input_fds[1], (char *) JSON_TD,
                        (int) sizeof(JSON_TD) - 1);
     TEST_CHECK(ret >= 0);
-    wait_for_file_count(s3_ctx->stream_active->path, 1);
-    s3_file = s3_store_file_get(s3_ctx, "backoff", 7);
+    s3_file = wait_for_s3_file(s3_ctx, "backoff", 7);
     TEST_CHECK(s3_file != NULL);
+    if (s3_file == NULL) {
+        goto cleanup;
+    }
     s3_file->create_time = time(NULL) - 61;
     setenv("TEST_CREATE_MULTIPART_UPLOAD_ERROR", ERROR_ACCESS_DENIED, 1);
     ret = flb_lib_push(ctx, input_fds[1], (char *) JSON_TD,
@@ -976,6 +1133,7 @@ void flb_test_s3_ordered_backoff_does_not_starve_completion(void)
     TEST_CHECK_(get_s3_call_count("CompleteMultipartUpload") >= 2,
                 "Expected pending completion to run while queue head was backing off");
 
+cleanup:
     unsetenv("TEST_CREATE_MULTIPART_UPLOAD_ERROR");
     unsetenv("TEST_COMPLETE_MULTIPART_UPLOAD_ERROR");
     flb_stop(ctx);
@@ -999,7 +1157,6 @@ void flb_test_s3_ordered_shared_upload_retries_safely(void)
     char first_file_name[128];
     char second_file_name[128];
     struct flb_s3 *s3_ctx;
-    struct s3_file *s3_file;
 
     store_dir = create_test_store_directory("/flb-s3-test-shared-upload-XXXXXX");
     TEST_CHECK(store_dir != NULL);
@@ -1037,12 +1194,13 @@ void flb_test_s3_ordered_shared_upload_retries_safely(void)
     ret = flb_lib_push(ctx, in_ffd, (char *) JSON_TD,
                        (int) sizeof(JSON_TD) - 1);
     TEST_CHECK(ret >= 0);
-    wait_for_file_count(s3_ctx->stream_active->path, 1);
-    s3_file = s3_store_file_get(s3_ctx, "shared-upload", 13);
-    TEST_CHECK(s3_file != NULL);
-    snprintf(first_file_name, sizeof(first_file_name), "%s",
-             s3_file->fsf->name);
-    s3_file->create_time = time(NULL) - 61;
+    ret = wait_for_s3_file_create_time(s3_ctx, "shared-upload", 13,
+                                       time(NULL) - 61,
+                                       first_file_name, sizeof(first_file_name));
+    TEST_CHECK_(ret == 0, "Expected first shared-upload chunk to be created");
+    if (ret != 0) {
+        goto cleanup;
+    }
 
     ret = flb_lib_push(ctx, in_ffd, (char *) JSON_TD,
                        (int) sizeof(JSON_TD) - 1);
@@ -1052,14 +1210,15 @@ void flb_test_s3_ordered_shared_upload_retries_safely(void)
     ret = flb_lib_push(ctx, in_ffd, (char *) JSON_TD,
                        (int) sizeof(JSON_TD) - 1);
     TEST_CHECK(ret >= 0);
-    wait_for_file_count(s3_ctx->stream_active->path, 2);
-    s3_file = s3_store_file_get(s3_ctx, "shared-upload", 13);
-    TEST_CHECK(s3_file != NULL);
-    snprintf(second_file_name, sizeof(second_file_name), "%s",
-             s3_file->fsf->name);
+    ret = wait_for_s3_file_create_time(s3_ctx, "shared-upload", 13,
+                                       time(NULL) - 61,
+                                       second_file_name, sizeof(second_file_name));
+    TEST_CHECK_(ret == 0, "Expected second shared-upload chunk to be created");
+    if (ret != 0) {
+        goto cleanup;
+    }
     TEST_CHECK_(strcmp(first_file_name, second_file_name) != 0,
                 "Expected two distinct shared-upload chunks");
-    s3_file->create_time = time(NULL) - 61;
 
     wait_for_s3_call_count("UploadPart", 3);
     ret = flb_lib_push(ctx, in_ffd, (char *) JSON_TD,
@@ -1067,8 +1226,10 @@ void flb_test_s3_ordered_shared_upload_retries_safely(void)
     TEST_CHECK(ret >= 0);
     wait_for_file_count(s3_ctx->stream_active->path, 2);
     wait_for_s3_call_count("UploadPart", 4);
-    wait_for_file_count_at_most(s3_ctx->stream_active->path, 1);
+    ret = wait_for_shared_upload_cleanup(s3_ctx, first_file_name, second_file_name);
+    TEST_CHECK_(ret == 0, "Expected both shared-upload chunks to finish cleanup");
 
+    pthread_mutex_lock(&s3_ctx->files_mutex);
     TEST_CHECK_(get_s3_call_count("UploadPart") == 4,
                 "Expected both shared-upload chunks to exhaust safely, got %d attempts",
                 get_s3_call_count("UploadPart"));
@@ -1080,7 +1241,9 @@ void flb_test_s3_ordered_shared_upload_retries_safely(void)
                 "Expected second retry-exhausted chunk to be deleted");
     TEST_CHECK_(mk_list_is_empty(&s3_ctx->upload_queue) == 0,
                 "Expected shared-upload queue to be empty");
+    pthread_mutex_unlock(&s3_ctx->files_mutex);
 
+cleanup:
     flb_stop(ctx);
     flb_destroy(ctx);
 
@@ -1638,8 +1801,6 @@ void flb_test_s3_ordered_index_keeps_global_queue_order(void)
     flb_ctx_t *ctx;
     char *store_dir;
     struct flb_s3 *s3_ctx;
-    struct s3_file *oldest_file;
-    struct s3_file *later_file;
 
     store_dir = create_test_store_directory("/flb-s3-test-index-order-XXXXXX");
     TEST_CHECK(store_dir != NULL);
@@ -1683,15 +1844,12 @@ void flb_test_s3_ordered_index_keeps_global_queue_order(void)
 
     s3_ctx = get_s3_context(ctx);
     TEST_CHECK(s3_ctx != NULL);
-    wait_for_file_count(s3_ctx->stream_active->path, 2);
-    oldest_file = s3_store_file_get(s3_ctx, "oldest", 6);
-    later_file = s3_store_file_get(s3_ctx, "later", 5);
-    TEST_CHECK(oldest_file != NULL);
-    TEST_CHECK(later_file != NULL);
-    oldest_file->create_time = time(NULL) - 30;
-    later_file->create_time = time(NULL) - 20;
-
     setenv("TEST_PUT_OBJECT_ERROR", ERROR_ACCESS_DENIED, 1);
+    ret = prepare_s3_ordered_files(s3_ctx);
+    TEST_CHECK_(ret == 0, "Expected both ordered chunks to be created");
+    if (ret != 0) {
+        goto cleanup;
+    }
     wait_for_s3_call_count("PutObject", 1);
     flb_time_msleep(500);
 
@@ -1714,6 +1872,7 @@ void flb_test_s3_ordered_index_keeps_global_queue_order(void)
                 "Expected later indexed chunk after retry, got %s",
                 uri ? uri : "(null)");
 
+cleanup:
     flb_stop(ctx);
     flb_destroy(ctx);
 
@@ -2180,8 +2339,151 @@ void flb_test_s3_startup_buffer_size_accounting(void)
     flb_free(store_dir);
 }
 
+/* Detect overlapping cache reads/refreshes while requests remain concurrent. */
+struct s3_credentials_test {
+    pthread_mutex_t mutex;
+    int requests_entered;
+    int active;
+    int max_active;
+    int gets;
+    int refreshes;
+    int request_wait_failed;
+};
+
+static struct s3_credentials_test credentials_test;
+
+static void s3_test_provider_access(int refresh)
+{
+    pthread_mutex_lock(&credentials_test.mutex);
+    credentials_test.active++;
+    if (credentials_test.active > credentials_test.max_active) {
+        credentials_test.max_active = credentials_test.active;
+    }
+    if (refresh) {
+        credentials_test.refreshes++;
+    }
+    else {
+        credentials_test.gets++;
+    }
+    pthread_mutex_unlock(&credentials_test.mutex);
+
+    flb_time_msleep(5);
+
+    pthread_mutex_lock(&credentials_test.mutex);
+    credentials_test.active--;
+    pthread_mutex_unlock(&credentials_test.mutex);
+}
+
+static struct flb_aws_credentials *s3_test_get_credentials(struct flb_aws_provider *provider)
+{
+    s3_test_provider_access(FLB_FALSE);
+    return flb_calloc(1, sizeof(struct flb_aws_credentials));
+}
+
+static int s3_test_refresh_credentials(struct flb_aws_provider *provider)
+{
+    s3_test_provider_access(FLB_TRUE);
+    return 0;
+}
+
+static struct flb_http_client *s3_test_concurrent_request(struct flb_aws_client *client,
+                                                         int method, const char *uri,
+                                                         const char *body, size_t body_size,
+                                                         struct flb_aws_header *headers,
+                                                         size_t headers_count)
+{
+    struct flb_aws_credentials *credentials;
+    int i;
+    int ready = FLB_FALSE;
+
+    pthread_mutex_lock(&credentials_test.mutex);
+    credentials_test.requests_entered++;
+    pthread_mutex_unlock(&credentials_test.mutex);
+
+    /* A bounded rendezvous also catches accidentally serializing entire requests. */
+    for (i = 0; i < 500; i++) {
+        pthread_mutex_lock(&credentials_test.mutex);
+        ready = credentials_test.requests_entered == 2;
+        pthread_mutex_unlock(&credentials_test.mutex);
+        if (ready) {
+            break;
+        }
+        flb_time_msleep(10);
+    }
+    if (!ready) {
+        pthread_mutex_lock(&credentials_test.mutex);
+        credentials_test.request_wait_failed = FLB_TRUE;
+        pthread_mutex_unlock(&credentials_test.mutex);
+    }
+
+    for (i = 0; i < 20; i++) {
+        credentials = client->provider->provider_vtable->get_credentials(client->provider);
+        flb_aws_credentials_destroy(credentials);
+        client->provider->provider_vtable->refresh(client->provider);
+    }
+    return NULL;
+}
+
+static void *s3_test_request_worker(void *data)
+{
+    struct flb_s3 *ctx = data;
+
+    pthread_mutex_lock(&ctx->files_mutex);
+    s3_request(ctx, FLB_HTTP_PUT, "/test", NULL, 0, NULL, 0);
+    pthread_mutex_unlock(&ctx->files_mutex);
+    return NULL;
+}
+
+static void flb_test_s3_credentials_serialized(void)
+{
+    struct flb_s3 ctx = {0};
+    struct flb_aws_provider provider = {0};
+    struct flb_aws_client client = {0};
+    struct flb_aws_provider_vtable provider_vtable = {
+        .get_credentials = s3_test_get_credentials,
+        .refresh = s3_test_refresh_credentials
+    };
+    struct flb_aws_client_vtable client_vtable = {
+        .request = s3_test_concurrent_request
+    };
+    pthread_t workers[2];
+    int created = 0;
+    int ret;
+    int i;
+
+    memset(&credentials_test, 0, sizeof(credentials_test));
+    pthread_mutex_init(&credentials_test.mutex, NULL);
+    pthread_mutex_init(&ctx.files_mutex, NULL);
+    provider.provider_vtable = &provider_vtable;
+    client.client_vtable = &client_vtable;
+    client.provider = &provider;
+    ctx.provider = &provider;
+    ctx.s3_client = &client;
+
+    for (i = 0; i < 2; i++) {
+        ret = pthread_create(&workers[i], NULL, s3_test_request_worker, &ctx);
+        TEST_CHECK(ret == 0);
+        if (ret != 0) {
+            break;
+        }
+        created++;
+    }
+    for (i = 0; i < created; i++) {
+        pthread_join(workers[i], NULL);
+    }
+
+    TEST_CHECK(credentials_test.request_wait_failed == FLB_FALSE);
+    TEST_CHECK(credentials_test.requests_entered == 2);
+    TEST_CHECK(credentials_test.max_active == 1);
+    TEST_CHECK(credentials_test.gets == 40);
+    TEST_CHECK(credentials_test.refreshes == 40);
+    pthread_mutex_destroy(&ctx.files_mutex);
+    pthread_mutex_destroy(&credentials_test.mutex);
+}
+
 /* Test list */
 TEST_LIST = {
+    {"credentials_serialized", flb_test_s3_credentials_serialized },
     {"multipart_success", flb_test_s3_multipart_success },
     {"putobject_success", flb_test_s3_putobject_success },
     {"putobject_error", flb_test_s3_putobject_error },

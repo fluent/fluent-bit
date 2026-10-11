@@ -57,6 +57,7 @@ if(WIN32)
       set_tests_properties(${script} PROPERTIES
         ENVIRONMENT "${RUNTIME_SHELL_ENVIRONMENT}"
         LABELS "runtime_shell"
+        TIMEOUT 90
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         )
     endforeach()
@@ -102,6 +103,7 @@ else()
     set_tests_properties(${script} PROPERTIES
       ENVIRONMENT "${RUNTIME_SHELL_ENVIRONMENT}"
       LABELS "runtime_shell"
+      TIMEOUT 90
       )
   endforeach()
 endif()

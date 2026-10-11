@@ -1,4 +1,5 @@
 import concurrent.futures
+import json
 import os
 import socket
 import subprocess
@@ -34,11 +35,16 @@ class Service:
     def stop(self):
         self.service.stop()
 
-    def request(self, path, *, method="GET", http_mode="http1.1", include_headers=False):
+    def request(self, path, *, method="GET", http_mode="http1.1", include_headers=False,
+                payload=None):
+        headers = None
+        if payload is not None:
+            headers = ["Content-Type: application/json"]
         return run_curl_request(
             f"{self.base_url}{path}",
             method=method,
-            payload=None,
+            payload=payload,
+            headers=headers,
             http_mode=http_mode,
             include_headers=include_headers,
         )
@@ -93,6 +99,59 @@ def test_internal_http_server_endpoints():
         trace_disable = service.request("/api/v1/trace/dummy.0", method="DELETE")
         assert trace_disable["status_code"] == 201
         assert '"status":"ok"' in trace_disable["body"]
+    finally:
+        service.stop()
+
+
+def test_internal_http_server_trace_rejects_unsafe_outputs(tmp_path):
+    service = Service()
+    service.start()
+
+    target_dir = tmp_path / "aws"
+    rejected = [
+        {
+            "output": "file",
+            "prefix": "/bin/true ",
+            "params": {
+                "path": str(target_dir),
+                "file": "config",
+                "format": "template",
+                "template": "credential_process = {trace_id}",
+                "mkdir": "true",
+            },
+        },
+        {"output": "s3", "params": {"bucket": "x", "region": "us-east-1"}},
+        {"output": "http", "params": {"host": "127.0.0.1", "port": "9"}},
+        {"output": "stdout://127.0.0.1"},
+        {"output": "CALYPTIA", "params": {"format": "json"}},
+        {"output": "Stdout"},
+        {"output": "stdout", "params": {"workers": "64"}},
+        {"output": "stdout", "params": {"match": "*"}},
+    ]
+
+    try:
+        for body in rejected:
+            result = service.request("/api/v1/trace/dummy.0", method="POST",
+                                     payload=json.dumps(body))
+            assert result["status_code"] == 403, body
+            assert '"status":"error"' in result["body"]
+
+            result = service.request("/api/v1/traces/", method="POST",
+                                     payload=json.dumps({"inputs": ["dummy.0"], **body}))
+            assert result["status_code"] == 200
+            assert '"returncode":403' in result["body"], body
+
+        assert not target_dir.exists()
+
+        result = service.request("/api/v1/trace/dummy.0", method="POST",
+                                 payload=json.dumps({"output": "stdout",
+                                                     "prefix": "trace.",
+                                                     "params": {"format": "json"}}))
+        assert result["status_code"] == 200
+        assert '"status":"ok"' in result["body"]
+
+        result = service.request("/api/v1/trace/dummy.0", method="DELETE")
+        assert result["status_code"] == 201
     finally:
         service.stop()
 

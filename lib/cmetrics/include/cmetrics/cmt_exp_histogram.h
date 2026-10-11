@@ -24,6 +24,13 @@
 #include <cmetrics/cmt_opts.h>
 #include <cmetrics/cmt_metric.h>
 
+/* Widest bucket range a single exponential histogram sample may span when
+ * samples are merged. Bucket offsets are provided by the sender, so the
+ * range derived from them must be bounded; this matches the largest bucket
+ * array the msgpack decoder accepts.
+ */
+#define CMT_EXP_HISTOGRAM_MAX_BUCKETS 65535
+
 struct cmt_exp_histogram {
     struct cmt_opts opts;
     struct cmt_map *map;

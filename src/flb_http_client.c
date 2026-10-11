@@ -50,6 +50,7 @@
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_http_client_debug.h>
 #include <fluent-bit/flb_network.h>
+#include <fluent-bit/flb_upstream_ha.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_base64.h>
 #include <fluent-bit/tls/flb_tls.h>
@@ -945,6 +946,17 @@ struct flb_http_client *create_http_client(struct flb_connection *u_conn,
 
     struct flb_http_client *c;
 
+    /* Request targets must not contain HTTP whitespace or control bytes. */
+    if (uri == NULL) {
+        return NULL;
+    }
+    for (p = (char *) uri; *p; p++) {
+        if ((unsigned char) *p <= 0x20 || (unsigned char) *p == 0x7f) {
+            flb_error("[http_client] invalid character in request target");
+            return NULL;
+        }
+    }
+
     switch (method) {
     case FLB_HTTP_GET:
         str_method = "GET";
@@ -1189,9 +1201,9 @@ size_t flb_http_buffer_available(struct flb_http_client *c)
 int flb_http_buffer_increase(struct flb_http_client *c, size_t size,
                              size_t *out_size)
 {
-    int off_payload = 0;
-    int off_headers_end = 0;
-    int off_chunk_processed_end = 0;
+    ssize_t off_payload = -1;
+    ssize_t off_headers_end = -1;
+    ssize_t off_chunk_processed_end = -1;
     char *tmp;
     size_t new_size;
     size_t allocated;
@@ -1221,8 +1233,12 @@ int flb_http_buffer_increase(struct flb_http_client *c, size_t size,
     /*
      * The payload is a reference to a position of 'data' buffer,
      * we need to adjust the pointer after a memory buffer size change.
+     * Note that the pointer can be set while payload_size is zero (e.g.
+     * a chunked response whose first chunk is the last-chunk, or after
+     * the caller consumed the whole payload), so check the pointer and
+     * not the size.
      */
-    if (c->resp.payload_size > 0) {
+    if (c->resp.payload) {
         off_payload = c->resp.payload - c->resp.data;
     }
 
@@ -1236,13 +1252,13 @@ int flb_http_buffer_increase(struct flb_http_client *c, size_t size,
         c->resp.data = tmp;
         c->resp.data_size = new_size;
 
-        if (off_headers_end > 0) {
+        if (off_headers_end >= 0) {
             c->resp.headers_end = c->resp.data + off_headers_end;
         }
-        if (off_chunk_processed_end > 0) {
+        if (off_chunk_processed_end >= 0) {
             c->resp.chunk_processed_end = c->resp.data + off_chunk_processed_end;
         }
-        if (off_payload > 0) {
+        if (off_payload >= 0) {
             c->resp.payload = c->resp.data + off_payload;
         }
     }

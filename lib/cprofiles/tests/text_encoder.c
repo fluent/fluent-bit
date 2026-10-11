@@ -23,6 +23,8 @@
 #include <cprofiles/cprof_decode_opentelemetry.h>
 #include <cprofiles/cprof_encode_opentelemetry.h>
 #include <cprofiles/cprof_encode_text.h>
+#include <cfl/cfl_array.h>
+#include <cfl/cfl_kvlist.h>
 
 #include <stdio.h>
 #include <inttypes.h>
@@ -628,6 +630,8 @@ static void test_encoder()
 {
     cfl_sds_t     text_encoder_result;
     struct cprof *context;
+    struct cprof_resource_profiles *resource_profiles;
+    struct cfl_array *empty_array;
     int           result;
     size_t        offset;
 
@@ -643,6 +647,14 @@ static void test_encoder()
     TEST_CHECK(offset == sizeof(serialized_data));
 
     if (result == CPROF_DECODE_MSGPACK_SUCCESS) {
+        resource_profiles = cfl_list_entry_first(&context->profiles,
+                                                  struct cprof_resource_profiles,
+                                                  _head);
+        empty_array = cfl_array_create(0);
+        TEST_ASSERT(empty_array != NULL);
+        TEST_ASSERT(cfl_kvlist_insert_array(resource_profiles->resource->attributes,
+                                            "empty.array", empty_array) == 0);
+
         result = cprof_encode_text_create(&text_encoder_result,
                                           context,
                                           CPROF_ENCODE_TEXT_RENDER_DICTIONARIES_AND_INDEXES);

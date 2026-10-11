@@ -115,6 +115,7 @@ struct flb_elasticsearch {
 
     int trace_output;
     int trace_error;
+    int drop_unrecoverable_records;
 
     /*
      * Logstash compatibility options

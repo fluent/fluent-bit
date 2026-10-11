@@ -6,7 +6,9 @@
 #include <fluent-bit/flb_pack_json.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_str.h>
+#include <fluent-bit/flb_coro.h>
 #include <monkey/mk_core.h>
+#include <msgpack/unpack_define.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -928,6 +930,47 @@ void test_json_pack_nan()
     flb_pack_init(&config);
 }
 
+/*
+ * flb_msgpack_to_json() must report a buffer overflow as a negative value
+ * (not 0), so fixed-buffer callers can tell truncation apart from a
+ * successful zero-length write.
+ */
+void test_json_pack_truncation()
+{
+    int ret;
+    char small[4];
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
+    msgpack_object obj;
+    msgpack_zone mempool;
+    msgpack_unpack_return unpack_ret;
+
+    /* a value whose JSON form does not fit in the destination buffer */
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    msgpack_pack_double(&mp_pck, 123456789.0);
+    msgpack_zone_init(&mempool, 2048);
+    unpack_ret = msgpack_unpack(mp_sbuf.data, mp_sbuf.size, NULL, &mempool, &obj);
+    if (!TEST_CHECK(unpack_ret == MSGPACK_UNPACK_SUCCESS)) {
+        TEST_MSG("msgpack_unpack failed: %d", unpack_ret);
+        msgpack_zone_destroy(&mempool);
+        msgpack_sbuffer_destroy(&mp_sbuf);
+        return;
+    }
+
+    ret = flb_msgpack_to_json(small, sizeof(small), &obj, FLB_TRUE);
+    if (!TEST_CHECK(ret < 0)) {
+        TEST_MSG("truncation must return a negative value, got %d", ret);
+    }
+
+    /* a zero-capacity buffer must be rejected, not wrapped to SIZE_MAX */
+    ret = flb_msgpack_to_json(small, 0, &obj, FLB_TRUE);
+    TEST_CHECK(ret < 0);
+
+    msgpack_zone_destroy(&mempool);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+}
+
 static int check_msgpack_val(msgpack_object obj, int expected_type, char *expected_val)
 {
     int len;
@@ -1077,6 +1120,160 @@ void test_json_pack_bug5336()
 }
 
 /* Ensure empty arrays inside nested objects are handled */
+/*
+ * Must mirror FLB_PACK_JSON_MAX_DEPTH in src/flb_pack.c (not exposed via a
+ * public header since it is an internal implementation detail of
+ * msgpack2json()).
+ */
+#define TEST_PACK_MAX_DEPTH 512
+
+/*
+ * Regression test: a non-empty msgpack map whose key/value pairs would be
+ * evaluated exactly one level past FLB_PACK_JSON_MAX_DEPTH must still be
+ * rendered as valid JSON. The whole map is expected to collapse to a JSON
+ * null literal instead of emitting a bare, unquoted null in place of a map
+ * key (which would produce invalid JSON such as {null:"v"}).
+ */
+void test_json_pack_deep_map_boundary()
+{
+    int i;
+    char *out;
+    char *p;
+    msgpack_object *chain;
+    msgpack_object_kv kv;
+    size_t out_len;
+    size_t expected_len;
+
+    /*
+     * Build TEST_PACK_MAX_DEPTH nested single-element arrays with a
+     * non-empty map ({"k":"v"}) as the innermost element, constructed
+     * directly in memory. chain[0] is evaluated at depth 0, chain[i] at
+     * depth i, so the map at chain[TEST_PACK_MAX_DEPTH] is evaluated at
+     * depth == TEST_PACK_MAX_DEPTH: its own guard passes, but its key/value
+     * pair would be one level past the limit.
+     */
+    chain = flb_malloc(sizeof(msgpack_object) * (TEST_PACK_MAX_DEPTH + 1));
+    if (!TEST_CHECK(chain != NULL)) {
+        TEST_MSG("could not allocate test msgpack_object chain");
+        return;
+    }
+
+    for (i = 0; i < TEST_PACK_MAX_DEPTH; i++) {
+        chain[i].type = MSGPACK_OBJECT_ARRAY;
+        chain[i].via.array.size = 1;
+        chain[i].via.array.ptr = &chain[i + 1];
+    }
+
+    kv.key.type = MSGPACK_OBJECT_STR;
+    kv.key.via.str.size = 1;
+    kv.key.via.str.ptr = "k";
+    kv.val.type = MSGPACK_OBJECT_STR;
+    kv.val.via.str.size = 1;
+    kv.val.via.str.ptr = "v";
+
+    chain[TEST_PACK_MAX_DEPTH].type = MSGPACK_OBJECT_MAP;
+    chain[TEST_PACK_MAX_DEPTH].via.map.size = 1;
+    chain[TEST_PACK_MAX_DEPTH].via.map.ptr = &kv;
+
+    out = flb_msgpack_to_json_str(1024, &chain[0], FLB_FALSE);
+    flb_free(chain);
+
+    if (!TEST_CHECK(out != NULL)) {
+        TEST_MSG("flb_msgpack_to_json_str returned NULL");
+        return;
+    }
+
+    /* a map key must never be truncated to an unquoted null */
+    p = strstr(out, "null:");
+    if (!TEST_CHECK(p == NULL)) {
+        TEST_MSG("map key was rendered as an unquoted null: %s", out);
+    }
+
+    /*
+     * Exact shape check: TEST_PACK_MAX_DEPTH opening brackets, then the
+     * truncated map as a bare "null", then TEST_PACK_MAX_DEPTH closing
+     * brackets. Verify both the total length and that the null literal
+     * begins exactly at offset TEST_PACK_MAX_DEPTH, rather than accepting
+     * "null" anywhere in the output.
+     */
+    {
+        out_len = strlen(out);
+        expected_len = (size_t) TEST_PACK_MAX_DEPTH * 2 + 4;
+
+        if (!TEST_CHECK(out_len == expected_len)) {
+            TEST_MSG("unexpected output length: expected=%zu got=%zu out=%s",
+                     expected_len, out_len, out);
+        }
+
+        if (!TEST_CHECK(out_len > (size_t) TEST_PACK_MAX_DEPTH + 4 &&
+                         strncmp(out + TEST_PACK_MAX_DEPTH, "null", 4) == 0)) {
+            TEST_MSG("expected a null literal at offset %d: %s",
+                     TEST_PACK_MAX_DEPTH, out);
+        }
+    }
+
+    /* the original key/value content must not appear: it was truncated */
+    p = strstr(out, "\"k\":\"v\"");
+    if (!TEST_CHECK(p == NULL)) {
+        TEST_MSG("map content should have been truncated: %s", out);
+    }
+
+    flb_free(out);
+}
+
+/*
+ * Companion check: the same map shape placed comfortably below the depth
+ * limit must still serialize its real content (i.e. the pre-check added for
+ * the boundary case above must not fire early for valid, shallower input).
+ */
+void test_json_pack_deep_map_below_boundary()
+{
+    int i;
+    int shallow_depth = TEST_PACK_MAX_DEPTH - 5;
+    char *out;
+    char *p;
+    msgpack_object *chain;
+    msgpack_object_kv kv;
+
+    chain = flb_malloc(sizeof(msgpack_object) * (shallow_depth + 1));
+    if (!TEST_CHECK(chain != NULL)) {
+        TEST_MSG("could not allocate test msgpack_object chain");
+        return;
+    }
+
+    for (i = 0; i < shallow_depth; i++) {
+        chain[i].type = MSGPACK_OBJECT_ARRAY;
+        chain[i].via.array.size = 1;
+        chain[i].via.array.ptr = &chain[i + 1];
+    }
+
+    kv.key.type = MSGPACK_OBJECT_STR;
+    kv.key.via.str.size = 1;
+    kv.key.via.str.ptr = "k";
+    kv.val.type = MSGPACK_OBJECT_STR;
+    kv.val.via.str.size = 1;
+    kv.val.via.str.ptr = "v";
+
+    chain[shallow_depth].type = MSGPACK_OBJECT_MAP;
+    chain[shallow_depth].via.map.size = 1;
+    chain[shallow_depth].via.map.ptr = &kv;
+
+    out = flb_msgpack_to_json_str(1024, &chain[0], FLB_FALSE);
+    flb_free(chain);
+
+    if (!TEST_CHECK(out != NULL)) {
+        TEST_MSG("flb_msgpack_to_json_str returned NULL");
+        return;
+    }
+
+    p = strstr(out, "\"k\":\"v\"");
+    if (!TEST_CHECK(p != NULL)) {
+        TEST_MSG("map content below the depth limit should be preserved: %s", out);
+    }
+
+    flb_free(out);
+}
+
 void test_json_pack_empty_array()
 {
     int ret;
@@ -1287,7 +1484,401 @@ void test_json_pack_token_count_overflow()
     flb_pack_state_reset(&state);
 }
 
+
+void test_json_pack_buffer_capacity(void)
+{
+    struct {
+        const char *packed;
+        size_t packed_size;
+        const char *raw;
+        const char *escaped;
+    } cases[] = {
+        {"\xc0", 1, "null", "null"},
+        {"\xc3", 1, "true", "true"},
+        {"\xc2", 1, "false", "false"},
+        {"\x2a", 1, "42", "42"},
+        {"\xd0\xd6", 2, "-42", "-42"},
+        {"\xcb\x3f\xf8\x00\x00\x00\x00\x00\x00", 9, "1.5", "1.5"},
+        {"\xa0", 1, "\"\"", "\"\""},
+        {"\xa4" "abcd", 5, "\"abcd\"", "\"abcd\""},
+        {"\xa6" "a\n\"\\\xc3\xa9", 7,
+         "\"a\\n\\\"\\\\\xc3\xa9\"", "\"a\\n\\\"\\\\\\u00e9\""},
+        {"\xa4\xf0\x9f\x98\x80", 5,
+         "\"\xf0\x9f\x98\x80\"", "\"\\ud83d\\ude00\""},
+        {"\xd9\x20" "0123456789abcdef0123456789abcdef", 34,
+         "\"0123456789abcdef0123456789abcdef\"",
+         "\"0123456789abcdef0123456789abcdef\""},
+        {"\xc4\x04" "abcd", 6, "\"abcd\"", "\"abcd\""},
+        {"\xd4\x01" "a", 3, "\"\\x61\"", "\"\\x61\""},
+        {"\x90", 1, "[]", "[]"},
+        {"\x80", 1, "{}", "{}"},
+        {"\x81\xa1" "a" "\x93\xc0\x81\xa1" "b" "\xa4" "abcd" "\x90", 14,
+         "{\"a\":[null,{\"b\":\"abcd\"},[]]}",
+         "{\"a\":[null,{\"b\":\"abcd\"},[]]}"},
+    };
+    size_t i;
+    size_t capacity;
+    size_t expected_size;
+    size_t offset;
+    int escape_unicode;
+    int ret;
+    char *allocation;
+    char *buffer;
+    const char *expected;
+    msgpack_unpacked unpacked;
+
+    for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        offset = 0;
+        msgpack_unpacked_init(&unpacked);
+        ret = msgpack_unpack_next(&unpacked, cases[i].packed,
+                                  cases[i].packed_size, &offset);
+        TEST_ASSERT(ret == MSGPACK_UNPACK_SUCCESS);
+        TEST_CHECK(offset == cases[i].packed_size);
+
+        for (escape_unicode = FLB_FALSE; escape_unicode <= FLB_TRUE; escape_unicode++) {
+            expected = escape_unicode ? cases[i].escaped : cases[i].raw;
+            expected_size = strlen(expected);
+
+            for (capacity = 0; capacity <= expected_size + 2; capacity++) {
+                allocation = flb_malloc(capacity + 2);
+                TEST_ASSERT(allocation != NULL);
+                memset(allocation, 'X', capacity + 2);
+                buffer = allocation + 1;
+
+                ret = flb_msgpack_to_json(buffer, capacity, &unpacked.data,
+                                         escape_unicode);
+                TEST_CHECK(allocation[0] == 'X');
+                TEST_CHECK(buffer[capacity] == 'X');
+                TEST_MSG("case=%zu capacity=%zu escape_unicode=%d",
+                         i, capacity, escape_unicode);
+                if (capacity == 0) {
+                    TEST_CHECK(ret == -1);
+                }
+                else if (capacity <= expected_size) {
+                    TEST_CHECK(ret < 0);
+                    TEST_CHECK(memchr(buffer, '\0', capacity) != NULL);
+                }
+                else {
+                    TEST_CHECK(ret == expected_size);
+                    TEST_MSG("case=%zu capacity=%zu escape_unicode=%d ret=%d",
+                             i, capacity, escape_unicode, ret);
+                    TEST_CHECK(memcmp(buffer, expected, expected_size + 1) == 0);
+                }
+                flb_free(allocation);
+            }
+        }
+        msgpack_unpacked_destroy(&unpacked);
+    }
+}
+
+#ifdef FLB_HAVE_YYJSON
+static void test_json_pack_depth_limit(void)
+{
+    int kind;
+    int depth;
+    int index;
+    int ret;
+    int root_type;
+    int records;
+    int prefix;
+    size_t offset;
+    size_t size;
+    char *buffer;
+    flb_sds_t json;
+    msgpack_unpacked unpacked;
+
+    /* Exercise maps, arrays, mixed nesting, and cleanup after a valid record. */
+    for (kind = 0; kind < 3; kind++) {
+        for (prefix = 0; prefix < 2; prefix++) {
+            for (depth = MSGPACK_EMBED_STACK_SIZE - 1;
+                 depth <= MSGPACK_EMBED_STACK_SIZE + 1; depth++) {
+                json = flb_sds_create(prefix ? "{} " : "");
+                TEST_ASSERT(json != NULL);
+                for (index = 0; index < depth; index++) {
+                    json = flb_sds_cat(json, kind == 0 || (kind == 2 && index % 2) ?
+                                      "{\"k\":" : "[",
+                                      kind == 0 || (kind == 2 && index % 2) ? 5 : 1);
+                    TEST_ASSERT(json != NULL);
+                }
+                json = flb_sds_cat(json, "0", 1);
+                TEST_ASSERT(json != NULL);
+                for (index = depth - 1; index >= 0; index--) {
+                    json = flb_sds_cat(json, kind == 0 || (kind == 2 && index % 2) ?
+                                      "}" : "]", 1);
+                    TEST_ASSERT(json != NULL);
+                }
+                buffer = NULL;
+                size = 0;
+                ret = flb_pack_json_recs(json, flb_sds_len(json), &buffer, &size,
+                                         &root_type, &records, NULL);
+                if (depth > MSGPACK_EMBED_STACK_SIZE) {
+                    TEST_CHECK(ret != 0);
+                    TEST_CHECK(buffer == NULL);
+                    TEST_CHECK(size == 0);
+                }
+                else {
+                    TEST_ASSERT(ret == 0);
+                    TEST_CHECK(records == prefix + 1);
+                    offset = 0;
+                    msgpack_unpacked_init(&unpacked);
+                    for (index = 0; index < records; index++) {
+                        TEST_CHECK(msgpack_unpack_next(&unpacked, buffer, size, &offset) ==
+                                   MSGPACK_UNPACK_SUCCESS);
+                    }
+                    TEST_CHECK(offset == size);
+                    msgpack_unpacked_destroy(&unpacked);
+                }
+                flb_free(buffer);
+                flb_sds_destroy(json);
+            }
+        }
+    }
+}
+#endif
+
+static cothread_t pack_coro_caller;
+static msgpack_object *pack_coro_object;
+static char *pack_coro_json;
+
+static void pack_small_stack_entry(void)
+{
+    pack_coro_json = flb_msgpack_to_json_str(1, pack_coro_object, FLB_FALSE);
+    co_switch(pack_coro_caller);
+}
+
+/* Match the small coroutine stacks used by older Linux output workers. */
+static void check_json_pack_small_stack(int depth, int mixed)
+{
+    msgpack_object *chain;
+    msgpack_object_kv *pairs;
+    cothread_t callee;
+    char *expected;
+    int offset = 0;
+    int retained;
+    size_t stack_size;
+#ifdef FLB_HAVE_VALGRIND
+    unsigned int stack_id;
+#endif
+    int i;
+
+    chain = flb_calloc(depth + 1, sizeof(*chain));
+    TEST_ASSERT(chain != NULL);
+    pairs = flb_calloc(depth, sizeof(*pairs));
+    TEST_ASSERT(pairs != NULL);
+    expected = flb_malloc(depth * 6 + 5);
+    TEST_ASSERT(expected != NULL);
+    retained = depth > 512 ? 512 : depth;
+    for (i = 0; i < depth; i++) {
+        if (mixed && i % 2 == 0) {
+            chain[i].type = MSGPACK_OBJECT_MAP;
+            chain[i].via.map.size = 1;
+            chain[i].via.map.ptr = &pairs[i];
+            pairs[i].key.type = MSGPACK_OBJECT_STR;
+            pairs[i].key.via.str.ptr = "k";
+            pairs[i].key.via.str.size = 1;
+        }
+        else {
+            chain[i].type = MSGPACK_OBJECT_ARRAY;
+            chain[i].via.array.size = 1;
+            chain[i].via.array.ptr = &chain[i + 1];
+        }
+        if (i < retained) {
+            offset += sprintf(expected + offset, mixed && i % 2 == 0 ? "{\"k\":" : "[");
+        }
+    }
+    chain[depth].type = MSGPACK_OBJECT_NIL;
+    for (i = 0; i < depth; i++) {
+        if (mixed && i % 2 == 0) {
+            pairs[i].val = chain[i + 1];
+        }
+    }
+    offset += sprintf(expected + offset, "null");
+    for (i = retained - 1; i >= 0; i--) {
+        expected[offset++] = mixed && i % 2 == 0 ? '}' : ']';
+    }
+    expected[offset] = '\0';
+    pack_coro_object = chain;
+    pack_coro_json = NULL;
+    pack_coro_caller = co_active();
+    callee = co_create(24576, pack_small_stack_entry, &stack_size);
+    TEST_ASSERT(callee != NULL);
+#ifdef FLB_HAVE_VALGRIND
+    stack_id = VALGRIND_STACK_REGISTER(callee, ((char *) callee) + stack_size);
+#endif
+    co_switch(callee);
+#ifdef FLB_HAVE_VALGRIND
+    VALGRIND_STACK_DEREGISTER(stack_id);
+#endif
+    co_delete(callee);
+    TEST_CHECK(pack_coro_json != NULL);
+    if (pack_coro_json != NULL) {
+        TEST_CHECK(strcmp(pack_coro_json, expected) == 0);
+        flb_free(pack_coro_json);
+    }
+    flb_free(chain);
+    flb_free(pairs);
+    flb_free(expected);
+}
+
+void test_json_pack_small_stack(void)
+{
+    check_json_pack_small_stack(200, FLB_FALSE);
+    check_json_pack_small_stack(200, FLB_TRUE);
+    check_json_pack_small_stack(2000, FLB_TRUE);
+}
+
+void test_json_pack_scalar_keys(void)
+{
+    const char packed[] = "\x86\x01\xc0\xd0\xd6\xc3\xc3\x92\x01\xc2\xc2\x80"
+                          "\xc0\xa1n\xcb\x3f\xf8\x00\x00\x00\x00\x00\x00"
+                          "\x81\xa1k\xc2";
+    const char *expected = "{\"1\":null,\"-42\":true,\"true\":[1,false],\"false\":{},"
+                           "\"null\":\"n\",\"1.5\":{\"k\":false}}";
+    msgpack_unpacked unpacked;
+    size_t offset = 0;
+    size_t capacity;
+    size_t expected_size;
+    int escape_unicode;
+    int ret;
+    char buffer[256];
+    char *json;
+    flb_sds_t sds;
+
+    msgpack_unpacked_init(&unpacked);
+    ret = msgpack_unpack_next(&unpacked, packed, sizeof(packed) - 1, &offset);
+    TEST_ASSERT(ret == MSGPACK_UNPACK_SUCCESS);
+    expected_size = strlen(expected);
+
+    for (escape_unicode = FLB_FALSE; escape_unicode <= FLB_TRUE; escape_unicode++) {
+        for (capacity = 0; capacity <= expected_size + 1; capacity++) {
+            memset(buffer, 'X', sizeof(buffer));
+            ret = flb_msgpack_to_json(buffer + 1, capacity, &unpacked.data, escape_unicode);
+            TEST_CHECK(buffer[0] == 'X');
+            TEST_CHECK(buffer[capacity + 1] == 'X');
+            if (capacity <= expected_size) {
+                TEST_CHECK(ret < 0);
+            }
+            else {
+                TEST_CHECK(ret == expected_size);
+                TEST_CHECK(strcmp(buffer + 1, expected) == 0);
+            }
+        }
+
+        json = flb_msgpack_to_json_str(1, &unpacked.data, escape_unicode);
+        TEST_CHECK(json != NULL);
+        if (json != NULL) {
+            TEST_CHECK(strcmp(json, expected) == 0);
+            flb_free(json);
+        }
+        sds = flb_msgpack_raw_to_json_sds(packed, sizeof(packed) - 1, escape_unicode);
+        TEST_CHECK(sds != NULL);
+        if (sds != NULL) {
+            TEST_CHECK(strcmp(sds, expected) == 0);
+            flb_sds_destroy(sds);
+        }
+    }
+    msgpack_unpacked_destroy(&unpacked);
+}
+
+void test_json_pack_terminal_error(void)
+{
+    msgpack_object object;
+    msgpack_object_kv pairs[2];
+    char *json;
+    char buffer[16];
+    const char invalid_key[] = {0x81, 0x90, 0xc0};
+    const char invalid_map_key[] = {0x81, 0x80, 0xc0};
+
+    memset(&object, 0, sizeof(object));
+    object.type = MSGPACK_OBJECT_STR;
+    object.via.str.size = 1;
+    object.via.str.ptr = NULL;
+    TEST_CHECK(flb_msgpack_to_json(buffer, sizeof(buffer), &object, FLB_FALSE) == -1);
+    json = flb_msgpack_to_json_str(1, &object, FLB_FALSE);
+    TEST_CHECK(json == NULL);
+    flb_free(json);
+
+    /* A later invalid key must not be dereferenced during duplicate lookup. */
+    memset(pairs, 0, sizeof(pairs));
+    pairs[0].key.type = MSGPACK_OBJECT_STR;
+    pairs[0].key.via.str.ptr = "k";
+    pairs[0].key.via.str.size = 1;
+    pairs[0].val.type = MSGPACK_OBJECT_NIL;
+    pairs[1] = pairs[0];
+    pairs[1].key.via.str.ptr = NULL;
+    object.type = MSGPACK_OBJECT_MAP;
+    object.via.map.ptr = pairs;
+    object.via.map.size = 2;
+    json = flb_msgpack_to_json_str(1, &object, FLB_FALSE);
+    TEST_CHECK(json == NULL);
+    flb_free(json);
+
+    /* Both allocating wrappers must stop on terminal conversion errors. */
+    json = flb_msgpack_raw_to_json_sds(invalid_key, sizeof(invalid_key), FLB_FALSE);
+    TEST_CHECK(json == NULL);
+    flb_sds_destroy(json);
+
+    json = flb_msgpack_raw_to_json_sds(invalid_map_key, sizeof(invalid_map_key), FLB_FALSE);
+    TEST_CHECK(json == NULL);
+    flb_sds_destroy(json);
+}
+
+void test_json_pack_iterative_buffer_retry(void)
+{
+    const char *input = "{\"dup\":0,\"a\":[{},[],{\"b\":[true,null,\"x\\ny\"]}],"
+                        "\"dup\":2,\"last\":{\"empty\":[]}}";
+    const char *expected = "{\"a\":[{},[],{\"b\":[true,null,\"x\\ny\"]}],"
+                           "\"dup\":2,\"last\":{\"empty\":[]}}";
+    char *packed;
+    char *json;
+    char buffer[256];
+    size_t packed_size;
+    size_t offset = 0;
+    size_t capacity;
+    int root_type;
+    int ret;
+    msgpack_unpacked result;
+
+    ret = flb_pack_json(input, strlen(input), &packed, &packed_size, &root_type, NULL);
+    TEST_ASSERT(ret == 0);
+    msgpack_unpacked_init(&result);
+    ret = msgpack_unpack_next(&result, packed, packed_size, &offset);
+    TEST_ASSERT(ret == MSGPACK_UNPACK_SUCCESS);
+
+    /* Exercise early exits at every bracket, key, separator and scalar. */
+    for (capacity = 0; capacity < strlen(expected) + 3; capacity++) {
+        memset(buffer, 'X', sizeof(buffer));
+        ret = flb_msgpack_to_json(buffer, capacity, &result.data, FLB_FALSE);
+        TEST_CHECK(buffer[capacity] == 'X');
+        if (capacity == 0) {
+            TEST_CHECK(ret == -1);
+        }
+        else if (ret > 0) {
+            TEST_CHECK(strcmp(buffer, expected) == 0);
+        }
+        else {
+            /* insufficient space must be reported as a negative value */
+            TEST_CHECK(ret < 0);
+        }
+    }
+    json = flb_msgpack_to_json_str(1, &result.data, FLB_FALSE);
+    TEST_ASSERT(json != NULL);
+    TEST_CHECK(strcmp(json, expected) == 0);
+    flb_free(json);
+    msgpack_unpacked_destroy(&result);
+    flb_free(packed);
+}
+
 TEST_LIST = {
+    { "json_pack_buffer_capacity", test_json_pack_buffer_capacity },
+#ifdef FLB_HAVE_YYJSON
+    { "json_pack_depth_limit", test_json_pack_depth_limit },
+#endif
+
+    { "json_pack_small_stack", test_json_pack_small_stack },
+    { "json_pack_scalar_keys", test_json_pack_scalar_keys },
+    { "json_pack_terminal_error", test_json_pack_terminal_error },
+    { "json_pack_iterative_buffer_retry", test_json_pack_iterative_buffer_retry },
     /* JSON maps iteration */
     { "json_pack"          , test_json_pack },
     { "json_pack_ext_default_backend", test_json_pack_ext_default_backend },
@@ -1303,8 +1894,11 @@ TEST_LIST = {
     { "json_pack_bug342"   , test_json_pack_bug342},
     { "json_pack_bug1278"  , test_json_pack_bug1278},
     { "json_pack_nan"      , test_json_pack_nan},
+    { "json_pack_truncation", test_json_pack_truncation},
     { "json_pack_bug5336"  , test_json_pack_bug5336},
     { "json_pack_empty_array", test_json_pack_empty_array},
+    { "json_pack_deep_map_boundary", test_json_pack_deep_map_boundary},
+    { "json_pack_deep_map_below_boundary", test_json_pack_deep_map_below_boundary},
     { "json_date_iso8601" , test_json_date_iso8601},
     { "json_date_double" , test_json_date_double},
     { "json_date_java_sql" , test_json_date_java_sql},

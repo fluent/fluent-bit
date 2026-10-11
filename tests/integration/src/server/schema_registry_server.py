@@ -16,6 +16,7 @@
 
 import json
 import logging
+import ssl
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -36,6 +37,8 @@ data_storage = {"requests": []}
 logger = logging.getLogger(__name__)
 server_instance = None
 server_thread = None
+response_overrides = {}
+response_overrides_lock = threading.Lock()
 
 
 def reset_schema_registry_server_state():
@@ -43,6 +46,8 @@ def reset_schema_registry_server_state():
 
 
 class SchemaRegistryHandler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
     def log_message(self, fmt, *args):
         logger.debug("schema_registry_server: " + fmt, *args)
 
@@ -55,7 +60,18 @@ class SchemaRegistryHandler(BaseHTTPRequestHandler):
             }
         )
 
-        if self.path == f"/subjects/{SCHEMA_SUBJECT}/versions/latest":
+        if self.path in response_overrides:
+            with response_overrides_lock:
+                configured = response_overrides[self.path]
+                if isinstance(configured, list):
+                    status, body = configured.pop(0) if len(configured) > 1 else configured[0]
+                else:
+                    status, body = configured
+            self._send_json(body, status=status)
+            return
+
+        if self.path in (f"/subjects/{SCHEMA_SUBJECT}/versions/latest",
+                         f"/subjects/{SCHEMA_SUBJECT}/versions/{SCHEMA_VERSION}"):
             self._send_json(
                 {
                     "subject": SCHEMA_SUBJECT,
@@ -79,7 +95,7 @@ class SchemaRegistryHandler(BaseHTTPRequestHandler):
         self._send_json({"error_code": 40403, "message": "Schema not found"}, status=404)
 
     def _send_json(self, body, status=200):
-        payload = json.dumps(body).encode("utf-8")
+        payload = body if isinstance(body, bytes) else json.dumps(body).encode("utf-8")
 
         self.send_response(status)
         self.send_header("Content-Type", "application/vnd.schemaregistry.v1+json")
@@ -88,12 +104,19 @@ class SchemaRegistryHandler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
 
-def schema_registry_server_run(port, host="127.0.0.1"):
+def schema_registry_server_run(port, host="127.0.0.1", *, responses=None,
+                               tls_crt_file=None, tls_key_file=None):
     global server_instance
     global server_thread
+    global response_overrides
 
+    response_overrides = responses or {}
     reset_schema_registry_server_state()
     server_instance = ThreadingHTTPServer((host, port), SchemaRegistryHandler)
+    if tls_crt_file is not None:
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(tls_crt_file, tls_key_file)
+        server_instance.socket = context.wrap_socket(server_instance.socket, server_side=True)
     server_thread = threading.Thread(target=server_instance.serve_forever, daemon=True)
     server_thread.start()
     return server_thread

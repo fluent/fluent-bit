@@ -143,6 +143,60 @@ error:
     return -1;
 }
 
+/*
+ * Return an upper bound of the number of bytes msgpack_object_print_buffer()
+ * needs to render the given object, including the NULL terminator.
+ */
+static size_t slack_print_size(msgpack_object *o)
+{
+    uint32_t i;
+    size_t size = 0;
+
+    switch (o->type) {
+    case MSGPACK_OBJECT_NIL:
+    case MSGPACK_OBJECT_BOOLEAN:
+        size = 6;
+        break;
+    case MSGPACK_OBJECT_POSITIVE_INTEGER:
+    case MSGPACK_OBJECT_NEGATIVE_INTEGER:
+        size = 22;
+        break;
+    case MSGPACK_OBJECT_FLOAT32:
+    case MSGPACK_OBJECT_FLOAT64:
+        /* "%f" of the largest double: sign, 309 digits and 7 decimals */
+        size = 320;
+        break;
+    case MSGPACK_OBJECT_STR:
+        size = o->via.str.size + 3;
+        break;
+    case MSGPACK_OBJECT_BIN:
+        /* non printable bytes are rendered as \xNN */
+        size = (size_t) o->via.bin.size * 4 + 3;
+        break;
+    case MSGPACK_OBJECT_EXT:
+        size = (size_t) o->via.ext.size * 4 + 16;
+        break;
+    case MSGPACK_OBJECT_ARRAY:
+        size = 3;
+        for (i = 0; i < o->via.array.size; i++) {
+            size += slack_print_size(&o->via.array.ptr[i]) + 2;
+        }
+        break;
+    case MSGPACK_OBJECT_MAP:
+        size = 3;
+        for (i = 0; i < o->via.map.size; i++) {
+            size += slack_print_size(&o->via.map.ptr[i].key) + 4;
+            size += slack_print_size(&o->via.map.ptr[i].val);
+        }
+        break;
+    default:
+        size = 64;
+        break;
+    }
+
+    return size;
+}
+
 static void cb_slack_flush(struct flb_event_chunk *event_chunk,
                            struct flb_output_flush *out_flush,
                            struct flb_input_instance *i_ins,
@@ -153,9 +207,11 @@ static void cb_slack_flush(struct flb_event_chunk *event_chunk,
     int ret;
     int out_ret = FLB_OK;
     size_t size;
+    size_t needed;
     size_t printed = 0;
     size_t b_sent;
     flb_sds_t json;
+    flb_sds_t tmp;
     flb_sds_t out_buf;
     msgpack_sbuffer mp_sbuf;
     msgpack_packer mp_pck;
@@ -189,6 +245,26 @@ static void cb_slack_flush(struct flb_event_chunk *event_chunk,
                     &log_decoder,
                     &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
 
+        /*
+         * The text representation of a record can be much larger than its
+         * msgpack size (e.g: floats), make sure it fits: timestamp prefix,
+         * record body and the closing ']' and '\n'.
+         */
+        needed = 64 + slack_print_size(log_event.body) + 2;
+        if (size - printed < needed) {
+            tmp = flb_sds_increase(json, needed);
+            if (!tmp) {
+                flb_errno();
+                flb_sds_destroy(json);
+                flb_log_event_decoder_destroy(&log_decoder);
+
+                FLB_OUTPUT_RETURN(FLB_RETRY);
+            }
+            json = tmp;
+            memset(json + size, '\0', needed);
+            size += needed;
+        }
+
         ret = snprintf(json + printed, size - printed,
                        "[\"timestamp\": %" PRIu32 ".%09lu, ",
                        (uint32_t) log_event.timestamp.tm.tv_sec,
@@ -210,6 +286,7 @@ static void cb_slack_flush(struct flb_event_chunk *event_chunk,
         printed += ret;
         json[printed++] = ']';
         json[printed++] = '\n';
+        json[printed] = '\0';
     }
 
     flb_log_event_decoder_destroy(&log_decoder);

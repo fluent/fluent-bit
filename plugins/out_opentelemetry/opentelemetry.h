@@ -194,6 +194,9 @@ struct opentelemetry_context {
     /* compression: zstd */
     int compress_zstd;
 
+    /* cutoff threshold */
+    int cutoff_threshold;
+
     /* FLB/OTLP Record accessor patterns */
     struct flb_record_accessor *ra_meta_schema;
     struct flb_record_accessor *ra_meta_resource_id;
@@ -222,4 +225,6 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
                        const char *tag, int tag_len,
                        const char *http_uri,
                        const char *grpc_uri);
+
+void otel_metrics_apply_cutoff(struct cmt *cmt, int threshold_seconds);
 #endif

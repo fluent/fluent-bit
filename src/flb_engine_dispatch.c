@@ -94,6 +94,22 @@ int flb_engine_dispatch_retry(struct flb_task_retry *retry,
 
     task = retry->parent;
 
+    /*
+     * Same bound applied by tasks_start(): when too many flush requests are
+     * in flight, re-schedule the retry without spending an attempt.
+     */
+    if (config->flush_in_flight >= config->flush_in_flight_limit) {
+        flb_debug("[engine] %i flush requests in flight, deferring retry of "
+                  "task_id=%i", config->flush_in_flight, task->id);
+
+        ret = flb_task_retry_reschedule(retry, config);
+        if (ret == -1) {
+            return -1;
+        }
+
+        return 0;
+    }
+
     /* Set file up/down based on restrictions */
     ret = flb_input_chunk_set_up(task->ic);
     if (ret == -1) {
@@ -245,6 +261,20 @@ static int tasks_start(struct flb_input_instance *in,
         /* Only process recently created tasks */
         if (task->status != FLB_TASK_NEW) {
             continue;
+        }
+
+        /*
+         * Do not dispatch more flush requests than the channels between the
+         * engine and the outputs can hold, otherwise the engine blocks
+         * writing to an output worker that is blocked writing its return
+         * status back to the engine. The remaining tasks keep their
+         * FLB_TASK_NEW status and are started on the next flush cycle.
+         */
+        if (config->flush_in_flight >= config->flush_in_flight_limit) {
+            flb_debug("[engine] %i flush requests in flight, deferring tasks of "
+                      "input %s to the next flush cycle",
+                      config->flush_in_flight, flb_input_name(in));
+            break;
         }
         task->status = FLB_TASK_RUNNING;
 

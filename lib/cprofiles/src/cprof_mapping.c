@@ -38,6 +38,10 @@ struct cprof_mapping *cprof_mapping_create(struct cprof_profile *profile)
 void cprof_mapping_destroy(struct cprof_mapping *instance)
 {
     if (instance != NULL) {
+        if (cfl_list_entry_is_orphan(&instance->_head) == CFL_FALSE) {
+            cfl_list_del(&instance->_head);
+        }
+
         if (instance->attributes != NULL) {
             free(instance->attributes);
 

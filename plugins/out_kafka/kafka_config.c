@@ -50,7 +50,7 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
     ctx->ins = ins;
     ctx->blocked = FLB_FALSE;
     mk_list_init(&ctx->topics);
-#ifdef FLB_HAVE_AVRO_ENCODER
+#ifdef FLB_HAVE_KAFKA_SCHEMA_REGISTRY
     mk_list_init(&ctx->schema_registry_endpoints);
 #endif
 
@@ -131,6 +131,15 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
             ctx->format = FLB_KAFKA_FMT_AVRO;
         }
 #endif
+        else if (strcasecmp(ctx->format_str, "protobuf") == 0) {
+#ifdef FLB_HAVE_PROTOBUF_ENCODER
+            ctx->format = FLB_KAFKA_FMT_PROTOBUF;
+#else
+            flb_plg_error(ins, "format protobuf requires FLB_PROTOBUF_ENCODER=On");
+            flb_out_kafka_destroy(ctx);
+            return NULL;
+#endif
+        }
         else if (strcasecmp(ctx->format_str, "raw") == 0) {
             ctx->format = FLB_KAFKA_FMT_RAW;
         }
@@ -263,11 +272,11 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
     /* rd_kafka_new() succeeded, conf ownership transferred to rk */
     ctx->conf = NULL;
 
-#ifdef FLB_HAVE_AVRO_ENCODER
-    /* Config AVRO */
+#ifdef FLB_HAVE_KAFKA_SCHEMA_REGISTRY
+    /* Inline Avro schema or Schema Registry configuration */
     tmp = flb_output_get_property("schema_str", ins);
     if (tmp) {
-        ctx->avro_fields.schema_str = flb_sds_create(tmp);
+        ctx->schema_str = flb_sds_create(tmp);
     }
 
     ret = flb_kafka_schema_registry_configure(ctx, config);
@@ -302,8 +311,9 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
     }
 
     flb_plg_info(ctx->ins, "brokers='%s' topics='%s'", ctx->kafka.brokers, tmp);
-#ifdef FLB_HAVE_AVRO_ENCODER
-    flb_plg_info(ctx->ins, "schemaID='%d' schema='%s'", ctx->avro_fields.schema_id, ctx->avro_fields.schema_str);
+#ifdef FLB_HAVE_KAFKA_SCHEMA_REGISTRY
+    flb_plg_info(ctx->ins, "schemaID='%d' schema='%s'",
+                 ctx->schema_id, ctx->schema_str != NULL ? ctx->schema_str : "");
 #endif
 
     return ctx;
@@ -347,9 +357,8 @@ int flb_out_kafka_destroy(struct flb_out_kafka *ctx)
 
     flb_sds_destroy(ctx->sasl_mechanism);
 
-#ifdef FLB_HAVE_AVRO_ENCODER
-    // avro
-    flb_sds_destroy(ctx->avro_fields.schema_str);
+#ifdef FLB_HAVE_KAFKA_SCHEMA_REGISTRY
+    flb_sds_destroy(ctx->schema_str);
     flb_kafka_schema_registry_destroy(ctx);
 #endif
 

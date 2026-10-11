@@ -2,12 +2,15 @@ import base64
 import json
 import logging
 import os
+import re
 import shutil
 import socket
 import threading
+from collections import Counter
 
 import requests
 import pytest
+import yaml
 from google.protobuf import json_format
 from h2.config import H2Configuration
 from h2.connection import H2Connection
@@ -1074,6 +1077,68 @@ def test_out_opentelemetry_metrics_partial_success_is_not_retried():
     assert {8, 9, 10}.isdisjoint(set().union(*batch_series))
 
 
+@pytest.mark.parametrize("encoding", ["json", "protobuf"])
+@pytest.mark.parametrize("filesystem_storage", [False, True])
+def test_out_opentelemetry_trace_status_roundtrip(tmp_path, encoding, filesystem_storage):
+    with open(_repo_relative("../config", "out_otel_http_traces.yaml"), encoding="utf-8") as stream:
+        config = yaml.safe_load(stream)
+    if filesystem_storage:
+        config["service"]["storage.path"] = str(tmp_path / "storage")
+        config["pipeline"]["inputs"][0]["storage.type"] = "filesystem"
+    config_file = tmp_path / "trace-status.yaml"
+    with config_file.open("w", encoding="utf-8") as stream:
+        yaml.safe_dump(config, stream)
+
+    codes = [0, 1, 2, -2147483648, -1, 3, 2147483647]
+    spans = [{
+        "traceId": "0123456789abcdef0123456789abcdef",
+        "spanId": f"{index + 1:016x}",
+        "name": f"status-{code}",
+        "startTimeUnixNano": "1700000000000000000",
+        "endTimeUnixNano": "1700000000000000001",
+        "status": {"code": code, "message": f"message-{code}"},
+    } for index, code in enumerate(codes)]
+    payload = {"resourceSpans": [{"scopeSpans": [{"spans": spans}]}]}
+    service = Service(str(config_file))
+    service.start()
+    if encoding == "protobuf":
+        request = ExportTraceServiceRequest()
+        resource = request.resource_spans.add()
+        resource.resource.SetInParent()
+        scope = resource.scope_spans.add()
+        for source in spans:
+            span = scope.spans.add()
+            span.trace_id = bytes.fromhex(source["traceId"])
+            span.span_id = bytes.fromhex(source["spanId"])
+            span.name = source["name"]
+            span.start_time_unix_nano = int(source["startTimeUnixNano"])
+            span.end_time_unix_nano = int(source["endTimeUnixNano"])
+            span.status.code = source["status"]["code"]
+            span.status.message = source["status"]["message"]
+        body = request.SerializeToString()
+        content_type = "application/x-protobuf"
+    else:
+        body = json.dumps(payload).encode()
+        content_type = "application/json"
+    response = requests.post(
+        f"http://127.0.0.1:{service.flb_listener_port}/v1/traces",
+        data=body,
+        headers={"Content-Type": content_type},
+        timeout=5,
+    )
+    response.raise_for_status()
+    traces_seen = service.wait_for_signal("traces")
+    service.stop()
+    received = [
+        span for request in traces_seen for resource in request.resource_spans
+        for scope in resource.scope_spans for span in scope.spans
+    ]
+    assert len(received) == len(codes)
+    assert {span.name: (span.status.code, span.status.message) for span in received} == {
+        f"status-{code}": (code, f"message-{code}") for code in codes
+    }
+
+
 def test_out_opentelemetry_traces_uri():
     service = Service("out_otel_http_traces.yaml")
     service.start()
@@ -1109,6 +1174,133 @@ def test_out_opentelemetry_batch_size_splits_log_exports():
             for scope_log in resource_log.get("scopeLogs", [])
         )
         assert record_count == 1
+
+
+@pytest.mark.parametrize(
+    "input_name,batch_size,record_count,fail_request,status_code",
+    [
+        ("http", 1, 2, 0, 429),
+        ("http", 1, 2, 1, 429),
+        ("http", 1, 2, 2, 429),
+        ("http", 2, 5, 1, 429),
+        ("http", 2, 5, 2, 429),
+        ("http", 2, 5, 3, 429),
+        ("http", 2, 1, 1, 429),
+        ("http", 2, 2, 1, 429),
+        ("http", 1000, 2000, 1, 429),
+        ("http", 1000, 2000, 2, 429),
+        ("http", 1, 2, 1, 400),
+        ("http", 1, 2, 2, 400),
+        ("opentelemetry", 1, 2, 0, 429),
+        ("opentelemetry", 1, 2, 1, 429),
+        ("opentelemetry", 1, 2, 2, 429),
+    ],
+)
+def test_out_opentelemetry_log_batch_retry(
+    monkeypatch, input_name, batch_size, record_count, fail_request, status_code
+):
+    monkeypatch.setenv("TEST_LOG_INPUT", input_name)
+    monkeypatch.setenv("TEST_LOG_BATCH_SIZE", str(batch_size))
+    service = Service("out_otel_http_logs_batch_retry.yaml")
+    expected = [f"event-{index:06d}" for index in range(record_count)]
+    expected_batches = [expected[index:index + batch_size] for index in range(0, record_count, batch_size)]
+    statuses = [200] * (fail_request - 1) + [status_code] if fail_request else []
+    permanent_failure = bool(fail_request and status_code == 400)
+    retried = bool(fail_request and not permanent_failure)
+    service.start()
+    try:
+        configure_otlp_response(
+            status_codes=statuses,
+            body=b"",
+            content_type="application/x-protobuf",
+        )
+        if input_name == "opentelemetry":
+            service.send_payload_dict(
+                {"resource_logs": [
+                    _build_resource_collision_payload(event_id, event_id)["resource_logs"][0]
+                    for event_id in expected
+                ]},
+                "logs",
+            )
+        else:
+            response = requests.post(
+                f"http://127.0.0.1:{service.flb_listener_port}/repro",
+                json=[{"message": event_id} for event_id in expected],
+                timeout=5,
+            )
+            assert response.status_code == 201
+
+        def completed_metrics():
+            try:
+                response = requests.get(
+                    f"http://127.0.0.1:{service.flb.http_monitoring_port}/api/v1/metrics/prometheus",
+                    timeout=2,
+                )
+            except (requests.ConnectionError, requests.Timeout):
+                return None
+            response.raise_for_status()
+            counters = {
+                name: int(value)
+                for name, value in re.findall(
+                    r'^fluentbit_output_(\w+)\{name="opentelemetry\.0"\} (\d+)',
+                    response.text,
+                    re.MULTILINE,
+                )
+            }
+            finished = counters.get("proc_records_total", 0) + counters.get("dropped_records_total", 0)
+            return counters if finished == record_count else None
+
+        counters = service.service.wait_for_condition(
+            completed_metrics,
+            timeout=30,
+            description="completion of the whole log chunk",
+        )
+        _wait_for_log_message(service, "[task] destroy task=")
+        requests_seen = list(data_storage["logs"])
+    finally:
+        service.stop()
+
+    accepted = []
+    batches = []
+    for request_number, export_request in enumerate(requests_seen, start=1):
+        batch = [
+            record.body.string_value
+            for resource in export_request.resource_logs
+            for scope in resource.scope_logs
+            for record in scope.log_records
+        ]
+        assert 0 < len(batch) <= batch_size
+        batches.append(batch)
+        if request_number != fail_request:
+            accepted.extend(batch)
+
+    assert counters["proc_records_total"] == (0 if permanent_failure else record_count)
+    assert counters["retries_total"] == int(retried)
+    assert counters["retried_records_total"] == (record_count if retried else 0)
+    assert counters["errors_total"] == int(permanent_failure)
+    assert counters["dropped_records_total"] == (record_count if permanent_failure else 0)
+    if fail_request:
+        assert batches[fail_request - 1] == expected_batches[fail_request - 1]
+        attempted = expected_batches[:fail_request]
+        expected_accepted = expected[:(fail_request - 1) * batch_size]
+        if retried:
+            assert batches[fail_request] == expected_batches[0]
+            replayed = [event_id for batch in batches[fail_request:] for event_id in batch]
+            assert Counter(replayed) == Counter(expected)
+            attempted += expected_batches
+            expected_accepted += expected
+    else:
+        attempted = expected_batches
+        expected_accepted = expected
+    assert Counter(accepted) == Counter(expected_accepted)
+    assert Counter(map(tuple, batches)) == Counter(map(tuple, attempted))
+
+    with open(service.flb.log_file, encoding="utf-8") as log_file:
+        log = log_file.read()
+    created = re.findall(r"\[task\] created task=(\S+)", log)
+    destroyed = re.findall(r"\[task\] destroy task=(\S+)", log)
+    assert len(created) == 1
+    assert destroyed == created
 
 
 def test_out_opentelemetry_log_severity_message_keys():

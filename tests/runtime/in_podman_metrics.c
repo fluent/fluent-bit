@@ -57,6 +57,27 @@ int check_metric(flb_ctx_t *ctx, char *name) {
 
 }
 
+/* Whether a counter with the given name is present. check_metric() cannot
+ * express this: it returns 0 both when the counter is found and when the input
+ * exposes no counters at all. */
+int metric_exists(flb_ctx_t *ctx, char *name) {
+    struct mk_list *head;
+    struct cfl_list *inner_head;
+    struct flb_input_instance *i_ins;
+    struct cmt_counter *counter;
+
+    mk_list_foreach(head, &ctx->config->inputs) {
+        i_ins = mk_list_entry(head, struct flb_input_instance, _head);
+        cfl_list_foreach(inner_head, &i_ins->cmt->counters) {
+            counter = cfl_list_entry(inner_head, struct cmt_counter, _head);
+            if (strcmp(name, counter->opts.name) == 0) {
+                return FLB_TRUE;
+            }
+        }
+    }
+    return FLB_FALSE;
+}
+
 void do_create(flb_ctx_t *ctx, char *system, ...)
 {
     int in_ffd;
@@ -125,7 +146,15 @@ void flb_test_ipm_garbage_config() {
             "path.sysfs", DPATH_PODMAN_GARBAGE_CONFIG,
             "path.procfs", DPATH_PODMAN_GARBAGE_CONFIG,
             NULL);
-    TEST_CHECK(flb_start(ctx) != 0);
+    /*
+     * An unparsable config file must not abort startup. Podman rewrites
+     * containers.json in place, so a scrape can race with that write and read
+     * a partial file. The plugin warns and the interval collector retries, so
+     * the engine starts but exposes no container metrics.
+     */
+    TEST_CHECK(flb_start(ctx) == 0);
+    sleep(1);
+    TEST_CHECK(metric_exists(ctx, "usage_bytes") == FLB_FALSE);
     do_destroy(ctx);
 }
 
@@ -138,7 +167,13 @@ void flb_test_ipm_no_config() {
             "path.sysfs", DPATH_PODMAN_NO_CONFIG,
             "path.procfs", DPATH_PODMAN_NO_CONFIG,
             NULL);
-    TEST_CHECK(flb_start(ctx) != 0);
+    /*
+     * A missing config file must not abort startup either: podman may simply
+     * not have run on this host yet. Same contract as the garbage config case.
+     */
+    TEST_CHECK(flb_start(ctx) == 0);
+    sleep(1);
+    TEST_CHECK(metric_exists(ctx, "usage_bytes") == FLB_FALSE);
     do_destroy(ctx);
 }
 

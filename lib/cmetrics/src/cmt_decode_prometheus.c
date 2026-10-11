@@ -623,8 +623,11 @@ static int add_metric_histogram(struct cmt_decode_prometheus_context *context)
         timestamp = context->opts.default_timestamp;
     }
 
+    /* reuse the previous histogram only if its shape matches, the number of
+     * bucket defaults set below comes from this instance */
     h = context->current.histogram;
-    if (!h || label_i != h->map->label_count) {
+    if (!h || label_i != h->map->label_count ||
+        h->buckets == NULL || h->buckets->count != bucket_count) {
         cmt_buckets = cmt_histogram_buckets_create_size(buckets, bucket_count);
         if (!cmt_buckets) {
             ret = report_error(context,
@@ -683,6 +686,7 @@ static int add_metric_summary(struct cmt_decode_prometheus_context *context)
 {
     int ret = 0;
     int i;
+    int has_quantile = CMT_FALSE;
     size_t quantile_count;
     size_t quantile_index;
     double *quantiles = NULL;
@@ -707,10 +711,16 @@ static int add_metric_summary(struct cmt_decode_prometheus_context *context)
                 "not enough samples for summary");
     }
 
-    /* quantile_count = sample count - 2:
-     * - sum
-     * - count */
-    quantile_count = cfl_list_size(&context->metric.samples) - 2;
+    /* quantile_count = number of quantile samples. Count them instead of
+     * assuming that sum and count are present, otherwise the quantiles
+     * arrays are too small when any of them is missing */
+    quantile_count = 0;
+    cfl_list_foreach(head, &context->metric.samples) {
+        sample = cfl_list_entry(head, struct cmt_decode_prometheus_context_sample, _head);
+        if (sample->type == CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_NORMAL) {
+            quantile_count++;
+        }
+    }
     if (context->opts.override_timestamp) {
         timestamp = context->opts.override_timestamp;
     }
@@ -735,6 +745,9 @@ static int add_metric_summary(struct cmt_decode_prometheus_context *context)
         if (strcmp(context->metric.labels[i], "quantile")) {
             /* quantile is not a label */
             label_count++;
+        }
+        else {
+            has_quantile = CMT_TRUE;
         }
     }
 
@@ -772,6 +785,16 @@ static int add_metric_summary(struct cmt_decode_prometheus_context *context)
         sample = cfl_list_entry(head, struct cmt_decode_prometheus_context_sample, _head);
         switch (sample->type) {
             case CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_NORMAL:
+                /* a summary may have no quantiles at all (only sum and
+                 * count), but every quantile sample must carry a value */
+                if (!has_quantile ||
+                    !sample->label_values[quantile_label_index] ||
+                    sample->label_values[quantile_label_index][0] == '\0') {
+                    ret = report_error(context,
+                            CMT_DECODE_PROMETHEUS_SYNTAX_ERROR,
+                            "missing summary \"quantile\" value");
+                    goto end;
+                }
                 if (parse_double(sample->label_values[quantile_label_index],
                             quantiles + quantile_index)) {
                     ret = report_error(context,
@@ -847,8 +870,11 @@ static int add_metric_summary(struct cmt_decode_prometheus_context *context)
         timestamp = context->opts.default_timestamp;
     }
 
+    /* reuse the previous summary only if its shape matches, the number of
+     * quantile defaults set below comes from this instance */
     s = context->current.summary;
-    if (!s || label_i != s->map->label_count) {
+    if (!s || label_i != s->map->label_count ||
+        s->quantiles_count != quantile_count) {
         s = cmt_summary_create(context->cmt,
                                context->metric.ns,
                                context->metric.subsystem,
@@ -981,8 +1007,6 @@ static int parse_histogram_summary_name(
     bool has_buckets;
     bool is_previous_sum_or_count;
     bool name_matched = false;
-    struct cfl_list *head;
-    struct cfl_list *tmp;
     size_t current_name_len;
     size_t parsed_name_len;
     struct cmt_decode_prometheus_context_sample *sample;
@@ -1003,35 +1027,29 @@ static int parse_histogram_summary_name(
         name_matched = true;
     }
 
-    sum_found = false;
-    count_found = false;
-    has_buckets = false;
+    /* the flags are maintained by sample_start(), walking the whole list of
+     * samples on every line would make the decoding quadratic */
+    sum_found = context->metric.sum_found;
+    count_found = context->metric.count_found;
+    has_buckets = context->metric.has_buckets;
 
-    cfl_list_foreach_safe(head, tmp, &context->metric.samples) {
-        sample = cfl_list_entry(head, struct cmt_decode_prometheus_context_sample, _head);
-
-        switch (sample->type) {
-            case CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_SUM:
-                sum_found = true;
-                break;
-            case CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_COUNT:
-                count_found = true;
-                break;
-            default:
-                has_buckets = true;
-                break;
-        }
+    is_previous_sum_or_count = false;
+    if (!cfl_list_is_empty(&context->metric.samples)) {
+        sample = cfl_list_entry_last(&context->metric.samples,
+                struct cmt_decode_prometheus_context_sample, _head);
+        is_previous_sum_or_count =
+            sample->type == CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_SUM ||
+            sample->type == CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_COUNT;
     }
-
-    sample = cfl_list_entry_last(&context->metric.samples,
-            struct cmt_decode_prometheus_context_sample, _head);
-    is_previous_sum_or_count = sample->type == CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_SUM ||
-        sample->type == CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_COUNT;
 
     if (name_matched) {
         if (sum_found && count_found) {
-            /* finish instance of the summary/histogram */
-            return finish_duplicate_histogram_summary_sum_count(context, metric_name, -1);
+            /* finish instance of the summary/histogram, the samples of the
+             * next instance using the base name are quantiles */
+            return finish_duplicate_histogram_summary_sum_count(
+                    context,
+                    metric_name,
+                    CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_NORMAL);
         }
         else {
             /* parsing HELP after TYPE */
@@ -1156,6 +1174,10 @@ static int parse_label(
 
     sample = cfl_list_entry_last(&context->metric.samples,
             struct cmt_decode_prometheus_context_sample, _head);
+    if (sample->label_values[i]) {
+        /* label repeated in the same sample, release the previous value */
+        cfl_sds_destroy(sample->label_values[i]);
+    }
     sample->label_values[i] = value;
     return 0;
 }
@@ -1174,6 +1196,19 @@ static int sample_start(struct cmt_decode_prometheus_context *context)
     memset(sample, 0, sizeof(*sample));
     sample->type = context->metric.current_sample_type;
     cfl_list_add(&sample->_head, &context->metric.samples);
+
+    switch (sample->type) {
+        case CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_SUM:
+            context->metric.sum_found = true;
+            break;
+        case CMT_DECODE_PROMETHEUS_CONTEXT_SAMPLE_TYPE_COUNT:
+            context->metric.count_found = true;
+            break;
+        default:
+            context->metric.has_buckets = true;
+            break;
+    }
+
     return 0;
 }
 

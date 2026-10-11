@@ -231,6 +231,14 @@ static int package_content(struct flb_ml_stream *mst,
 
     /* Get stream group */
     stream_group = flb_ml_stream_group_get(mst->parser, mst, val_group);
+    if (!stream_group) {
+        /*
+         * The stream reached FLB_ML_MAX_GROUPS and no group exists for the
+         * given key_group value. Do not use the group of another key, let
+         * the caller handle the record as a standalone one.
+         */
+        return -1;
+    }
     if (!mst->last_stream_group) {
         mst->last_stream_group = stream_group;
     }

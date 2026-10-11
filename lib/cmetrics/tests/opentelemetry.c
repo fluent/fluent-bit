@@ -2576,6 +2576,243 @@ static void test_opentelemetry_batches_all_metric_types(void)
     cmt_encode_opentelemetry_destroy_batches(batches);
 }
 
+/* Build an OTLP request holding one histogram or summary metric with two
+ * data points, the first one carrying 'first_count' bounds (or quantiles)
+ * and the second one 'second_count'. For histograms 'with_counts' selects
+ * whether bucket counts (one per bound plus +Inf) are sent at all.
+ */
+static cfl_sds_t generate_layout_otlp_payload(int summary_metric,
+                                              size_t first_count,
+                                              size_t second_count,
+                                              size_t with_counts,
+                                              size_t second_offset)
+{
+    Opentelemetry__Proto__Collector__Metrics__V1__ExportMetricsServiceRequest request;
+    Opentelemetry__Proto__Metrics__V1__ResourceMetrics      resource_metrics;
+    Opentelemetry__Proto__Metrics__V1__ScopeMetrics         scope_metrics;
+    Opentelemetry__Proto__Metrics__V1__Metric               metric;
+    Opentelemetry__Proto__Metrics__V1__Histogram            histogram;
+    Opentelemetry__Proto__Metrics__V1__Summary              summary;
+    Opentelemetry__Proto__Metrics__V1__HistogramDataPoint   histogram_points[2];
+    Opentelemetry__Proto__Metrics__V1__SummaryDataPoint     summary_points[2];
+    Opentelemetry__Proto__Metrics__V1__SummaryDataPoint__ValueAtQuantile quantiles[64];
+    Opentelemetry__Proto__Metrics__V1__SummaryDataPoint__ValueAtQuantile *quantile_list[64];
+    Opentelemetry__Proto__Metrics__V1__HistogramDataPoint  *histogram_point_list[2];
+    Opentelemetry__Proto__Metrics__V1__SummaryDataPoint    *summary_point_list[2];
+    Opentelemetry__Proto__Metrics__V1__ResourceMetrics     *resource_metrics_list[1];
+    Opentelemetry__Proto__Metrics__V1__ScopeMetrics        *scope_metrics_list[1];
+    Opentelemetry__Proto__Metrics__V1__Metric              *metric_list[1];
+    double                                                  bounds[64];
+    uint64_t                                                counts[65];
+    size_t                                                  point_counts[2];
+    size_t                                                  point_offsets[2];
+    size_t                                                  index;
+    size_t                                                  point;
+    size_t                                                  payload_size;
+    unsigned char                                          *packed_payload;
+    cfl_sds_t                                               payload;
+
+    if (first_count > 64 || second_count + second_offset > 64 ||
+        with_counts > 1) {
+        return NULL;
+    }
+
+    opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__init(&request);
+    opentelemetry__proto__metrics__v1__resource_metrics__init(&resource_metrics);
+    opentelemetry__proto__metrics__v1__scope_metrics__init(&scope_metrics);
+    opentelemetry__proto__metrics__v1__metric__init(&metric);
+    opentelemetry__proto__metrics__v1__histogram__init(&histogram);
+    opentelemetry__proto__metrics__v1__summary__init(&summary);
+
+    for (index = 0 ; index < 64 ; index++) {
+        bounds[index] = (double) index;
+        counts[index] = 7;
+        opentelemetry__proto__metrics__v1__summary_data_point__value_at_quantile__init(
+            &quantiles[index]);
+        quantiles[index].quantile = (double) index / 64.0;
+        quantiles[index].value = 7.0;
+        quantile_list[index] = &quantiles[index];
+    }
+    counts[64] = 7;
+
+    point_counts[0] = first_count;
+    point_counts[1] = second_count;
+
+    /* a non zero offset makes the second point use different bound and
+     * quantile values while keeping the same count
+     */
+    point_offsets[0] = 0;
+    point_offsets[1] = second_offset;
+
+    for (point = 0 ; point < 2 ; point++) {
+        opentelemetry__proto__metrics__v1__histogram_data_point__init(&histogram_points[point]);
+        histogram_points[point].time_unix_nano = 1;
+        histogram_points[point].count = 7;
+        histogram_points[point].has_sum = CMT_TRUE;
+        histogram_points[point].sum = 7.0;
+        histogram_points[point].n_explicit_bounds = point_counts[point];
+        histogram_points[point].explicit_bounds = bounds + point_offsets[point];
+        histogram_points[point].n_bucket_counts = 0;
+        if (with_counts > 0) {
+            histogram_points[point].n_bucket_counts = point_counts[point] + 1;
+        }
+        histogram_points[point].bucket_counts = counts;
+        histogram_point_list[point] = &histogram_points[point];
+
+        opentelemetry__proto__metrics__v1__summary_data_point__init(&summary_points[point]);
+        summary_points[point].time_unix_nano = 1;
+        summary_points[point].count = 7;
+        summary_points[point].sum = 7.0;
+        summary_points[point].n_quantile_values = point_counts[point];
+        summary_points[point].quantile_values = quantile_list + point_offsets[point];
+        summary_point_list[point] = &summary_points[point];
+    }
+
+    if (summary_metric) {
+        summary.n_data_points = 2;
+        summary.data_points = summary_point_list;
+        metric.name = "layout_summary";
+        metric.data_case = OPENTELEMETRY__PROTO__METRICS__V1__METRIC__DATA_SUMMARY;
+        metric.summary = &summary;
+    }
+    else {
+        histogram.n_data_points = 2;
+        histogram.data_points = histogram_point_list;
+        histogram.aggregation_temporality =
+            OPENTELEMETRY__PROTO__METRICS__V1__AGGREGATION_TEMPORALITY__AGGREGATION_TEMPORALITY_CUMULATIVE;
+        metric.name = "layout_histogram";
+        metric.data_case = OPENTELEMETRY__PROTO__METRICS__V1__METRIC__DATA_HISTOGRAM;
+        metric.histogram = &histogram;
+    }
+
+    metric_list[0] = &metric;
+    scope_metrics.n_metrics = 1;
+    scope_metrics.metrics = metric_list;
+
+    scope_metrics_list[0] = &scope_metrics;
+    resource_metrics.n_scope_metrics = 1;
+    resource_metrics.scope_metrics = scope_metrics_list;
+
+    resource_metrics_list[0] = &resource_metrics;
+    request.n_resource_metrics = 1;
+    request.resource_metrics = resource_metrics_list;
+
+    payload_size = opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__get_packed_size(&request);
+    packed_payload = calloc(1, payload_size);
+    if (packed_payload == NULL) {
+        return NULL;
+    }
+
+    opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__pack(&request,
+                                                                                         packed_payload);
+
+    payload = cfl_sds_create_len((char *) packed_payload, payload_size);
+    free(packed_payload);
+
+    return payload;
+}
+
+/* Decode the payload and, when accepted, run the msgpack encoder over it:
+ * the encoder walks the metric wide bucket / quantile layout of every
+ * sample, so any per sample storage that is smaller is read out of bounds.
+ */
+static int decode_and_encode_layout_payload(cfl_sds_t payload)
+{
+    int              ret;
+    size_t           offset;
+    char            *msgpack_buffer;
+    size_t           msgpack_size;
+    struct cmt      *context;
+    struct cfl_list  result_list;
+
+    offset = 0;
+    ret = cmt_decode_opentelemetry_create(&result_list, payload, cfl_sds_len(payload),
+                                          &offset);
+    if (ret != CMT_DECODE_OPENTELEMETRY_SUCCESS) {
+        return ret;
+    }
+
+    context = cfl_list_entry_first(&result_list, struct cmt, _head);
+    ret = cmt_encode_msgpack_create(context, &msgpack_buffer, &msgpack_size);
+    TEST_CHECK(ret == 0);
+    if (ret == 0) {
+        cmt_encode_msgpack_destroy(msgpack_buffer);
+    }
+
+    cmt_decode_opentelemetry_destroy(&result_list);
+
+    return CMT_DECODE_OPENTELEMETRY_SUCCESS;
+}
+
+static void test_opentelemetry_histogram_layout_mismatch(void)
+{
+    int       ret;
+    cfl_sds_t payload;
+
+    cmt_initialize();
+
+    /* control: both points use the same layout */
+    payload = generate_layout_otlp_payload(CMT_FALSE, 64, 64, 1, 0);
+    TEST_ASSERT(payload != NULL);
+    ret = decode_and_encode_layout_payload(payload);
+    TEST_CHECK(ret == CMT_DECODE_OPENTELEMETRY_SUCCESS);
+    cfl_sds_destroy(payload);
+
+    /* bucket_counts missing while bounds are present must be rejected */
+    payload = generate_layout_otlp_payload(CMT_FALSE, 64, 64, 0, 0);
+    TEST_ASSERT(payload != NULL);
+    ret = decode_and_encode_layout_payload(payload);
+    TEST_CHECK(ret != CMT_DECODE_OPENTELEMETRY_SUCCESS);
+    cfl_sds_destroy(payload);
+
+    /* second point with a different number of bounds must be rejected */
+    payload = generate_layout_otlp_payload(CMT_FALSE, 64, 1, 1, 0);
+    TEST_ASSERT(payload != NULL);
+    ret = decode_and_encode_layout_payload(payload);
+    TEST_CHECK(ret != CMT_DECODE_OPENTELEMETRY_SUCCESS);
+    cfl_sds_destroy(payload);
+
+    /* second point with the same number of bounds but different values
+     * must be rejected
+     */
+    payload = generate_layout_otlp_payload(CMT_FALSE, 63, 63, 1, 1);
+    TEST_ASSERT(payload != NULL);
+    ret = decode_and_encode_layout_payload(payload);
+    TEST_CHECK(ret != CMT_DECODE_OPENTELEMETRY_SUCCESS);
+    cfl_sds_destroy(payload);
+}
+
+static void test_opentelemetry_summary_layout_mismatch(void)
+{
+    int       ret;
+    cfl_sds_t payload;
+
+    cmt_initialize();
+
+    /* control: both points use the same layout */
+    payload = generate_layout_otlp_payload(CMT_TRUE, 64, 64, 0, 0);
+    TEST_ASSERT(payload != NULL);
+    ret = decode_and_encode_layout_payload(payload);
+    TEST_CHECK(ret == CMT_DECODE_OPENTELEMETRY_SUCCESS);
+    cfl_sds_destroy(payload);
+
+    /* second point without quantile values must be rejected */
+    payload = generate_layout_otlp_payload(CMT_TRUE, 64, 0, 0, 0);
+    TEST_ASSERT(payload != NULL);
+    ret = decode_and_encode_layout_payload(payload);
+    TEST_CHECK(ret != CMT_DECODE_OPENTELEMETRY_SUCCESS);
+    cfl_sds_destroy(payload);
+
+    /* second point with the same number of quantiles but different values
+     * must be rejected
+     */
+    payload = generate_layout_otlp_payload(CMT_TRUE, 63, 63, 0, 1);
+    TEST_ASSERT(payload != NULL);
+    ret = decode_and_encode_layout_payload(payload);
+    TEST_CHECK(ret != CMT_DECODE_OPENTELEMETRY_SUCCESS);
+    cfl_sds_destroy(payload);
+}
+
 TEST_LIST = {
     {"opentelemetry_api_full_roundtrip_with_msgpack", test_opentelemetry_api_full_roundtrip_with_msgpack},
     {"opentelemetry_encode_multi_resource_scope_containers", test_opentelemetry_encode_multi_resource_scope_containers},
@@ -2595,5 +2832,7 @@ TEST_LIST = {
     {"opentelemetry_data_point_batches",               test_opentelemetry_data_point_batches},
     {"opentelemetry_batches_empty_context",            test_opentelemetry_batches_empty_context},
     {"opentelemetry_batches_all_metric_types",         test_opentelemetry_batches_all_metric_types},
+    {"opentelemetry_histogram_layout_mismatch",        test_opentelemetry_histogram_layout_mismatch},
+    {"opentelemetry_summary_layout_mismatch",          test_opentelemetry_summary_layout_mismatch},
     { 0 }
 };

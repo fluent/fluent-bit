@@ -1283,12 +1283,13 @@ void flb_oauth2_destroy(struct flb_oauth2 *ctx)
     flb_sds_destroy(ctx->port);
     flb_sds_destroy(ctx->uri);
 
-    if (ctx->tls) {
-        flb_tls_destroy(ctx->tls);
-    }
-
+    /* Connections must release their TLS sessions before the TLS context. */
     if (ctx->u) {
         flb_upstream_destroy(ctx->u);
+    }
+
+    if (ctx->tls) {
+        flb_tls_destroy(ctx->tls);
     }
 
     flb_oauth2_config_destroy(&ctx->cfg);

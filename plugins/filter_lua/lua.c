@@ -214,9 +214,7 @@ static int cb_lua_init(struct flb_filter_instance *f_ins,
     }
 
     if (ret == -1) {
-        flb_luajit_destroy(ctx->lua);
-        lua_config_destroy(ctx);
-        return -1;
+        goto error;
     }
 
     err = lua_pcall(ctx->lua->state, 0, 0, 0);
@@ -224,15 +222,13 @@ static int cb_lua_init(struct flb_filter_instance *f_ins,
         flb_error("[luajit] invalid lua content, error=%d: %s",
                   err, lua_tostring(lj->state, -1));
         lua_pop(lj->state, 1);
-        lua_config_destroy(ctx);
-        return -1;
+        goto error;
     }
 
 
     if (flb_lua_is_valid_func(ctx->lua->state, ctx->call) != FLB_TRUE) {
         flb_plg_error(ctx->ins, "function %s is not found", ctx->call);
-        lua_config_destroy(ctx);
-        return -1;
+        goto error;
     }
 
     /* determine number of expected arguments */
@@ -242,8 +238,7 @@ static int cb_lua_init(struct flb_filter_instance *f_ins,
     if (ctx->cb_args != 3 && ctx->cb_args != 5) {
         flb_plg_error(ctx->ins, "invalid number of arguments for function '%s': %d",
                       ctx->call, ctx->cb_args);
-        lua_config_destroy(ctx);
-        return -1;
+        goto error;
     }
 
     if (ctx->cb_args == 5) {
@@ -258,13 +253,18 @@ static int cb_lua_init(struct flb_filter_instance *f_ins,
     ctx->packbuf = flb_sds_create_size(1024);
     if (!ctx->packbuf) {
         flb_error("[filter_lua] failed to allocate packbuf");
-        return -1;
+        goto error;
     }
 
     /* Set context */
     flb_filter_set_context(f_ins, ctx);
 
     return 0;
+
+error:
+    flb_luajit_destroy(ctx->lua);
+    lua_config_destroy(ctx);
+    return -1;
 }
 
 

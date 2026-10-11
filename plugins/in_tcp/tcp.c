@@ -46,19 +46,11 @@ static void in_tcp_connections_destroy(struct flb_in_tcp_config *ctx)
 
 static void in_tcp_connections_pause(struct flb_in_tcp_config *ctx)
 {
-    struct mk_list *tmp;
-    struct mk_list *head;
-    struct tcp_conn *conn;
-
-    mk_list_foreach_safe(head, tmp, &ctx->connections) {
-        conn = mk_list_entry(head, struct tcp_conn, _head);
-        if (conn->busy) {
-            conn->pending_close = FLB_TRUE;
-            continue;
-        }
-
-        tcp_conn_del(conn);
-    }
+    /*
+     * Connections served by a suspended or running coroutine are released
+     * by the downstream once their callback unwinds.
+     */
+    in_tcp_connections_destroy(ctx);
 }
 
 static int in_tcp_worker_listener_event(void *data)
@@ -97,6 +89,9 @@ static int in_tcp_start_listener(struct flb_in_tcp_config *ctx,
     }
 
     flb_input_downstream_set(ctx->downstream, ctx->ins);
+
+    /* Connections are accepted and served from event coroutines */
+    flb_stream_enable_async_mode(&ctx->downstream->base);
 
     if (use_collector == FLB_TRUE) {
         ret = flb_input_set_collector_socket(ctx->ins,
@@ -268,28 +263,49 @@ static int in_tcp_collect(struct flb_input_instance *in,
     return in_tcp_collect_ctx(in_context);
 }
 
-static int in_tcp_collect_ctx(struct flb_in_tcp_config *ctx)
+/*
+ * Accept callback: invoked from the connection event coroutine once the
+ * socket has been accepted and the TLS handshake (if any) completed.
+ */
+static int in_tcp_conn_accept(struct flb_connection *connection, void *data)
 {
-    struct flb_connection    *connection;
     struct tcp_conn          *conn;
+    struct flb_in_tcp_config *ctx;
 
-    connection = flb_downstream_conn_get(ctx->downstream);
-
-    if (connection == NULL) {
-        /* connection dropped (e.g. paused) */
-        return 0;
-    }
+    ctx = data;
 
     flb_plg_trace(ctx->ins, "new TCP connection arrived FD=%i", connection->fd);
 
     conn = tcp_conn_add(connection, ctx);
-
     if (conn == NULL) {
         flb_plg_error(ctx->ins, "could not accept new connection");
 
-        flb_downstream_conn_release(connection);
-
         return -1;
+    }
+
+    return 0;
+}
+
+static int in_tcp_collect_ctx(struct flb_in_tcp_config *ctx)
+{
+    int ret;
+
+    /*
+     * Accept the client in its own event coroutine so a TLS handshake or a
+     * read that has to wait for the peer yields back to the event loop
+     * instead of blocking it.
+     */
+    ret = flb_downstream_conn_event_accept(ctx->downstream,
+                                           in_tcp_conn_accept,
+                                           ctx,
+                                           tcp_conn_event,
+                                           MK_EVENT_READ);
+    if (ret != 0) {
+        /*
+         * accept(2) and handshake failures are reported by the core, this
+         * also covers a client which was served and closed immediately.
+         */
+        flb_plg_trace(ctx->ins, "no new connection accepted");
     }
 
     return 0;

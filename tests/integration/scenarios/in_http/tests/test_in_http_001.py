@@ -2,6 +2,8 @@ import http.client
 import json
 import os
 import logging
+from pathlib import Path
+import re
 import socket
 import time
 
@@ -65,6 +67,59 @@ def send_requests(conn, num_requests, headers, json_payload):
             'data': response.read().decode()
         })
     return responses
+
+
+def post_json(connection, message):
+    body = json.dumps({"message": message})
+    connection.request("POST", "/", body=body, headers=create_headers())
+    response = connection.getresponse()
+    response.read()
+    assert response.status == 201
+
+
+def wait_for_connection_close(connection, timeout=10):
+    deadline = time.monotonic() + timeout
+    connection.settimeout(0.25)
+
+    while time.monotonic() < deadline:
+        try:
+            data = connection.recv(1)
+        except (ConnectionResetError, BrokenPipeError):
+            return
+        except socket.timeout:
+            continue
+
+        if not data:
+            return
+
+        pytest.fail(f"HTTP server sent unexpected data while closing an idle connection: {data!r}")
+
+    pytest.fail("HTTP server did not close the connection after its idle timeout")
+
+
+def read_fluent_bit_log(service):
+    return Path(service.flb.log_file).read_text(encoding="utf-8", errors="replace")
+
+
+def wait_for_timeout_log(service):
+    def read_log_with_timeout():
+        log = read_fluent_bit_log(service)
+        if "timed out after 2 seconds (IO timeout)" in log:
+            return log
+
+    return service.service.wait_for_condition(
+        read_log_with_timeout,
+        timeout=5,
+        interval=0.1,
+        description="HTTP connection timeout log",
+    )
+
+
+def timeout_log_pattern(level, peer_port):
+    return re.compile(
+        rf"\[{level}\].*\[downstream\] connection #\d+ from "
+        rf"tcp://127\.0\.0\.1:{peer_port} timed out after 2 seconds \(IO timeout\)"
+    )
 
 
 def assert_connection_open_without_response(connection):
@@ -283,6 +338,166 @@ def test_in_http_accepts_post_with_empty_generic_headers():
     assert b"HTTP/1.1 201" in response
     assert len(forwarded_payloads) == 1
     assert forwarded_payloads[0][0]["message"] == "empty-header"
+
+
+@pytest.mark.parametrize("workers", [1, 4], ids=["single_listener", "workers_4"])
+def test_in_http_idle_timeout_keeps_completed_connections_quiet(workers):
+    service = Service(
+        "in_http_idle_timeout.yaml",
+        extra_env={
+            "IN_HTTP_TEST_WORKERS": workers,
+            "IN_HTTP_TIMEOUT_LOG_ERROR": "true",
+        },
+    )
+    connection = None
+    replacement = None
+
+    try:
+        service.start()
+        connection = create_connection("127.0.0.1", service.flb_listener_port)
+        post_json(connection, "first-request")
+        original_socket = connection.sock
+        peer_port = original_socket.getsockname()[1]
+
+        time.sleep(0.5)
+        post_json(connection, "reused-before-idle-timeout")
+        assert connection.sock is original_socket
+
+        wait_for_connection_close(connection.sock)
+        if workers == 1:
+            timeout_log = wait_for_timeout_log(service)
+            assert timeout_log_pattern("debug", peer_port).search(timeout_log), timeout_log
+        else:
+            timeout_log = read_fluent_bit_log(service)
+        assert not re.search(
+            r"\[error\].*timed out after 2 seconds \(IO timeout\)",
+            timeout_log,
+        ), timeout_log
+
+        replacement = create_connection("127.0.0.1", service.flb_listener_port)
+        post_json(replacement, "reconnected-after-idle-timeout")
+        forwarded_payloads = service.service.wait_for_condition(
+            lambda: list(data_storage["payloads"])
+            if sum(len(payload) for payload in data_storage["payloads"]) == 3
+            else None,
+            timeout=10,
+            interval=0.1,
+            description="three forwarded HTTP records",
+        )
+    finally:
+        if connection is not None:
+            connection.close()
+        if replacement is not None:
+            replacement.close()
+        service.stop()
+
+    messages = [record["message"] for payload in forwarded_payloads for record in payload]
+    assert messages == [
+        "first-request",
+        "reused-before-idle-timeout",
+        "reconnected-after-idle-timeout",
+    ]
+
+
+@pytest.mark.parametrize("completed_request", [False, True], ids=["new_connection", "keepalive"])
+@pytest.mark.parametrize("workers", [1, 4], ids=["single_listener", "workers_4"])
+def test_in_http_incomplete_request_timeout_reports_peer(workers, completed_request):
+    service = Service(
+        "in_http_idle_timeout.yaml",
+        extra_env={
+            "IN_HTTP_TEST_WORKERS": workers,
+            "IN_HTTP_TIMEOUT_LOG_ERROR": "true",
+        },
+    )
+    connection = None
+
+    try:
+        service.start()
+        connection = socket.create_connection(
+            ("127.0.0.1", service.flb_listener_port),
+            timeout=2,
+        )
+        peer_port = connection.getsockname()[1]
+        if completed_request:
+            body = b'{"message":"completed-before-partial"}'
+            connection.sendall(
+                b"POST / HTTP/1.1\r\n"
+                b"Host: localhost\r\n"
+                b"Content-Type: application/json\r\n"
+                + f"Content-Length: {len(body)}\r\n".encode()
+                + b"\r\n"
+                + body
+            )
+            response = bytearray()
+            connection.settimeout(2)
+            while b"\r\n\r\n" not in response:
+                response_chunk = connection.recv(4096)
+                assert response_chunk, "HTTP server closed the completed request connection"
+                response.extend(response_chunk)
+            assert b"HTTP/1.1 201" in response
+
+        connection.sendall(
+            b"POST / HTTP/1.1\r\n"
+            b"Host: localhost\r\n"
+            b"Content-Type: application/json\r\n"
+            b"Content-Length: 100\r\n"
+            b"\r\n"
+            b'{"message":"incomplete'
+        )
+        wait_for_connection_close(connection)
+        timeout_log = wait_for_timeout_log(service)
+        expected_records = 1 if completed_request else 0
+        if expected_records:
+            forwarded_payloads = service.service.wait_for_condition(
+                lambda: list(data_storage["payloads"])
+                if sum(len(payload) for payload in data_storage["payloads"]) == expected_records
+                else None,
+                timeout=5,
+                interval=0.1,
+                description=f"{expected_records} forwarded HTTP records",
+            )
+        else:
+            service.assert_no_forwarded_payloads_for()
+            forwarded_payloads = list(data_storage["payloads"])
+    finally:
+        if connection is not None:
+            connection.close()
+        service.stop()
+
+    assert timeout_log_pattern("error", peer_port).search(timeout_log), timeout_log
+    assert sum(len(payload) for payload in forwarded_payloads) == expected_records
+
+
+def test_in_http_timeout_log_error_can_be_disabled():
+    service = Service(
+        "in_http_idle_timeout.yaml",
+        extra_env={
+            "IN_HTTP_TEST_WORKERS": 1,
+            "IN_HTTP_TIMEOUT_LOG_ERROR": "false",
+        },
+    )
+    connection = None
+
+    try:
+        service.start()
+        connection = socket.create_connection(
+            ("127.0.0.1", service.flb_listener_port),
+            timeout=2,
+        )
+        peer_port = connection.getsockname()[1]
+        connection.sendall(b"POST / HTTP/1.1\r\nHost: localhost\r\n")
+        wait_for_connection_close(connection)
+        timeout_log = wait_for_timeout_log(service)
+    finally:
+        if connection is not None:
+            connection.close()
+        service.stop()
+
+    assert timeout_log_pattern("debug", peer_port).search(timeout_log), timeout_log
+    assert not re.search(
+        r"\[error\].*timed out after 2 seconds \(IO timeout\)",
+        timeout_log,
+    ), timeout_log
 
 
 def test_in_http_accepts_empty_connection_and_transfer_encoding():
@@ -539,7 +754,7 @@ def test_in_http_oauth2_accepts_valid_jwt():
 
 
 class Service:
-    def __init__(self, config_file):
+    def __init__(self, config_file, extra_env=None):
         self.config_file = os.path.abspath(os.path.join(os.path.dirname(__file__), '../config/', config_file))
         test_path = os.path.dirname(os.path.abspath(__file__))
         cert_dir = os.path.abspath(os.path.join(test_path, "../../in_splunk/certificate"))
@@ -552,6 +767,7 @@ class Service:
             extra_env={
                 "CERTIFICATE_TEST": self.tls_crt_file,
                 "PRIVATE_KEY_TEST": self.tls_key_file,
+                **(extra_env or {}),
             },
             pre_start=self._start_receiver,
             post_stop=self._stop_receiver,

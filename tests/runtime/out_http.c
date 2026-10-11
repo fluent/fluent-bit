@@ -1119,6 +1119,12 @@ void flb_test_in_http()
     struct flb_lib_out_cb cb;
     char *buf = "[1, {\"msg\":\"hello world\"}]";
     size_t size = strlen(buf);
+    const char *port;
+
+    port = getenv("FLB_TEST_HTTP_PORT");
+    if (!port) {
+        port = "8888";
+    }
 
     cb.cb   = callback_test;
     cb.data = NULL;
@@ -1143,7 +1149,7 @@ void flb_test_in_http()
 
     ret = flb_input_set(ctx->flb,
                         i_ffd,
-                        "port", "8888",
+                        "port", port,
                         "tag", "http",
                         "host", "127.0.0.1",
                         NULL);
@@ -1165,7 +1171,7 @@ void flb_test_in_http()
                          ctx->o_ffd,
                          "match", "lib",
                          "host", "127.0.0.1",
-                         "port", "8888",
+                         "port", port,
                          NULL);
     TEST_CHECK(ret == 0);
 

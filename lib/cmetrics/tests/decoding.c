@@ -27,6 +27,7 @@
 #include <cmetrics/cmt_encode_prometheus_remote_write.h>
 #include <cmetrics/cmt_decode_prometheus_remote_write.h>
 #include <cmetrics/cmt_decode_statsd.h>
+#include <cmetrics/cmt_cat.h>
 
 #include "cmt_tests.h"
 
@@ -424,6 +425,98 @@ void test_prometheus_remote_write_metadata_matched_by_name()
     }
 }
 
+static cfl_sds_t generate_remote_write_histogram_metadata_samples_payload()
+{
+    Prometheus__WriteRequest request;
+    Prometheus__MetricMetadata metadata;
+    Prometheus__TimeSeries series;
+    Prometheus__Label name_label;
+    Prometheus__Sample sample;
+    Prometheus__MetricMetadata *metadata_list[1];
+    Prometheus__TimeSeries *time_series_list[1];
+    Prometheus__Label *label_list[1];
+    Prometheus__Sample *sample_list[1];
+    size_t payload_size;
+    unsigned char *packed_payload;
+    cfl_sds_t payload;
+
+    prometheus__write_request__init(&request);
+    prometheus__metric_metadata__init(&metadata);
+    prometheus__time_series__init(&series);
+    prometheus__label__init(&name_label);
+    prometheus__sample__init(&sample);
+
+    /* histogram metadata for a series which only carries plain samples */
+    metadata.type = PROMETHEUS__METRIC_METADATA__METRIC_TYPE__HISTOGRAM;
+    metadata.metric_family_name = "foo";
+    metadata.help = "h";
+    metadata_list[0] = &metadata;
+    request.n_metadata = 1;
+    request.metadata = metadata_list;
+
+    name_label.name = "__name__";
+    name_label.value = "foo";
+    label_list[0] = &name_label;
+    series.n_labels = 1;
+    series.labels = label_list;
+    sample.value = 3.5;
+    sample.timestamp = 1700000000000;
+    sample_list[0] = &sample;
+    series.n_samples = 1;
+    series.samples = sample_list;
+
+    time_series_list[0] = &series;
+    request.n_timeseries = 1;
+    request.timeseries = time_series_list;
+
+    payload_size = prometheus__write_request__get_packed_size(&request);
+    packed_payload = calloc(1, payload_size);
+    if (packed_payload == NULL) {
+        return NULL;
+    }
+
+    prometheus__write_request__pack(&request, packed_payload);
+    payload = cfl_sds_create_len((char *) packed_payload, payload_size);
+    free(packed_payload);
+
+    return payload;
+}
+
+void test_prometheus_remote_write_histogram_metadata_samples()
+{
+    int ret;
+    struct cmt *decoded_context = NULL;
+    struct cmt *copy;
+    cfl_sds_t payload;
+
+    cmt_initialize();
+
+    payload = generate_remote_write_histogram_metadata_samples_payload();
+    TEST_CHECK(payload != NULL);
+    if (payload == NULL) {
+        return;
+    }
+
+    ret = cmt_decode_prometheus_remote_write_create(&decoded_context,
+                                                    payload,
+                                                    cfl_sds_len(payload));
+    TEST_CHECK(ret == CMT_DECODE_PROMETHEUS_REMOTE_WRITE_SUCCESS);
+    if (ret == CMT_DECODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
+        /* no histogram without buckets must be created */
+        TEST_CHECK(cfl_list_size(&decoded_context->histograms) == 0);
+        TEST_CHECK(cfl_list_size(&decoded_context->gauges) == 1);
+
+        copy = cmt_create();
+        TEST_CHECK(copy != NULL);
+        if (copy != NULL) {
+            TEST_CHECK(cmt_cat(copy, decoded_context) == 0);
+            cmt_destroy(copy);
+        }
+        cmt_decode_prometheus_remote_write_destroy(decoded_context);
+    }
+    cfl_sds_destroy(payload);
+}
+
 void test_statsd()
 {
     int ret;
@@ -455,12 +548,130 @@ void test_statsd()
 }
 
 
+static int decode_statsd_text(char *text, struct cmt **out_context)
+{
+    int        ret;
+    cfl_sds_t  payload;
+
+    payload = cfl_sds_create(text);
+    if (payload == NULL) {
+        return -1;
+    }
+
+    *out_context = NULL;
+    ret = cmt_decode_statsd_create(out_context, payload, cfl_sds_len(payload),
+                                   CMT_DECODE_STATSD_GAUGE_OBSERVER);
+    cfl_sds_destroy(payload);
+
+    return ret;
+}
+
+static cfl_sds_t create_statsd_tagged_line(size_t tag_count)
+{
+    size_t    index;
+    cfl_sds_t line;
+    cfl_sds_t tmp;
+    char      tag[64];
+
+    line = cfl_sds_create("foo:1|c|#");
+    if (line == NULL) {
+        return NULL;
+    }
+
+    for (index = 0 ; index < tag_count ; index++) {
+        snprintf(tag, sizeof(tag) - 1, "%sk%zu:v%zu", index > 0 ? "," : "",
+                 index, index);
+        tmp = cfl_sds_cat(line, tag, strlen(tag));
+        if (tmp == NULL) {
+            cfl_sds_destroy(line);
+            return NULL;
+        }
+        line = tmp;
+    }
+
+    return line;
+}
+
+void test_statsd_many_tags()
+{
+    int                 ret;
+    struct cmt         *context;
+    struct cmt_counter *counter;
+    struct cmt_metric  *metric;
+    cfl_sds_t           line;
+
+    cmt_initialize();
+
+    /* every distinct tag must be kept */
+    line = create_statsd_tagged_line(17);
+    TEST_ASSERT(line != NULL);
+    ret = decode_statsd_text(line, &context);
+    cfl_sds_destroy(line);
+    TEST_CHECK(ret == CMT_DECODE_STATSD_SUCCESS);
+    if (ret == CMT_DECODE_STATSD_SUCCESS) {
+        counter = cfl_list_entry_first(&context->counters, struct cmt_counter, _head);
+        TEST_CHECK(cfl_list_size(&counter->map->label_keys) == 17);
+        metric = cfl_list_entry_first(&counter->map->metrics, struct cmt_metric, _head);
+        TEST_CHECK(cfl_list_size(&metric->labels) == 17);
+        cmt_decode_statsd_destroy(context);
+    }
+
+    /* the label limit must be enforced without a double free */
+    line = create_statsd_tagged_line(129);
+    TEST_ASSERT(line != NULL);
+    ret = decode_statsd_text(line, &context);
+    cfl_sds_destroy(line);
+    TEST_CHECK(ret != CMT_DECODE_STATSD_SUCCESS);
+    if (ret == CMT_DECODE_STATSD_SUCCESS) {
+        cmt_decode_statsd_destroy(context);
+    }
+
+    /* repeated tag keys must not leak the previous value */
+    ret = decode_statsd_text("foo:1|g|#k:a,k:b", &context);
+    TEST_CHECK(ret == CMT_DECODE_STATSD_SUCCESS);
+    if (ret == CMT_DECODE_STATSD_SUCCESS) {
+        cmt_decode_statsd_destroy(context);
+    }
+}
+
+void test_statsd_malformed_lines()
+{
+    int         index;
+    int         ret;
+    struct cmt *context;
+    char       *lines[] = {
+        "hello",
+        "foo:1|c\n\n",
+        "\nfoo:1|c",
+        "foo:1|c|#bar",
+        "foo:1|c|#bar,k:v",
+        "foo:1|c|#k:v,bar",
+        NULL
+    };
+
+    cmt_initialize();
+
+    /* malformed lines and tags must be skipped, not retried forever */
+    for (index = 0 ; lines[index] != NULL ; index++) {
+        ret = decode_statsd_text(lines[index], &context);
+        TEST_CHECK(ret == CMT_DECODE_STATSD_SUCCESS);
+        TEST_MSG("line %d", index);
+        if (ret == CMT_DECODE_STATSD_SUCCESS) {
+            cmt_decode_statsd_destroy(context);
+        }
+    }
+}
+
 TEST_LIST = {
     {"prometheus_remote_write", test_prometheus_remote_write},
     {"prometheus_remote_write_missing_label_name_rejected", test_prometheus_remote_write_missing_label_name_rejected},
     {"prometheus_remote_write_missing_label_value_no_crash", test_prometheus_remote_write_missing_label_value_no_crash},
     {"prometheus_remote_write_sparse_metadata_histogram", test_prometheus_remote_write_sparse_metadata_histogram},
     {"prometheus_remote_write_metadata_matched_by_name", test_prometheus_remote_write_metadata_matched_by_name},
+    {"prometheus_remote_write_histogram_metadata_samples",
+     test_prometheus_remote_write_histogram_metadata_samples},
     {"statsd", test_statsd},
+    {"statsd_many_tags", test_statsd_many_tags},
+    {"statsd_malformed_lines", test_statsd_malformed_lines},
     { 0 }
 };

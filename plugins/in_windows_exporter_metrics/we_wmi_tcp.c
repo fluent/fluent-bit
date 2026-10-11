@@ -51,7 +51,8 @@ static inline int windows_state_to_index(int state)
             return 4;
         case MIB_TCP_STATE_TIME_WAIT:
             return 5;
-        /* MIB_TCP_STATE_CLOSED is 1 */
+        case MIB_TCP_STATE_CLOSED:
+            return 6;
         case MIB_TCP_STATE_CLOSE_WAIT:
             return 7;
         case MIB_TCP_STATE_LAST_ACK:
@@ -69,12 +70,16 @@ static inline int windows_state_to_index(int state)
 
 static int we_tcp_get_state_metrics(struct flb_we *ctx, const char *af_label)
 {
-    PMIB_TCPTABLE2 tcp_table = NULL;
+    void *tcp_table = NULL;
+    void *new_table;
+    PMIB_TCPTABLE_OWNER_PID tcp4_table;
+    PMIB_TCP6TABLE_OWNER_PID tcp6_table;
     ULONG buffer_size = 0;
     DWORD result;
     DWORD idx = 0;
     int state_index;
     int i = 0;
+    int attempt;
     const char *state_label;
     uint64_t timestamp = cfl_time_now();
     int af_family = (strcmp(af_label, "ipv4") == 0) ? AF_INET : AF_INET6;
@@ -87,34 +92,51 @@ static int we_tcp_get_state_metrics(struct flb_we *ctx, const char *af_label)
         return -1;
     }
 
-    tcp_table = (PMIB_TCPTABLE2)flb_malloc(buffer_size);
-    if (tcp_table == NULL) {
-        flb_plg_error(ctx->ins, "TCP state metrics: could not allocate buffer");
-        return -1;
-    }
+    /* The table can grow between sizing and collection. Bound retries under churn. */
+    for (attempt = 0; attempt < 3; attempt++) {
+        new_table = flb_realloc(tcp_table, buffer_size);
+        if (new_table == NULL) {
+            flb_plg_error(ctx->ins, "TCP state metrics: could not allocate buffer");
+            flb_free(tcp_table);
+            return -1;
+        }
+        tcp_table = new_table;
 
-    result = GetExtendedTcpTable(tcp_table, &buffer_size, FALSE, af_family, TCP_TABLE_OWNER_PID_ALL, 0);
+        result = GetExtendedTcpTable(tcp_table, &buffer_size, FALSE, af_family,
+                                     TCP_TABLE_OWNER_PID_ALL, 0);
+        if (result != ERROR_INSUFFICIENT_BUFFER) {
+            break;
+        }
+    }
     if (result != NO_ERROR) {
         flb_plg_error(ctx->ins, "TCP state metrics: error getting table: %lu", result);
         flb_free(tcp_table);
         return -1;
     }
 
-    for (idx = 0; idx < tcp_table->dwNumEntries; idx++) {
-        state_index = windows_state_to_index(tcp_table->table[idx].dwState);
-        state_counts[state_index]++;
+    if (af_family == AF_INET) {
+        tcp4_table = (PMIB_TCPTABLE_OWNER_PID) tcp_table;
+        for (idx = 0; idx < tcp4_table->dwNumEntries; idx++) {
+            state_index = windows_state_to_index(tcp4_table->table[idx].dwState);
+            state_counts[state_index]++;
+        }
+    }
+    else {
+        tcp6_table = (PMIB_TCP6TABLE_OWNER_PID) tcp_table;
+        for (idx = 0; idx < tcp6_table->dwNumEntries; idx++) {
+            state_index = windows_state_to_index(tcp6_table->table[idx].dwState);
+            state_counts[state_index]++;
+        }
     }
 
     flb_free(tcp_table);
 
     for (i = 0; i < 13; i++) {
-        if (state_counts[i] > 0) {
-            state_label = TCP_STATE_STRINGS[i];
-            labels[0] = af_label;
-            labels[1] = state_label;
-            cmt_gauge_set(ctx->wmi_tcp->connections_state, timestamp,
-                          (double)state_counts[i], 2, (char **)labels);
-        }
+        state_label = TCP_STATE_STRINGS[i];
+        labels[0] = af_label;
+        labels[1] = state_label;
+        cmt_gauge_set(ctx->wmi_tcp->connections_state, timestamp,
+                      (double)state_counts[i], 2, (char **)labels);
     }
 
     return 0;

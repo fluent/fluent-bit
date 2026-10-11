@@ -23,7 +23,7 @@ endif()
 # Monkey Version
 set(MK_VERSION_MAJOR  1)
 set(MK_VERSION_MINOR  8)
-set(MK_VERSION_PATCH  9)
+set(MK_VERSION_PATCH 10)
 set(MK_VERSION_STR "${MK_VERSION_MAJOR}.${MK_VERSION_MINOR}.${MK_VERSION_PATCH}")
 
 # Output paths

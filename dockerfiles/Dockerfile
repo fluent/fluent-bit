@@ -13,7 +13,7 @@
 # docker buildx build --platform "linux/amd64,linux/arm64,linux/arm/v7,linux/s390x" -f ./dockerfiles/Dockerfile.multiarch --build-arg FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v1.8.11.tar.gz ./dockerfiles/
 
 # Set this to the current release version: it gets done so as part of the release.
-ARG RELEASE_VERSION=5.1.3
+ARG RELEASE_VERSION=5.1.4
 
 # For multi-arch builds - assumption is running on an AMD64 host
 FROM multiarch/qemu-user-static:x86_64-arm AS qemu-arm32
@@ -35,6 +35,7 @@ RUN mkdir -p /fluent-bit/bin /fluent-bit/etc /fluent-bit/log
 
 # hadolint ignore=DL3008
 RUN apt-get update && \
+    apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
     build-essential \
     curl \
@@ -240,6 +241,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # hadolint ignore=DL3008
 RUN apt-get update && \
+    apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
     libssl3t64 \
     libcurl4t64 \

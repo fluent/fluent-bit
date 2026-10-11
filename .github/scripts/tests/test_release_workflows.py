@@ -1,0 +1,102 @@
+"""Guard required release metadata dependencies and explicit file transfers."""
+import unittest
+from pathlib import Path
+
+import yaml
+
+ROOT = Path(__file__).resolve().parents[3]
+
+
+def workflow(name):
+    return yaml.safe_load((ROOT / ".github/workflows" / name).read_text())
+
+
+class WorkflowTests(unittest.TestCase):
+    def setUp(self):
+        self.release = workflow("staging-release.yaml")["jobs"]
+
+    def ancestors(self, name, visiting=None):
+        visiting = set() if visiting is None else visiting
+        self.assertNotIn(name, visiting, "workflow dependency cycle")
+        needs = self.release[name].get("needs", [])
+        if isinstance(needs, str):
+            needs = [needs]
+        result = set(needs)
+        for dependency in needs:
+            self.assertIn(dependency, self.release)
+            result.update(self.ancestors(dependency, visiting | {name}))
+        return result
+
+    def test_publication_and_reporting_require_public_verification(self):
+        names = ["yum-packages", "apt-packages", "update-non-linux-s3", "update-base-s3", "packages-index",
+                 "source-s3", "images", "images-arch-specific-legacy-tags", "images-latest-tags", "images-windows",
+                 "images-sign", "upload-cosign-key", "create-release", "create-docs-pr", "create-version-update-pr"]
+        for suffix in names:
+            name = "staging-release-" + suffix
+            with self.subTest(job=name):
+                self.assertIn("staging-release-publish-schema", self.ancestors(name))
+                self.assertNotIn("always()", str(self.release[name].get("if", "")))
+        for name in self.release:
+            self.ancestors(name)
+
+    def test_schema_steps_are_required_and_explicit(self):
+        for name in ("staging-release-validate-schema", "staging-release-publish-schema"):
+            job = self.release[name]
+            self.assertNotIn("continue-on-error", job)
+            for step in job["steps"]:
+                self.assertFalse(step.get("continue-on-error", False))
+                self.assertNotIn("*.json", str(step))
+        publish = str(self.release["staging-release-publish-schema"]["steps"])
+        self.assertIn("fluent-bit-schema-$VERSION.json", publish)
+        self.assertIn("fluent-bit-schema-pretty-$VERSION.json", publish)
+        self.assertIn("release_metadata.py verify", publish)
+        self.assertNotIn("--acl", publish)
+
+    def test_image_publication_is_pinned_to_validated_manifest(self):
+        for name in ("staging-release-images", "staging-release-images-latest-tags"):
+            job = self.release[name]
+            self.assertIn("staging-release-validate-schema", job["needs"])
+            self.assertIn("outputs.digest", job["env"]["SOURCE_DIGEST"])
+            self.assertIn("outputs.debug-digest", job["env"]["SOURCE_DIGEST"])
+            commands = "\n".join(step.get("run", "") for step in job["steps"])
+            self.assertIn("docker://$STAGING_IMAGE_NAME@$SOURCE_DIGEST", commands)
+            self.assertNotIn("docker://$STAGING_IMAGE_NAME:$TAG", commands)
+
+    def test_github_assets_for_every_release_branch(self):
+        steps = self.release["staging-release-create-release"]["steps"]
+        actions = [step for step in steps if "softprops/action-gh-release@" in step.get("uses", "")]
+        self.assertGreaterEqual(len(actions), 8)
+        for step in actions:
+            with self.subTest(branch=step["name"]):
+                self.assertTrue(step["with"]["fail_on_unmatched_files"])
+                self.assertTrue(step["with"]["overwrite_files"])
+                self.assertEqual(step["with"]["files"].splitlines(), [
+                    "metadata/fluent-bit-schema-${{ inputs.version }}.json",
+                    "metadata/fluent-bit-schema-pretty-${{ inputs.version }}.json"])
+        self.assertIn("--github-repository", steps[-1]["run"])
+        for name in ("staging-release-create-docs-pr", "staging-release-create-version-update-pr"):
+            self.assertIn("staging-release-create-release", self.ancestors(name))
+
+    def test_staging_generation_and_transfer(self):
+        jobs = workflow("staging-build.yaml")["jobs"]
+        upload = jobs["staging-build-upload-schema-s3"]
+        self.assertIn("staging-build-images", upload["needs"])
+        for step in upload["steps"]:
+            self.assertFalse(step.get("continue-on-error", False))
+        self.assertIn("release_metadata.py validate", str(upload["steps"]))
+        jobs = workflow("call-build-images.yaml")["jobs"]
+        generate = jobs["call-build-images-generate-schema"]
+        self.assertIn("call-build-container-image-manifests", generate["needs"])
+        self.assertIn("--image \"$IMAGE@$DIGEST\"", str(generate["steps"]))
+        self.assertNotIn("*.json", str(generate["steps"]))
+
+    def test_manual_recovery_uses_same_gate_before_sync(self):
+        script = (ROOT / "packaging/update-repos.sh").read_text()
+        self.assertIn("RELEASE_VERSION:?", script)
+        self.assertIn('"$METADATA_TOOL" compare', script)
+        self.assertIn('"$METADATA_TOOL" verify', script)
+        self.assertLess(script.index('"$METADATA_TOOL" verify'), script.index('aws s3 sync'))
+
+
+if __name__ == "__main__":
+    unittest.main()

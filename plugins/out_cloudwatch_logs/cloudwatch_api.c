@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_thread_pool.h>
 #include <fluent-bit/flb_slist.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_pack.h>
@@ -1687,10 +1688,23 @@ struct log_stream *get_or_create_log_stream(struct flb_cloudwatch *ctx,
     struct mk_list *tmp;
     struct mk_list *head;
     time_t now;
+    struct mk_list *streams;
+    struct flb_out_thread_instance *worker;
+
+    streams = &ctx->streams;
+    if (ctx->ins->is_threaded) {
+        worker = flb_output_thread_instance_get();
+        if (!worker || worker->ins != ctx->ins || !worker->th ||
+            worker->th->id < 0 || worker->th->id >= ctx->stream_worker_count) {
+            flb_plg_error(ctx->ins, "Cannot determine worker stream cache");
+            return NULL;
+        }
+        streams = &ctx->worker_streams[worker->th->id];
+    }
 
     /* check if the stream already exists */
     now = time(NULL);
-    mk_list_foreach_safe(head, tmp, &ctx->streams) {
+    mk_list_foreach_safe(head, tmp, streams) {
         stream = mk_list_entry(head, struct log_stream, _head);
         if (stream->expiration < now) {
             mk_list_del(&stream->_head);
@@ -1727,7 +1741,7 @@ struct log_stream *get_or_create_log_stream(struct flb_cloudwatch *ctx,
     }
     new_stream->expiration = time(NULL) + FOUR_HOURS_IN_SECONDS;
 
-    mk_list_add(&new_stream->_head, &ctx->streams);
+    mk_list_add(&new_stream->_head, streams);
     return new_stream;
 }
 

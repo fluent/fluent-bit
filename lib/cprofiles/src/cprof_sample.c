@@ -178,6 +178,10 @@ int cprof_sample_add_timestamp(struct cprof_sample *sample, uint64_t timestamp)
 void cprof_sample_destroy(struct cprof_sample *sample)
 {
     if (sample != NULL) {
+        if (cfl_list_entry_is_orphan(&sample->_head) == CFL_FALSE) {
+            cfl_list_del(&sample->_head);
+        }
+
         if (sample->location_index) {
             free(sample->location_index);
         }
@@ -262,6 +266,10 @@ struct cprof_value_type *cprof_sample_type_str_create(struct cprof_profile *prof
 void cprof_sample_type_destroy(struct cprof_value_type *sample_type)
 {
     if (sample_type != NULL) {
+        if (cfl_list_entry_is_orphan(&sample_type->_head) == CFL_FALSE) {
+            cfl_list_del(&sample_type->_head);
+        }
+
         free(sample_type);
     }
 }

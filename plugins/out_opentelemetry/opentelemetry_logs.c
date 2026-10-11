@@ -420,6 +420,9 @@ static int log_record_set_attributes(struct opentelemetry_context *ctx,
         }
 
         buf[attr_count] = msgpack_kv_to_otlp_any_value(kv);
+        if (buf[attr_count] == NULL) {
+            goto error;
+        }
         attr_count++;
     }
 
@@ -429,7 +432,13 @@ static int log_record_set_attributes(struct opentelemetry_context *ctx,
         for (i = 0; i < result.data.via.map.size; i++) {
             kv = &result.data.via.map.ptr[i];
             buf[attr_count] = msgpack_kv_to_otlp_any_value(kv);
-            attr_count++;
+            if (buf[attr_count] != NULL) {
+                attr_count++;
+            }
+            else if (kv->key.type == MSGPACK_OBJECT_STR) {
+                /* conversion failure, non-string keys are skipped */
+                goto error;
+            }
         }
         msgpack_unpacked_destroy(&result);
         flb_free(out_buf);
@@ -438,6 +447,14 @@ static int log_record_set_attributes(struct opentelemetry_context *ctx,
     log_record->attributes = buf;
     log_record->n_attributes = attr_count;
     return 0;
+
+error:
+    otlp_kvarray_destroy(buf, attr_count);
+    if (unpacked) {
+        msgpack_unpacked_destroy(&result);
+        flb_free(out_buf);
+    }
+    return -1;
 }
 
 static int pack_trace_id(struct opentelemetry_context *ctx,
@@ -1572,6 +1589,11 @@ start_resource:
             free_log_records(log_records, log_record_count);
             log_record_count = 0;
             scope_log->n_log_records = 0;
+
+            /* Do not let a later batch overwrite this failure. */
+            if (ret != FLB_OK) {
+                break;
+            }
         }
     }
 

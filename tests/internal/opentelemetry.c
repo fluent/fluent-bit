@@ -43,6 +43,7 @@
 #include <ctraces/ctr_encode_opentelemetry.h>
 #include <fluent-otel-proto/fluent-otel.h>
 #include <msgpack.h>
+#include <limits.h>
 #include <string.h>
 #include <fluent-bit/flb_json.h>
 
@@ -2424,7 +2425,7 @@ void test_opentelemetry_traces_otlp_json_roundtrip()
         "\"spanId\":\"0011223344556677\",\"name\":\"op-a\",\"kind\":2,"
         "\"startTimeUnixNano\":\"1704067200000000000\",\"endTimeUnixNano\":\"1704067201000000000\","
         "\"attributes\":[{\"key\":\"http.method\",\"value\":{\"stringValue\":\"GET\"}}],"
-        "\"status\":{\"code\":\"OK\"}}]}]}]}";
+        "\"status\":{\"code\":1}}]}]}]}";
 
     trace_context = flb_opentelemetry_json_traces_to_ctrace(expected,
                                                             strlen(expected),
@@ -2463,6 +2464,70 @@ void test_opentelemetry_traces_otlp_json_roundtrip()
     flb_sds_destroy(normalized_expected);
     flb_sds_destroy(actual);
     ctr_destroy(trace_context);
+}
+
+/* Check complete streams and a truncated second context in both JSON formats. */
+void test_opentelemetry_traces_otlp_json_stream_boundaries(void)
+{
+    int ret;
+    int result;
+    int format;
+    int test_case;
+    char *msgpack_buffer;
+    char *stream;
+    size_t msgpack_size;
+    size_t sizes[3];
+    flb_sds_t actual;
+    struct ctrace *context;
+    const char *input = "{\"resourceSpans\":[{\"scopeSpans\":[{\"spans\":[]}]}]}";
+    flb_sds_t (*converters[2])(const void *, size_t, int *) = {
+        flb_opentelemetry_traces_msgpack_to_otlp_json,
+        flb_opentelemetry_traces_msgpack_to_otlp_json_pretty
+    };
+
+    context = flb_opentelemetry_json_traces_to_ctrace(input, strlen(input), &result);
+    TEST_CHECK(context != NULL);
+    if (context == NULL) {
+        return;
+    }
+
+    ret = ctr_encode_msgpack_create(context, &msgpack_buffer, &msgpack_size);
+    ctr_destroy(context);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        return;
+    }
+
+    stream = flb_malloc(msgpack_size * 2);
+    TEST_CHECK(stream != NULL);
+    if (stream == NULL) {
+        flb_free(msgpack_buffer);
+        return;
+    }
+    memcpy(stream, msgpack_buffer, msgpack_size);
+    memcpy(stream + msgpack_size, msgpack_buffer, msgpack_size);
+    flb_free(msgpack_buffer);
+
+    sizes[0] = msgpack_size;
+    sizes[1] = msgpack_size * 2;
+    sizes[2] = msgpack_size * 2 - 1;
+
+    for (format = 0; format < 2; format++) {
+        for (test_case = 0; test_case < 3; test_case++) {
+            actual = converters[format](stream, sizes[test_case], &result);
+            if (test_case < 2) {
+                TEST_CHECK(actual != NULL);
+                TEST_CHECK(result == FLB_OPENTELEMETRY_OTLP_JSON_SUCCESS);
+            }
+            else {
+                TEST_CHECK(actual == NULL);
+                TEST_CHECK(result == FLB_OPENTELEMETRY_OTLP_JSON_INVALID_ARGUMENT);
+            }
+            flb_sds_destroy(actual);
+        }
+    }
+
+    flb_free(stream);
 }
 
 void test_opentelemetry_logs_otlp_proto_from_plain_logs()
@@ -3410,6 +3475,63 @@ void test_opentelemetry_traces_otlp_proto_roundtrip()
     ctr_destroy(trace_context);
 }
 
+/* Declaration of the cutoff helper from the out_opentelemetry plugin */
+extern void otel_metrics_apply_cutoff(struct cmt *cmt, int threshold_seconds);
+
+/*
+ * Test the metric age cut-off feature in the out_opentelemetry plugin.
+ * Calls the plugin's own flb_otel_metric_expire() — the same function
+ * used by process_metrics() — and verifies that:
+ *   1. Stale data points are dropped with a normal threshold.
+ *   2. The underflow guard (threshold_ns > now → no expire) prevents
+ *      data loss when the threshold would exceed current Unix time.
+ */
+void test_opentelemetry_metrics_cutoff()
+{
+    struct cmt       *cmt;
+    struct cmt_gauge *g;
+    uint64_t          now;
+
+    cmt_initialize();
+
+    /* --- normal cutoff: 200-second-old sample expires, 1-second-old survives --- */
+    cmt = cmt_create();
+    TEST_CHECK(cmt != NULL);
+
+    g = cmt_gauge_create(cmt, "test", "otel", "cutoff", "cutoff test", 1,
+                         (char *[]) {"host"});
+    TEST_CHECK(g != NULL);
+
+    now = cfl_time_now();
+    cmt_gauge_set(g, now - 1000000000ULL,   1.0, 1, (char *[]) {"fresh"});
+    cmt_gauge_set(g, now - 200000000000ULL, 2.0, 1, (char *[]) {"stale"});
+
+    TEST_CHECK(cfl_list_size(&g->map->metrics) == 2);
+
+    /* plugin function: cutoff_threshold = 100 s → stale sample dropped */
+    otel_metrics_apply_cutoff(cmt, 100);
+
+    TEST_CHECK(cfl_list_size(&g->map->metrics) == 1);
+    cmt_destroy(cmt);
+
+    /* --- underflow guard: INT_MAX seconds in ns > current Unix time → nothing dropped --- */
+    cmt = cmt_create();
+    TEST_CHECK(cmt != NULL);
+
+    g = cmt_gauge_create(cmt, "test", "otel", "cutoff2", "cutoff boundary", 1,
+                         (char *[]) {"host"});
+    TEST_CHECK(g != NULL);
+
+    now = cfl_time_now();
+    cmt_gauge_set(g, now - 1000000000ULL, 1.0, 1, (char *[]) {"a"});
+
+    /* plugin function clamps expiration to 0 → cmt_expire never called */
+    otel_metrics_apply_cutoff(cmt, INT_MAX);
+
+    TEST_CHECK(cfl_list_size(&g->map->metrics) == 1);
+    cmt_destroy(cmt);
+}
+
 /* Test list */
 TEST_LIST = {
     { "hex_to_id", test_hex_to_id },
@@ -3429,6 +3551,8 @@ TEST_LIST = {
     { "opentelemetry_logs_otlp_proto_from_plain_logs",
       test_opentelemetry_logs_otlp_proto_from_plain_logs },
     { "opentelemetry_traces_cases", test_opentelemetry_traces_cases },
+    { "opentelemetry_traces_otlp_json_stream_boundaries",
+      test_opentelemetry_traces_otlp_json_stream_boundaries },
     { "opentelemetry_traces_otlp_json_roundtrip",
       test_opentelemetry_traces_otlp_json_roundtrip },
     { "opentelemetry_traces_otlp_proto_roundtrip",
@@ -3447,5 +3571,7 @@ TEST_LIST = {
       test_opentelemetry_metrics_otlp_proto_batches_all_metric_types },
     { "opentelemetry_metrics_otlp_proto_batches_empty_context",
       test_opentelemetry_metrics_otlp_proto_batches_empty_context },
+    { "opentelemetry_metrics_cutoff",
+      test_opentelemetry_metrics_cutoff },
     { 0 }
 };

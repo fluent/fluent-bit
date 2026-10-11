@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_gzip.h>
+#include <fluent-bit/flb_input.h>
 #include <monkey/mk_core.h>
 #include "flb_tests_runtime.h"
 
@@ -882,7 +883,51 @@ void flb_test_in_elasticsearch_index_op_with_plugin_tag()
     flb_test_in_elasticsearch("index", 9210, "es.index");
 }
 
+void flb_test_in_elasticsearch_ingestion_failure()
+{
+    struct flb_lib_out_cb cb_data = {0};
+    struct test_ctx *ctx;
+    struct flb_input_instance *input;
+    struct flb_http_client *client;
+    int ret;
+    size_t bytes_sent;
+    char *payload = "{\"index\":{}}\n{\"message\":\"valid\"}\n";
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        return;
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd, "port", "9211", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_output_set(ctx->flb, ctx->o_ffd, "match", "*", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    input = flb_input_get_instance(ctx->flb->config, ctx->i_ffd);
+    /* Force append failure without pausing the HTTP listener itself. */
+    input->mem_buf_status = FLB_INPUT_PAUSED;
+    ctx->httpc = in_elasticsearch_client_ctx_create(9211);
+    client = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_POST, "/_bulk",
+                             payload, strlen(payload), "127.0.0.1", 9211, NULL, 0);
+    if (TEST_CHECK(client != NULL)) {
+        flb_http_add_header(client, FLB_HTTP_HEADER_CONTENT_TYPE,
+                           strlen(FLB_HTTP_HEADER_CONTENT_TYPE),
+                           NDJSON_CONTENT_TYPE, strlen(NDJSON_CONTENT_TYPE));
+        ret = flb_http_do(client, &bytes_sent);
+        TEST_CHECK(ret == 0);
+        TEST_CHECK(client->resp.status == 500);
+        TEST_MSG("expected HTTP 500, got %d", client->resp.status);
+        flb_http_client_destroy(client);
+    }
+    input->mem_buf_status = FLB_INPUT_RUNNING;
+    flb_upstream_conn_release(ctx->httpc->u_conn);
+    test_ctx_destroy(ctx);
+}
+
 TEST_LIST = {
+    {"ingestion_failure", flb_test_in_elasticsearch_ingestion_failure},
     {"version", flb_test_in_elasticsearch_version},
     {"configured_version", flb_test_in_elasticsearch_version_configured},
     {"index_op", flb_test_in_elasticsearch_index_op},

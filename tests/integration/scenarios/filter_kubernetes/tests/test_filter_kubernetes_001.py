@@ -7,6 +7,7 @@ import sys
 import threading
 
 import pytest
+import yaml
 
 from utils.data_utils import read_file
 from utils.test_service import FluentBitTestService
@@ -269,3 +270,86 @@ def test_filter_kubernetes_pod_association_is_independent_per_instance(tmp_path)
             service.stop()
 
     assert all(server.request_count >= 2 for server in servers)
+
+
+@pytest.mark.parametrize("custom_parser", [False, True])
+@pytest.mark.parametrize("namespace_only", [False, True])
+def test_filter_kubernetes_rejects_unsafe_tag_names(tmp_path, custom_parser, namespace_only):
+    requests = []
+
+    class Handler(_KubeApiHandler):
+        def do_GET(self):
+            requests.append((self.path, self.headers.get("Authorization")))
+            super().do_GET()
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    token_file = tmp_path / "token"
+    token_file.write_text("regression-token", encoding="utf-8")
+    parser_file = tmp_path / "parsers.conf"
+    parser_file.write_text(
+        "[PARSER]\n    Name capture\n    Format regex\n"
+        "    Regex ^(?<pod_name>[^_]+)_(?<namespace_name>[^_]+)_"
+        "(?<container_name>.+)-(?<docker_id>[a-z0-9]{64})\\.log$\n",
+        encoding="utf-8",
+    )
+    invalid = [
+        "../secrets", "default/pods", "default?watch=true", "default#fragment",
+        "default%2fsecrets", "default space", "default\tvalue",
+        "default\r\nX-Injected: yes", "default\x00suffix", ".", "..",
+        "UPPER", "-default", "default-", "default.name", "n" * 64,
+    ]
+    valid = [("pod-0.example", "default"), ("p" * 253, "n" * 63), ("0", "1")]
+    cases = [("pod", name) for name in invalid]
+    if custom_parser:
+        cases += [(name, "default") for name in invalid if name not in ("default.name", "n" * 64)]
+        cases += [("p" * 254, "default"), ("pod..name", "default"), ("pod.", "default")]
+    cases += valid
+    inputs = [
+        {
+            "name": "dummy", "samples": 1,
+            "tag": f"kube.var.log.containers.{pod}_{namespace}_container-{'a' * 64}.log",
+            "dummy": '{"message":"tag-name-case-%d"}' % index,
+        }
+        for index, (pod, namespace) in enumerate(cases)
+    ]
+    kube_filter = {
+        "name": "kubernetes", "match": "kube.*",
+        "kube_url": f"http://127.0.0.1:{server.server_address[1]}",
+        "kube_token_file": str(token_file), "kube_meta_namespace_cache_ttl": "0",
+        "kube_meta_cache_ttl": "0", "kube_tag_prefix": "kube.var.log.containers.",
+        "namespace_labels": True, "namespace_metadata_only": namespace_only,
+    }
+    if custom_parser:
+        kube_filter["regex_parser"] = "capture"
+    config = {
+        "service": {"flush": 1, "grace": 1, "log_level": "info",
+                    "parsers_file": str(parser_file), "http_server": True,
+                    "http_port": "${FLUENT_BIT_HTTP_MONITORING_PORT}"},
+        "pipeline": {"inputs": inputs, "filters": [kube_filter],
+                     "outputs": [{"name": "stdout", "match": "*"}]},
+    }
+    config_file = tmp_path / "tag-names.yaml"
+    config_file.write_text(yaml.safe_dump(config), encoding="utf-8")
+    service = Service(str(config_file))
+    try:
+        service.start()
+        service.service.wait_for_condition(
+            lambda: all(f'"tag-name-case-{index}"' in service.read_log()
+                        for index in range(len(cases))),
+            timeout=30, interval=0.25, description="all tag validation records flushed",
+        )
+    finally:
+        service.stop()
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+    expected = {f"/api/v1/namespaces/{namespace}" for _, namespace in valid}
+    if not namespace_only:
+        expected.update(f"/api/v1/namespaces/{namespace}/pods/{pod}"
+                        for pod, namespace in valid)
+    assert {path for path, _ in requests} == expected
+    assert len(requests) == len(expected)
+    assert all(auth == "Bearer regression-token" for _, auth in requests)

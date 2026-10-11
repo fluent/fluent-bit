@@ -1023,7 +1023,9 @@ static int search_podname_and_namespace(struct flb_kube_meta *meta,
         if (k.via.str.size == 4 && !strncmp(k.via.str.ptr, "name", 4)) {
 
             podname_found = FLB_TRUE;
-            if (!strncmp(v.via.str.ptr, meta->podname, meta->podname_len)) {
+            if (v.type == MSGPACK_OBJECT_STR &&
+                v.via.str.size == meta->podname_len &&
+                !strncmp(v.via.str.ptr, meta->podname, meta->podname_len)) {
                 target_podname_found = FLB_TRUE;
             }
 
@@ -1032,7 +1034,9 @@ static int search_podname_and_namespace(struct flb_kube_meta *meta,
                                                  "namespace", 9)) {
 
             namespace_found = FLB_TRUE;
-            if (!strncmp((char *)v.via.str.ptr,
+            if (v.type == MSGPACK_OBJECT_STR &&
+                v.via.str.size == meta->namespace_len &&
+                !strncmp((char *)v.via.str.ptr,
                           meta->namespace,
                           meta->namespace_len)) {
                 target_namespace_found = FLB_TRUE;
@@ -1754,6 +1758,41 @@ static int merge_pod_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
     return 0;
 }
 
+/*
+ * Kubernetes namespaces are DNS labels (63 bytes); pod names are DNS
+ * subdomains (253 bytes). Validate the captured lengths, including embedded
+ * NULs, before using names in cache filenames or authenticated API paths.
+ * Every accepted byte is an unreserved URI character.
+ */
+static int kube_name_valid(const char *name, int len, int subdomain)
+{
+    int i;
+    int label_start = FLB_TRUE;
+    unsigned char ch;
+
+    if (name == NULL || len <= 0 || len > (subdomain ? 253 : 63)) {
+        return FLB_FALSE;
+    }
+
+    for (i = 0; i < len; i++) {
+        ch = name[i];
+        if ((ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9')) {
+            label_start = FLB_FALSE;
+        }
+        else if (ch == '-' && !label_start && i + 1 < len) {
+            continue;
+        }
+        else if (ch == '.' && subdomain && !label_start && name[i - 1] != '-') {
+            label_start = FLB_TRUE;
+        }
+        else {
+            return FLB_FALSE;
+        }
+    }
+
+    return !label_start;
+}
+
 static inline int parse_regex_tag_data(struct flb_kube *ctx,
                                 const char *tag, int tag_len,
                                 const char *data, size_t data_size,
@@ -1766,7 +1805,7 @@ static inline int parse_regex_tag_data(struct flb_kube *ctx,
     const char *kube_tag_str;
     const char *container = NULL;
     int container_found = FLB_FALSE;
-    int container_length = 0;
+    size_t container_length = 0;
     struct flb_regex_search result;
     msgpack_unpacked mp_result;
     msgpack_object root;
@@ -1784,16 +1823,25 @@ static inline int parse_regex_tag_data(struct flb_kube *ctx,
                 continue;
             }
 
+            if (root.via.array.size < 2 ||
+                root.via.array.ptr[1].type != MSGPACK_OBJECT_MAP) {
+                continue;
+            }
+
             /* Lookup the CONTAINER_NAME key/value */
             map = root.via.array.ptr[1];
             for (i = 0; i < map.via.map.size; i++) {
                 key = map.via.map.ptr[i].key;
-                if (key.via.str.size != 14) {
+                if (key.type != MSGPACK_OBJECT_STR || key.via.str.size != 14) {
                     continue;
                 }
 
                 if (strncmp(key.via.str.ptr, "CONTAINER_NAME", 14) == 0) {
                     val = map.via.map.ptr[i].val;
+                    if (val.type != MSGPACK_OBJECT_STR) {
+                        /* CONTAINER_NAME must be a string, skip the record */
+                        break;
+                    }
                     container = val.via.str.ptr;
                     container_length = val.via.str.size;
                     container_found = FLB_TRUE;
@@ -1841,6 +1889,14 @@ static inline int parse_regex_tag_data(struct flb_kube *ctx,
 
     /* Parse the regex results */
     flb_regex_parse(ctx->regex, &result, cb_results, meta);
+
+    if ((meta->namespace && !kube_name_valid(meta->namespace, meta->namespace_len, FLB_FALSE)) ||
+        (meta->podname && !kube_name_valid(meta->podname, meta->podname_len, FLB_TRUE))) {
+        flb_plg_warn(ctx->ins, "invalid Kubernetes namespace or pod name");
+        flb_kube_meta_release(meta);
+        memset(meta, 0, sizeof(*meta));
+        return -1;
+    }
 
     return 0;
 }

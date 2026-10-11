@@ -316,9 +316,12 @@ static int quoted_string_len(const char *str)
  * 'out' is set to the beginning of the token.
  * 'out_len' is set to the length of the token.
  * 'parse_quotes' is set to FLB_TRUE when quotes shall be considered when tokenizing the 'str'.
+ * 'str_len' is the number of bytes available in 'str', so the remaining input
+ * is not measured again for every token.
  * The function returns offset to next token in the string.
  */
-static int next_token(const char *str, int separator, char **out, int *out_len, int parse_quotes) {
+static int next_token(const char *str, int str_len, int separator, char **out, int *out_len,
+                      int parse_quotes) {
     const char *token_in = str;
     char *token_out;
     int next_separator = 0;
@@ -327,13 +330,13 @@ static int next_token(const char *str, int separator, char **out, int *out_len, 
     int i;
 
     /* Skip leading separators. */
-    while (*token_in == separator) {
+    while (token_in - str < str_len && *token_in == separator) {
         token_in++;
     }
 
     /* Should quotes be parsed? Or is token quoted? If not, copy until separator or the end of string. */
     if (parse_quotes == FLB_FALSE || (*token_in != '"' && *token_in != '\'')) {
-        len = (int)strlen(token_in);
+        len = str_len - (int)(token_in - str);
         next_separator = mk_string_char_search(token_in, separator, len);
         if (next_separator > 0) {
             len = next_separator;
@@ -407,7 +410,7 @@ static struct mk_list *split(const char *line, int separator, int max_split, int
 
     len = strlen(line);
     while (i < len) {
-        end = next_token(line + i, separator, &val, &val_len, quoted);
+        end = next_token(line + i, len - i, separator, &val, &val_len, quoted);
         if (end == -1) {
             flb_error("Parsing failed: %s", line);
             flb_utils_split_free(list);
