@@ -23,7 +23,9 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_config.h>
+#ifdef FLB_HAVE_SQLDB
 #include <fluent-bit/flb_sqldb.h>
+#endif
 #include <fluent-bit/flb_log_event_encoder.h>
 
 #include <systemd/sd-journal.h>
