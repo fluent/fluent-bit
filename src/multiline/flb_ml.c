@@ -1604,6 +1604,7 @@ int flb_ml_flush_stream_group(struct flb_ml_parser *ml_parser,
     int ret;
     int size;
     int len;
+    int key_id;
     size_t off = 0;
     msgpack_object map;
     msgpack_object k;
@@ -1690,8 +1691,17 @@ int flb_ml_flush_stream_group(struct flb_ml_parser *ml_parser,
             }
         }
         else {
-            /* The buffer is empty, so just pack the original map from the context */
-            msgpack_pack_object(&mp_pck, map);
+            key_id = -1;
+            if (parser_i->drop_empty_content) {
+                key_id = get_key_id(&map, parser_i->key_content);
+            }
+
+            if (key_id == -1 ||
+                map.via.map.ptr[key_id].val.type != MSGPACK_OBJECT_STR ||
+                map.via.map.ptr[key_id].val.via.str.size > 0) {
+                /* The buffer is empty, so just pack the original map from the context */
+                msgpack_pack_object(&mp_pck, map);
+            }
         }
 
         msgpack_unpacked_destroy(&result);

@@ -254,6 +254,9 @@ struct flb_ml_parser_ins {
 
     /* Link to struct flb_ml_group->parsers */
     struct mk_list _head;
+
+    /* drop a flush whose key_content is an empty string (off) */
+    int drop_empty_content;
 };
 
 struct flb_ml_group {
