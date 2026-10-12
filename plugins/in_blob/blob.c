@@ -475,7 +475,15 @@ static ssize_t recursive_file_search(struct blob_ctx *ctx,
             continue;
         }
 
-        if (is_directory(glob_context.gl_pathv[index],
+        /*
+         * Descend only while a recursive pattern is still active. After the
+         * recursive wildcard is consumed, a directory match is terminal.
+         * Searching it again appends an empty suffix, globs the same
+         * directory, and overflows the stack. Files inside those directories
+         * are reached by the descent call above.
+         */
+        if (recursive_search_flag == FLB_TRUE &&
+            is_directory(glob_context.gl_pathv[index],
                          &fs_entry_metadata)) {
             local_path[0] = '\0';
 
