@@ -78,7 +78,7 @@ jobs:
           SOURCE_FILENAME_PREFIX: source-${{ inputs.version }}
 
       - name: Upload the source artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: source-${{ inputs.version }}
           path: source-packages/*
@@ -150,7 +150,7 @@ jobs:
         working-directory: packaging
 
       - name: Upload the ${{ steps.formatted_distro.outputs.replaced }} artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: packages-${{ inputs.version }}-${{ steps.formatted_distro.outputs.replaced }}
           path: packaging/packages/
