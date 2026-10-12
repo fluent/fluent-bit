@@ -37,6 +37,11 @@ enum flb_oauth2_auth_method {
     FLB_OAUTH2_AUTH_METHOD_PRIVATE_KEY_JWT = 2
 };
 
+enum flb_oauth2_token_source {
+    FLB_OAUTH2_TOKEN_SOURCE_CLIENT_CREDENTIALS = 0,
+    FLB_OAUTH2_TOKEN_SOURCE_METADATA = 1
+};
+
 struct flb_oauth2_config {
     int enabled;
     flb_sds_t token_url;
@@ -53,6 +58,11 @@ struct flb_oauth2_config {
 
     enum flb_oauth2_auth_method auth_method;
 
+    flb_sds_t token_source_str;
+    int token_source;
+    flb_sds_t metadata_url;
+    flb_sds_t metadata_header;
+
     int jwt_ttl;
     int refresh_skew;
     int timeout;
@@ -60,7 +70,6 @@ struct flb_oauth2_config {
 };
 
 struct flb_oauth2 {
-    flb_sds_t auth_url;
     flb_sds_t payload;
 
     /* Parsed URL */
@@ -117,5 +126,9 @@ int flb_oauth2_parse_json_response(const char *json_data, size_t json_size,
                         struct flb_oauth2 *ctx);
 
 struct mk_list *flb_oauth2_get_config_map(struct flb_config *config);
+
+/* Parse cfg->token_source_str into cfg->token_source.
+ * Returns 0 on success or no-op (NULL/empty), -1 on parse error or NULL cfg. */
+int flb_oauth2_config_resolve_token_source(struct flb_oauth2_config *cfg);
 
 #endif
