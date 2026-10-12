@@ -29,6 +29,9 @@
 
 #include "expect.h"
 #include <msgpack.h>
+#include <strings.h>
+
+#define FLB_EXP_REDACTED "[REDACTED]"
 
 static int key_to_type(char *key)
 {
@@ -272,11 +275,134 @@ static char *ra_value_type_to_str(struct flb_ra_value *val)
     return "UNKNOWN";
 }
 
+static int key_name_is_sensitive(const char *key, size_t len)
+{
+    int i;
+    flb_sds_t tmp;
+    static const char *patterns[] = {
+        "password", "passwd", "secret", "token", "credential",
+        "apikey", "api_key", "authorization", "private", "sensitive",
+        NULL
+    };
+
+    if (!key || len == 0) {
+        return FLB_FALSE;
+    }
+
+    tmp = flb_sds_create_len(key, len);
+    if (!tmp) {
+        return FLB_FALSE;
+    }
+
+    for (i = 0; patterns[i] != NULL; i++) {
+        if (strcasestr(tmp, patterns[i]) != NULL) {
+            flb_sds_destroy(tmp);
+            return FLB_TRUE;
+        }
+    }
+
+    flb_sds_destroy(tmp);
+    return FLB_FALSE;
+}
+
+static int rule_key_is_sensitive(struct flb_expect_rule *rule)
+{
+    if (rule->type == FLB_EXP_KEY_VAL_EQ) {
+        return key_name_is_sensitive(rule->ra->pattern,
+                                     flb_sds_len(rule->ra->pattern));
+    }
+
+    return key_name_is_sensitive(rule->value, flb_sds_len(rule->value));
+}
+
+static void pack_redacted_object(msgpack_packer *pck, msgpack_object *obj);
+
+static void pack_redacted_map(msgpack_packer *pck, msgpack_object_map *map)
+{
+    int i;
+    msgpack_object_kv *kv;
+
+    msgpack_pack_map(pck, map->size);
+    kv = map->ptr;
+    for (i = 0; i < map->size; i++) {
+        msgpack_pack_object(pck, kv[i].key);
+        if (kv[i].key.type == MSGPACK_OBJECT_STR &&
+            key_name_is_sensitive(kv[i].key.via.str.ptr,
+                                  kv[i].key.via.str.size)) {
+            msgpack_pack_str(pck, sizeof(FLB_EXP_REDACTED) - 1);
+            msgpack_pack_str_body(pck, FLB_EXP_REDACTED,
+                                  sizeof(FLB_EXP_REDACTED) - 1);
+        }
+        else {
+            pack_redacted_object(pck, &kv[i].val);
+        }
+    }
+}
+
+static void pack_redacted_array(msgpack_packer *pck, msgpack_object_array *array)
+{
+    int i;
+
+    msgpack_pack_array(pck, array->size);
+    for (i = 0; i < array->size; i++) {
+        pack_redacted_object(pck, &array->ptr[i]);
+    }
+}
+
+static void pack_redacted_object(msgpack_packer *pck, msgpack_object *obj)
+{
+    if (obj->type == MSGPACK_OBJECT_MAP) {
+        pack_redacted_map(pck, &obj->via.map);
+    }
+    else if (obj->type == MSGPACK_OBJECT_ARRAY) {
+        pack_redacted_array(pck, &obj->via.array);
+    }
+    else {
+        msgpack_pack_object(pck, *obj);
+    }
+}
+
+static char *record_to_redacted_json_str(size_t size, const msgpack_object *obj,
+                                         int escape_unicode)
+{
+    msgpack_sbuffer sbuf;
+    msgpack_packer pck;
+    flb_sds_t json_sds;
+    char *json;
+
+    if (obj->type != MSGPACK_OBJECT_MAP) {
+        return flb_msgpack_to_json_str(size, obj, escape_unicode);
+    }
+
+    msgpack_sbuffer_init(&sbuf);
+    msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
+    pack_redacted_object(&pck, (msgpack_object *) obj);
+
+    json_sds = flb_msgpack_raw_to_json_sds(sbuf.data, sbuf.size, escape_unicode);
+    msgpack_sbuffer_destroy(&sbuf);
+
+    if (!json_sds) {
+        return NULL;
+    }
+
+    json = flb_strdup(json_sds);
+    flb_sds_destroy(json_sds);
+
+    return json;
+}
+
+static char *record_content_json(struct flb_config *config, msgpack_object map,
+                                   size_t size)
+{
+    return record_to_redacted_json_str(size, &map, config->json_escape_unicode);
+}
+
 static int rule_apply(struct flb_expect *ctx, msgpack_object map, struct flb_config *config)
 {
     int n = 0;
     char *json;
     size_t size = 1024;
+    const char *actual_value;
     struct mk_list *head;
     struct flb_expect_rule *rule;
     struct flb_ra_value *val;
@@ -292,7 +418,7 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map, struct flb_con
                 continue;
             }
 
-            json = flb_msgpack_to_json_str(size, &map, config->json_escape_unicode);
+            json = record_content_json(config, map, size);
             flb_plg_error(ctx->ins,
                           "exception on rule #%i 'key_exists', key '%s' "
                           "not found. Record content:\n%s",
@@ -305,7 +431,7 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map, struct flb_con
                 n++;
                 continue;
             }
-            json = flb_msgpack_to_json_str(size, &map, config->json_escape_unicode);
+            json = record_content_json(config, map, size);
             flb_plg_error(ctx->ins,
                           "exception on rule #%i 'key_not_exists', key '%s' "
                           "exists. Record content:\n%s",
@@ -316,7 +442,7 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map, struct flb_con
         }
         else if (rule->type == FLB_EXP_KEY_VAL_NULL) {
             if (!val) {
-                json = flb_msgpack_to_json_str(size, &map, config->json_escape_unicode);
+                json = record_content_json(config, map, size);
                 flb_plg_error(ctx->ins,
                               "exception on rule #%i 'key_val_is_null', "
                               "key '%s' not found. Record content:\n%s",
@@ -325,7 +451,7 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map, struct flb_con
                 return FLB_FALSE;
             }
             if (val->type != FLB_RA_NULL) {
-                json = flb_msgpack_to_json_str(size, &map, config->json_escape_unicode);
+                json = record_content_json(config, map, size);
                 flb_plg_error(ctx->ins,
                               "exception on rule #%i 'key_val_is_null', "
                               "key '%s' contains a value type '%s'. "
@@ -340,7 +466,7 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map, struct flb_con
         }
         else if (rule->type == FLB_EXP_KEY_VAL_NOT_NULL) {
             if (!val) {
-                json = flb_msgpack_to_json_str(size, &map, config->json_escape_unicode);
+                json = record_content_json(config, map, size);
                 flb_plg_error(ctx->ins,
                               "exception on rule #%i 'key_val_is_not_null', "
                               "key '%s' not found. Record content:\n%s",
@@ -349,7 +475,7 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map, struct flb_con
                 return FLB_FALSE;
             }
             if (val->type == FLB_RA_NULL) {
-                json = flb_msgpack_to_json_str(size, &map, config->json_escape_unicode);
+                json = record_content_json(config, map, size);
                 flb_plg_error(ctx->ins,
                               "exception on rule #%i 'key_val_is_not_null', "
                               "key '%s' contains a value type '%s'. "
@@ -364,7 +490,7 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map, struct flb_con
         }
         else if (rule->type == FLB_EXP_KEY_VAL_EQ) {
             if (!val) {
-                json = flb_msgpack_to_json_str(size, &map, config->json_escape_unicode);
+                json = record_content_json(config, map, size);
                 flb_plg_error(ctx->ins,
                               "exception on rule #%i 'key_val_is_null', "
                               "key '%s' not found. Record content:\n%s",
@@ -376,12 +502,17 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map, struct flb_con
             if (val->type == FLB_RA_STRING) {
                 if (flb_sds_cmp(val->val.string, rule->expect,
                                 flb_sds_len(rule->expect)) != 0) {
-                    json = flb_msgpack_to_json_str(size, &map, config->json_escape_unicode);
+                    actual_value = val->val.string;
+                    if (rule_key_is_sensitive(rule)) {
+                        actual_value = FLB_EXP_REDACTED;
+                    }
+
+                    json = record_content_json(config, map, size);
                     flb_plg_error(ctx->ins,
                                   "exception on rule #%i 'key_val_eq', "
                                   "key value '%s' is different than "
                                   "expected: '%s'. Record content:\n%s",
-                                  n, val->val.string, rule->expect, json);
+                                  n, actual_value, rule->expect, json);
                     flb_free(json);
                     flb_ra_key_value_destroy(val);
                     return FLB_FALSE;
