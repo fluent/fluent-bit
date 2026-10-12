@@ -147,7 +147,7 @@ void flb_test_simple_log(void)
 
     /*  Verify that the size throttle plugin differentiates logs by a non nested name_field.
        We put 9 logs 32 bytes long which is 288 bytes of total or rate of 9.6.
-       If all logs passed this means that the the plugin sees them as two seperates tipes or
+       If all logs passed this means that the plugin sees them as two seperates tipes or
        does now work at all.Or each logs is seen as different group of logs. */
     for (i = 0; i < 9; i++) {
         /*Make message with sream: stdout */
@@ -276,7 +276,7 @@ void test_nestest_name_fields(void)
 
     /*  Verify that the size throttle plugin differentiates logs by a nested name_field and nested log_field.
        We put 9 logs 32 bytes long which is 288 bytes of total or rate of 9.6.
-       If all logs passed this means that the the plugin sees them as two seperates tipes or
+       If all logs passed this means that the plugin sees them as two seperates tipes or
        does now work at all.Or each logs is seen as different group of logs. */
     for (i = 0; i < 9; i++) {
         /*Make message with sream: stdout */
@@ -429,7 +429,7 @@ void test_default_name_field(void)
 
     /*  Verify that the size throttle plugin do not differentiates logs by name_field.
        We put 8 logs 32 bytes long which is 256 bytes of total or rate of 8.53.
-       If all logs passed this means that the the plugin sees them as one or
+       If all logs passed this means that the plugin sees them as one or
        does now work at all.Or each logs is seen as different group of logs. */
     for (i = 0; i < 4; i++) {
         /*Make message with sream: stdout */
