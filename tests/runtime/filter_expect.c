@@ -3,6 +3,10 @@
 #include <fluent-bit.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_sds.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 #include "flb_tests_runtime.h"
 
 struct test_ctx {
@@ -539,6 +543,134 @@ void flb_test_key_val_eq_not_matched()
     test_ctx_destroy(ctx);
 }
 
+static char *read_file_to_string(const char *path)
+{
+    FILE *fp;
+    long file_size;
+    char *buf;
+
+    fp = fopen(path, "r");
+    if (!fp) {
+        return NULL;
+    }
+
+    if (fseek(fp, 0, SEEK_END) != 0) {
+        fclose(fp);
+        return NULL;
+    }
+
+    file_size = ftell(fp);
+    if (file_size < 0) {
+        fclose(fp);
+        return NULL;
+    }
+
+    if (fseek(fp, 0, SEEK_SET) != 0) {
+        fclose(fp);
+        return NULL;
+    }
+
+    buf = flb_malloc(file_size + 1);
+    if (!buf) {
+        fclose(fp);
+        return NULL;
+    }
+
+    if (fread(buf, 1, file_size, fp) != (size_t) file_size) {
+        flb_free(buf);
+        fclose(fp);
+        return NULL;
+    }
+
+    buf[file_size] = '\0';
+    fclose(fp);
+
+    return buf;
+}
+
+void flb_test_mismatch_redacts_sensitive_fields()
+{
+    flb_ctx_t *flb;
+    int i_ffd;
+    int f_ffd;
+    int o_ffd;
+    int len;
+    int ret;
+    int bytes;
+    int log_fd;
+    char *input;
+    char *log_content;
+    char log_path[] = "/tmp/flb_expect_redact_test_XXXXXX";
+
+    log_fd = mkstemp(log_path);
+    if (!TEST_CHECK(log_fd >= 0)) {
+        TEST_MSG("mkstemp failed");
+        return;
+    }
+    close(log_fd);
+
+    flb = flb_create();
+    if (!TEST_CHECK(flb != NULL)) {
+        unlink(log_path);
+        return;
+    }
+
+    flb_service_set(flb,
+                    "Flush", "0.200000000",
+                    "Grace", "1",
+                    "Log_Level", "error",
+                    "Log_File", log_path,
+                    NULL);
+
+    i_ffd = flb_input(flb, (char *) "lib", NULL);
+    TEST_CHECK(i_ffd >= 0);
+    flb_input_set(flb, i_ffd, "tag", "test", NULL);
+
+    f_ffd = flb_filter(flb, (char *) "expect", NULL);
+    TEST_CHECK(f_ffd >= 0);
+    flb_filter_set(flb, f_ffd,
+                   "match", "*",
+                   "action", "warn",
+                   "key_exists", "missing_key",
+                   NULL);
+
+    o_ffd = flb_output(flb, (char *) "null", NULL);
+    TEST_CHECK(o_ffd >= 0);
+    flb_output_set(flb, o_ffd, "match", "test", NULL);
+
+    ret = flb_start(flb);
+    TEST_CHECK(ret == 0);
+
+    input = "[0, {\"field1\":\"visible\", \"api_token\":\"super-secret-token\"}]";
+    len = strlen(input);
+    bytes = flb_lib_push(flb, i_ffd, input, len);
+    TEST_CHECK(bytes == len);
+    flb_time_msleep(500);
+
+    flb_stop(flb);
+    flb_destroy(flb);
+
+    log_content = read_file_to_string(log_path);
+    if (!TEST_CHECK(log_content != NULL)) {
+        TEST_MSG("failed to read log file");
+        unlink(log_path);
+        return;
+    }
+
+    if (!TEST_CHECK(strstr(log_content, "super-secret-token") == NULL)) {
+        TEST_MSG("sensitive value leaked in expect error log");
+    }
+    if (!TEST_CHECK(strstr(log_content, "[REDACTED]") != NULL)) {
+        TEST_MSG("expected redacted marker in expect error log");
+    }
+    if (!TEST_CHECK(strstr(log_content, "visible") != NULL)) {
+        TEST_MSG("expected non-sensitive field value in expect error log");
+    }
+
+    flb_free(log_content);
+    unlink(log_path);
+}
+
 
 TEST_LIST = {
     {"key_exists_matched", flb_test_key_exists_matched},
@@ -551,5 +683,6 @@ TEST_LIST = {
     {"key_val_is_not_null_not_matched", flb_test_key_val_is_not_null_not_matched},
     {"key_val_eq_matched", flb_test_key_val_eq_matched},
     {"key_val_eq_not_matched", flb_test_key_val_eq_not_matched},
+    {"mismatch_redacts_sensitive_fields", flb_test_mismatch_redacts_sensitive_fields},
     {NULL, NULL}
 };
