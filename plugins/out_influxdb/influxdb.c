@@ -74,6 +74,8 @@ static int influxdb_format(struct flb_config *config,
     char *str = NULL;
     size_t str_size;
     char tmp[128];
+    int prefix_match = 0;
+    int prefix_offset = 0;
     msgpack_object map;
     struct flb_time tm;
     struct influxdb_bulk *bulk = NULL;
@@ -124,8 +126,21 @@ static int influxdb_format(struct flb_config *config,
             ctx->seq++;
         }
 
+        /* Find the overlap betwen the tag and a given prefix (to be removed):
+        If the prefix matches the tag for exactly the length of the prefix and
+        the tag is longer than the prefix, we have a valid match. */
+        prefix_offset = 0;
+        prefix_match = strncmp(tag, ctx->prefix, ctx->prefix_len);
+        if (prefix_match == 0) {
+            if (tag_len > ctx->prefix_len) {
+                prefix_offset = ctx->prefix_len;
+            }
+        }
+
+        /* Read the tag offset by the length of the prefix to remove it. */
         ret = influxdb_bulk_append_header(bulk_head,
-                                          tag, tag_len,
+                                          tag + prefix_offset,
+                                          tag_len - prefix_offset,
                                           seq,
                                           ctx->seq_name, ctx->seq_len);
         if (ret == -1) {
@@ -369,6 +384,15 @@ static int cb_influxdb_init(struct flb_output_instance *ins, struct flb_config *
     }
     ctx->seq_len = strlen(ctx->seq_name);
 
+    /* prefix to be removed from the tag */
+    tmp = flb_output_get_property("strip_prefix", ins);
+    if (!tmp) {
+        ctx->prefix = flb_strdup("");
+    } else {
+        ctx->prefix = flb_strdup(tmp);
+    }
+    ctx->prefix_len = strlen(ctx->prefix);
+
     if (ctx->custom_uri) {
         /* custom URI endpoint (e.g: Grafana */
         if (ctx->custom_uri[0] != '/') {
@@ -595,6 +619,10 @@ static int cb_influxdb_exit(void *data, struct flb_config *config)
         flb_free(ctx->seq_name);
     }
 
+    if (ctx->prefix) {
+        flb_free(ctx->prefix);
+    }
+
     flb_upstream_destroy(ctx->u);
     flb_free(ctx);
 
@@ -695,6 +723,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "add_integer_suffix", "false",
      0, FLB_TRUE, offsetof(struct flb_influxdb, use_influxdb_integer),
      "Use influxdb line protocol's integer type suffix."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "strip_prefix", NULL,
+     0, FLB_FALSE, 0,
+     "Prefix to be removed from the record tag when writing influx measurements."
     },
 
     /* EOF */
