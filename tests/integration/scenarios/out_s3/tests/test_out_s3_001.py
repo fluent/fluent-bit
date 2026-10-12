@@ -625,6 +625,20 @@ def test_out_s3_format_parquet_uploads_parquet_with_zstd():
     assert "Content-Encoding" not in request["headers"]
 
 
+def test_out_s3_format_parquet_omits_empty_objects_before_inference():
+    service = Service("out_s3_parquet_omit_empty_objects.yaml")
+    _start_or_skip_unsupported_columnar_format(service, "requires parquet-glib")
+    request = service.wait_for_request()
+    service.stop()
+
+    assert request["method"] == "PUT"
+    assert request["path"].startswith("/test-bucket/payloads/out_s3/")
+    body = request["body"]
+    assert body[:4] == b"PAR1"
+    assert body[-4:] == b"PAR1"
+    assert "Content-Encoding" not in request["headers"]
+
+
 def test_out_s3_format_parquet_compression_none_is_accepted():
     # 'compression none' must be explicitly accepted (not rejected as an
     # unknown codec) and produce an uncompressed Parquet object with no

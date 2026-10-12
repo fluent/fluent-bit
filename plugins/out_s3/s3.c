@@ -1282,6 +1282,13 @@ static int cb_s3_init(struct flb_output_instance *ins,
         }
     }
 
+    if (ctx->parquet_omit_empty_objects == FLB_TRUE &&
+        ctx->s3_format != FLB_S3_FORMAT_PARQUET) {
+        flb_plg_error(ctx->ins,
+                      "'parquet_omit_empty_objects' requires format 'parquet'");
+        return -1;
+    }
+
     tmp = flb_output_get_property("content_type", ins);
     if (tmp) {
         ctx->content_type = (char *) tmp;
@@ -4875,12 +4882,14 @@ static flb_sds_t s3_format_event_chunk(struct flb_s3 *ctx,
                                                 config);
     }
 
-    return flb_pack_msgpack_to_json_format(event_chunk->data,
-                                           event_chunk->size,
-                                           FLB_PACK_JSON_FORMAT_LINES,
-                                           ctx->json_date_format,
-                                           ctx->date_key,
-                                           config->json_escape_unicode);
+    return flb_pack_msgpack_to_json_format_ex(
+            event_chunk->data,
+            event_chunk->size,
+            FLB_PACK_JSON_FORMAT_LINES,
+            ctx->json_date_format,
+            ctx->date_key,
+            config->json_escape_unicode,
+            ctx->parquet_omit_empty_objects);
 }
 
 static int s3_flush_logs(struct flb_event_chunk *event_chunk,
@@ -5147,6 +5156,14 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "json_date_key", "date",
      0, FLB_TRUE, offsetof(struct flb_s3, json_date_key),
     "Specifies the name of the date field in output."
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "parquet_omit_empty_objects", "false",
+     0, FLB_TRUE, offsetof(struct flb_s3, parquet_omit_empty_objects),
+     "Omit recursively empty JSON objects before inferring a Parquet schema. "
+     "Empty objects in arrays are removed while preserving the order of the "
+     "remaining elements. "
+     "This option is disabled by default."
     },
     {
      FLB_CONFIG_MAP_SIZE, "total_file_size", "100000000",

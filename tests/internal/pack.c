@@ -7,6 +7,7 @@
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_coro.h>
+#include <fluent-bit/flb_log_event.h>
 #include <monkey/mk_core.h>
 #include <msgpack/unpack_define.h>
 
@@ -1367,6 +1368,198 @@ void test_json_date_epoch_ms()
     test_json_date("123456789123", FLB_PACK_JSON_DATE_EPOCH_MS);
 }
 
+void test_json_omit_empty_objects()
+{
+    flb_sds_t default_json;
+    flb_sds_t pruned_json;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
+    const char *expected;
+
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    /* [timestamp, body] */
+    msgpack_pack_array(&mp_pck, 2);
+    msgpack_pack_int64(&mp_pck, 0);
+    msgpack_pack_map(&mp_pck, 3);
+
+    msgpack_pack_str_with_body(&mp_pck, "keep", 4);
+    msgpack_pack_str_with_body(&mp_pck, "value", 5);
+
+    msgpack_pack_str_with_body(&mp_pck, "request", 7);
+    msgpack_pack_map(&mp_pck, 5);
+    msgpack_pack_str_with_body(&mp_pck, "id", 2);
+    msgpack_pack_str_with_body(&mp_pck, "r1", 2);
+    msgpack_pack_str_with_body(&mp_pck, "empty", 5);
+    msgpack_pack_map(&mp_pck, 0);
+    msgpack_pack_str_with_body(&mp_pck, "cascade", 7);
+    msgpack_pack_map(&mp_pck, 1);
+    msgpack_pack_str_with_body(&mp_pck, "child", 5);
+    msgpack_pack_map(&mp_pck, 0);
+    msgpack_pack_str_with_body(&mp_pck, "empty_array", 11);
+    msgpack_pack_array(&mp_pck, 0);
+    msgpack_pack_str_with_body(&mp_pck, "items", 5);
+    msgpack_pack_array(&mp_pck, 2);
+    msgpack_pack_map(&mp_pck, 0);
+    msgpack_pack_map(&mp_pck, 1);
+    msgpack_pack_str_with_body(&mp_pck, "name", 4);
+    msgpack_pack_str_with_body(&mp_pck, "ok", 2);
+
+    msgpack_pack_str_with_body(&mp_pck, "drop", 4);
+    msgpack_pack_map(&mp_pck, 0);
+
+    default_json = flb_pack_msgpack_to_json_format_ex(
+            mp_sbuf.data, mp_sbuf.size,
+            FLB_PACK_JSON_FORMAT_LINES,
+            FLB_PACK_JSON_DATE_EPOCH,
+            NULL, FLB_TRUE, FLB_FALSE);
+    TEST_CHECK(default_json != NULL);
+    if (default_json != NULL) {
+        TEST_CHECK(strstr(default_json, "\"empty\":{}") != NULL);
+        TEST_CHECK(strstr(default_json, "\"drop\":{}") != NULL);
+    }
+
+    pruned_json = flb_pack_msgpack_to_json_format_ex(
+            mp_sbuf.data, mp_sbuf.size,
+            FLB_PACK_JSON_FORMAT_LINES,
+            FLB_PACK_JSON_DATE_EPOCH,
+            NULL, FLB_TRUE, FLB_TRUE);
+    TEST_CHECK(pruned_json != NULL);
+    expected =
+        "{\"keep\":\"value\",\"request\":{\"id\":\"r1\","
+        "\"empty_array\":[],\"items\":[{\"name\":\"ok\"}]}}\n";
+    if (pruned_json != NULL) {
+        TEST_CHECK(strcmp(pruned_json, expected) == 0);
+    }
+
+    flb_sds_destroy(default_json);
+    flb_sds_destroy(pruned_json);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+}
+
+static void pack_test_event_time(msgpack_packer *packer, int32_t seconds)
+{
+    uint32_t value;
+    char ext_data[8] = {0};
+
+    value = (uint32_t) seconds;
+    ext_data[0] = (char) ((value >> 24) & 0xff);
+    ext_data[1] = (char) ((value >> 16) & 0xff);
+    ext_data[2] = (char) ((value >> 8) & 0xff);
+    ext_data[3] = (char) (value & 0xff);
+
+    msgpack_pack_ext(packer, sizeof(ext_data), 0);
+    msgpack_pack_ext_body(packer, ext_data, sizeof(ext_data));
+}
+
+void test_json_omit_empty_internal_objects()
+{
+    flb_sds_t json;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
+    const char *expected;
+
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    /* Group start record: [[timestamp, metadata], group attributes]. */
+    msgpack_pack_array(&mp_pck, 2);
+    msgpack_pack_array(&mp_pck, 2);
+    pack_test_event_time(&mp_pck, FLB_LOG_EVENT_GROUP_START);
+    msgpack_pack_map(&mp_pck, 1);
+    msgpack_pack_str_with_body(&mp_pck, "group", 5);
+    msgpack_pack_str_with_body(&mp_pck, "marker", 6);
+    msgpack_pack_map(&mp_pck, 3);
+    msgpack_pack_str_with_body(&mp_pck, "keep_group", 10);
+    msgpack_pack_map(&mp_pck, 1);
+    msgpack_pack_str_with_body(&mp_pck, "id", 2);
+    msgpack_pack_str_with_body(&mp_pck, "g1", 2);
+    msgpack_pack_str_with_body(&mp_pck, "empty_group", 11);
+    msgpack_pack_map(&mp_pck, 0);
+    msgpack_pack_str_with_body(&mp_pck, "cascade_group", 13);
+    msgpack_pack_map(&mp_pck, 1);
+    msgpack_pack_str_with_body(&mp_pck, "child", 5);
+    msgpack_pack_map(&mp_pck, 0);
+
+    /* Normal record with metadata; it inherits the active group attributes. */
+    msgpack_pack_array(&mp_pck, 2);
+    msgpack_pack_array(&mp_pck, 2);
+    msgpack_pack_uint64(&mp_pck, 0);
+    msgpack_pack_map(&mp_pck, 3);
+    msgpack_pack_str_with_body(&mp_pck, "keep_meta", 9);
+    msgpack_pack_map(&mp_pck, 1);
+    msgpack_pack_str_with_body(&mp_pck, "id", 2);
+    msgpack_pack_str_with_body(&mp_pck, "m1", 2);
+    msgpack_pack_str_with_body(&mp_pck, "empty_meta", 10);
+    msgpack_pack_map(&mp_pck, 0);
+    msgpack_pack_str_with_body(&mp_pck, "cascade_meta", 12);
+    msgpack_pack_map(&mp_pck, 1);
+    msgpack_pack_str_with_body(&mp_pck, "child", 5);
+    msgpack_pack_map(&mp_pck, 0);
+    msgpack_pack_map(&mp_pck, 1);
+    msgpack_pack_str_with_body(&mp_pck, "message", 7);
+    msgpack_pack_str_with_body(&mp_pck, "ok", 2);
+
+    json = flb_pack_msgpack_to_json_format_ex(
+            mp_sbuf.data, mp_sbuf.size,
+            FLB_PACK_JSON_FORMAT_LINES,
+            FLB_PACK_JSON_DATE_EPOCH,
+            NULL, FLB_TRUE, FLB_TRUE);
+    TEST_CHECK(json != NULL);
+    expected =
+        "{\"__internal__\":{\"group_attributes\":{\"keep_group\":"
+        "{\"id\":\"g1\"}},\"log_metadata\":{\"keep_meta\":"
+        "{\"id\":\"m1\"}}},\"message\":\"ok\"}\n";
+    if (json != NULL) {
+        TEST_CHECK(strcmp(json, expected) == 0);
+    }
+
+    flb_sds_destroy(json);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+}
+
+void test_json_omit_empty_objects_deep_nesting()
+{
+    int i;
+    flb_sds_t json;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
+
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    msgpack_pack_array(&mp_pck, 2);
+    msgpack_pack_int64(&mp_pck, 0);
+    msgpack_pack_map(&mp_pck, 1);
+    msgpack_pack_str_with_body(&mp_pck, "deep", 4);
+    /*
+     * Exceed the pruning stack's initial capacity of 32 while remaining
+     * below this test binary's msgpack-c embedded stack limit of 64.
+     */
+    for (i = 0; i < 40; i++) {
+        msgpack_pack_array(&mp_pck, 1);
+    }
+    msgpack_pack_map(&mp_pck, 1);
+    msgpack_pack_str_with_body(&mp_pck, "empty", 5);
+    msgpack_pack_map(&mp_pck, 0);
+
+    json = flb_pack_msgpack_to_json_format_ex(
+            mp_sbuf.data, mp_sbuf.size,
+            FLB_PACK_JSON_FORMAT_LINES,
+            FLB_PACK_JSON_DATE_EPOCH,
+            NULL, FLB_TRUE, FLB_TRUE);
+    TEST_CHECK(json != NULL);
+    if (json != NULL) {
+        TEST_CHECK(strstr(json, "\"deep\":") != NULL);
+        TEST_CHECK(strstr(json, "[]") != NULL);
+        TEST_CHECK(strstr(json, "{}") == NULL);
+    }
+
+    flb_sds_destroy(json);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+}
+
 void test_json_invalid()
 {
     const char *malformed_json = "{\"key1\": \"value1\", \"key2\": "; // incomplete JSON
@@ -1904,6 +2097,11 @@ TEST_LIST = {
     { "json_date_java_sql" , test_json_date_java_sql},
     { "json_date_epoch" , test_json_date_epoch},
     { "json_date_epoch_ms" , test_json_date_epoch_ms},
+    { "json_omit_empty_objects", test_json_omit_empty_objects},
+    { "json_omit_empty_internal_objects",
+      test_json_omit_empty_internal_objects},
+    { "json_omit_empty_objects_deep_nesting",
+      test_json_omit_empty_objects_deep_nesting},
     { "json_invalid",        test_json_invalid},
     { "json_pack_large_uint64", test_json_pack_large_uint64},
 
