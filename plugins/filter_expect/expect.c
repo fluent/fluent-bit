@@ -30,6 +30,7 @@
 #include "expect.h"
 #include <msgpack.h>
 #include <strings.h>
+#include <ctype.h>
 
 #define FLB_EXP_REDACTED "[REDACTED]"
 
@@ -275,10 +276,36 @@ static char *ra_value_type_to_str(struct flb_ra_value *val)
     return "UNKNOWN";
 }
 
+/* case-insensitive search over the whole key, embedded NULs included */
+static int key_contains_pattern(const char *key, size_t len, const char *pattern)
+{
+    size_t i;
+    size_t j;
+    size_t plen;
+
+    plen = strlen(pattern);
+    if (plen == 0 || plen > len) {
+        return FLB_FALSE;
+    }
+
+    for (i = 0; i <= len - plen; i++) {
+        for (j = 0; j < plen; j++) {
+            if (tolower((unsigned char) key[i + j]) !=
+                tolower((unsigned char) pattern[j])) {
+                break;
+            }
+        }
+        if (j == plen) {
+            return FLB_TRUE;
+        }
+    }
+
+    return FLB_FALSE;
+}
+
 static int key_name_is_sensitive(const char *key, size_t len)
 {
     int i;
-    flb_sds_t tmp;
     static const char *patterns[] = {
         "password", "passwd", "secret", "token", "credential",
         "apikey", "api_key", "authorization", "private", "sensitive",
@@ -289,19 +316,12 @@ static int key_name_is_sensitive(const char *key, size_t len)
         return FLB_FALSE;
     }
 
-    tmp = flb_sds_create_len(key, len);
-    if (!tmp) {
-        return FLB_FALSE;
-    }
-
     for (i = 0; patterns[i] != NULL; i++) {
-        if (strcasestr(tmp, patterns[i]) != NULL) {
-            flb_sds_destroy(tmp);
+        if (key_contains_pattern(key, len, patterns[i])) {
             return FLB_TRUE;
         }
     }
 
-    flb_sds_destroy(tmp);
     return FLB_FALSE;
 }
 
@@ -403,6 +423,7 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map, struct flb_con
     char *json;
     size_t size = 1024;
     const char *actual_value;
+    const char *expected_value;
     struct mk_list *head;
     struct flb_expect_rule *rule;
     struct flb_ra_value *val;
@@ -503,8 +524,10 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map, struct flb_con
                 if (flb_sds_cmp(val->val.string, rule->expect,
                                 flb_sds_len(rule->expect)) != 0) {
                     actual_value = val->val.string;
+                    expected_value = rule->expect;
                     if (rule_key_is_sensitive(rule)) {
                         actual_value = FLB_EXP_REDACTED;
+                        expected_value = FLB_EXP_REDACTED;
                     }
 
                     json = record_content_json(config, map, size);
@@ -512,7 +535,7 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map, struct flb_con
                                   "exception on rule #%i 'key_val_eq', "
                                   "key value '%s' is different than "
                                   "expected: '%s'. Record content:\n%s",
-                                  n, actual_value, rule->expect, json);
+                                  n, actual_value, expected_value, json);
                     flb_free(json);
                     flb_ra_key_value_destroy(val);
                     return FLB_FALSE;
