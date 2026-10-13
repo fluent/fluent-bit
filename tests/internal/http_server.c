@@ -1,6 +1,9 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_compression.h>
+#include <fluent-bit/flb_snappy.h>
+#include <fluent-bit/flb_zstd.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_http_common.h>
 #include <fluent-bit/flb_io.h>
@@ -1152,7 +1155,83 @@ void test_http1_fragmented_header_limit(void)
     check_http1_fragmented_header_limit(8 * 1024);
 }
 
+static void test_http_body_inflation_budget(void)
+{
+    struct flb_http_request request = {0};
+    struct flb_http_response response = {0};
+    struct flb_http_stream stream = {0};
+    struct flb_http_server_session session = {0};
+    const char *encodings[] = {"gzip", "zstd", "snappy"};
+    char original[32769];
+    char *compressed;
+    cfl_sds_t saved;
+    size_t compressed_size;
+    size_t budget;
+    int index;
+    int result;
+
+    session.version = HTTP_PROTOCOL_VERSION_11;
+    stream.role = HTTP_STREAM_ROLE_SERVER;
+    stream.parent = &session;
+    memset(original, 'x', sizeof(original));
+    for (index = 0; index < 3; index++) {
+        if (index == 0) {
+            result = flb_gzip_compress(original, sizeof(original),
+                                       (void **) &compressed, &compressed_size);
+        }
+        else if (index == 1) {
+            result = flb_zstd_compress(original, sizeof(original),
+                                       (void **) &compressed, &compressed_size);
+        }
+        else {
+            result = flb_snappy_compress(original, sizeof(original),
+                                         &compressed, &compressed_size);
+        }
+        TEST_ASSERT(result == 0);
+        for (budget = sizeof(original) - 1; budget <= sizeof(original) + 1; budget++) {
+            TEST_ASSERT(flb_http_request_init(&request) == 0);
+            request.body = cfl_sds_create_len(compressed, compressed_size);
+            saved = request.body;
+            request.content_length = compressed_size;
+            flb_http_request_set_header(&request, "Content-Encoding", 0, encodings[index], 0);
+            result = flb_http_request_uncompress_body(&request, budget);
+            if (budget < sizeof(original)) {
+                TEST_CHECK(result == FLB_DECOMPRESSOR_LIMIT_EXCEEDED);
+                TEST_CHECK(request.body == saved);
+                TEST_CHECK(request.content_length == compressed_size);
+                TEST_CHECK(flb_http_request_get_header(&request, "Content-Encoding") != NULL);
+            }
+            else {
+                TEST_CHECK(result == 0);
+                TEST_CHECK(request.content_length == sizeof(original));
+                TEST_CHECK(cfl_sds_len(request.body) == sizeof(original));
+                TEST_CHECK(memcmp(request.body, original, sizeof(original)) == 0);
+                TEST_CHECK(flb_http_request_get_header(&request, "Content-Encoding") == NULL);
+            }
+            flb_http_request_destroy(&request);
+        }
+        TEST_ASSERT(flb_http_response_init(&response) == 0);
+        response.stream = &stream;
+        response.body = cfl_sds_create_len(compressed, compressed_size);
+        flb_http_response_set_header(&response, "Content-Encoding", 0, encodings[index], 0);
+        TEST_CHECK(flb_http_response_uncompress_body(&response, 0) ==
+                   FLB_DECOMPRESSOR_LIMIT_EXCEEDED);
+        TEST_CHECK(flb_http_response_uncompress_body(&response, sizeof(original)) == 0);
+        TEST_CHECK(cfl_sds_len(response.body) == sizeof(original));
+        flb_http_response_destroy(&response);
+        flb_free(compressed);
+    }
+
+    TEST_ASSERT(flb_http_request_init(&request) == 0);
+    request.body = cfl_sds_create("broken");
+    flb_http_request_set_header(&request, "Content-Encoding", 0, "gzip", 0);
+    TEST_CHECK(flb_http_request_uncompress_body(&request, 1024) < 0);
+    TEST_CHECK(strcmp(request.body, "broken") == 0);
+    flb_http_request_destroy(&request);
+}
+
 TEST_LIST = {
+    { "http_body_inflation_budget", test_http_body_inflation_budget },
     { "http1_rejects_invalid_partial_request_line", test_http1_rejects_invalid_partial_request_line },
     { "http1_header_limit_binary_units", test_http1_header_limit_binary_units },
     { "http1_fragmented_header_limit", test_http1_fragmented_header_limit },
