@@ -16,6 +16,8 @@
 #include <fluent-bit/aws/flb_aws_compress.h>
 #include <inttypes.h>
 
+#include "compress.h"
+
 /*
  * compression_type_to_garrow - map a generic FLB_AWS_COMPRESS_* codec to the
  * corresponding GArrowCompressionType.
@@ -267,12 +269,12 @@ static GArrowResizableBuffer* table_to_parquet_buffer(GArrowTable *table,
 }
 #endif
 
-int flb_aws_compression_compress_columnar(int columnar_format,
-                                          void *json, size_t size,
-                                          void **out_buf, size_t *out_size,
-                                          int compression_type)
+int flb_aws_compression_write_columnar_table(int columnar_format,
+                                              GArrowTable *table,
+                                              void **out_buf,
+                                              size_t *out_size,
+                                              int compression_type)
 {
-        GArrowTable *table;
         GArrowResizableBuffer *buffer;
         GBytes *bytes;
         gconstpointer ptr;
@@ -287,11 +289,12 @@ int flb_aws_compression_compress_columnar(int columnar_format,
                 return -1;
         }
 
-        table = parse_json((uint8_t *) json, size);
-        if (table == NULL) {
-            flb_error("[aws][compress] Failed to parse JSON into Arrow Table");
+        if (table == NULL || out_buf == NULL || out_size == NULL) {
             return -1;
         }
+
+        *out_buf = NULL;
+        *out_size = 0;
 
         /* Select the columnar writer; compression is applied on top by each. */
 #ifdef FLB_HAVE_ARROW_PARQUET
@@ -304,25 +307,21 @@ int flb_aws_compression_compress_columnar(int columnar_format,
         else {
             flb_error("[aws][compress] unknown columnar format: %d",
                       columnar_format);
-            g_object_unref(table);
             return -1;
         }
 #else
         if (columnar_format == FLB_AWS_COMPRESS_FORMAT_PARQUET) {
             flb_error("[aws][compress] Parquet format requires parquet-glib "
                       "at compile time");
-            g_object_unref(table);
             return -1;
         }
         else if (columnar_format != FLB_AWS_COMPRESS_FORMAT_ARROW) {
             flb_error("[aws][compress] unknown columnar format: %d",
                       columnar_format);
-            g_object_unref(table);
             return -1;
         }
         buffer = table_to_buffer(table, compression_type);
 #endif
-        g_object_unref(table);
         if (buffer == NULL) {
             flb_error("[aws][compress] Failed to encode Arrow Table into "
                       "columnar buffer");
@@ -356,6 +355,27 @@ int flb_aws_compression_compress_columnar(int columnar_format,
         g_object_unref(buffer);
         g_bytes_unref(bytes);
         return 0;
+}
+
+int flb_aws_compression_compress_columnar(int columnar_format,
+                                          void *json, size_t size,
+                                          void **out_buf, size_t *out_size,
+                                          int compression_type)
+{
+        GArrowTable *table;
+        int ret;
+
+        table = parse_json((uint8_t *) json, size);
+        if (table == NULL) {
+            flb_error("[aws][compress] Failed to parse JSON into Arrow Table");
+            return -1;
+        }
+
+        ret = flb_aws_compression_write_columnar_table(
+                        columnar_format, table, out_buf, out_size,
+                        compression_type);
+        g_object_unref(table);
+        return ret;
 }
 
 int out_s3_compress_columnar(int columnar_format, void *json, size_t size,

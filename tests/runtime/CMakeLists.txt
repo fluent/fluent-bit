@@ -405,6 +405,31 @@ foreach(source_file ${CHECK_PROGRAMS})
   endif()
 endforeach()
 
+if(TARGET flb-rt-out_s3 AND
+   FLB_ARROW AND FLB_PROTOBUF AND FLB_IN_FORWARD AND
+   TARGET protobuf::protoc)
+  set(S3_PROTOBUF_DESCRIPTOR
+      "${CMAKE_CURRENT_BINARY_DIR}/s3_wire_log.desc")
+  add_custom_command(
+    OUTPUT "${S3_PROTOBUF_DESCRIPTOR}"
+    COMMAND $<TARGET_FILE:protobuf::protoc>
+            --descriptor_set_out=${S3_PROTOBUF_DESCRIPTOR}
+            --include_imports
+            --proto_path=${CMAKE_CURRENT_SOURCE_DIR}/../internal/data/protobuf
+            ${CMAKE_CURRENT_SOURCE_DIR}/../internal/data/protobuf/wire_log.proto
+    DEPENDS
+      protobuf::protoc
+      ${CMAKE_CURRENT_SOURCE_DIR}/../internal/data/protobuf/wire_log.proto
+    VERBATIM)
+  add_custom_target(flb-rt-out_s3-protobuf-descriptor
+    DEPENDS "${S3_PROTOBUF_DESCRIPTOR}")
+  add_dependencies(flb-rt-out_s3
+    flb-rt-out_s3-protobuf-descriptor)
+  target_compile_definitions(flb-rt-out_s3 PRIVATE
+    FLB_TEST_S3_PROTOBUF_FORWARD
+    FLB_TEST_S3_PROTOBUF_DESCRIPTOR_PATH="${S3_PROTOBUF_DESCRIPTOR}")
+endif()
+
 function(flb_runtime_lock_tests resource_name)
   foreach(test_name ${ARGN})
     if (TEST ${test_name})

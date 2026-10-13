@@ -43,6 +43,7 @@
 #include <msgpack.h>
 
 #include "s3.h"
+#include "s3_protobuf.h"
 #include "s3_store.h"
 #include <fluent-bit/aws/flb_aws_compress.h>
 
@@ -322,6 +323,7 @@ static int s3_format_is_columnar(int s3_format)
             s3_format == FLB_S3_FORMAT_ARROW);
 }
 
+#ifdef FLB_HAVE_ARROW
 /*
  * s3_format_to_aws_compress_format - convert an S3 output format to the
  * aws-compress columnar format identifier
@@ -343,6 +345,46 @@ static int s3_format_to_aws_compress_format(int s3_format)
     }
     return -1;
 }
+
+static int s3_compress_columnar(struct flb_s3 *ctx,
+                                const void *input, size_t input_size,
+                                void **output, size_t *output_size,
+                                char *error, size_t error_size)
+{
+    int format;
+    int result;
+
+    format = s3_format_to_aws_compress_format(ctx->s3_format);
+    if (format == -1) {
+        if (error != NULL && error_size > 0) {
+            snprintf(error, error_size, "unknown S3 columnar format");
+        }
+        return -1;
+    }
+
+    if (ctx->columnar_input_format == FLB_S3_COLUMNAR_INPUT_PROTOBUF) {
+        return s3_protobuf_compress_columnar(
+                    ctx, format,
+                    input, input_size,
+                    output, output_size,
+                    ctx->compression,
+                    error, error_size);
+    }
+
+    result = flb_aws_compression_compress_columnar(
+                    format,
+                    (void *) input, input_size,
+                    output, output_size,
+                    ctx->compression);
+    if (result == -1) {
+        if (error != NULL && error_size > 0) {
+            snprintf(error, error_size,
+                     "could not convert JSON records to columnar format");
+        }
+    }
+    return result;
+}
+#endif
 
 static struct flb_aws_header *get_content_encoding_header(int compression_type)
 {
@@ -684,10 +726,11 @@ static flb_sds_t concat_path(char *p1, char *p2)
 
 static flb_sds_t create_buffer_path(struct flb_s3 *ctx)
 {
-#ifdef FLB_SYSTEM_WINDOWS
-    char *temp_dir;
     flb_sds_t dir;
     flb_sds_t tmp;
+
+#ifdef FLB_SYSTEM_WINDOWS
+    char *temp_dir;
 
     if (strcmp(ctx->store_dir, "/tmp/fluent-bit/s3") == 0) {
         temp_dir = getenv("TEMP");
@@ -697,8 +740,17 @@ static flb_sds_t create_buffer_path(struct flb_s3 *ctx)
 
         if (temp_dir != NULL) {
             dir = flb_sds_create_size(64);
-            tmp = flb_sds_printf(&dir, "%s/fluent-bit/s3/%s",
-                                 temp_dir, ctx->bucket);
+            if (ctx->columnar_input_format ==
+                FLB_S3_COLUMNAR_INPUT_PROTOBUF) {
+                tmp = flb_sds_printf(&dir,
+                                     "%s/fluent-bit/s3/%s-protobuf-%s",
+                                     temp_dir, ctx->bucket,
+                                     ctx->protobuf_buffer_id);
+            }
+            else {
+                tmp = flb_sds_printf(&dir, "%s/fluent-bit/s3/%s",
+                                     temp_dir, ctx->bucket);
+            }
             if (tmp == NULL) {
                 flb_errno();
                 flb_sds_destroy(dir);
@@ -709,6 +761,21 @@ static flb_sds_t create_buffer_path(struct flb_s3 *ctx)
         }
     }
 #endif
+
+    if (ctx->columnar_input_format == FLB_S3_COLUMNAR_INPUT_PROTOBUF) {
+        dir = flb_sds_create_size(128);
+        if (dir == NULL) {
+            return NULL;
+        }
+        tmp = flb_sds_printf(&dir, "%s/%s-protobuf-%s",
+                             ctx->store_dir, ctx->bucket,
+                             ctx->protobuf_buffer_id);
+        if (tmp == NULL) {
+            flb_sds_destroy(dir);
+            return NULL;
+        }
+        return tmp;
+    }
 
     return concat_path(ctx->store_dir, ctx->bucket);
 }
@@ -924,6 +991,8 @@ static void s3_context_destroy(struct flb_s3 *ctx)
     if (ctx->seq_index_file) {
         flb_sds_destroy(ctx->seq_index_file);
     }
+
+    s3_protobuf_destroy(ctx);
 
     if (ctx->authorization_endpoint_upstream != NULL) {
         flb_upstream_destroy(ctx->authorization_endpoint_upstream);
@@ -1159,43 +1228,6 @@ static int cb_s3_init(struct flb_output_instance *ins,
         return -1;
     }
 
-    /*
-     * store_dir is the user input, buffer_dir is what the code uses
-     * We append the bucket name to the dir, to support multiple instances
-     * of this plugin using the same buffer dir
-     */
-    tmp_sds = create_buffer_path(ctx);
-    if (!tmp_sds) {
-        flb_plg_error(ctx->ins, "Could not construct buffer path");
-        return -1;
-    }
-    ctx->buffer_dir = tmp_sds;
-
-    /* Initialize local storage */
-    ret = s3_store_init(ctx);
-    if (ret == -1) {
-        flb_plg_error(ctx->ins, "Failed to initialize S3 storage: %s",
-                      ctx->store_dir);
-        return -1;
-    }
-
-    tmp = flb_output_get_property("s3_key_format", ins);
-    if (tmp) {
-        if (tmp[0] != '/') {
-            flb_plg_error(ctx->ins, "'s3_key_format' must start with a '/'");
-            return -1;
-        }
-        if (strstr((char *) tmp, "$INDEX")) {
-            ret = init_seq_index(ctx);
-            if (ret < 0) {
-                return -1;
-            }
-        }
-        if (strstr((char *) tmp, "$UUID")) {
-            ctx->key_fmt_has_uuid = FLB_TRUE;
-        }
-    }
-
     /* validate 'total_file_size' */
     if (ctx->file_size <= 0) {
         flb_plg_error(ctx->ins, "Failed to parse total_file_size %s", tmp);
@@ -1279,6 +1311,50 @@ static int cb_s3_init(struct flb_output_instance *ins,
                 }
             }
             ctx->compression = ret;
+        }
+    }
+
+    ret = s3_protobuf_configure(ctx);
+    if (ret != 0) {
+        return -1;
+    }
+
+    /*
+     * store_dir is the user input, buffer_dir is what the code uses. JSON
+     * buffers retain the existing bucket-specific path. Protobuf buffers also
+     * include an identifier derived from the framing version and message type.
+     * Compatible descriptor updates retain the same path, while unrelated
+     * message types can never share a buffered stream.
+     */
+    tmp_sds = create_buffer_path(ctx);
+    if (!tmp_sds) {
+        flb_plg_error(ctx->ins, "Could not construct buffer path");
+        return -1;
+    }
+    ctx->buffer_dir = tmp_sds;
+
+    /* Initialize local storage */
+    ret = s3_store_init(ctx);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "Failed to initialize S3 storage: %s",
+                      ctx->store_dir);
+        return -1;
+    }
+
+    tmp = flb_output_get_property("s3_key_format", ins);
+    if (tmp) {
+        if (tmp[0] != '/') {
+            flb_plg_error(ctx->ins, "'s3_key_format' must start with a '/'");
+            return -1;
+        }
+        if (strstr((char *) tmp, "$INDEX")) {
+            ret = init_seq_index(ctx);
+            if (ret < 0) {
+                return -1;
+            }
+        }
+        if (strstr((char *) tmp, "$UUID")) {
+            ctx->key_fmt_has_uuid = FLB_TRUE;
         }
     }
 
@@ -1715,6 +1791,9 @@ static int upload_data_owned(struct flb_s3 *ctx, struct s3_file *chunk,
     size_t payload_size = 0;
     size_t preCompress_size = 0;
     time_t file_first_log_time = time(NULL);
+#ifdef FLB_HAVE_ARROW
+    char columnar_error[512];
+#endif
 
     /*
      * When chunk does not exist, file_first_log_time will be the current time.
@@ -1729,14 +1808,16 @@ static int upload_data_owned(struct flb_s3 *ctx, struct s3_file *chunk,
 #ifdef FLB_HAVE_ARROW
     if (s3_format_is_columnar(ctx->s3_format)) {
         pthread_mutex_unlock(&ctx->files_mutex);
-        ret = flb_aws_compression_compress_columnar(
-                    s3_format_to_aws_compress_format(ctx->s3_format),
-                    body, body_size, &payload_buf,
-                    &payload_size, ctx->compression);
+        ret = s3_compress_columnar(ctx,
+                                  body, body_size,
+                                  &payload_buf, &payload_size,
+                                  columnar_error,
+                                  sizeof(columnar_error));
         pthread_mutex_lock(&ctx->files_mutex);
         if (ret == -1) {
-            flb_plg_error(ctx->ins, "Failed to convert data to columnar "
-                          "format");
+            flb_plg_error(ctx->ins,
+                          "Failed to convert data to columnar format: %s",
+                          columnar_error);
             if (chunk != NULL) {
                 s3_store_file_unlock(chunk);
                 chunk->failures += 1;
@@ -1959,6 +2040,9 @@ static int put_all_chunks(struct flb_s3 *ctx, int cleanup_empty_streams)
     int ret;
     uint64_t scan_id;
     struct s3_upload_claim claim;
+#ifdef FLB_HAVE_ARROW
+    char columnar_error[512];
+#endif
 
     scan_id = ++ctx->upload_scan_id;
 
@@ -2014,15 +2098,36 @@ restart:
             pthread_mutex_unlock(&ctx->files_mutex);
 #ifdef FLB_HAVE_ARROW
             if (s3_format_is_columnar(ctx->s3_format)) {
-                ret = flb_aws_compression_compress_columnar(
-                            s3_format_to_aws_compress_format(ctx->s3_format),
-                            buffer, buffer_size,
-                            &payload_buf, &payload_size,
-                            ctx->compression);
+                ret = s3_compress_columnar(ctx,
+                                          buffer, buffer_size,
+                                          &payload_buf, &payload_size,
+                                          columnar_error,
+                                          sizeof(columnar_error));
                 if (ret == -1) {
                     flb_plg_error(ctx->ins,
-                                  "Failed to convert to columnar format, "
-                                  "uploading raw data to prevent data loss");
+                                  "Failed to convert to columnar format: %s",
+                                  columnar_error);
+                    if (ctx->columnar_input_format ==
+                        FLB_S3_COLUMNAR_INPUT_PROTOBUF) {
+                        /*
+                         * Raw framed Protobuf is not a valid Parquet/Arrow
+                         * object. Keep the chunk for retry instead of
+                         * uploading bytes under a misleading file format.
+                         */
+                        pthread_mutex_lock(&ctx->files_mutex);
+                        flb_free(buffer);
+                        s3_claim_end(&claim);
+                        s3_store_file_unlock(chunk);
+                        chunk->failures += 1;
+                        result = -1;
+                        if (ctx->preserve_data_ordering == FLB_TRUE ||
+                            ctx->key_fmt_has_seq_index == FLB_TRUE) {
+                            return result;
+                        }
+                        goto restart;
+                    }
+                    flb_plg_warn(ctx->ins,
+                                 "uploading raw data to prevent data loss");
                 }
                 else {
                     flb_free(buffer);
@@ -4868,6 +4973,10 @@ static flb_sds_t s3_format_event_chunk(struct flb_s3 *ctx,
         return payload;
     }
 
+    if (ctx->columnar_input_format == FLB_S3_COLUMNAR_INPUT_PROTOBUF) {
+        return s3_protobuf_format_event_chunk(ctx, event_chunk);
+    }
+
     if (ctx->log_key) {
         return flb_pack_msgpack_extract_log_key(ctx,
                                                 event_chunk->data,
@@ -5134,9 +5243,34 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "format", "json_lines",
      0, FLB_FALSE, 0,
-     "Set output format. Supported values: json_lines, otlp_json, parquet. "
+     "Set output format. Supported values: json_lines, otlp_json, parquet, arrow. "
      "When format is parquet, the 'compression' option controls the page-level "
      "codec inside the Parquet file (snappy, zstd, gzip). Default: uncompressed."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "columnar_input_format", "json",
+     0, FLB_TRUE, offsetof(struct flb_s3, columnar_input_format_str),
+     "Input representation used by parquet and arrow output. Supported values "
+     "are 'json' and 'protobuf'. Protobuf input reads a MessagePack binary "
+     "field from every log record and requires the protobuf_* options."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "protobuf_data_key", NULL,
+     0, FLB_TRUE, offsetof(struct flb_s3, protobuf_data_key),
+     "Log record key containing one raw Protobuf message as a MessagePack "
+     "binary value. Used only when columnar_input_format is 'protobuf'."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "protobuf_descriptor_file", NULL,
+     0, FLB_TRUE, offsetof(struct flb_s3, protobuf_descriptor_file),
+     "Path to a binary google.protobuf.FileDescriptorSet used to decode raw "
+     "Protobuf records. Used only when columnar_input_format is 'protobuf'."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "protobuf_message_type", NULL,
+     0, FLB_TRUE, offsetof(struct flb_s3, protobuf_message_type),
+     "Fully-qualified Protobuf message type to decode from protobuf_data_key. "
+     "Used only when columnar_input_format is 'protobuf'."
     },
     {
      FLB_CONFIG_MAP_STR, "json_date_format", NULL,
