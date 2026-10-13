@@ -127,7 +127,7 @@ endif()
 # Add extra compilation flags
 #-----------------------------------------------------------------------------
 include(AddZstdCompilationFlags)
-ADD_ZSTD_COMPILATION_FLAGS(ON ZSTD_ENABLE_CXX ON) # C CXX LD
+ADD_ZSTD_COMPILATION_FLAGS(ON ${ZSTD_ENABLE_CXX} ON) # C CXX LD
 
 #-----------------------------------------------------------------------------
 # External dependencies
