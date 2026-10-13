@@ -588,17 +588,19 @@ static char *read_file_to_string(const char *path)
     return buf;
 }
 
-void flb_test_mismatch_redacts_sensitive_fields()
+static void run_redaction_case(const char *rule_name, const char *rule_value,
+                               char *input, const char **hidden,
+                               const char **shown)
 {
     flb_ctx_t *flb;
     int i_ffd;
     int f_ffd;
     int o_ffd;
+    int i;
     int len;
     int ret;
     int bytes;
     int log_fd;
-    char *input;
     char *log_content;
     char log_path[] = "/tmp/flb_expect_redact_test_XXXXXX";
 
@@ -631,7 +633,7 @@ void flb_test_mismatch_redacts_sensitive_fields()
     flb_filter_set(flb, f_ffd,
                    "match", "*",
                    "action", "warn",
-                   "key_exists", "missing_key",
+                   rule_name, rule_value,
                    NULL);
 
     o_ffd = flb_output(flb, (char *) "null", NULL);
@@ -641,7 +643,6 @@ void flb_test_mismatch_redacts_sensitive_fields()
     ret = flb_start(flb);
     TEST_CHECK(ret == 0);
 
-    input = "[0, {\"field1\":\"visible\", \"api_token\":\"super-secret-token\"}]";
     len = strlen(input);
     bytes = flb_lib_push(flb, i_ffd, input, len);
     TEST_CHECK(bytes == len);
@@ -657,18 +658,57 @@ void flb_test_mismatch_redacts_sensitive_fields()
         return;
     }
 
-    if (!TEST_CHECK(strstr(log_content, "super-secret-token") == NULL)) {
-        TEST_MSG("sensitive value leaked in expect error log");
+    for (i = 0; hidden[i] != NULL; i++) {
+        if (!TEST_CHECK(strstr(log_content, hidden[i]) == NULL)) {
+            TEST_MSG("sensitive value '%s' leaked in expect error log", hidden[i]);
+        }
     }
     if (!TEST_CHECK(strstr(log_content, "[REDACTED]") != NULL)) {
         TEST_MSG("expected redacted marker in expect error log");
     }
-    if (!TEST_CHECK(strstr(log_content, "visible") != NULL)) {
-        TEST_MSG("expected non-sensitive field value in expect error log");
+    for (i = 0; shown[i] != NULL; i++) {
+        if (!TEST_CHECK(strstr(log_content, shown[i]) != NULL)) {
+            TEST_MSG("expected '%s' in expect error log", shown[i]);
+        }
     }
 
     flb_free(log_content);
     unlink(log_path);
+}
+
+void flb_test_mismatch_redacts_sensitive_fields()
+{
+    const char *hidden[] = {"super-secret-token", NULL};
+    const char *shown[] = {"visible", NULL};
+
+    run_redaction_case("key_exists", "missing_key",
+                       "[0, {\"field1\":\"visible\", "
+                       "\"api_token\":\"super-secret-token\"}]",
+                       hidden, shown);
+}
+
+/* a NUL inside the key must not hide the sensitive part after it */
+void flb_test_mismatch_redacts_key_with_embedded_nul()
+{
+    const char *hidden[] = {"super-secret-token", NULL};
+    const char *shown[] = {"visible", NULL};
+
+    run_redaction_case("key_exists", "missing_key",
+                       "[0, {\"field1\":\"visible\", "
+                       "\"prefix\\u0000api_token\":\"super-secret-token\"}]",
+                       hidden, shown);
+}
+
+/* key_val_eq on a sensitive key must hide the expected value too */
+void flb_test_key_val_eq_redacts_expected_value()
+{
+    const char *hidden[] = {"expected-secret", "actual-secret", NULL};
+    const char *shown[] = {"visible", NULL};
+
+    run_redaction_case("key_val_eq", "api_token expected-secret",
+                       "[0, {\"field1\":\"visible\", "
+                       "\"api_token\":\"actual-secret\"}]",
+                       hidden, shown);
 }
 
 
@@ -684,5 +724,7 @@ TEST_LIST = {
     {"key_val_eq_matched", flb_test_key_val_eq_matched},
     {"key_val_eq_not_matched", flb_test_key_val_eq_not_matched},
     {"mismatch_redacts_sensitive_fields", flb_test_mismatch_redacts_sensitive_fields},
+    {"mismatch_redacts_key_with_embedded_nul", flb_test_mismatch_redacts_key_with_embedded_nul},
+    {"key_val_eq_redacts_expected_value", flb_test_key_val_eq_redacts_expected_value},
     {NULL, NULL}
 };
