@@ -91,6 +91,9 @@ static int in_opentelemetry_init(struct flb_input_instance *ins,
             opentelemetry_prot_handle_ng,
             ctx);
     if (ret == 0) {
+        if (ctx->oauth2_ctx != NULL) {
+            http_server_options.authorization_callback = opentelemetry_prot_authorize_ng;
+        }
         if (http_server_options.workers > 1) {
             ret = flb_input_ingress_enable(ins);
         }
