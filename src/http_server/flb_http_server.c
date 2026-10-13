@@ -18,6 +18,7 @@
  */
 
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_compression.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_network.h>
@@ -174,6 +175,7 @@ static int flb_http_server_apply_options(struct flb_http_server *session,
     session->idle_timeout = options->idle_timeout;
     session->flags = options->flags;
     session->request_callback = options->request_callback;
+    session->authorization_callback = options->authorization_callback;
     session->user_data = options->user_data;
 
     session->address = options->address;
@@ -381,7 +383,7 @@ static int flb_http_server_should_connection_be_closed(
 }
 
 struct flb_http_server_request_callback_context {
-    struct flb_http_server *server;
+    flb_http_server_request_processor_callback callback;
     struct flb_http_request *request;
     struct flb_http_response *response;
 };
@@ -392,8 +394,7 @@ static int flb_http_server_request_callback_dispatch(void *data)
 
     context = data;
 
-    return context->server->request_callback(context->request,
-                                             context->response);
+    return context->callback(context->request, context->response);
 }
 
 static int flb_http_server_session_is_idle(struct flb_http_server_session *session)
@@ -410,6 +411,24 @@ static int flb_http_server_session_is_idle(struct flb_http_server_session *sessi
 
     /* The HTTP/2 parser can retain an incomplete frame outside these buffers. */
     return FLB_FALSE;
+}
+
+static int flb_http_server_inflate_request(struct flb_http_request *request,
+                                           struct flb_http_response *response)
+{
+    struct flb_http_server_session *session;
+    size_t budget;
+    int result;
+
+    session = request->stream->parent;
+    budget = session->parent->buffer_max_size;
+    result = flb_http_request_uncompress_body(request, budget);
+    if (result != 0) {
+        flb_http_response_set_status(response,
+            result == FLB_DECOMPRESSOR_LIMIT_EXCEEDED ? 413 : 400);
+        flb_http_response_commit(response);
+    }
+    return result;
 }
 
 static int flb_http_server_client_activity_event_handler(void *data)
@@ -481,20 +500,28 @@ static int flb_http_server_client_activity_event_handler(void *data)
             request->content_length = cfl_sds_len(request->body);
         }
 
-        if ((server->flags & FLB_HTTP_SERVER_FLAG_AUTO_INFLATE) != 0) {
-            result = flb_http_request_uncompress_body(request);
-
+        callback_context.request = request;
+        callback_context.response = response;
+        if (server->authorization_callback != NULL) {
+            callback_context.callback = server->authorization_callback;
+            result = flb_downstream_conn_event_call_parent(
+                         connection,
+                         flb_http_server_request_callback_dispatch,
+                         &callback_context);
             if (result != 0) {
-                flb_http_server_session_destroy(session);
+                goto request_complete;
+            }
+        }
 
-                return -1;
+        if ((server->flags & FLB_HTTP_SERVER_FLAG_AUTO_INFLATE) != 0) {
+            result = flb_http_server_inflate_request(request, response);
+            if (result != 0) {
+                goto request_complete;
             }
         }
 
         if (server->request_callback != NULL) {
-            callback_context.server = server;
-            callback_context.request = request;
-            callback_context.response = response;
+            callback_context.callback = server->request_callback;
 
             result = flb_downstream_conn_event_call_parent(
                          connection,
@@ -505,6 +532,7 @@ static int flb_http_server_client_activity_event_handler(void *data)
             /* Report */
         }
 
+request_complete:
         close_connection = flb_http_server_should_connection_be_closed(request);
 
         if (session->version == HTTP_PROTOCOL_VERSION_20) {
@@ -681,6 +709,7 @@ static int flb_http_server_worker_initialize(struct flb_downstream_worker *worke
     options.protocol_version = parent->protocol_version;
     options.flags = parent->flags;
     options.request_callback = parent->request_callback;
+    options.authorization_callback = parent->authorization_callback;
     options.user_data = parent->user_data;
     options.address = parent->address;
     options.port = parent->port;
