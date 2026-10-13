@@ -883,6 +883,37 @@ static int process_payload_ng(flb_sds_t tag,
     return ret;
 }
 
+int http_prot_authorize_ng(struct flb_http_request *request,
+                            struct flb_http_response *response)
+{
+    struct flb_http *ctx;
+    const char *auth_header;
+    size_t auth_len = 0;
+    int ret;
+
+    ctx = (struct flb_http *) response->stream->user_data;
+    if (ctx->enable_health_endpoint == FLB_TRUE && request->method == HTTP_METHOD_GET &&
+        request->path != NULL && strcmp(request->path, "/health") == 0) {
+        return 0;
+    }
+
+    if (ctx->oauth2_ctx) {
+        auth_header = flb_http_request_get_header(request, "authorization");
+        if (auth_header != NULL) {
+            auth_len = strlen(auth_header);
+        }
+
+        ret = flb_oauth2_jwt_validate(ctx->oauth2_ctx, auth_header, auth_len);
+        if (ret != FLB_OAUTH2_JWT_OK) {
+            flb_plg_error(ctx->ins, "OAuth2 validation failed: %s (rejecting request with 401)",
+                         flb_oauth2_jwt_status_message(ret));
+            send_response_ng(response, 401, NULL);
+            return -1;
+        }
+    }
+    return 0;
+}
+
 int http_prot_handle_ng(struct flb_http_request *request,
                         struct flb_http_response *response)
 {
@@ -891,13 +922,9 @@ int http_prot_handle_ng(struct flb_http_request *request,
     int                             len;
     flb_sds_t                       health;
     flb_sds_t                       tag;
-    const char                     *auth_header;
-    size_t                          auth_len;
     struct flb_http                *ctx;
 
     ctx = (struct flb_http *) response->stream->user_data;
-    auth_header = NULL;
-    auth_len = 0;
     if (request->path == NULL || request->path[0] != '/') {
         send_response_ng(response, 400, "error: invalid request\n");
         return -1;
@@ -948,22 +975,6 @@ int http_prot_handle_ng(struct flb_http_request *request,
         flb_sds_destroy(health);
 
         return 0;
-    }
-
-    if (ctx->oauth2_ctx) {
-        auth_header = flb_http_request_get_header(request, "authorization");
-        if (auth_header != NULL) {
-            auth_len = strlen(auth_header);
-        }
-
-        ret = flb_oauth2_jwt_validate(ctx->oauth2_ctx, auth_header, auth_len);
-        if (ret != FLB_OAUTH2_JWT_OK) {
-            flb_plg_error(ctx->ins, "OAuth2 validation failed: %s (rejecting request with 401)",
-                         flb_oauth2_jwt_status_message(ret));
-            flb_sds_destroy(tag);
-            send_response_ng(response, 401, NULL);
-            return -1;
-        }
     }
 
     if (request->method != HTTP_METHOD_POST) {
