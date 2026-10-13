@@ -5,6 +5,7 @@ import socket
 import subprocess
 
 import pytest
+import yaml
 from utils.fluent_bit_manager import FluentBitManager, FluentBitStartupError
 from utils.http_matrix import curl_supports_http2, run_curl_request
 from utils.test_service import FluentBitTestService
@@ -21,8 +22,8 @@ def _headers_map(headers_raw):
 
 
 class Service:
-    def __init__(self):
-        self.config_file = os.path.abspath(
+    def __init__(self, config_file=None):
+        self.config_file = config_file or os.path.abspath(
             os.path.join(os.path.dirname(__file__), "../config/internal_http_server.yaml")
         )
         self.service = FluentBitTestService(self.config_file)
@@ -152,6 +153,175 @@ def test_internal_http_server_trace_rejects_unsafe_outputs(tmp_path):
 
         result = service.request("/api/v1/trace/dummy.0", method="DELETE")
         assert result["status_code"] == 201
+    finally:
+        service.stop()
+
+
+def test_internal_http_server_trace_rejects_duplicate_and_invalid_options():
+    service = Service()
+    service.start()
+    # Raw JSON preserves duplicate members, including after a populated params map.
+    invalid = [
+        '"params":{"format":"json"},"params":{}',
+        '"params":{"format":"json"},"params":{"json_date_key":"date"}',
+        '"params":{"format":"json","FORMAT":"json_lines"}',
+        '"prefix":"first","prefix":"second"',
+        '"output":"stdout","output":"stdout"',
+        '"limit":{"count":1},"limit":{"count":2}',
+        '"params":{"format":"json","json_date_key":42}',
+        '"params":[]',
+        '"prefix":false',
+        '"output":null',
+        '"output":"stdout\\u0000file"',
+        '"params":{"format\\u0000ignored":"json"}',
+        '"limit":{"count":2147483648}',
+        '"limit":{"count":0}',
+        '"limit":{"seconds":0}',
+    ]
+    try:
+        for fields in invalid:
+            for path, inputs in [
+                ("/api/v1/trace/dummy.0", ""),
+                ("/api/v1/traces/", '"inputs":["dummy.0"],'),
+            ]:
+                result = service.request(path, method="POST", payload="{" + inputs + fields + "}")
+                assert result["status_code"] == 400, (fields, result)
+                assert json.loads(result["body"])["status"] == "error"
+        # The same process must still accept valid options after all error cleanups.
+        result = service.request("/api/v1/traces/", method="POST", payload=json.dumps({
+            "inputs": ["dummy.0"], "params": {"format": "json"}, "prefix": "trace.",
+        }))
+        assert result["status_code"] == 200
+        assert json.loads(result["body"])["inputs"]["dummy.0"]["status"] == "ok"
+        assert service.request("/api/v1/trace/dummy.0", method="DELETE")["status_code"] == 201
+    finally:
+        service.stop()
+
+
+def test_internal_http_server_trace_batch_bounds_and_validation():
+    service = Service()
+    service.start()
+    invalid = [
+        '{"inputs":["dummy.0","dummy.0"]}',
+        '{"inputs":["missing","missing"]}',
+        '{"inputs":["dummy.0",42]}',
+        '{"inputs":[""]}',
+        '{"inputs":["dummy.0\\u0000suffix"]}',
+        '{"inputs":[],"inputs":["dummy.0"]}',
+        '{"inputs_suffix":["dummy.0"]}',
+        json.dumps({"inputs": [f"missing.{i}" for i in range(65)]}),
+    ]
+    try:
+        for payload in invalid:
+            result = service.request("/api/v1/traces/", method="POST", payload=payload)
+            assert result["status_code"] == 400, (payload, result)
+            assert json.loads(result["body"])["status"] == "error"
+
+        names = [f"missing.{i}" for i in range(64)]
+        result = service.request("/api/v1/traces/", method="POST", payload=json.dumps({
+            "inputs": names, "params": {"format": "json"},
+        }))
+        assert result["status_code"] == 200
+        results = json.loads(result["body"])["inputs"]
+        assert set(results) == set(names)
+        assert all(item["returncode"] == 404 for item in results.values())
+    finally:
+        service.stop()
+
+
+def test_internal_http_server_trace_batch_reuses_options(tmp_path):
+    default_service = Service()
+    with open(default_service.config_file, encoding="utf-8") as stream:
+        config = yaml.safe_load(stream)
+    config["pipeline"]["inputs"][0]["alias"] = "source"
+    config["pipeline"]["inputs"].append({"name": "dummy", "tag": "second"})
+    config_file = tmp_path / "trace-batch.yaml"
+    config_file.write_text(yaml.safe_dump(config), encoding="utf-8")
+    service = Service(str(config_file))
+    service.start()
+    try:
+        result = service.request("/api/v1/traces/", method="POST", payload=json.dumps({
+            "inputs": ["dummy.0", "source"], "params": {"format": "json"},
+        }))
+        assert result["status_code"] == 400
+
+        for _ in range(3):
+            result = service.request("/api/v1/traces/", method="POST", payload=json.dumps({
+                "inputs": ["source", "dummy.1"],
+                "params": {"format": "json", "json_date_key": "date"},
+                "prefix": "batch.",
+            }))
+            assert result["status_code"] == 200
+            results = json.loads(result["body"])["inputs"]
+            assert set(results) == {"source", "dummy.1"}
+            assert all(item["status"] == "ok" for item in results.values())
+            result = service.request("/api/v1/traces/", method="DELETE", payload=json.dumps({
+                "inputs": ["source", "dummy.1"],
+            }))
+            assert result["status_code"] == 200
+
+        # Exercise limit parsing and setup without racing automatic expiration
+        # against the explicit DELETE used to clean up this API test.
+        for limit in [{"count": 1000}, {"seconds": 60}]:
+            result = service.request("/api/v1/trace/source", method="POST", payload=json.dumps({
+                "params": {"format": "json"}, "limit": limit,
+            }))
+            assert result["status_code"] == 200
+            assert service.request("/api/v1/trace/source", method="DELETE")["status_code"] == 201
+    finally:
+        service.stop()
+
+
+def test_internal_http_server_trace_time_limit_keeps_input_running():
+    service = Service()
+    service.start()
+    try:
+        result = service.request("/api/v1/trace/dummy.0", method="POST", payload=json.dumps({
+            "prefix": "limit-lock.", "params": {"format": "json"}, "limit": {"seconds": 60},
+        }))
+        assert result["status_code"] == 200
+
+        def second_chunk_traced():
+            with open(service.flb.log_file, encoding="utf-8", errors="replace") as stream:
+                return "limit-lock.1" in stream.read()
+
+        # Two traced chunks prove ingestion continues after the first check of
+        # a time limit that has not expired. A leaked mutex stalls that path.
+        service.service.wait_for_condition(
+            second_chunk_traced, timeout=10, interval=0.1,
+            description="second chunk traced before time limit expires",
+        )
+        result = service.request("/api/v1/trace/dummy.0", method="DELETE")
+        assert result["status_code"] == 201
+        assert service.request("/api/v1/uptime")["status_code"] == 200
+    finally:
+        service.stop()
+
+
+def test_internal_http_server_trace_option_byte_bounds():
+    service = Service()
+    service.start()
+    try:
+        for path, inputs in [
+            ("/api/v1/trace/missing", {}),
+            ("/api/v1/traces/", {"inputs": ["missing"]}),
+        ]:
+            # Include the key bytes in the limit. Missing inputs avoid starting a
+            # trace pipeline while still exercising option parsing and cleanup.
+            for extra in [0, 1]:
+                body = {**inputs, "params": {"json_date_key": "x" * (65536 - 13 + extra)}}
+                result = service.request(path, method="POST", payload=json.dumps(body))
+                if extra:
+                    assert result["status_code"] == 400, result
+                elif inputs:
+                    assert result["status_code"] == 200
+                    assert json.loads(result["body"])["inputs"]["missing"]["returncode"] == 404
+                else:
+                    assert result["status_code"] == 404, result
+
+            body = {**inputs, "params": {f"key{i}": "value" for i in range(65)}}
+            result = service.request(path, method="POST", payload=json.dumps(body))
+            assert result["status_code"] == 400, result
     finally:
         service.stop()
 
