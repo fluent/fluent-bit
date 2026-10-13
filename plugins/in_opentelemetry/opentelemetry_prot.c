@@ -819,6 +819,45 @@ error:
     return -1;
 }
 
+int opentelemetry_prot_authorize_ng(struct flb_http_request *request,
+                                     struct flb_http_response *response)
+{
+    struct flb_opentelemetry *context;
+    char *auth_header;
+    size_t auth_len = 0;
+    int grpc_request;
+    int ret;
+
+    context = (struct flb_opentelemetry *) response->stream->user_data;
+    grpc_request = request->path != NULL &&
+                   strncmp(request->path, "/opentelemetry.proto.",
+                           sizeof("/opentelemetry.proto.") - 1) == 0;
+
+    if (context->oauth2_ctx) {
+        auth_header = flb_http_request_get_header(request, "authorization");
+        if (auth_header != NULL) {
+            auth_len = strlen(auth_header);
+        }
+
+        ret = flb_oauth2_jwt_validate(context->oauth2_ctx, auth_header, auth_len);
+        if (ret != FLB_OAUTH2_JWT_OK) {
+            flb_plg_error(context->ins,
+                          "OAuth2 validation failed: %s (rejecting request with 401)",
+                          flb_oauth2_jwt_status_message(ret));
+
+            if (grpc_request) {
+                send_grpc_error_response_ng(response, 16, "unauthorized");
+            }
+            else {
+                send_response_ng(response, 401, NULL);
+            }
+
+            return -1;
+        }
+    }
+    return 0;
+}
+
 /*
  * Protocol handle for requests coming from HTTP/2 server backend. Note that
  * if the payload is compressed (Content-Encoding) it will be decompressed
@@ -831,10 +870,8 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
                                  struct flb_http_response *response)
 {
     int ret = -1;
-    size_t auth_len = 0;
     int grpc_request = FLB_FALSE;
     flb_sds_t tag = NULL;
-    char *auth_header = NULL;
     char payload_type;
     char *payload = NULL;
     size_t payload_size = 0;
@@ -881,29 +918,6 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
             return -1;
         }
         return -1;
-    }
-
-    if (context->oauth2_ctx) {
-        auth_header = flb_http_request_get_header(request, "authorization");
-        if (auth_header != NULL) {
-            auth_len = strlen(auth_header);
-        }
-
-        ret = flb_oauth2_jwt_validate(context->oauth2_ctx, auth_header, auth_len);
-        if (ret != FLB_OAUTH2_JWT_OK) {
-            flb_plg_error(context->ins,
-                          "OAuth2 validation failed: %s (rejecting request with 401)",
-                          flb_oauth2_jwt_status_message(ret));
-
-            if (grpc_request) {
-                send_grpc_error_response_ng(response, 16, "unauthorized");
-            }
-            else {
-                send_response_ng(response, 401, NULL);
-            }
-
-            return -1;
-        }
     }
 
     if (request->method != HTTP_METHOD_POST) {
