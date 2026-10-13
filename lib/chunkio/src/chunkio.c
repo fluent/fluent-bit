@@ -79,6 +79,7 @@ void cio_options_init(struct cio_options *options)
     options->log_level = CIO_LOG_INFO;
     options->flags = CIO_OPEN_RW;
     options->realloc_size_hint = CIO_DISABLE_REALLOC_HINT;
+    options->file_pool_size = 0;
 }
 
 struct cio_ctx *cio_create(struct cio_options *options)
@@ -126,6 +127,7 @@ struct cio_ctx *cio_create(struct cio_options *options)
     ctx->page_size = cio_getpagesize();
     ctx->max_chunks_up = CIO_MAX_CHUNKS_UP;
     ctx->options.flags = options->flags;
+    ctx->options.file_pool_size = options->file_pool_size;
     ctx->realloc_size_hint = CIO_DISABLE_REALLOC_HINT;
 
     if (options->user != NULL) {

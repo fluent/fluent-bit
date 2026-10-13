@@ -40,6 +40,7 @@ struct cio_file {
     size_t realloc_size;      /* chunk size to increase alloc */
     char *path;               /* root path + stream   */
     char *map;                /* map of data          */
+    int pool_slot;            /* file-slot pool index (-1 = not pooled) */
     struct cio_ctx *ctx;      /* owning context */
 #ifdef _WIN32
     HANDLE backing_file;

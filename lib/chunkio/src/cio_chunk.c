@@ -168,6 +168,40 @@ int cio_chunk_delete(struct cio_ctx *ctx, struct cio_stream *st, const char *nam
 #endif
 
     if (st->type == CIO_STORE_FS) {
+        struct mk_list *head;
+        struct cio_chunk *ch;
+        struct cio_chunk *loaded;
+
+        /*
+         * A pooled chunk's logical name is not its on-disk name, so a delete
+         * by logical name must go through the close path to resolve the real
+         * slot file and release the slot. Only pooled chunks are closed: for
+         * every other loaded chunk the historical behaviour is kept (the file
+         * is removed, the chunk object is left for its owner), so callers
+         * holding a chunk pointer are unaffected when the pool is disabled.
+         *
+         * The per-stream chunk lists are not locked: chunkio does not support
+         * concurrent operations on one stream (Fluent Bit gives each input
+         * thread its own stream). The scan path calls this single-threaded.
+         */
+        loaded = NULL;
+        mk_list_foreach(head, &st->chunks) {
+            ch = mk_list_entry(head, struct cio_chunk, _head);
+            if (strcmp(ch->name, name) == 0) {
+                loaded = ch;
+                break;
+            }
+        }
+
+        if (loaded != NULL) {
+            struct cio_file *cf = (struct cio_file *) loaded->backend;
+
+            if (cf != NULL && cf->pool_slot >= 0) {
+                cio_chunk_close(loaded, CIO_TRUE);
+                return CIO_OK;
+            }
+        }
+
         result = cio_file_delete(ctx, st, name);
     }
     else {
@@ -613,30 +647,132 @@ char *cio_version()
  * Counters API
  */
 
+/*
+ * Chunk counters are shared by every stream of a context, and Fluent Bit can
+ * update chunks from multiple input threads when inputs run in threaded mode;
+ * use atomic operations so concurrent updates cannot be lost. A lost
+ * decrement underflows 'total_chunks_up' (0 - 1) and then every new chunk is
+ * created 'down' (writes fail with "file is not mmap()ed").
+ */
+static inline size_t cio_counter_add(size_t *counter)
+{
+#if defined(_WIN32)
+#if defined(_WIN64)
+    return (size_t) _InterlockedIncrement64((volatile LONG64 *) counter);
+#else
+    return (size_t) _InterlockedIncrement((volatile LONG *) counter);
+#endif
+#else
+    return __atomic_add_fetch(counter, 1, __ATOMIC_SEQ_CST);
+#endif
+}
+
+static inline size_t cio_counter_sub(size_t *counter)
+{
+#if defined(_WIN32)
+#if defined(_WIN64)
+    return (size_t) _InterlockedDecrement64((volatile LONG64 *) counter);
+#else
+    return (size_t) _InterlockedDecrement((volatile LONG *) counter);
+#endif
+#else
+    return __atomic_sub_fetch(counter, 1, __ATOMIC_SEQ_CST);
+#endif
+}
+
+static inline size_t cio_counter_get(size_t *counter)
+{
+#if defined(_WIN32)
+#if defined(_WIN64)
+    return (size_t) _InterlockedCompareExchange64((volatile LONG64 *) counter,
+                                                 0, 0);
+#else
+    return (size_t) _InterlockedCompareExchange((volatile LONG *) counter,
+                                                0, 0);
+#endif
+#else
+    return __atomic_load_n(counter, __ATOMIC_RELAXED);
+#endif
+}
+
+static inline int cio_counter_cas(size_t *counter, size_t *expected,
+                                  size_t desired)
+{
+#if defined(_WIN32)
+#if defined(_WIN64)
+    LONG64 prev;
+
+    prev = _InterlockedCompareExchange64((volatile LONG64 *) counter,
+                                         (LONG64) desired,
+                                         (LONG64) *expected);
+    if ((size_t) prev == *expected) {
+        return 1;
+    }
+    *expected = (size_t) prev;
+    return 0;
+#else
+    LONG prev;
+
+    prev = _InterlockedCompareExchange((volatile LONG *) counter,
+                                       (LONG) desired, (LONG) *expected);
+    if ((size_t) prev == *expected) {
+        return 1;
+    }
+    *expected = (size_t) prev;
+    return 0;
+#endif
+#else
+    return __atomic_compare_exchange_n(counter, expected, desired, 0,
+                                       __ATOMIC_SEQ_CST, __ATOMIC_RELAXED);
+#endif
+}
+
 /* Increase the number of total chunks registered (+1) */
 size_t cio_chunk_counter_total_add(struct cio_ctx *ctx)
 {
-    ctx->total_chunks++;
-    return ctx->total_chunks;
+    return cio_counter_add(&ctx->total_chunks);
 }
 
 /* Decrease the total number of chunks (-1) */
 size_t cio_chunk_counter_total_sub(struct cio_ctx *ctx)
 {
-    ctx->total_chunks--;
-    return ctx->total_chunks;
+    return cio_counter_sub(&ctx->total_chunks);
 }
 
 /* Increase the number of total chunks up in memory (+1) */
 size_t cio_chunk_counter_total_up_add(struct cio_ctx *ctx)
 {
-    ctx->total_chunks_up++;
-    return ctx->total_chunks_up;
+    return cio_counter_add(&ctx->total_chunks_up);
 }
 
 /* Decrease the total number of chunks up in memory (-1) */
 size_t cio_chunk_counter_total_up_sub(struct cio_ctx *ctx)
 {
-    ctx->total_chunks_up--;
-    return ctx->total_chunks_up;
+    return cio_counter_sub(&ctx->total_chunks_up);
+}
+
+/* Get the number of chunks up in memory */
+size_t cio_chunk_counter_total_up_get(struct cio_ctx *ctx)
+{
+    return cio_counter_get(&ctx->total_chunks_up);
+}
+
+/*
+ * Try to reserve one 'up' chunk. Returns CIO_TRUE with the counter already
+ * incremented, or CIO_FALSE when max_chunks_up is reached. The check and the
+ * increment are a single atomic operation so concurrent threads cannot
+ * overshoot the configured limit.
+ */
+int cio_chunk_counter_total_up_try_inc(struct cio_ctx *ctx)
+{
+    size_t cur;
+
+    do {
+        cur = cio_counter_get(&ctx->total_chunks_up);
+        if (cur >= ctx->max_chunks_up) {
+            return CIO_FALSE;
+        }
+    } while (cio_counter_cas(&ctx->total_chunks_up, &cur, cur + 1) == 0);
+
+    return CIO_TRUE;
 }
