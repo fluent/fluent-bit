@@ -63,11 +63,6 @@ struct flb_sqldb *flb_sqldb_open(const char *path, const char *desc,
     mk_list_foreach(head, &config->sqldb_list) {
         db_temp = mk_list_entry(head, struct flb_sqldb, _head);
 
-        /* Only lookup for original database, not contexts already shared */
-        if (db_temp->shared == FLB_TRUE) {
-            continue;
-        }
-
         if (strcmp(db_temp->path, path) == 0) {
             break;
         }
