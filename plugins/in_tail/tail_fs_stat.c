@@ -147,7 +147,13 @@ static int tail_fs_check(struct flb_input_instance *ins,
             flb_plg_debug(ctx->ins, "tail_fs_check: file truncated %s (diff: %"PRId64" bytes)", 
                          file->name, size_delta);
             file->offset = offset;
+            file->stream_offset = offset;
+            file->last_processed_bytes = 0;
             file->buf_len = 0;
+            file->anchor_offset = offset;
+            file->skip_bytes = 0;
+            file->exclude_bytes = 0;
+            file->skipping_mode = FLB_FALSE;
             memcpy(&fst->st, &st, sizeof(struct stat));
 
 #ifdef FLB_HAVE_SQLDB
