@@ -429,6 +429,10 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
     struct flb_http_request  *request;
     int                       out_ret = FLB_RETRY;
     int                       result;
+    const char               *grpc_status;
+    const char               *grpc_message;
+    size_t                   final_body_len;
+    void                     *final_body;
 
     oauth2_token = NULL;
 
@@ -458,6 +462,29 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
 
     if (request->protocol_version == HTTP_PROTOCOL_VERSION_20 &&
         ctx->enable_grpc_flag) {
+        result = -1;
+        if (ctx->compress_gzip == FLB_TRUE) {
+            result = flb_gzip_compress((void *) body, body_len,
+                                       &final_body, &final_body_len);
+            compression_algorithm = "gzip";
+        }
+        else if (ctx->compress_zstd == FLB_TRUE)  {
+            result = flb_zstd_compress((void *) body, body_len,
+                                       &final_body, &final_body_len);
+            compression_algorithm = "zstd";
+        }
+        else {
+            final_body = (void *) body;
+            final_body_len = body_len;
+            result = 0;
+        }
+        if (result != 0) {
+            compression_algorithm = NULL;
+            final_body = (void *) body;
+            final_body_len = body_len;
+            flb_plg_error(ctx->ins, "cannot compress payload, disabling "
+                                    "compression");
+        }
         /* nghttp2 does not automatically add the TE header because it is not
          * tied to the gRPC semantics, so we must set the required
          * "te: trailers" header explicitly for gRPC-over-HTTP/2.
@@ -470,18 +497,26 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
             flb_plg_error(ctx->ins, "failed to set gRPC TE header");
             flb_http_client_request_destroy(request, FLB_TRUE);
 
+            if (compression_algorithm != NULL) {
+                flb_free(final_body);
+            }
+
             return FLB_RETRY;
         }
 
-        grpc_body = cfl_sds_create_size(body_len + 5);
+        grpc_body = cfl_sds_create_size(final_body_len + 5);
 
         if (grpc_body == NULL) {
             flb_http_client_request_destroy(request, FLB_TRUE);
 
+            if (compression_algorithm != NULL) {
+                flb_free(final_body);
+            }
+
             return FLB_RETRY;
         }
 
-        wire_message_length = (uint32_t) body_len;
+        wire_message_length = (uint32_t) final_body_len;
 
         sds_result = cfl_sds_cat(grpc_body, "\x00----", 5);
 
@@ -490,22 +525,33 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
 
             cfl_sds_destroy(grpc_body);
 
+            if (compression_algorithm != NULL) {
+                flb_free(final_body);
+            }
+
             return FLB_RETRY;
         }
 
         grpc_body = sds_result;
 
+        if(compression_algorithm != NULL){
+            ((uint8_t *) grpc_body)[0] = 0x01;
+        }
         ((uint8_t *) grpc_body)[1] = (wire_message_length & 0xFF000000) >> 24;
         ((uint8_t *) grpc_body)[2] = (wire_message_length & 0x00FF0000) >> 16;
         ((uint8_t *) grpc_body)[3] = (wire_message_length & 0x0000FF00) >> 8;
         ((uint8_t *) grpc_body)[4] = (wire_message_length & 0x000000FF) >> 0;
 
-        sds_result = cfl_sds_cat(grpc_body, body, body_len);
+        sds_result = cfl_sds_cat(grpc_body, final_body, final_body_len);
 
         if (sds_result == NULL) {
             flb_http_client_request_destroy(request, FLB_TRUE);
 
             cfl_sds_destroy(grpc_body);
+
+            if (compression_algorithm != NULL) {
+                flb_free(final_body);
+            }
 
             return FLB_RETRY;
         }
@@ -520,11 +566,29 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
                     "application/grpc"),
                     FLB_HTTP_CLIENT_ARGUMENT_BODY(grpc_body,
                                                   grpc_body_length,
-                                                  compression_algorithm));
+                                                  NULL));
+
+        if(compression_algorithm != NULL) {
+            if (result == 0) {
+                result = flb_http_request_set_header(request,
+                                                     "grpc-encoding",
+                                                     0,
+                                                     compression_algorithm,
+                                                     0);
+            }
+            if (result == 0) {
+                flb_http_request_set_header(request,
+                                            "grpc-accept-encoding",
+                                            0,
+                                            compression_algorithm,
+                                            0);
+            }
+            flb_free(final_body);
+        }
 
         cfl_sds_destroy(grpc_body);
 
-        if (result  != 0) {
+        if (result != 0) {
             flb_http_client_request_destroy(request, FLB_TRUE);
 
             return FLB_RETRY;
@@ -661,6 +725,22 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
     }
     else {
         if (ctx->log_response_payload &&
+                 response->content_type != NULL &&
+                 strncasecmp(response->content_type, "application/grpc", 16)
+                 == 0){
+            grpc_status = flb_hash_table_get_ptr(response->headers,
+                                                 "grpc-status", 11);
+            grpc_message = flb_hash_table_get_ptr(response->headers,
+                                                  "grpc-message", 12);
+            flb_plg_info(ctx->ins,
+                         "%s:%i, HTTP status=%i GRPC status=%s %s",
+                         ctx->host,
+                         ctx->port,
+                         response->status,
+                         grpc_status  ? grpc_status  : "(none)",
+                         grpc_message ? grpc_message : "");
+        }
+        else if (ctx->log_response_payload &&
             response->body != NULL &&
             cfl_sds_len(response->body) > 0) {
             flb_plg_info(ctx->ins, "%s:%i, HTTP status=%i%s",
