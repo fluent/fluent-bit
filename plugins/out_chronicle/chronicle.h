@@ -100,6 +100,10 @@ struct flb_chronicle {
     int api;
     size_t max_payload_size;
 
+    /* request body compression */
+    flb_sds_t compress_str;
+    int compress_gzip;
+
     flb_sds_t uri;
     flb_sds_t health_uri;
     flb_sds_t endpoint;
