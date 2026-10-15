@@ -111,9 +111,11 @@ class Service:
     "items_fields",
     [{"items": None}, {}, {"items": {}}, {"items": "invalid"},
      {"items": 1}, {"items": False}, {"items": []},
+     {"items": [{"metadata": "malformed"}]},
      {"items": [{"metadata": {"name": "testpod", "namespace": "default",
                                "uid": "kubelet-test-pod"}}]}],
-    ids=["null", "missing", "object", "string", "number", "boolean", "empty", "valid"],
+    ids=["null", "missing", "object", "string", "number", "boolean", "empty",
+         "malformed-metadata", "valid"],
 )
 def test_filter_kubernetes_kubelet_items(tmp_path, items_fields):
     payload = {"kind": "PodList", "apiVersion": "v1", "metadata": {}}
@@ -152,7 +154,7 @@ def test_filter_kubernetes_kubelet_items(tmp_path, items_fields):
     assert metadata["pod_name"] == "testpod"
     assert metadata["namespace_name"] == "default"
     items = items_fields.get("items")
-    if isinstance(items, list) and items:
+    if isinstance(items, list) and items and isinstance(items[0].get("metadata"), dict):
         assert metadata["pod_id"] == "kubelet-test-pod"
     else:
         assert "pod_id" not in metadata
