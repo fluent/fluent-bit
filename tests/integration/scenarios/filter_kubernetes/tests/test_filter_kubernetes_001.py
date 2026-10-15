@@ -1,5 +1,6 @@
 import contextlib
 import http.server
+import json
 import os
 import shlex
 import ssl
@@ -104,6 +105,57 @@ class Service:
 
     def read_log(self):
         return read_file(self.flb.log_file)
+
+
+@pytest.mark.parametrize(
+    "items_fields",
+    [{"items": None}, {}, {"items": {}}, {"items": "invalid"},
+     {"items": 1}, {"items": False}, {"items": []},
+     {"items": [{"metadata": {"name": "testpod", "namespace": "default",
+                               "uid": "kubelet-test-pod"}}]}],
+    ids=["null", "missing", "object", "string", "number", "boolean", "empty", "valid"],
+)
+def test_filter_kubernetes_kubelet_items(tmp_path, items_fields):
+    payload = {"kind": "PodList", "apiVersion": "v1", "metadata": {}}
+    payload.update(items_fields)
+    meta_file = tmp_path / "default_testpod.meta"
+    meta_file.write_text(json.dumps(payload), encoding="utf-8")
+    config = {
+        "service": {"flush": 1, "grace": 1, "log_level": "info",
+                    "http_server": True,
+                    "http_port": "${FLUENT_BIT_HTTP_MONITORING_PORT}"},
+        "pipeline": {
+            "inputs": [{"name": "dummy", "samples": 1,
+                        "tag": f"kube.var.log.containers.testpod_default_app-{'a' * 64}.log",
+                        "dummy": '{"message":"kubelet-items-regression"}'}],
+            "filters": [{"name": "kubernetes", "match": "kube.*",
+                         "use_kubelet": True,
+                         "kube_meta_preload_cache_dir": str(tmp_path),
+                         "kube_tag_prefix": "kube.var.log.containers."}],
+            "outputs": [{"name": "stdout", "match": "*", "format": "json_lines"}],
+        },
+    }
+    config_file = tmp_path / "kubelet-items.yaml"
+    config_file.write_text(yaml.safe_dump(config), encoding="utf-8")
+    service = Service(str(config_file))
+    try:
+        service.start()
+        log_text = service.wait_for_log_contains('"kubelet-items-regression"')
+    finally:
+        service.stop()
+
+    records = [json.loads(line) for line in log_text.splitlines() if line.startswith("{")]
+    records = [record for record in records
+               if record.get("message") == "kubelet-items-regression"]
+    assert len(records) == 1
+    metadata = records[0].get("kubernetes", {})
+    assert metadata["pod_name"] == "testpod"
+    assert metadata["namespace_name"] == "default"
+    items = items_fields.get("items")
+    if isinstance(items, list) and items:
+        assert metadata["pod_id"] == "kubelet-test-pod"
+    else:
+        assert "pod_id" not in metadata
 
 
 def _write_script(tmp_path, name, line_count):
