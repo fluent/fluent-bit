@@ -1270,6 +1270,72 @@ void test_chronicle_api_duplicate_label()
     check_start_error(ctx, out_ffd, "duplicate label keys must be rejected");
 }
 
+static void check_compress_accepted(const char *compress)
+{
+    flb_ctx_t *ctx;
+    int ret;
+    int in_ffd, out_ffd;
+    char *record = "[1700000000.0625, {\"message\": \"hello world\"}]";
+
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", "log_level", "error", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "chronicle", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "api", "chronicle",
+                   "customer_id", "test-customer",
+                   "project_id", "TESTING_FORMAT",
+                   "log_type", "TEST_LOG",
+                   "compress", compress,
+                   NULL);
+
+    /*
+     * Google applies the size limits to the uncompressed payload, so the
+     * batches are built from the uncompressed JSON whatever the compression.
+     */
+    flb_output_set_test(ctx, out_ffd, "formatter",
+                        cb_check_format_chronicle_api, NULL, NULL);
+
+    ret = flb_start(ctx);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("compress '%s' must be accepted", compress);
+        flb_destroy(ctx);
+        return;
+    }
+    clear_output_invoked();
+
+    flb_lib_push(ctx, in_ffd, record, strlen(record));
+
+    sleep(1);
+
+    stop_and_check(ctx, 1);
+}
+
+void test_compress_accepted()
+{
+    check_compress_accepted("gzip");
+    check_compress_accepted("none");
+}
+
+void test_invalid_compress()
+{
+    flb_ctx_t *ctx;
+    int out_ffd;
+
+    ctx = create_chronicle_api_ctx(&out_ffd);
+    flb_output_set(ctx, out_ffd,
+                   "api", "chronicle",
+                   "log_type", "TEST_LOG",
+                   "compress", "zstd",
+                   NULL);
+
+    check_start_error(ctx, out_ffd, "an unsupported compress value must be rejected");
+}
+
 
 TEST_LIST = {
     { "format_no_log_key",           test_format_no_log_key },
@@ -1295,5 +1361,7 @@ TEST_LIST = {
     { "chronicle_api_duplicate_label", test_chronicle_api_duplicate_label },
     { "chronicle_api_response_status", test_chronicle_api_response_status },
     { "legacy_api_response_status",  test_legacy_api_response_status },
+    { "compress_accepted",           test_compress_accepted },
+    { "invalid_compress",            test_invalid_compress },
     { NULL, NULL }
 };
