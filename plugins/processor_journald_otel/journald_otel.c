@@ -66,6 +66,10 @@ static int parse_uint(struct cfl_variant *value, uint64_t limit, uint64_t *numbe
     unsigned int digit;
     uint64_t result = 0;
 
+    if (!value) {
+        return FLB_FALSE;
+    }
+
     if (value->type == CFL_VARIANT_UINT) {
         result = value->data.as_uint64;
     }
@@ -167,6 +171,11 @@ static struct cfl_variant *jo_variant_clone(struct cfl_variant *var)
     struct cfl_kvlist *kvlist;
     struct cfl_variant *out;
 
+    /* Sparse CFL arrays can contain empty slots. Encode those as null. */
+    if (!var) {
+        return cfl_variant_create_from_null();
+    }
+
     switch (var->type) {
     case CFL_VARIANT_STRING:
         return cfl_variant_create_from_string_s(var->data.as_string,
@@ -206,6 +215,9 @@ static struct cfl_variant *jo_variant_clone(struct cfl_variant *var)
             cfl_kvlist_destroy(kvlist);
         }
         return out;
+    case CFL_VARIANT_REFERENCE:
+        /* Opaque pointers have no serializable value or transferable ownership. */
+        return NULL;
     default:
         return NULL;
     }
@@ -357,7 +369,9 @@ static int map_record(struct flb_mp_chunk_cobj *chunk,
             continue;
         }
         if (key_matches("__REALTIME_TIMESTAMP", pair->key) &&
-            parse_uint(pair->val, UINT64_MAX / 1000, &number)) {
+            parse_uint(pair->val, UINT64_MAX / 1000, &number) &&
+            number / 1000000 <= UINT32_MAX &&
+            (sizeof(time_t) > 4 || number / 1000000 <= INT32_MAX)) {
             timestamp = number * 1000;
             flb_time_set(&tm, number / 1000000, (number % 1000000) * 1000);
             continue;
@@ -378,7 +392,7 @@ static int map_record(struct flb_mp_chunk_cobj *chunk,
                 }
                 continue;
             }
-            if (!field->numeric && pair->val->type == CFL_VARIANT_STRING) {
+            if (!field->numeric && pair->val && pair->val->type == CFL_VARIANT_STRING) {
                 if (insert_copy(target, field->destination, strlen(field->destination),
                                 pair->val) != 0) {
                     goto failure;
@@ -430,10 +444,12 @@ static int map_record(struct flb_mp_chunk_cobj *chunk,
     end->modified = FLB_TRUE;
     cfl_list_add_before(&start->_head, &record->_head, &chunk->records);
     cfl_list_add_before(&end->_head, record->_head.next, &chunk->records);
-    record->cobj_group_metadata = start->cobj_metadata;
-    record->cobj_group_attributes = start->cobj_record;
-    end->cobj_group_metadata = start->cobj_metadata;
-    end->cobj_group_attributes = start->cobj_record;
+    /*
+     * The markers carry the group through encoding, as in opentelemetry_envelope.
+     * Do not attach borrowed pointers to their payloads: downstream processors
+     * can remove a marker independently. All input has already been materialized,
+     * so the decoder's active_group_* state must not be changed here.
+     */
     cfl_object_destroy(record->cobj_record);
     cfl_object_destroy(record->cobj_metadata);
     record->cobj_record = new_body;
@@ -459,6 +475,7 @@ static int cb_process_logs(struct flb_processor_instance *ins,
 {
     int ret;
     int type;
+    size_t offset;
     int grouped = FLB_FALSE;
     struct cfl_list *head;
     struct cfl_list *tmp;
@@ -469,7 +486,18 @@ static int cb_process_logs(struct flb_processor_instance *ins,
     /* Materialize all records so conditions cannot hide existing group markers. */
     condition = chunk->condition;
     chunk->condition = NULL;
-    while ((ret = flb_mp_chunk_cobj_record_next(chunk, &record)) == FLB_MP_CHUNK_RECORD_OK) {
+    for (;;) {
+        offset = chunk->log_decoder->offset;
+        ret = flb_mp_chunk_cobj_record_next(chunk, &record);
+        if (ret == FLB_MP_CHUNK_RECORD_OK) {
+            continue;
+        }
+        /* The decoder consumed this invalid body; keep later records visible. */
+        if (ret == FLB_MP_CHUNK_RECORD_ERROR && chunk->log_decoder->offset > offset &&
+            chunk->log_decoder->last_result == FLB_EVENT_DECODER_ERROR_WRONG_BODY_TYPE) {
+            continue;
+        }
+        break;
     }
     chunk->condition = condition;
     if (ret != FLB_MP_CHUNK_RECORD_EOF) {
