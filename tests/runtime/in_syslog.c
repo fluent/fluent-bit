@@ -1499,10 +1499,17 @@ void flb_test_syslog_buffer_limits(void)
         {"-1", "0", FLB_FALSE},
         {above_limit, "0", FLB_FALSE},
         {"3000000000", "0", FLB_FALSE},
+        {"4294967296", "0", FLB_FALSE},
+        {"4294967304", "0", FLB_FALSE},
+        {"-4294967288", "0", FLB_FALSE},
         {"8", above_limit, FLB_FALSE},
+        {"8", "4294967296", FLB_FALSE},
+        {"8", "4294967304", FLB_FALSE},
+        {"8", "-4294967296", FLB_FALSE},
         {"8", "-1", FLB_FALSE},
         {"2147483648", "4294967296", FLB_FALSE},
         {"2", "0", FLB_TRUE},
+        {"1k", "2k", FLB_TRUE},
         {"8", limit, FLB_TRUE},
         {limit, "0", FLB_TRUE}
     };
