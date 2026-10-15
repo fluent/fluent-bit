@@ -515,11 +515,15 @@ static int send_events(struct flb_out_manticore *ctx,
     return result;
 }
 
-/* Sent once from cb_exit after every worker has stopped. */
+/*
+ * Sent once from cb_exit after every worker has stopped. Returns FLB_OK when
+ * the load is published, FLB_ERROR when it is not, and FLB_RETRY when the
+ * Finish was sent but its outcome is unknown.
+ */
 static int shared_commit(struct flb_out_manticore *ctx)
 {
     int ret;
-    int result = FLB_RETRY;
+    int result = FLB_ERROR;
     size_t sent = 0;
     struct flb_connection *connection;
     struct flb_http_client *client;
@@ -537,7 +541,7 @@ static int shared_commit(struct flb_out_manticore *ctx)
     flb_stream_disable_keepalive(&ctx->u->base);
     connection = flb_upstream_conn_get(ctx->u);
     if (connection == NULL) {
-        return FLB_RETRY;
+        return FLB_ERROR;
     }
     /*
      * HTTP/1.0: a blocking read that meets a closed connection ends the reply
@@ -553,6 +557,7 @@ static int shared_commit(struct flb_out_manticore *ctx)
         if (ctx->http_user != NULL) {
             flb_http_basic_auth(client, ctx->http_user, ctx->http_passwd);
         }
+        result = FLB_RETRY;
         ret = flb_http_do(client, &sent);
         if (ret == 0 && client->resp.status > 0) {
             result = shared_response(ctx, client, "published");
@@ -724,7 +729,7 @@ static void shared_exit(struct flb_out_manticore *ctx, struct flb_config *config
     int mem_chunks = 0;
     int fs_chunks = 0;
     int tasks;
-    int ret;
+    int ret = FLB_OK;
     double dropped = -1;
     double exhausted = -1;
     char *name;
@@ -750,20 +755,20 @@ static void shared_exit(struct flb_out_manticore *ctx, struct flb_config *config
                       "Shared incomplete: tasks=%d chunks=%d/%d dropped=%.0f exhausted=%.0f",
                       tasks, mem_chunks, fs_chunks, dropped, exhausted);
     }
-    if (ctx->session_failed) {
-        flb_plg_error(ctx->ins,
-                      "Shared import incomplete; use PURGE BULK_IMPORT FROM TABLE %s "
-                      "OPTION clear_sessions=1 to cancel staged data", ctx->table);
-    }
-    else if (ctx->session_started) {
+    if (!ctx->session_failed && ctx->session_started) {
         ret = shared_commit(ctx);
         if (ret != FLB_OK) {
             ctx->session_failed = FLB_TRUE;
-            if (ret == FLB_RETRY) {
-                flb_plg_error(ctx->ins,
-                              "Shared Finish completion unknown; coordinate recovery before replay");
-            }
         }
+    }
+    if (ret == FLB_RETRY) {
+        flb_plg_error(ctx->ins,
+                      "Shared Finish completion unknown; coordinate recovery before replay");
+    }
+    else if (ctx->session_failed) {
+        flb_plg_error(ctx->ins,
+                      "Shared import not published; use PURGE BULK_IMPORT FROM TABLE %s "
+                      "OPTION clear_sessions=1 to cancel staged data", ctx->table);
     }
 
     if (ctx->session_failed) {
