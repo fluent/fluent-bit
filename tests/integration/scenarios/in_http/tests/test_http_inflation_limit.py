@@ -3,9 +3,11 @@ import concurrent.futures
 import gzip
 import http.client
 import json
+from pathlib import Path
 
 import pytest
 
+from utils.fluent_bit_manager import FluentBitStartupError
 from utils.test_service import FluentBitTestService
 
 
@@ -66,9 +68,10 @@ def encode(payload, codec):
 def post(port, payload, encoding):
     connection = http.client.HTTPConnection("127.0.0.1", port, timeout=15)
     try:
-        connection.request("POST", "/", payload, {
-            "Content-Type": "application/json", "Content-Encoding": encoding,
-        })
+        headers = {"Content-Type": "application/json"}
+        if encoding is not None:
+            headers["Content-Encoding"] = encoding
+        connection.request("POST", "/", payload, headers)
         response = connection.getresponse()
         response.read()
         return response.status
@@ -123,5 +126,51 @@ def test_http_inflation_budget(tmp_path, codec, decoded_limit):
         for unsupported in ("zlib", "deflate", "gzip, snappy", "gzip-invalid"):
             assert post(port, payload, unsupported) is None
         assert post(port, encode(prefix + b" " * 128, codec), encoding) == 201
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("value", ["100MiB", "-1"])
+def test_http_rejects_invalid_decoded_limit(tmp_path, value):
+    config = {
+        "service": {"flush": 1, "http_server": "on",
+                    "http_port": "${FLUENT_BIT_HTTP_MONITORING_PORT}"},
+        "pipeline": {
+            "inputs": [{"name": "http", "listen": "127.0.0.1",
+                        "port": "${FLUENT_BIT_TEST_LISTENER_PORT}",
+                        "http_server.max_decoded_body_size": value}],
+            "outputs": [{"name": "null", "match": "*"}],
+        },
+    }
+    path = tmp_path / "http.yaml"
+    path.write_text(json.dumps(config))
+    service = FluentBitTestService(str(path))
+
+    with pytest.raises(FluentBitStartupError):
+        service.start()
+    assert "invalid http_server.max_decoded_body_size" in Path(service.flb.log_file).read_text()
+
+
+def test_plain_http_body_uses_wire_limit(tmp_path):
+    config = {
+        "service": {"flush": 1, "http_server": "on",
+                    "http_port": "${FLUENT_BIT_HTTP_MONITORING_PORT}"},
+        "pipeline": {
+            "inputs": [{"name": "http", "listen": "127.0.0.1",
+                        "port": "${FLUENT_BIT_TEST_LISTENER_PORT}",
+                        "http_server.buffer_max_size": "4096",
+                        "http_server.max_decoded_body_size": "1024"}],
+            "outputs": [{"name": "null", "match": "*"}],
+        },
+    }
+    path = tmp_path / "http.yaml"
+    path.write_text(json.dumps(config))
+    service = FluentBitTestService(str(path))
+    payload = b'{"message":"plain"}' + b" " * 2029
+    try:
+        service.start()
+        assert post(service.flb_listener_port, payload, "identity") == 201
+        assert post(service.flb_listener_port, payload, None) == 201
+        assert post(service.flb_listener_port, gzip.compress(payload), "gzip") is None
     finally:
         service.stop()
