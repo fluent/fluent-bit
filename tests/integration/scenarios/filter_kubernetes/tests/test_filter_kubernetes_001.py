@@ -160,6 +160,113 @@ def test_filter_kubernetes_kubelet_items(tmp_path, items_fields):
         assert "pod_id" not in metadata
 
 
+def _probe_config(tmp_path, use_kubelet):
+    kubernetes_filter = {
+        "name": "kubernetes",
+        "match": "kube.*",
+        "kube_meta_preload_cache_dir": str(tmp_path),
+        "kube_tag_prefix": "kube.var.log.containers.",
+    }
+    if use_kubelet:
+        kubernetes_filter["use_kubelet"] = True
+
+    return {
+        "service": {"flush": 1, "grace": 1, "log_level": "info",
+                    "http_server": True,
+                    "http_port": "${FLUENT_BIT_HTTP_MONITORING_PORT}"},
+        "pipeline": {
+            "inputs": [{"name": "dummy", "samples": 1,
+                        "tag": f"kube.var.log.containers.testpod_default_app-{'a' * 64}.log",
+                        "dummy": '{"message":"malformed-pod-regression"}'}],
+            "filters": [kubernetes_filter],
+            "outputs": [{"name": "stdout", "match": "*", "format": "json_lines"}],
+        },
+    }
+
+
+def _probe_records(log_text):
+    records = [json.loads(line) for line in log_text.splitlines() if line.startswith("{")]
+    records = [record for record in records
+               if record.get("message") == "malformed-pod-regression"]
+    assert len(records) == 1
+    return records
+
+
+@pytest.mark.parametrize("use_kubelet", [True, False], ids=["kubelet", "api"])
+@pytest.mark.parametrize(
+    ("pod_fields", "expect_pod_id"),
+    [({"spec": 1234567}, True),
+     ({"spec": "invalid"}, True),
+     ({"status": 987654321}, True),
+     ({"status": ["invalid"]}, True),
+     ({"status": {"containerStatuses": "aaaa"}}, True),
+     ({"status": {"containerStatuses": 4242}}, True),
+     ({"status": {"containerStatuses": [7]}}, True),
+     ({"status": {"containerStatuses": [{"name": "app", "containerID": 99,
+                                        "image": None}]}}, True)],
+    ids=["spec-number", "spec-string", "status-number", "status-array",
+         "statuses-string", "statuses-number", "statuses-element-number",
+         "statuses-value-types"],
+)
+def test_filter_kubernetes_malformed_pod_object(tmp_path, use_kubelet,
+                                                pod_fields, expect_pod_id):
+    pod = {"metadata": {"name": "testpod", "namespace": "default",
+                        "uid": "kubelet-test-pod"}}
+    pod.update(pod_fields)
+    if use_kubelet:
+        payload = {"kind": "PodList", "apiVersion": "v1", "metadata": {},
+                   "items": [pod]}
+    else:
+        payload = pod
+    meta_file = tmp_path / "default_testpod.meta"
+    meta_file.write_text(json.dumps(payload), encoding="utf-8")
+    config = _probe_config(tmp_path, use_kubelet)
+    config_file = tmp_path / "malformed-pod-object.yaml"
+    config_file.write_text(yaml.safe_dump(config), encoding="utf-8")
+    service = Service(str(config_file))
+    try:
+        service.start()
+        log_text = service.wait_for_log_contains('"malformed-pod-regression"')
+    finally:
+        service.stop()
+
+    records = _probe_records(log_text)
+    metadata = records[0].get("kubernetes", {})
+    assert metadata["pod_name"] == "testpod"
+    assert metadata["namespace_name"] == "default"
+    if expect_pod_id:
+        assert metadata["pod_id"] == "kubelet-test-pod"
+    else:
+        assert "pod_id" not in metadata
+
+
+@pytest.mark.parametrize("use_kubelet", [True, False], ids=["kubelet", "api"])
+@pytest.mark.parametrize(
+    "payload",
+    [[{"metadata": {"name": "testpod", "namespace": "default"}}],
+     "just-a-string", 42, True],
+    ids=["root-array", "root-string", "root-number", "root-boolean"],
+)
+def test_filter_kubernetes_non_object_root(tmp_path, use_kubelet, payload):
+    meta_file = tmp_path / "default_testpod.meta"
+    meta_file.write_text(json.dumps(payload), encoding="utf-8")
+    config = _probe_config(tmp_path, use_kubelet)
+    config_file = tmp_path / "non-object-root.yaml"
+    config_file.write_text(yaml.safe_dump(config), encoding="utf-8")
+    service = Service(str(config_file))
+    try:
+        service.start()
+        log_text = service.wait_for_log_contains('"malformed-pod-regression"')
+    finally:
+        service.stop()
+
+    records = _probe_records(log_text)
+    metadata = records[0].get("kubernetes", {})
+    assert metadata["pod_name"] == "testpod"
+    assert metadata["namespace_name"] == "default"
+    assert "pod_id" not in metadata
+
+
 def _write_script(tmp_path, name, line_count):
     script_file = tmp_path / name
     script_file.write_text(
