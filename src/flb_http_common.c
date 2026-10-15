@@ -533,7 +533,7 @@ int flb_http_request_uncompress_body(
 
     if (content_encoding_header_value == NULL ||
         strcasecmp(content_encoding_header_value, "identity") == 0) {
-        return cfl_sds_len(request->body) > budget ? FLB_DECOMPRESSOR_LIMIT_EXCEEDED : 0;
+        return 0;
     }
 
     if (strcasecmp(content_encoding_header_value, "gzip") != 0 &&
