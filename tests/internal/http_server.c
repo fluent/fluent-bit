@@ -185,11 +185,13 @@ void test_http_server_options_defaults()
     TEST_CHECK(options.reuse_port == FLB_FALSE);
     TEST_CHECK(options.idle_timeout == HTTP_SERVER_DEFAULT_IDLE_TIMEOUT);
     TEST_CHECK(options.buffer_max_size == HTTP_SERVER_MAXIMUM_BUFFER_SIZE);
+    TEST_CHECK(options.max_decoded_body_size == HTTP_SERVER_DEFAULT_MAX_DECODED_BODY_SIZE);
     TEST_CHECK(options.http1_max_header_size == HTTP_SERVER_DEFAULT_HTTP1_MAX_HEADER_SIZE);
     TEST_CHECK(options.max_connections == 0);
     TEST_CHECK(config.http2 == FLB_TRUE);
     TEST_CHECK(config.idle_timeout == HTTP_SERVER_DEFAULT_IDLE_TIMEOUT);
     TEST_CHECK(config.buffer_max_size == HTTP_SERVER_MAXIMUM_BUFFER_SIZE);
+    TEST_CHECK(config.max_decoded_body_size == HTTP_SERVER_DEFAULT_MAX_DECODED_BODY_SIZE);
     TEST_CHECK(strcmp(config.http1_max_header_size, "32KiB") == 0);
     TEST_CHECK(config.max_connections == 0);
     TEST_CHECK(flb_http_server_property_is_allowed("http_server.idle_timeout") == FLB_TRUE);
@@ -1230,7 +1232,66 @@ static void test_http_body_inflation_budget(void)
     flb_http_request_destroy(&request);
 }
 
+static void test_http_body_inflation_limit(void)
+{
+    struct flb_http_request request;
+    char input[32768];
+    char *encoded;
+    char *encodings[] = {"gzip", "zstd", "snappy"};
+    size_t encoded_size;
+    size_t limits[] = {sizeof(input) - 1, sizeof(input), sizeof(input) + 1};
+    size_t i;
+    size_t j;
+    int ret;
+
+    memset(input, 'a', sizeof(input));
+    for (i = 0; i < 3; i++) {
+        encoded = NULL;
+        if (i == 0) {
+            ret = flb_gzip_compress(input, sizeof(input), (void **) &encoded, &encoded_size);
+        }
+        else if (i == 1) {
+            ret = flb_zstd_compress(input, sizeof(input), (void **) &encoded, &encoded_size);
+        }
+        else {
+            ret = flb_snappy_compress(input, sizeof(input), &encoded, &encoded_size);
+        }
+        TEST_ASSERT(ret == 0);
+        for (j = 0; j < 3; j++) {
+            memset(&request, 0, sizeof(request));
+            TEST_ASSERT(flb_http_request_init(&request) == 0);
+            request.body = cfl_sds_create_len(encoded, encoded_size);
+            TEST_ASSERT(request.body != NULL);
+            TEST_ASSERT(flb_http_request_set_header(&request, "Content-Encoding", 0,
+                                                    encodings[i], 0) == 0);
+            ret = flb_http_request_uncompress_body(&request, limits[j]);
+            if (j == 0) {
+                TEST_CHECK(ret == FLB_DECOMPRESSOR_LIMIT_EXCEEDED);
+                TEST_CHECK(cfl_sds_len(request.body) == encoded_size);
+                TEST_CHECK(memcmp(request.body, encoded, encoded_size) == 0);
+            }
+            else {
+                TEST_CHECK(ret == 0);
+                TEST_CHECK(request.content_length == sizeof(input));
+                TEST_CHECK(cfl_sds_len(request.body) == sizeof(input));
+                TEST_CHECK(memcmp(request.body, input, sizeof(input)) == 0);
+                TEST_CHECK(flb_http_request_get_header(&request, "Content-Encoding") == NULL);
+            }
+            flb_http_request_destroy(&request);
+        }
+        /* A failed decoder must not dispatch the original compressed body. */
+        memset(&request, 0, sizeof(request));
+        TEST_ASSERT(flb_http_request_init(&request) == 0);
+        request.body = cfl_sds_create_len(encoded, encoded_size / 2);
+        flb_http_request_set_header(&request, "Content-Encoding", 0, encodings[i], 0);
+        TEST_CHECK(flb_http_request_uncompress_body(&request, sizeof(input)) != 0);
+        flb_http_request_destroy(&request);
+        flb_free(encoded);
+    }
+}
+
 TEST_LIST = {
+    { "http_body_inflation_limit", test_http_body_inflation_limit },
     { "http_body_inflation_budget", test_http_body_inflation_budget },
     { "http1_rejects_invalid_partial_request_line", test_http1_rejects_invalid_partial_request_line },
     { "http1_header_limit_binary_units", test_http1_header_limit_binary_units },
