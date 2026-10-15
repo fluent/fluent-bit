@@ -38,6 +38,12 @@ struct flb_config_map flb_http_server_config_map[] = {
      "Set the maximum size of the HTTP request buffer"
     },
     {
+     FLB_CONFIG_MAP_SIZE, "http_server.max_decoded_body_size", "100M",
+     0, FLB_TRUE, offsetof(struct flb_http_server_config, max_decoded_body_size),
+     "Set the maximum decoded body size for automatic HTTP decompression, independently "
+     "of buffer_max_size. 0 uses the default 100M limit."
+    },
+    {
      FLB_CONFIG_MAP_SIZE, "http_server.buffer_chunk_size", "512K",
      0, FLB_TRUE, offsetof(struct flb_http_server_config, buffer_chunk_size),
      "Set the buffer chunk size used for HTTP requests"

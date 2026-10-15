@@ -18,6 +18,7 @@
  */
 
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_compression.h>
 
 #include <fluent-bit/http_server/flb_http_server.h>
 #include <fluent-bit/flb_http_common.h>
@@ -414,88 +415,109 @@ int flb_http_request_compress_body(
     return 0;
 }
 
-int flb_http_request_uncompress_body(
-    struct flb_http_request *request)
+int flb_http_request_uncompress_body(struct flb_http_request *request)
 {
-    char      *content_encoding_header_value;
-    char       new_content_length[21];
-    cfl_sds_t  inflated_body;
-    char      *output_buffer;
-    size_t     output_size;
-    int        result;
+    return flb_http_request_uncompress_body_limited(request,
+                                                    HTTP_SERVER_DEFAULT_MAX_DECODED_BODY_SIZE);
+}
 
-    result = 0;
+int flb_http_request_uncompress_body_limited(struct flb_http_request *request, size_t limit)
+{
+    struct flb_decompression_context *decoder;
+    char *encoding;
+    char new_content_length[21];
+    char chunk[16384];
+    cfl_sds_t body;
+    cfl_sds_t resized;
+    size_t produced;
+    size_t previous_input;
+    int previous_state;
+    int algorithm;
+    int result;
 
     if (request->body == NULL) {
         return 0;
     }
 
-    content_encoding_header_value = flb_http_request_get_header(
-                                        request,
-                                        "Content-Encoding");
-
-    if (content_encoding_header_value == NULL) {
-        return 0;
+    encoding = flb_http_request_get_header(request, "Content-Encoding");
+    if (encoding == NULL || strcasecmp(encoding, "identity") == 0) {
+        return cfl_sds_len(request->body) > limit ? FLB_DECOMPRESSOR_LIMIT_EXCEEDED : 0;
     }
 
-    if (strncasecmp(content_encoding_header_value, "gzip", 4) == 0) {
-        result = uncompress_gzip(&output_buffer,
-                                    &output_size,
-                                    request->body,
-                                    cfl_sds_len(request->body));
+    if (strcasecmp(encoding, "gzip") == 0) {
+        algorithm = FLB_COMPRESSION_ALGORITHM_GZIP;
     }
-    else if (strncasecmp(content_encoding_header_value, "zlib", 4) == 0) {
-        result = uncompress_zlib(&output_buffer,
-                                    &output_size,
-                                    request->body,
-                                    cfl_sds_len(request->body));
+    else if (strcasecmp(encoding, "zstd") == 0) {
+        algorithm = FLB_COMPRESSION_ALGORITHM_ZSTD;
     }
-    else if (strncasecmp(content_encoding_header_value, "zstd", 4) == 0) {
-        result = uncompress_zstd(&output_buffer,
-                                    &output_size,
-                                    request->body,
-                                    cfl_sds_len(request->body));
+    else if (strcasecmp(encoding, "snappy") == 0) {
+        algorithm = FLB_COMPRESSION_ALGORITHM_SNAPPY;
     }
-    else if (strncasecmp(content_encoding_header_value, "snappy", 6) == 0) {
-        result = uncompress_snappy(&output_buffer,
-                                    &output_size,
-                                    request->body,
-                                    cfl_sds_len(request->body));
-    }
-    else if (strncasecmp(content_encoding_header_value, "deflate", 7) == 0) {
-        result = uncompress_deflate(&output_buffer,
-                                    &output_size,
-                                    request->body,
-                                    cfl_sds_len(request->body));
+    else {
+        /* Do not pass unsupported or stacked encodings to ingestion callbacks. */
+        return FLB_DECOMPRESSOR_FAILURE;
     }
 
-    if (result == 1) {
-        inflated_body = cfl_sds_create_len(output_buffer, output_size);
+    if (cfl_sds_len(request->body) == 0) {
+        return FLB_DECOMPRESSOR_FAILURE;
+    }
 
-        flb_free(output_buffer);
+    decoder = flb_decompression_context_create(algorithm, cfl_sds_len(request->body));
+    if (decoder == NULL) {
+        return FLB_DECOMPRESSOR_FAILURE;
+    }
+    decoder->output_limit = limit;
+    decoder->input_complete = FLB_TRUE;
+    memcpy(flb_decompression_context_get_append_buffer(decoder),
+           request->body, cfl_sds_len(request->body));
+    decoder->input_buffer_length = cfl_sds_len(request->body);
+    body = cfl_sds_create_size(0);
+    if (body == NULL) {
+        flb_decompression_context_destroy(decoder);
+        return FLB_DECOMPRESSOR_FAILURE;
+    }
 
-        if (inflated_body == NULL) {
-            return -1;
+    /* Collect bounded chunks directly into the final SDS, without a full-size copy. */
+    while (decoder->input_buffer_length > 0) {
+        previous_input = decoder->input_buffer_length;
+        previous_state = decoder->state;
+        produced = sizeof(chunk);
+        result = flb_decompress(decoder, chunk, &produced);
+        if (result != FLB_DECOMPRESSOR_SUCCESS) {
+            goto error;
         }
-
-        cfl_sds_destroy(request->body);
-
-        request->body = inflated_body;
-
-        snprintf(new_content_length,
-                 sizeof(new_content_length),
-                 "%zu",
-                 output_size);
-
-        flb_http_request_unset_header(request, "Content-Encoding");
-        flb_http_request_set_header(request,
-                                    "Content-Length", 0,
-                                    new_content_length, 0);
-
-        request->content_length = output_size;
+        if (produced > 0) {
+            resized = cfl_sds_cat(body, chunk, produced);
+            if (resized == NULL) {
+                result = FLB_DECOMPRESSOR_FAILURE;
+                goto error;
+            }
+            body = resized;
+        }
+        if (produced == 0 && previous_input == decoder->input_buffer_length &&
+            previous_state == decoder->state) {
+            result = FLB_DECOMPRESSOR_FAILURE;
+            goto error;
+        }
+    }
+    if (algorithm == FLB_COMPRESSION_ALGORITHM_GZIP &&
+        decoder->state != FLB_DECOMPRESSOR_STATE_EXPECTING_HEADER) {
+        result = FLB_DECOMPRESSOR_FAILURE;
+        goto error;
     }
 
-    return 0;
+    flb_decompression_context_destroy(decoder);
+    cfl_sds_destroy(request->body);
+    request->body = body;
+    request->content_length = cfl_sds_len(body);
+    snprintf(new_content_length, sizeof(new_content_length), "%zu", request->content_length);
+    flb_http_request_unset_header(request, "Content-Encoding");
+    return flb_http_request_set_header(request, "Content-Length", 0, new_content_length, 0);
+
+error:
+    cfl_sds_destroy(body);
+    flb_decompression_context_destroy(decoder);
+    return result;
 }
 
 

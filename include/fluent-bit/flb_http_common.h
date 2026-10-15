@@ -212,6 +212,8 @@ int flb_http_request_compress_body(
 int flb_http_request_uncompress_body(
     struct flb_http_request *request);
 
+int flb_http_request_uncompress_body_limited(struct flb_http_request *request, size_t limit);
+
 int flb_http_request_perform_signv4_signature(
         struct flb_http_request *request,
         const char *aws_region,

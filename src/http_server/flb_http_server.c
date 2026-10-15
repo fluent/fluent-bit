@@ -186,6 +186,7 @@ static int flb_http_server_apply_options(struct flb_http_server *session,
 
     session->downstream = NULL;
     session->buffer_max_size = options->buffer_max_size;
+    session->max_decoded_body_size = options->max_decoded_body_size;
     session->buffer_chunk_size = options->buffer_chunk_size;
     session->max_connections = options->max_connections;
     cfl_atomic_store(&session->active_connections, 0);
@@ -482,7 +483,8 @@ static int flb_http_server_client_activity_event_handler(void *data)
         }
 
         if ((server->flags & FLB_HTTP_SERVER_FLAG_AUTO_INFLATE) != 0) {
-            result = flb_http_request_uncompress_body(request);
+            result = flb_http_request_uncompress_body_limited(
+                         request, server->max_decoded_body_size);
 
             if (result != 0) {
                 flb_http_server_session_destroy(session);
@@ -691,6 +693,7 @@ static int flb_http_server_worker_initialize(struct flb_downstream_worker *worke
     options.system_context = parent->system_context;
     options.idle_timeout = parent->idle_timeout;
     options.buffer_max_size = parent->buffer_max_size;
+    options.max_decoded_body_size = parent->max_decoded_body_size;
     options.buffer_chunk_size = parent->buffer_chunk_size;
     options.max_connections = parent->max_connections;
     options.connection_counter = parent->connection_counter;
@@ -853,6 +856,7 @@ void flb_http_server_options_init(struct flb_http_server_options *options)
     memset(options, 0, sizeof(struct flb_http_server_options));
 
     options->buffer_max_size = HTTP_SERVER_MAXIMUM_BUFFER_SIZE;
+    options->max_decoded_body_size = HTTP_SERVER_DEFAULT_MAX_DECODED_BODY_SIZE;
     options->buffer_chunk_size = HTTP_SERVER_INITIAL_BUFFER_SIZE;
     options->idle_timeout = HTTP_SERVER_DEFAULT_IDLE_TIMEOUT;
     options->max_connections = 0;
@@ -872,6 +876,7 @@ void flb_http_server_config_init(struct flb_http_server_config *config)
     config->http2 = FLB_TRUE;
     config->idle_timeout = HTTP_SERVER_DEFAULT_IDLE_TIMEOUT;
     config->buffer_max_size = HTTP_SERVER_MAXIMUM_BUFFER_SIZE;
+    config->max_decoded_body_size = HTTP_SERVER_DEFAULT_MAX_DECODED_BODY_SIZE;
     config->buffer_chunk_size = HTTP_SERVER_INITIAL_BUFFER_SIZE;
     config->max_connections = 0;
     config->workers = 1;
@@ -958,6 +963,7 @@ int flb_input_http_server_options_init(struct flb_http_server_options *options,
 
     if (server_config != NULL) {
         options->idle_timeout = server_config->idle_timeout;
+        options->max_decoded_body_size = server_config->max_decoded_body_size;
         if (server_config->buffer_chunk_size > 0) {
             options->buffer_chunk_size = server_config->buffer_chunk_size;
         }
@@ -978,6 +984,10 @@ int flb_http_server_init_with_options(
 
     if (options->buffer_max_size == 0) {
         options->buffer_max_size = HTTP_SERVER_MAXIMUM_BUFFER_SIZE;
+    }
+
+    if (options->max_decoded_body_size == 0) {
+        options->max_decoded_body_size = HTTP_SERVER_DEFAULT_MAX_DECODED_BODY_SIZE;
     }
 
     if (options->workers <= 0) {

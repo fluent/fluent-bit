@@ -38,6 +38,7 @@
 
 #define HTTP_SERVER_INITIAL_BUFFER_SIZE        (10 * 1024)
 #define HTTP_SERVER_MAXIMUM_BUFFER_SIZE        (10 * (1000 * 1024))
+#define HTTP_SERVER_DEFAULT_MAX_DECODED_BODY_SIZE (100 * 1000 * 1000)
 #define HTTP_SERVER_DEFAULT_IDLE_TIMEOUT       10  /* seconds */
 
 #define FLB_HTTP_SERVER_FLAG_KEEPALIVE         (((uint64_t) 1) << 0)
@@ -73,6 +74,7 @@ struct flb_http_server_config {
     int    http2;
     int    idle_timeout; /* seconds */
     size_t buffer_max_size;
+    size_t max_decoded_body_size;
     size_t buffer_chunk_size;
     size_t max_connections;
     int    workers;
@@ -96,6 +98,7 @@ struct flb_http_server_options {
 
     int                                  idle_timeout; /* seconds */
     size_t                               buffer_max_size;
+    size_t                               max_decoded_body_size;
     size_t                               buffer_chunk_size;
     size_t                               max_connections;
     uint64_t                            *connection_counter;
@@ -142,6 +145,7 @@ struct flb_http_server {
     flb_http_server_request_processor_callback request_callback;
     void                               *user_data;
     size_t                              buffer_max_size;
+    size_t                              max_decoded_body_size;
     size_t                              buffer_chunk_size;
     size_t                              max_connections;
     uint64_t                            active_connections;
