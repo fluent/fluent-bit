@@ -20,7 +20,10 @@
 #include <fluent-bit.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 #include <fluent-bit/flb_processor.h>
+#include <fluent-bit/flb_processor_plugin.h>
+#include <fluent-bit/flb_mp_chunk.h>
 #include <fluent-bit/flb_conditionals.h>
 #include "flb_tests_runtime.h"
 
@@ -402,7 +405,101 @@ static void existing_envelope(void)
 }
 #endif
 
+extern struct flb_processor_plugin processor_journald_otel_plugin;
+
+static void group_marker_removal(void)
+{
+    int root_type;
+    char *input;
+    size_t size;
+    struct flb_log_event_decoder decoder;
+    struct flb_log_event_encoder encoder;
+    struct flb_mp_chunk_cobj *chunk;
+    struct flb_mp_chunk_record *start;
+    struct flb_mp_chunk_record *record;
+    struct flb_mp_chunk_record *end;
+    struct cfl_array *array;
+    struct cfl_variant *value;
+    char *json = "[1,{\"MESSAGE\":\"hello\"}]";
+
+    TEST_ASSERT(flb_pack_json(json, strlen(json), &input, &size, &root_type, NULL) == 0);
+    TEST_ASSERT(flb_log_event_decoder_init(&decoder, input, size) == 0);
+    TEST_ASSERT(flb_log_event_encoder_init(&encoder, FLB_LOG_EVENT_FORMAT_DEFAULT) == 0);
+    chunk = flb_mp_chunk_cobj_create(&encoder, &decoder);
+    TEST_ASSERT(chunk != NULL);
+    TEST_ASSERT(flb_mp_chunk_cobj_record_next(chunk, &record) == FLB_MP_CHUNK_RECORD_OK);
+    array = cfl_array_create(1);
+    TEST_ASSERT(array != NULL);
+    /* A sparse CFL slot must become a serializable null, without dereferencing it. */
+    array->entry_count = 1;
+    array->entries[0] = NULL;
+    TEST_ASSERT(cfl_kvlist_insert_array(record->cobj_record->variant->data.as_kvlist,
+                                       "SPARSE", array) == 0);
+    TEST_ASSERT(processor_journald_otel_plugin.cb_process_logs(NULL, chunk, "test", 4) ==
+                FLB_PROCESSOR_SUCCESS);
+    value = cfl_kvlist_fetch(record->cobj_metadata->variant->data.as_kvlist, "otlp");
+    TEST_ASSERT(value != NULL);
+    value = cfl_kvlist_fetch(value->data.as_kvlist, "attributes");
+    TEST_ASSERT(value != NULL);
+    value = cfl_kvlist_fetch(value->data.as_kvlist, "journald.SPARSE");
+    TEST_ASSERT(value != NULL && value->type == CFL_VARIANT_ARRAY);
+    TEST_ASSERT(value->data.as_array->entries[0] != NULL);
+    TEST_CHECK(value->data.as_array->entries[0]->type == CFL_VARIANT_NULL);
+    start = cfl_list_entry_first(&chunk->records, struct flb_mp_chunk_record, _head);
+    end = cfl_list_entry_last(&chunk->records, struct flb_mp_chunk_record, _head);
+    TEST_CHECK(start != record && end != record);
+    TEST_CHECK(record->cobj_group_metadata == NULL);
+    TEST_CHECK(record->cobj_group_attributes == NULL);
+    TEST_CHECK(end->cobj_group_metadata == NULL);
+    TEST_CHECK(end->cobj_group_attributes == NULL);
+    TEST_CHECK(chunk->active_group_metadata == NULL);
+    TEST_CHECK(chunk->active_group_attributes == NULL);
+    TEST_ASSERT(flb_mp_chunk_cobj_record_destroy(chunk, start) == 0);
+    TEST_ASSERT(flb_mp_chunk_cobj_normalize_groups(chunk) == 0);
+    TEST_CHECK(cfl_list_size(&chunk->records) == 1);
+    flb_mp_chunk_cobj_destroy(chunk);
+    flb_log_event_encoder_destroy(&encoder);
+    flb_log_event_decoder_destroy(&decoder);
+    flb_free(input);
+}
+
+static void non_map_bodies(void)
+{
+    int i;
+    struct result result;
+    struct flb_log_event event;
+
+    result = process("[1,42][2,[]][3,null]"
+                     "[4,{\"MESSAGE\":\"first\"}][5,\"scalar\"]"
+                     "[6,{\"MESSAGE\":\"last\"}][7,false]", 0, 2);
+    for (i = 0; i < 2; i++) {
+        TEST_ASSERT(flb_log_event_decoder_next(&result.decoder, &event) == 0);
+        string_equals(get(event.body, "message"), i == 0 ? "first" : "last");
+        TEST_CHECK(event.timestamp.tm.tv_sec == (i == 0 ? 4 : 6));
+    }
+    TEST_CHECK(flb_log_event_decoder_next(&result.decoder, &event) != 0);
+    destroy_result(&result);
+}
+
+static void timestamp_boundary(void)
+{
+    struct result result;
+    struct flb_log_event event;
+
+    result = process("[1,{\"__REALTIME_TIMESTAMP\":\"18446744073709551\"}]", 0, 1);
+    TEST_ASSERT(flb_log_event_decoder_next(&result.decoder, &event) == 0);
+    /* The wire EventTime seconds are uint32 even when time_t is wider. */
+    TEST_CHECK(event.timestamp.tm.tv_sec == 1);
+    string_equals(get(attributes(&event), "journald.__REALTIME_TIMESTAMP"),
+                  "18446744073709551");
+    number_equals(get(get(event.metadata, "otlp"), "timestamp"), 1000000000);
+    destroy_result(&result);
+}
+
 TEST_LIST = {
+    {"group_marker_removal", group_marker_removal},
+    {"non_map_bodies", non_map_bodies},
+    {"timestamp_boundary", timestamp_boundary},
     {"mapping", mapping},
     {"executable_name", executable_name},
     {"severity", severity},
