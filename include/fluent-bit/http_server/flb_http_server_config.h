@@ -22,6 +22,7 @@
 
 #define HTTP_SERVER_INITIAL_BUFFER_SIZE        (10 * 1024)
 #define HTTP_SERVER_MAXIMUM_BUFFER_SIZE        (10 * (1000 * 1024))
+#define HTTP_SERVER_DEFAULT_MAX_DECODED_BODY_SIZE (100 * 1000 * 1000)
 #define HTTP_SERVER_DEFAULT_HTTP1_MAX_HEADER_SIZE (32 * 1024)
 #define HTTP_SERVER_DEFAULT_HTTP1_MAX_HEADER_SIZE_STR "32KiB"
 #define HTTP_SERVER_DEFAULT_IDLE_TIMEOUT       10  /* seconds */
@@ -33,6 +34,7 @@ struct flb_http_server_config {
     int    http2;
     int    idle_timeout; /* seconds */
     size_t buffer_max_size;
+    size_t max_decoded_body_size;
     char  *http1_max_header_size;
     size_t buffer_chunk_size;
     size_t max_connections;

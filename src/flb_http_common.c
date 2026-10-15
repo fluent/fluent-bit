@@ -531,8 +531,16 @@ int flb_http_request_uncompress_body(
                                         request,
                                         "Content-Encoding");
 
-    if (content_encoding_header_value == NULL) {
-        return 0;
+    if (content_encoding_header_value == NULL ||
+        strcasecmp(content_encoding_header_value, "identity") == 0) {
+        return cfl_sds_len(request->body) > budget ? FLB_DECOMPRESSOR_LIMIT_EXCEEDED : 0;
+    }
+
+    if (strcasecmp(content_encoding_header_value, "gzip") != 0 &&
+        strcasecmp(content_encoding_header_value, "zstd") != 0 &&
+        strcasecmp(content_encoding_header_value, "snappy") != 0) {
+        /* Do not pass unsupported or stacked encodings to ingestion callbacks. */
+        return FLB_DECOMPRESSOR_FAILURE;
     }
 
     result = http_uncompress_body(request->body, content_encoding_header_value,
@@ -553,14 +561,14 @@ int flb_http_request_uncompress_body(
                  output_size);
 
         flb_http_request_unset_header(request, "Content-Encoding");
-        flb_http_request_set_header(request,
-                                    "Content-Length", 0,
-                                    new_content_length, 0);
+        result = flb_http_request_set_header(request,
+                                             "Content-Length", 0,
+                                             new_content_length, 0);
 
         request->content_length = output_size;
     }
 
-    return 0;
+    return result;
 }
 
 

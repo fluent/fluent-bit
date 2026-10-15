@@ -234,6 +234,7 @@ static int flb_http_server_apply_options(struct flb_http_server *session,
 
     session->downstream = NULL;
     session->buffer_max_size = options->buffer_max_size;
+    session->max_decoded_body_size = options->max_decoded_body_size;
     session->http1_max_header_size = options->http1_max_header_size;
     session->buffer_chunk_size = options->buffer_chunk_size;
     session->max_connections = options->max_connections;
@@ -470,7 +471,7 @@ static int flb_http_server_inflate_request(struct flb_http_request *request,
     int result;
 
     session = request->stream->parent;
-    budget = session->parent->buffer_max_size;
+    budget = session->parent->max_decoded_body_size;
     result = flb_http_request_uncompress_body(request, budget);
     if (result != 0) {
         flb_http_response_set_status(response,
@@ -1067,6 +1068,7 @@ static int flb_http_server_worker_initialize(struct flb_downstream_worker *worke
     options.system_context = parent->system_context;
     options.idle_timeout = parent->idle_timeout;
     options.buffer_max_size = parent->buffer_max_size;
+    options.max_decoded_body_size = parent->max_decoded_body_size;
     options.http1_max_header_size = parent->http1_max_header_size;
     options.buffer_chunk_size = parent->buffer_chunk_size;
     options.max_connections = parent->max_connections;
@@ -1253,6 +1255,7 @@ void flb_http_server_options_init(struct flb_http_server_options *options)
     memset(options, 0, sizeof(struct flb_http_server_options));
 
     options->buffer_max_size = HTTP_SERVER_MAXIMUM_BUFFER_SIZE;
+    options->max_decoded_body_size = HTTP_SERVER_DEFAULT_MAX_DECODED_BODY_SIZE;
     options->http1_max_header_size = HTTP_SERVER_DEFAULT_HTTP1_MAX_HEADER_SIZE;
     options->buffer_chunk_size = HTTP_SERVER_INITIAL_BUFFER_SIZE;
     options->idle_timeout = HTTP_SERVER_DEFAULT_IDLE_TIMEOUT;
@@ -1361,6 +1364,7 @@ int flb_input_http_server_options_init(struct flb_http_server_options *options,
 
     if (server_config != NULL) {
         options->idle_timeout = server_config->idle_timeout;
+        options->max_decoded_body_size = server_config->max_decoded_body_size;
         if (server_config->http1_max_header_size != NULL) {
             if (!http_server_header_size_is_valid(server_config->http1_max_header_size)) {
                 flb_error("[http_server] invalid http_server.http1_max_header_size");
@@ -1395,6 +1399,10 @@ int flb_http_server_init_with_options(
 
     if (options->buffer_max_size == 0) {
         options->buffer_max_size = HTTP_SERVER_MAXIMUM_BUFFER_SIZE;
+    }
+
+    if (options->max_decoded_body_size == 0) {
+        options->max_decoded_body_size = HTTP_SERVER_DEFAULT_MAX_DECODED_BODY_SIZE;
     }
 
     if (options->http1_max_header_size == 0) {
