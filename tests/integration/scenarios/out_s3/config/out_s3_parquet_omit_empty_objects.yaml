@@ -1,0 +1,28 @@
+service:
+  flush: 1
+  grace: 3
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: out_s3
+      dummy: '{"message":"hello parquet s3","request":{"id":"r1","psi":{},"nested":{"empty":{}},"items":[{},{"name":"kept"}],"only_empty_items":[{}]}}'
+      samples: 1
+
+  outputs:
+    - name: s3
+      match: out_s3
+      bucket: test-bucket
+      region: us-east-1
+      endpoint: http://127.0.0.1:${TEST_SUITE_HTTP_PORT}
+      use_put_object: true
+      total_file_size: 1M
+      upload_timeout: 2s
+      s3_key_format: /payloads/$TAG/$UUID
+      format: parquet
+      compression: zstd
+      parquet_omit_empty_objects: true
+      store_dir: /tmp/fluent-bit-test-suite-s3-parquet-omit-empty-objects
