@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_oauth2.h>
 #include <fluent-bit/flb_base64.h>
+#include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_crypto.h>
 #include <fluent-bit/flb_signv4.h>
@@ -1564,10 +1565,13 @@ static void cb_chronicle_flush(struct flb_event_chunk *event_chunk,
     int ret;
     int result;
     int ret_code = FLB_OK;
+    int compressed;
     size_t b_sent;
     flb_sds_t token;
     flb_sds_t payload_buf;
     size_t payload_size;
+    void *body;
+    size_t body_size;
     struct flb_chronicle *ctx = out_context;
     struct flb_connection *u_conn;
     struct flb_http_client *c;
@@ -1674,14 +1678,39 @@ static void cb_chronicle_flush(struct flb_event_chunk *event_chunk,
             retries = 0;
         }
 
+        /*
+         * Google applies the size limits to the uncompressed payload, so the
+         * batch is sized above and only the request body is compressed.
+         */
+        body = payload_buf;
+        body_size = payload_size;
+        compressed = FLB_FALSE;
+        if (ctx->compress_gzip == FLB_TRUE) {
+            ret = flb_gzip_compress((void *) payload_buf, payload_size,
+                                    &body, &body_size);
+            if (ret == -1) {
+                flb_plg_error(ctx->ins, "cannot gzip payload, sending it uncompressed");
+                body = payload_buf;
+                body_size = payload_size;
+            }
+            else {
+                compressed = FLB_TRUE;
+                flb_plg_debug(ctx->ins, "gzip compressed the payload from %zu to %zu bytes",
+                              payload_size, body_size);
+            }
+        }
+
         /* Compose HTTP Client request */
         c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->endpoint,
-                            payload_buf, payload_size, NULL, 0, NULL, 0);
+                            body, body_size, NULL, 0, NULL, 0);
         if (!c) {
             flb_plg_error(ctx->ins, "cannot create HTTP client context");
             flb_upstream_conn_release(u_conn);
             flb_sds_destroy(token);
             flb_sds_destroy(payload_buf);
+            if (compressed == FLB_TRUE) {
+                flb_free(body);
+            }
             flb_log_event_decoder_destroy(&log_decoder);
 
             FLB_OUTPUT_RETURN(FLB_RETRY);
@@ -1690,6 +1719,9 @@ static void cb_chronicle_flush(struct flb_event_chunk *event_chunk,
         flb_http_buffer_size(c, 4192);
         flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
         flb_http_add_header(c, "Content-Type", 12, "application/json", 16);
+        if (compressed == FLB_TRUE) {
+            flb_http_set_content_encoding_gzip(c);
+        }
 
         /* Compose and append Authorization header */
         flb_http_add_header(c, "Authorization", 13, token, flb_sds_len(token));
@@ -1725,6 +1757,9 @@ static void cb_chronicle_flush(struct flb_event_chunk *event_chunk,
         /* Clean up HTTP client stuffs */
         flb_sds_destroy(payload_buf);
         flb_http_client_destroy(c);
+        if (compressed == FLB_TRUE) {
+            flb_free(body);
+        }
 
         /*
          * A chunk can be sent in several requests, so a later success must
@@ -1818,6 +1853,12 @@ static struct flb_config_map config_map[] = {
       0, FLB_TRUE, offsetof(struct flb_chronicle, api_str),
       "Set the ingestion API: 'legacy' for the deprecated Ingestion API or "
       "'chronicle' for the Chronicle API (logs:import)"
+    },
+    {
+      FLB_CONFIG_MAP_STR, "compress", NULL,
+      0, FLB_TRUE, offsetof(struct flb_chronicle, compress_str),
+      "Set the request body compression: 'gzip' or 'none'. Google applies the "
+      "request size limits to the uncompressed payload"
     },
     {
       FLB_CONFIG_MAP_STR, "log_key", NULL,

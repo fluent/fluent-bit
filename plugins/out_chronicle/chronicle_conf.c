@@ -430,6 +430,20 @@ struct flb_chronicle *flb_chronicle_conf_create(struct flb_output_instance *ins,
         return NULL;
     }
 
+    /* config: 'compress' */
+    ctx->compress_gzip = FLB_FALSE;
+    if (ctx->compress_str) {
+        if (strcasecmp(ctx->compress_str, "gzip") == 0) {
+            ctx->compress_gzip = FLB_TRUE;
+        }
+        else if (strcasecmp(ctx->compress_str, "none") != 0) {
+            flb_plg_error(ins, "invalid compress '%s', expected 'gzip' or 'none'",
+                          ctx->compress_str);
+            flb_free(ctx);
+            return NULL;
+        }
+    }
+
     /* Lookup credentials file */
     creds = flb_calloc(1, sizeof(struct flb_chronicle_oauth_credentials));
     if (!creds) {
