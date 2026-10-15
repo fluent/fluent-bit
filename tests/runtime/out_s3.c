@@ -1,5 +1,6 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 #include <fluent-bit.h>
+#include <fluent-bit/flb_socket.h>
 #include <fluent-bit/flb_time.h>
 #include <cfl/cfl_atomic.h>
 #include "../../plugins/out_s3/s3.h"
@@ -13,7 +14,9 @@
 #include <windows.h>
 #else
 #include <dirent.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/un.h>
 #endif
 
 /* Test data */
@@ -427,6 +430,345 @@ static char *create_test_store_directory(const char *postfix)
 
     return store_dir;
 }
+
+#if defined(FLB_TEST_S3_PROTOBUF_FORWARD) && \
+    defined(FLB_HAVE_UNIX_SOCKET)
+static const unsigned char s3_protobuf_wire_log_record[] = {
+    0x08, 0x07,
+    0x10, 0x80, 0xe4, 0x97, 0xd0, 0x12,
+    0x19, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf8, 0x3f,
+    0x22, 0x05, 'a', 'l', 'p', 'h', 'a',
+    0x2a, 0x0a, 0x08, 0x09, 0x12, 0x06,
+    'n', 'e', 's', 't', 'e', 'd',
+    0x32, 0x03, 0x01, 0xac, 0x02,
+    0x3a, 0x0a, 0x0a, 0x06, 'r', 'e', 'g', 'i', 'o', 'n',
+    0x10, 0x0b,
+    0x42, 0x02, 0x00, 0xff,
+    0x4a, 0x00
+};
+
+static int create_forward_protobuf_record(msgpack_sbuffer *buffer,
+                                          int use_binary_value)
+{
+    msgpack_packer packer;
+    int result;
+
+    msgpack_sbuffer_init(buffer);
+    msgpack_packer_init(&packer, buffer, msgpack_sbuffer_write);
+
+    result = msgpack_pack_array(&packer, 3);
+    if (result == 0) {
+        result = msgpack_pack_str(&packer, 4);
+    }
+    if (result == 0) {
+        result = msgpack_pack_str_body(&packer, "test", 4);
+    }
+    if (result == 0) {
+        result = msgpack_pack_uint64(&packer, 1700000000);
+    }
+    if (result == 0) {
+        result = msgpack_pack_map(&packer, 1);
+    }
+    if (result == 0) {
+        result = msgpack_pack_str(&packer, 10);
+    }
+    if (result == 0) {
+        result = msgpack_pack_str_body(&packer, "wire_proto", 10);
+    }
+    if (result == 0 && use_binary_value == FLB_TRUE) {
+        result = msgpack_pack_bin(
+                    &packer, sizeof(s3_protobuf_wire_log_record));
+    }
+    else if (result == 0) {
+        result = msgpack_pack_str(
+                    &packer, sizeof(s3_protobuf_wire_log_record));
+    }
+    if (result == 0 && use_binary_value == FLB_TRUE) {
+        result = msgpack_pack_bin_body(
+                    &packer,
+                    s3_protobuf_wire_log_record,
+                    sizeof(s3_protobuf_wire_log_record));
+    }
+    else if (result == 0) {
+        result = msgpack_pack_str_body(
+                    &packer,
+                    s3_protobuf_wire_log_record,
+                    sizeof(s3_protobuf_wire_log_record));
+    }
+
+    if (result != 0) {
+        msgpack_sbuffer_destroy(buffer);
+        return -1;
+    }
+
+    return 0;
+}
+
+static flb_sockfd_t connect_unix_socket(const char *path)
+{
+    int result;
+    int attempts;
+    flb_sockfd_t socket_fd;
+    struct sockaddr_un address;
+
+    socket_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (socket_fd < 0) {
+        return -1;
+    }
+
+    memset(&address, 0, sizeof(address));
+    address.sun_family = AF_UNIX;
+    if (strlen(path) >= sizeof(address.sun_path)) {
+        flb_socket_close(socket_fd);
+        return -1;
+    }
+    memcpy(address.sun_path, path, strlen(path) + 1);
+
+    for (attempts = 0; attempts < 100; attempts++) {
+        result = connect(socket_fd,
+                         (const struct sockaddr *) &address,
+                         sizeof(address));
+        if (result == 0) {
+            return socket_fd;
+        }
+        flb_time_msleep(10);
+    }
+
+    flb_socket_close(socket_fd);
+    return -1;
+}
+
+static int send_all(flb_sockfd_t socket_fd,
+                    const char *buffer, size_t buffer_size)
+{
+    ssize_t written;
+    size_t offset = 0;
+
+    while (offset < buffer_size) {
+        written = send(socket_fd,
+                       buffer + offset,
+                       buffer_size - offset,
+                       0);
+        if (written <= 0) {
+            return -1;
+        }
+        offset += (size_t) written;
+    }
+
+    return 0;
+}
+
+static int configure_protobuf_s3_output(flb_ctx_t *ctx, int output_id,
+                                        const char *store_dir)
+{
+    return flb_output_set(
+                ctx, output_id,
+                "match", "test",
+                "region", "us-west-2",
+                "bucket", "fluent",
+                "store_dir", store_dir,
+                "format", "parquet",
+                "compression", "zstd",
+                "columnar_input_format", "protobuf",
+                "protobuf_data_key", "wire_proto",
+                "protobuf_descriptor_file",
+                FLB_TEST_S3_PROTOBUF_DESCRIPTOR_PATH,
+                "protobuf_message_type", "fluent.test.WireLog",
+                "upload_timeout", S3_TEST_UPLOAD_TIMEOUT,
+                "Retry_Limit", "1",
+                NULL);
+}
+
+static int configure_forward_unix_input(flb_ctx_t *ctx, int input_id,
+                                        const char *socket_path)
+{
+    return flb_input_set(ctx, input_id,
+                         "unix_path", socket_path,
+                         NULL);
+}
+
+/*
+ * The Forward protocol can carry MessagePack binary values without encoding
+ * them as text. Send two records to exercise framing across buffered records.
+ */
+void flb_test_s3_protobuf_forward_to_parquet(void)
+{
+    int result;
+    int input_id;
+    int output_id;
+    char socket_path[256];
+    char *store_dir;
+    flb_ctx_t *ctx;
+    flb_sockfd_t socket_fd = -1;
+    msgpack_sbuffer record;
+    struct flb_s3 *s3_ctx;
+
+    store_dir = create_test_store_directory(
+                    "/flb-s3-test-protobuf-XXXXXX");
+    TEST_ASSERT(store_dir != NULL);
+    snprintf(socket_path, sizeof(socket_path),
+             "%s/forward.sock", store_dir);
+
+    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    unsetenv("TEST_PutObject_CALL_COUNT");
+
+    ctx = flb_create();
+    TEST_ASSERT(ctx != NULL);
+    flb_service_set(ctx,
+                    "Flush", "0.2",
+                    "Grace", "1",
+                    "Log_Level", "error",
+                    NULL);
+
+    input_id = flb_input(ctx, (char *) "forward", NULL);
+    TEST_ASSERT(input_id >= 0);
+    TEST_CHECK(configure_forward_unix_input(
+                    ctx, input_id, socket_path) == 0);
+
+    output_id = flb_output(ctx, (char *) "s3", NULL);
+    TEST_ASSERT(output_id >= 0);
+    TEST_CHECK(configure_protobuf_s3_output(
+                    ctx, output_id, store_dir) == 0);
+
+    result = flb_start(ctx);
+    TEST_ASSERT(result == 0);
+
+    s3_ctx = get_s3_context(ctx);
+    TEST_ASSERT(s3_ctx != NULL);
+    TEST_CHECK(s3_ctx->columnar_input_format ==
+               FLB_S3_COLUMNAR_INPUT_PROTOBUF);
+    TEST_CHECK(s3_ctx->protobuf_schema != NULL);
+    TEST_CHECK(strstr(s3_ctx->buffer_dir, "-protobuf-") != NULL);
+
+    socket_fd = connect_unix_socket(socket_path);
+    TEST_ASSERT(socket_fd >= 0);
+    TEST_ASSERT(create_forward_protobuf_record(
+                    &record, FLB_TRUE) == 0);
+
+    TEST_CHECK(send_all(socket_fd, record.data, record.size) == 0);
+    TEST_CHECK(send_all(socket_fd, record.data, record.size) == 0);
+    msgpack_sbuffer_destroy(&record);
+    flb_socket_close(socket_fd);
+    socket_fd = -1;
+
+    wait_for_s3_call_count("PutObject", 1);
+    TEST_CHECK_(get_s3_call_count("PutObject") == 1,
+                "Expected one Parquet PutObject call, got %d",
+                get_s3_call_count("PutObject"));
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
+    unsetenv("TEST_PutObject_CALL_COUNT");
+    unlink(socket_path);
+    flb_free(store_dir);
+}
+
+void flb_test_s3_protobuf_rejects_text_value(void)
+{
+    int result;
+    int input_id;
+    int output_id;
+    char socket_path[256];
+    char *store_dir;
+    flb_ctx_t *ctx;
+    flb_sockfd_t socket_fd;
+    msgpack_sbuffer record;
+
+    store_dir = create_test_store_directory(
+                    "/flb-s3-test-protobuf-text-XXXXXX");
+    TEST_ASSERT(store_dir != NULL);
+    snprintf(socket_path, sizeof(socket_path),
+             "%s/forward.sock", store_dir);
+
+    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    unsetenv("TEST_PutObject_CALL_COUNT");
+
+    ctx = flb_create();
+    TEST_ASSERT(ctx != NULL);
+    flb_service_set(ctx,
+                    "Flush", "0.2",
+                    "Grace", "1",
+                    "Log_Level", "error",
+                    NULL);
+
+    input_id = flb_input(ctx, (char *) "forward", NULL);
+    TEST_ASSERT(input_id >= 0);
+    TEST_CHECK(configure_forward_unix_input(
+                    ctx, input_id, socket_path) == 0);
+
+    output_id = flb_output(ctx, (char *) "s3", NULL);
+    TEST_ASSERT(output_id >= 0);
+    TEST_CHECK(configure_protobuf_s3_output(
+                    ctx, output_id, store_dir) == 0);
+
+    result = flb_start(ctx);
+    TEST_ASSERT(result == 0);
+
+    socket_fd = connect_unix_socket(socket_path);
+    TEST_ASSERT(socket_fd >= 0);
+    TEST_ASSERT(create_forward_protobuf_record(
+                    &record, FLB_FALSE) == 0);
+    TEST_CHECK(send_all(socket_fd, record.data, record.size) == 0);
+    msgpack_sbuffer_destroy(&record);
+    flb_socket_close(socket_fd);
+
+    flb_time_msleep(500);
+    TEST_CHECK_(get_s3_call_count("PutObject") == 0,
+                "Text Protobuf value must not be uploaded");
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
+    unsetenv("TEST_PutObject_CALL_COUNT");
+    unlink(socket_path);
+    flb_free(store_dir);
+}
+
+/*
+ * Keep a startup test separate from the data-path test so incomplete
+ * descriptor configuration fails before any local buffer is opened.
+ */
+void flb_test_s3_protobuf_requires_complete_config(void)
+{
+    int result;
+    int input_id;
+    int output_id;
+    char *store_dir;
+    flb_ctx_t *ctx;
+
+    store_dir = create_test_store_directory(
+                    "/flb-s3-test-protobuf-config-XXXXXX");
+    TEST_ASSERT(store_dir != NULL);
+
+    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    ctx = flb_create();
+    TEST_ASSERT(ctx != NULL);
+
+    input_id = flb_input(ctx, (char *) "lib", NULL);
+    TEST_ASSERT(input_id >= 0);
+
+    output_id = flb_output(ctx, (char *) "s3", NULL);
+    TEST_ASSERT(output_id >= 0);
+    TEST_CHECK(flb_output_set(
+                    ctx, output_id,
+                    "match", "*",
+                    "region", "us-west-2",
+                    "bucket", "fluent",
+                    "store_dir", store_dir,
+                    "format", "parquet",
+                    "columnar_input_format", "protobuf",
+                    "protobuf_data_key", "wire_proto",
+                    NULL) == 0);
+
+    result = flb_start(ctx);
+    TEST_CHECK(result != 0);
+
+    flb_destroy(ctx);
+    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
+    flb_free(store_dir);
+}
+#endif
 
 void flb_test_s3_multipart_success(void)
 {
@@ -2483,6 +2825,15 @@ static void flb_test_s3_credentials_serialized(void)
 
 /* Test list */
 TEST_LIST = {
+#if defined(FLB_TEST_S3_PROTOBUF_FORWARD) && \
+    defined(FLB_HAVE_UNIX_SOCKET)
+    {"protobuf_forward_to_parquet",
+     flb_test_s3_protobuf_forward_to_parquet },
+    {"protobuf_rejects_text_value",
+     flb_test_s3_protobuf_rejects_text_value },
+    {"protobuf_requires_complete_config",
+     flb_test_s3_protobuf_requires_complete_config },
+#endif
     {"credentials_serialized", flb_test_s3_credentials_serialized },
     {"multipart_success", flb_test_s3_multipart_success },
     {"putobject_success", flb_test_s3_putobject_success },

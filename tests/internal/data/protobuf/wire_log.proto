@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package fluent.test;
+
+message Child {
+  int64 value = 1;
+  string label = 2;
+}
+
+message Empty {
+}
+
+message WireLog {
+  int32 count = 1;
+  int64 total = 2;
+  double score = 3;
+  string name = 4;
+  Child child = 5;
+  repeated uint32 ids = 6;
+  map<string, int64> labels = 7;
+  bytes payload = 8;
+  Empty marker = 9;
+}
+
+message Recursive {
+  Recursive child = 1;
+}
