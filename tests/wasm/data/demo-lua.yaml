@@ -1,0 +1,31 @@
+service:
+  flush: 0.5
+  grace: 1
+  log_level: info
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: browser.lua
+      rate: 1
+      dummy: '{"message":"Hello from Lua","values":[1,2,3],"optional":null}'
+      processors:
+        logs:
+          - name: lua
+            call: enrich
+            time_as_table: true
+            enable_flb_null: true
+            code: |
+              function enrich(tag, timestamp, record)
+                record.message = record.message .. " in the browser"
+                record.runtime = _VERSION
+                record.total = 0
+                for _, value in ipairs(record.values) do
+                  record.total = record.total + value
+                end
+                return 2, timestamp, record
+              end
+  outputs:
+    - name: stdout
+      match: '*'
+      format: json_lines

@@ -19,6 +19,9 @@
 
 #include <chunkio/chunkio.h>
 #include <chunkio/cio_log.h>
+#include <chunkio/cio_utils.h>
+#include <chunkio/cio_scan.h>
+#include <errno.h>
 
 #include "cio_tests_internal.h"
 
@@ -70,6 +73,9 @@ static void test_context()
     TEST_CHECK(ctx == NULL);
 
     /* Valid context without callback */
+#ifndef CIO_HAVE_BACKEND_FILESYSTEM
+    cio_opts.root_path = NULL;
+#endif
     log_check = 0;
     cio_opts.log_level = CIO_LOG_INFO;
 
@@ -101,6 +107,9 @@ static void test_log_level()
     log_check = 0;
     cio_opts.root_path = "/tmp/";
     cio_opts.log_level = CIO_LOG_INFO;
+#ifndef CIO_HAVE_BACKEND_FILESYSTEM
+    cio_opts.root_path = NULL;
+#endif
 
     ctx = cio_create(&cio_opts);
     TEST_CHECK(ctx != NULL);
@@ -174,7 +183,39 @@ static void test_open_flags()
     cio_destroy(ctx);
 }
 
+#ifndef CIO_HAVE_BACKEND_FILESYSTEM
+static void test_filesystem_disabled(void)
+{
+    struct cio_options options;
+    struct cio_ctx *context;
+
+    cio_options_init(&options);
+    options.root_path = "filesystem-must-not-be-created";
+    context = cio_create(&options);
+    TEST_CHECK(context == NULL);
+    if (context != NULL) {
+        cio_destroy(context);
+    }
+
+    errno = 0;
+    TEST_CHECK(cio_utils_recursive_delete("unused") == CIO_ERROR);
+    TEST_CHECK(errno == ENOSYS);
+
+    options.root_path = NULL;
+    context = cio_create(&options);
+    TEST_CHECK(context != NULL);
+    if (context == NULL) {
+        return;
+    }
+    TEST_CHECK(cio_scan_streams(context, ".flb") == CIO_ERROR);
+    cio_destroy(context);
+}
+#endif
+
 TEST_LIST = {
+#ifndef CIO_HAVE_BACKEND_FILESYSTEM
+    {"filesystem_disabled", test_filesystem_disabled},
+#endif
     {"context",     test_context},
     {"log_level",   test_log_level},
     {"open_flags",  test_open_flags},

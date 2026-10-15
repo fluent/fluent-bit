@@ -56,6 +56,9 @@
 #include <fluent-bit/tls/flb_tls.h>
 #include <time.h>
 #include <fluent-bit/flb_signv4_ng.h>
+#ifdef __EMSCRIPTEN__
+#include <fluent-bit/wasm/flb_wasm_http.h>
+#endif
 
 void flb_http_client_debug(struct flb_http_client *c,
                            struct flb_callback *cb_ctx)
@@ -1143,7 +1146,12 @@ struct flb_http_client *flb_http_client(struct flb_connection *u_conn,
         c->flags |= FLB_HTTP_11;
     }
 
+#ifdef __EMSCRIPTEN__
+    /* Fetch supplies Host and Content-Length; do not manufacture wire headers. */
+    ret = 0;
+#else
     ret = add_host_and_content_length(c);
+#endif
     if (ret != 0) {
         flb_http_client_destroy(c);
         return NULL;
@@ -1467,6 +1475,10 @@ static void http_headers_destroy(struct flb_http_client *c)
 
 int flb_http_set_keepalive(struct flb_http_client *c)
 {
+#ifdef __EMSCRIPTEN__
+    /* Connection reuse belongs to the browser. */
+    return 0;
+#endif
     /* check if 'keepalive' mode is enabled in the Upstream connection */
     if (flb_stream_is_keepalive(c->u_conn->stream) == FLB_FALSE) {
         return -1;
@@ -1866,6 +1878,10 @@ int flb_http_do_request(struct flb_http_client *c, size_t *bytes)
     size_t bytes_body = 0;
     char *tmp;
 
+#ifdef __EMSCRIPTEN__
+    flb_error("[http_client] browser streaming requests are unsupported; use flb_http_do");
+    return FLB_HTTP_ERROR;
+#endif
     c->header_len = c->base_header_len;
 
     /* Try to add keep alive header */
@@ -1983,6 +1999,10 @@ int flb_http_get_response_data(struct flb_http_client *c, size_t bytes_consumed)
     size_t out_size;
     time_t now;
 
+#ifdef __EMSCRIPTEN__
+    flb_error("[http_client] browser streaming responses are unsupported; use flb_http_do");
+    return FLB_HTTP_ERROR;
+#endif
     /* If the caller has consumed some of the payload (via bytes_consumed)
      * we consume those bytes off the payload
      */
@@ -2100,6 +2120,9 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
     if (c->test_mode == FLB_TRUE) {
         return flb_http_stub_response(c);
     }
+#ifdef __EMSCRIPTEN__
+    return flb_wasm_http_execute(c, bytes);
+#endif
 
     ret = flb_http_do_request(c, bytes);
     if (ret != 0) {
@@ -2158,6 +2181,13 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
 int flb_http_do_with_oauth2(struct flb_http_client *c, size_t *bytes,
                             struct flb_oauth2 *oauth2)
 {
+#ifdef __EMSCRIPTEN__
+    if (oauth2) {
+        flb_error("[http_client] OAuth2 is not supported by the browser transport");
+        return -1;
+    }
+    return flb_http_do(c, bytes);
+#else
     int ret;
     flb_sds_t token = NULL;
     struct flb_connection *old_conn;
@@ -2216,6 +2246,7 @@ int flb_http_do_with_oauth2(struct flb_http_client *c, size_t *bytes,
     }
 
     return ret;
+#endif
 }
 
 /*
@@ -2300,8 +2331,10 @@ void flb_http_client_destroy(struct flb_http_client *c)
 
 
 
+#ifndef __EMSCRIPTEN__
 static int flb_http_client_session_read(struct flb_http_client_session *session);
 static int flb_http_client_session_write(struct flb_http_client_session *session);
+#endif
 
 
 
@@ -2320,6 +2353,17 @@ int flb_http_client_ng_init(struct flb_http_client_ng *client,
 {
     memset(client, 0, sizeof(struct flb_http_client_ng));
 
+    cfl_list_init(&client->sessions);
+    flb_lock_init(&client->lock);
+#ifdef __EMSCRIPTEN__
+    /* Fetch owns protocol negotiation; an explicit HTTP/2 requirement cannot be honored. */
+    if (protocol_version != HTTP_PROTOCOL_VERSION_AUTODETECT &&
+        protocol_version != HTTP_PROTOCOL_VERSION_11 &&
+        protocol_version != HTTP_PROTOCOL_VERSION_10) {
+        flb_error("[http_client] browser transport cannot force an HTTP protocol version");
+        return -1;
+    }
+#endif
     client->temporary_buffer = cfl_sds_create_size(HTTP_CLIENT_TEMPORARY_BUFFER_SIZE);
 
     if (client->temporary_buffer == NULL) {
@@ -2331,8 +2375,7 @@ int flb_http_client_ng_init(struct flb_http_client_ng *client,
     client->upstream = upstream;
     client->flags = flags;
 
-    cfl_list_init(&client->sessions);
-
+#ifndef __EMSCRIPTEN__
     if (protocol_version == HTTP_PROTOCOL_VERSION_AUTODETECT) {
         if (upstream->base.tls_context != NULL) {
             flb_tls_set_alpn(upstream->base.tls_context, "h2,http/1.1,http/1.0");
@@ -2354,7 +2397,7 @@ int flb_http_client_ng_init(struct flb_http_client_ng *client,
         }
     }
 
-    flb_lock_init(&client->lock);
+#endif
 
     return 0;
 }
@@ -2420,6 +2463,11 @@ void flb_http_client_ng_destroy(struct flb_http_client_ng *client)
                      FLB_LOCK_DEFAULT_RETRY_DELAY);
 
     flb_lock_destroy(&client->lock);
+#ifdef __EMSCRIPTEN__
+    if (client->releasable) {
+        flb_free(client);
+    }
+#endif
 }
 
 int flb_http_client_session_init(struct flb_http_client_session *session,
@@ -2427,7 +2475,9 @@ int flb_http_client_session_init(struct flb_http_client_session *session,
                                  int protocol_version,
                                  struct flb_connection  *connection)
 {
+#ifndef __EMSCRIPTEN__
     int result;
+#endif
 
     memset(session, 0, sizeof(struct flb_http_client_session));
 
@@ -2441,6 +2491,13 @@ int flb_http_client_session_init(struct flb_http_client_session *session,
 
     cfl_list_entry_init(&session->_head);
 
+#ifdef __EMSCRIPTEN__
+    if (protocol_version != HTTP_PROTOCOL_VERSION_AUTODETECT &&
+        protocol_version != HTTP_PROTOCOL_VERSION_11 &&
+        protocol_version != HTTP_PROTOCOL_VERSION_10) {
+        return -1;
+    }
+#endif
     session->incoming_data = cfl_sds_create_size(1);
 
     if (session->incoming_data == NULL) {
@@ -2453,6 +2510,7 @@ int flb_http_client_session_init(struct flb_http_client_session *session,
         return -1;
     }
 
+#ifndef __EMSCRIPTEN__
     if (session->protocol_version == HTTP_PROTOCOL_VERSION_11 ||
         session->protocol_version == HTTP_PROTOCOL_VERSION_10) {
         session->http1.parent = session;
@@ -2475,6 +2533,10 @@ int flb_http_client_session_init(struct flb_http_client_session *session,
     else {
         return -1;
     }
+#else
+    /* This is the message model, not the browser's negotiated wire version. */
+    session->protocol_version = HTTP_PROTOCOL_VERSION_11;
+#endif
 
     return 0;
 }
@@ -2509,10 +2571,17 @@ struct flb_http_client_session *flb_http_client_session_create(struct flb_http_c
         session->releasable = FLB_TRUE;
 
         if (result != 0) {
+            /* Ownership of the connection transfers only on success. */
+            session->connection = NULL;
             flb_http_client_session_destroy(session);
 
             session = NULL;
         }
+#ifdef __EMSCRIPTEN__
+        else if (client != NULL) {
+            cfl_list_add(&session->_head, &client->sessions);
+        }
+#endif
     }
 
     return session;
@@ -2523,9 +2592,13 @@ struct flb_http_client_session *flb_http_client_session_begin(struct flb_http_cl
     int                             protocol_version;
     struct flb_upstream_node       *upstream_node;
     struct flb_connection          *connection;
+#ifndef __EMSCRIPTEN__
     struct flb_upstream            *upstream;
+#endif
     struct flb_http_client_session *session;
+#ifndef __EMSCRIPTEN__
     const char                     *alpn;
+#endif
 
     if (client->upstream_ha != NULL) {
         upstream_node = flb_upstream_ha_node_get(client->upstream_ha);
@@ -2534,14 +2607,18 @@ struct flb_http_client_session *flb_http_client_session_begin(struct flb_http_cl
             return NULL;
         }
 
+#ifndef __EMSCRIPTEN__
         upstream = upstream_node->u;
+#endif
 
         connection = flb_upstream_conn_get(upstream_node->u);
     }
     else {
         upstream_node = NULL;
 
+#ifndef __EMSCRIPTEN__
         upstream = client->upstream;
+#endif
 
         connection = flb_upstream_conn_get(client->upstream);
     }
@@ -2552,6 +2629,7 @@ struct flb_http_client_session *flb_http_client_session_begin(struct flb_http_cl
 
     protocol_version = client->protocol_version;
 
+#ifndef __EMSCRIPTEN__
     if (protocol_version == HTTP_PROTOCOL_VERSION_AUTODETECT) {
         if (connection->tls_session != NULL) {
             alpn = flb_tls_session_get_alpn(connection->tls_session);
@@ -2578,11 +2656,13 @@ struct flb_http_client_session *flb_http_client_session_begin(struct flb_http_cl
         flb_stream_disable_keepalive(&upstream->base);
         flb_upstream_conn_recycle(connection, FLB_FALSE);
     }
+#endif
 
     session = flb_http_client_session_create(client, protocol_version, connection);
 
     if (session == NULL) {
         flb_upstream_conn_release(connection);
+        return NULL;
     }
 
     session->upstream_node = upstream_node;
@@ -2621,8 +2701,10 @@ void flb_http_client_session_destroy(struct flb_http_client_session *session)
             cfl_sds_destroy(session->outgoing_data);
         }
 
+#ifndef __EMSCRIPTEN__
         flb_http1_client_session_destroy(&session->http1);
         flb_http2_client_session_destroy(&session->http2);
+#endif
 
         if (session->releasable) {
             flb_free(session);
@@ -2634,7 +2716,9 @@ struct flb_http_request *flb_http_client_request_begin(struct flb_http_client_se
 {
     int                     stream_id;
     struct flb_http_stream *stream;
+#ifndef __EMSCRIPTEN__
     int                     result;
+#endif
 
     stream_id = session->stream_sequence_number;
     session->stream_sequence_number += 2;
@@ -2650,6 +2734,7 @@ struct flb_http_request *flb_http_client_request_begin(struct flb_http_client_se
 
     stream->request.protocol_version = session->protocol_version;
 
+#ifndef __EMSCRIPTEN__
     if (stream->request.protocol_version == HTTP_PROTOCOL_VERSION_20) {
         result = flb_http2_request_begin(&stream->request);
     }
@@ -2666,6 +2751,7 @@ struct flb_http_request *flb_http_client_request_begin(struct flb_http_client_se
 
         return NULL;
     }
+#endif
 
     cfl_list_add(&stream->_head, &session->streams);
 
@@ -2675,6 +2761,9 @@ struct flb_http_request *flb_http_client_request_begin(struct flb_http_client_se
 struct flb_http_response *flb_http_client_request_execute_step(
                             struct flb_http_request *request)
 {
+#ifdef __EMSCRIPTEN__
+    return flb_wasm_http_request_execute(request);
+#else
     struct flb_http_response       *response;
     struct flb_http_client_session *session;
     int                             result;
@@ -2747,6 +2836,7 @@ struct flb_http_response *flb_http_client_request_execute_step(
     }
 
     return response;
+#endif
 }
 
 struct flb_http_response *flb_http_client_request_execute(struct flb_http_request *request)
@@ -2762,6 +2852,7 @@ struct flb_http_response *flb_http_client_request_execute(struct flb_http_reques
     return response;
 }
 
+#ifndef __EMSCRIPTEN__
 static int flb_http_client_session_read(struct flb_http_client_session *session)
 {
     ssize_t result;
@@ -2785,6 +2876,7 @@ static int flb_http_client_session_read(struct flb_http_client_session *session)
 
     return 0;
 }
+#endif
 
 
 void flb_http_client_request_destroy(struct flb_http_request *request,
@@ -2795,11 +2887,16 @@ void flb_http_client_request_destroy(struct flb_http_request *request,
                                          request->stream->parent);
     }
     else {
+#ifdef __EMSCRIPTEN__
+        flb_http_stream_destroy(request->stream);
+#else
         flb_http_request_destroy(request);
+#endif
     }
 }
 
 
+#ifndef __EMSCRIPTEN__
 static int flb_http_client_session_write(struct flb_http_client_session *session)
 {
     size_t data_length;
@@ -2842,11 +2939,13 @@ static int flb_http_client_session_write(struct flb_http_client_session *session
 
     return 0;
 }
+#endif
 
 int flb_http_client_session_ingest(struct flb_http_client_session *session,
                                    unsigned char *buffer,
                                    size_t length)
 {
+#ifndef __EMSCRIPTEN__
     if (session->protocol_version == HTTP_PROTOCOL_VERSION_11 ||
         session->protocol_version == HTTP_PROTOCOL_VERSION_10) {
         return flb_http1_client_session_ingest(&session->http1,
@@ -2858,6 +2957,7 @@ int flb_http_client_session_ingest(struct flb_http_client_session *session,
                                                buffer,
                                                length);
     }
+#endif
 
     return -20;
 }
@@ -3328,7 +3428,7 @@ struct flb_http_request *flb_http_client_request_builder_unsafe(
         return NULL;
     }
 
-    flb_http_request_set_port(request, client->upstream->tcp_port);
+    flb_http_request_set_port(request, session->connection->upstream->tcp_port);
 
     va_start(arguments, client);
 

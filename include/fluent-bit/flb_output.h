@@ -372,6 +372,9 @@ struct flb_output_instance {
     int retry_limit;                     /* max of retries allowed       */
     int retry_limit_is_set;              /* explicitly set by user?      */
     int use_tls;                         /* bool, try to use TLS for I/O */
+#ifdef __EMSCRIPTEN__
+    flb_sds_t browser_url;               /* optional complete HTTPS URL override */
+#endif
     char *match;                         /* match rule for tag/routing   */
 #ifdef FLB_HAVE_REGEX
     struct flb_regex *match_regex;       /* match rule (regex) based on Tags */
