@@ -180,8 +180,8 @@ def test_malformed_data_reply_fails_the_load(tmp_path, server):
         producer.service.stop()
 
 
-# A machine error to the Finish fails the load; a success reply that does not confirm the
-# publication leaves its outcome unknown.
+# A machine error to the Finish fails the load, and the log names the PURGE statement; a
+# success reply that does not confirm the publication leaves its outcome unknown.
 @pytest.mark.parametrize("status, body, unknown", [
     (409, reply("busy", "shared_busy"), False),
     (200, reply("staged"), True),
@@ -198,6 +198,7 @@ def test_finish_failure_fails_the_load(tmp_path, server, status, body, unknown):
         assert failed(output), output
         assert ops(server) == ["data", "finish"]
         assert ("Finish completion unknown" in output) == unknown, output
+        assert ("PURGE BULK_IMPORT FROM TABLE shared_logs" in output) != unknown, output
     finally:
         producer.service.stop()
 
