@@ -105,9 +105,9 @@ def test_in_syslog_tcp_tls():
         with socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=5) as raw_sock:
             with context.wrap_socket(raw_sock, server_hostname="localhost") as tls_sock:
                 tls_sock.sendall(TCP_RFC5424_MESSAGE)
-                tls_sock.shutdown(socket.SHUT_WR)
-
-        payloads = service.read_forwarded_payloads()
+                # Keep TLS alive until ingestion completes; a raw TCP shutdown
+                # can interrupt the server's TLS handshake with unexpected EOF.
+                payloads = service.read_forwarded_payloads()
     finally:
         service.stop()
 
