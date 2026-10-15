@@ -26,7 +26,7 @@
 #ifndef FLB_LANGINFO_H
 #define FLB_LANGINFO_H
 
-#ifndef _MSC_VER
+#ifndef _WIN32
 #include <langinfo.h>
 #else
 
