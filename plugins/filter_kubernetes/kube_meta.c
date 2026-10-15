@@ -1141,10 +1141,11 @@ static int search_item_in_items(struct flb_kube_meta *meta,
         }
     }
 
-    int ret = search_metadata_in_items(meta, ctx, items_array,
-                                       target_item_map);
+    if (!items_array_found) {
+        return -1;
+    }
 
-    return ret;
+    return search_metadata_in_items(meta, ctx, items_array, target_item_map);
 }
 
 
