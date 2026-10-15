@@ -441,7 +441,7 @@ int flb_http_request_uncompress_body_limited(struct flb_http_request *request, s
 
     encoding = flb_http_request_get_header(request, "Content-Encoding");
     if (encoding == NULL || strcasecmp(encoding, "identity") == 0) {
-        return cfl_sds_len(request->body) > limit ? FLB_DECOMPRESSOR_LIMIT_EXCEEDED : 0;
+        return 0;
     }
 
     if (strcasecmp(encoding, "gzip") == 0) {
