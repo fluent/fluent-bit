@@ -1015,11 +1015,18 @@ static int search_podname_and_namespace(struct flb_kube_meta *meta,
     msgpack_object k;
     msgpack_object v;
 
+    if (map.type != MSGPACK_OBJECT_MAP) {
+        return -1;
+    }
+
     for (i = 0; (!podname_found || !namespace_found) &&
                  i < map.via.map.size; i++) {
 
         k = map.via.map.ptr[i].key;
         v = map.via.map.ptr[i].val;
+        if (k.type != MSGPACK_OBJECT_STR) {
+            continue;
+        }
         if (k.via.str.size == 4 && !strncmp(k.via.str.ptr, "name", 4)) {
 
             podname_found = FLB_TRUE;
@@ -1073,6 +1080,9 @@ static int search_metadata_in_items(struct flb_kube_meta *meta,
         for (j = 0; j < item_info_map.via.map.size; j++) {
 
             k = item_info_map.via.map.ptr[j].key;
+            if (k.type != MSGPACK_OBJECT_STR) {
+                continue;
+            }
             if (k.via.str.size == 8 &&
                 !strncmp(k.via.str.ptr, "metadata", 8)) {
 
@@ -1128,9 +1138,16 @@ static int search_item_in_items(struct flb_kube_meta *meta,
     msgpack_object v;
     msgpack_object items_array;
 
+    if (api_map.type != MSGPACK_OBJECT_MAP) {
+        return -1;
+    }
+
     for (i = 0; !items_array_found && i < api_map.via.map.size; i++) {
 
         k = api_map.via.map.ptr[i].key;
+        if (k.type != MSGPACK_OBJECT_STR) {
+            continue;
+        }
         if (k.via.str.size == 5 && !strncmp(k.via.str.ptr, "items", 5)) {
 
             v = api_map.via.map.ptr[i].val;
