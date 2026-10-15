@@ -198,6 +198,17 @@ void test_http_server_options_defaults()
     TEST_CHECK(flb_http_server_property_is_allowed("idle_timeout") == FLB_FALSE);
 }
 
+void test_http_server_rejects_invalid_decoded_body_limit()
+{
+    struct flb_http_server server;
+    struct flb_http_server_options options;
+
+    flb_http_server_options_init(&options);
+    options.max_decoded_body_size = SIZE_MAX;
+
+    TEST_CHECK(flb_http_server_init_with_options(&server, &options) == -1);
+}
+
 void test_http_server_options_multi_worker_magic()
 {
     struct flb_config *config;
@@ -1291,6 +1302,8 @@ static void test_http_body_inflation_limit(void)
 }
 
 TEST_LIST = {
+    { "http_server_rejects_invalid_decoded_body_limit",
+      test_http_server_rejects_invalid_decoded_body_limit },
     { "http_body_inflation_limit", test_http_body_inflation_limit },
     { "http_body_inflation_budget", test_http_body_inflation_budget },
     { "http1_rejects_invalid_partial_request_line", test_http1_rejects_invalid_partial_request_line },
