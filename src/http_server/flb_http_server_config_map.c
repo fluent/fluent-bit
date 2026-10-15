@@ -31,6 +31,7 @@ void flb_http_server_config_init(struct flb_http_server_config *config)
     config->http2 = FLB_TRUE;
     config->idle_timeout = HTTP_SERVER_DEFAULT_IDLE_TIMEOUT;
     config->buffer_max_size = HTTP_SERVER_MAXIMUM_BUFFER_SIZE;
+    config->max_decoded_body_size = HTTP_SERVER_DEFAULT_MAX_DECODED_BODY_SIZE;
     config->http1_max_header_size = HTTP_SERVER_DEFAULT_HTTP1_MAX_HEADER_SIZE_STR;
     config->buffer_chunk_size = HTTP_SERVER_INITIAL_BUFFER_SIZE;
     config->max_connections = 0;
@@ -56,6 +57,12 @@ struct flb_config_map flb_http_server_config_map[] = {
      FLB_CONFIG_MAP_SIZE, "http_server.buffer_max_size", "4M",
      0, FLB_TRUE, offsetof(struct flb_http_server_config, buffer_max_size),
      "Set the maximum size of the HTTP request buffer"
+    },
+    {
+     FLB_CONFIG_MAP_SIZE, "http_server.max_decoded_body_size", "100M",
+     0, FLB_TRUE, offsetof(struct flb_http_server_config, max_decoded_body_size),
+     "Set the maximum decoded body size for automatic HTTP decompression, independently "
+     "of buffer_max_size. 0 uses the default 100M limit."
     },
     {
      FLB_CONFIG_MAP_STR, "http_server.http1_max_header_size",

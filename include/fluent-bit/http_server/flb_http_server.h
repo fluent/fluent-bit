@@ -82,6 +82,7 @@ struct flb_http_server_options {
     int                                  idle_timeout; /* seconds */
     size_t                               buffer_max_size;
     size_t                               http1_max_header_size;
+    size_t                               max_decoded_body_size;
     size_t                               buffer_chunk_size;
     size_t                               max_connections;
     uint64_t                            *connection_counter;
@@ -134,6 +135,7 @@ struct flb_http_server {
     void                               *user_data;
     size_t                              buffer_max_size;
     size_t                              http1_max_header_size;
+    size_t                              max_decoded_body_size;
     size_t                              buffer_chunk_size;
     size_t                              max_connections;
     uint64_t                            active_connections;
