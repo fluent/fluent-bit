@@ -98,6 +98,56 @@ struct str_list {
     char **lists;
 };
 
+struct json_stream_expected {
+    const char *records[2];
+    int seen[2];
+};
+
+/* A flush may contain one or both records. Check each complete JSON object. */
+static void cb_check_json_stream(void *ctx, int ffd, int res_ret,
+                                 void *res_data, size_t res_size, void *data)
+{
+    size_t i;
+    size_t len;
+    size_t offset;
+    flb_sds_t output = res_data;
+    struct json_stream_expected *expected = data;
+
+    if (output == NULL) {
+        set_callback_error("formatter returned no output");
+        return;
+    }
+
+    if (expected == NULL || res_ret != 0) {
+        set_callback_error("formatter returned an error or no callback data");
+        flb_sds_destroy(output);
+        return;
+    }
+
+    offset = 0;
+    while (offset < res_size) {
+        for (i = 0; i < 2; i++) {
+            len = strlen(expected->records[i]);
+            if (len <= res_size - offset &&
+                strncmp(output + offset, expected->records[i], len) == 0) {
+                pthread_mutex_lock(&result_mutex);
+                expected->seen[i]++;
+                num_output++;
+                pthread_mutex_unlock(&result_mutex);
+                offset += len;
+                break;
+            }
+        }
+
+        if (i == 2) {
+            set_callback_error("formatter output contained an unexpected JSON stream record");
+            break;
+        }
+    }
+
+    flb_sds_destroy(output);
+}
+
 /* Callback to check expected results */
 static void cb_check_str_list(void *ctx, int ffd, int res_ret, 
                               void *res_data, size_t res_size, void *data)
@@ -451,10 +501,12 @@ void flb_test_format_json_stream()
     char *buf2 = "[2, {\"msg\":\"hello world\"}]";
     size_t size2 = strlen(buf2);
 
-    char *expected_strs[] = {"{\"date\":1.0,\"msg\":\"hello world\"}{\"date\":2.0,\"msg\":\"hello world\"}"};
-    struct str_list expected = {
-                                .size = sizeof(expected_strs)/sizeof(char*),
-                                .lists = &expected_strs[0],
+    struct json_stream_expected expected = {
+        .records = {
+            "{\"date\":1.0,\"msg\":\"hello world\"}",
+            "{\"date\":2.0,\"msg\":\"hello world\"}"
+        },
+        .seen = {0, 0}
     };
 
     clear_output_num();
@@ -472,7 +524,7 @@ void flb_test_format_json_stream()
     TEST_CHECK(ret == 0);
 
     ret = flb_output_set_test(ctx->flb, ctx->o_ffd,
-                         "formatter", cb_check_str_list,
+                         "formatter", cb_check_json_stream,
                           &expected, NULL);
     TEST_CHECK(ret == 0);
 
@@ -486,15 +538,20 @@ void flb_test_format_json_stream()
     ret = flb_lib_push(ctx->flb, ctx->i_ffd, (char *) buf2, size2);
     TEST_CHECK(ret >= 0);
 
-    /* waiting to flush */
-    flb_time_msleep(500);
+    /* Wait for both records, whether they arrive in one or two flushes. */
+    for (ret = 0; ret < 50 && get_output_num() < 2; ret++) {
+        flb_time_msleep(100);
+    }
 
     num = get_output_num();
-    if (!TEST_CHECK(num > 0))  {
-        TEST_MSG("no outputs");
+    if (!TEST_CHECK(num == 2)) {
+        TEST_MSG("got %d records, expected 2", num);
     }
 
     test_ctx_destroy(ctx);
+
+    TEST_CHECK(expected.seen[0] == 1);
+    TEST_CHECK(expected.seen[1] == 1);
 }
 
 void flb_test_format_json_lines()
