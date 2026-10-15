@@ -200,6 +200,12 @@ struct flb_kube {
     int kube_meta_cache_ttl;
     int kube_meta_namespace_cache_ttl;
 
+    /* Bound the synchronous metadata fetch and remember recently-failed
+     * lookups so a stalled API server / kubelet connection cannot block the
+     * pipeline thread (and therefore in_tail) indefinitely. */
+    int kube_meta_io_timeout;
+    int kube_meta_negative_cache_ttl;
+
     /* Configuration used for enabling pod to service name mapping*/
     int aws_use_pod_association;
     char *aws_pod_association_host;
@@ -248,6 +254,7 @@ struct flb_kube {
     struct flb_config *config;
     struct flb_hash_table *hash_table;
     struct flb_hash_table *namespace_hash_table;
+    struct flb_hash_table *neg_hash_table;
     struct flb_upstream *kubelet_upstream;
     struct flb_upstream *kube_api_upstream;
     struct flb_filter_instance *ins;
