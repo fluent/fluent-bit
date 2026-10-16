@@ -738,6 +738,11 @@ static void csv_field_content(FILE *fp, msgpack_object obj, int nested)
             fputs("\"\"", fp);
         }
         for (i = 0; i < length; i++) {
+            if (obj.type == MSGPACK_OBJECT_BIN &&
+                ((unsigned char) value[i] < 0x20 || (unsigned char) value[i] >= 0x7f)) {
+                fprintf(fp, "\\x%02x", (unsigned char) value[i]);
+                continue;
+            }
             if (value[i] == '"') {
                 fputc('"', fp);
             }
@@ -836,6 +841,91 @@ static int csv_output(FILE *fp, int column_names,
     return 0;
 }
 
+/* Percent-encode separators and controls; encode percent to avoid ambiguity. */
+static void ltsv_bytes(FILE *fp, const char *value, size_t length,
+                       struct flb_file_conf *ctx)
+{
+    size_t i;
+    unsigned char c;
+
+    for (i = 0; i < length; i++) {
+        c = (unsigned char) value[i];
+        if (c < 0x20 || c == 0x7f || c == '%' ||
+            strchr(ctx->delimiter, c) != NULL ||
+            strchr(ctx->label_delimiter, c) != NULL) {
+            fprintf(fp, "%%%02X", (unsigned int) c);
+        }
+        else {
+            fputc(c, fp);
+        }
+    }
+}
+
+static void ltsv_field(FILE *fp, msgpack_object obj, struct flb_file_conf *ctx)
+{
+    size_t i;
+    int length;
+    char number[512];
+
+    switch (obj.type) {
+    case MSGPACK_OBJECT_STR:
+    case MSGPACK_OBJECT_BIN:
+        ltsv_bytes(fp, "\"", 1, ctx);
+        if (obj.type == MSGPACK_OBJECT_STR) {
+            ltsv_bytes(fp, obj.via.str.ptr, obj.via.str.size, ctx);
+        }
+        else {
+            for (i = 0; i < obj.via.bin.size; i++) {
+                if ((unsigned char) obj.via.bin.ptr[i] >= 0x80) {
+                    fprintf(fp, "%%%02X", (unsigned char) obj.via.bin.ptr[i]);
+                }
+                else {
+                    ltsv_bytes(fp, obj.via.bin.ptr + i, 1, ctx);
+                }
+            }
+        }
+        ltsv_bytes(fp, "\"", 1, ctx);
+        break;
+    case MSGPACK_OBJECT_ARRAY:
+        ltsv_bytes(fp, "[", 1, ctx);
+        for (i = 0; i < obj.via.array.size; i++) {
+            if (i > 0) {
+                ltsv_bytes(fp, ", ", 2, ctx);
+            }
+            ltsv_field(fp, obj.via.array.ptr[i], ctx);
+        }
+        ltsv_bytes(fp, "]", 1, ctx);
+        break;
+    case MSGPACK_OBJECT_MAP:
+        ltsv_bytes(fp, "{", 1, ctx);
+        for (i = 0; i < obj.via.map.size; i++) {
+            if (i > 0) {
+                ltsv_bytes(fp, ", ", 2, ctx);
+            }
+            ltsv_field(fp, obj.via.map.ptr[i].key, ctx);
+            ltsv_bytes(fp, "=>", 2, ctx);
+            ltsv_field(fp, obj.via.map.ptr[i].val, ctx);
+        }
+        ltsv_bytes(fp, "}", 1, ctx);
+        break;
+    case MSGPACK_OBJECT_EXT:
+        length = snprintf(number, sizeof(number), "(ext: %d)\"", (int) obj.via.ext.type);
+        ltsv_bytes(fp, number, length, ctx);
+        for (i = 0; i < obj.via.ext.size; i++) {
+            length = snprintf(number, sizeof(number), "\\x%02x", (unsigned char) obj.via.ext.ptr[i]);
+            ltsv_bytes(fp, number, length, ctx);
+        }
+        ltsv_bytes(fp, "\"", 1, ctx);
+        break;
+    default:
+        length = msgpack_object_print_buffer(number, sizeof(number), obj);
+        if (length > 0) {
+            ltsv_bytes(fp, number, length, ctx);
+        }
+        break;
+    }
+}
+
 static int ltsv_output(FILE *fp, struct flb_time *tm, msgpack_object *obj,
                        struct flb_file_conf *ctx)
 {
@@ -852,15 +942,15 @@ static int ltsv_output(FILE *fp, struct flb_time *tm, msgpack_object *obj,
                 ctx->delimiter);
 
         for (i = 0; i < map_size - 1; i++) {
-            msgpack_object_print(fp, (kv+i)->key);
+            ltsv_field(fp, (kv+i)->key, ctx);
             fprintf(fp, "%s", ctx->label_delimiter);
-            msgpack_object_print(fp, (kv+i)->val);
+            ltsv_field(fp, (kv+i)->val, ctx);
             fprintf(fp, "%s", ctx->delimiter);
         }
 
-        msgpack_object_print(fp, (kv+(map_size-1))->key);
+        ltsv_field(fp, (kv+(map_size-1))->key, ctx);
         fprintf(fp, "%s", ctx->label_delimiter);
-        msgpack_object_print(fp, (kv+(map_size-1))->val);
+        ltsv_field(fp, (kv+(map_size-1))->val, ctx);
         fprintf(fp, NEWLINE);
     }
     return 0;
