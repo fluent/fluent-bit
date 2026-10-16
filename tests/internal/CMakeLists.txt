@@ -220,6 +220,10 @@ if(FLB_IN_COLLECTD)
   list(APPEND UNIT_TESTS_FILES collectd.c)
 endif()
 
+if(FLB_LUAJIT AND FLB_YYJSON AND FLB_PROCESSOR_FTS)
+  list(APPEND UNIT_TESTS_FILES fts.c)
+endif()
+
 set(UNIT_TESTS_DATA
   data/fips/disabled.cnf
   data/tls/certificate.pem
