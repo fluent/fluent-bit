@@ -21,9 +21,12 @@
 #define FLB_IN_BLOB_H
 
 #include <fluent-bit/flb_input_plugin.h>
-#include <fluent-bit/flb_sqldb.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_log_event_encoder.h>
+
+#ifdef FLB_HAVE_SQLDB
+#include <fluent-bit/flb_sqldb.h>
+#endif
 
 #define POST_UPLOAD_ACTION_NONE       0
 #define POST_UPLOAD_ACTION_DELETE     1
