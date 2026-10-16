@@ -26,194 +26,21 @@
 
 #include <ctraces/ctraces.h>
 
-static int process_attribute(struct ctrace_attributes *attr,
-                             msgpack_object *key, msgpack_object *value, int type)
-{
-    int ret;
-    char *key_str;
-    char *value_str;
-    int64_t value_int;
-    double value_double;
-    int value_bool;
-
-    if (key->type != MSGPACK_OBJECT_STR) {
-        return -1;
-    }
-
-    /* temporary buffer for key since it needs to be NULL terminated */
-    key_str = flb_sds_create_len(key->via.str.ptr, key->via.str.size);
-    if (key_str == NULL) {
-        return -1;
-    }
-
-    /*
-     * the value of 'type' is set by the JSON wrapped value, we need to to convert it
-     * since msgpack_object *value is always a string
-     */
-    switch (type) {
-    case MSGPACK_OBJECT_STR:
-        if (value->type != MSGPACK_OBJECT_STR) {
-            flb_sds_destroy(key_str);
-            return -1;
-        }
-
-        value_str = flb_sds_create_len(value->via.str.ptr, value->via.str.size);
-        if (value_str == NULL) {
-            flb_sds_destroy(key_str);
-            return -1;
-        }
-
-        ret = ctr_attributes_set_string(attr, key_str, value_str);
-        flb_sds_destroy(value_str);
-        break;
-    case MSGPACK_OBJECT_POSITIVE_INTEGER:
-    case MSGPACK_OBJECT_NEGATIVE_INTEGER:
-        if (value->type == MSGPACK_OBJECT_STR) {
-            value_str = flb_sds_create_len(value->via.str.ptr, value->via.str.size);
-            if (value_str == NULL) {
-                flb_sds_destroy(key_str);
-                return -1;
-            }
-            value_int = strtoll(value_str, NULL, 10);
-            flb_sds_destroy(value_str);
-        }
-        else if (value->type == MSGPACK_OBJECT_POSITIVE_INTEGER ||
-                 value->type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
-            value_int = value->via.i64;
-        }
-        else {
-            flb_sds_destroy(key_str);
-            return -1;
-        }
-
-        ret = ctr_attributes_set_int64(attr, key_str, value_int);
-        break;
-    case MSGPACK_OBJECT_FLOAT32:
-    case MSGPACK_OBJECT_FLOAT64:
-        if (value->type == MSGPACK_OBJECT_STR) {
-            value_str = flb_sds_create_len(value->via.str.ptr, value->via.str.size);
-            if (value_str == NULL) {
-                flb_sds_destroy(key_str);
-                return -1;
-            }
-            value_double = strtod(value_str, NULL);
-            flb_sds_destroy(value_str);
-        }
-        else if (value->type == MSGPACK_OBJECT_FLOAT32 ||
-                 value->type == MSGPACK_OBJECT_FLOAT64) {
-            value_double = value->via.f64;
-        }
-        else {
-            flb_sds_destroy(key_str);
-            return -1;
-        }
-
-        ret = ctr_attributes_set_double(attr, key_str, value_double);
-        break;
-    case MSGPACK_OBJECT_BOOLEAN:
-        if (value->type != MSGPACK_OBJECT_BOOLEAN) {
-            flb_sds_destroy(key_str);
-            return -1;
-        }
-
-        value_bool = value->via.boolean;
-        ret = ctr_attributes_set_bool(attr, key_str, value_bool);
-        break;
-    case MSGPACK_OBJECT_ARRAY:
-        /*
-         * The less fun part (OTel JSON encoding), the value can be an array and
-         * only allows values such as string, bool, int64, double. I am glad this
-         * don't support nested arrays or maps.
-         */
-        ret = 0;
-        break;
-    default:
-        flb_sds_destroy(key_str);
-        return -1;
-    }
-
-    flb_sds_destroy(key_str);
-    return ret;
-}
-
-static int process_resource_unwrap_attribute(msgpack_object *attr,
-                                             msgpack_object *out_key,
-                                             msgpack_object *out_value, int *out_value_type)
-{
-    int ret;
-    int type;
-    msgpack_object key;
-    msgpack_object val;
-    msgpack_object *real_value;
-
-    if (attr->type != MSGPACK_OBJECT_MAP) {
-        return -1;
-    }
-
-    ret = flb_otel_utils_find_map_entry_by_key(&attr->via.map, "key", 0, FLB_TRUE);
-    if (ret == -1) {
-        return -1;
-    }
-
-    key = attr->via.map.ptr[ret].val;
-    if (key.type != MSGPACK_OBJECT_STR) {
-        return -1;
-    }
-
-    ret = flb_otel_utils_find_map_entry_by_key(&attr->via.map, "value", 0, FLB_TRUE);
-    if (ret == -1) {
-        return -1;
-    }
-
-    val = attr->via.map.ptr[ret].val;
-
-    ret = flb_otel_utils_json_payload_get_wrapped_value(&val, &real_value, &type);
-    if (ret != 0) {
-        return -1;
-    }
-
-    *out_key = key;
-    *out_value = *real_value;
-    *out_value_type = type;
-
-    return 0;
-}
-
-/*
- * Convert a list of attributes in msgpack format to a cfl attributes by
- * unwrapping JSON encoded value types.
- */
+/* Use the shared AnyValue decoder for scalars, bytes, arrays and nested maps. */
 static struct ctrace_attributes *convert_attributes(msgpack_object *attributes,
                                                     const char *log_context)
 {
-    int i;
-    int ret;
-    int value_type;
-    msgpack_object key;
-    msgpack_object value;
     struct ctrace_attributes *attr;
 
     attr = ctr_attributes_create();
-    if (attr == NULL) {
+    if (!attr) {
         return NULL;
     }
-
-    for (i = 0; i < attributes->via.array.size; i++) {
-        ret = process_resource_unwrap_attribute(&attributes->via.array.ptr[i],
-                                                &key, &value, &value_type);
-        if (ret == -1) {
-            flb_warn("found invalid %s attribute, skipping", log_context);
-            continue;
-        }
-
-        /* set attribute */
-        ret = process_attribute(attr, &key, &value, value_type);
-        if (ret == -1) {
-            flb_warn("failed to set %s attribute, skipping", log_context);
-            continue;
-        }
+    if (flb_otel_utils_clone_kvlist_from_otlp_json_array(attr->kv, attributes) != 0) {
+        flb_warn("failed to decode %s attributes", log_context);
+        ctr_attributes_destroy(attr);
+        return NULL;
     }
-
     return attr;
 }
 
@@ -854,8 +681,16 @@ static int process_spans(struct ctrace *ctr,
 
         /* kind */
         ret = flb_otel_utils_find_map_entry_by_key(&span.via.map, "kind", 0, FLB_TRUE);
-        if (ret >= 0 && span.via.map.ptr[ret].val.type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
-            ctr_span_kind_set(ctr_span, span.via.map.ptr[ret].val.via.u64);
+        if (ret >= 0) {
+            /* Proto3 enums preserve unknown numeric values within int32. */
+            if (span.via.map.ptr[ret].val.type == MSGPACK_OBJECT_POSITIVE_INTEGER &&
+                span.via.map.ptr[ret].val.via.u64 <= INT32_MAX) {
+                ctr_span->kind = (int32_t) span.via.map.ptr[ret].val.via.u64;
+            }
+            else if (span.via.map.ptr[ret].val.type == MSGPACK_OBJECT_NEGATIVE_INTEGER &&
+                     span.via.map.ptr[ret].val.via.i64 >= INT32_MIN) {
+                ctr_span->kind = (int32_t) span.via.map.ptr[ret].val.via.i64;
+            }
         }
 
         /* attributes */
