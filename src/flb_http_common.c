@@ -1436,6 +1436,8 @@ int flb_http_stream_init(struct flb_http_stream *stream,
     int result;
 
     stream->id = stream_id;
+    stream->incoming_header_size = 0;
+    stream->incoming_header_count = 0;
 
     if (role == HTTP_STREAM_ROLE_SERVER) {
         stream->status = HTTP_STREAM_STATUS_RECEIVING_HEADERS;
