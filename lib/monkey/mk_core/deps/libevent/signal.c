@@ -85,7 +85,9 @@
 #ifndef _WIN32
 /* Windows wants us to call our signal handlers as __cdecl.  Nobody else
  * expects you to do anything crazy like this. */
+#ifndef __cdecl
 #define __cdecl
+#endif
 #endif
 
 static int evsig_add(struct event_base *, evutil_socket_t, short, short, void *);
@@ -206,25 +208,13 @@ evsig_init_(struct event_base *base)
 	return 0;
 }
 
-/* Helper: set the signal handler for evsignal to handler in base, so that
- * we can restore the original handler when we clear the current one. */
+/* Helper: resize saved signal handler array up to the highest signal
+   number. A dynamic array is used to keep footprint on the low side. */
 int
-evsig_set_handler_(struct event_base *base,
-    int evsignal, void (__cdecl *handler)(int))
+evsig_ensure_saved_(struct evsig_info *sig, int evsignal)
 {
-#ifdef EVENT__HAVE_SIGACTION
-	struct sigaction sa;
-#else
-	ev_sighandler_t sh;
-#endif
-	struct evsig_info *sig = &base->sig;
-	void *p;
-
-	/*
-	 * resize saved signal handler array up to the highest signal number.
-	 * a dynamic array is used to keep footprint on the low side.
-	 */
 	if (evsignal >= sig->sh_old_max) {
+		void *p;
 		int new_max = evsignal + 1;
 		event_debug(("%s: evsignal (%d) >= sh_old_max (%d), resizing",
 			    __func__, evsignal, sig->sh_old_max));
@@ -240,6 +230,25 @@ evsig_set_handler_(struct event_base *base,
 		sig->sh_old_max = new_max;
 		sig->sh_old = p;
 	}
+	return 0;
+}
+
+/* Helper: set the signal handler for evsignal to handler in base, so that
+ * we can restore the original handler when we clear the current one. */
+int
+evsig_set_handler_(struct event_base *base,
+    int evsignal, void (__cdecl *handler)(int))
+{
+#ifdef EVENT__HAVE_SIGACTION
+	struct sigaction sa;
+#else
+	ev_sighandler_t sh;
+#endif
+	struct evsig_info *sig = &base->sig;
+
+	/* ensure saved array is large enough */
+	if (evsig_ensure_saved_(sig, evsignal) < 0)
+		return (-1);
 
 	/* allocate space for previous handler out of dynamic array */
 	sig->sh_old[evsignal] = mm_malloc(sizeof *sig->sh_old[evsignal]);
@@ -252,7 +261,9 @@ evsig_set_handler_(struct event_base *base,
 #ifdef EVENT__HAVE_SIGACTION
 	memset(&sa, 0, sizeof(sa));
 	sa.sa_handler = handler;
+#ifdef SA_RESTART
 	sa.sa_flags |= SA_RESTART;
+#endif
 	sigfillset(&sa.sa_mask);
 
 	if (sigaction(evsignal, &sa, sig->sh_old[evsignal]) == -1) {
@@ -291,7 +302,7 @@ evsig_add(struct event_base *base, evutil_socket_t evsignal, short old, short ev
 		    "the most recently added signal or the most recent "
 		    "event_base_loop() call gets preference; do "
 		    "not rely on this behavior in future Libevent versions.",
-		    base, evsig_base, base->evsel->name);
+                   (void *)base, (void *)evsig_base, base->evsel->name);
 	}
 	evsig_base = base;
 	evsig_base_n_signals_added = ++sig->ev_n_signals_added;
@@ -398,9 +409,25 @@ evsig_handler(int sig)
 #ifdef _WIN32
 	send(evsig_base_fd, (char*)&msg, 1, 0);
 #else
-	{
-		int r = write(evsig_base_fd, (char*)&msg, 1);
-		(void)r; /* Suppress 'unused return value' and 'unused var' */
+	for (;;) {
+		/*
+		 * errno is only set to provide a descriptive message for event_warnx
+		 * if write returns 0. Not setting it will result in "No error" message
+		 * because write does not set errno when returning 0.
+		 *
+		 * EAGAIN will print "Try again" message. Another idea is to use
+		 * ENOSPC, but since we use non blocking sockets EAGAIN is preferable.
+		 *
+		 * Other than setting this text of the logged warning, the value in
+		 * errno has no further effect.
+		 */
+		errno = EAGAIN;
+		if (0 >= write(evsig_base_fd, &msg, 1)) {
+			if (errno == EINTR)
+				continue;
+			event_warnx("%s: write: %s", __func__, strerror(errno));
+		}
+		break;
 	}
 #endif
 	errno = save_errno;

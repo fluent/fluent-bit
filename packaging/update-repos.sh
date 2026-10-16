@@ -4,7 +4,7 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
 # Wrapper script around the actual ones used in CI
 # Intended only for legacy/manual use in event of failure in CI
-# Ensure to add dependencies, e.g. for Ubuntu 22.04: awscli git createrepo-c debsigs aptly rsync gnupg2
+# Dependencies: awscli git createrepo-c debsigs aptly rsync gnupg2 python3 curl docker/buildx
 # Following that there are a few things to do:
 # Import the signing key (if signing)
 # gpg --import <private key>
@@ -30,6 +30,32 @@ fi
 # AWS_S3_BUCKET_RELEASE=packages.fluentbit.io
 # AWS_S3_BUCKET_STAGING=fluentbit-staging
 export AWS_REGION=${AWS_REGION:-us-east-1}
+
+# Manual official-release recovery must meet the same metadata gate as CI.
+# This check reads staging/public files; it does not publish metadata or alter ACLs.
+if [[ "${AWS_SYNC:-false}" != "false" ]]; then
+    RELEASE_VERSION=${RELEASE_VERSION:?Set RELEASE_VERSION to the numeric release version}
+    if [[ ! "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]]; then
+        echo "RELEASE_VERSION must be numeric without the v prefix: $RELEASE_VERSION" >&2
+        exit 1
+    fi
+    METADATA_TOOL="$SCRIPT_DIR/../.github/scripts/release_metadata.py"
+    METADATA_DIR=$(mktemp -d)
+    trap 'rm -rf "$METADATA_DIR"' EXIT
+    STAGING_IMAGE=${STAGING_IMAGE:-ghcr.io/fluent/fluent-bit/staging}
+    IMAGE_DIGEST=$(docker buildx imagetools inspect "$STAGING_IMAGE:$RELEASE_VERSION" --format '{{.Manifest.Digest}}')
+    python3 "$METADATA_TOOL" generate --version "$RELEASE_VERSION" \
+        --image "$STAGING_IMAGE@$IMAGE_DIGEST" --directory "$METADATA_DIR/generated"
+    mkdir -p "$METADATA_DIR/staged"
+    for FILE in "fluent-bit-schema-$RELEASE_VERSION.json" "fluent-bit-schema-pretty-$RELEASE_VERSION.json"; do
+        aws s3 cp "s3://${AWS_S3_BUCKET_STAGING:?}/$RELEASE_VERSION/$FILE" "$METADATA_DIR/staged/$FILE" --no-progress
+    done
+    python3 "$METADATA_TOOL" compare --version "$RELEASE_VERSION" \
+        --directory "$METADATA_DIR/staged" --reference-directory "$METADATA_DIR/generated"
+    python3 "$METADATA_TOOL" verify --version "$RELEASE_VERSION" --directory "$METADATA_DIR/staged"
+    python3 "$METADATA_TOOL" verify --version "$RELEASE_VERSION" --directory "$METADATA_DIR/staged" \
+        --github-repository fluent/fluent-bit --attempts 10 --delay 30
+fi
 
 RPM_REPO_PATHS=( "amazonlinux/2" 
 				 "amazonlinux/2023" 

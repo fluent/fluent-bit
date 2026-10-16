@@ -228,6 +228,58 @@ int sampling_span_registry_add_span(struct sampling *ctx, struct sampling_span_r
     return 0;
 }
 
+/*
+ * Remove every reference to the spans of 'ctr' from the registry. This is used to
+ * roll back a failed registration: the registry must never keep pointers to spans
+ * of a context that the sampler does not own, since the caller destroys a rejected
+ * context right after. The spans are not destroyed, only the registry records.
+ */
+void sampling_span_registry_remove_trace(struct sampling *ctx,
+                                         struct sampling_span_registry *reg,
+                                         struct ctrace *ctr)
+{
+    int ret;
+    size_t out_size = 0;
+    struct cfl_list *head;
+    struct cfl_list *head_span;
+    struct cfl_list *tmp_span;
+    struct ctrace_span *span;
+    struct trace_entry *t_entry;
+    struct trace_span *t_span;
+
+    cfl_list_foreach(head, &ctr->span_list) {
+        span = cfl_list_entry(head, struct ctrace_span, _head_global);
+
+        /* spans without a trace_id were never registered */
+        if (!span->trace_id) {
+            continue;
+        }
+
+        ret = flb_hash_table_get(reg->ht,
+                                 ctr_id_get_buf(span->trace_id),
+                                 ctr_id_get_len(span->trace_id),
+                                 (void **) &t_entry, &out_size);
+        if (ret == -1) {
+            continue;
+        }
+
+        /* unlink the trace_span records that point to this span */
+        cfl_list_foreach_safe(head_span, tmp_span, &t_entry->span_list) {
+            t_span = cfl_list_entry(head_span, struct trace_span, _head);
+            if (t_span->span != span) {
+                continue;
+            }
+            cfl_list_del(&t_span->_head);
+            flb_free(t_span);
+        }
+
+        /* drop the trace_entry if no spans are left */
+        if (cfl_list_is_empty(&t_entry->span_list)) {
+            sampling_span_registry_delete_entry(ctx, reg, t_entry, FLB_FALSE);
+        }
+    }
+}
+
 int sampling_span_registry_add_trace(struct sampling *ctx, struct sampling_span_registry *reg, struct ctrace *ctr)
 {
     int ret;
@@ -241,6 +293,9 @@ int sampling_span_registry_add_trace(struct sampling *ctx, struct sampling_span_
         ret = sampling_span_registry_add_span(ctx, reg, span);
         if (ret != 0) {
             flb_plg_error(ctx->ins, "failed to process span: %s", span->name);
+
+            /* unregister the spans added so far: the caller owns the context */
+            sampling_span_registry_remove_trace(ctx, reg, ctr);
             return -1;
         }
     }

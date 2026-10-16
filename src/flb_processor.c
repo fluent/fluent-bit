@@ -35,6 +35,7 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_plugin.h>
+#include <fluent-bit/flb_plugin_alias.h>
 #include <cfl/cfl.h>
 
 struct flb_config_map processor_global_properties[] = {
@@ -618,13 +619,19 @@ struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
                                                      char *unit_name)
 {
     int result;
+    int native_plugin_found;
     struct mk_list *head;
     int    filter_event_type;
+    const char *alias_target;
+    const char *effective_unit_name;
     struct flb_filter_plugin *f = NULL;
     struct flb_filter_instance *f_ins;
     struct flb_config *config = proc->config;
     struct flb_processor_unit *pu = NULL;
     struct flb_processor_instance *processor_instance;
+    struct flb_processor_plugin *processor_plugin;
+
+    effective_unit_name = unit_name;
 
     /*
      * Looking the processor unit by using it's name and type, the first list we
@@ -641,12 +648,57 @@ struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
 
         /* skip filters which don't handle the required type */
         if ((event_type & filter_event_type) != 0) {
-            if (strcmp(f->name, unit_name) == 0) {
+            if (strcasecmp(f->name, effective_unit_name) == 0) {
                 break;
             }
         }
 
         f = NULL;
+    }
+
+    /* A processor unit may be either a filter or a native processor. */
+    native_plugin_found = FLB_FALSE;
+    if (f == NULL) {
+        mk_list_foreach(head, &config->processor_plugins) {
+            processor_plugin = mk_list_entry(head, struct flb_processor_plugin, _head);
+            if (strcasecmp(processor_plugin->name, unit_name) == 0) {
+                native_plugin_found = FLB_TRUE;
+                break;
+            }
+        }
+    }
+
+    /* Prefer exact registered names before falling back to aliases. */
+    if (f == NULL && native_plugin_found == FLB_FALSE) {
+        alias_target = flb_plugin_alias_get(FLB_PLUGIN_FILTER, unit_name,
+                                            strlen(unit_name));
+        if (alias_target != NULL) {
+            effective_unit_name = alias_target;
+
+            mk_list_foreach(head, &config->filter_plugins) {
+                f = mk_list_entry(head, struct flb_filter_plugin, _head);
+
+                filter_event_type = f->event_type;
+                if (filter_event_type == 0) {
+                    filter_event_type = FLB_FILTER_LOGS;
+                }
+
+                if ((event_type & filter_event_type) != 0 &&
+                    strcasecmp(f->name, effective_unit_name) == 0) {
+                    break;
+                }
+                f = NULL;
+            }
+        }
+
+        if (f == NULL) {
+            effective_unit_name = unit_name;
+            alias_target = flb_plugin_alias_get(FLB_PLUGIN_PROCESSOR, unit_name,
+                                                strlen(unit_name));
+            if (alias_target != NULL) {
+                effective_unit_name = alias_target;
+            }
+        }
     }
 
     /* allocate and initialize processor unit context */
@@ -659,7 +711,7 @@ struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
 
     pu->parent = proc;
     pu->event_type = event_type;
-    pu->name = flb_sds_create(unit_name);
+    pu->name = flb_sds_create(effective_unit_name);
     pu->condition = NULL;
 
     if (!pu->name) {
@@ -673,14 +725,13 @@ struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
     if (result != 0) {
         flb_sds_destroy(pu->name);
         flb_free(pu);
-
         return NULL;
     }
 
     /* If we matched a pipeline filter, create the speacial processing unit for it */
     if (f) {
         /* create an instance of the filter */
-        f_ins = flb_filter_new(config, unit_name, NULL);
+        f_ins = flb_filter_new(config, effective_unit_name, NULL);
 
         if (!f_ins) {
             pthread_mutex_destroy(&pu->lock);
@@ -725,7 +776,7 @@ struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
         processor_instance = flb_processor_instance_create(config,
                                                            pu,
                                                            pu->event_type,
-                                                           unit_name, NULL);
+                                                           (char *) effective_unit_name, NULL);
 
         if (processor_instance == NULL) {
             flb_error("[processor] error creating processor '%s': plugin doesn't exist or failed to initialize", unit_name);

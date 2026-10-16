@@ -60,7 +60,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.ref }}
 
@@ -98,16 +98,16 @@ jobs:
     runs-on: ${{ (contains(matrix.platform, 'arm') && 'ubuntu-22.04-arm') || 'ubuntu-latest' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.ref }}
           token: ${{ secrets.token }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+        uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003 # v4.4.0
 
       - name: Log in to the Container registry
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ${{ inputs.registry }}
           username: ${{ github.actor }}
@@ -115,7 +115,7 @@ jobs:
 
       - name: Build and push by digest the standard ${{ matrix.target }} image
         id: build
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           # Use path context rather than Git context as we want local files
           file: ./dockerfiles/Dockerfile
@@ -141,7 +141,7 @@ jobs:
         shell: bash
 
       - name: Upload ${{ matrix.target }} digest
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ matrix.target }}-digests-${{ (contains(matrix.platform, 'arm/v7') && 'arm-v7') || matrix.platform }}
           path: /tmp/digests/*
@@ -161,10 +161,11 @@ jobs:
       - call-build-single-arch-container-images
     outputs:
       version: ${{ steps.meta.outputs.version }}
+      digest: ${{ steps.release-digest.outputs.digest }}
     steps:
       - name: Extract metadata from Github
         id: meta
-        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ inputs.registry }}/${{ inputs.image }}
           tags: |
@@ -173,17 +174,17 @@ jobs:
             raw,latest
 
       - name: Download production digests
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: production-digests-*
           path: /tmp/production-digests
           merge-multiple: true
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+        uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003 # v4.4.0
 
       - name: Log in to the Container registry
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ${{ inputs.registry }}
           username: ${{ github.actor }}
@@ -201,6 +202,16 @@ jobs:
           docker buildx imagetools inspect ${{ inputs.registry }}/${{ inputs.image }}:${{ steps.meta.outputs.version }}
         shell: bash
 
+      - name: Resolve immutable production manifest
+        id: release-digest
+        run: |
+          DIGEST=$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{.Manifest.Digest}}')
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+        env:
+          IMAGE: ${{ inputs.registry }}/${{ inputs.image }}
+          VERSION: ${{ inputs.version }}
+        shell: bash
+
   # Take the digests and produce a multi-arch manifest from them.
   call-build-debug-container-image-manifests:
     if: inputs.push
@@ -216,7 +227,7 @@ jobs:
       version: ${{ steps.debug-meta.outputs.version }}
     steps:
       - id: debug-meta
-        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ inputs.registry }}/${{ inputs.image }}
           tags: |
@@ -225,17 +236,17 @@ jobs:
             raw,latest-debug
 
       - name: Download debug digests
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: debug-digests-*
           path: /tmp/debug-digests
           merge-multiple: true
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+        uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003 # v4.4.0
 
       - name: Log in to the Container registry
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ${{ inputs.registry }}
           username: ${{ github.actor }}
@@ -265,24 +276,40 @@ jobs:
       packages: read
     steps:
       - name: Log in to the Container registry
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ${{ inputs.registry }}
           username: ${{ inputs.username }}
           password: ${{ secrets.token }}
 
-      - name: Generate schema
+      - name: Checkout release tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Generate and validate configuration metadata
         run: |
-          docker run --rm -t ${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }} -J > fluent-bit-schema-${{ inputs.version }}.json
-          cat fluent-bit-schema-${{ inputs.version }}.json | jq -M > fluent-bit-schema-pretty-${{ inputs.version }}.json
+          ARGS=()
+          # PR/nightly labels are not release versions. Official staging is strict.
+          if [[ "$ENVIRONMENT" != staging && ! "$VERSION" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            ARGS+=(--development)
+          fi
+          python3 .github/scripts/release_metadata.py generate \
+            --image "$IMAGE@$DIGEST" --version "$VERSION" "${ARGS[@]}"
+        env:
+          IMAGE: ${{ inputs.registry }}/${{ inputs.image }}
+          DIGEST: ${{ needs.call-build-container-image-manifests.outputs.digest }}
+          VERSION: ${{ inputs.version }}
+          ENVIRONMENT: ${{ inputs.environment }}
         shell: bash
 
       - name: Upload the schema
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          path: ./fluent-bit-schema*.json
+          path: |
+            ./fluent-bit-schema-${{ inputs.version }}.json
+            ./fluent-bit-schema-pretty-${{ inputs.version }}.json
           name: fluent-bit-schema-${{ inputs.version }}
           if-no-files-found: error
+          overwrite: true
 
   call-build-images-scan:
     if: inputs.push
@@ -297,7 +324,7 @@ jobs:
       packages: read
     steps:
       - name: Log in to the Container registry
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ${{ inputs.registry }}
           username: ${{ inputs.username }}
@@ -381,7 +408,7 @@ jobs:
 
   # This takes a long time...
   call-build-windows-container:
-    name: Windows container images
+    name: Windows ${{ matrix.windows-container-type }} ${{ matrix.windows-base-version }} container image
     runs-on: windows-${{ matrix.windows-base-version }}
     environment: ${{ inputs.environment }}
     needs:
@@ -389,17 +416,27 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        windows-base-version:
-          - '2022'
-          - '2025'
+        include:
+          - windows-base-version: '2022'
+            windows-container-type: servercore
+            dockerfile: Dockerfile.windows
+            image-tag-prefix: windows-2022
+          - windows-base-version: '2025'
+            windows-container-type: servercore
+            dockerfile: Dockerfile.windows
+            image-tag-prefix: windows-2025
+          - windows-base-version: '2025'
+            windows-container-type: nanoserver
+            dockerfile: Dockerfile.windows.nano
+            image-tag-prefix: windows-nano-2025
     permissions:
       contents: read
       packages: write
     env:
-      IMAGE: ${{ inputs.registry }}/${{ inputs.image }}:windows-${{ matrix.windows-base-version }}-${{ inputs.version }}
+      IMAGE: ${{ inputs.registry }}/${{ inputs.image }}:${{ matrix.image-tag-prefix }}-${{ inputs.version }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.ref }}
 
@@ -407,7 +444,7 @@ jobs:
       #   uses: docker/setup-buildx-action@v4
 
       - name: Log in to the Container registry
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ${{ inputs.registry }}
           username: ${{ inputs.username }}
@@ -416,20 +453,57 @@ jobs:
       # https://github.com/actions/runner-images/issues/12199
       # https://github.com/moby/moby/issues/48093
       # https://support.microsoft.com/en-us/topic/gettemppath-changes-in-windows-february-cumulative-update-preview-4cc631fb-9d97-4118-ab6d-f643cd0a7259#ID0EDF
-      - name: Change system temp directory to the drive having sufficient disk space
+      - name: Move Docker storage and system temp to the build drive
         id: relocate-system-temp-dir
         run: |
           $ErrorActionPreference = "Stop"
+          Get-Volume | Where-Object DriveLetter | Select-Object DriveLetter, FileSystem, SizeRemaining, Size
           if (Test-Path -Path "D:\") {
+            if ((Get-Volume -DriveLetter D).FileSystem -ne "NTFS") {
+              throw "Docker Windows container storage requires an NTFS build drive"
+            }
             $newSystemTempDir = "D:\SystemTemp"
             New-Item -ItemType Directory -Path "${newSystemTempDir}" -Force
             $acl = New-Object System.Security.AccessControl.DirectorySecurity
             $acl.SetSecurityDescriptorSddlForm("O:SYG:SYD:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)")
             Set-Acl "${newSystemTempDir}" -AclObject ${acl}
             [Environment]::SetEnvironmentVariable("SYSTEMTEMP", "${newSystemTempDir}", [EnvironmentVariableTarget]::Machine)
-            Restart-Service docker
+
+            # SYSTEMTEMP does not relocate Docker's layer extraction or image storage.
+            $dockerDataRoot = "D:\docker"
+            $daemonConfigPath = Join-Path $env:ProgramData "docker\config\daemon.json"
+            $daemonConfig = @{}
+            if (Test-Path $daemonConfigPath) {
+              $daemonConfig = Get-Content $daemonConfigPath -Raw | ConvertFrom-Json -AsHashtable
+            }
+            $daemonConfig["data-root"] = $dockerDataRoot
+            New-Item -ItemType Directory -Path (Split-Path $daemonConfigPath) -Force | Out-Null
+            Stop-Service docker
+            try {
+              $daemonConfig | ConvertTo-Json -Depth 100 | Set-Content $daemonConfigPath -Encoding utf8NoBOM
+            }
+            finally {
+              Start-Service docker
+            }
+
+            $dockerReady = $false
+            for ($attempt = 0; $attempt -lt 30; $attempt++) {
+              $actualDataRoot = docker info --format '{{.DockerRootDir}}' 2>$null
+              if ($LASTEXITCODE -eq 0) {
+                $dockerReady = $true
+                break
+              }
+              Start-Sleep -Seconds 2
+            }
+            if (-not $dockerReady) {
+              throw "Docker did not become ready after relocating its storage"
+            }
+            if ($actualDataRoot.TrimEnd('\') -ne $dockerDataRoot.TrimEnd('\')) {
+              throw "Docker storage relocation failed: expected $dockerDataRoot, got $actualDataRoot"
+            }
+            Write-Host "Docker data root: $actualDataRoot"
           } else {
-            Write-Warning "Drive D doesn't exist, so there is no disk to relocate system temp directory"
+            Write-Warning "Drive D doesn't exist; Docker storage and system temp remain on the system drive"
           }
         shell: pwsh
 
@@ -438,20 +512,44 @@ jobs:
         run: |
           VERSION=$(gh release list --json tagName,isLatest --jq '.[] | select(.isLatest)|.tagName | sub("^v"; "")')
           echo VERSION="$VERSION"
-          docker pull ${{ inputs.registry }}/${{ inputs.image }}:windows-${{ matrix.windows-base-version }}-$VERSION
+          docker pull ${{ inputs.registry }}/${{ inputs.image }}:${{ matrix.image-tag-prefix }}-$VERSION
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.token }}
 
       - name: Build the production images
         run: |
-          docker build -t $IMAGE --build-arg FLB_NIGHTLY_BUILD=${{ inputs.unstable }} --build-arg WINDOWS_VERSION=ltsc${{ matrix.windows-base-version }} -f ./dockerfiles/Dockerfile.windows .
+          docker build -t $IMAGE --build-arg FLB_NIGHTLY_BUILD=${{ inputs.unstable }} --build-arg WINDOWS_VERSION=ltsc${{ matrix.windows-base-version }} -f ./dockerfiles/${{ matrix.dockerfile }} .
         shell: bash
 
       - name: Sanity check of the production images
         run: |
           docker run --rm -t $IMAGE --help
         shell: bash
+
+      - name: Sanity check the Nano Server default configuration
+        if: matrix.windows-container-type == 'nanoserver'
+        run: |
+          $containerName = "fluent-bit-nano-${{ matrix.windows-base-version }}"
+
+          try {
+            docker run --detach --name $containerName $env:IMAGE
+            Start-Sleep -Seconds 5
+
+            $running = docker inspect --format '{{.State.Running}}' $containerName
+            docker logs $containerName
+
+            if ($running -ne "true") {
+              throw "Nano Server container did not remain running"
+            }
+          }
+          finally {
+            $containerId = docker ps --all --quiet --filter "name=^/${containerName}$"
+            if ($containerId) {
+              docker rm --force $containerName | Out-Null
+            }
+          }
+        shell: pwsh
 
       - name: Push the production images
         if: inputs.push

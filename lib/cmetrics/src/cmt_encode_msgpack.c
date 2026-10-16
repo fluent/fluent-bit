@@ -58,6 +58,7 @@ static void pack_header(mpack_writer_t *writer, struct cmt *cmt, struct cmt_map 
     size_t                index;
     struct cmt_summary   *summary = NULL;
     struct cmt_histogram *histogram = NULL;
+    struct cmt_exp_histogram *exp_histogram = NULL;
     struct cmt_counter   *counter = NULL;
     size_t                meta_field_count;
 
@@ -66,6 +67,11 @@ static void pack_header(mpack_writer_t *writer, struct cmt *cmt, struct cmt_map 
 
     if (map->type == CMT_HISTOGRAM) {
         histogram = (struct cmt_histogram *) map->parent;
+
+        meta_field_count += 2;
+    }
+    else if (map->type == CMT_EXP_HISTOGRAM) {
+        exp_histogram = (struct cmt_exp_histogram *) map->parent;
 
         meta_field_count++;
     }
@@ -156,6 +162,15 @@ static void pack_header(mpack_writer_t *writer, struct cmt *cmt, struct cmt_map 
         }
 
         mpack_finish_array(writer);
+
+        /* aggregation_type */
+        mpack_write_cstr(writer, "aggregation_type");
+        mpack_write_int(writer, histogram->aggregation_type);
+    }
+    else if (map->type == CMT_EXP_HISTOGRAM) {
+        /* aggregation_type */
+        mpack_write_cstr(writer, "aggregation_type");
+        mpack_write_int(writer, exp_histogram->aggregation_type);
     }
     else if (map->type == CMT_SUMMARY) {
         /* 'quantiles' (summary quantiles) */

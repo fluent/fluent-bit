@@ -203,6 +203,7 @@ int run_action_extract(struct content_modifier_ctx *ctx,
     struct cfl_kvpair *kvpair;
     struct cfl_kvlist *kvlist;
     struct cfl_variant *v;
+    cfl_sds_t source;
 
     kvlist = obj->variant->data.as_kvlist;
 
@@ -217,14 +218,24 @@ int run_action_extract(struct content_modifier_ctx *ctx,
         return -1;
     }
 
-    match_count = flb_regex_do(regex,
-                               v->data.as_string,
-                               cfl_variant_size_get(v), &match_list);
+    /*
+     * cb_extract_regex() replaces the kvpair named like each capture group;
+     * if a group is named like 'key' that destroys the very string the match
+     * results point into, so run the regex over a copy.
+     */
+    source = cfl_sds_create_len(v->data.as_string, cfl_variant_size_get(v));
+    if (!source) {
+        return -1;
+    }
+
+    match_count = flb_regex_do(regex, source, cfl_sds_len(source), &match_list);
     if (match_count <= 0) {
+        cfl_sds_destroy(source);
         return -1;
     }
 
     ret = flb_regex_parse(regex, &match_list, cb_extract_regex, kvlist);
+    cfl_sds_destroy(source);
     if (ret == -1) {
         return -1;
     }

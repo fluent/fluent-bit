@@ -1036,20 +1036,19 @@ void decoder_corrupted_group_timestamps()
 
     flb_time_set(&tm1, 1000, 100);
 
-    /* Test Case 1: Invalid negative timestamp (not -1 or -2) - should skip */
+    /* Test Case 1: 0xfffffffd is a valid EventTime, not a corrupted -3. */
     msgpack_sbuffer_init(&sbuf);
     msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
 
-    /* Create a record with corrupted group timestamp (-3) */
-    flb_time_set(&corrupted_tm, -3, 0);  /* Invalid group marker timestamp */
+    flb_time_set(&corrupted_tm, (time_t) (UINT32_MAX - 2), 0);
 
     msgpack_pack_array(&pck, 2);  /* Root array: [header, body] */
     msgpack_pack_array(&pck, 2);  /* Header array: [timestamp, metadata] */
-    pack_event_time(&pck, &corrupted_tm);  /* Invalid group marker timestamp */
+    pack_event_time(&pck, &corrupted_tm);
     msgpack_pack_map(&pck, 0);     /* Empty metadata */
     msgpack_pack_map(&pck, 0);     /* Empty body */
 
-    /* Normal log after corrupted marker */
+    /* Normal log after the high EventTime */
     msgpack_pack_array(&pck, 2);
     msgpack_pack_array(&pck, 2);
     pack_event_time(&pck, &tm1);
@@ -1066,7 +1065,13 @@ void decoder_corrupted_group_timestamps()
     ret = flb_log_event_decoder_read_groups(&dec, FLB_FALSE);
     TEST_CHECK(ret == 0);
 
-    /* When read_groups=false, corrupted group marker should be skipped */
+    ret = flb_log_event_decoder_next(&dec, &event);
+    TEST_CHECK(ret == FLB_EVENT_DECODER_SUCCESS);
+    ret = flb_log_event_decoder_get_record_type(&event, &decoded_record_type);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(decoded_record_type == FLB_LOG_EVENT_NORMAL);
+    TEST_CHECK(flb_time_equal(&corrupted_tm, &event.timestamp));
+
     ret = flb_log_event_decoder_next(&dec, &event);
     TEST_CHECK(ret == FLB_EVENT_DECODER_SUCCESS);
     ret = flb_log_event_decoder_get_record_type(&event, &decoded_record_type);
@@ -1077,11 +1082,11 @@ void decoder_corrupted_group_timestamps()
     flb_log_event_decoder_destroy(&dec);
     msgpack_sbuffer_destroy(&sbuf);
 
-    /* Test Case 2: Invalid negative timestamp with read_groups=true - should also skip */
+    /* Test Case 2: 0xfffffff6 is a valid EventTime with read_groups=true. */
     msgpack_sbuffer_init(&sbuf2);
     msgpack_packer_init(&pck2, &sbuf2, msgpack_sbuffer_write);
 
-    flb_time_set(&corrupted_tm, -10, 0);  /* Another invalid group marker timestamp */
+    flb_time_set(&corrupted_tm, (time_t) (UINT32_MAX - 9), 0);
 
     msgpack_pack_array(&pck2, 2);
     msgpack_pack_array(&pck2, 2);
@@ -1089,7 +1094,7 @@ void decoder_corrupted_group_timestamps()
     msgpack_pack_map(&pck2, 0);
     msgpack_pack_map(&pck2, 0);
 
-    /* Normal log after corrupted marker */
+    /* Normal log after the high EventTime */
     msgpack_pack_array(&pck2, 2);
     msgpack_pack_array(&pck2, 2);
     pack_event_time(&pck2, &tm1);
@@ -1106,7 +1111,13 @@ void decoder_corrupted_group_timestamps()
     ret = flb_log_event_decoder_read_groups(&dec, FLB_TRUE);
     TEST_CHECK(ret == 0);
 
-    /* When read_groups=true, corrupted group marker should also be skipped */
+    ret = flb_log_event_decoder_next(&dec, &event);
+    TEST_CHECK(ret == FLB_EVENT_DECODER_SUCCESS);
+    ret = flb_log_event_decoder_get_record_type(&event, &decoded_record_type);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(decoded_record_type == FLB_LOG_EVENT_NORMAL);
+    TEST_CHECK(flb_time_equal(&corrupted_tm, &event.timestamp));
+
     ret = flb_log_event_decoder_next(&dec, &event);
     TEST_CHECK(ret == FLB_EVENT_DECODER_SUCCESS);
     ret = flb_log_event_decoder_get_record_type(&event, &decoded_record_type);
@@ -1117,11 +1128,44 @@ void decoder_corrupted_group_timestamps()
     flb_log_event_decoder_destroy(&dec);
     msgpack_sbuffer_destroy(&sbuf2);
 
-    /* Test Case 3: Very negative timestamp - should skip */
+    /* Test Case 3: Post-2038 timestamp should remain a normal record. */
     msgpack_sbuffer_init(&sbuf);
     msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
 
-    flb_time_set(&corrupted_tm, -1000, 0);  /* Very negative but invalid */
+    /* 2040-01-03 03:15:10 UTC */
+    flb_time_set(&tm1, 2209072510LL, 808241446);
+
+    msgpack_pack_array(&pck, 2);
+    msgpack_pack_array(&pck, 2);
+    pack_event_time(&pck, &tm1);
+    msgpack_pack_map(&pck, 0);
+    msgpack_pack_map(&pck, 1);
+    msgpack_pack_str(&pck, 3);
+    msgpack_pack_str_body(&pck, "log", 3);
+    msgpack_pack_str(&pck, 4);
+    msgpack_pack_str_body(&pck, "2040", 4);
+
+    ret = flb_log_event_decoder_init(&dec, (char *)sbuf.data, sbuf.size);
+    TEST_CHECK(ret == FLB_EVENT_DECODER_SUCCESS);
+
+    ret = flb_log_event_decoder_read_groups(&dec, FLB_TRUE);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_log_event_decoder_next(&dec, &event);
+    TEST_CHECK(ret == FLB_EVENT_DECODER_SUCCESS);
+    ret = flb_log_event_decoder_get_record_type(&event, &decoded_record_type);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(decoded_record_type == FLB_LOG_EVENT_NORMAL);
+    TEST_CHECK(flb_time_equal(&tm1, &event.timestamp));
+
+    flb_log_event_decoder_destroy(&dec);
+    msgpack_sbuffer_destroy(&sbuf);
+
+    /* Test Case 4: 0xfffffc18 is a valid high EventTime. */
+    msgpack_sbuffer_init(&sbuf);
+    msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
+
+    flb_time_set(&corrupted_tm, (time_t) (UINT32_MAX - 999), 0);
 
     msgpack_pack_array(&pck, 2);
     msgpack_pack_array(&pck, 2);
@@ -1129,7 +1173,7 @@ void decoder_corrupted_group_timestamps()
     msgpack_pack_map(&pck, 0);
     msgpack_pack_map(&pck, 0);
 
-    /* Normal log after corrupted marker */
+    /* Normal log after the high EventTime */
     msgpack_pack_array(&pck, 2);
     msgpack_pack_array(&pck, 2);
     pack_event_time(&pck, &tm1);
@@ -1146,7 +1190,13 @@ void decoder_corrupted_group_timestamps()
     ret = flb_log_event_decoder_read_groups(&dec, FLB_FALSE);
     TEST_CHECK(ret == 0);
 
-    /* Corrupted marker should be skipped, normal log should be returned */
+    ret = flb_log_event_decoder_next(&dec, &event);
+    TEST_CHECK(ret == FLB_EVENT_DECODER_SUCCESS);
+    ret = flb_log_event_decoder_get_record_type(&event, &decoded_record_type);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(decoded_record_type == FLB_LOG_EVENT_NORMAL);
+    TEST_CHECK(flb_time_equal(&corrupted_tm, &event.timestamp));
+
     ret = flb_log_event_decoder_next(&dec, &event);
     TEST_CHECK(ret == FLB_EVENT_DECODER_SUCCESS);
     ret = flb_log_event_decoder_get_record_type(&event, &decoded_record_type);
@@ -1174,8 +1224,7 @@ void decoder_invalid_marker_preserves_group_state()
     flb_time_set(&tm1, 1000, 100);
     flb_time_set(&tm2, 2000, 200);
 
-    /* Test: GROUP_START → normal_log1 → [corrupted -3 marker] → normal_log2
-     * Expected: normal_log2 should STILL have group metadata (state preserved) */
+    /* Test: GROUP_START → normal_log1 → high EventTime → normal_log2. */
     msgpack_sbuffer_init(&sbuf);
     msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
 
@@ -1193,15 +1242,15 @@ void decoder_invalid_marker_preserves_group_state()
     msgpack_pack_str(&pck, 1);
     msgpack_pack_str_body(&pck, "1", 1);
 
-    /* Corrupted marker (-3) - should NOT clear group state */
-    flb_time_set(&corrupted_tm, -3, 0);
+    /* A valid high EventTime must not clear group state. */
+    flb_time_set(&corrupted_tm, (time_t) (UINT32_MAX - 2), 0);
     msgpack_pack_array(&pck, 2);
     msgpack_pack_array(&pck, 2);
     pack_event_time(&pck, &corrupted_tm);
     msgpack_pack_map(&pck, 0);
     msgpack_pack_map(&pck, 0);
 
-    /* Normal log 2 - should STILL have group metadata (state preserved) */
+    /* Normal log 2 should still have group metadata. */
     msgpack_pack_array(&pck, 2);
     msgpack_pack_array(&pck, 2);
     pack_event_time(&pck, &tm2);
@@ -1228,18 +1277,27 @@ void decoder_invalid_marker_preserves_group_state()
     TEST_CHECK(event.group_metadata != NULL || event.group_attributes != NULL);
     record_count++;
 
-    /* Read normal log 2 - should STILL have group metadata (state preserved) */
+    /* Read the high EventTime record. */
+    ret = flb_log_event_decoder_next(&dec, &event);
+    TEST_CHECK(ret == FLB_EVENT_DECODER_SUCCESS);
+    ret = flb_log_event_decoder_get_record_type(&event, &decoded_record_type);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(decoded_record_type == FLB_LOG_EVENT_NORMAL);
+    TEST_CHECK(flb_time_equal(&corrupted_tm, &event.timestamp));
+    TEST_CHECK(event.group_metadata != NULL || event.group_attributes != NULL);
+    record_count++;
+
+    /* Group state remains active for the following normal record. */
     ret = flb_log_event_decoder_next(&dec, &event);
     TEST_CHECK(ret == FLB_EVENT_DECODER_SUCCESS);
     ret = flb_log_event_decoder_get_record_type(&event, &decoded_record_type);
     TEST_CHECK(ret == 0);
     TEST_CHECK(decoded_record_type == FLB_LOG_EVENT_NORMAL);
     TEST_CHECK(flb_time_equal(&tm2, &event.timestamp));
-    /* CRITICAL: Group state should be preserved despite invalid marker */
     TEST_CHECK(event.group_metadata != NULL || event.group_attributes != NULL);
     record_count++;
 
-    TEST_CHECK(record_count == 2);
+    TEST_CHECK(record_count == 3);
 
     flb_log_event_decoder_destroy(&dec);
     msgpack_sbuffer_destroy(&sbuf);

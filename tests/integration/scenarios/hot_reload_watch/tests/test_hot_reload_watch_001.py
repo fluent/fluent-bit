@@ -26,25 +26,35 @@ import requests
 from google.protobuf import json_format
 
 from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import ExportLogsServiceRequest
-from src.server.otlp_server import data_storage, otlp_server_run
-from src.utils.fluent_bit_manager import FluentBitManager
+from src.server.otlp_server import data_storage, otlp_server_run, stop_otlp_server
+from src.utils.fluent_bit_manager import (
+    FluentBitManager,
+    fluent_bit_binary_supports_config_property,
+)
 from src.utils.network import find_available_port
 
 logger = logging.getLogger(__name__)
 
 
 class Service:
-    def __init__(self, before_name, after_name):
+    def __init__(self, before_name, after_name, support_files=None):
         self.test_path = os.path.dirname(os.path.abspath(__file__))
         self.config_dir = os.path.abspath(os.path.join(self.test_path, "../config"))
         self.before_config = os.path.join(self.config_dir, before_name)
         self.after_config = os.path.join(self.config_dir, after_name)
+        self.support_files = support_files or []
         self.runtime_dir = tempfile.mkdtemp(prefix="flb-hot-reload-watch-")
-        self.runtime_config = os.path.join(self.runtime_dir, "fluent-bit.yaml")
+        extension = os.path.splitext(before_name)[1]
+        self.runtime_config = os.path.join(self.runtime_dir, f"fluent-bit{extension}")
         data_storage["logs"] = []
 
     def start(self):
         shutil.copyfile(self.before_config, self.runtime_config)
+        for support_file in self.support_files:
+            shutil.copyfile(
+                os.path.join(self.config_dir, support_file),
+                os.path.join(self.runtime_dir, support_file),
+            )
 
         self.flb = FluentBitManager(self.runtime_config)
         self.test_suite_http_port = find_available_port(starting_port=50000)
@@ -67,10 +77,14 @@ class Service:
         self.flb.start()
 
     def stop(self):
-        if getattr(self, "flb", None) is not None and self.flb.process is not None:
-            self.flb.stop()
-        requests.post(f"http://127.0.0.1:{self.test_suite_http_port}/shutdown")
-        shutil.rmtree(self.runtime_dir, ignore_errors=True)
+        try:
+            if getattr(self, "flb", None) is not None and self.flb.process is not None:
+                self.flb.stop()
+        finally:
+            try:
+                stop_otlp_server()
+            finally:
+                shutil.rmtree(self.runtime_dir, ignore_errors=True)
 
     def wait_for_log_count(self, expected_count, timeout=15):
         start_time = time.time()
@@ -89,7 +103,7 @@ class Service:
         return payload["resourceLogs"][0]["scopeLogs"][0]["logRecords"][0]["body"]["stringValue"]
 
     def replace_config(self):
-        pending_path = os.path.join(self.runtime_dir, "fluent-bit.yaml.tmp")
+        pending_path = f"{self.runtime_config}.tmp"
         shutil.copyfile(self.after_config, pending_path)
         os.replace(pending_path, self.runtime_config)
 
@@ -99,7 +113,25 @@ def assert_reload_result(service):
     assert service.read_message(1) == "after"
 
 
+def test_cleanup_removes_runtime_dir_when_otlp_stop_fails(monkeypatch):
+    service = Service("fluent-bit-before.yaml", "fluent-bit-after.yaml")
+    runtime_dir = service.runtime_dir
+
+    def fail_to_stop_otlp_server():
+        raise RuntimeError("OTLP server did not stop")
+
+    monkeypatch.setitem(globals(), "stop_otlp_server", fail_to_stop_otlp_server)
+
+    with pytest.raises(RuntimeError, match="OTLP server did not stop"):
+        service.stop()
+
+    assert not os.path.exists(runtime_dir)
+
+
 def test_hot_reload_watch_yaml_config_change():
+    if not fluent_bit_binary_supports_config_property("hot_reload.watch"):
+        pytest.skip("hot_reload.watch is not supported by the selected Fluent Bit binary")
+
     service = Service("fluent-bit-before.yaml", "fluent-bit-after.yaml")
 
     try:
@@ -136,6 +168,40 @@ def test_hot_reload_sighup_yaml_config_change():
 
 def test_hot_reload_http_yaml_config_change():
     service = Service("fluent-bit-manual-before.yaml", "fluent-bit-manual-after.yaml")
+
+    try:
+        service.start()
+        service.wait_for_log_count(1)
+        assert service.read_message(0) == "before"
+
+        service.replace_config()
+
+        with pytest.raises(TimeoutError):
+            service.flb.wait_for_hot_reload_count(1, timeout=2)
+
+        payload = service.flb.trigger_http_reload()
+        assert payload["reload"] == "done"
+        service.flb.wait_for_hot_reload_count(1)
+        assert_reload_result(service)
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize(
+    ("before_name", "after_name"),
+    [
+        ("fluent-bit-relative-parser-before.conf", "fluent-bit-relative-parser-after.conf"),
+        ("fluent-bit-relative-parser-before.yaml", "fluent-bit-relative-parser-after.yaml"),
+    ],
+    ids=["classic", "yaml"],
+)
+def test_hot_reload_http_relative_parser(before_name, after_name):
+    parser_file = "relative-parser.conf"
+
+    # Ensure the parser cannot be loaded relative to the process working directory.
+    assert not os.path.exists(os.path.join(os.getcwd(), parser_file))
+
+    service = Service(before_name, after_name, support_files=[parser_file])
 
     try:
         service.start()

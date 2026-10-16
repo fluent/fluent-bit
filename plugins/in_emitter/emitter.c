@@ -18,8 +18,10 @@
  */
 
 #include <fluent-bit/flb_compat.h>
+#include <fluent-bit/flb_emitter.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_chunk.h>
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_sds.h>
@@ -49,12 +51,28 @@ struct input_ref {
 
 struct flb_emitter {
     int coll_fd;                        /* collector id */
+    size_t pending_bytes;               /* bytes waiting in chunks list */
     struct mk_list chunks;              /* list of all pending chunks */
     struct flb_input_instance *ins;     /* input instance */
     struct flb_ring_buffer *msgs;       /* ring buffer for cross-thread messages */
     int ring_buffer_size;               /* size of the ring buffer */
     struct mk_list i_ins_list;          /* instance list of linked/sending inputs */
+    int cycle_reported;                 /* self-emission cycle already logged ? */
+    int propagating;                    /* pause/resume propagation in progress */
+    int owner_flush_enabled;             /* owner supports lossless shutdown flush */
+    int shutdown_flush_done;            /* owner shutdown hook already invoked */
+    int shutdown_flush_active;          /* owner shutdown hook is emitting */
 };
+
+static inline int shutdown_flush_enabled(struct flb_emitter *ctx)
+{
+    if (ctx->ins->config->is_shutting_down == FLB_TRUE &&
+        ctx->owner_flush_enabled == FLB_TRUE) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
 
 struct em_chunk *em_chunk_create(const char *tag, int tag_len,
                                  struct flb_emitter *ctx)
@@ -82,12 +100,53 @@ struct em_chunk *em_chunk_create(const char *tag, int tag_len,
     return ec;
 }
 
-static void em_chunk_destroy(struct em_chunk *ec)
+static void em_chunk_destroy(struct flb_emitter *ctx, struct em_chunk *ec)
 {
+    if (ctx->pending_bytes >= ec->mp_sbuf.size) {
+        ctx->pending_bytes -= ec->mp_sbuf.size;
+    }
+    else {
+        ctx->pending_bytes = 0;
+    }
+
     mk_list_del(&ec->_head);
     flb_sds_destroy(ec->tag);
     msgpack_sbuffer_destroy(&ec->mp_sbuf);
     flb_free(ec);
+}
+
+static int is_queue_overlimit(struct flb_emitter *ctx, size_t append_size)
+{
+    if (ctx->ins->mem_buf_limit == 0) {
+        return FLB_FALSE;
+    }
+
+    if (ctx->ins->mem_chunks_size + ctx->pending_bytes + append_size >
+        ctx->ins->mem_buf_limit) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
+static int is_owner_queue_overlimit(struct flb_emitter *ctx, size_t append_size)
+{
+    size_t limit;
+
+    if (ctx->ins->mem_buf_limit == 0) {
+        return FLB_FALSE;
+    }
+
+    limit = ctx->ins->mem_buf_limit;
+    if (limit < FLB_INPUT_CHUNK_SIZE) {
+        limit = FLB_INPUT_CHUNK_SIZE;
+    }
+
+    if (ctx->pending_bytes + append_size > limit) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
 }
 
 int static do_in_emitter_add_record(struct em_chunk *ec,
@@ -96,7 +155,8 @@ int static do_in_emitter_add_record(struct em_chunk *ec,
     struct flb_emitter *ctx = (struct flb_emitter *) in->context;
     int ret;
 
-    if (flb_input_buf_paused(ctx->ins) == FLB_TRUE) {
+    if (flb_input_buf_paused(ctx->ins) == FLB_TRUE &&
+        shutdown_flush_enabled(ctx) == FLB_FALSE) {
         flb_plg_debug(ctx->ins, "_emitter %s paused. Not processing records.",
                          ctx->ins->name);
         return FLB_EMITTER_BUSY;
@@ -110,10 +170,10 @@ int static do_in_emitter_add_record(struct em_chunk *ec,
     if (ret == -1) {
         flb_plg_error(ctx->ins, "error registering chunk with tag: %s", ec->tag);
         /* Release the echunk */
-        em_chunk_destroy(ec);
+        em_chunk_destroy(ctx, ec);
         return -1;
     }
-    em_chunk_destroy(ec);
+    em_chunk_destroy(ctx, ec);
     return 0;
 }
 
@@ -131,12 +191,34 @@ int in_emitter_add_record(const char *tag, int tag_len,
     struct input_ref *i_ref;
     bool ref_found;
     struct mk_list *tmp;
+    int ret;
 
     struct em_chunk *ec;
     struct flb_emitter *ctx;
 
     ctx = (struct flb_emitter *) in->context;
     ec = NULL;
+
+    /*
+     * Reject records that this emitter is trying to send to itself: the filter
+     * that owns the emitter matched a record that the emitter injected. Keeping
+     * the emitter in its own sender list makes pause/resume recurse into this
+     * same instance until the stack is exhausted, and the emission itself is an
+     * endless tag rewrite cycle.
+     */
+    if (i_ins == ctx->ins) {
+        if (ctx->cycle_reported == FLB_FALSE) {
+            ctx->cycle_reported = FLB_TRUE;
+            flb_plg_error(ctx->ins,
+                          "emitter cycle detected: the filter attached to this "
+                          "emitter matches the records it emits (tag=%.*s), "
+                          "the emission is rejected. Adjust the filter 'Match' "
+                          "or its rules so emitted records are not processed "
+                          "again", tag_len, tag);
+        }
+        return -1;
+    }
+
     /* Iterate over list of already known (source) inputs */
     /* If new, add it to the list to be able to pause it later on */
     ref_found = false;
@@ -163,14 +245,16 @@ int in_emitter_add_record(const char *tag, int tag_len,
     }
 
 
-    /* Restricted by mem_buf_limit */
-    if (flb_input_buf_paused(ctx->ins) == FLB_TRUE) {
-        flb_plg_debug(ctx->ins, "emitter memory buffer limit reached. Not accepting record.");
-        return FLB_EMITTER_BUSY;
-    }
-
     /* Use the ring buffer first if it exists */
-    if (ctx->msgs) {
+    if (ctx->msgs && ctx->shutdown_flush_active == FLB_FALSE) {
+        /* Restricted by mem_buf_limit */
+        if (flb_input_buf_paused(ctx->ins) == FLB_TRUE &&
+            shutdown_flush_enabled(ctx) == FLB_FALSE) {
+            flb_plg_debug(ctx->ins,
+                          "emitter memory buffer limit reached. Not accepting record.");
+            return FLB_EMITTER_BUSY;
+        }
+
         memset(&temporary_chunk, 0, sizeof(struct em_chunk));
 
         temporary_chunk.tag = flb_sds_create_len(tag, tag_len);
@@ -188,6 +272,20 @@ int in_emitter_add_record(const char *tag, int tag_len,
         return flb_ring_buffer_write(ctx->msgs,
                                      (void *) &temporary_chunk,
                                      sizeof(struct em_chunk));
+    }
+
+    /*
+     * A callback-owning filter cannot retry its in-flight batch. Allow one
+     * input-chunk-sized pending batch while normal chunk accounting pauses
+     * the emitter, but retain a hard bound under sustained backpressure.
+     */
+    if (shutdown_flush_enabled(ctx) == FLB_FALSE &&
+        is_queue_overlimit(ctx, buf_size) == FLB_TRUE &&
+        (ctx->owner_flush_enabled == FLB_FALSE ||
+         is_owner_queue_overlimit(ctx, buf_size) == FLB_TRUE)) {
+        flb_plg_debug(ctx->ins,
+                      "emitter memory buffer limit reached. Not accepting record.");
+        return FLB_EMITTER_BUSY;
     }
 
     /* Check if any target chunk already exists */
@@ -210,8 +308,23 @@ int in_emitter_add_record(const char *tag, int tag_len,
         }
     }
 
+    /*
+     * When the emitter is paused, caller-side filters cannot ask the engine to
+     * retry the same record. Keep it in the emitter queue so the collector can
+     * ingest it after resume instead of forcing callers to drop or retag it.
+     */
+    if (flb_input_buf_paused(ctx->ins) == FLB_TRUE) {
+        flb_plg_debug(ctx->ins,
+                      "emitter memory buffer limit reached. Buffering record.");
+    }
+
     /* Append raw msgpack data */
-    msgpack_sbuffer_write(&ec->mp_sbuf, buf_data, buf_size);
+    ret = msgpack_sbuffer_write(&ec->mp_sbuf, buf_data, buf_size);
+    if (ret != 0) {
+        return -1;
+    }
+
+    ctx->pending_bytes += buf_size;
     return 0;
 }
 
@@ -298,6 +411,7 @@ static int cb_emitter_init(struct flb_input_instance *in,
 {
     struct flb_sched *scheduler;
     struct flb_emitter *ctx;
+    struct flb_emitter_callbacks *callbacks;
     char *pause_prop = NULL;
     int ret;
 
@@ -312,6 +426,12 @@ static int cb_emitter_init(struct flb_input_instance *in,
     mk_list_init(&ctx->chunks);
 
     mk_list_init(&ctx->i_ins_list);
+
+    callbacks = (struct flb_emitter_callbacks *) in->data;
+    if (callbacks != NULL && callbacks->pause != NULL) {
+        ctx->owner_flush_enabled = FLB_TRUE;
+        in->flags |= FLB_INPUT_SHUTDOWN_FLUSH;
+    }
 
 
     ret = flb_input_config_map_set(in, (void *) ctx);
@@ -371,10 +491,41 @@ static int cb_emitter_init(struct flb_input_instance *in,
 
 static void cb_emitter_pause(void *data, struct flb_config *config)
 {
+    struct flb_emitter_callbacks *callbacks;
     struct flb_emitter *ctx = data;
     struct mk_list *tmp;
     struct mk_list *head;
     struct input_ref *i_ref;
+
+    /*
+     * A sender can be another emitter that references this one back, the guard
+     * keeps the propagation from recursing into this instance again.
+     */
+    if (ctx->propagating == FLB_TRUE) {
+        return;
+    }
+    ctx->propagating = FLB_TRUE;
+
+    if (shutdown_flush_enabled(ctx) == FLB_TRUE &&
+        ctx->shutdown_flush_done == FLB_FALSE &&
+        ctx->ins->data != NULL) {
+        callbacks = (struct flb_emitter_callbacks *) ctx->ins->data;
+        ctx->shutdown_flush_done = FLB_TRUE;
+
+        if (callbacks->pause != NULL) {
+            /* Publish any records already waiting in a threaded emitter. */
+            if (ctx->msgs != NULL) {
+                in_emitter_ingest_ring_buffer(ctx->ins, config, ctx);
+            }
+
+            ctx->shutdown_flush_active = FLB_TRUE;
+            callbacks->pause(callbacks->data, config);
+            ctx->shutdown_flush_active = FLB_FALSE;
+
+            /* Convert owner-emitted records into input chunks before pausing. */
+            cb_queue_chunks(ctx->ins, config, ctx);
+        }
+    }
 
     /* Pause all known senders */
     flb_input_collector_pause(ctx->coll_fd, ctx->ins);
@@ -382,6 +533,8 @@ static void cb_emitter_pause(void *data, struct flb_config *config)
         i_ref = mk_list_entry(head, struct input_ref, _head);
         flb_input_pause(i_ref->i_ins);
     }
+
+    ctx->propagating = FLB_FALSE;
 }
 
 static void cb_emitter_resume(void *data, struct flb_config *config)
@@ -391,12 +544,19 @@ static void cb_emitter_resume(void *data, struct flb_config *config)
     struct mk_list *head;
     struct input_ref *i_ref;
 
+    if (ctx->propagating == FLB_TRUE) {
+        return;
+    }
+    ctx->propagating = FLB_TRUE;
+
     /* Resume all known senders */
     flb_input_collector_resume(ctx->coll_fd, ctx->ins);
     mk_list_foreach_safe(head, tmp, &ctx->i_ins_list) {
         i_ref = mk_list_entry(head, struct input_ref, _head);
         flb_input_resume(i_ref->i_ins);
     }
+
+    ctx->propagating = FLB_FALSE;
 }
 
 static int cb_emitter_exit(void *data, struct flb_config *config)
@@ -411,8 +571,7 @@ static int cb_emitter_exit(void *data, struct flb_config *config)
 
     mk_list_foreach_safe(head, tmp, &ctx->chunks) {
         echunk = mk_list_entry(head, struct em_chunk, _head);
-        mk_list_del(&echunk->_head);
-        flb_free(echunk);
+        em_chunk_destroy(ctx, echunk);
     }
 
     if (ctx->msgs) {

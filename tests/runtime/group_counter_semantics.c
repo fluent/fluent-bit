@@ -30,7 +30,7 @@
 #include "../../plugins/out_forward/forward.h"
 
 #include <msgpack.h>
-#include <pthread.h>
+#include <fluent-bit/flb_pthread.h>
 #include <string.h>
 
 #define SERVICE_CREDENTIALS \

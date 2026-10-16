@@ -11,10 +11,11 @@
 # - dockerfiles/Dockerfile.windows
 #
 
+ARG WINDOWS_SERVER_TYPE=servercore
 ARG WINDOWS_VERSION=ltsc2025
 
 # Builder Image - Windows Server Core
-FROM mcr.microsoft.com/windows/servercore:$WINDOWS_VERSION AS builder-base
+FROM mcr.microsoft.com/windows/$WINDOWS_SERVER_TYPE:$WINDOWS_VERSION AS builder-base
 
 SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
 
@@ -228,7 +229,7 @@ RUN New-Item -Path  /fluent-bit/etc/ -ItemType "directory"; `
 #
 # Runtime Image - Windows Server Core
 #
-FROM mcr.microsoft.com/windows/servercore:$WINDOWS_VERSION AS runtime
+FROM mcr.microsoft.com/windows/$WINDOWS_SERVER_TYPE:$WINDOWS_VERSION AS runtime
 
 ARG FLUENTBIT_VERSION=master
 ARG IMAGE_CREATE_DATE

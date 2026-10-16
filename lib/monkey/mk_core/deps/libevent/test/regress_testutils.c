@@ -69,9 +69,13 @@
 #include "regress.h"
 #include "regress_testutils.h"
 
+#define ARRAY_SIZE(a) (sizeof(a) / sizeof(a[0]))
+
 /* globals */
-static struct evdns_server_port *dns_port;
-evutil_socket_t dns_sock = -1;
+static struct evdns_server_port *udp_dns_port;
+evutil_socket_t udp_dns_sock = -1;
+static struct evdns_server_port *tcp_dns_port;
+evutil_socket_t tcp_dns_sock = -1;
 
 /* Helper: return the port that a socket is bound on, in host order. */
 int
@@ -90,7 +94,7 @@ regress_get_socket_port(evutil_socket_t fd)
 }
 
 struct evdns_server_port *
-regress_get_dnsserver(struct event_base *base,
+regress_get_udp_dnsserver(struct event_base *base,
     ev_uint16_t *portnum,
     evutil_socket_t *psock,
     evdns_request_callback_fn_type cb,
@@ -110,10 +114,12 @@ regress_get_dnsserver(struct event_base *base,
 	memset(&my_addr, 0, sizeof(my_addr));
 	my_addr.sin_family = AF_INET;
 	my_addr.sin_port = htons(*portnum);
-	my_addr.sin_addr.s_addr = htonl(0x7f000001UL);
+	my_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
 	if (bind(sock, (struct sockaddr*)&my_addr, sizeof(my_addr)) < 0) {
+		int err = EVUTIL_SOCKET_ERROR();
 		evutil_closesocket(sock);
-		tt_abort_perror("bind");
+		TT_DIE(("bind: %s [%d]",
+			evutil_socket_error_to_string(err), err));
 	}
 	port = evdns_add_server_port_with_base(base, sock, 0, cb, arg);
 	if (!*portnum)
@@ -126,16 +132,64 @@ end:
 	return NULL;
 }
 
+struct evdns_server_port *
+regress_get_tcp_dnsserver(struct event_base *base,
+	ev_uint16_t *portnum,
+	evutil_socket_t *psock,
+	evdns_request_callback_fn_type cb,
+	void *arg)
+{
+	struct evdns_server_port *port = NULL;
+	evutil_socket_t sock = -1;
+	struct sockaddr_in my_addr;
+	struct evconnlistener *listener = NULL;
+
+	memset(&my_addr, 0, sizeof(my_addr));
+	my_addr.sin_family = AF_INET;
+	my_addr.sin_port = htons(*portnum);
+	my_addr.sin_addr.s_addr = htonl(0x7f000001UL);
+
+	listener = evconnlistener_new_bind(base, NULL, NULL,
+			LEV_OPT_CLOSE_ON_FREE | LEV_OPT_REUSEABLE, 128,
+			(struct sockaddr*)&my_addr, sizeof(my_addr));
+	if (!listener)
+		goto end;
+	port = evdns_add_server_port_with_listener(base, listener, 0, cb, arg);
+	if (!port)
+		goto end;
+
+	sock = evconnlistener_get_fd(listener);
+	if (!*portnum)
+		*portnum = regress_get_socket_port(sock);
+	if (psock)
+		*psock = sock;
+
+	return port;
+end:
+	if (listener)
+		evconnlistener_free(listener);
+	return NULL;
+}
+
 void
 regress_clean_dnsserver(void)
 {
-	if (dns_port) {
-		evdns_close_server_port(dns_port);
-		dns_port = NULL;
+	if (udp_dns_port) {
+		evdns_close_server_port(udp_dns_port);
+		udp_dns_port = NULL;
 	}
-	if (dns_sock >= 0) {
-		evutil_closesocket(dns_sock);
-		dns_sock = -1;
+	if (udp_dns_sock >= 0) {
+		evutil_closesocket(udp_dns_sock);
+		udp_dns_sock = -1;
+	}
+
+	if (tcp_dns_port) {
+		evdns_close_server_port(tcp_dns_port);
+		tcp_dns_port = NULL;
+	}
+	if (tcp_dns_sock >= 0) {
+		evutil_closesocket(tcp_dns_sock);
+		tcp_dns_sock = -1;
 	}
 }
 
@@ -171,7 +225,11 @@ regress_dns_server_cb(struct evdns_server_request *req, void *data)
 
 	if (!strcmp(tab->anstype, "err")) {
 		int err = atoi(tab->ans);
-		tt_assert(! evdns_server_request_respond(req, err));
+		if (DNS_ERR_TIMEOUT == err) {
+			tt_assert(! evdns_server_request_drop(req));
+		} else {
+			tt_assert(! evdns_server_request_respond(req, err));
+		}
 		return;
 	} else if (!strcmp(tab->anstype, "errsoa")) {
 		int err = atoi(tab->ans);
@@ -191,12 +249,9 @@ regress_dns_server_cb(struct evdns_server_request *req, void *data)
 		tt_assert(! evdns_server_request_respond(req, err));
 		return;
 	} else if (!strcmp(tab->anstype, "A")) {
-		struct in_addr in;
-		if (!evutil_inet_pton(AF_INET, tab->ans, &in)) {
-			TT_DIE(("Bad A value %s in table", tab->ans));
-		}
-		evdns_server_request_add_a_reply(req, question, 1, &in.s_addr,
-		    100);
+		struct in_addr in[2048];
+		int count = parse_csv_address_list(tab->ans, AF_INET, in, ARRAY_SIZE(in));
+		evdns_server_request_add_a_reply(req, question, count, in, 100);
 	} else if (!strcmp(tab->anstype, "AAAA")) {
 		struct in6_addr in6;
 		if (!evutil_inet_pton(AF_INET6, tab->ans, &in6)) {
@@ -204,6 +259,11 @@ regress_dns_server_cb(struct evdns_server_request *req, void *data)
 		}
 		evdns_server_request_add_aaaa_reply(req,
 		    question, 1, &in6.s6_addr, 100);
+	} else if (!strcmp(tab->anstype, "CNAME")) {
+		struct in_addr in;
+		evutil_inet_pton(AF_INET, "11.22.33.44", &in);
+		evdns_server_request_add_a_reply(req, question, 1, &in, 100);
+		evdns_server_request_add_cname_reply(req, question, tab->ans, 100);
 	} else {
 		TT_DIE(("Weird table entry with type '%s'", tab->anstype));
 	}
@@ -213,13 +273,114 @@ end:
 	tt_want(! evdns_server_request_drop(req));
 }
 
+/* Find an ephemeral port that is available for both UDP and TCP bind on
+ * 127.0.0.1.  On Windows, Hyper-V / WinNAT can reserve different port ranges
+ * for TCP and UDP, so a port obtained via one protocol may fall into an
+ * excluded range for the other (WSAEACCES).  Returns 0 on success. */
+static int
+regress_pick_port(ev_uint16_t *port, int need_udp, int need_tcp)
+{
+	struct sockaddr_in sin;
+	evutil_socket_t udp_sock = -1, tcp_sock = -1;
+	int i;
+
+	memset(&sin, 0, sizeof(sin));
+	sin.sin_family = AF_INET;
+	sin.sin_addr.s_addr = htonl(0x7f000001UL);
+
+	/* Windows allocates ephemeral ports sequentially and Hyper-V/WinNAT
+	 * can exclude 200+ contiguous ports for one protocol but not the
+	 * other.  Retry enough times to skip past any excluded range. */
+	for (i = 0; i < 256; i++) {
+		sin.sin_port = 0;
+
+		if (need_udp) {
+			udp_sock = socket(AF_INET, SOCK_DGRAM, 0);
+			if (udp_sock < 0)
+				goto retry;
+			if (bind(udp_sock, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
+				int err = EVUTIL_SOCKET_ERROR();
+				printf("pick_port: udp bind failed port %d: %s [%d]\n",
+					ntohs(sin.sin_port),
+					evutil_socket_error_to_string(err), err);
+				goto retry;
+			}
+			*port = regress_get_socket_port(udp_sock);
+			sin.sin_port = htons(*port);
+		}
+
+		if (need_tcp) {
+			tcp_sock = socket(AF_INET, SOCK_STREAM, 0);
+			if (tcp_sock < 0)
+				goto retry;
+			if (bind(tcp_sock, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
+				int err = EVUTIL_SOCKET_ERROR();
+				printf("pick_port: tcp bind failed port %d: %s [%d]\n",
+					ntohs(sin.sin_port),
+					evutil_socket_error_to_string(err), err);
+				goto retry;
+			}
+			if (!need_udp) {
+				*port = regress_get_socket_port(tcp_sock);
+			}
+		}
+
+		if (udp_sock >= 0)
+			evutil_closesocket(udp_sock);
+		if (tcp_sock >= 0)
+			evutil_closesocket(tcp_sock);
+		return 0;
+
+retry:
+		if (udp_sock >= 0) {
+			evutil_closesocket(udp_sock);
+			udp_sock = -1;
+		}
+		if (tcp_sock >= 0) {
+			evutil_closesocket(tcp_sock);
+			tcp_sock = -1;
+		}
+	}
+	return -1;
+}
+
 int
 regress_dnsserver(struct event_base *base, ev_uint16_t *port,
-    struct regress_dns_server_table *search_table)
+	struct regress_dns_server_table *udp_seach_table,
+	struct regress_dns_server_table *tcp_seach_table)
 {
-	dns_port = regress_get_dnsserver(base, port, &dns_sock,
-	    regress_dns_server_cb, search_table);
-	return dns_port != NULL;
+	if (!udp_seach_table && !tcp_seach_table)
+		goto error;
+
+	if (regress_pick_port(port, !!udp_seach_table, !!tcp_seach_table) < 0) {
+		printf("regress_dnsserver: pick_port failed\n");
+		goto error;
+	}
+
+	if (udp_seach_table) {
+		udp_dns_port = regress_get_udp_dnsserver(base, port, &udp_dns_sock,
+			regress_dns_server_cb, udp_seach_table);
+		if (!udp_dns_port) {
+			printf("regress_dnsserver: udp server bind failed port %d\n",
+				(int)*port);
+			goto error;
+		}
+	}
+
+	if (tcp_seach_table) {
+		tcp_dns_port = regress_get_tcp_dnsserver(base, port, &tcp_dns_sock,
+			regress_dns_server_cb, tcp_seach_table);
+		if (!tcp_dns_port) {
+			printf("regress_dnsserver: tcp server bind failed port %d\n",
+				(int)*port);
+			goto error;
+		}
+	}
+	return 1;
+
+error:
+	regress_clean_dnsserver();
+	return 0;
 }
 
 int
@@ -230,4 +391,30 @@ regress_get_listener_addr(struct evconnlistener *lev,
 	if (s <= 0)
 		return -1;
 	return getsockname(s, sa, socklen);
+}
+
+int
+parse_csv_address_list(const char *s, int family, void *addrs, size_t addrs_size)
+{
+	int i = 0;
+	char *token;
+	char buf[16384];
+	void *next_addr;
+
+	tt_assert(family == AF_INET || family == AF_INET6);
+	tt_assert(strlen(s) < ARRAY_SIZE(buf));
+	strcpy(buf, s);
+	token = strtok(buf, ",");
+	do {
+		tt_assert((unsigned)i < addrs_size);
+		next_addr = (family == AF_INET) ? (void *)((struct in_addr*)addrs + i)
+			: (void *)((struct in6_addr*)addrs + i);
+		if (!evutil_inet_pton(AF_INET, token, next_addr)) {
+			TT_DIE(("Bad %s value %s in table", (family == AF_INET) ? "A" :"AAAA", token));
+		}
+		++i;
+		token = strtok (NULL, ",");
+	} while (token);
+end:
+	return i;
 }

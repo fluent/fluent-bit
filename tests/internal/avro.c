@@ -297,6 +297,123 @@ const char JSON_INT_MULTI_FIELD_SCHEMA[] =
 "{\"name\":\"bad\",\"type\":\"int\"},"
 "{\"name\":\"last\",\"type\":\"string\"}]}";
 
+const char JSON_EMPTY_MAP_SCHEMA[] =
+"{\"type\":\"record\","
+"\"name\":\"EmptyMapRecord\","
+"\"fields\":["
+"{\"name\":\"ID\",\"type\":\"string\"},"
+"{\"name\":\"HTTPHeader\",\"type\":{\"type\":\"map\",\"values\":\"string\"}}]}";
+
+const char JSON_EMPTY_RECORD_SCHEMA[] =
+"{\"type\":\"record\","
+"\"name\":\"EmptyRecord\","
+"\"fields\":[]}";
+
+const char JSON_STRING_SCHEMA[] = "\"string\"";
+
+/* SHA-1 of the original sample record ID. */
+const char EMPTY_MAP_RECORD_ID[] = "97789a11215b54828d2c3f50b864afed42543ff8";
+
+void test_msgpack_to_avro_empty_map()
+{
+    size_t map_size = 0;
+    size_t id_size = 0;
+    const char *id = NULL;
+    avro_value_t aobject;
+    avro_value_t field;
+    avro_schema_t aschema;
+    avro_value_iface_t *aclass;
+    msgpack_sbuffer sbuf;
+    msgpack_packer pk;
+    msgpack_unpacked msg;
+
+    aclass = flb_avro_init(&aobject, (char *) JSON_EMPTY_MAP_SCHEMA,
+                           strlen(JSON_EMPTY_MAP_SCHEMA), &aschema);
+    TEST_CHECK(aclass != NULL);
+
+    msgpack_sbuffer_init(&sbuf);
+    msgpack_packer_init(&pk, &sbuf, msgpack_sbuffer_write);
+
+    msgpack_pack_map(&pk, 2);
+    msgpack_pack_str(&pk, 2);
+    msgpack_pack_str_body(&pk, "ID", 2);
+    msgpack_pack_str(&pk, sizeof(EMPTY_MAP_RECORD_ID) - 1);
+    msgpack_pack_str_body(&pk, EMPTY_MAP_RECORD_ID, sizeof(EMPTY_MAP_RECORD_ID) - 1);
+    msgpack_pack_str(&pk, 10);
+    msgpack_pack_str_body(&pk, "HTTPHeader", 10);
+    msgpack_pack_map(&pk, 0);
+
+    msgpack_unpacked_init(&msg);
+    TEST_CHECK(msgpack_unpack_next(&msg, sbuf.data, sbuf.size, NULL) ==
+               MSGPACK_UNPACK_SUCCESS);
+    TEST_CHECK(flb_msgpack_to_avro(&aobject, &msg.data) == FLB_TRUE);
+
+    TEST_CHECK(avro_value_get_by_name(&aobject, "ID", &field, NULL) == 0);
+    TEST_CHECK(avro_value_get_string(&field, &id, &id_size) == 0);
+    TEST_CHECK(id_size == sizeof(EMPTY_MAP_RECORD_ID));
+    TEST_CHECK(strcmp(id, EMPTY_MAP_RECORD_ID) == 0);
+
+    TEST_CHECK(avro_value_get_by_name(&aobject, "HTTPHeader", &field, NULL) == 0);
+    TEST_CHECK(avro_value_get_size(&field, &map_size) == 0);
+    TEST_CHECK(map_size == 0);
+
+    msgpack_unpacked_destroy(&msg);
+    msgpack_sbuffer_destroy(&sbuf);
+    avro_value_decref(&aobject);
+    avro_value_iface_decref(aclass);
+    avro_schema_decref(aschema);
+}
+
+void test_msgpack_to_avro_empty_record()
+{
+    size_t record_size = 1;
+    avro_value_t aobject;
+    avro_schema_t aschema;
+    avro_value_iface_t *aclass;
+    msgpack_sbuffer sbuf;
+    msgpack_packer pk;
+    msgpack_unpacked msg;
+
+    msgpack_sbuffer_init(&sbuf);
+    msgpack_packer_init(&pk, &sbuf, msgpack_sbuffer_write);
+    msgpack_pack_map(&pk, 0);
+
+    msgpack_unpacked_init(&msg);
+    TEST_CHECK(msgpack_unpack_next(&msg, sbuf.data, sbuf.size, NULL) ==
+               MSGPACK_UNPACK_SUCCESS);
+
+    aclass = flb_avro_init(&aobject, (char *) JSON_EMPTY_RECORD_SCHEMA,
+                           strlen(JSON_EMPTY_RECORD_SCHEMA), &aschema);
+    TEST_CHECK(aclass != NULL);
+    TEST_CHECK(flb_msgpack_to_avro(&aobject, &msg.data) == FLB_TRUE);
+    TEST_CHECK(avro_value_get_size(&aobject, &record_size) == 0);
+    TEST_CHECK(record_size == 0);
+
+    avro_value_decref(&aobject);
+    avro_value_iface_decref(aclass);
+    avro_schema_decref(aschema);
+
+    aclass = flb_avro_init(&aobject, (char *) JSON_EMPTY_MAP_SCHEMA,
+                           strlen(JSON_EMPTY_MAP_SCHEMA), &aschema);
+    TEST_CHECK(aclass != NULL);
+    TEST_CHECK(flb_msgpack_to_avro(&aobject, &msg.data) == FLB_FALSE);
+
+    avro_value_decref(&aobject);
+    avro_value_iface_decref(aclass);
+    avro_schema_decref(aschema);
+
+    aclass = flb_avro_init(&aobject, (char *) JSON_STRING_SCHEMA,
+                           strlen(JSON_STRING_SCHEMA), &aschema);
+    TEST_CHECK(aclass != NULL);
+    TEST_CHECK(flb_msgpack_to_avro(&aobject, &msg.data) == FLB_FALSE);
+
+    avro_value_decref(&aobject);
+    avro_value_iface_decref(aclass);
+    avro_schema_decref(aschema);
+    msgpack_unpacked_destroy(&msg);
+    msgpack_sbuffer_destroy(&sbuf);
+}
+
 void test_msgpack_to_avro_int64()
 {
     int64_t positive_expected = 4294967296LL;
@@ -537,6 +654,8 @@ TEST_LIST = {
     /* Avro */
     { "msgpack_to_avro_basic", test_unpack_to_avro},
     { "test_parse_reordered_schema", test_parse_reordered_schema},
+    { "test_msgpack_to_avro_empty_map", test_msgpack_to_avro_empty_map},
+    { "test_msgpack_to_avro_empty_record", test_msgpack_to_avro_empty_record},
     { "test_msgpack_to_avro_int64", test_msgpack_to_avro_int64},
     { "test_msgpack_to_avro_int_range", test_msgpack_to_avro_int_range},
     { "test_msgpack_to_avro_int_range_multi_field",

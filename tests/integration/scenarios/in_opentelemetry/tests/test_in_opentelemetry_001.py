@@ -19,6 +19,7 @@ import json
 import logging
 import time
 import base64
+import gzip
 from concurrent.futures import ThreadPoolExecutor
 import grpc
 import requests
@@ -36,6 +37,11 @@ from google.protobuf import json_format
 # local imports
 from utils.data_utils import read_json_file
 from utils.http_matrix import PROTOCOL_CASES, run_curl_request
+from utils.input_pause_resume import (
+    assert_pause_resume_cycles,
+    assert_shutdown_while_paused,
+    open_stalled_tcp_connection,
+)
 from utils.test_service import FluentBitTestService
 
 from server.http_server import http_server_run
@@ -228,6 +234,14 @@ def read_stdout_otlp_json_text(service, root_key, timeout=10, interval=0.25):
         time.sleep(interval)
 
     raise TimeoutError(f"Timed out waiting for stdout OTLP JSON payload with root key {root_key}")
+
+
+def read_fluent_bit_log(service):
+    if not service.flb or not service.flb.log_file or not os.path.exists(service.flb.log_file):
+        return ""
+
+    with open(service.flb.log_file, "r", encoding="utf-8", errors="replace") as log_file:
+        return log_file.read()
 
 
 def read_prometheus_metric_value(metrics_text, metric_name, input_name):
@@ -678,6 +692,146 @@ def test_opentelemetry_to_opentelemetry_basic_log():
         assert item["record_attributes"]["example_key"] == "example_value"
 
 
+def test_in_opentelemetry_protobuf_log_body_int64():
+    service = Service("001-fluent-bit.yaml")
+    payload = ExportLogsServiceRequest()
+    scope = payload.resource_logs.add().scope_logs.add()
+    expected = [-(2**63), -(2**31) - 1, 2**31, 2**53 + 1, 2**63 - 1]
+    for value in expected:
+        scope.log_records.add(time_unix_nano=1789516800123456789).body.int_value = value
+
+    service.start()
+    try:
+        before = len(data_storage["logs"])
+        response = service.send_raw_request("/v1/logs", payload.SerializeToString())
+        assert response.status_code == 201
+
+        def received():
+            values = [record.body.int_value
+                      for request in data_storage["logs"][before:]
+                      for resource in request.resource_logs
+                      for scope in resource.scope_logs
+                      for record in scope.log_records]
+            return values if len(values) >= len(expected) else None
+
+        actual = service.service.wait_for_condition(received, timeout=20, interval=0.25,
+                                                    description="64-bit log body values")
+        assert actual == expected
+    finally:
+        service.stop()
+
+
+def test_in_opentelemetry_large_protobuf_logs():
+    service = Service("001-fluent-bit.yaml")
+    source = ExportLogsServiceRequest()
+    source.ParseFromString(service.build_otel_payload("test_logs_001.in.json", "logs"))
+
+    payload = ExportLogsServiceRequest()
+    payload.CopyFrom(source)
+    source_records = list(source.resource_logs[0].scope_logs[0].log_records)
+
+    while payload.ByteSize() < 128 * 1024:
+        payload.resource_logs[0].scope_logs[0].log_records.extend(source_records)
+
+    expected_record_count = sum(
+        len(scope_logs.log_records)
+        for resource_logs in payload.resource_logs
+        for scope_logs in resource_logs.scope_logs
+    )
+
+    service.start()
+    try:
+        logs_before = len(data_storage["logs"])
+        response = service.send_raw_request("/v1/logs", payload.SerializeToString())
+
+        assert response.status_code == 201
+        received_record_count = service.service.wait_for_condition(
+            lambda: count if (
+                count := sum(
+                    len(scope_logs.log_records)
+                    for received in data_storage["logs"][logs_before:]
+                    for resource_logs in received.resource_logs
+                    for scope_logs in resource_logs.scope_logs
+                )
+            ) >= expected_record_count else None,
+            timeout=20,
+            interval=0.25,
+            description="all large protobuf log records",
+        )
+    finally:
+        service.stop()
+
+    assert received_record_count == expected_record_count
+
+
+def test_in_opentelemetry_batched_protobuf_logs_with_workers():
+    service = Service(IN_OPENTELEMETRY_WORKER_PROTOCOL_CONFIGS["http1_cleartext"])
+    source = ExportLogsServiceRequest()
+    source.ParseFromString(service.build_otel_payload("test_logs_001.in.json", "logs"))
+
+    payload = ExportLogsServiceRequest()
+    payload.CopyFrom(source)
+    source_records = list(source.resource_logs[0].scope_logs[0].log_records)
+
+    while payload.ByteSize() < 16 * 1024:
+        payload.resource_logs[0].scope_logs[0].log_records.extend(source_records)
+
+    assert payload.ByteSize() < 64 * 1024
+
+    expected_record_count = sum(
+        len(scope_logs.log_records)
+        for resource_logs in payload.resource_logs
+        for scope_logs in resource_logs.scope_logs
+    )
+
+    service.start()
+    try:
+        service.wait_for_log_message("with 4 workers", timeout=10)
+        logs_before = len(data_storage["logs"])
+        response = service.send_raw_request("/v1/logs", payload.SerializeToString())
+
+        assert response.status_code == 201
+        received_record_count = service.service.wait_for_condition(
+            lambda: count if (
+                count := sum(
+                    len(scope_logs.log_records)
+                    for received in data_storage["logs"][logs_before:]
+                    for resource_logs in received.resource_logs
+                    for scope_logs in resource_logs.scope_logs
+                )
+            ) >= expected_record_count else None,
+            timeout=20,
+            interval=0.25,
+            description="all batched protobuf log records",
+        )
+
+        metrics_text = service.service.wait_for_condition(
+            lambda: (
+                metrics if maybe_read_prometheus_metric_value(
+                    metrics,
+                    "fluentbit_input_records_total",
+                    "opentelemetry.0",
+                ) is not None and maybe_read_prometheus_metric_value(
+                    metrics,
+                    "fluentbit_input_records_total",
+                    "opentelemetry.0",
+                ) >= expected_record_count else None
+            ) if (metrics := service.scrape_prometheus_metrics()) else None,
+            timeout=10,
+            interval=0.25,
+            description="protobuf input record accounting",
+        )
+    finally:
+        service.stop()
+
+    assert received_record_count == expected_record_count
+    assert read_prometheus_metric_value(
+        metrics_text,
+        "fluentbit_input_records_total",
+        "opentelemetry.0",
+    ) == expected_record_count
+
+
 # Start a Fluent Bit Pipeline with Dummy message and then it gets handle by OpenTelemetry output, the config
 # aims to populate traceId and spanId fields with the values from the Dummy message.
 #
@@ -797,11 +951,96 @@ def test_opentelemetry_to_opentelemetry_parent_child_traces():
 def test_in_opentelemetry_rejects_invalid_logs_payload():
     service = Service("001-fluent-bit.yaml")
     service.start()
-    response = service.send_raw_request("/v1/logs", b"not-a-valid-otlp-payload")
-    service.stop()
+    try:
+        small_response = service.send_raw_request("/v1/logs", b"not-a-valid-otlp-payload")
+        large_response = service.send_raw_request("/v1/logs", b"\x80" * (64 * 1024))
+    finally:
+        service.stop()
 
-    assert response.status_code >= 400
+    assert small_response.status_code >= 400
+    assert large_response.status_code >= 400
     assert len(data_storage["logs"]) == 0
+
+
+@pytest.mark.parametrize(
+    ("body", "expected_status", "expected_body"),
+    [
+        pytest.param(
+            {"arrayValue": {"values": "not-an-array"}},
+            400,
+            None,
+            id="array-value",
+        ),
+        pytest.param(
+            {"arrayValue": {"value": []}},
+            400,
+            None,
+            id="array-value-invalid-values-key",
+        ),
+        pytest.param(
+            {"kvlistValue": {"values": "not-a-kvlist"}},
+            400,
+            None,
+            id="kvlist-value",
+        ),
+        pytest.param(
+            {"kvlistValue": {}},
+            201,
+            {"kvlistValue": {"values": []}},
+            id="map-form-kvlist-value",
+        ),
+        pytest.param(
+            {"arrayValue": {}},
+            201,
+            {"arrayValue": {"values": []}},
+            id="empty-array-value",
+        ),
+    ],
+)
+def test_in_opentelemetry_handles_json_logs_with_invalid_any_value_container(
+    body, expected_status, expected_body
+):
+    payload = {
+        "resourceLogs": [
+            {
+                "scopeLogs": [
+                    {
+                        "logRecords": [
+                            {
+                                "body": body,
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+
+    service = Service("003-stdout-otlp-json.yaml")
+    service.start()
+
+    try:
+        response = service.send_raw_request(
+            "/v1/logs",
+            json.dumps(payload).encode("utf-8"),
+            content_type="application/json",
+        )
+
+        assert response.status_code == expected_status
+        assert service.flb.process is not None
+        assert service.flb.process.poll() is None
+
+        if expected_body is None:
+            with pytest.raises(TimeoutError):
+                read_stdout_otlp_json(service, "resourceLogs", timeout=2)
+        else:
+            output = read_stdout_otlp_json(service, "resourceLogs")
+            records = list(iter_log_records(output))
+
+            assert len(records) == 1
+            assert records[0]["record"]["body"] == expected_body
+    finally:
+        service.stop()
 
 
 def test_in_opentelemetry_rejects_invalid_metrics_payload():
@@ -1052,6 +1291,138 @@ def test_in_opentelemetry_stdout_otlp_json_traces():
     assert span_entry["resource_attributes"]["service.name"] == "checkout"
 
 
+@pytest.mark.parametrize("config_file", [
+    "003-stdout-otlp-json.yaml", "004-stdout-otlp-json-pretty.yaml",
+])
+@pytest.mark.parametrize("encoding", ["json", "protobuf", "legacy", "canonical"])
+def test_in_opentelemetry_trace_status_codes(config_file, encoding):
+    service = Service(config_file)
+    service.start()
+    codes = [0, 1, 2]
+    if encoding in ("json", "protobuf"):
+        codes += [-2147483648, -1, 3, 2147483647]
+    spans = []
+    for index, code in enumerate(codes):
+        wire_code = code
+        if encoding == "legacy":
+            wire_code = ["UNSET", "OK", "ERROR"][code]
+        elif encoding == "canonical":
+            wire_code = ["STATUS_CODE_UNSET", "STATUS_CODE_OK", "STATUS_CODE_ERROR"][code]
+        spans.append({
+            "traceId": "0123456789abcdef0123456789abcdef",
+            "spanId": f"{index + 1:016x}",
+            "name": f"status-{code}",
+            "startTimeUnixNano": "1700000000000000000",
+            "endTimeUnixNano": "1700000000000000001",
+            "status": {"code": wire_code, "message": f"message-{code}"},
+        })
+    payload = {"resourceSpans": [{"scopeSpans": [{"spans": spans}]}]}
+    if encoding == "protobuf":
+        request = ExportTraceServiceRequest()
+        resource = request.resource_spans.add()
+        resource.resource.SetInParent()
+        scope = resource.scope_spans.add()
+        for source in spans:
+            span = scope.spans.add()
+            span.trace_id = bytes.fromhex(source["traceId"])
+            span.span_id = bytes.fromhex(source["spanId"])
+            span.name = source["name"]
+            span.start_time_unix_nano = int(source["startTimeUnixNano"])
+            span.end_time_unix_nano = int(source["endTimeUnixNano"])
+            span.status.code = source["status"]["code"]
+            span.status.message = source["status"]["message"]
+        body = request.SerializeToString()
+        content_type = "application/x-protobuf"
+    else:
+        body = json.dumps(payload).encode()
+        content_type = "application/json"
+    response = service.send_raw_request("/v1/traces", body, content_type)
+    assert 200 <= response.status_code < 300, response.text
+    output = read_stdout_otlp_json(service, "resourceSpans")
+    service.stop()
+    received = {entry["span"]["name"]: entry["span"] for entry in iter_spans(output)}
+    assert len(received) == len(codes)
+    for code in codes:
+        status = received[f"status-{code}"]["status"]
+        assert type(status["code"]) is int
+        assert status["code"] == code
+        assert status["message"] == f"message-{code}"
+
+
+def test_in_opentelemetry_trace_status_invalid_codes():
+    service = Service("003-stdout-otlp-json.yaml")
+    service.start()
+    for code in [True, 1.5, [], {}, "INVALID", 2147483648, -2147483649]:
+        payload = {"resourceSpans": [{"scopeSpans": [{"spans": [{
+            "name": "invalid-status", "status": {"code": code},
+        }]}]}]}
+        response = service.send_raw_request(
+            "/v1/traces", json.dumps(payload).encode(), "application/json")
+        assert response.status_code == 400, (code, response.text)
+    service.stop()
+
+
+@pytest.mark.parametrize("status", [
+    True, 1, "ERROR", [],
+    {"code": 2, "message": True},
+    {"code": 2, "message": 1},
+    {"code": 2, "message": []},
+    {"code": 2, "message": {}},
+])
+def test_in_opentelemetry_trace_status_invalid_fields_recovery(status):
+    service = Service("003-stdout-otlp-json.yaml")
+    service.start()
+    spans = [
+        {"name": "before-invalid", "status": {"code": 2, "message": "valid"}},
+        {"name": "invalid-status", "status": status},
+    ]
+    payload = {"resourceSpans": [{"scopeSpans": [{"spans": spans}]}]}
+    response = service.send_raw_request(
+        "/v1/traces", json.dumps(payload).encode(), "application/json")
+    assert response.status_code == 400, response.text
+
+    spans = [{"name": "recovered", "status": {"code": 2, "message": "error details"}}]
+    payload = {"resourceSpans": [{"scopeSpans": [{"spans": spans}]}]}
+    response = service.send_raw_request(
+        "/v1/traces", json.dumps(payload).encode(), "application/json")
+    assert 200 <= response.status_code < 300, response.text
+    output = read_stdout_otlp_json(service, "resourceSpans")
+    log_file = service.flb.log_file
+    service.stop()
+    received = [entry["span"] for entry in iter_spans(output)]
+    assert [span["name"] for span in received] == ["recovered"]
+    assert received[0]["status"] == {"code": 2, "message": "error details"}
+    with open(log_file, encoding="utf-8") as stream:
+        emitted = stream.read()
+    assert "before-invalid" not in emitted
+    assert "invalid-status" not in emitted
+
+
+def test_in_opentelemetry_trace_status_default_code():
+    service = Service("003-stdout-otlp-json.yaml")
+    service.start()
+    payload = {"resourceSpans": [{"scopeSpans": [{"spans": [
+        {"name": "empty-status", "status": {}},
+        {"name": "message-only", "status": {"message": "unset"}},
+        {"name": "absent-status"},
+        {"name": "null-status", "status": None},
+        {"name": "null-message", "status": {"code": 2, "message": None}},
+        {"name": "null-code", "status": {"code": None, "message": "unset"}},
+    ]}]}]}
+    response = service.send_raw_request(
+        "/v1/traces", json.dumps(payload).encode(), "application/json")
+    assert 200 <= response.status_code < 300, response.text
+    output = read_stdout_otlp_json(service, "resourceSpans")
+    service.stop()
+    received = {entry["span"]["name"]: entry["span"] for entry in iter_spans(output)}
+    assert len(received) == 6
+    assert received["message-only"]["status"] == {"code": 0, "message": "unset"}
+    assert received["null-message"]["status"] == {"code": 2}
+    assert received["null-code"]["status"] == {"code": 0, "message": "unset"}
+    for name in ["empty-status", "absent-status", "null-status"]:
+        assert received[name].get("status", {}).get("code", 0) == 0
+
+
 def test_in_opentelemetry_stdout_otlp_json_pretty_logs():
     service = Service("004-stdout-otlp-json-pretty.yaml")
     service.start()
@@ -1258,6 +1629,27 @@ def test_in_opentelemetry_protocol_matrix(case, signal_type, json_input, endpoin
     assert len(response_payload) > 0
 
 
+def test_in_opentelemetry_http2_invalid_endpoint_returns_404():
+    service = Service(IN_OPENTELEMETRY_PROTOCOL_CONFIGS["http2_cleartext"])
+    service.start()
+
+    result = run_curl_request(
+        f"http://localhost:{service.flb_listener_port}/v1/invalid",
+        b"invalid payload",
+        headers=["Content-Type: application/x-protobuf"],
+        http_mode="http2-prior-knowledge",
+    )
+
+    service.stop()
+
+    assert result["status_code"] == 404
+    assert result["http_version"] == "2"
+    assert result["body"] == "error: invalid endpoint\n"
+    assert len(data_storage["logs"]) == 0
+    assert len(data_storage["metrics"]) == 0
+    assert len(data_storage["traces"]) == 0
+
+
 # This test is branch-specific coverage for the generic HTTP listener worker mode.
 # It does three things:
 # 1. enables http_server.workers on the in_opentelemetry listener,
@@ -1281,12 +1673,13 @@ def test_in_opentelemetry_http_workers_mixed_signal_matrix(case):
         ("metrics", "test_metrics_001.in.json", "/v1/metrics"),
         ("traces", "test_traces_001.in.json", "/v1/traces"),
     ]
+    worker_count = 4
     repeats_per_signal = 4
     total_requests = len(request_plan) * repeats_per_signal
 
     service = Service(IN_OPENTELEMETRY_WORKER_PROTOCOL_CONFIGS[case["config_key"]])
     service.start()
-    service.wait_for_log_message("with 4 workers", timeout=10)
+    service.wait_for_log_message(f"with {worker_count} workers", timeout=10)
 
     scheme = "https" if case["use_tls"] else "http"
     request_jobs = []
@@ -1309,7 +1702,7 @@ def test_in_opentelemetry_http_workers_mixed_signal_matrix(case):
             ca_cert_path=service.tls_crt_file if case["use_tls"] else None,
         )
 
-    with ThreadPoolExecutor(max_workers=total_requests) as executor:
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
         results = list(executor.map(send_job, request_jobs))
 
     for result in results:
@@ -1334,6 +1727,91 @@ def test_in_opentelemetry_http_workers_mixed_signal_matrix(case):
     assert "/v1/logs" in paths_seen
     assert "/v1/metrics" in paths_seen
     assert "/v1/traces" in paths_seen
+
+
+@pytest.mark.parametrize(
+    "config_file,signal_type,json_input,endpoint",
+    [
+        (config_file, signal_type, json_input, endpoint)
+        for config_file in [
+            "otlp_pause_resume_single.yaml",
+            "otlp_pause_resume_workers.yaml",
+        ]
+        for signal_type, json_input, endpoint in [
+            ("logs", "test_logs_001.in.json", "/v1/logs"),
+            ("metrics", "test_metrics_001.in.json", "/v1/metrics"),
+            ("traces", "test_traces_001.in.json", "/v1/traces"),
+        ]
+    ],
+    ids=[
+        f"{'single_listener' if 'single' in config_file else 'workers_4'}-{signal_type}"
+        for config_file in [
+            "otlp_pause_resume_single.yaml",
+            "otlp_pause_resume_workers.yaml",
+        ]
+        for signal_type in ["logs", "metrics", "traces"]
+    ],
+)
+def test_in_opentelemetry_pause_resume(config_file, signal_type, json_input, endpoint):
+    service = Service(config_file)
+
+    try:
+        service.start()
+        resume_payload = service.build_otel_payload(json_input, signal_type)
+
+        def open_active_connections():
+            return [
+                open_stalled_tcp_connection(
+                    "127.0.0.1",
+                    service.flb_listener_port,
+                )
+                for _ in range(8)
+            ]
+
+        assert_pause_resume_cycles(
+            service.flb,
+            f"http://localhost:{service.flb_listener_port}{endpoint}",
+            resume_payload,
+            ["Content-Type: application/x-protobuf"],
+            input_name="opentelemetry.0",
+            success_status=201,
+            cycles=2,
+            http_mode="http2-prior-knowledge",
+            pause_trigger_requests=64,
+            resume_payload=resume_payload,
+            active_connection_factory=open_active_connections,
+        )
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize(
+    "config_file",
+    ["otlp_pause_resume_single.yaml", "otlp_pause_resume_workers.yaml"],
+    ids=["single_listener", "workers_4"],
+)
+def test_in_opentelemetry_shutdown_while_paused(config_file):
+    service = Service(config_file)
+
+    try:
+        service.start()
+        payload = service.build_otel_payload("test_logs_001.in.json", "logs")
+        assert_shutdown_while_paused(
+            service.flb,
+            service.stop,
+            "127.0.0.1",
+            service.flb_listener_port,
+            f"http://localhost:{service.flb_listener_port}/v1/logs",
+            payload,
+            ["Content-Type: application/x-protobuf"],
+            input_name="opentelemetry.0",
+            success_status=201,
+            connection_factory=open_stalled_tcp_connection,
+            pause_trigger_requests=64,
+            http_mode="http2-prior-knowledge",
+        )
+    finally:
+        service.stop()
 
 
 def test_in_opentelemetry_http_workers_export_ingress_queue_metrics():
@@ -1497,3 +1975,433 @@ def test_in_opentelemetry_http_workers_respect_ingress_queue_byte_limit():
         "fluentbit_input_http_server_ingress_queue_pending_bytes",
         "opentelemetry.0",
     ) == 0
+
+
+def test_in_opentelemetry_http_workers_account_metrics_payload_bytes():
+    service = Service(IN_OPENTELEMETRY_TINY_INGRESS_QUEUE_BYTE_LIMIT_CONFIG)
+    small_payload = service.build_otel_payload("test_metrics_001.in.json", "metrics")
+
+    small_request = ExportMetricsServiceRequest()
+    small_request.ParseFromString(small_payload)
+
+    large_request = ExportMetricsServiceRequest()
+    for _ in range(16):
+        large_request.resource_metrics.extend(small_request.resource_metrics)
+
+    large_payload = large_request.SerializeToString()
+
+    assert len(small_payload) < 2000
+    assert len(large_payload) > 2000
+
+    service.start()
+    service.wait_for_log_message("with 4 workers", timeout=10)
+    metrics_before = len(data_storage["metrics"])
+
+    try:
+        success_response = service.send_raw_request("/v1/metrics", small_payload)
+        assert success_response.status_code == 201
+        service.wait_for_signal_count("metrics", metrics_before + 1, timeout=10)
+
+        failure_response = service.send_raw_request("/v1/metrics", large_payload)
+        assert failure_response.status_code == 503
+        assert "deferred ingress queue is full" in failure_response.text
+    finally:
+        service.stop()
+
+    assert len(data_storage["metrics"]) == metrics_before + 1
+
+
+def test_expect_warn_validates_each_otlp_log_record_in_batch():
+    service = Service("expect_batch.yaml")
+    payload = read_json_file(
+        os.path.join(
+            os.path.dirname(__file__),
+            "data_files",
+            "test_logs_expect_batch.in.json",
+        )
+    )
+
+    service.start()
+
+    try:
+        response = requests.post(
+            f"http://127.0.0.1:{service.flb_listener_port}/v1/logs",
+            json=payload,
+            timeout=5,
+        )
+        assert response.status_code == 201
+
+        log_text = service.service.wait_for_condition(
+            lambda: (
+                content
+                if content.count("expect check failed") >= 4
+                else None
+            ) if (content := read_fluent_bit_log(service)) else None,
+            timeout=10,
+            interval=0.25,
+            description="one expect warning per invalid OTLP log record",
+        )
+    finally:
+        service.stop()
+
+    assert log_text.count("expect check failed") == 4
+    for field_name in ("field1", "field2", "field3", "field4"):
+        assert log_text.count(f"key '{field_name}' not found") == 1
+
+
+def test_expect_result_key_preserves_otlp_log_groups():
+    service = Service("expect_group_result_key.yaml")
+    payload = read_json_file(
+        os.path.join(
+            os.path.dirname(__file__),
+            "data_files",
+            "test_logs_expect_batch.in.json",
+        )
+    )
+    scope_logs = payload["resourceLogs"][0]["scopeLogs"][0]
+    scope_logs["scope"] = {"name": "issue.scope"}
+    scope_logs["logRecords"].append(
+        {
+            "timeUnixNano": "1784797967000450100",
+            "body": {
+                "kvlistValue": {
+                    "values": [
+                        {
+                            "key": f"field{index}",
+                            "value": {"stringValue": str(index)},
+                        }
+                        for index in range(1, 5)
+                    ]
+                }
+            },
+        }
+    )
+
+    service.start()
+
+    try:
+        response = requests.post(
+            f"http://127.0.0.1:{service.flb_listener_port}/v1/logs",
+            json=payload,
+            timeout=5,
+        )
+        assert response.status_code == 201
+        output = service.read_response("logs")
+    finally:
+        service.stop()
+
+    records = list(iter_log_records(output))
+    assert len(records) == 5
+
+    matched_values = []
+    for record in records:
+        assert record["resource_attributes"] == {"service.name": "my-service"}
+        assert record["scope_name"] == "issue.scope"
+
+        values = record["record"]["body"]["kvlistValue"]["values"]
+        fields = {
+            item["key"]: next(iter(item["value"].values()))
+            for item in values
+        }
+        matched_values.append(fields["matched"])
+
+    assert matched_values == [False, False, False, False, True]
+
+
+def grpc_limit_payload(service, size, signal_type="logs"):
+    """Pad a valid export using an unknown length-delimited protobuf field."""
+    payload = service.build_otel_payload(f"test_{signal_type}_001.in.json", signal_type)
+    padding_size = size - len(payload) - 6
+    # Field 127, with a four-byte varint length (legal even for small lengths).
+    length = bytes([
+        (padding_size & 0x7f) | 0x80,
+        ((padding_size >> 7) & 0x7f) | 0x80,
+        ((padding_size >> 14) & 0x7f) | 0x80,
+        padding_size >> 21,
+    ])
+    result = payload + b"\xfa\x07" + length + b"x" * padding_size
+    assert len(result) == size
+    return result
+
+
+def send_grpc_limit_frames(service, frames, signal_type="logs", encoding="gzip", suffix=b""):
+    body = b""
+    for payload, compressed in frames:
+        encoded = encode_grpc_limit_payload(payload, encoding) if compressed else payload
+        body += bytes([int(compressed)]) + len(encoded).to_bytes(4, "big") + encoded
+    service_name = {"logs": "Logs", "metrics": "Metrics", "traces": "Trace"}[signal_type]
+    package = "trace" if signal_type == "traces" else signal_type
+    result = run_curl_request(
+        f"http://localhost:{service.flb_listener_port}/opentelemetry.proto.collector."
+        f"{package}.v1.{service_name}Service/Export",
+        body + suffix,
+        headers=["Content-Type: application/grpc", f"grpc-encoding: {encoding.split('-')[0]}"],
+        http_mode="http2-prior-knowledge",
+        include_headers=True,
+    )
+    assert result["status_code"] == 200
+    headers = dict(
+        line.split(":", 1) for line in result["headers_raw"].lower().splitlines()
+        if ":" in line
+    )
+    return int(headers["grpc-status"].strip())
+
+
+@pytest.mark.parametrize("size_delta,expected_status", [(-1, 0), (0, 0), (1, 8)])
+def test_in_opentelemetry_grpc_expanded_message_limit(size_delta, expected_status):
+    service = Service("otlp_grpc_expanded_limit.yaml")
+    try:
+        service.start()
+        payload = grpc_limit_payload(service, 16 * 1024 * 1024 + size_delta)
+        assert send_grpc_limit_frames(service, [(payload, True)]) == expected_status
+        # A rejected allocation must not poison subsequent requests.
+        small = service.build_otel_payload("test_logs_001.in.json", "logs")
+        assert send_grpc_limit_frames(service, [(small, True)]) == 0
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("signal_type", ["logs", "metrics", "traces"])
+@pytest.mark.parametrize("size_delta,expected_status", [(-1, 0), (0, 0), (1, 8)])
+def test_in_opentelemetry_grpc_expanded_http_limit(signal_type, size_delta, expected_status):
+    # The listener's default 4M limit uses decimal bytes.
+    service = Service("otlp_http2_cleartext.yaml")
+    try:
+        service.start()
+        payload = grpc_limit_payload(service, 4_000_000 + size_delta, signal_type)
+        assert send_grpc_limit_frames(service, [(payload, True)], signal_type) == expected_status
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("first_compressed", [False, True])
+@pytest.mark.parametrize("size_delta,expected_status", [(-1, 0), (0, 0), (1, 8)])
+def test_in_opentelemetry_grpc_expanded_request_budget(first_compressed, size_delta, expected_status):
+    service = Service("otlp_http2_cleartext.yaml")
+    try:
+        service.start()
+        first = grpc_limit_payload(service, 1024)
+        second = grpc_limit_payload(service, 4_000_000 - len(first) + size_delta)
+        assert send_grpc_limit_frames(
+            service, [(first, first_compressed), (second, True)]
+        ) == expected_status
+        small = service.build_otel_payload("test_logs_001.in.json", "logs")
+        assert send_grpc_limit_frames(service, [(small, False)]) == 0
+    finally:
+        service.stop()
+
+
+
+def encode_test_varint(value):
+    result = bytearray()
+    while value > 127:
+        result.append((value & 127) | 128)
+        value >>= 7
+    result.append(value)
+    return bytes(result)
+
+
+def snappy_test_crc32c(payload):
+    # Castagnoli CRC for Snappy framed test data; no optional codec dependencies.
+    crc = 0xffffffff
+    for byte in payload:
+        crc ^= byte
+        for _ in range(8):
+            crc = (crc >> 1) ^ (0x82f63b78 if crc & 1 else 0)
+    crc ^= 0xffffffff
+    return (((crc >> 15) | (crc << 17)) + 0xa282ead8) & 0xffffffff
+
+
+def encode_grpc_limit_payload(payload, encoding):
+    if encoding == "gzip":
+        return gzip.compress(payload)
+
+    prefix = payload.rstrip(b"x")
+    repeated = len(payload) - len(prefix)
+    if encoding.startswith("zstd"):
+        # Single-segment frames carry content size; streaming frames omit it.
+        if encoding == "zstd":
+            header = b"\x28\xb5\x2f\xfd\xa0" + len(payload).to_bytes(4, "little")
+        elif encoding == "zstd-unknown-large-window":
+            # No FCS, with an 8 MiB window exceeding the default request budget.
+            header = b"\x28\xb5\x2f\xfd\x00\x68"
+        else:
+            # No FCS, not single-segment; descriptor 0x38 gives a 128 KiB window.
+            header = b"\x28\xb5\x2f\xfd\x00\x38"
+        blocks = [(0, prefix[offset:offset + 1024], len(prefix[offset:offset + 1024]))
+                  for offset in range(0, len(prefix), 1024)]
+        while repeated:
+            count = min(repeated, 1024)
+            blocks.append((1, b"x", count))
+            repeated -= count
+        result = header
+        for index, (kind, data, size) in enumerate(blocks):
+            result += ((size << 3) | (kind << 1) | int(index == len(blocks) - 1)).to_bytes(3, "little")
+            result += data
+        return result
+
+    if encoding in ("snappy-framed", "snappy-mixed"):
+        result = b"\xff\x06\x00\x00sNaPpY"
+        # Multiple chunks exercise accounting within a single Snappy stream.
+        for offset in range(0, len(payload), 2048):
+            chunk = payload[offset:offset + 2048]
+            uncompressed = encoding == "snappy-mixed" and offset == 0
+            encoded = chunk if uncompressed else encode_grpc_limit_payload(chunk, "snappy")
+            result += bytes([int(uncompressed)]) + (len(encoded) + 4).to_bytes(3, "little")
+            result += snappy_test_crc32c(chunk).to_bytes(4, "little") + encoded
+        return result
+
+    assert encoding == "snappy"
+    if repeated:
+        prefix += b"x"
+        repeated -= 1
+    literal_length = len(prefix) - 1
+    if literal_length < 60:
+        literal = bytes([literal_length << 2])
+    else:
+        byte_count = (literal_length.bit_length() + 7) // 8
+        literal = bytes([(59 + byte_count) << 2]) + literal_length.to_bytes(byte_count, "little")
+    result = encode_test_varint(len(payload)) + literal + prefix
+    while repeated:
+        count = min(repeated, 64)
+        result += bytes([((count - 1) << 2) | 2, 1, 0])
+        repeated -= count
+    return result
+
+
+def received_grpc_log_records():
+    return [record for request in data_storage["logs"]
+            for resource in request.resource_logs for scope in resource.scope_logs
+            for record in scope.log_records]
+
+
+@pytest.mark.parametrize("encoding", [
+    "gzip", "zstd", "zstd-unknown", "zstd-unknown-large-window",
+    "snappy", "snappy-framed", "snappy-mixed",
+])
+@pytest.mark.parametrize("workers", [1, 4])
+def test_in_opentelemetry_grpc_bounded_codecs(encoding, workers):
+    service = Service("otlp_grpc_bounded.yaml")
+    service.service.extra_env["OTLP_TEST_HTTP_WORKERS"] = workers
+    try:
+        service.start()
+        # Check each boundary and cumulative accounting, including an exhausted budget.
+        for sizes, expected in [([4095], 0), ([4096], 0), ([4097], 8),
+                                ([1024, 3072], 0), ([1024, 3073], 8),
+                                ([4096, 1024], 8)]:
+            frames = [(grpc_limit_payload(service, size), True) for size in sizes]
+            assert send_grpc_limit_frames(service, frames, encoding=encoding) == expected
+    finally:
+        service.stop()
+    # Every fixture has four records. Only the three accepted requests may ingest.
+    assert len(received_grpc_log_records()) == 16
+
+
+@pytest.mark.parametrize("encoding", [
+    "gzip", "zstd", "zstd-unknown", "zstd-unknown-large-window",
+    "snappy", "snappy-framed", "snappy-mixed",
+])
+@pytest.mark.parametrize("first_compressed", [False, True])
+def test_in_opentelemetry_grpc_rejected_request_is_not_ingested(encoding, first_compressed):
+    service = Service("otlp_grpc_bounded.yaml")
+    service.service.extra_env["OTLP_TEST_HTTP_WORKERS"] = 4
+    try:
+        service.start()
+        first = grpc_limit_payload(service, 1024)
+        second = grpc_limit_payload(service, 3073)
+        # Retry the rejected request to detect duplication of its first frame.
+        for _ in range(2):
+            assert send_grpc_limit_frames(
+                service, [(first, first_compressed), (second, True)], encoding=encoding
+            ) == 8
+        # A malformed later frame must also reject the entire request.
+        assert send_grpc_limit_frames(
+            service, [(first, True)], encoding=encoding, suffix=b"\x01\x00"
+        ) == 3
+        # Corrupt compressed data in a later frame must free every staged frame.
+        assert send_grpc_limit_frames(
+            service, [(first, True)], encoding=encoding, suffix=b"\x01\x00\x00\x00\x01\xff"
+        ) == 13
+    finally:
+        service.stop()
+    assert received_grpc_log_records() == []
+
+
+@pytest.mark.parametrize("encoding,payload", [
+    ("gzip", b"\x1f\x8b\x08\x00" + b"\x00" * 10 + (100_000_000).to_bytes(4, "little")),
+    ("zstd", b"\x28\xb5\x2f\xfd\xa0" + (100_000_000).to_bytes(4, "little") + b"\x01\x00\x00"),
+    ("snappy", b"\xfe\xff\xff\xff\x0f"),
+    ("snappy", b"\xff\x06\x00\x00sNaPpY\x00\x09\x00\x00" + b"\x00" * 4 + b"\xfe\xff\xff\xff\x0f"),
+])
+def test_in_opentelemetry_grpc_rejects_advertised_size_before_decode(encoding, payload):
+    service = Service("otlp_grpc_bounded.yaml")
+    service.service.extra_env["OTLP_TEST_HTTP_WORKERS"] = 1
+    try:
+        service.start()
+        # These bodies have no valid compressed data. Size rejection (8), rather
+        # than decompression failure (13), proves rejection precedes decoding.
+        # Supply the already encoded bytes without modifying the codec header.
+        result = run_curl_request(
+            f"http://localhost:{service.flb_listener_port}/opentelemetry.proto.collector."
+            "logs.v1.LogsService/Export",
+            b"\x01" + len(payload).to_bytes(4, "big") + payload,
+            headers=["Content-Type: application/grpc", f"grpc-encoding: {encoding}"],
+            http_mode="http2-prior-knowledge", include_headers=True,
+        )
+        assert result["status_code"] == 200
+        assert "grpc-status: 8" in result["headers_raw"].lower()
+    finally:
+        service.stop()
+    assert received_grpc_log_records() == []
+
+
+@pytest.mark.parametrize("encoding", [
+    "gzip", "zstd", "zstd-unknown", "zstd-unknown-large-window",
+    "snappy", "snappy-framed", "snappy-mixed",
+])
+def test_in_opentelemetry_grpc_preserves_groups_across_chunks(encoding):
+    service = Service("otlp_grpc_grouped.yaml")
+    frames = []
+    expected = []
+    for frame_index in range(2):
+        request = ExportLogsServiceRequest()
+        for resource_index in range(2):
+            resource = request.resource_logs.add()
+            resource_id = f"frame-{frame_index}-resource-{resource_index}"
+            attribute = resource.resource.attributes.add(key="resource.id")
+            attribute.value.string_value = resource_id
+            resource.schema_url = f"https://example.com/resource/{resource_id}"
+            for scope_index in range(2):
+                scope = resource.scope_logs.add()
+                scope.scope.name = f"scope-{scope_index}"
+                scope.scope.version = "1.2.3"
+                scope.schema_url = f"https://example.com/scope/{scope_index}"
+                scope.scope.attributes.add(key="scope.id").value.int_value = scope_index
+                body = f"{resource_id}-scope-{scope_index}:" + "x" * 300_000
+                scope.log_records.add(time_unix_nano=1789516800123456789).body.string_value = body
+                expected.append((resource_id, resource.schema_url, scope.scope.name,
+                                 scope.scope.version, scope.schema_url, scope_index, body))
+        payload = request.SerializeToString()
+        assert len(payload) > 1024 * 1000
+        frames.append((payload, True))
+    try:
+        service.start()
+        assert send_grpc_limit_frames(service, frames, encoding=encoding) == 0
+        service.service.wait_for_condition(
+            lambda: len(received_grpc_log_records()) == len(expected), timeout=30,
+            description="all grouped records from both gRPC frames",
+        )
+    finally:
+        service.stop()
+    actual = []
+    for received in data_storage["logs"]:
+        for resource in received.resource_logs:
+            resource_id = next(item.value.string_value for item in resource.resource.attributes
+                               if item.key == "resource.id")
+            for scope in resource.scope_logs:
+                scope_id = next(item.value.int_value for item in scope.scope.attributes
+                                if item.key == "scope.id")
+                actual.extend((resource_id, resource.schema_url, scope.scope.name,
+                               scope.scope.version, scope.schema_url, scope_id, record.body.string_value)
+                              for record in scope.log_records)
+    assert sorted(actual) == sorted(expected)

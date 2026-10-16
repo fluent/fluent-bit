@@ -1,0 +1,27 @@
+service:
+  flush: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: out_syslog
+      dummy: '{"message":"preset-message"}'
+      samples: 1
+    - name: dummy
+      tag: out_syslog
+      dummy: '{"message":"record-message","sd":{"source":"record"}}'
+      samples: 1
+
+  outputs:
+    - name: syslog
+      match: out_syslog
+      host: 127.0.0.1
+      port: ${SYSLOG_RECEIVER_PORT}
+      mode: tcp
+      syslog_format: rfc5424
+      syslog_message_key: message
+      syslog_sd_key: sd
+      syslog_sd_preset: '[meta@32473 source="preset"]'

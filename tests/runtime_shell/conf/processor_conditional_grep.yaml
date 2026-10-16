@@ -1,0 +1,54 @@
+service:
+  log_level: trace
+  flush: 1
+pipeline:
+  inputs:
+    - name: dummy
+      dummy: '{"endpoint":"localhost", "value":"something"}'
+      tag: dummy
+      processors:
+        logs:
+          - name: grep
+            logical_op: and
+            regex:
+              - value something
+            condition:
+              op: and
+              rules:
+                - field: $endpoint
+                  op: eq
+                  value: farhost
+    - name: dummy
+      dummy: '{"endpoint":"localhost2", "value":"something"}'
+      tag: dummy
+      processors:
+        logs:
+          - name: grep
+            logical_op: and
+            regex:
+              - value something
+            condition:
+              op: and
+              rules:
+                - field: $endpoint
+                  op: eq
+                  value: farhost
+    - name: dummy
+      dummy: '{"endpoint":"farhost", "value":"nothing"}'
+      tag: dummy
+      processors:
+        logs:
+          - name: grep
+            logical_op: and
+            regex:
+              - value something
+            condition:
+              op: and
+              rules:
+                - field: $endpoint
+                  op: eq
+                  value: farhost
+
+  outputs:
+    - name: stdout
+      match: '*'

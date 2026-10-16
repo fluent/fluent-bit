@@ -33,8 +33,8 @@
 #define STATUS_PENDING  -1
 #define CALLBACK_TIME    2 /* 2 seconds */
 
-#define SERVER_PORT      "9092"
-#define SERVER_IFACE     "0.0.0.0"
+#define SERVER_PORT      "0"
+#define SERVER_IFACE     "127.0.0.1"
 
 struct unit_test {
     int id;
@@ -55,7 +55,8 @@ struct unit_test tests[] = {
 
 struct event_test {
     flb_pipefd_t pipe[2];
-    int server_fd;
+    flb_sockfd_t server_fd;
+    int server_port;
     int client_coll_id;
     struct flb_upstream *upstream;
     struct unit_test *tests;
@@ -127,9 +128,9 @@ static int cb_collector_time(struct flb_input_instance *ins,
      * to our local pipe.
      */
     val = 1;
-    ret = write(ctx->pipe[1], &val, sizeof(val));
+    ret = flb_pipe_w(ctx->pipe[1], &val, sizeof(val));
     if (ret == -1) {
-        flb_errno();
+        flb_pipe_error();
         set_unit_test_status(ctx, 0, STATUS_ERROR);
         flb_engine_exit(config);
     }
@@ -143,13 +144,13 @@ static int cb_collector_fd(struct flb_input_instance *ins,
                            struct flb_config *config, void *in_context)
 {
     uint64_t val = 0;
-    size_t bytes;
+    ssize_t bytes;
     struct unit_test *ut;
     struct event_test *ctx = (struct event_test *) in_context;
 
-    bytes = read(ctx->pipe[0], &val, sizeof(val));
+    bytes = flb_pipe_r(ctx->pipe[0], &val, sizeof(val));
     if (bytes <= 0) {
-        flb_errno();
+        flb_pipe_error();
         set_unit_test_status(ctx, 1, STATUS_ERROR);
         flb_engine_exit(config);
     }
@@ -242,12 +243,28 @@ static struct event_test *config_create(struct flb_input_instance *ins)
     return ctx;
 }
 
+static int get_server_port(flb_sockfd_t fd)
+{
+    int ret;
+    socklen_t len;
+    struct sockaddr_in addr;
+
+    len = sizeof(addr);
+    ret = getsockname(fd, (struct sockaddr *) &addr, &len);
+    if (ret == -1) {
+        return -1;
+    }
+
+    return ntohs(addr.sin_port);
+}
+
 /* Initialize plugin */
 static int cb_event_test_init(struct flb_input_instance *ins,
                               struct flb_config *config, void *data)
 {
-    int fd;
     int ret;
+    int port;
+    flb_sockfd_t fd;
     struct unit_test *ut;
     struct event_test *ctx = NULL;
     struct flb_upstream *upstream;
@@ -297,7 +314,15 @@ static int cb_event_test_init(struct flb_input_instance *ins,
         return -1;
     }
     flb_net_socket_nonblocking(fd);
-        ctx->server_fd = fd;
+    ctx->server_fd = fd;
+
+    port = get_server_port(ctx->server_fd);
+    if (port <= 0) {
+        flb_errno();
+        config_destroy(ctx);
+        return -1;
+    }
+    ctx->server_port = port;
 
     /* socket server */
     ret = flb_input_set_collector_socket(ins,
@@ -321,7 +346,7 @@ static int cb_event_test_init(struct flb_input_instance *ins,
     ctx->client_coll_id = ret;
 
     /* upstream context for socket client */
-    upstream = flb_upstream_create(config, "127.0.0.1", atoi(SERVER_PORT),
+    upstream = flb_upstream_create(config, SERVER_IFACE, ctx->server_port,
                                    FLB_IO_TCP, NULL);
     if (!upstream) {
         config_destroy(ctx);

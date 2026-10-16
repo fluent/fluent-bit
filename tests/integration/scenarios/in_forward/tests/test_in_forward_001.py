@@ -1,15 +1,19 @@
 import gzip
 import hashlib
 import json
+import mmap
 import os
+import re
 import shutil
 import socket
 import ssl
+import struct
 import subprocess
 import sys
 import tempfile
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import opentelemetry
@@ -17,6 +21,8 @@ import opentelemetry.proto
 import opentelemetry.proto.collector
 import pytest
 import requests
+
+from utils.memory_check import memory_check_enabled
 
 VENDORED_OTEL_PROTO_ROOT = Path(__file__).resolve().parents[3] / "vendor"
 VENDORED_OTEL_PACKAGE_ROOT = VENDORED_OTEL_PROTO_ROOT / "opentelemetry"
@@ -45,6 +51,7 @@ from server.forward_server import (
 )
 from server.http_server import configure_http_response, data_storage, http_server_run
 from utils.data_utils import read_file, read_json_file
+from utils.fluent_bit_manager import FluentBitStartupError, fluent_bit_input_supports_config_property
 from utils.test_service import FluentBitTestService
 
 
@@ -58,6 +65,7 @@ SECURE_SELF_HOSTNAME = "server-node"
 
 class Service:
     def __init__(self, config_file, *, use_unix_socket=False):
+        self.config_name = config_file
         self.config_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "../config", config_file))
         self.use_unix_socket = use_unix_socket
         self.socket_path = None
@@ -71,7 +79,10 @@ class Service:
         }
 
         if use_unix_socket:
-            self.socket_path = os.path.join(tempfile.gettempdir(), f"fluent_bit_forward_{uuid.uuid4().hex}.sock")
+            socket_dir = "/tmp" if sys.platform == "darwin" else tempfile.gettempdir()
+            self.socket_path = os.path.join(
+                socket_dir, f"flb-fw-{uuid.uuid4().hex[:12]}.sock"
+            )
             extra_env["FORWARD_UNIX_PATH"] = self.socket_path
 
         self.service = FluentBitTestService(
@@ -103,7 +114,12 @@ class Service:
                 pass
 
     def start(self):
+        if ("workers" in self.config_name and
+                not fluent_bit_input_supports_config_property("forward", "workers")):
+            pytest.skip("forward.workers is not supported by the selected Fluent Bit binary")
+
         self.service.start()
+        self.flb = self.service.flb
         self.flb_listener_port = self.service.flb_listener_port
 
     def stop(self):
@@ -136,6 +152,9 @@ class Service:
             description=f"log text {text!r}",
         )
 
+    def wait_for_log_message(self, pattern, timeout=10):
+        return self.wait_for_log_contains(pattern, timeout)
+
 
 class StorageLimitService(Service):
     def __init__(self, config_file):
@@ -144,6 +163,9 @@ class StorageLimitService(Service):
         self.file_output_path = tempfile.mkdtemp(prefix="fluent_bit_forward_file_output_")
         self.service.extra_env["FORWARD_STORAGE_PATH"] = self.storage_path
         self.service.extra_env["FORWARD_FILE_OUTPUT_PATH"] = self.file_output_path
+        self.service.extra_env["FORWARD_STORAGE_TOTAL_LIMIT_SIZE"] = str(
+            mmap.PAGESIZE * 2
+        )
 
     def stop(self):
         try:
@@ -164,7 +186,17 @@ class StorageLimitService(Service):
         if not stream_dir.exists():
             return []
 
-        return [path.read_bytes() for path in stream_dir.rglob("*.flb") if path.is_file()]
+        contents = []
+
+        for path in stream_dir.rglob("*.flb"):
+            try:
+                if path.is_file():
+                    contents.append(path.read_bytes())
+            except FileNotFoundError:
+                # Chunk eviction can remove a file between discovery and open.
+                continue
+
+        return contents
 
     def file_output_contents(self):
         output_dir = Path(self.file_output_path)
@@ -308,6 +340,68 @@ def _assert_forward_signal_message(message, *, expected_tag, expected_signal):
     assert message["options"]["fluent_signal"] == expected_signal
     assert message["options"]["chunk"]
     assert len(message["records"]) >= 1
+
+
+def _forward_metric_names(messages):
+    names = set()
+
+    for message in messages:
+        if message["options"].get("fluent_signal") != 1:
+            continue
+
+        for record in message["records"]:
+            payload = record.get("raw")
+            if not isinstance(payload, dict):
+                continue
+
+            for metric in payload.get("metrics", []):
+                names.add(metric["meta"]["opts"]["name"])
+
+    return names
+
+
+def _otel_metrics_request(metric_name):
+    base_path = os.path.abspath(
+        os.path.join(
+            os.path.dirname(__file__),
+            "../../in_opentelemetry/tests/data_files",
+        )
+    )
+    request = ExportMetricsServiceRequest()
+    json_payload = read_json_file(os.path.join(base_path, "test_metrics_001.in.json"))
+
+    json_format.Parse(json.dumps(json_payload), request)
+    request.resource_metrics[0].scope_metrics[0].metrics[0].name = metric_name
+
+    return request
+
+
+def _forward_metric_contexts(metric_names):
+    timeout = 30 if memory_check_enabled() else 10
+    source = ForwardReceiverService(
+        "in_opentelemetry_to_forward_receiver_single_worker.yaml"
+    )
+
+    source.start()
+    try:
+        for metric_name in metric_names:
+            source.send_request("/v1/metrics", _otel_metrics_request(metric_name))
+            source.service.wait_for_condition(
+                lambda: forward_data_storage["messages"]
+                if metric_name in _forward_metric_names(forward_data_storage["messages"])
+                else None,
+                timeout=timeout,
+                interval=0.2,
+                description=f"source cmetrics context {metric_name}",
+            )
+
+        return [
+            message["raw"][1]
+            for message in forward_data_storage["messages"]
+            if message["options"].get("fluent_signal") == 1
+        ]
+    finally:
+        source.stop()
 
 
 def _pack_uint(value):
@@ -455,9 +549,9 @@ def _zstd_bytes(data):
 
 
 def _forward_allocation_repro_payload():
-    entry_count = 170
+    entry_count = 8
     declared_entries = entry_count * 2
-    body = "R" * 200
+    body = "R" * 100000
     payload = bytearray()
 
     payload += _pack_array_header(2)
@@ -467,166 +561,7 @@ def _forward_allocation_repro_payload():
     for i in range(entry_count):
         payload += _pack_obj([TEST_TS + i, {"log": body}])
 
-    return bytes(payload[:29229]).ljust(29229, b"\x00")
-
-
-def _process_status_kb(pid, key):
-    status_path = Path("/proc") / str(pid) / "status"
-    prefix = f"{key}:"
-
-    for line in status_path.read_text(encoding="utf-8").splitlines():
-        if line.startswith(prefix):
-            return int(line.split()[1])
-
-    raise RuntimeError(f"{key} not found in {status_path}")
-
-
-def _find_free_port():
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return sock.getsockname()[1]
-
-
-def _fluent_bit_binary_path():
-    if os.environ.get("FLUENT_BIT_BINARY"):
-        return os.environ["FLUENT_BIT_BINARY"]
-
-    return str(Path(__file__).resolve().parents[5] / "build" / "bin" / "fluent-bit")
-
-
-def _write_forward_stdout_config(path, port):
-    path.write_text(
-        f"""[SERVICE]
-    Flush          1
-    Daemon         Off
-    Log_Level      info
-
-[INPUT]
-    Name           forward
-    Listen         127.0.0.1
-    Port           {port}
-
-[OUTPUT]
-    Name           stdout
-    Match          *
-""",
-        encoding="utf-8",
-    )
-
-
-def _start_fluent_bit_process(config_file, log_file, data_limit_kb=None):
-    preexec_fn = None
-
-    if data_limit_kb is not None:
-        def set_data_limit():
-            import resource
-
-            _, hard_limit = resource.getrlimit(resource.RLIMIT_DATA)
-            resource.setrlimit(resource.RLIMIT_DATA, (data_limit_kb * 1024, hard_limit))
-
-        preexec_fn = set_data_limit
-
-    output = open(log_file, "a", encoding="utf-8")
-    process = subprocess.Popen(
-        [_fluent_bit_binary_path(), "-c", str(config_file), "-l", str(log_file)],
-        stdout=output,
-        stderr=subprocess.STDOUT,
-        text=True,
-        preexec_fn=preexec_fn,
-    )
-
-    return process, output
-
-
-def _stop_fluent_bit_process(process, output):
-    try:
-        if process.poll() is None:
-            process.terminate()
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=5)
-    finally:
-        output.close()
-
-
-def _wait_for_log_text(log_file, text, process, timeout=10):
-    deadline = time.time() + timeout
-
-    while time.time() < deadline:
-        if log_file.exists() and text in read_file(log_file):
-            return True
-        if process.poll() is not None:
-            return False
-        time.sleep(0.1)
-
-    return False
-
-
-def _measure_forward_vmdata_kb(tmp_path):
-    port = _find_free_port()
-    config_file = tmp_path / "measure-forward.conf"
-    log_file = tmp_path / "measure-forward.log"
-    _write_forward_stdout_config(config_file, port)
-
-    process, output = _start_fluent_bit_process(config_file, log_file)
-    try:
-        assert _wait_for_log_text(log_file, f"listening on 127.0.0.1:{port}", process)
-        return _process_status_kb(process.pid, "VmData")
-    finally:
-        _stop_fluent_bit_process(process, output)
-
-
-def _restore_process_data_limit(pid):
-    try:
-        import resource
-
-        _, hard_limit = resource.prlimit(pid, resource.RLIMIT_DATA)
-        resource.prlimit(pid, resource.RLIMIT_DATA, (hard_limit, hard_limit))
-    except ProcessLookupError:
-        pass
-
-
-def _run_forward_repro_attempt(tmp_path, data_limit_kb):
-    port = _find_free_port()
-    attempt_dir = tmp_path / f"data-limit-{data_limit_kb}"
-    attempt_dir.mkdir()
-    config_file = attempt_dir / "fluent-bit.conf"
-    log_file = attempt_dir / "fluent-bit.log"
-    _write_forward_stdout_config(config_file, port)
-
-    process, output = _start_fluent_bit_process(config_file, log_file, data_limit_kb)
-    try:
-        if not _wait_for_log_text(log_file, f"listening on 127.0.0.1:{port}", process):
-            return False, "listener did not start"
-
-        _send_tcp_payload(port, _forward_allocation_repro_payload())
-
-        deadline = time.time() + 3
-        while time.time() < deadline:
-            log_text = read_file(log_file)
-            if "could not allocate msgpack unpacker buffer" in log_text:
-                _restore_process_data_limit(process.pid)
-                _send_tcp_payload(
-                    port,
-                    _message_mode_payload(TEST_TAG, {"message": "after-unpacker-nomem"}),
-                )
-                if _wait_for_log_text(log_file, "after-unpacker-nomem", process, timeout=5):
-                    return True, "triggered and recovered"
-                return False, "triggered but did not recover"
-
-            if "fw_conn.c" in log_text and "Cannot allocate memory" in log_text:
-                return False, "connection allocation failed"
-
-            if process.poll() is not None:
-                return False, f"process exited with {process.returncode}"
-
-            time.sleep(0.1)
-
-        return False, "allocation failure was not triggered"
-    finally:
-        _stop_fluent_bit_process(process, output)
+    return bytes(payload[:800000]).ljust(800000, b"\x00")
 
 
 def _send_tcp_payload(port, payload):
@@ -643,18 +578,127 @@ def _send_unix_payload(path, payload):
 
 def _send_tls_payload(port, payload, cafile):
     context = ssl.create_default_context(cafile=cafile)
-    with socket.create_connection(("127.0.0.1", port), timeout=5) as raw_sock:
+    with socket.create_connection(("127.0.0.1", port), timeout=20) as raw_sock:
         with context.wrap_socket(raw_sock, server_hostname="localhost") as tls_sock:
             tls_sock.sendall(payload)
 
 
+def _create_tls_memory_bio_client(port, cafile):
+    context = ssl.create_default_context(cafile=cafile)
+    incoming = ssl.MemoryBIO()
+    outgoing = ssl.MemoryBIO()
+    tls = context.wrap_bio(incoming, outgoing, server_hostname="localhost")
+    raw_sock = socket.create_connection(("127.0.0.1", port), timeout=5)
+
+    while True:
+        try:
+            tls.do_handshake()
+            break
+        except ssl.SSLWantReadError:
+            encrypted = outgoing.read()
+            if encrypted:
+                raw_sock.sendall(encrypted)
+
+            encrypted = raw_sock.recv(65536)
+            assert encrypted
+            incoming.write(encrypted)
+        except ssl.SSLWantWriteError:
+            encrypted = outgoing.read()
+            if encrypted:
+                raw_sock.sendall(encrypted)
+
+    encrypted = outgoing.read()
+    if encrypted:
+        raw_sock.sendall(encrypted)
+
+    return raw_sock, tls, outgoing
+
+
+def _reset_tls_connection(port, cafile):
+    raw_sock, tls, outgoing = _create_tls_memory_bio_client(port, cafile)
+
+    tls.write(b"\x91")
+    wire_payload = outgoing.read()
+    raw_sock.sendall(wire_payload[:-1])
+    time.sleep(1)
+
+    raw_sock.setsockopt(
+        socket.SOL_SOCKET,
+        socket.SO_LINGER,
+        struct.pack("ii", 1, 0),
+    )
+    raw_sock.close()
+
+
+def _send_corrupted_tls_record(port, cafile):
+    raw_sock, tls, outgoing = _create_tls_memory_bio_client(port, cafile)
+
+    tls.write(b"\x91")
+    wire_payload = bytearray(outgoing.read())
+    wire_payload[-1] ^= 1
+    raw_sock.sendall(wire_payload)
+
+    return raw_sock
+
+
+def _create_partial_forward_client(service, payload, use_tls):
+    if use_tls:
+        sock, tls, outgoing = _create_tls_memory_bio_client(
+            service.flb_listener_port,
+            service.tls_crt_file,
+        )
+        tls.write(payload)
+        wire_payload = outgoing.read()
+
+        def send_payload(next_payload):
+            tls.write(next_payload)
+            sock.sendall(outgoing.read())
+    else:
+        sock = socket.create_connection(
+            ("127.0.0.1", service.flb_listener_port),
+            timeout=5,
+        )
+        wire_payload = payload
+
+        def send_payload(next_payload):
+            sock.sendall(next_payload)
+
+    assert len(wire_payload) > 1
+    sock.sendall(wire_payload[:-1])
+
+    return sock, wire_payload[-1:], send_payload
+
+
+def _send_forward_payload(service, payload, use_tls):
+    if use_tls:
+        _send_tls_payload(
+            service.flb_listener_port,
+            payload,
+            service.tls_crt_file,
+        )
+    else:
+        _send_tcp_payload(service.flb_listener_port, payload)
+
+
 def _recv_msgpack_value(sock):
     sock.settimeout(5)
-    data = sock.recv(4096)
-    assert data
-    value, offset = _unpack_obj(data, 0)
-    assert offset == len(data)
-    return value
+    data = bytearray()
+
+    while True:
+        chunk = sock.recv(4096)
+        assert chunk
+        data.extend(chunk)
+
+        try:
+            value, offset = _unpack_obj(data, 0)
+        except IndexError:
+            continue
+
+        if offset > len(data):
+            continue
+
+        assert offset == len(data)
+        return value
 
 
 def _decode_str_like(raw):
@@ -756,6 +800,231 @@ def _secure_forward_handshake(sock, *, username, password, shared_key, hostname=
     return _recv_msgpack_value(sock)
 
 
+def _preflight_config(tmp_path, memory_limit, wire_limit="6M", *, output="http"):
+    template = "in_forward.yaml" if output == "http" else "in_forward_multi_metrics_stdout.yaml"
+    source = Path(__file__).resolve().parent.parent / "config" / template
+    config = source.read_text().replace(
+        "    - name: forward\n",
+        f"    - name: forward\n      msgpack_memory_limit: {memory_limit}\n"
+        f"      buffer_max_size: {wire_limit}\n      buffer_chunk_size: 512\n",
+    )
+    target = tmp_path / "preflight.yaml"
+    target.write_text(config)
+    return str(target)
+
+
+@pytest.mark.parametrize("memory_limit,wire_limit,expected,workers", [
+    (None, "1K", 65536, 1),
+    ("0", "8K", 128000, 1),
+    ("0", "8K", 128000, 2),
+    ("128K", "1K", 128000, 1),
+    ("128K", str(sys.maxsize // 8 + 1), 128000, 1),
+])
+def test_in_forward_preflight_auto_budget(tmp_path, memory_limit, wire_limit, expected, workers):
+    config = Path(_preflight_config(tmp_path, memory_limit, wire_limit))
+    text = config.read_text().replace("log_level: info", "log_level: debug")
+    if memory_limit is None:
+        text = text.replace("      msgpack_memory_limit: None\n", "")
+    text = text.replace("    - name: forward\n", f"    - name: forward\n      workers: {workers}\n")
+    config.write_text(text)
+    service = Service(str(config))
+    service.start()
+    try:
+        entry = _pack_obj([TEST_TS, {"message": "automatic-budget"}])
+        _send_tcp_payload(service.flb_listener_port, _packed_forward_payload(TEST_TAG, entry))
+        records = service.wait_for_record_count(1)
+        assert records[0]["message"] == "automatic-budget"
+        assert f"MessagePack zone memory limit: {expected} bytes" in read_file(service.flb.log_file)
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("memory_limit,wire_limit,error", [
+    ("bogus", "1K", "msgpack_memory_limit must be zero or a positive size"),
+    ("-1K", "1K", "msgpack_memory_limit must be zero or a positive size"),
+    ("0", str(sys.maxsize // 8 + 1), "automatic msgpack_memory_limit overflows"),
+])
+def test_in_forward_preflight_invalid_budget(tmp_path, memory_limit, wire_limit, error):
+    config = _preflight_config(tmp_path, memory_limit, wire_limit)
+    service = FluentBitTestService(config)
+    with pytest.raises(FluentBitStartupError):
+        service.start()
+    assert error in read_file(service.flb.log_file)
+
+
+@pytest.mark.parametrize("memory_limit,accepted", [("64K", False), ("128K", True)])
+def test_in_forward_preflight_retained_group_zone(tmp_path, memory_limit, accepted):
+    service = Service(_preflight_config(tmp_path, memory_limit))
+    start = [ [("__ext__", 0, struct.pack(">II", 0xFFFFFFFF, 0)), {}],
+              {"values": [None] * 700} ]
+    entry = [TEST_TS, {"message": "group-event", "values": [None] * 700}]
+    end = [[("__ext__", 0, struct.pack(">II", 0xFFFFFFFE, 0)), {}], {}]
+    # Each large object fits separately; the retained group and event do not
+    # fit together in 64K. The outer envelope also consumes a zone.
+    service.start()
+    try:
+        if not accepted:
+            for record in (start, entry):
+                with socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=10) as sock:
+                    sock.sendall(_pack_obj([TEST_TAG, _pack_obj(record), {"chunk": "single"}]))
+                    assert _recv_msgpack_value(sock) == {"ack": "single"}
+        packed = b"".join(_pack_obj(record) for record in (start, entry, end))
+        with socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=10) as sock:
+            sock.sendall(_pack_obj([TEST_TAG, packed, {"chunk": "group"}]))
+            if accepted:
+                assert _recv_msgpack_value(sock) == {"ack": "group"}
+            else:
+                try:
+                    assert sock.recv(1) == b""
+                except ConnectionResetError:
+                    pass
+        records = service.wait_for_record_count(1)
+        assert records[0]["message"] == "group-event"
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("memory_limit,accepted", [("16K", False), ("128K", True)])
+def test_in_forward_preflight_independent_zone_limit(tmp_path, memory_limit, accepted):
+    service = Service(_preflight_config(tmp_path, memory_limit, "4K"))
+    payload = _forward_mode_payload(TEST_TAG, [{"value": i} for i in range(150)])
+    assert len(payload) < 4096
+    service.start()
+    try:
+        with socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=10) as sock:
+            sock.sendall(payload)
+            if not accepted:
+                try:
+                    assert sock.recv(1) == b""
+                except ConnectionResetError:
+                    pass
+        if accepted:
+            assert len(service.wait_for_record_count(150)) == 150
+            # Raising the zone limit must not raise the independent wire cap.
+            with socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=10) as sock:
+                try:
+                    sock.sendall(_message_mode_payload(TEST_TAG, {"message": "x" * 5000}))
+                    assert sock.recv(1) == b""
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("signal", [1, 2])
+def test_in_forward_preflight_mpack_signal_not_zone_limited(tmp_path, signal):
+    # 16K allows the outer frame but not two inner msgpack-c zones. Valid
+    # mpack contexts remain acceptable and malformed sequences still fail.
+    config = _preflight_config(tmp_path, "16K", output="stdout")
+    receiver = FluentBitTestService(config, extra_env={"FORWARD_INPUT_WORKERS": 1})
+    if signal == 1:
+        contexts = _forward_metric_contexts(("budget_metric_a", "budget_metric_b"))
+        packed = b"".join(contexts)
+    else:
+        # ctraces accepts an array of resource spans; an empty resource list
+        # is a valid empty context, so use many contexts to exceed zone costs.
+        packed = _pack_obj({"resourceSpans": []}) * 4
+    receiver.start()
+    try:
+        with socket.create_connection(("127.0.0.1", receiver.flb_listener_port), timeout=10) as sock:
+            sock.sendall(_pack_obj([TEST_TAG, packed, {"fluent_signal": signal, "chunk": "mpack"}]))
+            assert _recv_msgpack_value(sock) == {"ack": "mpack"}
+        with socket.create_connection(("127.0.0.1", receiver.flb_listener_port), timeout=10) as sock:
+            sock.sendall(_pack_obj([TEST_TAG, packed + b"\xc1", {"fluent_signal": signal}]))
+            try:
+                assert sock.recv(1) == b""
+            except ConnectionResetError:
+                pass
+    finally:
+        receiver.stop()
+
+
+@pytest.mark.parametrize("kind", ["array", "map", "nested", "dense", "packed", "gzip", "zstd"])
+def test_in_forward_preflight_rejects_allocation_amplification(kind, tmp_path):
+    service = Service(_preflight_config(tmp_path, "6M"))
+    service.start()
+    try:
+        header = b"\xdd\xff\xff\xff\xff"
+        if kind == "map":
+            header = b"\xdf\xff\xff\xff\xff"
+        elif kind == "nested":
+            header = b"\x92" + header
+        elif kind == "dense":
+            header = _message_mode_payload(TEST_TAG, {"arrays": [[None] * 30000 for _ in range(7)]})
+        elif kind in ("packed", "gzip", "zstd"):
+            compression = None
+            if kind == "gzip":
+                header = gzip.compress(header)
+                compression = "gzip"
+            elif kind == "zstd":
+                header = _zstd_bytes(header)
+                compression = "zstd"
+            header = _packed_forward_payload(TEST_TAG, header, compressed=compression)
+
+        with socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=10) as sock:
+            # Force incremental validation of a split container header.
+            sock.sendall(header[:2])
+            time.sleep(0.05)
+            try:
+                sock.sendall(header[2:])
+                assert sock.recv(1) == b""
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+
+        _send_tcp_payload(service.flb_listener_port,
+                          _message_mode_payload(TEST_TAG, {"message": "after-budget-rejection"}))
+        records = service.wait_for_record_count(1)
+        assert records[0]["message"] == "after-budget-rejection"
+    finally:
+        service.stop()
+
+
+def test_in_forward_preflight_small_buffer_valid_packed_frame():
+    service = Service("in_forward_preflight_small.yaml")
+    service.start()
+    try:
+        entry = _pack_obj([TEST_TS, {"message": "small-buffer"}])
+        payload = _packed_forward_payload(TEST_TAG, entry)
+        _send_tcp_payload(service.flb_listener_port, payload)
+        records = service.wait_for_record_count(1)
+        assert records[0]["message"] == "small-buffer"
+    finally:
+        service.stop()
+
+
+def test_in_forward_preflight_valid_frame_before_rejected_frame():
+    service = Service("in_forward.yaml")
+    service.start()
+    try:
+        first = _message_mode_payload(TEST_TAG, {"message": "valid-prefix"})
+        with socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=10) as sock:
+            sock.sendall(first + b"\xdd\xff\xff\xff\xff")
+            try:
+                assert sock.recv(1) == b""
+            except ConnectionResetError:
+                pass
+        records = service.wait_for_record_count(1)
+        assert records[0]["message"] == "valid-prefix"
+    finally:
+        service.stop()
+
+
+def test_in_forward_preflight_complete_prefix_fragmented_suffix():
+    service = Service("in_forward.yaml")
+    service.start()
+    try:
+        first = _message_mode_payload(TEST_TAG, {"message": "first"})
+        second = _message_mode_payload(TEST_TAG, {"message": "second"})
+        with socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=10) as sock:
+            sock.sendall(first + second[:3])
+            time.sleep(0.05)
+            sock.sendall(second[3:])
+        records = service.wait_for_record_count(2)
+        assert [record["message"] for record in records] == ["first", "second"]
+    finally:
+        service.stop()
+
+
 def test_in_forward_message_mode_tcp():
     service = Service("in_forward.yaml")
     service.start()
@@ -787,26 +1056,21 @@ def test_in_forward_message_mode_partial_tcp_writes():
     assert records[0]["message"] == "partial"
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="process resource limits are Linux-only")
-def test_in_forward_repro_payload_allocation_failure_closes_connection(tmp_path):
-    if os.environ.get("VALGRIND"):
-        pytest.skip("process resource limits do not give a deterministic failure under Valgrind")
-
-    baseline_kb = _measure_forward_vmdata_kb(tmp_path)
-    attempts = []
-
-    for delta_kb in [
-        512, 640, 768, 896, 960, 992, 1008, 1016, 1024, 1040, 1088, 1152, 1280,
-        1536, 2048,
-    ]:
-        data_limit_kb = baseline_kb + delta_kb
-        matched, status = _run_forward_repro_attempt(tmp_path, data_limit_kb)
-        attempts.append(f"{data_limit_kb} KiB: {status}")
-
-        if matched:
-            return
-
-    pytest.fail("could not trigger allocation failure; attempts: " + "; ".join(attempts))
+def test_in_forward_preflight_incomplete_repro_keeps_listener_responsive():
+    # This formerly exercised allocation failure in the incremental unpacker.
+    # Incomplete frames now remain in the bounded receive buffer without
+    # allocating an object tree or an additional unpacker buffer.
+    service = Service("in_forward.yaml")
+    service.start()
+    try:
+        with socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=10) as sock:
+            sock.sendall(_forward_allocation_repro_payload())
+            _send_tcp_payload(service.flb_listener_port,
+                              _message_mode_payload(TEST_TAG, {"message": "while-incomplete"}))
+            records = service.wait_for_record_count(1)
+            assert records[0]["message"] == "while-incomplete"
+    finally:
+        service.stop()
 
 
 def test_in_forward_message_mode_eventtime_ext():
@@ -840,6 +1104,154 @@ def test_in_forward_forward_mode_multiple_entries():
         service.stop()
 
     assert [record["message"] for record in records[:2]] == ["entry-1", "entry-2"]
+
+
+def test_in_forward_workers_concurrent_message_mode_records():
+    total_records = 16
+    service = Service("in_forward_workers.yaml")
+    service.start()
+
+    try:
+        service.wait_for_log_message("with 4 workers", timeout=10)
+        payloads = [
+            _message_mode_payload(TEST_TAG, {"message": f"worker-{i}", "value": i})
+            for i in range(total_records)
+        ]
+        with ThreadPoolExecutor(max_workers=total_records) as executor:
+            list(executor.map(
+                lambda payload: _send_tcp_payload(service.flb_listener_port, payload),
+                payloads,
+            ))
+        records = service.wait_for_record_count(total_records, timeout=20)
+    finally:
+        service.stop()
+
+    values = sorted(record["value"] for record in records)
+    assert values == list(range(total_records))
+
+
+def test_in_forward_workers_forward_mode_batch():
+    total_records = 256
+    chunk = "workers-forward-batch-001"
+    service = Service("in_forward_workers.yaml")
+    service.start()
+
+    try:
+        service.wait_for_log_message("with 4 workers", timeout=10)
+        payload = _pack_obj([
+            TEST_TAG,
+            [
+                [
+                    TEST_TS,
+                    {"message": f"forward-batch-{index}", "value": index},
+                ]
+                for index in range(total_records)
+            ],
+            {"chunk": chunk},
+        ])
+        with socket.create_connection(
+            ("127.0.0.1", service.flb_listener_port), timeout=5
+        ) as sock:
+            sock.sendall(payload)
+            ack = _recv_msgpack_value(sock)
+        records = service.wait_for_record_count(total_records, timeout=20)
+    finally:
+        service.stop()
+
+    assert ack == {"ack": chunk}
+    assert len(records) == total_records
+    assert [record["value"] for record in records[:total_records]] == list(
+        range(total_records)
+    )
+
+
+def test_in_forward_workers_forward_mode_batch_respects_ingress_queue_byte_limit():
+    total_records = 8
+    chunk = "workers-forward-limited-batch-001"
+    service = Service("in_forward_workers_tiny_ingress_queue.yaml")
+    service.start()
+
+    try:
+        service.wait_for_log_message("with 4 workers", timeout=10)
+        payload = _pack_obj([
+            TEST_TAG,
+            [
+                [
+                    TEST_TS,
+                    {"message": f"limited-batch-{index}", "value": index},
+                ]
+                for index in range(total_records)
+            ],
+            {"chunk": chunk},
+        ])
+        with socket.create_connection(
+            ("127.0.0.1", service.flb_listener_port), timeout=5
+        ) as sock:
+            sock.sendall(payload)
+            ack = _recv_msgpack_value(sock)
+        records = service.wait_for_record_count(total_records, timeout=20)
+    finally:
+        service.stop()
+
+    assert ack == {"ack": chunk}
+    assert len(records) == total_records
+    assert [record["value"] for record in records] == list(range(total_records))
+
+
+def test_in_forward_workers_forward_mode_preserves_valid_prefix():
+    service = Service("in_forward_workers.yaml")
+    service.start()
+
+    try:
+        service.wait_for_log_message("with 4 workers", timeout=10)
+        payload = _pack_obj([
+            TEST_TAG,
+            [
+                [TEST_TS, {"message": "valid-prefix"}],
+                [TEST_TS],
+            ],
+        ])
+        _send_tcp_payload(service.flb_listener_port, payload)
+        service.wait_for_log_message("event decoder or encoder failure", timeout=20)
+        service.wait_for_record_count(1, timeout=20)
+    finally:
+        service.stop()
+
+    records = service.flattened_records()
+    assert len(records) == 1
+    assert records[0]["message"] == "valid-prefix"
+
+
+def test_in_forward_workers_drop_partial_connections_and_continue():
+    dropped_connections = 8
+    valid_records = 8
+    service = Service("in_forward_workers.yaml")
+    service.start()
+
+    try:
+        service.wait_for_log_message("with 4 workers", timeout=10)
+        # Send partial MessagePack bytes and close to exercise drop cleanup.
+        with ThreadPoolExecutor(max_workers=dropped_connections) as executor:
+            list(executor.map(
+                lambda _: _send_tcp_payload(service.flb_listener_port, b"\x93\xa4test"),
+                range(dropped_connections),
+            ))
+
+        payloads = [
+            _message_mode_payload(TEST_TAG, {"message": f"valid-{i}", "value": i})
+            for i in range(valid_records)
+        ]
+        with ThreadPoolExecutor(max_workers=valid_records) as executor:
+            list(executor.map(
+                lambda payload: _send_tcp_payload(service.flb_listener_port, payload),
+                payloads,
+            ))
+        records = service.wait_for_record_count(valid_records, timeout=20)
+    finally:
+        service.stop()
+
+    values = sorted(record["value"] for record in records)
+    assert values == list(range(valid_records))
 
 
 def test_in_forward_packed_forward_gzip():
@@ -1025,6 +1437,450 @@ def test_in_forward_tls_message_mode():
         service.stop()
 
     assert records[0]["message"] == "tls-message"
+
+
+@pytest.mark.parametrize(
+    "config_file,use_tls,worker_log",
+    [
+        ("in_forward.yaml", False, None),
+        ("in_forward_threaded.yaml", False, None),
+        ("in_forward_workers.yaml", False, "with 4 workers"),
+        ("in_forward_tls.yaml", True, None),
+        ("in_forward_tls_threaded.yaml", True, None),
+        ("in_forward_tls_workers.yaml", True, "with 4 workers"),
+    ],
+)
+def test_in_forward_downstream_coro_partial_record_keeps_listener_responsive(
+    config_file,
+    use_tls,
+    worker_log,
+):
+    service = Service(config_file)
+    service.start()
+
+    partial_sock = None
+
+    try:
+        if worker_log is not None:
+            service.wait_for_log_message(worker_log, timeout=10)
+
+        partial_payload = _message_mode_payload(
+            TEST_TAG,
+            {"message": "partial-coroutine-record"},
+        )
+        partial_sock, final_byte, send_on_partial_connection = (
+            _create_partial_forward_client(
+                service,
+                partial_payload,
+                use_tls,
+            )
+        )
+        time.sleep(0.5)
+
+        responsive_payload = _message_mode_payload(
+            TEST_TAG,
+            {"message": "second-connection-remains-responsive"},
+        )
+        _send_forward_payload(
+            service,
+            responsive_payload,
+            use_tls,
+        )
+        records = service.wait_for_record_count(1, timeout=10)
+
+        assert records[0]["message"] == "second-connection-remains-responsive"
+
+        partial_sock.sendall(final_byte)
+        records = service.wait_for_record_count(2, timeout=10)
+
+        restored_payload = _message_mode_payload(
+            TEST_TAG,
+            {"message": "same-connection-after-resume"},
+        )
+        send_on_partial_connection(restored_payload)
+        records = service.wait_for_record_count(3, timeout=10)
+    finally:
+        if partial_sock is not None:
+            partial_sock.close()
+        service.stop()
+
+    assert any(
+        record.get("message") == "partial-coroutine-record"
+        for record in records
+    )
+    assert any(
+        record.get("message") == "same-connection-after-resume"
+        for record in records
+    )
+
+
+@pytest.mark.parametrize(
+    "config_file,use_tls",
+    [
+        ("in_forward.yaml", False),
+        ("in_forward_threaded.yaml", False),
+        ("in_forward_workers.yaml", False),
+        ("in_forward_tls.yaml", True),
+        ("in_forward_tls_threaded.yaml", True),
+        ("in_forward_tls_workers.yaml", True),
+    ],
+)
+def test_in_forward_downstream_coro_eof_and_error_keep_listener_responsive(
+    config_file,
+    use_tls,
+):
+    service = Service(config_file)
+    service.start()
+
+    try:
+        if use_tls:
+            eof_sock, _, _ = _create_tls_memory_bio_client(
+                service.flb_listener_port,
+                service.tls_crt_file,
+            )
+        else:
+            eof_sock = socket.create_connection(
+                ("127.0.0.1", service.flb_listener_port),
+                timeout=5,
+            )
+        eof_sock.close()
+
+        if use_tls:
+            error_sock, _, _ = _create_tls_memory_bio_client(
+                service.flb_listener_port,
+                service.tls_crt_file,
+            )
+            error_sock.sendall(b"\x17\x03\x03\x00\x06broken")
+            error_sock.close()
+        else:
+            _send_tcp_payload(service.flb_listener_port, b"\xc1")
+
+        payload = _message_mode_payload(TEST_TAG, {"message": "after-io-errors"})
+        _send_forward_payload(service, payload, use_tls)
+        records = service.wait_for_record_count(1, timeout=10)
+    finally:
+        service.stop()
+
+    assert records[0]["message"] == "after-io-errors"
+
+
+def test_in_forward_tls_syscall_error_preserves_errno():
+    service = Service("in_forward_tls.yaml")
+    service.start()
+
+    try:
+        _reset_tls_connection(
+            service.flb_listener_port,
+            service.tls_crt_file,
+        )
+        log_text = service.wait_for_log_contains("[tls] syscall error:", timeout=10)
+
+        payload = _message_mode_payload(
+            TEST_TAG,
+            {"message": "after-tls-reset"},
+        )
+        _send_forward_payload(service, payload, True)
+        records = service.wait_for_record_count(1, timeout=10)
+    finally:
+        service.stop()
+
+    assert "Connection reset by peer" in log_text
+    assert "Inappropriate ioctl for device" not in log_text
+    assert not any(
+        "openssl.c:" in line and "errno=" in line
+        for line in log_text.splitlines()
+    )
+    assert records[0]["message"] == "after-tls-reset"
+
+
+def test_in_forward_tls_protocol_error_is_reported():
+    service = Service("in_forward_tls.yaml")
+    protocol_sock = None
+    service.start()
+
+    try:
+        protocol_sock = _send_corrupted_tls_record(
+            service.flb_listener_port,
+            service.tls_crt_file,
+        )
+        log_text = service.wait_for_log_contains("[tls] error:", timeout=10)
+        protocol_sock.close()
+        protocol_sock = None
+
+        payload = _message_mode_payload(
+            TEST_TAG,
+            {"message": "after-tls-protocol-error"},
+        )
+        _send_forward_payload(service, payload, True)
+        records = service.wait_for_record_count(1, timeout=10)
+    finally:
+        if protocol_sock is not None:
+            protocol_sock.close()
+        service.stop()
+
+    assert "bad record mac" in log_text.lower()
+    assert "unknown error" not in log_text
+    assert records[0]["message"] == "after-tls-protocol-error"
+
+
+@pytest.mark.parametrize(
+    "config_file,use_tls",
+    [
+        ("in_forward.yaml", False),
+        ("in_forward_threaded.yaml", False),
+        ("in_forward_workers.yaml", False),
+        ("in_forward_tls.yaml", True),
+        ("in_forward_tls_threaded.yaml", True),
+        ("in_forward_tls_workers.yaml", True),
+    ],
+)
+def test_in_forward_downstream_coro_partial_record_shutdown_is_clean(
+    config_file,
+    use_tls,
+):
+    service = Service(config_file)
+    service.start()
+    process = service.flb.process
+
+    partial_sock = None
+
+    try:
+        payload = _message_mode_payload(TEST_TAG, {"message": "shutdown-partial"})
+        partial_sock, _, _ = _create_partial_forward_client(
+            service,
+            payload,
+            use_tls,
+        )
+        time.sleep(0.5)
+    finally:
+        service.stop()
+        if partial_sock is not None:
+            partial_sock.close()
+
+    assert process.returncode == 0
+
+
+@pytest.mark.parametrize(
+    "config_file,use_tls",
+    [
+        ("in_forward_pause.yaml", False),
+        ("in_forward_threaded_pause.yaml", False),
+        ("in_forward_tls_pause.yaml", True),
+        ("in_forward_tls_threaded_pause.yaml", True),
+    ],
+)
+def test_in_forward_downstream_coro_pause_unwinds_connections(
+    config_file,
+    use_tls,
+):
+    service = Service(config_file)
+    service.start()
+    process = service.flb.process
+
+    partial_sock = None
+
+    try:
+        log_file = service.service.flb.log_file
+        drop_log = "drop connection fd="
+        dropped_before_pause = read_file(log_file).count(drop_log)
+
+        partial_payload = _message_mode_payload(TEST_TAG, {"message": "pause-partial"})
+        partial_sock, _, _ = _create_partial_forward_client(
+            service,
+            partial_payload,
+            use_tls,
+        )
+
+        large_payload = _message_mode_payload(
+            TEST_TAG,
+            {"message": "trigger-pause", "payload": "x" * 4096},
+        )
+        _send_forward_payload(service, large_payload, use_tls)
+        service.wait_for_log_contains("paused (mem buf overlimit", timeout=10)
+        service.service.wait_for_condition(
+            lambda: read_file(log_file)
+            if read_file(log_file).count(drop_log)
+            >= dropped_before_pause + 2
+            else None,
+            timeout=10,
+            interval=0.2,
+            description="paused Forward TLS coroutines to unwind",
+        )
+    finally:
+        service.stop()
+        if partial_sock is not None:
+            partial_sock.close()
+
+    assert process.returncode == 0
+
+
+@pytest.mark.parametrize(
+    "config_file,use_tls",
+    [
+        ("in_forward_workers_timeout.yaml", False),
+        ("in_forward_tls_workers_timeout.yaml", True),
+    ],
+)
+def test_in_forward_downstream_coro_worker_timeout_unwinds_connection(
+    config_file,
+    use_tls,
+):
+    service = Service(config_file)
+    service.start()
+
+    partial_sock = None
+
+    try:
+        service.wait_for_log_message("with 4 workers", timeout=10)
+        log_file = service.service.flb.log_file
+        drop_log = "drop connection fd="
+        dropped_before_timeout = read_file(log_file).count(drop_log)
+
+        payload = _message_mode_payload(TEST_TAG, {"message": "worker-timeout"})
+        partial_sock, _, _ = _create_partial_forward_client(
+            service,
+            payload,
+            use_tls,
+        )
+
+        service.wait_for_log_contains("timed out after 2 seconds (IO timeout)", timeout=10)
+        service.service.wait_for_condition(
+            lambda: read_file(log_file)
+            if read_file(log_file).count(drop_log)
+            >= dropped_before_timeout + 1
+            else None,
+            timeout=10,
+            interval=0.2,
+            description="timed-out Forward coroutine to unwind",
+        )
+
+        responsive_payload = _message_mode_payload(
+            TEST_TAG,
+            {"message": "after-worker-timeout"},
+        )
+        _send_forward_payload(
+            service,
+            responsive_payload,
+            use_tls,
+        )
+        records = service.wait_for_record_count(1, timeout=10)
+    finally:
+        if partial_sock is not None:
+            partial_sock.close()
+        service.stop()
+
+    assert records[0]["message"] == "after-worker-timeout"
+
+
+def test_in_forward_tls_idle_connection_timeout_churn(monkeypatch):
+    """
+    Regression test for issue #12025.
+
+    Open many idle TLS connections so net.io_timeout expires for all of them
+    in the same downstream timeout sweep. Previously the engine could free a
+    connection while its injected teardown event was still linked in the
+    priority bucket queue (100% CPU spin / use-after-free), and the forward
+    plugin left orphaned connection wrappers that crashed on the next
+    pause/shutdown. The listener must survive and keep ingesting.
+    """
+    service = Service("in_forward_conn_churn.yaml")
+    service.start()
+
+    port = service.flb_listener_port
+    cafile = service.tls_crt_file
+
+    try:
+        for _ in range(3):
+            idle = []
+            for _ in range(30):
+                context = ssl.create_default_context(cafile=cafile)
+                context.check_hostname = False
+                context.verify_mode = ssl.CERT_NONE
+                raw = socket.create_connection(("127.0.0.1", port), timeout=5)
+                tls = context.wrap_socket(raw, server_hostname="localhost")
+                idle.append(tls)
+
+            # net.io_timeout is 2s: let the whole batch time out in one sweep
+            time.sleep(4)
+
+            for tls in idle:
+                try:
+                    tls.close()
+                except OSError:
+                    pass
+
+        # The listener must still accept a fresh connection and ingest data
+        context = ssl.create_default_context(cafile=cafile)
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        raw = socket.create_connection(("127.0.0.1", port), timeout=5)
+        with context.wrap_socket(raw, server_hostname="localhost") as tls:
+            tls.sendall(_message_mode_payload(TEST_TAG, {"message": "after-churn"}))
+
+        records = service.wait_for_record_count(1, timeout=15)
+    finally:
+        service.stop()
+
+    assert any(record.get("message") == "after-churn" for record in records)
+
+
+def test_in_forward_tls_workers_concurrent_message_mode_records():
+    total_records = 16
+    service = Service("in_forward_tls_workers.yaml")
+    service.start()
+
+    try:
+        service.wait_for_log_message("with 4 workers", timeout=10)
+        with ThreadPoolExecutor(max_workers=total_records) as executor:
+            list(executor.map(
+                lambda i: _send_tls_payload(service.flb_listener_port,
+                                            _message_mode_payload(
+                                                TEST_TAG,
+                                                {"message": f"tls-worker-{i}",
+                                                 "value": i}),
+                                            service.tls_crt_file),
+                range(total_records),
+            ))
+        records = service.wait_for_record_count(total_records, timeout=20)
+    finally:
+        service.stop()
+
+    values = sorted(record["value"] for record in records)
+    assert values == list(range(total_records))
+
+
+def test_in_forward_tls_workers_drop_bad_handshakes_and_continue():
+    dropped_connections = 8
+    valid_records = 8
+    service = Service("in_forward_tls_workers.yaml")
+    service.start()
+
+    try:
+        service.wait_for_log_message("with 4 workers", timeout=10)
+        # Send raw non-TLS bytes and close to exercise handshake cleanup.
+        with ThreadPoolExecutor(max_workers=dropped_connections) as executor:
+            list(executor.map(
+                lambda i: _send_tcp_payload(service.flb_listener_port,
+                                            f"not-tls-{i}".encode("utf-8")),
+                range(dropped_connections),
+            ))
+
+        with ThreadPoolExecutor(max_workers=valid_records) as executor:
+            list(executor.map(
+                lambda i: _send_tls_payload(service.flb_listener_port,
+                                            _message_mode_payload(
+                                                TEST_TAG,
+                                                {"message": f"valid-tls-{i}",
+                                                 "value": i}),
+                                            service.tls_crt_file),
+                range(valid_records),
+            ))
+        records = service.wait_for_record_count(valid_records, timeout=20)
+    finally:
+        service.stop()
+
+    values = sorted(record["value"] for record in records)
+    assert values == list(range(valid_records))
 
 
 def test_in_forward_secure_forward_auth_success():
@@ -1231,6 +2087,130 @@ def test_out_forward_metrics_signal_e2e_with_forward_receiver():
     assert record_payload["metrics"][0]["values"][0]["value_int64"] == 42
 
 
+def test_in_forward_ingests_all_metrics_contexts_from_single_payload():
+    expected_names = {"forward_metric_a", "forward_metric_b"}
+    timeout = 30 if memory_check_enabled() else 10
+    metrics_payload = b"".join(_forward_metric_contexts(expected_names))
+
+    receiver_config = os.path.abspath(
+        os.path.join(
+            os.path.dirname(__file__),
+            "../config/in_forward_multi_metrics_stdout.yaml",
+        )
+    )
+    payload = _pack_obj(["test", metrics_payload, {"fluent_signal": 1}])
+
+    for input_workers in (1, 2):
+        receiver = FluentBitTestService(
+            receiver_config,
+            extra_env={"FORWARD_INPUT_WORKERS": input_workers},
+        )
+        receiver.start()
+        try:
+            with socket.create_connection(
+                ("127.0.0.1", receiver.flb_listener_port), timeout=5
+            ) as sock:
+                sock.sendall(payload)
+
+            output = receiver.wait_for_condition(
+                lambda: read_file(receiver.flb.log_file)
+                if all(
+                    metric_name in read_file(receiver.flb.log_file)
+                    for metric_name in expected_names
+                )
+                else None,
+                timeout=timeout,
+                interval=0.2,
+                description=(
+                    f"both forwarded cmetrics contexts with {input_workers} workers"
+                ),
+            )
+        finally:
+            receiver.stop()
+
+        assert all(metric_name in output for metric_name in expected_names)
+
+
+def test_in_forward_metrics_payload_append_is_atomic():
+    metric_names = ("forward_atomic_a", "forward_atomic_b")
+    contexts = _forward_metric_contexts(metric_names)
+    chunk_id = "atomic-metrics-payload"
+    timeout = 30 if memory_check_enabled() else 10
+
+    assert len(contexts) == 2
+    invalid_context = contexts[1].replace(
+        b"opentelemetry", b"invalid-value", 1
+    )
+    assert invalid_context != contexts[1]
+
+    invalid_payload = _pack_obj([
+        "test",
+        contexts[0] + invalid_context,
+        {"fluent_signal": 1, "chunk": chunk_id},
+    ])
+    valid_payload = _pack_obj([
+        "test",
+        b"".join(contexts),
+        {"fluent_signal": 1, "chunk": chunk_id},
+    ])
+    receiver_config = os.path.abspath(
+        os.path.join(
+            os.path.dirname(__file__),
+            "../config/in_forward_atomic_metrics_stdout.yaml",
+        )
+    )
+    receiver = FluentBitTestService(receiver_config)
+
+    receiver.start()
+    try:
+        with socket.create_connection(
+            ("127.0.0.1", receiver.flb_listener_port), timeout=5
+        ) as sock:
+            sock.settimeout(2)
+            sock.sendall(invalid_payload)
+            try:
+                response = sock.recv(4096)
+            except socket.timeout:
+                response = b""
+
+        assert response == b""
+        receiver.wait_for_condition(
+            lambda: read_file(receiver.flb.log_file)
+            if "could not append metrics" in read_file(receiver.flb.log_file)
+            else None,
+            timeout=timeout,
+            interval=0.2,
+            description="rejected atomic metrics payload",
+        )
+        time.sleep(2)
+        assert not any(
+            metric_name in read_file(receiver.flb.log_file)
+            for metric_name in metric_names
+        )
+
+        with socket.create_connection(
+            ("127.0.0.1", receiver.flb_listener_port), timeout=5
+        ) as sock:
+            sock.sendall(valid_payload)
+            assert _recv_msgpack_value(sock) == {"ack": chunk_id}
+
+        output = receiver.wait_for_condition(
+            lambda: read_file(receiver.flb.log_file)
+            if all(
+                metric_name in read_file(receiver.flb.log_file)
+                for metric_name in metric_names
+            )
+            else None,
+            timeout=timeout,
+            interval=0.2,
+            description="retried atomic metrics payload",
+        )
+    finally:
+        receiver.stop()
+
+    assert all(metric_name in output for metric_name in metric_names)
+
+
 def test_out_forward_traces_signal_e2e_with_forward_receiver():
     service = ForwardReceiverService("in_opentelemetry_to_forward_receiver.yaml")
     service.start()
@@ -1409,6 +2389,12 @@ def test_in_forward_storage_limit_single_output_prefers_actual_chunk_deletion():
                     "forward storage eviction preference is not supported by this Fluent Bit binary"
                 )
             raise
+
+        service.wait_for_log_contains(
+            "evicted from output queue to make room under "
+            "storage.total_limit_size: input=forward.0 > output=http.0",
+            timeout=10,
+        )
     finally:
         service.stop()
 
@@ -1474,7 +2460,7 @@ def test_in_forward_storage_limit_multi_output_prefers_deletable_solo_chunk():
 
 def test_in_forward_storage_limit_shared_success_route_deletes_old_chunk():
     service = StorageLimitService("in_forward_storage_limit_shared_success_output.yaml")
-    timeout = 30 if os.environ.get("VALGRIND") else 10
+    timeout = 30 if memory_check_enabled() else 10
     service.start()
 
     try:
@@ -1531,9 +2517,25 @@ def test_in_forward_storage_limit_shared_success_route_deletes_old_chunk():
             interval=0.2,
             description="shared-output stale route eviction snapshot",
         )
+
+        log_text = service.wait_for_log_contains(
+            "evicted from output queue to make room under "
+            "storage.total_limit_size: task_id=",
+            timeout=timeout,
+        )
     finally:
         service.stop()
+
+    failed_chunks = set(re.findall(
+        r"failed to flush chunk '([^']+)'.*output=non_working_endpoint",
+        log_text,
+    ))
+    evicted_chunks = set(re.findall(
+        r"chunk '([^']+)' evicted from output queue.*output=non_working_endpoint",
+        log_text,
+    ))
 
     assert not any(b"shared-one" in content for content in chunk_contents)
     assert any(b"shared-two" in content for content in chunk_contents)
     assert any(b"shared-three" in content for content in chunk_contents)
+    assert failed_chunks & evicted_chunks

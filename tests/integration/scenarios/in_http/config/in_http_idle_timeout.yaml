@@ -1,0 +1,23 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: debug
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: http
+      port: ${FLUENT_BIT_TEST_LISTENER_PORT}
+      http2: on
+      workers: ${IN_HTTP_TEST_WORKERS}
+      http_server.idle_timeout: 2s
+      net.accept_timeout_log_error: ${IN_HTTP_TIMEOUT_LOG_ERROR}
+
+  outputs:
+    - name: http
+      match: '*'
+      host: 127.0.0.1
+      port: ${TEST_SUITE_HTTP_PORT}
+      uri: /data
+      format: json

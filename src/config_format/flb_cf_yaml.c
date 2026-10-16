@@ -35,6 +35,7 @@
 #include <yaml.h>
 
 #include <ctype.h>
+#include <errno.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #ifndef _MSC_VER
@@ -65,6 +66,7 @@ enum section {
     SECTION_STREAM_PROCESSOR,
     SECTION_PLUGINS,
     SECTION_UPSTREAM_SERVERS,
+    SECTION_EXTENSIONS,
     SECTION_OTHER,
 };
 
@@ -84,6 +86,7 @@ static char *section_names[] = {
     "stream_processor",
     "plugins",
     "upstream_servers",
+    "extensions",
     "other"
 };
 
@@ -123,6 +126,7 @@ enum state {
 
     STATE_SERVICE,         /* 'service' section */
     STATE_INCLUDE,         /* 'includes' section */
+    STATE_EXTENSIONS,      /* 'extensions' section */
     STATE_OTHER,           /* any other unknown section */
 
     STATE_CUSTOM,          /* custom plugins */
@@ -272,6 +276,8 @@ static char *state_str(enum state val)
         return "service";
     case STATE_INCLUDE:
         return "include";
+    case STATE_EXTENSIONS:
+        return "extensions";
     case STATE_OTHER:
         return "other";
     case STATE_CUSTOM:
@@ -545,9 +551,13 @@ static int read_glob(struct flb_cf *conf, struct local_ctx *ctx,
 static char *dirname(char *path)
 {
     char *ptr;
-
+    char *slash;
 
     ptr = strrchr(path, '\\');
+    slash = strrchr(path, '/');
+    if (slash != NULL && (ptr == NULL || slash > ptr)) {
+        ptr = slash;
+    }
 
     if (ptr == NULL) {
         /* No directory component */
@@ -1803,9 +1813,22 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
                     return YAML_FAILURE;
                 }
             }
+            else if (strcasecmp(value, "extensions") == 0) {
+                state = state_push_section(ctx, STATE_EXTENSIONS, SECTION_EXTENSIONS);
+
+                if (state == NULL) {
+                    flb_error("unable to allocate state");
+                    return YAML_FAILURE;
+                }
+
+                if (state_create_section(conf, state, value) == -1) {
+                    flb_error("unable to allocate section: %s", value);
+                    return YAML_FAILURE;
+                }
+            }
             else {
                 /* any other main section definition (e.g: similar to STATE_SERVICE) */
-                state = state_push(ctx, STATE_OTHER);
+                state = state_push_section(ctx, STATE_OTHER, SECTION_OTHER);
 
                 if (state == NULL) {
                     flb_error("unable to allocate state");
@@ -1843,6 +1866,7 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
     /* service or others */
     case STATE_ENV:
     case STATE_SERVICE:
+    case STATE_EXTENSIONS:
     case STATE_OTHER:
         switch(event->type) {
         case YAML_MAPPING_START_EVENT:
@@ -1901,6 +1925,7 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
             switch (state->state) {
             case STATE_SERVICE:
             case STATE_ENV:
+            case STATE_EXTENSIONS:
             case STATE_OTHER:
                 break;
             default:
@@ -1923,6 +1948,40 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
 
     case STATE_SECTION_VAL:
         switch(event->type) {
+        case YAML_MAPPING_START_EVENT:
+            if (state->section == SECTION_ENV) {
+                flb_error("nested maps are not allowed in env section");
+                yaml_error_event(ctx, state, event);
+                return YAML_FAILURE;
+            }
+            if (state->section != SECTION_SERVICE &&
+                state->section != SECTION_EXTENSIONS) {
+                yaml_error_event(ctx, state, event);
+                return YAML_FAILURE;
+            }
+
+            state = state_push_variant(ctx, state, 1);
+            if (state == NULL) {
+                flb_error("unable to allocate state");
+                return YAML_FAILURE;
+            }
+            break;
+        case YAML_SEQUENCE_START_EVENT:
+            if (state->section == SECTION_ENV) {
+                yaml_error_event(ctx, state, event);
+                return YAML_FAILURE;
+            }
+            if (state->section != SECTION_EXTENSIONS) {
+                yaml_error_event(ctx, state, event);
+                return YAML_FAILURE;
+            }
+
+            state = state_push_variant(ctx, state, event->type == YAML_MAPPING_START_EVENT);
+            if (state == NULL) {
+                flb_error("unable to allocate state");
+                return YAML_FAILURE;
+            }
+            break;
         case YAML_SCALAR_EVENT:
             value = (char *) event->data.scalar.value;
 
@@ -1935,6 +1994,23 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
 
                 if (keyval == NULL) {
                     flb_error("unable to add key value");
+                    return YAML_FAILURE;
+                }
+            }
+            else if (state->section == SECTION_EXTENSIONS) {
+                variant = state_variant_parse_scalar(event);
+                if (variant == NULL) {
+                    flb_error("unable to allocate memory for variant");
+                    return YAML_FAILURE;
+                }
+
+                if (flb_cf_section_property_add_variant(conf,
+                                                        state->cf_section->properties,
+                                                        state->key,
+                                                        flb_sds_len(state->key),
+                                                        variant) == NULL) {
+                    cfl_variant_destroy(variant);
+                    flb_error("unable to insert variant");
                     return YAML_FAILURE;
                 }
             }
@@ -2238,6 +2314,21 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
                 break;
             }
 
+            if (state->section == SECTION_INPUT &&
+                strcmp(state->key, "telemetry") == 0) {
+                /*
+                 * Input telemetry is consumed structurally at load time. Other
+                 * nested input maps keep the legacy group behavior.
+                 */
+                state = state_push_variant(ctx, state, 1);
+
+                if (state == NULL) {
+                    flb_error("unable to allocate state");
+                    return YAML_FAILURE;
+                }
+                break;
+            }
+
             state = state_push(ctx, STATE_GROUP_KEY);
 
             if (state == NULL) {
@@ -2400,6 +2491,35 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
                 }
 
                 state = state_pop(ctx);
+
+                break;
+            }
+            else if (state->state == STATE_SECTION_VAL) {
+                if (state->section == SECTION_ENV) {
+                    flb_error("invalid type for env entry");
+                    return YAML_FAILURE;
+                }
+                if (state->section != SECTION_SERVICE &&
+                    state->section != SECTION_EXTENSIONS) {
+                    flb_error("variant values are only valid in service and extensions sections");
+                    return YAML_FAILURE;
+                }
+
+                if (flb_cf_section_property_add_variant(conf,
+                                                        state->cf_section->properties,
+                                                        state->key,
+                                                        flb_sds_len(state->key),
+                                                        variant) == NULL) {
+                    cfl_variant_destroy(variant);
+                    flb_error("unable to insert variant");
+                    return YAML_FAILURE;
+                }
+
+                state = state_pop(ctx);
+                if (state == NULL) {
+                    flb_error("no state left");
+                    return YAML_FAILURE;
+                }
 
                 break;
             }
@@ -3002,6 +3122,8 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
     int ret;
     int status;
     int code = 0;
+    int path_is_absolute;
+    struct stat st;
     struct parser_state *state;
     flb_sds_t include_dir = NULL;
     flb_sds_t include_file = NULL;
@@ -3010,7 +3132,14 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
     FILE *fh;
     struct file_state fstate;
 
-    if (parent && cfg_file[0] != '/') {
+    path_is_absolute = cfg_file[0] == '/';
+#ifdef _WIN32
+    path_is_absolute = path_is_absolute || cfg_file[0] == '\\' ||
+                       (isalpha((unsigned char) cfg_file[0]) && cfg_file[1] == ':' &&
+                        (cfg_file[2] == '/' || cfg_file[2] == '\\'));
+#endif
+
+    if (parent && !path_is_absolute) {
 
         include_dir = flb_sds_create_size(strlen(cfg_file) + strlen(parent->path));
 
@@ -3026,10 +3155,20 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
 #endif
         if (flb_sds_printf(&include_dir, PATH_CONCAT_TEMPLATE, parent->path, cfg_file) == NULL) {
             flb_error("unable to create full filename");
+            flb_sds_destroy(include_dir);
             return -1;
         }
 #undef PATH_CONCAT_TEMPLATE
 
+        /* Keep parent-relative precedence, then try the working directory. */
+        if (stat(include_dir, &st) == -1 && (errno == ENOENT || errno == ENOTDIR)) {
+            flb_sds_destroy(include_dir);
+            include_dir = flb_sds_create(cfg_file);
+            if (include_dir == NULL) {
+                flb_error("unable to create include filename");
+                return -1;
+            }
+        }
     }
     else {
 

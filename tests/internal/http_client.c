@@ -1113,7 +1113,41 @@ void test_http_timeout_setters_preserve_upstream_io_timeout()
     test_ctx_destroy(ctx);
 }
 
+static void test_http_request_target_validation(void)
+{
+    struct test_ctx *ctx;
+    struct flb_http_client *c;
+    int i;
+    char target[] = "/badXtarget";
+    const char *valid[] = {"/", "/pods/a-b.c", "/search?q=a%20b&n=1"};
+
+    ctx = test_ctx_create();
+    TEST_ASSERT(ctx != NULL);
+    for (i = 1; i <= 0x7f; i++) {
+        if (i > 0x20 && i != 0x7f) {
+            continue;
+        }
+        target[4] = i;
+        c = flb_http_client(ctx->u_conn, FLB_HTTP_GET, target,
+                            NULL, 0, NULL, 0, NULL, 0);
+        TEST_CHECK(c == NULL);
+        if (c != NULL) {
+            flb_http_client_destroy(c);
+        }
+    }
+    for (i = 0; i < sizeof(valid) / sizeof(valid[0]); i++) {
+        c = flb_http_client(ctx->u_conn, FLB_HTTP_GET, valid[i],
+                            NULL, 0, NULL, 0, NULL, 0);
+        TEST_CHECK(c != NULL);
+        if (c != NULL) {
+            flb_http_client_destroy(c);
+        }
+    }
+    test_ctx_destroy(ctx);
+}
+
 TEST_LIST = {
+    { "request_target_validation", test_http_request_target_validation},
     { "http_buffer_increase"  , test_http_buffer_increase},
     { "add_get_header"        , test_http_add_get_header},
     { "set_keepalive"         , test_http_set_keepalive},

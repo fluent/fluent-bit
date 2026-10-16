@@ -27,6 +27,7 @@
 #define MM_INTERNAL_H_INCLUDED_
 
 #include <sys/types.h>
+#include <event2/visibility.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -43,6 +44,7 @@ extern "C" {
  *     On failure, set errno to ENOMEM and return NULL.
  *     If the argument sz is 0, simply return NULL.
  */
+EVENT2_EXPORT_SYMBOL
 void *event_mm_malloc_(size_t sz);
 
 /** Allocate memory initialized to zero.
@@ -53,6 +55,7 @@ void *event_mm_malloc_(size_t sz);
  *     set errno to ENOMEM and return NULL.
  *     If either arguments are 0, simply return NULL.
  */
+EVENT2_EXPORT_SYMBOL
 void *event_mm_calloc_(size_t count, size_t size);
 
 /** Duplicate a string.
@@ -63,9 +66,12 @@ void *event_mm_calloc_(size_t count, size_t size);
  *     occurs (or would occur) in the process.
  *     If the argument str is NULL, set errno to EINVAL and return NULL.
  */
+EVENT2_EXPORT_SYMBOL
 char *event_mm_strdup_(const char *str);
 
+EVENT2_EXPORT_SYMBOL
 void *event_mm_realloc_(void *p, size_t sz);
+EVENT2_EXPORT_SYMBOL
 void event_mm_free_(void *p);
 #define mm_malloc(sz) event_mm_malloc_(sz)
 #define mm_calloc(count, size) event_mm_calloc_((count), (size))

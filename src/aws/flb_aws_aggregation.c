@@ -170,8 +170,12 @@ int flb_aws_aggregation_process_event(struct flb_aws_agg_buffer *agg_buf,
         }
 
         len = flb_aws_strftime_precision(&out_buf, time_key_format, tms);
+        /*
+         * the closing '}' is replaced by ,"<time_key>":"<time>"} so the
+         * record grows by the time_key name and separators too.
+         */
         tmp_size = (tmp_buf_size - *tmp_buf_offset) - written;
-        if (len > tmp_size) {
+        if (len > 0 && (len + strlen(time_key) + 7) > tmp_size) {
             flb_free(out_buf);
             return 1;
         }

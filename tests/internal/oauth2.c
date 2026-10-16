@@ -1079,7 +1079,7 @@ void test_caching_and_refresh(void)
     flb_config_exit(config);
 }
 
-void test_legacy_create_manual_payload_flow(void)
+static void check_legacy_manual_payload_flow(int jwt_bearer)
 {
     int ret;
     char *token;
@@ -1101,33 +1101,56 @@ void test_legacy_create_manual_payload_flow(void)
     TEST_CHECK(ret == 0);
 #endif
 
+    TEST_CHECK(ctx->cfg.enabled == FLB_TRUE);
     flb_oauth2_payload_clear(ctx);
 
     ret = flb_oauth2_payload_append(ctx, "grant_type", -1,
-                                    "client_credentials", -1);
+                                    jwt_bearer ? "urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer"
+                                               : "client_credentials", -1);
     TEST_CHECK(ret == 0);
 
-    ret = flb_oauth2_payload_append(ctx, "client_id", -1, "legacy-id", -1);
-    TEST_CHECK(ret == 0);
-
-    ret = flb_oauth2_payload_append(ctx, "client_secret", -1,
-                                    "legacy-secret", -1);
-    TEST_CHECK(ret == 0);
+    if (jwt_bearer) {
+        ret = flb_oauth2_payload_append(ctx, "assertion", -1, "header.payload.signature", -1);
+        TEST_CHECK(ret == 0);
+    }
+    else {
+        ret = flb_oauth2_payload_append(ctx, "client_id", -1, "legacy-id", -1);
+        TEST_CHECK(ret == 0);
+        ret = flb_oauth2_payload_append(ctx, "client_secret", -1, "legacy-secret", -1);
+        TEST_CHECK(ret == 0);
+    }
 
     token = flb_oauth2_token_get(ctx);
     TEST_CHECK(token != NULL);
     TEST_CHECK(server.token_requests == 1);
-    TEST_CHECK(strcmp(token, "mock-token-1") == 0);
+    if (token != NULL) {
+        TEST_CHECK(strcmp(token, "mock-token-1") == 0);
+    }
     TEST_CHECK(strstr(server.latest_token_request,
-                      "grant_type=client_credentials") != NULL);
-    TEST_CHECK(strstr(server.latest_token_request,
-                      "client_id=legacy-id") != NULL);
-    TEST_CHECK(strstr(server.latest_token_request,
-                      "client_secret=legacy-secret") != NULL);
+                      jwt_bearer ? "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer"
+                                 : "grant_type=client_credentials") != NULL);
+    if (jwt_bearer) {
+        TEST_CHECK(strstr(server.latest_token_request,
+                          "assertion=header.payload.signature") != NULL);
+    }
+    else {
+        TEST_CHECK(strstr(server.latest_token_request, "client_id=legacy-id") != NULL);
+        TEST_CHECK(strstr(server.latest_token_request, "client_secret=legacy-secret") != NULL);
+    }
 
     flb_oauth2_destroy(ctx);
     oauth2_mock_server_stop(&server);
     flb_config_exit(config);
+}
+
+void test_legacy_create_manual_payload_flow(void)
+{
+    check_legacy_manual_payload_flow(FLB_FALSE);
+}
+
+void test_legacy_create_jwt_bearer_flow(void)
+{
+    check_legacy_manual_payload_flow(FLB_TRUE);
 }
 
 void test_private_key_jwt_body(void)
@@ -1262,6 +1285,7 @@ TEST_LIST = {
     {"caching_and_refresh", test_caching_and_refresh},
     {"user_agent_header_optional", test_user_agent_header_optional},
     {"legacy_create_manual_payload_flow", test_legacy_create_manual_payload_flow},
+    {"legacy_create_jwt_bearer_flow", test_legacy_create_jwt_bearer_flow},
     {"private_key_jwt_body", test_private_key_jwt_body},
     {"private_key_jwt_x5t_header", test_private_key_jwt_x5t_header},
     {0}

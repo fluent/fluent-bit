@@ -164,30 +164,47 @@ int flb_otel_utils_json_payload_get_wrapped_value(msgpack_object *wrapper,
             *type  = internal_type;
         }
 
-        if (value != NULL) {
-            *value = kv_value;
-        }
-
         if (kv_value->type == MSGPACK_OBJECT_MAP) {
             map = &kv_value->via.map;
 
-            if (map->size == 1) {
+            if (map->size == 1)
+            {
+                if (map->ptr[0].key.type != MSGPACK_OBJECT_STR)
+                {
+                    return -3;
+                }
+
                 kv_value = &map->ptr[0].val;
                 kv_key = &map->ptr[0].key.via.str;
 
-                if (strncasecmp(kv_key->ptr, "values", kv_key->size) == 0) {
-                    if (value != NULL) {
-                        *value = kv_value;
-                    }
-                }
-                else {
+                if (kv_key->size != 6 ||
+                    strncasecmp(kv_key->ptr, "values", 6) != 0)
+                {
                     return -3;
                 }
             }
         }
+
+        if (internal_type == MSGPACK_OBJECT_ARRAY &&
+            kv_value->type != MSGPACK_OBJECT_ARRAY &&
+            (kv_value->type != MSGPACK_OBJECT_MAP ||
+             kv_value->via.map.size != 0))
+        {
+            return -2;
+        }
+        else if (internal_type == MSGPACK_OBJECT_MAP &&
+                 kv_value->type != MSGPACK_OBJECT_ARRAY &&
+                 kv_value->type != MSGPACK_OBJECT_MAP)
+        {
+            return -2;
+        }
+
+        if (value != NULL) {
+            *value = kv_value;
+        }
     }
     else {
-        return -2;
+        return -1;
     }
 
     return 0;
@@ -329,17 +346,53 @@ int flb_otel_utils_json_payload_append_unwrapped_value(
         else if (type == MSGPACK_OBJECT_BIN) {
             unwrap_value = FLB_TRUE;
         }
-        else if (type == MSGPACK_OBJECT_ARRAY) {
-            result = flb_otel_utils_json_payload_append_converted_array(encoder,
-                                                         target_field,
-                                                         value);
+        else if (type == MSGPACK_OBJECT_ARRAY)
+        {
+            if (value->type == MSGPACK_OBJECT_ARRAY)
+            {
+                result = flb_otel_utils_json_payload_append_converted_array(
+                            encoder,
+                            target_field,
+                            value);
+            }
+            else if (value->type == MSGPACK_OBJECT_MAP &&
+                     value->via.map.size == 0)
+            {
+                result = flb_log_event_encoder_begin_array(encoder, target_field);
+
+                if (result == FLB_EVENT_ENCODER_SUCCESS)
+                {
+                    result = flb_log_event_encoder_commit_array(encoder, target_field);
+                }
+            }
+            else
+            {
+                return -2;
+            }
         }
-        else if (type == MSGPACK_OBJECT_MAP) {
-            result = flb_otel_utils_json_payload_append_converted_kvlist(encoder,
-                                                          target_field,
-                                                          value);
+        else if (type == MSGPACK_OBJECT_MAP)
+        {
+            if (value->type == MSGPACK_OBJECT_ARRAY)
+            {
+                result = flb_otel_utils_json_payload_append_converted_kvlist(
+                            encoder,
+                            target_field,
+                            value);
+            }
+            else if (value->type == MSGPACK_OBJECT_MAP)
+            {
+                result = flb_otel_utils_json_payload_append_converted_map(
+                            encoder,
+                            target_field,
+                            value);
+            }
+            else
+            {
+                return -2;
+            }
         }
-        else {
+        else
+        {
             return -2;
         }
 
@@ -353,11 +406,7 @@ int flb_otel_utils_json_payload_append_unwrapped_value(
 
         return 0;
     }
-    else {
-        return -1;
-    }
-
-    return -1;
+    return result;
 }
 
 int flb_otel_utils_json_payload_append_converted_map(
@@ -370,6 +419,11 @@ int flb_otel_utils_json_payload_append_converted_map(
     size_t              index;
     msgpack_object_map *map;
 
+    if (encoder == NULL || object == NULL ||
+        object->type != MSGPACK_OBJECT_MAP) {
+        return FLB_EVENT_ENCODER_ERROR_INVALID_ARGUMENT;
+    }
+
     map = &object->via.map;
 
     result = flb_otel_utils_json_payload_append_unwrapped_value(
@@ -378,8 +432,13 @@ int flb_otel_utils_json_payload_append_converted_map(
                 object,
                 &encoder_result);
 
-    if (result == 0) {
+    if (result == 0)
+    {
         return encoder_result;
+    }
+    else if (result != -1)
+    {
+        return FLB_EVENT_ENCODER_ERROR_INVALID_VALUE_TYPE;
     }
 
     result = flb_log_event_encoder_begin_map(encoder, target_field);
@@ -419,6 +478,12 @@ int flb_otel_utils_json_payload_append_converted_array(struct flb_log_event_enco
     size_t                index;
     msgpack_object_array *array;
 
+    if (encoder == NULL || object == NULL ||
+        object->type != MSGPACK_OBJECT_ARRAY)
+    {
+        return FLB_EVENT_ENCODER_ERROR_INVALID_ARGUMENT;
+    }
+
     array = &object->via.array;
 
     result = flb_log_event_encoder_begin_array(encoder, target_field);
@@ -457,6 +522,12 @@ int flb_otel_utils_json_payload_append_converted_kvlist(
     size_t                index;
     msgpack_object_array *array;
     msgpack_object_map   *entry;
+
+    if (encoder == NULL || object == NULL ||
+        object->type != MSGPACK_OBJECT_ARRAY)
+    {
+        return FLB_EVENT_ENCODER_ERROR_INVALID_ARGUMENT;
+    }
 
     array = &object->via.array;
 
@@ -842,26 +913,42 @@ static struct cfl_variant *convert_otlp_anyvalue_wrapper_to_cfl_variant(
                                              value_object->via.bin.size,
                                              CFL_FALSE);
     }
-    else if (value_type == MSGPACK_OBJECT_ARRAY) {
-        if (value_object->type != MSGPACK_OBJECT_ARRAY) {
+    else if (value_type == MSGPACK_OBJECT_ARRAY)
+    {
+        if (value_object->type == MSGPACK_OBJECT_MAP &&
+            value_object->via.map.size == 0)
+        {
+            value_array = NULL;
+            array_instance = cfl_array_create(0);
+        }
+        else if (value_object->type == MSGPACK_OBJECT_ARRAY)
+        {
+            value_array = &value_object->via.array;
+            array_instance = cfl_array_create(value_array->size);
+        }
+        else
+        {
             return NULL;
         }
 
-        value_array = &value_object->via.array;
-        array_instance = cfl_array_create(value_array->size);
-        if (array_instance == NULL) {
+        if (array_instance == NULL)
+        {
             return NULL;
         }
 
-        for (index = 0 ; index < value_array->size ; index++) {
+        for (index = 0 ;
+             value_array != NULL && index < value_array->size ;
+             index++) {
             child_variant = flb_otel_utils_msgpack_object_to_cfl_variant(
                               &value_array->ptr[index]);
-            if (child_variant == NULL) {
+            if (child_variant == NULL)
+            {
                 cfl_array_destroy(array_instance);
                 return NULL;
             }
 
-            if (cfl_array_append(array_instance, child_variant) != 0) {
+            if (cfl_array_append(array_instance, child_variant) != 0)
+            {
                 cfl_variant_destroy(child_variant);
                 cfl_array_destroy(array_instance);
                 return NULL;

@@ -29,7 +29,7 @@
 
 /** @file event2/tag.h
 
-  Helper functions for reading and writing tagged data onto buffers.
+  @brief Helper functions for reading and writing tagged data onto buffers.
 
  */
 
@@ -63,6 +63,8 @@ void evtag_init(void);
 
 /**
    Unmarshals the header and returns the length of the payload
+
+   Returns an error if the payload length is above INT_MAX.
 
    @param evbuf the buffer from which to unmarshal data
    @param ptag a pointer in which the tag id is being stored

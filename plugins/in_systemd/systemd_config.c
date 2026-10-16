@@ -25,6 +25,7 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <string.h>
 #include <unistd.h>
 
 #ifdef FLB_HAVE_SQLDB
@@ -74,6 +75,12 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
         return NULL;
     }
 
+    if (ctx->path && ctx->journal_namespace) {
+        flb_plg_error(ctx->ins, "path and namespace are mutually exclusive");
+        flb_systemd_config_destroy(ctx);
+        return NULL;
+    }
+
     /* Config: path */
     if (ctx->path) {
         ret = stat(ctx->path, &st);
@@ -99,12 +106,32 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
     if (ctx->path) {
         ret = sd_journal_open_directory(&ctx->j, ctx->path, 0);
     }
+    else if (ctx->journal_namespace) {
+#ifdef FLB_HAVE_SYSTEMD_JOURNAL_NAMESPACE
+        ret = sd_journal_open_namespace(&ctx->j, ctx->journal_namespace,
+                                        SD_JOURNAL_LOCAL_ONLY);
+#else
+        flb_plg_error(ctx->ins,
+                      "namespace requires libsystemd >= 245; this binary was built "
+                      "against an older version; use path instead");
+        flb_systemd_config_destroy(ctx);
+        return NULL;
+#endif
+    }
     else {
         ret = sd_journal_open(&ctx->j, SD_JOURNAL_LOCAL_ONLY);
     }
-    if (ret != 0) {
-        flb_plg_error(ctx->ins, "could not open the Journal");
-        flb_free(ctx);
+    if (ret < 0) {
+        if (ctx->journal_namespace) {
+            flb_plg_error(ctx->ins,
+                          "could not open journal namespace '%s': %s (error=%d)",
+                          ctx->journal_namespace, strerror(-ret), ret);
+        }
+        else {
+            flb_plg_error(ctx->ins, "could not open the Journal: %s (error=%d)",
+                          strerror(-ret), ret);
+        }
+        flb_systemd_config_destroy(ctx);
         return NULL;
     }
     ctx->fd = sd_journal_get_fd(ctx->j);
@@ -254,7 +281,15 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
                 sd_journal_next_skip(ctx->j, 1);
             }
             else {
-                flb_plg_warn(ctx->ins, "seek_cursor failed");
+                if (ctx->journal_namespace) {
+                    flb_plg_warn(ctx->ins,
+                                 "seek_cursor failed for journal namespace '%s'; "
+                                 "use a distinct database file per namespace",
+                                 ctx->journal_namespace);
+                }
+                else {
+                    flb_plg_warn(ctx->ins, "seek_cursor failed");
+                }
             }
             flb_free(cursor);
         }

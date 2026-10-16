@@ -5,7 +5,14 @@
 #include "flb_tests_runtime.h"
 #include "../../plugins/in_calyptia_fleet/in_calyptia_fleet.h"
 
+#ifdef FLB_SYSTEM_WINDOWS
+#define TEST_FLEET_CONFIG_DIR "C:\\calyptia-fleet"
+#else
+#define TEST_FLEET_CONFIG_DIR FLEET_DEFAULT_CONFIG_DIR
+#endif
+
 flb_sds_t fleet_config_filename(struct flb_in_calyptia_fleet_config *ctx, char *fname);
+flb_sds_t time_fleet_config_filename(struct flb_in_calyptia_fleet_config *ctx, time_t t);
 int get_calyptia_fleet_config(struct flb_in_calyptia_fleet_config *ctx);
 
 /* Test context structure */
@@ -50,6 +57,7 @@ static struct test_context *init_test_context()
 
     t_ctx->ctx->fleet_name = flb_strdup("test_fleet");
     t_ctx->ctx->machine_id = flb_strdup("test_machine_id");
+    t_ctx->ctx->config_dir = TEST_FLEET_CONFIG_DIR;
 
     t_ctx->ctx->fleet_config_legacy_format = FLB_TRUE;
 
@@ -88,7 +96,9 @@ static void test_in_fleet_format() {
 
     /* Ensure we create TOML files by default */
     char expectedValue[CALYPTIA_MAX_DIR_SIZE];
-    int ret = sprintf(expectedValue, "%s/%s/%s/test.conf", FLEET_DEFAULT_CONFIG_DIR, t_ctx->ctx->machine_id, t_ctx->ctx->fleet_name);
+    int ret = sprintf(expectedValue, "%s" PATH_SEPARATOR "%s" PATH_SEPARATOR "%s"
+                      PATH_SEPARATOR "test.conf", TEST_FLEET_CONFIG_DIR,
+                      t_ctx->ctx->machine_id, t_ctx->ctx->fleet_name);
     TEST_CHECK(ret > 0);
 
     flb_sds_t value = fleet_config_filename( t_ctx->ctx, "test" );
@@ -101,7 +111,9 @@ static void test_in_fleet_format() {
     /* Ensure we create YAML files if configured to do so */
     t_ctx->ctx->fleet_config_legacy_format = FLB_FALSE;
 
-    ret = sprintf(expectedValue, "%s/%s/%s/test.yaml", FLEET_DEFAULT_CONFIG_DIR, t_ctx->ctx->machine_id, t_ctx->ctx->fleet_name);
+    ret = sprintf(expectedValue, "%s" PATH_SEPARATOR "%s" PATH_SEPARATOR "%s"
+                  PATH_SEPARATOR "test.yaml", TEST_FLEET_CONFIG_DIR,
+                  t_ctx->ctx->machine_id, t_ctx->ctx->fleet_name);
     TEST_CHECK(ret > 0);
 
     value = fleet_config_filename( t_ctx->ctx, "test" );
@@ -114,8 +126,47 @@ static void test_in_fleet_format() {
     cleanup_test_context(t_ctx);
 }
 
+static void test_in_fleet_timestamped_config_format(void)
+{
+    struct test_context *t_ctx;
+    char expectedValue[CALYPTIA_MAX_DIR_SIZE];
+    flb_sds_t value;
+    int ret;
+
+    t_ctx = init_test_context();
+    TEST_CHECK(t_ctx != NULL);
+
+    ret = snprintf(expectedValue, sizeof(expectedValue), "%s" PATH_SEPARATOR "%s"
+                   PATH_SEPARATOR "%s" PATH_SEPARATOR "123.conf", TEST_FLEET_CONFIG_DIR,
+                   t_ctx->ctx->machine_id, t_ctx->ctx->fleet_name);
+    TEST_CHECK(ret > 0 && ret < (int) sizeof(expectedValue));
+
+    value = time_fleet_config_filename(t_ctx->ctx, 123);
+    TEST_CHECK(value != NULL);
+    TEST_MSG("time_fleet_config_filename expected=%s got=%s", expectedValue, value);
+    TEST_CHECK(value && strcmp(value, expectedValue) == 0);
+    flb_sds_destroy(value);
+    value = NULL;
+
+    t_ctx->ctx->fleet_config_legacy_format = FLB_FALSE;
+
+    ret = snprintf(expectedValue, sizeof(expectedValue), "%s" PATH_SEPARATOR "%s"
+                   PATH_SEPARATOR "%s" PATH_SEPARATOR "123" PATH_SEPARATOR "config.yaml",
+                   TEST_FLEET_CONFIG_DIR, t_ctx->ctx->machine_id, t_ctx->ctx->fleet_name);
+    TEST_CHECK(ret > 0 && ret < (int) sizeof(expectedValue));
+
+    value = time_fleet_config_filename(t_ctx->ctx, 123);
+    TEST_CHECK(value != NULL);
+    TEST_MSG("time_fleet_config_filename expected=%s got=%s", expectedValue, value);
+    TEST_CHECK(value && strcmp(value, expectedValue) == 0);
+    flb_sds_destroy(value);
+
+    cleanup_test_context(t_ctx);
+}
+
 /* Define test list */
 TEST_LIST = {
     {"in_calyptia_fleet_format", test_in_fleet_format},
+    {"in_calyptia_fleet_timestamped_config_format", test_in_fleet_timestamped_config_format},
     {NULL, NULL}
 };

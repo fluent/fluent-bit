@@ -138,6 +138,38 @@ static int in_http_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static int in_http_pause(void *data, struct flb_config *config)
+{
+    struct flb_http *ctx;
+
+    (void) config;
+
+    ctx = data;
+
+    if (flb_http_server_pause(&ctx->http_server) != 0) {
+        flb_plg_error(ctx->ins, "could not pause HTTP server");
+        return -1;
+    }
+
+    return 0;
+}
+
+static int in_http_resume(void *data, struct flb_config *config)
+{
+    struct flb_http *ctx;
+
+    (void) config;
+
+    ctx = data;
+
+    if (flb_http_server_resume(&ctx->http_server) != 0) {
+        flb_plg_error(ctx->ins, "could not resume HTTP server");
+        return -1;
+    }
+
+    return 0;
+}
+
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
     {
@@ -188,8 +220,8 @@ struct flb_input_plugin in_http_plugin = {
     .cb_pre_run   = NULL,
     .cb_collect   = NULL,
     .cb_flush_buf = NULL,
-    .cb_pause     = NULL,
-    .cb_resume    = NULL,
+    .cb_pause_checked = in_http_pause,
+    .cb_resume_checked = in_http_resume,
     .cb_exit      = in_http_exit,
     .config_map   = config_map,
     .flags        = FLB_INPUT_NET_SERVER | FLB_INPUT_HTTP_SERVER | FLB_IO_OPT_TLS

@@ -1,17 +1,151 @@
 # - Config file for the Libevent package
 # It defines the following variables
-#  LIBEVENT_INCLUDE_DIRS - include directories for FooBar
-#  LIBEVENT_LIBRARIES    - libraries to link against
+#  LIBEVENT_FOUND            - true if libevent and all required components found on the system
+#  LIBEVENT_xxx_FOUND        - true if component xxx(see available components) found on the system
+#  LIBEVENT_VERSION          - libevent version in format Major.Minor.Patch
+#  LIBEVENT_INCLUDE_DIRS     - directories where libevent header is located.
+#  LIBEVENT_INCLUDE_DIR      - same as DIRS
+#  LIBEVENT_LIBRARIES        - libevent library to link against.
+#  LIBEVENT_LIBRARY          - same as LIBRARIES
+#
+# These variables are deprecated, don't use them.
+#  LIBEVENT_STATIC_LIBRARIES - libraries to link against (archive/static)
+#  LIBEVENT_SHARED_LIBRARIES - libraries to link against (shared)
+#
+# When you try to locate the libevent libraries, you should specify which components you want to use.
+# The following table lists all available components. If none is given, all imported targets will used.
+#  core        - the core functions of libevent
+#  extra       - extra functions, contains http, dns and rpc
+#  pthreads    - multiple threads for libevent, does not exist on Windows
+#  openssl     - OpenSSL support for libevent
+#  mbedtls     - MbedTLS support for libevent
+#
+# By default, the shared libraries of libevent will be found. To find the static ones instead,
+# you must set the LIBEVENT_STATIC_LINK variable to TRUE before calling find_package(Libevent ...).
+# If no component provided, all components will be used.
+# example:
+#  set(LIBEVENT_STATIC_LINK TRUE)
+#  find_package(Libevent 2.2 REQUIRED COMPONENTS core)
+#  include_directories(${LIBEVENT_INCLUDE_DIRS})  # Can be omitted
+#  target_link_libraries(myapp ${LIBEVENT_LIBRARIES})
+#    or target_link_libraries(myapp libevent::core)
+#
+# find_package() can handle dependencies automatically. For example, given the 'openssl' component,
+# all dependencies (libevent_core, libssl, libcrypto and openssl include directories) will be found.
 
-# Get the path of the current file.
-get_filename_component(LIBEVENT_CMAKE_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
+set(LIBEVENT_VERSION @EVENT_PACKAGE_VERSION@)
 
-# Set the include directories.
-set(LIBEVENT_INCLUDE_DIRS "@EVENT_INSTALL_INCLUDE_DIR@")
-
-# Include the project Targets file, this contains definitions for IMPORTED targets.
-include(${LIBEVENT_CMAKE_DIR}/LibeventTargets.cmake)
+# Load the dependencies of all components. As find_dependency propagates the original
+# find_package attributes (i.e. required or not), there's no need to repeat this or filter
+# by component.
+include(CMakeFindDependencyMacro)
+find_dependency(Threads)
+if(@EVENT__HAVE_MBEDTLS@)
+    find_dependency(MbedTLS)
+endif()
+if(@EVENT__HAVE_OPENSSL@)
+    find_dependency(OpenSSL)
+endif()
 
 # IMPORTED targets from LibeventTargets.cmake
-set(LIBEVENT_LIBRARIES event event_core event_extra)
+set(LIBEVENT_STATIC_LIBRARIES "@LIBEVENT_STATIC_LIBRARIES@")
+set(LIBEVENT_SHARED_LIBRARIES "@LIBEVENT_SHARED_LIBRARIES@")
 
+# Default to the same type as libevent was built:
+if(NOT DEFINED LIBEVENT_STATIC_LINK)
+    set(LIBEVENT_STATIC_LINK NOT @EVENT_LIBRARY_SHARED@)
+endif()
+
+if(${LIBEVENT_STATIC_LINK})
+    set(_LIB_TYPE static)
+    set(_AVAILABLE_LIBS "${LIBEVENT_STATIC_LIBRARIES}")
+
+    # CMake before 3.15 doesn't link OpenSSL to pthread/dl, do it ourselves instead
+    if (${CMAKE_VERSION} VERSION_LESS "3.15.0" AND "${LIBEVENT_STATIC_LINK}" AND "${OPENSSL_FOUND}" AND "${Threads_FOUND}")
+        set_property(TARGET OpenSSL::Crypto APPEND PROPERTY INTERFACE_LINK_LIBRARIES Threads::Threads)
+        set_property(TARGET OpenSSL::Crypto APPEND PROPERTY INTERFACE_LINK_LIBRARIES ${CMAKE_DL_LIBS})
+    endif ()
+else()
+    set(_LIB_TYPE shared)
+    set(_AVAILABLE_LIBS "${LIBEVENT_SHARED_LIBRARIES}")
+endif()
+
+macro(message_if_needed _flag _msg)
+    if (NOT ${CMAKE_FIND_PACKAGE_NAME}_FIND_QUIETLY)
+        message(${_flag} "${_msg}")
+    endif()
+endmacro()
+
+macro(no_component_msg _comp)
+    if(${CMAKE_FIND_PACKAGE_NAME}_FIND_REQUIRED_${_comp})
+        set(pthreadlib)
+        if(NOT WIN32)
+            set(pthreadlib ", pthreads")
+        endif()
+        message(FATAL_ERROR "Your libevent library does not contain a ${_comp} component!\n"
+                "The valid components are core, extra${pthreadlib}, openssl and mbedtls.")
+    else()
+        message_if_needed(WARNING "Your libevent library does not contain a ${_comp} component!")
+    endif()
+endmacro()
+
+set(_EVENT_COMPONENTS)
+if(${CMAKE_FIND_PACKAGE_NAME}_FIND_COMPONENTS)
+    list(REMOVE_DUPLICATES ${CMAKE_FIND_PACKAGE_NAME}_FIND_COMPONENTS)
+    foreach(_comp ${${CMAKE_FIND_PACKAGE_NAME}_FIND_COMPONENTS})
+        list(FIND _AVAILABLE_LIBS ${_comp} _INDEX)
+        if(_INDEX GREATER -1)
+            list(APPEND _EVENT_COMPONENTS ${_comp})
+        else()
+            no_component_msg(${_comp})
+        endif()
+    endforeach()
+else()
+    set(_EVENT_COMPONENTS ${_AVAILABLE_LIBS})
+endif()
+
+set(_POSSIBLE_PKG_NAMES)
+list(APPEND _POSSIBLE_PKG_NAMES ${CMAKE_FIND_PACKAGE_NAME} LIBEVENT Libevent libevent)
+list(REMOVE_DUPLICATES _POSSIBLE_PKG_NAMES)
+
+macro(set_case_insensitive_found _comp)
+    foreach(name ${_POSSIBLE_PKG_NAMES})
+        if("${_comp}" STREQUAL "")
+            set(${name}_FOUND TRUE)
+            set(${name}_NOTFOUND FALSE)
+        else()
+            set(${name}_${_comp}_FOUND TRUE)
+            set(${name}_${_comp}_NOTFOUND FALSE)
+        endif()
+    endforeach()
+endmacro()
+
+foreach(_comp ${_EVENT_COMPONENTS})
+    list(APPEND LIBEVENT_LIBRARIES "libevent::${_comp}")
+    set_case_insensitive_found(${_comp})
+endforeach()
+
+if(LIBEVENT_LIBRARIES)
+    set(LIBEVENT_LIBRARY ${LIBEVENT_LIBRARIES})
+
+    # Avoid including targets more than once.
+    if(NOT TARGET libevent::core)
+        # Include the project Targets file, this contains definitions for IMPORTED targets.
+        include(${CMAKE_CURRENT_LIST_DIR}/LibeventTargets-${_LIB_TYPE}.cmake)
+    endif()
+    get_target_property(LIBEVENT_INCLUDE_DIRS libevent::core INTERFACE_INCLUDE_DIRECTORIES)
+    get_filename_component(LIBEVENT_INSTALL_PREFIX "${LIBEVENT_INCLUDE_DIRS}" PATH)
+    message_if_needed(STATUS "Found libevent ${LIBEVENT_VERSION} in ${LIBEVENT_INSTALL_PREFIX}")
+else()
+    if(${CMAKE_FIND_PACKAGE_NAME}_FIND_REQUIRED)
+        message(FATAL_ERROR "Can not find any libraries for libevent.")
+    else()
+        message_if_needed(WARNING "Can not find any libraries for libevent.")
+    endif()
+endif()
+set(LIBEVENT_INCLUDE_DIR ${LIBEVENT_INCLUDE_DIRS})
+
+unset(_LIB_TYPE)
+unset(_AVAILABLE_LIBS)
+unset(_EVENT_COMPONENTS)
+unset(_POSSIBLE_PKG_NAMES)

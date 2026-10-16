@@ -10,6 +10,7 @@ set(src
   we_util.c
   we_metric.c
   we_cache.c
+  we_performancecounter.c
   we_perflib.c
   we_wmi_thermalzone.c
   we_wmi_cpu_info.c
@@ -26,6 +27,7 @@ set(libs
   wbemuuid
   netapi32
   iphlpapi
+  pdh
 )
 
 FLB_PLUGIN(in_windows_exporter_metrics "${src}" "${libs}")

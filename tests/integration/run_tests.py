@@ -21,15 +21,19 @@ def _maybe_reexec_in_venv() -> None:
     if not VENV_PYTHON.is_file():
         return
 
-    current = Path(sys.executable).resolve()
-    target = VENV_PYTHON.resolve()
+    current_prefix = Path(sys.prefix).resolve()
+    target_prefix = VENV_PYTHON.parent.parent.resolve()
 
-    if current == target:
+    if current_prefix == target_prefix:
         return
 
     env = os.environ.copy()
     env[REEXEC_ENV] = "1"
-    os.execve(str(target), [str(target), str(Path(__file__).resolve()), *sys.argv[1:]], env)
+    os.execve(
+        str(VENV_PYTHON),
+        [str(VENV_PYTHON), str(Path(__file__).resolve()), *sys.argv[1:]],
+        env,
+    )
 
 
 _maybe_reexec_in_venv()
@@ -243,6 +247,28 @@ def print_collected_tests(nodeids: list[str]) -> None:
             print(f"  [ ] {short_name_from_nodeid(nodeid)}")
 
 
+def _xdist_uses_multiple_workers(passthrough: list[str]) -> bool:
+    for index, argument in enumerate(passthrough):
+        worker_count = None
+
+        if argument in ("-n", "--numprocesses"):
+            if index + 1 < len(passthrough):
+                worker_count = passthrough[index + 1]
+        elif argument.startswith("--numprocesses="):
+            worker_count = argument.split("=", 1)[1]
+        elif argument.startswith("-n") and len(argument) > 2:
+            worker_count = argument[2:]
+
+        if worker_count is not None:
+            return worker_count not in ("0", "1")
+
+    return False
+
+
+def _memory_check_environment_enabled(variable_name: str) -> bool:
+    return bool(os.environ.get(variable_name))
+
+
 def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     parser = argparse.ArgumentParser(
         description="List and run the Fluent Bit Python test suite with a simple checkbox progress view."
@@ -256,6 +282,16 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
         help="Run with VALGRIND=1 and VALGRIND_STRICT=1.",
     )
     parser.add_argument(
+        "--leaks",
+        action="store_true",
+        help="Run on macOS with LEAKS=1.",
+    )
+    parser.add_argument(
+        "--leaks-strict",
+        action="store_true",
+        help="Run on macOS with LEAKS=1 and LEAKS_STRICT=1.",
+    )
+    parser.add_argument(
         "--quiet",
         action="store_true",
         help="Use quieter pytest output; checkbox progress still renders.",
@@ -265,7 +301,27 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
         action="store_true",
         help="Keep pytest live logs enabled instead of the cleaner wrapper view.",
     )
-    return parser.parse_known_args(argv)
+    args, passthrough = parser.parse_known_args(argv)
+
+    valgrind_requested = (
+        args.valgrind
+        or args.valgrind_strict
+        or _memory_check_environment_enabled("VALGRIND")
+    )
+    leaks_requested = (
+        args.leaks
+        or args.leaks_strict
+        or _memory_check_environment_enabled("LEAKS")
+    )
+    if valgrind_requested and leaks_requested:
+        parser.error("Valgrind and macOS leaks cannot be enabled together")
+    if leaks_requested and _xdist_uses_multiple_workers(passthrough):
+        parser.error(
+            "macOS leaks checks require one pytest worker because concurrent "
+            "leaks processes can fail to acquire Mach task ports"
+        )
+
+    return args, passthrough
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -279,6 +335,10 @@ def main(argv: list[str] | None = None) -> int:
         os.environ["VALGRIND"] = "1"
     if args.valgrind_strict:
         os.environ["VALGRIND_STRICT"] = "1"
+    if args.leaks or args.leaks_strict:
+        os.environ["LEAKS"] = "1"
+    if args.leaks_strict:
+        os.environ["LEAKS_STRICT"] = "1"
 
     if args.list_only:
         collector = CollectPlugin()

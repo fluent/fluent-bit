@@ -48,6 +48,7 @@ struct flb_systemd_config {
     sd_journal *j;       /* Journal context */
     char *cursor;
     flb_sds_t path;
+    flb_sds_t journal_namespace;
     flb_sds_t filter_type; /* sysytemd filter type: and|or */
     struct mk_list *systemd_filters;
     int pending_records;

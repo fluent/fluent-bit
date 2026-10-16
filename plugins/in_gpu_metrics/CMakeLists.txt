@@ -1,6 +1,7 @@
 set(src
   gpu_metrics.c
   amd_gpu.c
+  nvml_gpu.c
   gpu_common.c
 )
 

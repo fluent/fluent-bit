@@ -1,4 +1,9 @@
 # zstd cmake
+if(MSVC)
+  # Zstd checks C++ compiler flags on MSVC even when only building the C library.
+  enable_language(CXX)
+endif()
+
 set(ZSTD_BUILD_STATIC ON)
 set(ZSTD_BUILD_SHARED OFF)
 set(ZSTD_BUILD_COMPRESSION ON)

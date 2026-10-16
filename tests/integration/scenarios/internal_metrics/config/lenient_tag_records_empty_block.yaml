@@ -1,0 +1,22 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: error
+  # An empty tag_records block is valid: nothing is configured, the feature
+  # stays disabled, and Fluent Bit must start normally (no error, no crash).
+  telemetry:
+    metrics:
+      logs:
+        tag_records: {}
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: lenient.empty
+      dummy: '{"message":"x"}'
+      interval_sec: 0
+      interval_nsec: 200000000
+
+  outputs:
+    - name: 'null'
+      match: '*'

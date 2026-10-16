@@ -35,9 +35,18 @@
 #define FLB_IO_OPT_TLS     4  /* use TCP and optional TLS               */
 #define FLB_IO_ASYNC       8  /* use async mode (depends on event loop) */
 #define FLB_IO_TCP_KA     16  /* use async mode (depends on event loop) */
+#define FLB_IO_UDP        32  /* use plain UDP                          */
+#define FLB_IO_DTLS       64  /* use DTLS over UDP                      */
 
 /* Other features */
-#define FLB_IO_IPV6       32  /* network I/O uses IPv6                  */
+#define FLB_IO_IPV6      128  /* network I/O uses IPv6                  */
+#define FLB_IO_PROXY_TLS 256  /* connection-scoped: an HTTPS proxy TLS
+                                * session is active on this connection.
+                                * Independent of FLB_IO_TLS, which
+                                * describes the destination stream: must
+                                * only ever be set on struct
+                                * flb_connection.flags, never on the
+                                * shared stream/upstream flags.          */
 
 struct flb_connection;
 

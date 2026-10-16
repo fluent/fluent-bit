@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_crypto_constants.h>
 #include <fluent-bit/flb_compression.h>
 
+#include <string.h>
 #include <math.h>
 
 #include "azure_blob.h"
@@ -220,18 +221,21 @@ char *azb_block_blob_id_logs(uint64_t *ms)
 /*
  * Generate a block id for blob type events:
  *
- * Azure Blob requires that Blobs IDs do not exceed 64 bytes, so we generate a MD5
- * of the path and append the part number to it, we add some zeros for padding since
- * all blocks id MUST have the same length.
+ * Azure Blob requires block IDs to have the same length and the base64-encoded
+ * value must not exceed 64 bytes. The non-FIPS path keeps the original
+ * MD5-derived format for compatibility. When FIPS mode is enabled, use the
+ * first 128 bits of SHA-256 rendered as hex plus the same fixed-width suffix.
  */
-char *azb_block_blob_id_blob(struct flb_azure_blob *ctx, char *path, int64_t part_id)
+char *azb_block_blob_id_blob(struct flb_azure_blob *ctx, char *path, uint64_t part_id)
 {
     int i;
     int len;
     int ret;
+    int fips_mode;
     unsigned char md5[16] = {0};
+    unsigned char sha256[32] = {0};
     char tmp[128];
-    flb_sds_t md5_hex;
+    flb_sds_t digest_hex;
     size_t size;
     size_t o_len;
     char *b64;
@@ -240,27 +244,57 @@ char *azb_block_blob_id_blob(struct flb_azure_blob *ctx, char *path, int64_t par
      * block ids in base64 cannot exceed 64 bytes, so we hash the path to avoid
      * exceeding the lenght and then just append the part number.
      */
-    ret = flb_hash_simple(FLB_HASH_MD5, (unsigned char *) path, strlen(path),
-                          md5, sizeof(md5));
-    if (ret != 0) {
-        flb_plg_error(ctx->ins, "cannot hash block id for path %s", path);
-        return NULL;
+    fips_mode = FLB_FALSE;
+    if (ctx->config != NULL && ctx->config->fips_mode_active == FLB_TRUE) {
+        fips_mode = FLB_TRUE;
     }
 
-    /* convert md5 to hex string (32 byte hex string) */
-    md5_hex = flb_sds_create_size(32);
-    if (!md5_hex) {
-        return NULL;
-    }
+    if (fips_mode == FLB_TRUE) {
+        ret = flb_hash_simple(FLB_HASH_SHA256, (unsigned char *) path, strlen(path),
+                              sha256, sizeof(sha256));
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "cannot hash block id for path %s", path);
+            return NULL;
+        }
 
-    for (i = 0; i < 16; i++) {
-        snprintf(md5_hex + (i * 2), 3, "%02x", md5[i]);
-    }
-    flb_sds_len_set(md5_hex, 32);
+        digest_hex = flb_sds_create_size(32);
+        if (!digest_hex) {
+            return NULL;
+        }
 
-    /* append part number */
-    len = snprintf(tmp, sizeof(tmp) - 1, "%s.flb-part.%06ld", md5_hex, part_id);
-    flb_sds_destroy(md5_hex);
+        for (i = 0; i < 16; i++) {
+            snprintf(digest_hex + (i * 2), 3, "%02x", sha256[i]);
+        }
+        flb_sds_len_set(digest_hex, 32);
+
+        len = snprintf(tmp, sizeof(tmp) - 1, "%s.flb-part.%06" PRIu64,
+                       digest_hex, part_id);
+        flb_sds_destroy(digest_hex);
+    }
+    else {
+        ret = flb_hash_simple(FLB_HASH_MD5, (unsigned char *) path, strlen(path),
+                              md5, sizeof(md5));
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "cannot hash block id for path %s", path);
+            return NULL;
+        }
+
+        /* convert md5 to hex string (32 byte hex string) */
+        digest_hex = flb_sds_create_size(32);
+        if (!digest_hex) {
+            return NULL;
+        }
+
+        for (i = 0; i < 16; i++) {
+            snprintf(digest_hex + (i * 2), 3, "%02x", md5[i]);
+        }
+        flb_sds_len_set(digest_hex, 32);
+
+        /* append part number */
+        len = snprintf(tmp, sizeof(tmp) - 1, "%s.flb-part.%06" PRIu64,
+                       digest_hex, part_id);
+        flb_sds_destroy(digest_hex);
+    }
 
     size = 64 + 1;
     b64 = flb_calloc(1, size);
@@ -441,6 +475,15 @@ int azb_block_blob_commit_file_parts(struct flb_azure_blob *ctx, uint64_t file_i
 
         id = atol(sentry->value);
         block_id = azb_block_blob_id_blob(ctx, path, id);
+        if (block_id == NULL) {
+            flb_plg_error(ctx->ins,
+                          "could not generate block id for file id=%" PRIu64
+                          " name %s part=%" PRIu64,
+                          file_id, path, id);
+            flb_sds_destroy(payload);
+            flb_utils_split_free(list);
+            return -1;
+        }
 
         cfl_sds_cat_safe(&payload, "  ", 2);
         cfl_sds_cat_safe(&payload, "<Uncommitted>", 13);

@@ -36,6 +36,7 @@
 #include <cprofiles/cprof_decode_msgpack.h>
 
 #include <msgpack.h>
+#include <inttypes.h>
 #include "stdout.h"
 
 
@@ -363,6 +364,10 @@ static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
                                                ctx->json_date_format,
                                                ctx->date_key,
                                                config->json_escape_unicode);
+        if (!json) {
+            flb_plg_error(ctx->ins, "error formatting JSON payload");
+            FLB_OUTPUT_RETURN(FLB_ERROR);
+        }
         write(STDOUT_FILENO, json, flb_sds_len(json));
         flb_sds_destroy(json);
 
@@ -402,7 +407,7 @@ static void cb_stdout_flush(struct flb_event_chunk *event_chunk,
 
             printf("[%zd] %s: [[", cnt++, event_chunk->tag);
 
-            printf("%"PRId32".%09lu, ", (int32_t) log_event.timestamp.tm.tv_sec,
+            printf("%"PRId64".%09lu, ", (int64_t) log_event.timestamp.tm.tv_sec,
                     log_event.timestamp.tm.tv_nsec);
 
             msgpack_object_print(stdout, *log_event.metadata);

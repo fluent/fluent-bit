@@ -1,0 +1,149 @@
+name: Backend CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native:
+    name: ${{ matrix.os }} / ${{ matrix.cc }} / ${{ matrix.build_type }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-26.04, ubuntu-26.04-arm, macos-15-intel, macos-15]
+        cc: [clang]
+        build_type: [Debug, Release]
+        include:
+          - {os: ubuntu-26.04, cc: gcc, build_type: Release}
+          - {os: ubuntu-26.04-arm, cc: gcc, build_type: Release}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build -DLIBCO_TESTS=ON -DCMAKE_C_COMPILER=${{ matrix.cc }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Test
+        run: ctest --test-dir build --output-on-failure --no-tests=error
+
+  linux-cross:
+    name: Linux / ${{ matrix.target.arch }} / ${{ matrix.build_type }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [Debug, Release]
+        target:
+          - {arch: i686, triple: i686-linux-gnu, qemu: i386}
+          - {arch: arm, triple: arm-linux-gnueabihf, qemu: arm}
+          - {arch: aarch64, triple: aarch64-linux-gnu, qemu: aarch64}
+          - {arch: riscv64, triple: riscv64-linux-gnu, qemu: riscv64}
+          - {arch: ppc, triple: powerpc-linux-gnu, qemu: ppc}
+          - {arch: ppc64, triple: powerpc64-linux-gnu, qemu: ppc64}
+          - {arch: ppc64le, triple: powerpc64le-linux-gnu, qemu: ppc64le}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install compiler and emulator
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-${{ matrix.target.triple }} qemu-user
+      - name: Configure
+        run: >-
+          cmake -S . -B build -DLIBCO_TESTS=ON
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=${{ matrix.target.arch }}
+          -DCMAKE_C_COMPILER=${{ matrix.target.triple }}-gcc
+          '-DCMAKE_CROSSCOMPILING_EMULATOR=qemu-${{ matrix.target.qemu }};-L;/usr/${{ matrix.target.triple }}'
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Test under QEMU
+        run: ctest --test-dir build --output-on-failure --no-tests=error
+
+  windows-msvc:
+    name: Windows / MSVC / ${{ matrix.arch }} / ${{ matrix.build_type }}
+    runs-on: windows-2022
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [Win32, x64]
+        build_type: [Debug, Release]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build -A ${{ matrix.arch }} -DLIBCO_TESTS=ON
+      - name: Build
+        run: cmake --build build --config ${{ matrix.build_type }} --parallel
+      - name: Test
+        run: ctest --test-dir build -C ${{ matrix.build_type }} --output-on-failure --no-tests=error
+
+  windows-mingw:
+    name: Windows / MinGW / ${{ matrix.environment.msystem }} / ${{ matrix.build_type }}
+    runs-on: windows-2022
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: msys2 {0}
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [Debug, Release]
+        environment:
+          - {msystem: MINGW32, prefix: mingw-w64-i686, compiler: gcc}
+          - {msystem: UCRT64, prefix: mingw-w64-ucrt-x86_64, compiler: gcc}
+          - {msystem: CLANG64, prefix: mingw-w64-clang-x86_64, compiler: clang}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{ matrix.environment.msystem }}
+          install: >-
+            ${{ matrix.environment.prefix }}-${{ matrix.environment.compiler }}
+            ${{ matrix.environment.prefix }}-cmake
+            ${{ matrix.environment.prefix }}-ninja
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DLIBCO_TESTS=ON -DCMAKE_C_COMPILER=${{ matrix.environment.compiler }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Test
+        run: ctest --test-dir build --output-on-failure --no-tests=error
+
+  wasm:
+    name: Emscripten / ${{ matrix.mode }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [debug, release, asan]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: emscripten-core/setup-emsdk@v15
+        with:
+          version: '6.0.9'
+      - name: Configure
+        shell: bash
+        run: |
+          flags=()
+          case '${{ matrix.mode }}' in
+            debug) flags+=(-DCMAKE_BUILD_TYPE=Debug) ;;
+            release) flags+=(-DCMAKE_BUILD_TYPE=Release) ;;
+            asan) flags+=(-DCMAKE_BUILD_TYPE=Debug -DLIBCO_TESTS_ASAN=ON -DCMAKE_C_FLAGS=-fsanitize=address '-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address -sALLOW_MEMORY_GROWTH=1') ;;
+          esac
+          emcmake cmake -S . -B build -DLIBCO_TESTS=ON "${flags[@]}"
+      - name: Build
+        run: cmake --build build --parallel 2
+      - name: Test in Node
+        run: |
+          ctest --test-dir build --output-on-failure --no-tests=error
+          ctest --test-dir build -R co-wasm-worker-reuse --repeat until-fail:20 --output-on-failure --no-tests=error

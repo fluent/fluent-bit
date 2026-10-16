@@ -29,9 +29,153 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef FLB_SYSTEM_WINDOWS
+#include <errno.h>
+#include <fcntl.h>
+#include <signal.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
 #include "in_exec_win32_compat.h"
 
 #include "in_exec.h"
+
+#ifndef FLB_SYSTEM_WINDOWS
+static FILE *in_exec_popen(struct flb_exec *ctx)
+{
+    int ret;
+    int pipe_fds[2];
+    pid_t child_pid;
+    FILE *stream;
+
+    ret = pipe(pipe_fds);
+    if (ret == -1) {
+        flb_errno();
+        return NULL;
+    }
+
+    ret = fcntl(pipe_fds[0], F_SETFD, FD_CLOEXEC);
+    if (ret == -1) {
+        flb_errno();
+        close(pipe_fds[0]);
+        close(pipe_fds[1]);
+        return NULL;
+    }
+
+    ret = fcntl(pipe_fds[1], F_SETFD, FD_CLOEXEC);
+    if (ret == -1) {
+        flb_errno();
+        close(pipe_fds[0]);
+        close(pipe_fds[1]);
+        return NULL;
+    }
+
+    pthread_mutex_lock(&ctx->child_mutex);
+
+    if (ctx->shutdown_requested == FLB_TRUE) {
+        pthread_mutex_unlock(&ctx->child_mutex);
+        close(pipe_fds[0]);
+        close(pipe_fds[1]);
+        return NULL;
+    }
+
+    child_pid = fork();
+    if (child_pid == -1) {
+        flb_errno();
+        pthread_mutex_unlock(&ctx->child_mutex);
+        close(pipe_fds[0]);
+        close(pipe_fds[1]);
+        return NULL;
+    }
+
+    if (child_pid == 0) {
+        close(pipe_fds[0]);
+        setpgid(0, 0);
+
+        if (dup2(pipe_fds[1], STDOUT_FILENO) == -1) {
+            _exit(127);
+        }
+
+        close(pipe_fds[1]);
+        execl("/bin/sh", "sh", "-c", ctx->cmd, (char *) NULL);
+        _exit(127);
+    }
+
+    close(pipe_fds[1]);
+    setpgid(child_pid, child_pid);
+    ctx->child_pid = child_pid;
+    pthread_mutex_unlock(&ctx->child_mutex);
+
+    stream = fdopen(pipe_fds[0], "r");
+    if (stream == NULL) {
+        flb_errno();
+        kill(-child_pid, SIGKILL);
+        waitpid(child_pid, NULL, 0);
+
+        pthread_mutex_lock(&ctx->child_mutex);
+        ctx->child_pid = -1;
+        pthread_mutex_unlock(&ctx->child_mutex);
+
+        close(pipe_fds[0]);
+        return NULL;
+    }
+
+    return stream;
+}
+
+static int in_exec_pclose(struct flb_exec *ctx, FILE *stream)
+{
+    int ret;
+    int status;
+    pid_t child_pid;
+
+    ret = fclose(stream);
+    if (ret == EOF) {
+        flb_errno();
+    }
+
+    pthread_mutex_lock(&ctx->child_mutex);
+    child_pid = ctx->child_pid;
+    pthread_mutex_unlock(&ctx->child_mutex);
+
+    do {
+        ret = waitpid(child_pid, &status, 0);
+    } while (ret == -1 && errno == EINTR);
+
+    pthread_mutex_lock(&ctx->child_mutex);
+    if (ctx->child_pid == child_pid) {
+        ctx->child_pid = -1;
+    }
+    pthread_mutex_unlock(&ctx->child_mutex);
+
+    if (ret == -1) {
+        return -1;
+    }
+
+    return status;
+}
+
+static void in_exec_pre_exit(void *data, struct flb_config *config)
+{
+    int ret;
+    pid_t child_pid;
+    struct flb_exec *ctx = data;
+
+    (void) config;
+
+    pthread_mutex_lock(&ctx->child_mutex);
+    ctx->shutdown_requested = FLB_TRUE;
+    child_pid = ctx->child_pid;
+    if (child_pid > 0) {
+        ret = kill(-child_pid, SIGTERM);
+        if (ret == -1 && errno != ESRCH) {
+            flb_plg_warn(ctx->ins, "could not terminate command process group");
+            flb_errno();
+        }
+    }
+    pthread_mutex_unlock(&ctx->child_mutex);
+}
+#endif
 
 /* cb_collect callback */
 static int in_exec_collect(struct flb_input_instance *ins,
@@ -59,7 +203,11 @@ static int in_exec_collect(struct flb_input_instance *ins,
         }
     }
 
+#ifndef FLB_SYSTEM_WINDOWS
+    cmdp = in_exec_popen(ctx);
+#else
     cmdp = flb_popen(ctx->cmd, "r");
+#endif
     if (cmdp == NULL) {
         flb_plg_debug(ctx->ins, "command %s failed", ctx->cmd);
         goto collect_end;
@@ -178,7 +326,11 @@ static int in_exec_collect(struct flb_input_instance *ins,
          * and
          * https://skarnet.org/software/execline/exitcodes.html
          */
+#ifndef FLB_SYSTEM_WINDOWS
+        cmdret = in_exec_pclose(ctx, cmdp);
+#else
         cmdret = flb_pclose(cmdp);
+#endif
         if (cmdret == -1) {
             flb_errno();
             flb_plg_debug(ctx->ins,
@@ -339,6 +491,10 @@ static void delete_exec_config(struct flb_exec *ctx)
         flb_pipe_close(ctx->ch_manager[1]);
     }
 
+#ifndef FLB_SYSTEM_WINDOWS
+    pthread_mutex_destroy(&ctx->child_mutex);
+#endif
+
     flb_free(ctx);
 }
 
@@ -355,6 +511,15 @@ static int in_exec_init(struct flb_input_instance *in,
         return -1;
     }
     ctx->parser = NULL;
+
+#ifndef FLB_SYSTEM_WINDOWS
+    ret = pthread_mutex_init(&ctx->child_mutex, NULL);
+    if (ret != 0) {
+        flb_free(ctx);
+        return -1;
+    }
+    ctx->child_pid = -1;
+#endif
 
     /* Initialize exec config */
     ret = in_exec_config_read(ctx, in, config);
@@ -486,6 +651,9 @@ struct flb_input_plugin in_exec_plugin = {
     .cb_pre_run   = in_exec_prerun,
     .cb_collect   = in_exec_collect,
     .cb_flush_buf = NULL,
+#ifndef FLB_SYSTEM_WINDOWS
+    .cb_pre_exit  = in_exec_pre_exit,
+#endif
     .cb_exit      = in_exec_exit,
     .config_map   = config_map
 };

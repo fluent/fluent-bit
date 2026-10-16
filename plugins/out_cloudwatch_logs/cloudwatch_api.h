@@ -48,7 +48,7 @@
  * https://docs.aws.amazon.com/AmazonCloudWatchLogs/latest/APIReference/API_PutLogEvents.html
  * AWS CloudWatch's documented maximum event size is 1,048,576 bytes (1 MiB),
  * including JSON encoding overhead (structure, escaping, etc.).
- * 
+ *
  * Setting MAX_EVENT_LEN to 1,000,000 bytes (1 MB) provides a ~4.6% safety margin
  * to account for JSON encoding overhead and ensure reliable operation.
  * Testing confirmed messages up to 1,048,546 bytes (encoding to 1,048,586 bytes)
@@ -80,5 +80,8 @@ int put_log_events(struct flb_cloudwatch *ctx, struct cw_flush *buf,
 int create_log_group(struct flb_cloudwatch *ctx, struct log_stream *stream);
 int compare_events(const void *a_arg, const void *b_arg);
 void reset_flush_buf(struct flb_cloudwatch *ctx, struct cw_flush *buf);
+void cloudwatch_mock_call_count_reset(void);
+int cloudwatch_mock_call_count_get(const char *api);
+int cloudwatch_mock_create_after_put_count_get(void);
 
 #endif

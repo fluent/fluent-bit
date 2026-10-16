@@ -29,6 +29,14 @@ static inline char *event_type_to_string(enum event_type type) {
             return "dns";
         case EVENT_TYPE_SCHED:
             return "sched";
+        case EVENT_TYPE_TLS_HANDSHAKE:
+            return "tls_handshake";
+        case EVENT_TYPE_TLS_READ:
+            return "tls_read";
+        case EVENT_TYPE_TLS_WRITE:
+            return "tls_write";
+        case EVENT_TYPE_TLS_SHUTDOWN:
+            return "tls_shutdown";
         default:
             return "unknown";
     }
@@ -54,6 +62,16 @@ static inline int encode_common_fields(struct flb_log_event_encoder *log_encoder
         return -1;
     }
     ret = flb_log_event_encoder_append_body_cstring(log_encoder, event_type_str);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -1;
+    }
+
+    /* Encode event ID */
+    ret = flb_log_event_encoder_append_body_cstring(log_encoder, "event_id");
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -1;
+    }
+    ret = flb_log_event_encoder_append_body_uint64(log_encoder, e->common.event_id);
     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
         return -1;
     }

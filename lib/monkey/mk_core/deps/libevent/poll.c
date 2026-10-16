@@ -53,6 +53,17 @@
 #include "evthread-internal.h"
 #include "time-internal.h"
 
+/* Since Linux 2.6.17, poll is able to report about peer half-closed connection
+   using special POLLRDHUP flag on a read event.
+*/
+#if !defined(POLLRDHUP)
+#define POLLRDHUP 0
+#define EARLY_CLOSE_IF_HAVE_RDHUP 0
+#else
+#define EARLY_CLOSE_IF_HAVE_RDHUP EV_FEATURE_EARLY_CLOSE
+#endif
+
+
 struct pollidx {
 	int idxplus1;
 };
@@ -79,8 +90,8 @@ const struct eventop pollops = {
 	poll_del,
 	poll_dispatch,
 	poll_dealloc,
-	0, /* doesn't need_reinit */
-	EV_FEATURE_FDS,
+	1, /* need_reinit */
+	EV_FEATURE_FDS|EARLY_CLOSE_IF_HAVE_RDHUP,
 	sizeof(struct pollidx),
 };
 
@@ -92,7 +103,8 @@ poll_init(struct event_base *base)
 	if (!(pollop = mm_calloc(1, sizeof(struct pollop))))
 		return (NULL);
 
-	evsig_init_(base);
+	if (sigfd_init_(base) < 0)
+		evsig_init_(base);
 
 	evutil_weakrand_seed_(&base->weakrand_seed, 0);
 
@@ -204,6 +216,8 @@ poll_dispatch(struct event_base *base, struct timeval *tv)
 			res |= EV_READ;
 		if (what & POLLOUT)
 			res |= EV_WRITE;
+		if (what & POLLRDHUP)
+			res |= EV_CLOSED;
 		if (res == 0)
 			continue;
 
@@ -222,7 +236,7 @@ poll_add(struct event_base *base, int fd, short old, short events, void *idx_)
 	int i;
 
 	EVUTIL_ASSERT((events & EV_SIGNAL) == 0);
-	if (!(events & (EV_READ|EV_WRITE)))
+	if (!(events & (EV_READ|EV_WRITE|EV_CLOSED)))
 		return (0);
 
 	poll_check_ok(pop);
@@ -265,6 +279,8 @@ poll_add(struct event_base *base, int fd, short old, short events, void *idx_)
 		pfd->events |= POLLOUT;
 	if (events & EV_READ)
 		pfd->events |= POLLIN;
+	if (events & EV_CLOSED)
+		pfd->events |= POLLRDHUP;
 	poll_check_ok(pop);
 
 	return (0);
@@ -283,7 +299,7 @@ poll_del(struct event_base *base, int fd, short old, short events, void *idx_)
 	int i;
 
 	EVUTIL_ASSERT((events & EV_SIGNAL) == 0);
-	if (!(events & (EV_READ|EV_WRITE)))
+	if (!(events & (EV_READ|EV_WRITE|EV_CLOSED)))
 		return (0);
 
 	poll_check_ok(pop);
@@ -297,6 +313,8 @@ poll_del(struct event_base *base, int fd, short old, short events, void *idx_)
 		pfd->events &= ~POLLIN;
 	if (events & EV_WRITE)
 		pfd->events &= ~POLLOUT;
+	if (events & EV_CLOSED)
+		pfd->events &= ~POLLRDHUP;
 	poll_check_ok(pop);
 	if (pfd->events)
 		/* Another event cares about that fd. */

@@ -1,0 +1,19 @@
+service:
+  flush: 12
+  grace: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: opentelemetry
+      port: ${FLUENT_BIT_TEST_LISTENER_PORT}
+      mem_buf_limit: 8KB
+      http2: on
+      tls: off
+      http_server.workers: 1
+
+  outputs:
+    - name: stdout
+      match: '*'

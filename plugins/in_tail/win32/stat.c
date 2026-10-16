@@ -17,10 +17,17 @@
  *  limitations under the License.
  */
 
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+
 #include <Windows.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <io.h>
+
+#include <fluent-bit/flb_mem.h>
+
 #include "interface.h"
 
 /*
@@ -73,7 +80,7 @@ static void reset_errno()
     errno = 0;
 }
 
-static void propagate_last_error_to_errno()
+void win32_propagate_last_error_to_errno(void)
 {
     DWORD error_code;
 
@@ -194,7 +201,7 @@ static int is_symlink(const char *path)
     h = FindFirstFileA(path, &data);
 
     if (h == INVALID_HANDLE_VALUE) {
-        propagate_last_error_to_errno();
+        win32_propagate_last_error_to_errno();
 
         return 0;
     }
@@ -215,6 +222,41 @@ static int is_symlink(const char *path)
     return 0;
 }
 
+static int is_symlink_utf8(const char *path)
+{
+    WIN32_FIND_DATAW data;
+    HANDLE h;
+    wchar_t *wide_path;
+
+    SetLastError(0);
+    reset_errno();
+
+    wide_path = win32_utf8_to_wide(path);
+    if (wide_path == NULL) {
+        errno = EINVAL;
+        return 0;
+    }
+
+    h = FindFirstFileW(wide_path, &data);
+    flb_free(wide_path);
+
+    if (h == INVALID_HANDLE_VALUE) {
+        win32_propagate_last_error_to_errno();
+
+        return 0;
+    }
+
+    FindClose(h);
+
+    if (data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+        if (data.dwReserved0 == IO_REPARSE_TAG_SYMLINK) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
 static int hstat(HANDLE h, struct win32_stat *wst)
 {
     BY_HANDLE_FILE_INFORMATION info;
@@ -224,14 +266,14 @@ static int hstat(HANDLE h, struct win32_stat *wst)
     reset_errno();
 
     if (!GetFileInformationByHandle(h, &info)) {
-        propagate_last_error_to_errno();
+        win32_propagate_last_error_to_errno();
 
         return -1;
     }
 
     if (!GetFileInformationByHandleEx(h, FileStandardInfo,
                                       &std, sizeof(std))) {
-        propagate_last_error_to_errno();
+        win32_propagate_last_error_to_errno();
 
         return -1;
     }
@@ -265,7 +307,45 @@ int win32_stat(const char *path, struct win32_stat *wst)
                     NULL);          /* hTemplateFile */
 
     if (h == INVALID_HANDLE_VALUE) {
-        propagate_last_error_to_errno();
+        win32_propagate_last_error_to_errno();
+
+        return -1;
+    }
+
+    if (hstat(h, wst)) {
+        CloseHandle(h);
+        return -1;
+    }
+
+    CloseHandle(h);
+    return 0;
+}
+
+int win32_stat_utf8(const char *path, struct win32_stat *wst)
+{
+    HANDLE h;
+    wchar_t *wide_path;
+
+    SetLastError(0);
+    reset_errno();
+
+    wide_path = win32_utf8_to_wide(path);
+    if (wide_path == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    h = CreateFileW(wide_path,
+                    GENERIC_READ,
+                    FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,
+                    NULL,           /* lpSecurityAttributes */
+                    OPEN_EXISTING,  /* dwCreationDisposition */
+                    0,              /* dwFlagsAndAttributes */
+                    NULL);          /* hTemplateFile */
+    flb_free(wide_path);
+
+    if (h == INVALID_HANDLE_VALUE) {
+        win32_propagate_last_error_to_errno();
 
         return -1;
     }
@@ -295,7 +375,7 @@ int win32_lstat(const char *path, struct win32_stat *wst)
                     NULL);          /* hTemplateFile */
 
     if (h == INVALID_HANDLE_VALUE) {
-        propagate_last_error_to_errno();
+        win32_propagate_last_error_to_errno();
 
         return -1;
     }
@@ -313,6 +393,48 @@ int win32_lstat(const char *path, struct win32_stat *wst)
     return 0;
 }
 
+int win32_lstat_utf8(const char *path, struct win32_stat *wst)
+{
+    HANDLE h;
+    wchar_t *wide_path;
+
+    SetLastError(0);
+    reset_errno();
+
+    wide_path = win32_utf8_to_wide(path);
+    if (wide_path == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    h = CreateFileW(wide_path,
+                    GENERIC_READ,
+                    FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,
+                    NULL,           /* lpSecurityAttributes */
+                    OPEN_EXISTING,  /* dwCreationDisposition */
+                    FILE_FLAG_OPEN_REPARSE_POINT,
+                    NULL);          /* hTemplateFile */
+    flb_free(wide_path);
+
+    if (h == INVALID_HANDLE_VALUE) {
+        win32_propagate_last_error_to_errno();
+
+        return -1;
+    }
+
+    if (hstat(h, wst)) {
+        CloseHandle(h);
+        return -1;
+    }
+
+    if (is_symlink_utf8(path)) {
+        wst->st_mode = WIN32_S_IFLNK;
+    }
+
+    CloseHandle(h);
+    return 0;
+}
+
 int win32_fstat(int fd, struct win32_stat *wst)
 {
     HANDLE h;
@@ -323,7 +445,7 @@ int win32_fstat(int fd, struct win32_stat *wst)
     h = (HANDLE) _get_osfhandle(fd);
 
     if (h == INVALID_HANDLE_VALUE) {
-        propagate_last_error_to_errno();
+        win32_propagate_last_error_to_errno();
 
         return -1;
     }

@@ -1,0 +1,21 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: http
+      port: ${FLUENT_BIT_TEST_LISTENER_PORT}
+      http2: on
+      workers: 4
+      net.accept_timeout: 2s
+      tls: on
+      tls.crt_file: ${CERTIFICATE_TEST}
+      tls.key_file: ${PRIVATE_KEY_TEST}
+
+  outputs:
+    - name: stdout
+      match: "*"

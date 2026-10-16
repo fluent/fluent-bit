@@ -894,6 +894,8 @@ static int cb_do_sampling(struct sampling *ctx, void *plugin_context,
     ctrace_entry = flb_malloc(sizeof(struct sampling_ctrace_entry));
     if (!ctrace_entry) {
         flb_errno();
+        /* the caller destroys the context, unregister its spans */
+        sampling_span_registry_remove_trace(ctx, settings->span_reg, in_ctr);
         return FLB_PROCESSOR_FAILURE;
     }
     ctrace_entry->ctr = in_ctr;

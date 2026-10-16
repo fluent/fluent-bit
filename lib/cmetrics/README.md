@@ -141,6 +141,10 @@ CMetrics is heavily inspired by the Go Prometheus Client API design:
 
 - https://pkg.go.dev/github.com/prometheus/client_golang/prometheus#section-documentation
 
+Additional design notes:
+
+- [Long metric label handling](docs/label-value-handling.md)
+
 ## License
 
 This program is under the terms of the

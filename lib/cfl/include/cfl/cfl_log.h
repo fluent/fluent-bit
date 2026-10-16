@@ -24,11 +24,12 @@
 
 int cfl_report_runtime_error_impl(int errnum, char *file, int line);
 
-#ifdef __FILENAME__
-#define cfl_report_runtime_error() cfl_report_runtime_error_impl(errno, __FILENAME__, __LINE__)
-#else
-#define cfl_report_runtime_error() cfl_report_runtime_error_impl(errno, __FILE__, __LINE__)
+#ifndef CFL_FILENAME
+#define CFL_FILENAME __FILE__
 #endif
+
+#define cfl_report_runtime_error() \
+    cfl_report_runtime_error_impl(errno, CFL_FILENAME, __LINE__)
 
 #define cfl_errno() do {} while (0)
 

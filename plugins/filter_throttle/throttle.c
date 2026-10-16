@@ -92,8 +92,9 @@ void *time_ticker(void *args)
                          ctx->hash->total / ctx->hash->size);
         }
         pthread_mutex_unlock(&throttle_mut);
-        /* sleep is a cancelable function */
+        /* Windows sleep is not a pthread cancellation point. */
         sleep(ctx->ticker_data.seconds);
+        pthread_testcancel();
     }
 }
 

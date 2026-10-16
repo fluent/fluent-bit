@@ -10,6 +10,11 @@ void flb_test_downstream_accept_timeout()
     struct flb_connection *conn = NULL;
     time_t now;
 
+#ifdef _WIN32
+    WSADATA wsa_data;
+    WSAStartup(0x0201, &wsa_data);
+#endif
+
     flb_engine_evl_init();
 
     evl = mk_event_loop_create(16);

@@ -32,6 +32,10 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #endif
+#ifndef _WIN32
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#endif
 #include <fcntl.h>
 #include "flb_tests_runtime.h"
 
@@ -122,6 +126,7 @@ static struct test_ctx *test_ctx_create(struct flb_lib_out_cb *data)
     int i_ffd;
     int o_ffd;
     struct test_ctx *ctx = NULL;
+    const char *port;
 
     ctx = flb_malloc(sizeof(struct test_ctx));
     if (!TEST_CHECK(ctx != NULL)) {
@@ -142,6 +147,10 @@ static struct test_ctx *test_ctx_create(struct flb_lib_out_cb *data)
     i_ffd = flb_input(ctx->flb, (char *) "forward", NULL);
     TEST_CHECK(i_ffd >= 0);
     ctx->i_ffd = i_ffd;
+    port = getenv("FLB_TEST_FORWARD_PORT");
+    if (port) {
+        TEST_CHECK(flb_input_set(ctx->flb, i_ffd, "port", port, NULL) == 0);
+    }
 
     /* Output */
     o_ffd = flb_output(ctx->flb, (char *) "lib", (void *) data);
@@ -175,6 +184,9 @@ static flb_sockfd_t connect_tcp(char *in_host, int in_port)
     }
     if (port < 0) {
         port = DEFAULT_PORT;
+        if (getenv("FLB_TEST_FORWARD_PORT")) {
+            port = atoi(getenv("FLB_TEST_FORWARD_PORT"));
+        }
     }
 
     memset(&addr, 0, sizeof(addr));
@@ -561,6 +573,7 @@ void flb_test_unix_perm()
         exit(EXIT_FAILURE);
     }
 
+#ifndef _WIN32
     if (!TEST_CHECK((sb.st_mode & S_IRWXO) == 0)) {
         TEST_MSG("Permssion(others) error. val=0x%x",sb.st_mode & S_IRWXO);
     }
@@ -570,6 +583,7 @@ void flb_test_unix_perm()
     if (!TEST_CHECK((sb.st_mode & S_IRWXU) == (S_IRUSR | S_IWUSR))) {
         TEST_MSG("Permssion(user) error. val=0x%x",sb.st_mode & S_IRWXU);
     }
+#endif
 
     flb_socket_close(fd);
     test_ctx_destroy(ctx);
@@ -1082,6 +1096,10 @@ void flb_test_threaded_forward_issue_10946()
 
     in_ffd = flb_input(ctx, (char *) "forward", NULL);
     TEST_CHECK(in_ffd >= 0);
+    if (getenv("FLB_TEST_FORWARD_PORT")) {
+        ret = flb_input_set(ctx, in_ffd, "port", getenv("FLB_TEST_FORWARD_PORT"), NULL);
+        TEST_CHECK(ret == 0);
+    }
     ret = flb_input_set(ctx, in_ffd,
                         "tag", "logs",
                         "threaded", "true",
@@ -1168,6 +1186,10 @@ static flb_ctx_t *fw_make_ctx_with_forward(int *in_ffd_out, int *out_ffd_out)
     /* forward input */
     in_ffd = flb_input(ctx, (char *) "forward", NULL);
     TEST_CHECK(in_ffd >= 0);
+    if (getenv("FLB_TEST_FORWARD_PORT")) {
+        ret = flb_input_set(ctx, in_ffd, "port", getenv("FLB_TEST_FORWARD_PORT"), NULL);
+        TEST_CHECK(ret == 0);
+    }
     if (in_ffd < 0) { flb_destroy(ctx); return NULL; }
 
     /* lib output: count only (no payload check) */

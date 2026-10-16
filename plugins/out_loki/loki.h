@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_hash_table.h>
+#include <fluent-bit/flb_pthread.h>
 #include <cfl/cfl_list.h>
 
 #define FLB_LOKI_CT              "Content-Type"
@@ -105,6 +106,16 @@ struct flb_loki {
 
     struct cfl_list remove_mpa_list;
     pthread_mutex_t remove_mpa_list_lock;
+
+    /*
+     * Per-instance TLS key for the thread-local remove_mpa cache. Each loki
+     * output instance owns its own key so multiple loki outputs running on
+     * the same worker thread do not share each other's mpa, which would
+     * cause one instance to silently skip remove_keys against records that
+     * do not match the other instance's patterns.
+     */
+    pthread_key_t remove_mpa_key;
+    int remove_mpa_key_initialized;
 
     /* Upstream Context */
     struct flb_upstream *u;

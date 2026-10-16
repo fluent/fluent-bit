@@ -1,0 +1,28 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+  telemetry:
+    metrics:
+      logs:
+        tag_records:
+          enabled: true
+
+pipeline:
+  inputs:
+    - name: dummy
+      alias: tag_records_multi_a
+      tag: tag.records.alpha
+      dummy: '{"message":"alpha"}'
+      samples: 1
+    - name: dummy
+      alias: tag_records_multi_b
+      tag: tag.records.beta
+      dummy: '{"message":"beta"}'
+      samples: 1
+
+  outputs:
+    - name: stdout
+      match: '*'

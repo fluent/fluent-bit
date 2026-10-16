@@ -31,14 +31,17 @@ void flb_test_td_json_long(void)
 
     out_ffd = flb_output(ctx, (char *) "td", NULL);
     TEST_CHECK(out_ffd >= 0);
-    flb_output_set(ctx, out_ffd,"match", "test", NULL);
-
-    ret = flb_lib_config_file(ctx, (char *) "/tmp/td.conf");
+    /* Exercise large-record ingestion without credentials or a live service. */
+    ret = flb_output_set(ctx, out_ffd, "match", "test",
+                         "api", "local-test-key", "database", "test", "table", "test",
+                         "host", "127.0.0.1", "port", "9", NULL);
+    TEST_CHECK(ret == 0);
 
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
 
-    flb_lib_push(ctx, in_ffd, (char *) JSON_TD , (int) sizeof(JSON_TD) - 1);
+    ret = flb_lib_push(ctx, in_ffd, (char *) JSON_TD, (int) sizeof(JSON_TD) - 1);
+    TEST_CHECK(ret == (int) sizeof(JSON_TD) - 1);
 
     flb_stop(ctx);
     flb_destroy(ctx);

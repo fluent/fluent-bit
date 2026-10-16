@@ -76,6 +76,7 @@ void mk_string_split_free(struct mk_list *list);
 int mk_string_trim(char **str);
 char *mk_string_build(char **buffer, unsigned long *len,
                       const char *format, ...) PRINTF_WARNINGS(3,4);
+char *mk_string_html_escape(const char *str);
 
 #if defined (__GNUC__) || defined (_WIN32)
 int mk_string_itop(uint64_t value, mk_ptr_t *p);

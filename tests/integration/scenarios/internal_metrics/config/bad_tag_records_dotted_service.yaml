@@ -1,0 +1,18 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: error
+  # Flat dotted keys are not supported; only nested 'telemetry' blocks are.
+  # This must be rejected explicitly, not silently ignored.
+  telemetry.metrics.logs.tag_records: true
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: bad.dotted.service
+      dummy: '{"message":"x"}'
+      samples: 1
+
+  outputs:
+    - name: 'null'
+      match: '*'

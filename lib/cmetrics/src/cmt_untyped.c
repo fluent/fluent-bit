@@ -96,7 +96,7 @@ int cmt_untyped_destroy(struct cmt_untyped *untyped)
     return 0;
 }
 
-/* Set untyped value, new value cannot be smaller than current value */
+/* Set untyped value */
 int cmt_untyped_set(struct cmt_untyped *untyped, uint64_t timestamp, double val,
                     int labels_count, char **label_vals)
 {
@@ -112,9 +112,6 @@ int cmt_untyped_set(struct cmt_untyped *untyped, uint64_t timestamp, double val,
         return -1;
     }
 
-    if (cmt_metric_get_value(metric) > val) {
-        return -1;
-    }
     cmt_metric_set(metric, timestamp, val);
     return 0;
 }

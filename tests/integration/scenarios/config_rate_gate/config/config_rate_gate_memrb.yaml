@@ -1,0 +1,23 @@
+service:
+  flush: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: rate_gate.memrb
+      dummy: '{"message":"memrb path"}'
+      copies: 30
+      rate: 120
+      mem_buf_limit: 256k
+      rate_gate: true
+      rate_gate.max_bytes: 1024
+      rate_gate.max_records: 20
+      rate_window: 1s
+      rate_gate.backpressure: true
+
+  outputs:
+    - name: stdout
+      match: "*"

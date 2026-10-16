@@ -46,6 +46,11 @@
 #define FLB_TAIL_METRIC_L_SKIPPED 105  /* number of skipped occurrences of long lines */
 #endif
 
+#ifdef FLB_SYSTEM_WINDOWS
+#define FLB_TAIL_WINDOWS_PATH_ENCODING_ANSI 0
+#define FLB_TAIL_WINDOWS_PATH_ENCODING_UTF8 1
+#endif
+
 struct flb_tail_config {
     int fd_notify;             /* inotify fd               */
     flb_pipefd_t ch_manager[2];    /* pipe: channel manager    */
@@ -96,6 +101,9 @@ struct flb_tail_config {
                                     * being ingested */
     time_t last_pending;       /* last time a 'pending signal' was emitted' */
     struct mk_list *path_list; /* list of paths to scan (glob) */
+#ifdef FLB_SYSTEM_WINDOWS
+    int windows_path_encoding; /* Windows path API encoding mode */
+#endif
     flb_sds_t path_key;        /* key name of file path        */
     flb_sds_t key;             /* key for unstructured record  */
     int   skip_long_lines;     /* skip long lines              */

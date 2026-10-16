@@ -59,6 +59,7 @@ struct flb_in_fw_config *fw_config_init(struct flb_input_instance *i_ins)
 {
     char tmp[16];
     int ret = -1;
+    int64_t memory_limit;
     const char *p;
     struct flb_in_fw_config *config;
 
@@ -68,6 +69,7 @@ struct flb_in_fw_config *fw_config_init(struct flb_input_instance *i_ins)
         return NULL;
     }
     config->coll_fd = -1;
+    config->workers = 1;
 
     config->log_encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
 
@@ -90,9 +92,65 @@ struct flb_in_fw_config *fw_config_init(struct flb_input_instance *i_ins)
     ret = flb_input_config_map_set(i_ins, (void *)config);
     if (ret == -1) {
         flb_plg_error(i_ins, "config map set error");
+        /* values written so far are still owned by the config map */
+        config->tag_prefix = NULL;
         fw_config_destroy(config);
         return NULL;
     }
+
+    /*
+     * The config map owns the strings it writes into the context and
+     * releases them the next time it is applied to the same instance, which
+     * happens once per listener worker (in_fw_worker_init). Keep private
+     * copies of the values used while serving connections so no context is
+     * left pointing to released memory.
+     */
+    if (config->tag_prefix) {
+        config->tag_prefix = flb_sds_create_len(config->tag_prefix,
+                                                flb_sds_len(config->tag_prefix));
+        if (!config->tag_prefix) {
+            flb_plg_error(i_ins, "tag_prefix alloc failed");
+            fw_config_destroy(config);
+            return NULL;
+        }
+    }
+
+    if (config->shared_key) {
+        config->shared_key = flb_sds_create_len(config->shared_key,
+                                                flb_sds_len(config->shared_key));
+        if (!config->shared_key) {
+            flb_plg_error(i_ins, "shared_key alloc failed");
+            fw_config_destroy(config);
+            return NULL;
+        }
+        config->owns_shared_key = FLB_TRUE;
+    }
+
+    p = flb_input_get_property("msgpack_memory_limit", i_ins);
+    if (p != NULL) {
+        memory_limit = flb_utils_size_to_bytes(p);
+        if (memory_limit < 0 || (uint64_t) memory_limit > SIZE_MAX) {
+            flb_plg_error(i_ins, "msgpack_memory_limit must be zero or a positive size");
+            fw_config_destroy(config);
+            return NULL;
+        }
+    }
+    if (config->msgpack_memory_limit == 0) {
+        /* Leave bounded headroom for compact records and zone rounding. The
+         * floor accommodates initial zones when the receive buffer is small.
+         * This is a default policy, not a worst-case MessagePack size bound. */
+        if (config->buffer_max_size > SIZE_MAX / 16) {
+            flb_plg_error(i_ins, "automatic msgpack_memory_limit overflows; set an explicit size");
+            fw_config_destroy(config);
+            return NULL;
+        }
+        config->msgpack_memory_limit = config->buffer_max_size * 16;
+        if (config->msgpack_memory_limit < 65536) {
+            config->msgpack_memory_limit = 65536;
+        }
+    }
+    flb_plg_debug(i_ins, "MessagePack zone memory limit: %zu bytes",
+                  config->msgpack_memory_limit);
 
     p = flb_input_get_property("unix_path", i_ins);
     if (p == NULL) {
@@ -135,6 +193,11 @@ struct flb_in_fw_config *fw_config_init(struct flb_input_instance *i_ins)
 
 int fw_config_destroy(struct flb_in_fw_config *config)
 {
+    if (config->conn_mutex_initialized == FLB_TRUE) {
+        pthread_mutex_destroy(&config->conn_mutex);
+        config->conn_mutex_initialized = FLB_FALSE;
+    }
+
     if (config->log_encoder != NULL) {
         flb_log_event_encoder_destroy(config->log_encoder);
     }
@@ -149,6 +212,11 @@ int fw_config_destroy(struct flb_in_fw_config *config)
         config->coll_fd = -1;
     }
 
+    if (config->listener_registered == FLB_TRUE && config->event_loop != NULL) {
+        mk_event_del(config->event_loop, &config->listener_event);
+        config->listener_registered = FLB_FALSE;
+    }
+
     if (config->downstream != NULL) {
         flb_downstream_destroy(config->downstream);
     }
@@ -161,6 +229,7 @@ int fw_config_destroy(struct flb_in_fw_config *config)
     }
 
     fw_destroy_shared_key(config);
+    flb_sds_destroy(config->tag_prefix);
     flb_sds_destroy(config->self_hostname);
 
     flb_free(config);

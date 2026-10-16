@@ -134,10 +134,16 @@ struct flb_forward_ping {
     int keepalive;
 };
 
+/*
+ * Maximum storage required for a 'chunk' ack token: Base64 representation
+ * of a 128 bits unique id (24 bytes) plus NUL terminator.
+ */
+#define FLB_FORWARD_CHUNK_TOKEN_SIZE   25
+
 /* Flush callback context */
 struct flb_forward_flush {
     struct flb_forward_config *fc;
-    char checksum_hex[33];
+    char chunk_token[FLB_FORWARD_CHUNK_TOKEN_SIZE];
 };
 
 struct flb_forward_config *flb_forward_target(struct flb_forward *ctx,

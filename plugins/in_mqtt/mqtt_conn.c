@@ -28,13 +28,19 @@
 #include "mqtt_prot.h"
 #include "mqtt_conn.h"
 
-/* Callback invoked every time an event is triggered for a connection */
+static void mqtt_conn_drop(struct flb_connection *connection);
+
+/*
+ * Callback invoked from the downstream event coroutine of the connection. It
+ * is called in a loop and the read below suspends the coroutine until data
+ * is available, so every return path must either consume data or release
+ * the connection.
+ */
 int mqtt_conn_event(void *data)
 {
     int ret;
     int bytes;
     int available;
-    struct mk_event *event;
     struct mqtt_conn *conn;
     struct flb_in_mqtt_config *ctx;
     struct flb_connection *connection;
@@ -43,38 +49,45 @@ int mqtt_conn_event(void *data)
 
     conn = connection->user_data;
 
+    /* The wrapper might have been released by the drop notification */
+    if (conn == NULL) {
+        return -1;
+    }
+
     ctx = conn->ctx;
 
-    event = &connection->event;
+    available = conn->buf_size - conn->buf_len;
+    if (available < 1) {
+        flb_plg_debug(ctx->ins, "[fd=%i] incoming packet exceeds buffer_size",
+                      connection->fd);
 
-    if (event->mask & MK_EVENT_READ) {
-        available = conn->buf_size - conn->buf_len;
+        mqtt_conn_del(conn);
 
-        bytes = flb_io_net_read(connection,
-                                (void *) &conn->buf[conn->buf_len],
-                                available);
-
-        if (bytes > 0) {
-            conn->buf_len += bytes;
-            flb_plg_trace(ctx->ins, "[fd=%i] read()=%i bytes",
-                          connection->fd,
-                          bytes);
-
-            ret = mqtt_prot_parser(conn);
-            if (ret < 0) {
-                mqtt_conn_del(conn);
-                return -1;
-            }
-        }
-        else {
-            flb_plg_debug(ctx->ins, "[fd=%i] connection closed",
-                          connection->fd);
-
-            mqtt_conn_del(conn);
-        }
+        return -1;
     }
-    else if (event->mask & MK_EVENT_CLOSE) {
-        flb_plg_debug(ctx->ins, "[fd=%i] hangup", event->fd);
+
+    bytes = flb_io_net_read(connection,
+                            (void *) &conn->buf[conn->buf_len],
+                            available);
+
+    if (bytes <= 0) {
+        flb_plg_debug(ctx->ins, "[fd=%i] connection closed",
+                      connection->fd);
+
+        mqtt_conn_del(conn);
+
+        return -1;
+    }
+
+    conn->buf_len += bytes;
+    flb_plg_trace(ctx->ins, "[fd=%i] read()=%i bytes",
+                  connection->fd,
+                  bytes);
+
+    ret = mqtt_prot_parser(conn);
+    if (ret < 0) {
+        mqtt_conn_del(conn);
+        return -1;
     }
 
     return 0;
@@ -85,7 +98,6 @@ struct mqtt_conn *mqtt_conn_add(struct flb_connection *connection,
                                 struct flb_in_mqtt_config *ctx)
 {
     struct mqtt_conn *conn;
-    int               ret;
 
     conn = flb_malloc(sizeof(struct mqtt_conn));
     if (!conn) {
@@ -105,12 +117,7 @@ struct mqtt_conn *mqtt_conn_add(struct flb_connection *connection,
 
     conn->connection = connection;
 
-    /* Set data for the event-loop */
-    MK_EVENT_NEW(&connection->event);
-
     connection->user_data     = conn;
-    connection->event.type    = FLB_ENGINE_EV_CUSTOM;
-    connection->event.handler = mqtt_conn_event;
 
     /* Connection info */
     conn->ctx     = ctx;
@@ -119,32 +126,21 @@ struct mqtt_conn *mqtt_conn_add(struct flb_connection *connection,
     conn->buf_frame_end = 0;
     conn->status  = MQTT_NEW;
 
-    /* Register instance into the event loop */
-    ret = mk_event_add(flb_engine_evl_get(),
-                       connection->fd,
-                       FLB_ENGINE_EV_CUSTOM,
-                       MK_EVENT_READ,
-                       &connection->event);
-    if (ret == -1) {
-        flb_plg_error(ctx->ins, "could not register new connection");
-        flb_free(conn);
-
-        return NULL;
-    }
-
     mk_list_add(&conn->_head, &ctx->conns);
+
+    /*
+     * The connection is registered into the event loop by the downstream
+     * accept coroutine and the wrapper is released from the drop
+     * notification once the engine tears the connection down.
+     */
+    connection->drop_notification_callback = mqtt_conn_drop;
 
     return conn;
 }
 
-int mqtt_conn_del(struct mqtt_conn *conn)
+/* Release the plugin-side wrapper, the downstream connection is not touched */
+static void mqtt_conn_release(struct mqtt_conn *conn)
 {
-    /* The downstream unregisters the file descriptor from the event-loop
-     * so there's nothing to be done by the plugin
-     */
-    flb_downstream_conn_release(conn->connection);
-
-    /* Release resources */
     mk_list_del(&conn->_head);
 
     if (conn->buf != NULL) {
@@ -152,6 +148,39 @@ int mqtt_conn_del(struct mqtt_conn *conn)
     }
 
     flb_free(conn);
+}
+
+/*
+ * Invoked by the engine (via prepare_destroy_conn) when the underlying
+ * connection is destroyed, either on our request through mqtt_conn_del
+ * or on its own (e.g. an IO timeout).
+ */
+static void mqtt_conn_drop(struct flb_connection *connection)
+{
+    struct mqtt_conn *conn;
+
+    conn = connection->user_data;
+
+    connection->drop_notification_callback = NULL;
+    connection->user_data = NULL;
+
+    if (conn != NULL) {
+        flb_plg_trace(conn->ctx->ins, "[fd=%i] drop connection",
+                      connection->fd);
+        conn->connection = NULL;
+        mqtt_conn_release(conn);
+    }
+}
+
+int mqtt_conn_del(struct mqtt_conn *conn)
+{
+    /*
+     * The downstream unregisters the file descriptor from the event-loop
+     * and may have to wake a callback suspended in asynchronous I/O before
+     * releasing it, so the wrapper is freed by the drop notification in
+     * both the immediate and the deferred paths.
+     */
+    flb_downstream_conn_release(conn->connection);
 
     return 0;
 }

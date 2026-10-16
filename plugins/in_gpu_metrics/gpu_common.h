@@ -23,8 +23,11 @@
 #include <inttypes.h>
 #include <stddef.h>
 
+struct in_gpu_metrics;
+
 int gpu_read_uint64(const char *path, uint64_t *value);
 int gpu_read_double(const char *path, double scale, double *value);
 int gpu_read_line(const char *path, char *buf, size_t size);
+int gpu_should_include_card(struct in_gpu_metrics *ctx, int card_id);
 
 #endif

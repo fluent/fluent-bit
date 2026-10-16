@@ -200,6 +200,16 @@ def test_out_stdout_logs_accepts_otlp_json_ingestion():
     assert "This is another example log message." in log_text
 
 
+def test_out_stdout_preserves_post_2038_otlp_timestamp():
+    service = Service("out_stdout_otel.yaml")
+    service.start()
+    service.send_logs_json_payload("test_logs_2038.in.json")
+    log_text = service.wait_for_log_contains("post-2038 timestamp")
+    service.stop()
+
+    assert "2209072510.808241446" in log_text
+
+
 def test_out_stdout_metrics_accepts_otlp_json_ingestion():
     service = Service("out_stdout_otel.yaml")
     service.start()

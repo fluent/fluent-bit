@@ -40,7 +40,36 @@ struct cmt_opentelemetry_context
     struct cmt                                     *cmt;
 };
 
+struct cmt_opentelemetry_batch {
+    cfl_sds_t payload;
+    size_t data_point_count;
+};
+
+struct cmt_opentelemetry_batches {
+    size_t count;
+    struct cmt_opentelemetry_batch *entries;
+};
+
 cfl_sds_t cmt_encode_opentelemetry_create(struct cmt *cmt);
 void cmt_encode_opentelemetry_destroy(cfl_sds_t text);
+
+/*
+ * Split an encoded OTLP ExportMetricsServiceRequest without changing metric,
+ * resource, or scope metadata. A zero limit returns the original request as a
+ * single batch. The returned payloads are owned by the batch collection.
+ */
+struct cmt_opentelemetry_batches *
+cmt_encode_opentelemetry_split_payload(const void *payload,
+                                       size_t payload_size,
+                                       size_t max_data_points,
+                                       int *result);
+
+struct cmt_opentelemetry_batches *
+cmt_encode_opentelemetry_create_batches(struct cmt *context,
+                                        size_t max_data_points,
+                                        int *result);
+
+void cmt_encode_opentelemetry_destroy_batches(
+    struct cmt_opentelemetry_batches *batches);
 
 #endif

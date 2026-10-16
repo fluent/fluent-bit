@@ -309,6 +309,13 @@ static void output_thread(void *data)
                                                         th_ins->ins,
                                                         th_ins->config);
                     if (!out_flush) {
+                        /*
+                         * The engine already counts this worker as a user
+                         * of the task and waits for the route status:
+                         * report the error so the task gets released
+                         * instead of being retained forever.
+                         */
+                        flb_output_task_flush_error(task, ins);
                         continue;
                     }
                     flb_coro_resume(out_flush->coro);

@@ -20,7 +20,10 @@
 
 #include <fluent-bit.h>
 #include <stdlib.h>
+#ifndef _WIN32
 #include <unistd.h>
+#endif
+#include <fluent-bit/flb_time.h>
 #include <string.h>
 
 #include "flb_tests_runtime.h"
@@ -40,27 +43,29 @@ TEST_LIST = {
 int64_t result_time;
 static inline int64_t set_result(int64_t v)
 {
+#ifdef _WIN32
+    return InterlockedExchange64((volatile LONG64 *)&result_time, v);
+#else
     int64_t old = __sync_lock_test_and_set(&result_time, v);
     return old;
+#endif
 }
 
 static inline int64_t get_result(void)
 {
+#ifdef _WIN32
+    return InterlockedCompareExchange64((volatile LONG64 *)&result_time, 0, 0);
+#else
     int64_t old = __sync_fetch_and_add(&result_time, 0);
-
     return old;
+#endif
 }
 
 static inline int64_t time_in_ms()
 {
-    int ms;
-    struct timespec s;
-    TEST_CHECK(clock_gettime(CLOCK_MONOTONIC, &s) == 0);
-    ms = s.tv_nsec / 1.0e6;
-    if (ms >= 1000) {
-        ms = 0;
-    }
-    return 1000 * s.tv_sec + ms;
+    struct flb_time s;
+    flb_time_get(&s);
+    return flb_time_to_millisec(&s);
 }
 
 int callback_test(void* data, size_t size, void* cb_data)

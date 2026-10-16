@@ -20,6 +20,7 @@
 #include <ctraces/ctr_mpack_utils.h>
 #include <cfl/cfl_sds.h>
 #include <mpack/mpack.h>
+#include <limits.h>
 
 int ctr_mpack_consume_string_or_nil_tag(mpack_reader_t *reader, cfl_sds_t *output_buffer)
 {
@@ -126,6 +127,9 @@ int ctr_mpack_consume_uint_tag(mpack_reader_t *reader, uint64_t *output_buffer)
     }
 
     if (mpack_type_int == mpack_tag_type(&tag)) {
+        if (mpack_tag_int_value(&tag) < 0) {
+            return CTR_MPACK_CORRUPT_INPUT_DATA_ERROR;
+        }
         *output_buffer = (uint64_t) mpack_tag_int_value(&tag);
     }
     else if (mpack_type_uint == mpack_tag_type(&tag)) {
@@ -146,6 +150,9 @@ int ctr_mpack_consume_uint32_tag(mpack_reader_t *reader, uint32_t *output_buffer
     result = ctr_mpack_consume_uint_tag(reader, &value);
 
     if (result == CTR_MPACK_SUCCESS) {
+        if (value > UINT32_MAX) {
+            return CTR_MPACK_CORRUPT_INPUT_DATA_ERROR;
+        }
         *output_buffer = (uint32_t) value;
     }
 
@@ -179,6 +186,9 @@ int ctr_mpack_consume_int_tag(mpack_reader_t *reader, int64_t *output_buffer)
         *output_buffer = (int64_t) mpack_tag_int_value(&tag);
     }
     else if (mpack_type_uint == mpack_tag_type(&tag)) {
+        if (mpack_tag_uint_value(&tag) > INT64_MAX) {
+            return CTR_MPACK_CORRUPT_INPUT_DATA_ERROR;
+        }
         *output_buffer = (int64_t) mpack_tag_uint_value(&tag);
     }
     else {
@@ -196,6 +206,9 @@ int ctr_mpack_consume_int32_tag(mpack_reader_t *reader, int32_t *output_buffer)
     result = ctr_mpack_consume_int_tag(reader, &value);
 
     if (result == CTR_MPACK_SUCCESS) {
+        if (value < INT32_MIN || value > INT32_MAX) {
+            return CTR_MPACK_CORRUPT_INPUT_DATA_ERROR;
+        }
         *output_buffer = (int32_t) value;
     }
 
@@ -335,6 +348,8 @@ int ctr_mpack_unpack_map(mpack_reader_t *reader,
     struct ctr_mpack_map_entry_callback_t *callback_entry;
     uint32_t                               entry_index;
     uint32_t                               entry_count;
+    uint32_t                               callback_index;
+    uint8_t                                handled_entries[CTR_MPACK_MAX_MAP_ENTRY_COUNT];
     cfl_sds_t                              key_name;
     int                                    result;
     mpack_tag_t                            tag;
@@ -363,22 +378,31 @@ int ctr_mpack_unpack_map(mpack_reader_t *reader,
     }
 
     result = 0;
+    memset(handled_entries, 0, sizeof(handled_entries));
 
     for (entry_index = 0 ; 0 == result && entry_index < entry_count ; entry_index++) {
         result = ctr_mpack_consume_string_tag(reader, &key_name);
 
         if (CTR_MPACK_SUCCESS == result) {
             callback_entry = callback_list;
+            callback_index = 0;
             result = CTR_MPACK_UNEXPECTED_KEY_ERROR;
 
             while (CTR_MPACK_UNEXPECTED_KEY_ERROR == result &&
                    NULL != callback_entry->identifier) {
 
                 if (0 == strcmp(callback_entry->identifier, key_name)) {
-                    result = callback_entry->handler(reader, entry_index, context);
+                    if (handled_entries[callback_index]) {
+                        result = CTR_MPACK_CORRUPT_INPUT_DATA_ERROR;
+                    }
+                    else {
+                        handled_entries[callback_index] = 1;
+                        result = callback_entry->handler(reader, entry_index, context);
+                    }
                 }
 
                 callback_entry++;
+                callback_index++;
             }
 
             cfl_sds_destroy(key_name);

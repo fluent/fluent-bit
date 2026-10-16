@@ -1,0 +1,18 @@
+service:
+  flush: 1
+  grace: 0
+  storage.path: ${STORAGE_BACKLOG_PATH}
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: stale
+      samples: 1
+      storage.type: filesystem
+
+  outputs:
+    - name: http
+      match: stale
+      host: 127.0.0.1
+      port: 9
+      retry_limit: no_limits

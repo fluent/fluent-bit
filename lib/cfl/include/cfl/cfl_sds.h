@@ -29,10 +29,11 @@
 #include <string.h>
 #include <inttypes.h>
 #include <stdint.h>
+typedef char *cfl_sds_t;
+
+struct cfl_arena;
 
 #define CFL_SDS_HEADER_SIZE (sizeof(uint64_t) + sizeof(uint64_t))
-
-typedef char *cfl_sds_t;
 
 #pragma pack(push, 1)
 struct cfl_sds {
@@ -44,6 +45,8 @@ struct cfl_sds {
 
 #define CFL_SDS_HEADER(s)  ((struct cfl_sds *) (s - CFL_SDS_HEADER_SIZE))
 
+size_t cfl_sds_alloc(cfl_sds_t s);
+
 static inline void cfl_sds_len_set(cfl_sds_t s, size_t len)
 {
     struct cfl_sds *head;
@@ -53,7 +56,7 @@ static inline void cfl_sds_len_set(cfl_sds_t s, size_t len)
     }
 
     head = CFL_SDS_HEADER(s);
-    if (len > head->alloc) {
+    if (len > cfl_sds_alloc(s)) {
         return;
     }
 
@@ -62,10 +65,11 @@ static inline void cfl_sds_len_set(cfl_sds_t s, size_t len)
 }
 
 size_t cfl_sds_avail(cfl_sds_t s);
-size_t cfl_sds_alloc(cfl_sds_t s);
 cfl_sds_t cfl_sds_increase(cfl_sds_t s, size_t len);
 size_t cfl_sds_len(cfl_sds_t s);
 cfl_sds_t cfl_sds_create_len(const char *str, int len);
+cfl_sds_t cfl_sds_create_len_in(struct cfl_arena *arena,
+                                const char *str, int len);
 cfl_sds_t cfl_sds_create(const char *str);
 void cfl_sds_destroy(cfl_sds_t s);
 cfl_sds_t cfl_sds_cat(cfl_sds_t s, const char *str, int len);

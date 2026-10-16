@@ -1,0 +1,24 @@
+service:
+  flush: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: out_kafka
+      dummy: '{"ID":"97789a11215b54828d2c3f50b864afed42543ff8","HTTPHeader":{}}'
+      samples: 1
+
+  outputs:
+    - name: kafka
+      match: out_kafka
+      brokers: 127.0.0.1:${TEST_SUITE_KAFKA_PORT}
+      topics: test
+      format: avro
+      schema_str: '{"type":"record","name":"EmptyMapRecord","fields":[{"name":"ID","type":"string"},{"name":"HTTPHeader","type":{"type":"map","values":"string"}}]}'
+      schema_id: 42
+      queue_full_retries: 1
+      rdkafka.api.version.request: false
+      rdkafka.broker.version.fallback: 0.8.2.0

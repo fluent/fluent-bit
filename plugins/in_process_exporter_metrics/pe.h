@@ -46,6 +46,7 @@ struct flb_pe {
     /* configuration */
     flb_sds_t path_procfs;
     int scrape_interval;
+    int page_size;
 
     int coll_fd;                    /* collector fd     */
     struct cmt *cmt;                /* cmetrics context */

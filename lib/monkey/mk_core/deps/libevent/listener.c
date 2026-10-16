@@ -24,19 +24,26 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifdef _WIN32
+#ifndef _WIN32_WINNT
+/* Minimum required for InitializeCriticalSectionAndSpinCount */
+#define _WIN32_WINNT 0x0403
+#endif
+#endif
+
 #include "event2/event-config.h"
 #include "evconfig-private.h"
 
 #include <sys/types.h>
 
 #ifdef _WIN32
-#ifndef _WIN32_WINNT
-/* Minimum required for InitializeCriticalSectionAndSpinCount */
-#define _WIN32_WINNT 0x0403
-#endif
 #include <winsock2.h>
+#include <winerror.h>
 #include <ws2tcpip.h>
 #include <mswsock.h>
+#endif
+#ifdef EVENT__HAVE_AFUNIX_H
+#include <afunix.h>
 #endif
 #include <errno.h>
 #ifdef EVENT__HAVE_SYS_SOCKET_H
@@ -213,7 +220,6 @@ evconnlistener_new_bind(struct event_base *base, evconnlistener_cb cb,
 {
 	struct evconnlistener *listener;
 	evutil_socket_t fd;
-	int on = 1;
 	int family = sa ? sa->sa_family : AF_UNSPEC;
 	int socktype = SOCK_STREAM | EVUTIL_SOCK_NONBLOCK;
 
@@ -227,21 +233,58 @@ evconnlistener_new_bind(struct event_base *base, evconnlistener_cb cb,
 	if (fd == -1)
 		return NULL;
 
-	if (setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, (void*)&on, sizeof(on))<0)
-		goto err;
+	/*
+	 * We do not bother about TCP keep-alive on Unix sockets, because the
+	 * chances of a network failure here are only of theoretical nature.
+	 */
+	if (family != AF_UNIX) {
+		/* TODO(panjf2000): make this TCP keep-alive value configurable */
+		if (evutil_set_tcp_keepalive(fd, 1, 300) < 0)
+			goto err;
+	}
 
 	if (flags & LEV_OPT_REUSEABLE) {
+		if (family == AF_UNIX) {
+			/* Despite the fact that SO_REUSEADDR can be set on a Unix domain socket
+			 * via setsockopt() without reporting an error, SO_REUSEADDR is actually
+			 * not supported for sockets of AF_UNIX.
+			 * Instead of confusing the callers by allowing this option to be set and
+			 * failing the subsequent bind() on the same socket, it's better to fail here.
+			 */
+			evutil_closesocket(fd);
+			return NULL;
+		}
 		if (evutil_make_listen_socket_reuseable(fd) < 0)
 			goto err;
 	}
 
 	if (flags & LEV_OPT_REUSEABLE_PORT) {
+		if (family == AF_UNIX) {
+			/* Despite the fact that SO_REUSEPORT can be set on a Unix domain socket
+			 * via setsockopt() without reporting an error, SO_REUSEPORT is actually
+			 * not supported for sockets of AF_UNIX.
+			 * Instead of confusing the callers by allowing this option to be set and
+			 * failing the subsequent bind() on the same socket, it's better to fail here.
+			 */
+			evutil_closesocket(fd);
+			return NULL;
+		}
 		if (evutil_make_listen_socket_reuseable_port(fd) < 0)
 			goto err;
 	}
 
 	if (flags & LEV_OPT_DEFERRED_ACCEPT) {
 		if (evutil_make_tcp_listen_socket_deferred(fd) < 0)
+			goto err;
+	}
+
+	if (flags & LEV_OPT_BIND_IPV6ONLY) {
+		if (evutil_make_listen_socket_ipv6only(fd) < 0)
+			goto err;
+	}
+
+	if (flags & LEV_OPT_BIND_IPV4_AND_IPV6) {
+		if (evutil_make_listen_socket_not_ipv6only(fd) < 0)
 			goto err;
 	}
 
@@ -256,8 +299,13 @@ evconnlistener_new_bind(struct event_base *base, evconnlistener_cb cb,
 
 	return listener;
 err:
-	evutil_closesocket(fd);
-	return NULL;
+	{
+		int saved_errno = EVUTIL_SOCKET_ERROR();
+		evutil_closesocket(fd);
+		if (saved_errno)
+			EVUTIL_SET_SOCKET_ERROR(saved_errno);
+		return NULL;
+	}
 }
 
 void
@@ -414,18 +462,19 @@ listener_read_cb(evutil_socket_t fd, short what, void *p)
 		++lev->refcnt;
 		cb = lev->cb;
 		user_data = lev->user_data;
-		UNLOCK(lev);
 		cb(lev, new_fd, (struct sockaddr*)&ss, (int)socklen,
 		    user_data);
-		LOCK(lev);
 		if (lev->refcnt == 1) {
 			int freed = listener_decref_and_unlock(lev);
 			EVUTIL_ASSERT(freed);
-
-			evutil_closesocket(new_fd);
 			return;
 		}
 		--lev->refcnt;
+		if (!lev->enabled) {
+			/* the callback could have disabled the listener */
+			UNLOCK(lev);
+			return;
+		}
 	}
 	err = evutil_socket_geterror(fd);
 	if (EVUTIL_ERR_ACCEPT_RETRIABLE(err)) {
@@ -436,9 +485,7 @@ listener_read_cb(evutil_socket_t fd, short what, void *p)
 		++lev->refcnt;
 		errorcb = lev->errorcb;
 		user_data = lev->user_data;
-		UNLOCK(lev);
 		errorcb(lev, user_data);
-		LOCK(lev);
 		listener_decref_and_unlock(lev);
 	} else {
 		event_sock_warn(fd, "Error from accept() call");
@@ -495,6 +542,10 @@ new_accepting_socket(struct evconnlistener_iocp *lev, int family)
 		addrlen = sizeof(struct sockaddr_in);
 	else if (family == AF_INET6)
 		addrlen = sizeof(struct sockaddr_in6);
+#ifdef EVENT__HAVE_AFUNIX_H
+	else if (family == AF_UNIX && evutil_check_working_afunix_())
+		addrlen = sizeof(struct sockaddr_un);
+#endif
 	else
 		return NULL;
 	buflen = (addrlen+16)*2;
@@ -504,7 +555,7 @@ new_accepting_socket(struct evconnlistener_iocp *lev, int family)
 		return NULL;
 
 	event_overlapped_init_(&res->overlapped, accepted_socket_cb);
-	res->s = INVALID_SOCKET;
+	res->s = EVUTIL_INVALID_SOCKET;
 	res->lev = lev;
 	res->buflen = buflen;
 	res->family = family;
@@ -522,7 +573,7 @@ static void
 free_and_unlock_accepting_socket(struct accepting_socket *as)
 {
 	/* requires lock. */
-	if (as->s != INVALID_SOCKET)
+	if (as->s != EVUTIL_INVALID_SOCKET)
 		closesocket(as->s);
 
 	LeaveCriticalSection(&as->lock);
@@ -542,7 +593,7 @@ start_accepting(struct accepting_socket *as)
 	if (!as->lev->base.enabled)
 		return 0;
 
-	if (s == INVALID_SOCKET) {
+	if (s == EVUTIL_INVALID_SOCKET) {
 		error = WSAGetLastError();
 		goto report_err;
 	}
@@ -589,7 +640,7 @@ stop_accepting(struct accepting_socket *as)
 {
 	/* requires lock. */
 	SOCKET s = as->s;
-	as->s = INVALID_SOCKET;
+	as->s = EVUTIL_INVALID_SOCKET;
 	closesocket(s);
 }
 
@@ -631,7 +682,7 @@ accepted_socket_invoke_user_cb(struct event_callback *dcb, void *arg)
 			&socklen_remote);
 		sock = as->s;
 		cb = lev->cb;
-		as->s = INVALID_SOCKET;
+		as->s = EVUTIL_INVALID_SOCKET;
 
 		/* We need to call this so getsockname, getpeername, and
 		 * shutdown work correctly on the accepted socket. */
@@ -679,7 +730,7 @@ accepted_socket_cb(struct event_overlapped *o, ev_uintptr_t key, ev_ssize_t n, i
 		free_and_unlock_accepting_socket(as);
 		listener_decref_and_unlock(lev);
 		return;
-	} else if (as->s == INVALID_SOCKET) {
+	} else if (as->s == EVUTIL_INVALID_SOCKET) {
 		/* This is okay; we were disabled by iocp_listener_disable. */
 		LeaveCriticalSection(&as->lock);
 	} else {
@@ -717,7 +768,7 @@ iocp_listener_enable(struct evconnlistener *lev)
 		if (!as)
 			continue;
 		EnterCriticalSection(&as->lock);
-		if (!as->free_on_cb && as->s == INVALID_SOCKET)
+		if (!as->free_on_cb && as->s == EVUTIL_INVALID_SOCKET)
 			start_accepting(as);
 		LeaveCriticalSection(&as->lock);
 	}
@@ -739,7 +790,7 @@ iocp_listener_disable_impl(struct evconnlistener *lev, int shutdown)
 		if (!as)
 			continue;
 		EnterCriticalSection(&as->lock);
-		if (!as->free_on_cb && as->s != INVALID_SOCKET) {
+		if (!as->free_on_cb && as->s != EVUTIL_INVALID_SOCKET) {
 			if (shutdown)
 				as->free_on_cb = 1;
 			stop_accepting(as);
@@ -876,8 +927,11 @@ evconnlistener_new_async(struct event_base *base,
 	return &lev->base;
 
 err_free_accepting:
+	for (i = 0; i < lev->n_accepting; ++i) {
+		if (lev->accepting[i])
+			free_and_unlock_accepting_socket(lev->accepting[i]);
+	}
 	mm_free(lev->accepting);
-	/* XXXX free the other elements. */
 err_delete_lock:
 	EVTHREAD_FREE_LOCK(lev->base.lock, EVTHREAD_LOCKTYPE_RECURSIVE);
 err_free_lev:

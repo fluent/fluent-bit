@@ -130,10 +130,12 @@ static int cpu_thermal_update(struct flb_ne *ctx, uint64_t ts)
         }
 
         /* Package Metric: node_cpu_core_throttles_total */
-        ret = ne_utils_file_read_uint64(ctx, ctx->path_sysfs,
-                                        entry->str,
-                                        "thermal_throttle", "core_throttle_count",
-                                        &core_throttle_count);
+        ret = ne_utils_file_read_uint64_at_level(ctx, ctx->path_sysfs,
+                                                 entry->str,
+                                                 "thermal_throttle",
+                                                 "core_throttle_count",
+                                                 &core_throttle_count,
+                                                 FLB_LOG_DEBUG);
         if (ret != 0) {
             flb_plg_debug(ctx->ins,
                           "CPU is missing core_throttle_count: %s",
@@ -150,10 +152,12 @@ static int cpu_thermal_update(struct flb_ne *ctx, uint64_t ts)
         }
 
         /* Package Metric: node_cpu_package_throttles_total */
-        ret = ne_utils_file_read_uint64(ctx, ctx->path_sysfs,
-                                        entry->str,
-                                        "thermal_throttle", "package_throttle_count",
-                                        &package_throttle_count);
+        ret = ne_utils_file_read_uint64_at_level(ctx, ctx->path_sysfs,
+                                                 entry->str,
+                                                 "thermal_throttle",
+                                                 "package_throttle_count",
+                                                 &package_throttle_count,
+                                                 FLB_LOG_DEBUG);
         if (ret != 0) {
             flb_plg_debug(ctx->ins,
                           "CPU is missing package_throttle_count: %s",

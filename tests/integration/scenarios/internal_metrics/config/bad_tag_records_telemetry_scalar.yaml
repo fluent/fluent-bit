@@ -1,0 +1,17 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: error
+  telemetry: oops
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: bad.scalar
+      dummy: '{"message":"x"}'
+      interval_sec: 0
+      interval_nsec: 200000000
+
+  outputs:
+    - name: 'null'
+      match: '*'

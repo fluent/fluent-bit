@@ -46,7 +46,7 @@ int mk_user_init(struct mk_http_session *cs, struct mk_http_request *sr,
     }
 
     limit = mk_string_char_search(sr->uri_processed.data + offset, '/',
-                                  sr->uri_processed.len);
+                                  sr->uri_processed.len - offset);
 
     if (limit == -1) {
         limit = (sr->uri_processed.len) - offset;

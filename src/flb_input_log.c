@@ -166,12 +166,8 @@ static int route_payload_apply_outputs(struct flb_input_instance *ins,
             }
 
             if (route_path->ins->total_limit_size != -1) {
-                if (route_path->ins->fs_chunks_size > chunk_size_sz) {
-                    route_path->ins->fs_chunks_size -= chunk_size_sz;
-                }
-                else {
-                    route_path->ins->fs_chunks_size = 0;
-                }
+                flb_input_chunk_output_size_subtract(route_path->ins,
+                                                     chunk_size_sz);
             }
 
             flb_routes_mask_clear_bit(chunk->routes_mask,
@@ -1059,12 +1055,7 @@ static int input_chunk_apply_base_direct_routes(struct flb_input_instance *ins,
                 continue;
             }
 
-            if (o_ins->fs_chunks_size > chunk_size_sz) {
-                o_ins->fs_chunks_size -= chunk_size_sz;
-            }
-            else {
-                o_ins->fs_chunks_size = 0;
-            }
+            flb_input_chunk_output_size_subtract(o_ins, chunk_size_sz);
         }
 
         chunk->fs_counted = FLB_FALSE;

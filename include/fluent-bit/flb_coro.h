@@ -74,7 +74,14 @@ struct flb_coro {
 #ifdef FLB_CORO_STACK_SIZE
 #define FLB_CORO_STACK_SIZE_BYTE      FLB_CORO_STACK_SIZE
 #else
-#define FLB_CORO_STACK_SIZE_BYTE      ((3 * STACK_FACTOR * PTHREAD_STACK_MIN) / 2)
+#define FLB_CORO_STACK_SIZE_PLATFORM_BYTE \
+    ((3 * STACK_FACTOR * PTHREAD_STACK_MIN) / 2)
+/* Leave headroom for parser frames which can exceed the platform default. */
+#define FLB_CORO_STACK_SIZE_MIN_BYTE  (64 * 1024)
+#define FLB_CORO_STACK_SIZE_BYTE                                      \
+    (FLB_CORO_STACK_SIZE_PLATFORM_BYTE > FLB_CORO_STACK_SIZE_MIN_BYTE \
+     ? FLB_CORO_STACK_SIZE_PLATFORM_BYTE                              \
+     : FLB_CORO_STACK_SIZE_MIN_BYTE)
 #endif
 
 #define FLB_CORO_DATA(coro)      (((char *) coro) + sizeof(struct flb_coro))

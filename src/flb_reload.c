@@ -533,6 +533,20 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
 
     new_config = new_ctx->config;
 
+    if (old_config->conf_path) {
+        new_config->conf_path = flb_strdup(old_config->conf_path);
+        if (!new_config->conf_path) {
+            if (file != NULL) {
+                flb_sds_destroy(file);
+            }
+            flb_cf_destroy(new_cf);
+            flb_destroy(new_ctx);
+            flb_error("[reload] copying configuration path failed. Reloading is halted");
+            flb_reload_watchdog_cleanup(watchdog_ctx);
+            return FLB_RELOAD_HALTED;
+        }
+    }
+
     /* Inherit verbose from the old ctx instance */
     verbose = ctx->config->verbose;
     new_config->verbose = verbose;
@@ -591,6 +605,19 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
         old_config->hot_reloading = FLB_FALSE;
 
         flb_error("[reload] reloaded config format is invalid. Reloading is halted");
+        flb_reload_watchdog_cleanup(watchdog_ctx);
+        return FLB_RELOAD_HALTED;
+    }
+
+    if (new_config->fips_mode != old_config->fips_mode) {
+        if (file != NULL) {
+            flb_sds_destroy(file);
+        }
+        flb_cf_destroy(new_cf);
+        flb_destroy(new_ctx);
+        old_config->hot_reloading = FLB_FALSE;
+
+        flb_error("[reload] security.fips_mode cannot be changed by hot reload");
         flb_reload_watchdog_cleanup(watchdog_ctx);
         return FLB_RELOAD_HALTED;
     }

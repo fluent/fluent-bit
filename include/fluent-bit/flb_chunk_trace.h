@@ -67,7 +67,13 @@ struct flb_chunk_trace_limit {
     int count;
 };
 
+/* start up state of the trace pipeline thread */
+#define FLB_CHUNK_PIPELINE_STARTING  0
+#define FLB_CHUNK_PIPELINE_RUNNING   1
+#define FLB_CHUNK_PIPELINE_FAILED   -1
+
 struct flb_chunk_pipeline_context {
+    int state;
     flb_ctx_t *flb;
     flb_sds_t output_name;
     pthread_t thread;

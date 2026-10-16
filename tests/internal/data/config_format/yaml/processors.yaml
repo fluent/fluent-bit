@@ -8,6 +8,10 @@ pipeline:
             record:
               - filtered_by record_modifier
               - powered_by calyptia
+          - name: sampling
+            type: probabilistic
+            sampling_settings:
+              sampling_percentage: 25
   outputs:
     - name: stdout
       match: "*"

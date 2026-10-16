@@ -21,6 +21,8 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <inttypes.h>
+#include <errno.h>
+#include <ctype.h>
 
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_network.h>
@@ -54,8 +56,13 @@ static int file_to_buffer(const char *path,
     ssize_t bytes;
     FILE *fp;
     struct stat st;
+    const char *file_mode = "r";
 
-    if (!(fp = fopen(path, "r"))) {
+#ifdef FLB_SYSTEM_WINDOWS
+    file_mode = "rb";
+#endif
+
+    if (!(fp = fopen(path, file_mode))) {
         return -1;
     }
 
@@ -174,6 +181,7 @@ static int refresh_token_if_needed(struct k8s_events *ctx)
 static msgpack_object *record_get_field_ptr(msgpack_object *obj, const char *fieldname)
 {
     int i;
+    size_t fieldname_len;
     msgpack_object *k;
     msgpack_object *v;
 
@@ -181,13 +189,23 @@ static msgpack_object *record_get_field_ptr(msgpack_object *obj, const char *fie
         return NULL;
     }
 
+    fieldname_len = strlen(fieldname);
+
     for (i = 0; i < obj->via.map.size; i++) {
         k = &obj->via.map.ptr[i].key;
         if (k->type != MSGPACK_OBJECT_STR) {
             continue;
         }
 
-        if (strncmp(k->via.str.ptr, fieldname, strlen(fieldname)) == 0) {
+        /*
+         * msgpack strings are not NUL terminated: k->via.str.ptr points
+         * directly into the decode buffer for exactly k->via.str.size
+         * bytes. Require an exact length match before comparing so we
+         * never read past that boundary, and so a key that merely shares
+         * a prefix with fieldname cannot match.
+         */
+        if ((size_t) k->via.str.size == fieldname_len &&
+            strncmp(k->via.str.ptr, fieldname, fieldname_len) == 0) {
             v = &obj->via.map.ptr[i].val;
             return v;
         }
@@ -199,6 +217,8 @@ static int record_get_field_sds(msgpack_object *obj, const char *fieldname, flb_
 {
     msgpack_object *v;
 
+    *val = NULL;
+
     v = record_get_field_ptr(obj, fieldname);
     if (v == NULL) {
         return 0;
@@ -208,13 +228,19 @@ static int record_get_field_sds(msgpack_object *obj, const char *fieldname, flb_
     }
 
     *val = flb_sds_create_len(v->via.str.ptr, v->via.str.size);
+    if (*val == NULL) {
+        return -1;
+    }
+
     return 0;
 }
 
 static int record_get_field_time(msgpack_object *obj, const char *fieldname, struct flb_time *val)
 {
+    char *end;
     msgpack_object *v;
     struct flb_tm tm = { 0 };
+    char buf[64];
 
     v = record_get_field_ptr(obj, fieldname);
     if (v == NULL) {
@@ -224,7 +250,20 @@ static int record_get_field_time(msgpack_object *obj, const char *fieldname, str
         return -1;
     }
 
-    if (flb_strptime(v->via.str.ptr, "%Y-%m-%dT%H:%M:%SZ", &tm) == NULL) {
+    /*
+     * msgpack strings are not NUL terminated: v->via.str.ptr points
+     * directly into the decode buffer for exactly v->via.str.size bytes.
+     * Copy it into a bounded, NUL-terminated stack buffer before handing
+     * it to flb_strptime(), instead of scanning the raw buffer directly.
+     */
+    if (v->via.str.size == 0 || v->via.str.size >= sizeof(buf)) {
+        return -2;
+    }
+    memcpy(buf, v->via.str.ptr, v->via.str.size);
+    buf[v->via.str.size] = '\0';
+
+    end = flb_strptime(buf, "%Y-%m-%dT%H:%M:%SZ", &tm);
+    if (end == NULL || *end != '\0') {
         return -2;
     }
 
@@ -237,7 +276,9 @@ static int record_get_field_time(msgpack_object *obj, const char *fieldname, str
 static int record_get_field_uint64(msgpack_object *obj, const char *fieldname, uint64_t *val)
 {
     msgpack_object *v;
+    char buf[32];
     char *end;
+    size_t len;
 
     v = record_get_field_ptr(obj, fieldname);
     if (v == NULL) {
@@ -246,8 +287,35 @@ static int record_get_field_uint64(msgpack_object *obj, const char *fieldname, u
 
     /* attempt to parse string as number... */
     if (v->type == MSGPACK_OBJECT_STR) {
-        *val = strtoul(v->via.str.ptr, &end, 10);
-        if (end == NULL || (end < v->via.str.ptr + v->via.str.size)) {
+        /*
+         * msgpack strings are not NUL terminated: v->via.str.ptr points
+         * directly into the decode buffer for exactly v->via.str.size
+         * bytes. Copy it into a bounded, NUL-terminated stack buffer
+         * before calling strtoul() on it, instead of scanning the raw
+         * buffer directly (no valid uint64 needs more than 20 digits).
+         */
+        len = v->via.str.size;
+        if (len == 0 || len > sizeof(buf) - 1) {
+            return -1;
+        }
+        memcpy(buf, v->via.str.ptr, len);
+        buf[len] = '\0';
+
+        /*
+         * strtoull() itself accepts a leading '+'/'-' and skips leading
+         * whitespace, which would let a value like "-5" silently wrap
+         * around into a huge positive number instead of being rejected.
+         * Kubernetes resourceVersion (the only caller) is always a plain,
+         * unsigned, digits-only decimal string, so require that directly
+         * before parsing.
+         */
+        if (!isdigit((unsigned char) buf[0])) {
+            return -1;
+        }
+
+        errno = 0;
+        *val = strtoull(buf, &end, 10);
+        if (errno == ERANGE || end == buf || *end != '\0') {
             return -1;
         }
         return 0;
@@ -257,8 +325,7 @@ static int record_get_field_uint64(msgpack_object *obj, const char *fieldname, u
         return 0;
     }
     if (v->type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
-        *val = (uint64_t)v->via.i64;
-        return 0;
+        return -1;
     }
     return -1;
 }
@@ -272,12 +339,12 @@ static int item_get_timestamp(msgpack_object *obj, struct flb_time *event_time)
      * NULL while having metadata.creationTimestamp set.
      */
     ret = record_get_field_time(obj, "lastTimestamp", event_time);
-    if (ret != -1) {
+    if (ret == 0) {
         return FLB_TRUE;
     }
 
     ret = record_get_field_time(obj, "firstTimestamp", event_time);
-    if (ret != -1) {
+    if (ret == 0) {
         return FLB_TRUE;
     }
 
@@ -287,7 +354,7 @@ static int item_get_timestamp(msgpack_object *obj, struct flb_time *event_time)
     }
 
     ret = record_get_field_time(metadata, "creationTimestamp", event_time);
-    if (ret != -1) {
+    if (ret == 0) {
         return FLB_TRUE;
     }
 
@@ -300,10 +367,10 @@ static bool check_event_is_filtered(struct k8s_events *ctx, msgpack_object *obj,
     int ret;
     uint64_t outdated;
     msgpack_object *metadata;
-    flb_sds_t uid;
+    flb_sds_t uid = NULL;
     uint64_t resource_version;
 
-    outdated = cfl_time_now() - (ctx->retention_time * 1000000000L);
+    outdated = cfl_time_now() - ((uint64_t) ctx->retention_time * 1000000000ULL);
     if (flb_time_to_nanosec(event_time) < outdated) {
         flb_plg_debug(ctx->ins, "Item is older than retention_time: %" PRIu64 " < %" PRIu64,
                       flb_time_to_nanosec(event_time), outdated);
@@ -323,8 +390,8 @@ static bool check_event_is_filtered(struct k8s_events *ctx, msgpack_object *obj,
     }
 
     ret = record_get_field_sds(metadata, "uid", &uid);
-    if (ret == -1) {
-        flb_plg_error(ctx->ins, "Cannot get resourceVersion for item in response");
+    if (ret == -1 || uid == NULL) {
+        flb_plg_error(ctx->ins, "Cannot get uid for item in response");
         return FLB_FALSE;
     }
 
@@ -447,7 +514,9 @@ static int process_watched_event(struct k8s_events *ctx, char *buf_data, size_t 
     msgpack_unpacked result;
     msgpack_object root;
     msgpack_object *item = NULL;
+    msgpack_object *metadata;
     flb_sds_t event_type = NULL;
+    uint64_t resource_version;
 
     /* unpack */
     msgpack_unpacked_init(&result);
@@ -463,8 +532,9 @@ static int process_watched_event(struct k8s_events *ctx, char *buf_data, size_t 
     }
 
     ret = record_get_field_sds(&root, "type", &event_type);
-    if (ret == -1) {
+    if (ret == -1 || event_type == NULL) {
         flb_plg_warn(ctx->ins, "Streamed Event 'type' not found");
+        ret = -1;
         goto msg_error;
     }
 
@@ -476,6 +546,15 @@ static int process_watched_event(struct k8s_events *ctx, char *buf_data, size_t 
     }
 
     ret = process_event_object(ctx, event_type, item);
+    if (ret == 0) {
+        metadata = record_get_field_ptr(item, "metadata");
+        if (metadata != NULL &&
+            record_get_field_uint64(metadata, "resourceVersion", &resource_version) == 0 &&
+            resource_version > ctx->last_resource_version) {
+            flb_plg_debug(ctx->ins, "set last resourceVersion=%" PRIu64, resource_version);
+            ctx->last_resource_version = resource_version;
+        }
+    }
 
 msg_error:
     flb_sds_destroy(event_type);
@@ -495,7 +574,6 @@ static int process_event_list(struct k8s_events *ctx, char *in_data, size_t in_s
     size_t off = 0;
     msgpack_unpacked result;
     msgpack_object root;
-    msgpack_object k;
     msgpack_object *items = NULL;
     msgpack_object *item = NULL;
     msgpack_object *metadata = NULL;
@@ -524,27 +602,16 @@ static int process_event_list(struct k8s_events *ctx, char *in_data, size_t in_s
     /* Traverse the EventList for the metadata (for the continue token) and the items.
      * https://kubernetes.io/docs/reference/kubernetes-api/cluster-resources/event-v1/#EventList
      */
-    for (i = 0; i < root.via.map.size; i++) {
-        k = root.via.map.ptr[i].key;
-        if (k.type != MSGPACK_OBJECT_STR) {
-            continue;
-        }
+    items = record_get_field_ptr(&root, "items");
+    if (items != NULL && items->type != MSGPACK_OBJECT_ARRAY) {
+        flb_plg_error(ctx->ins, "Cannot unpack items");
+        goto msg_error;
+    }
 
-        if (strncmp(k.via.str.ptr, "items", 5) == 0) {
-            items = &root.via.map.ptr[i].val;
-            if (items->type != MSGPACK_OBJECT_ARRAY) {
-                flb_plg_error(ctx->ins, "Cannot unpack items");
-                goto msg_error;
-            }
-        }
-
-        if (strncmp(k.via.str.ptr, "metadata", 8) == 0) {
-            metadata = &root.via.map.ptr[i].val;
-            if (metadata->type != MSGPACK_OBJECT_MAP) {
-                flb_plg_error(ctx->ins, "Cannot unpack metadata");
-                goto msg_error;
-            }
-        }
+    metadata = record_get_field_ptr(&root, "metadata");
+    if (metadata != NULL && metadata->type != MSGPACK_OBJECT_MAP) {
+        flb_plg_error(ctx->ins, "Cannot unpack metadata");
+        goto msg_error;
     }
 
     if (items == NULL) {
@@ -602,6 +669,9 @@ static struct flb_http_client *make_event_watch_api_request(struct k8s_events *c
     }
 
     flb_sds_printf(&url, "?watch=1&resourceVersion=%" PRIu64, max_resource_version);
+    if (ctx->watch_timeout > 0) {
+        flb_sds_printf(&url, "&timeoutSeconds=%d", ctx->watch_timeout);
+    }
     flb_plg_info(ctx->ins, "Requesting %s", url);
     c = flb_http_client(ctx->current_connection, FLB_HTTP_GET, url,
                         NULL, 0, ctx->api_host, ctx->api_port, NULL, 0);
@@ -655,7 +725,8 @@ static int k8s_events_cleanup_db(struct flb_input_instance *ins,
         FLB_INPUT_RETURN(0);
     }
 
-    retention_time_ago = cfl_time_now() - (ctx->retention_time * 1000000000L);
+    retention_time_ago = cfl_time_now() -
+                         ((uint64_t) ctx->retention_time * 1000000000ULL);
     sqlite3_bind_int64(ctx->stmt_delete_old_kubernetes_events,
                         1, (int64_t)retention_time_ago);
     ret = sqlite3_step(ctx->stmt_delete_old_kubernetes_events);
@@ -675,10 +746,10 @@ static int k8s_events_sql_insert_event(struct k8s_events *ctx, msgpack_object *i
     uint64_t resource_version;
     struct flb_time last;
     msgpack_object *meta;
-    flb_sds_t uid;
+    flb_sds_t uid = NULL;
 
 
-    meta = record_get_field_ptr(item, "meta");
+    meta = record_get_field_ptr(item, "metadata");
     if (meta == NULL) {
         flb_plg_error(ctx->ins, "unable to find metadata to save event");
         return -1;
@@ -691,7 +762,7 @@ static int k8s_events_sql_insert_event(struct k8s_events *ctx, msgpack_object *i
     }
 
     ret = record_get_field_sds(meta, "uid", &uid);
-    if (ret == -1) {
+    if (ret == -1 || uid == NULL) {
         flb_plg_error(ctx->ins, "unable to find uid in metadata to save event");
         return -1;
     }
@@ -864,6 +935,9 @@ static int check_and_init_stream(struct k8s_events *ctx)
         goto failure;
     }
     initialize_http_client(ctx->streaming_client, ctx);
+    if (ctx->watch_timeout > 0) {
+        flb_http_set_read_idle_timeout(ctx->streaming_client, ctx->watch_timeout);
+    }
 
     /* Watch will stream chunked json data, so we only send
      * the http request, then use flb_http_get_response_data
@@ -1005,6 +1079,13 @@ static struct flb_config_map config_map[] = {
       FLB_CONFIG_MAP_INT, "interval_nsec", DEFAULT_INTERVAL_NSEC,
       0, FLB_TRUE, offsetof(struct k8s_events, interval_nsec),
       "Set the polling interval for each channel (sub seconds)"
+    },
+
+    {
+      FLB_CONFIG_MAP_TIME, "kube_watch_timeout", DEFAULT_WATCH_TIMEOUT,
+      0, FLB_TRUE, offsetof(struct k8s_events, watch_timeout),
+      "Set the maximum Kubernetes watch duration and client read idle timeout. "
+      "Set to 0 to disable the timeout"
     },
 
     /* TLS: set debug 'level' */

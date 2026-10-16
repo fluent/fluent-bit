@@ -35,6 +35,7 @@
 #include "we_logical_disk.h"
 #include "we_cs.h"
 #include "we_cache.h"
+#include "we_performancecounter.h"
 
 /* wmi collectors */
 #include "we_wmi_cpu_info.h"
@@ -197,6 +198,17 @@ static int we_timer_wmi_tcp_metrics_cb(struct flb_input_instance *ins,
     return 0;
 }
 
+static int we_timer_performancecounter_metrics_cb(struct flb_input_instance *ins,
+                                                  struct flb_config *config,
+                                                  void *in_context)
+{
+    struct flb_we *ctx = in_context;
+
+    we_performancecounter_update(ctx);
+
+    return 0;
+}
+
 struct flb_we_callback {
     char *name;
     void (*func)(char *, void *, void *);
@@ -354,6 +366,13 @@ static void we_wmi_tcp_update_cb(char *name, void *p1, void *p2)
     we_wmi_tcp_update(ctx);
 }
 
+static void we_performancecounter_update_cb(char *name, void *p1, void *p2)
+{
+    struct flb_we *ctx = p1;
+
+    we_performancecounter_update(ctx);
+}
+
 static int we_update_cb(struct flb_we *ctx, char *name)
 {
     int ret;
@@ -382,6 +401,7 @@ struct flb_we_callback ne_callbacks[] = {
     { "paging_file", we_wmi_paging_file_update_cb },
     { "process", we_wmi_process_update_cb },
     { "tcp", we_wmi_tcp_update_cb },
+    { "performancecounter", we_performancecounter_update_cb },
     { 0 }
 };
 
@@ -421,6 +441,7 @@ static int in_we_init(struct flb_input_instance *in,
     ctx->coll_wmi_paging_file_fd = -1;
     ctx->coll_wmi_process_fd = -1;
     ctx->coll_wmi_tcp_fd = -1;
+    ctx->coll_performancecounter_fd = -1;
 
     ctx->callback = flb_callback_create(in->name);
     if (!ctx->callback) {
@@ -474,6 +495,7 @@ static int in_we_init(struct flb_input_instance *in,
     if (ctx->metrics) {
         mk_list_foreach(head, ctx->metrics) {
             entry = mk_list_entry(head, struct flb_slist_entry, _head);
+            metric_idx = -1;
             ret = flb_callback_exists(ctx->callback, entry->str);
 
             if (ret == FLB_FALSE) {
@@ -851,6 +873,32 @@ static int in_we_init(struct flb_input_instance *in,
                         return -1;
                     }
                 }
+                else if (strncmp(entry->str, "performancecounter", 18) == 0) {
+                    if (ctx->performancecounter_scrape_interval == 0) {
+                        flb_plg_debug(ctx->ins, "enabled metrics %s", entry->str);
+                        metric_idx = 15;
+                    }
+                    else {
+                        /* Create the performancecounter collector */
+                        ret = flb_input_set_collector_time(
+                                  in,
+                                  we_timer_performancecounter_metrics_cb,
+                                  ctx->performancecounter_scrape_interval, 0,
+                                  config);
+                        if (ret == -1) {
+                            flb_plg_error(ctx->ins,
+                                          "could not set performancecounter collector "
+                                          "for Windows Exporter Metrics plugin");
+                            return -1;
+                        }
+                        ctx->coll_performancecounter_fd = ret;
+                    }
+
+                    ret = we_performancecounter_init(ctx);
+                    if (ret) {
+                        return -1;
+                    }
+                }
                 else {
                     flb_plg_warn(ctx->ins, "Unknown metrics: %s", entry->str);
                     metric_idx = -1;
@@ -939,6 +987,9 @@ static int in_we_exit(void *data, struct flb_config *config)
                 else if (strncmp(entry->str, "tcp", 3) == 0) {
                     we_wmi_tcp_exit(ctx);
                 }
+                else if (strncmp(entry->str, "performancecounter", 18) == 0) {
+                    we_performancecounter_exit(ctx);
+                }
                 else {
                     flb_plg_warn(ctx->ins, "Unknown metrics: %s", entry->str);
                 }
@@ -993,6 +1044,9 @@ static int in_we_exit(void *data, struct flb_config *config)
     }
     if (ctx->coll_wmi_tcp_fd != -1) {
         we_wmi_tcp_exit(ctx);
+    }
+    if (ctx->coll_performancecounter_fd != -1) {
+        we_performancecounter_exit(ctx);
     }
 
     flb_we_config_destroy(ctx);
@@ -1052,6 +1106,9 @@ static void in_we_pause(void *data, struct flb_config *config)
     if (ctx->coll_wmi_tcp_fd != -1) {
         flb_input_collector_pause(ctx->coll_wmi_tcp_fd, ctx->ins);
     }
+    if (ctx->coll_performancecounter_fd != -1) {
+        flb_input_collector_pause(ctx->coll_performancecounter_fd, ctx->ins);
+    }
 }
 
 static void in_we_resume(void *data, struct flb_config *config)
@@ -1108,6 +1165,9 @@ static void in_we_resume(void *data, struct flb_config *config)
     }
     if (ctx->coll_wmi_tcp_fd != -1) {
         flb_input_collector_resume(ctx->coll_wmi_tcp_fd, ctx->ins);
+    }
+    if (ctx->coll_performancecounter_fd != -1) {
+        flb_input_collector_resume(ctx->coll_performancecounter_fd, ctx->ins);
     }
 }
 
@@ -1210,6 +1270,12 @@ static struct flb_config_map config_map[] = {
     },
 
     {
+     FLB_CONFIG_MAP_TIME, "collector.performancecounter.scrape_interval", "0",
+     0, FLB_TRUE, offsetof(struct flb_we, performancecounter_scrape_interval),
+     "scrape interval to collect performancecounter metrics from the node."
+    },
+
+    {
      FLB_CONFIG_MAP_CLIST, "metrics",
      "cpu,cpu_info,os,net,logical_disk,cs,cache,thermalzone,logon,system,service,tcp",
      0, FLB_TRUE, offsetof(struct flb_we, metrics),
@@ -1254,6 +1320,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "we.process.deny_process_regex", NULL,
      0, FLB_TRUE, offsetof(struct flb_we, raw_denying_process),
      "Specify the regex for process metrics to prevent collection of/ignore."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "PerformanceCounter", NULL,
+     FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct flb_we, raw_performance_counters),
+     "Windows Performance Counter in name=counter_path form."
     },
     /* EOF */
     {0}

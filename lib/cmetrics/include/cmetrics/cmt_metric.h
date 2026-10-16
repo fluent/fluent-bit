@@ -70,6 +70,11 @@ struct cmt_metric {
     uint64_t exp_hist_lock;
     struct cfl_list labels;
     struct cfl_list _head;
+
+    /* Internal lookup index. Keep these after the established public fields. */
+    int hash_indexed;
+    struct cmt_map *map;
+    struct cfl_list _hash_head;
 };
 
 struct cmt_exp_histogram_snapshot {

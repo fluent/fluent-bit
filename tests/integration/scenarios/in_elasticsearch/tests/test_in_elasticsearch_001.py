@@ -4,6 +4,11 @@ import pytest
 
 from server.otlp_server import data_storage
 from utils.http_matrix import PROTOCOL_CASES, run_curl_request
+from utils.input_pause_resume import (
+    assert_pause_resume_cycles,
+    assert_shutdown_while_paused,
+    open_partial_http_request,
+)
 from utils.test_service import FluentBitTestService
 
 logger = logging.getLogger(__name__)
@@ -35,6 +40,10 @@ IN_ELASTICSEARCH_SMALL_BUFFER_REGRESSION_CASES = [
         "http_mode": "http2-prior-knowledge",
     },
 ]
+
+# A deliberately truncated response can surface as an HTTP/2 framing error (16),
+# a send error (55), or a receive error (56), depending on curl and the protocol.
+SMALL_BUFFER_CURL_EXIT_CODES = {0, 16, 55, 56}
 
 
 def parse_single_item_response(response_text):
@@ -270,6 +279,76 @@ def test_in_elasticsearch_rejects_unknown_bulk_operation():
 
 
 @pytest.mark.parametrize(
+    "config_file",
+    [
+        "in_elasticsearch_pause_resume.yaml",
+        "in_elasticsearch_pause_resume_workers.yaml",
+    ],
+    ids=["single_listener", "workers_4"],
+)
+def test_in_elasticsearch_pause_resume_cycles(config_file):
+    service = Service(config_file)
+
+    try:
+        service.start()
+        large_document = '{"index":{}}\n{"message":"' + ("x" * 6144) + '"}\n'
+        small_document = '{"index":{}}\n{"message":"resume-check"}\n'
+
+        def open_active_connections():
+            return [
+                open_partial_http_request(
+                    "127.0.0.1",
+                    service.flb_listener_port,
+                )
+                for _ in range(8)
+            ]
+
+        assert_pause_resume_cycles(
+            service.flb,
+            f"http://localhost:{service.flb_listener_port}/_bulk",
+            large_document,
+            ["Content-Type: application/x-ndjson"],
+            input_name="elasticsearch.0",
+            success_status=200,
+            cycles=2,
+            pause_trigger_requests=2,
+            resume_payload=small_document,
+            active_connection_factory=open_active_connections,
+        )
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize(
+    "config_file",
+    [
+        "in_elasticsearch_pause_resume.yaml",
+        "in_elasticsearch_pause_resume_workers.yaml",
+    ],
+    ids=["single_listener", "workers_4"],
+)
+def test_in_elasticsearch_shutdown_while_paused(config_file):
+    service = Service(config_file)
+
+    try:
+        service.start()
+        large_document = '{"index":{}}\n{"message":"' + ("x" * 6144) + '"}\n'
+        assert_shutdown_while_paused(
+            service.flb,
+            service.stop,
+            "127.0.0.1",
+            service.flb_listener_port,
+            f"http://localhost:{service.flb_listener_port}/_bulk",
+            large_document,
+            ["Content-Type: application/x-ndjson"],
+            input_name="elasticsearch.0",
+            success_status=200,
+        )
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize(
     "case",
     IN_ELASTICSEARCH_SMALL_BUFFER_REGRESSION_CASES,
     ids=[case["id"] for case in IN_ELASTICSEARCH_SMALL_BUFFER_REGRESSION_CASES],
@@ -325,7 +404,7 @@ def test_in_elasticsearch_bulk_small_status_buffer_does_not_crash(case):
     # The regression condition is process termination from a reachable double-free.
     # Response formatting can still vary under constrained buffer settings, but the
     # parser must not take down the process.
-    assert curl_result.returncode in {0, 55, 56}
+    assert curl_result.returncode in SMALL_BUFFER_CURL_EXIT_CODES
     assert health_result["status_code"] == 200
 
 

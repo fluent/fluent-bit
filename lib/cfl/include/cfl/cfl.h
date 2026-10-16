@@ -38,6 +38,7 @@
 #include <cfl/cfl_checksum.h>
 #include <cfl/cfl_time.h>
 #include <cfl/cfl_variant.h>
+#include <cfl/cfl_arena.h>
 #include <cfl/cfl_object.h>
 #include <cfl/cfl_utils.h>
 

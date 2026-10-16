@@ -19,12 +19,16 @@
 
 
 #include <mk_core/mk_event.h>
+#ifdef _WIN32
+#include <mk_core/mk_win32_socketpair.h>
+#endif
 
 /* Libevent */
 #include <event.h>
 
 #ifdef _WIN32
 #define ERR(e) (WSA##e)
+static LONG mk_event_libevent_wsa_initialized = 0;
 #else
 #define ERR(e) (e)
 #endif
@@ -37,14 +41,54 @@ struct ev_map {
     struct mk_event_ctx *ctx;
 };
 
+static int mk_event_libevent_socketpair(evutil_socket_t fd[2])
+{
+#ifdef _WIN32
+    int ret;
+    SOCKET pair[2];
+
+    ret = mk_win32_socketpair(pair);
+    if (ret != 0) {
+        return ret;
+    }
+
+    fd[0] = (evutil_socket_t) pair[0];
+    fd[1] = (evutil_socket_t) pair[1];
+    return 0;
+#else
+    return evutil_socketpair(AF_UNIX, SOCK_STREAM, 0, fd);
+#endif
+}
+
 static inline int _mk_event_init()
 {
+#ifdef _WIN32
+    int ret;
+    WSADATA wsa_data;
+
+    if (InterlockedCompareExchange(&mk_event_libevent_wsa_initialized,
+                                   1, 0) != 0) {
+        return 0;
+    }
+
+    ret = WSAStartup(MAKEWORD(2, 2), &wsa_data);
+    if (ret != 0) {
+        InterlockedExchange(&mk_event_libevent_wsa_initialized, 0);
+        WSASetLastError(ret);
+        return -1;
+    }
+#endif
+
     return 0;
 }
 
 static inline void *_mk_event_loop_create(int size)
 {
     struct mk_event_ctx *ctx;
+
+    if (_mk_event_init() != 0) {
+        return NULL;
+    }
 
     /* Main event context */
     ctx = mk_mem_alloc_z(sizeof(struct mk_event_ctx));
@@ -300,7 +344,7 @@ static inline int _mk_event_timeout_create(struct mk_event_ctx *ctx,
 
     mk_bug(data == NULL);
 
-    if (evutil_socketpair(AF_UNIX, SOCK_STREAM, 0, fd) == -1) {
+    if (mk_event_libevent_socketpair(fd) == -1) {
         perror("socketpair");
         return -1;
     }
@@ -364,7 +408,7 @@ static inline int _mk_event_channel_create(struct mk_event_ctx *ctx,
 
     mk_bug(data == NULL);
 
-    ret = evutil_socketpair(AF_UNIX, SOCK_STREAM, 0, fd);
+    ret = mk_event_libevent_socketpair(fd);
 
     if (ret == -1) {
         perror("socketpair");

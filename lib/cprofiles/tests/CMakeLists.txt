@@ -1,4 +1,6 @@
 set(UNIT_TESTS_FILES
+  protobuf.c
+  variant_depth.c
   profile.c
   msgpack_transcoder.c
   opentelemetry_transcoder.c

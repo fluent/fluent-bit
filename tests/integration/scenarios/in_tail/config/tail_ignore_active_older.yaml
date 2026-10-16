@@ -14,7 +14,7 @@ pipeline:
       refresh_interval: 1
       watcher_interval: 1
       progress_check_interval: 1
-      rotate_wait: 6
+      rotate_wait: 1
       inotify_watcher: false
       ignore_older: 2s
       ignore_active_older_files: true

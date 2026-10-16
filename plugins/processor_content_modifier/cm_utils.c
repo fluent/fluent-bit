@@ -262,9 +262,6 @@ int cm_utils_variant_convert(struct cfl_variant *input_value,
                 }
                 else {
                     /* out of range for both `int` and `unsigned int` */
-                    if (tmp) {
-                        cfl_variant_destroy(tmp);
-                    }
                     return CFL_FALSE;
                 }
             }

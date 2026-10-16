@@ -21,9 +21,11 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_chunk_trace.h>
 #include <fluent-bit/flb_router.h>
-#include <pthread.h>
+#include <fluent-bit/flb_compat.h>
 #include <stdlib.h>
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 #include "flb_tests_runtime.h"
 
 
@@ -145,10 +147,40 @@ void flb_test_trace()
     do_test_records_trace(flb_test_dummy_records_trace_simple);
 }
 
+void flb_test_trace_time_limit_unlocks(void)
+{
+    struct flb_input_instance input = {0};
+    struct flb_chunk_trace_context context = {0};
+    struct flb_time now;
+    int expired;
+    int ret;
+
+    ret = pthread_mutex_init(&input.chunk_trace_lock, NULL);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        return;
+    }
+    input.chunk_trace_ctxt = &context;
+    context.limit.type = FLB_CHUNK_TRACE_LIMIT_TIME;
+    context.limit.seconds = 60;
+
+    for (expired = FLB_FALSE; expired <= FLB_TRUE; expired++) {
+        flb_time_get(&now);
+        context.limit.seconds_started = now.tm.tv_sec - (expired ? 61 : 0);
+        TEST_CHECK(flb_chunk_trace_context_hit_limit(&input) == expired);
+        ret = pthread_mutex_trylock(&input.chunk_trace_lock);
+        TEST_CHECK(ret == 0);
+        /* This thread owns either the newly acquired or the leaked lock. */
+        pthread_mutex_unlock(&input.chunk_trace_lock);
+    }
+    pthread_mutex_destroy(&input.chunk_trace_lock);
+}
+
 /* Test list */
 TEST_LIST = {
 #ifdef FLB_HAVE_CHUNK_TRACE
     {"trace",    flb_test_trace},
+    {"trace_time_limit_unlocks", flb_test_trace_time_limit_unlocks},
 #endif
     {NULL, NULL}
 };

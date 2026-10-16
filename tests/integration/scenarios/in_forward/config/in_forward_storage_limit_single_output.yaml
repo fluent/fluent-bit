@@ -22,4 +22,4 @@ pipeline:
       format: json
       json_date_key: false
       retry_limit: false
-      storage.total_limit_size: 10K
+      storage.total_limit_size: ${FORWARD_STORAGE_TOTAL_LIMIT_SIZE}

@@ -76,6 +76,34 @@ static int cb_http_init(struct flb_output_instance *ins,
     return 0;
 }
 
+/* header names and values must not contain line breaks */
+static int header_is_valid(const char *str, size_t len)
+{
+    size_t i;
+
+    for (i = 0; i < len; i++) {
+        if (str[i] == '\r' || str[i] == '\n' || str[i] == '\0') {
+            return FLB_FALSE;
+        }
+    }
+
+    return FLB_TRUE;
+}
+
+static void free_headers(char **headers)
+{
+    size_t i;
+
+    if (!headers) {
+        return;
+    }
+
+    for (i = 0; headers[i] != NULL; i++) {
+        flb_free(headers[i]);
+    }
+    flb_free(headers);
+}
+
 static void append_headers(struct flb_http_client *c,
                            char **headers)
 {
@@ -99,8 +127,6 @@ static void append_headers(struct flb_http_client *c,
                                 strlen(header_key),
                                 header_value,
                                 strlen(header_value));
-            flb_free(header_key);
-            flb_free(header_value);
             header_key = NULL;
             header_value = NULL;
         }
@@ -243,10 +269,16 @@ static int http_request(struct flb_out_http *ctx,
     }
 
     if (ctx->header_tag) {
-        flb_http_add_header(c,
-                            ctx->header_tag,
-                            flb_sds_len(ctx->header_tag),
-                            tag, tag_len);
+        if (header_is_valid(tag, tag_len) == FLB_TRUE) {
+            flb_http_add_header(c,
+                                ctx->header_tag,
+                                flb_sds_len(ctx->header_tag),
+                                tag, tag_len);
+        }
+        else {
+            flb_plg_warn(ctx->ins, "tag contains invalid characters, "
+                         "skipping header '%s'", ctx->header_tag);
+        }
     }
 
     /* Content Encoding: gzip */
@@ -485,8 +517,10 @@ static int compose_payload(struct flb_out_http *ctx,
     return FLB_OK;
 }
 
-static char **extract_headers(msgpack_object *obj) {
+static char **extract_headers(struct flb_out_http *ctx, msgpack_object *obj)
+{
     size_t i;
+    size_t n = 0;
     char **headers = NULL;
     size_t str_count;
     msgpack_object_map map;
@@ -514,30 +548,31 @@ static char **extract_headers(msgpack_object *obj) {
         k = map.ptr[i].key.via.str;
         v = map.ptr[i].val.via.str;
 
-        headers[i * 2] = strndup(k.ptr, k.size);
-
-        if (!headers[i]) {
-            goto err;
+        if (header_is_valid(k.ptr, k.size) == FLB_FALSE ||
+            header_is_valid(v.ptr, v.size) == FLB_FALSE) {
+            flb_plg_warn(ctx->ins, "header in record contains invalid "
+                         "characters, skipping it");
+            continue;
         }
 
-        headers[i * 2 + 1] = strndup(v.ptr, v.size);
-
-        if (!headers[i]) {
+        /* pack pairs densely: a NULL entry terminates the list */
+        headers[n] = flb_strndup(k.ptr, k.size);
+        if (!headers[n]) {
             goto err;
         }
+        n++;
+
+        headers[n] = flb_strndup(v.ptr, v.size);
+        if (!headers[n]) {
+            goto err;
+        }
+        n++;
     }
 
     return headers;
 
 err:
-    if (headers) {
-        for (i = 0; i < str_count; i++) {
-            if (headers[i]) {
-                flb_free(headers[i]);
-            }
-        }
-        flb_free(headers);
-    }
+    free_headers(headers);
     return NULL;
 }
 
@@ -598,7 +633,7 @@ static int send_all_requests(struct flb_out_http *ctx,
         }
 
         if (!flb_ra_get_kv_pair(ctx->headers_ra, map, &start_key, &k, &v)) {
-            headers = extract_headers(v);
+            headers = extract_headers(ctx, v);
             if (headers) {
                 headers_found = true;
             }
@@ -620,11 +655,12 @@ static int send_all_requests(struct flb_out_http *ctx,
             flb_plg_warn(ctx->ins,
                          "failed to extract body/headers using patterns "
                          "\"%s\" and \"%s\"", ctx->body_key, ctx->headers_key);
+            free_headers(headers);
             ret = -1;
             continue;
         }
 
-        flb_free(headers);
+        free_headers(headers);
     }
 
     flb_log_event_decoder_destroy(&log_decoder);

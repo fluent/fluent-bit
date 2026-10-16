@@ -14,6 +14,7 @@
 #include <gadget/types.h>
 
 #include "common/events.h"
+#include "common/event_id.bpf.h"
 
 #define MAX_ENTRIES 10240
 
@@ -87,6 +88,7 @@ int trace_vfs_openat_exit(struct syscall_trace_exit *ctx)
 
     uid_gid = bpf_get_current_uid_gid();
 
+    generate_event_id(&event->common.event_id);
     event->common.timestamp_raw = bpf_ktime_get_boot_ns();
     event->common.pid = pid_tgid >> 32;
     event->common.tid = tid;

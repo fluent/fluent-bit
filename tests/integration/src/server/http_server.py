@@ -256,6 +256,7 @@ def _decode_json_payload(decoded_payload):
 @app.route('/data', methods=['POST'])
 @app.route('/shared', methods=['POST'])
 @app.route('/solo', methods=['POST'])
+@app.route('/loki/api/v1/push', methods=['POST'])
 @app.route('/dataCollectionRules/<path:subpath>', methods=['POST'])
 def receive_data(subpath=None):
     _record_request()

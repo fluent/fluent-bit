@@ -1,0 +1,20 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: error
+  telemetry:
+    metrics:
+      logs:
+        tag_records:
+          enabled: notabool
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: bad.enabled
+      dummy: '{"message":"x"}'
+      samples: 1
+
+  outputs:
+    - name: 'null'
+      match: '*'

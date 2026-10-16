@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_opentelemetry.h>
 #include <fluent-bit/flb_ra_key.h>
 
 #include <cfl/cfl.h>
@@ -48,9 +49,6 @@
 #include <fluent-bit/flb_signv4.h>
 #endif
 #endif
-
-extern cfl_sds_t cmt_encode_opentelemetry_create(struct cmt *cmt);
-extern void cmt_encode_opentelemetry_destroy(cfl_sds_t text);
 
 #include "opentelemetry.h"
 #include "opentelemetry_conf.h"
@@ -730,6 +728,84 @@ static int opentelemetry_format_test(struct flb_config *config,
     return 0;
 }
 
+static int post_metrics_payload(struct opentelemetry_context *ctx,
+                                struct flb_event_chunk *event_chunk,
+                                flb_sds_t payload)
+{
+    int result;
+    int split_result;
+    size_t index;
+    struct cmt_opentelemetry_batches *batches;
+
+    if (ctx->metrics_max_datapoints == 0) {
+        return opentelemetry_post(ctx,
+                                  payload,
+                                  flb_sds_len(payload),
+                                  event_chunk->tag,
+                                  flb_sds_len(event_chunk->tag),
+                                  ctx->metrics_uri_sanitized,
+                                  ctx->grpc_metrics_uri);
+    }
+
+    batches = cmt_encode_opentelemetry_split_payload(
+                  payload,
+                  flb_sds_len(payload),
+                  (size_t) ctx->metrics_max_datapoints,
+                  &split_result);
+    if (batches == NULL) {
+        flb_plg_error(ctx->ins,
+                      "could not split metric payload into batches: %i",
+                      split_result);
+        if (split_result == CMT_ENCODE_OPENTELEMETRY_ALLOCATION_ERROR) {
+            return FLB_RETRY;
+        }
+        return FLB_ERROR;
+    }
+
+    result = FLB_OK;
+    for (index = 0; index < batches->count; index++) {
+        result = opentelemetry_post(ctx,
+                                    batches->entries[index].payload,
+                                    cfl_sds_len(batches->entries[index].payload),
+                                    event_chunk->tag,
+                                    flb_sds_len(event_chunk->tag),
+                                    ctx->metrics_uri_sanitized,
+                                    ctx->grpc_metrics_uri);
+        if (result != FLB_OK) {
+            if (result == FLB_RETRY && index > 0) {
+                flb_plg_warn(ctx->ins,
+                             "metric payload partially succeeded (%zu/%zu batches); "
+                             "skipping retry to avoid resending accepted data",
+                             index,
+                             batches->count);
+                result = FLB_OK;
+            }
+            break;
+        }
+    }
+
+    cmt_encode_opentelemetry_destroy_batches(batches);
+
+    return result;
+}
+
+void otel_metrics_apply_cutoff(struct cmt *cmt, int threshold_seconds)
+{
+    uint64_t threshold_ns;
+    uint64_t now;
+    uint64_t expiration;
+
+    if (threshold_seconds <= 0) {
+        return;
+    }
+    threshold_ns = (uint64_t) threshold_seconds * 1000000000ULL;
+    now = cfl_time_now();
+    expiration = (threshold_ns < now) ? (now - threshold_ns) : 0;
+    if (expiration > 0) {
+        cmt_expire(cmt, expiration);
+    }
+}
+
 static int process_metrics(struct flb_event_chunk *event_chunk,
                            struct flb_output_flush *out1_flush,
                            struct flb_input_instance *ins, void *out_context,
@@ -766,6 +842,9 @@ static int process_metrics(struct flb_event_chunk *event_chunk,
     while ((ret = cmt_decode_msgpack_create(&cmt,
                                             (char *) event_chunk->data,
                                             event_chunk->size, &off)) == ok) {
+        /* Exclude samples older than the configured cut-off. */
+        otel_metrics_apply_cutoff(cmt, ctx->cutoff_threshold);
+
         /* append labels set by config */
         append_labels(ctx, cmt);
 
@@ -773,7 +852,7 @@ static int process_metrics(struct flb_event_chunk *event_chunk,
         encoded_chunk = cmt_encode_opentelemetry_create(cmt);
         if (encoded_chunk == NULL) {
             flb_plg_error(ctx->ins,
-                          "Error encoding context as opentelemetry");
+                          "Error encoding metrics as opentelemetry");
             result = FLB_ERROR;
             cmt_destroy(cmt);
             goto exit;
@@ -796,11 +875,7 @@ static int process_metrics(struct flb_event_chunk *event_chunk,
         flb_plg_debug(ctx->ins, "final payload size: %lu", flb_sds_len(buf));
         if (buf && flb_sds_len(buf) > 0) {
             /* Send HTTP request */
-            result = opentelemetry_post(ctx, buf, flb_sds_len(buf),
-                                        event_chunk->tag,
-                                        flb_sds_len(event_chunk->tag),
-                                        ctx->metrics_uri_sanitized,
-                                        ctx->grpc_metrics_uri);
+            result = post_metrics_payload(ctx, event_chunk, buf);
 
             /* Debug http_post() result statuses */
             if (result == FLB_OK) {
@@ -856,9 +931,15 @@ static int process_traces(struct flb_event_chunk *event_chunk,
     flb_plg_debug(ctx->ins, "ctraces msgpack size: %lu",
                   event_chunk->size);
 
-    while (ctr_decode_msgpack_create(&ctr,
-                                     (char *) event_chunk->data,
-                                     event_chunk->size, &off) == 0) {
+    while (off < event_chunk->size) {
+        ret = ctr_decode_msgpack_create(&ctr, (char *) event_chunk->data,
+                                        event_chunk->size, &off);
+        if (ret != CTR_DECODE_MSGPACK_SUCCESS) {
+            flb_plg_error(ctx->ins, "could not decode traces msgpack: %d", ret);
+            result = FLB_ERROR;
+            goto exit;
+        }
+
         /* Create a OpenTelemetry payload */
         encoded_chunk = ctr_encode_opentelemetry_create(ctr);
         if (encoded_chunk == NULL) {
@@ -996,9 +1077,30 @@ exit:
 
 static int cb_opentelemetry_exit(void *data, struct flb_config *config)
 {
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct flb_connection *connection;
+    struct flb_upstream_queue *queue;
     struct opentelemetry_context *ctx;
 
     ctx = (struct opentelemetry_context *) data;
+
+    /* Worker callbacks have already finished when their pool is joined. */
+    if (ctx && ctx->u && !ctx->ins->is_threaded) {
+        /* Let callbacks suspended in socket I/O release their HTTP resources. */
+        queue = flb_upstream_queue_get(ctx->u);
+        mk_list_foreach_safe(head, tmp, &queue->busy_queue) {
+            connection = mk_list_entry(head, struct flb_connection, _head);
+            if (connection->coroutine && MK_EVENT_IS_REGISTERED((&connection->event))) {
+                connection->net_error = ECANCELED;
+                connection->recycle = FLB_FALSE;
+                shutdown(connection->fd, SHUT_RDWR);
+                connection->shutdown_flag = FLB_TRUE;
+                mk_event_del(connection->evl, &connection->event);
+                flb_coro_resume(connection->coroutine);
+            }
+        }
+    }
 
     flb_opentelemetry_context_destroy(ctx);
 
@@ -1018,6 +1120,12 @@ static int cb_opentelemetry_init(struct flb_output_instance *ins,
 
     if (ctx->batch_size <= 0){
         ctx->batch_size = atoi(DEFAULT_LOG_RECORD_BATCH_SIZE);
+    }
+
+    if (ctx->metrics_max_datapoints < 0) {
+        flb_plg_error(ins, "metrics_max_datapoints must be zero or greater");
+        flb_opentelemetry_context_destroy(ctx);
+        return -1;
     }
 
     flb_output_set_context(ins, ctx);
@@ -1116,6 +1224,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "grpc_metrics_uri", "/opentelemetry.proto.collector.metrics.v1.MetricsService/Export",
      0, FLB_TRUE, offsetof(struct opentelemetry_context, grpc_metrics_uri),
      "Specify an optional gRPC URI for the target OTel endpoint."
+    },
+    {
+     FLB_CONFIG_MAP_INT, "metrics_max_datapoints", DEFAULT_METRICS_MAX_DATAPOINTS,
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, metrics_max_datapoints),
+     "Set the maximum number of metric data points per OTLP export request "
+     "(0 disables the limit; default: 0)"
     },
 
     {
@@ -1272,6 +1386,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "logs_severity_number_message_key", "$SeverityNumber",
      0, FLB_TRUE, offsetof(struct opentelemetry_context, logs_severity_number_message_key),
      "Specify a Severity Number key"
+    },
+    {
+     FLB_CONFIG_MAP_TIME, "cut_off_time", "0",
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, cutoff_threshold),
+     "Specify an optional filter on metric age. Default 0s"
     },
 
 

@@ -74,6 +74,7 @@
 #define HTTP_STREAM_STATUS_PROCESSING          7
 #define HTTP_STREAM_STATUS_CLOSED              8
 #define HTTP_STREAM_STATUS_ERROR               9
+#define HTTP_STREAM_STATUS_RELEASED            10
 
 #define HTTP_WWW_AUTHORIZATION_SCHEME_NONE       0
 #define HTTP_WWW_AUTHORIZATION_SCHEME_BASIC      (((uint64_t) 1) << 0)

@@ -174,26 +174,27 @@ static int configure(struct filter_nest_ctx *ctx,
 
 }
 
-static void helper_pack_string_remove_prefix(
+static int helper_pack_string_remove_prefix(
         struct flb_log_event_encoder *log_encoder,
         struct filter_nest_ctx *ctx,
         const char *str,
         int len)
 {
-    if (strncmp(str, ctx->prefix, ctx->prefix_len) == 0) {
-        flb_log_event_encoder_append_body_string(
-            log_encoder,
-            (char *) &str[ctx->prefix_len],
-            len - ctx->prefix_len);
+    /* 'str' is not NUL terminated: never compare past its length */
+    if (len >= ctx->prefix_len &&
+        strncmp(str, ctx->prefix, ctx->prefix_len) == 0) {
+        return flb_log_event_encoder_append_body_string(
+                log_encoder,
+                (char *) &str[ctx->prefix_len],
+                len - ctx->prefix_len);
     }
-    else {
-        /* Key does not contain specified prefix */
-        flb_log_event_encoder_append_body_string(
+
+    /* Key does not contain specified prefix */
+    return flb_log_event_encoder_append_body_string(
             log_encoder, (char *) str, len);
-    }
 }
 
-static void helper_pack_string_add_prefix(struct flb_log_event_encoder *log_encoder,
+static int helper_pack_string_add_prefix(struct flb_log_event_encoder *log_encoder,
         struct filter_nest_ctx *ctx,
         const char *str,
         int len)
@@ -208,11 +209,45 @@ static void helper_pack_string_add_prefix(struct flb_log_event_encoder *log_enco
      */
     new_size = ctx->prefix_len + len;
 
-    flb_log_event_encoder_append_body_values(
-        log_encoder,
-        FLB_LOG_EVENT_STRING_LENGTH_VALUE(new_size),
-        FLB_LOG_EVENT_STRING_BODY_VALUE(ctx->prefix, ctx->prefix_len),
-        FLB_LOG_EVENT_STRING_BODY_VALUE(str, len));
+    return flb_log_event_encoder_append_body_values(
+            log_encoder,
+            FLB_LOG_EVENT_STRING_LENGTH_VALUE(new_size),
+            FLB_LOG_EVENT_STRING_BODY_VALUE(ctx->prefix, ctx->prefix_len),
+            FLB_LOG_EVENT_STRING_BODY_VALUE(str, len));
+}
+
+/*
+ * Pack a map key applying the configured Add_prefix / Remove_prefix rule.
+ * Only string-like keys can be rewritten; anything else is packed as is.
+ */
+static inline int helper_pack_key(struct flb_log_event_encoder *log_encoder,
+                                  struct filter_nest_ctx *ctx,
+                                  msgpack_object *key)
+{
+    const char *str;
+    int len;
+
+    if (key->type == MSGPACK_OBJECT_BIN) {
+        str = key->via.bin.ptr;
+        len = key->via.bin.size;
+    }
+    else if (key->type == MSGPACK_OBJECT_STR) {
+        str = key->via.str.ptr;
+        len = key->via.str.size;
+    }
+    else {
+        /* Not a string: there is no prefix to add or remove */
+        return flb_log_event_encoder_append_body_msgpack_object(log_encoder, key);
+    }
+
+    if (ctx->add_prefix) {
+        return helper_pack_string_add_prefix(log_encoder, ctx, str, len);
+    }
+    else if (ctx->remove_prefix) {
+        return helper_pack_string_remove_prefix(log_encoder, ctx, str, len);
+    }
+
+    return flb_log_event_encoder_append_body_msgpack_object(log_encoder, key);
 }
 
 static inline void map_pack_each_fn(struct flb_log_event_encoder *log_encoder,
@@ -259,16 +294,7 @@ static inline void map_transform_and_pack_each_fn(struct flb_log_event_encoder *
         if ((*f) (&map->via.map.ptr[i], ctx)) {
             key = &map->via.map.ptr[i].key;
 
-            if (ctx->add_prefix) {
-                helper_pack_string_add_prefix(log_encoder, ctx, key->via.str.ptr, key->via.str.size);
-            }
-            else if (ctx->remove_prefix) {
-                helper_pack_string_remove_prefix(log_encoder, ctx, key->via.str.ptr, key->via.str.size);
-            }
-            else {
-                ret = flb_log_event_encoder_append_body_msgpack_object(
-                        log_encoder, key);
-            }
+            ret = helper_pack_key(log_encoder, ctx, key);
 
             if (ret == FLB_EVENT_ENCODER_SUCCESS) {
                 ret = flb_log_event_encoder_append_body_msgpack_object(
@@ -326,7 +352,9 @@ static inline bool is_kv_to_nest(msgpack_object_kv * kv,
 
         if (wildcard->key_is_dynamic) {
             /* This will positively match "ABC123" with prefix "ABC*" */
-            if (strncmp(key, wildcard->key, wildcard->key_len) == 0) {
+            if ((klen >= wildcard->key_len) &&
+                    (strncmp(key, wildcard->key, wildcard->key_len) == 0)
+              ) {
                 return true;
             }
         }
@@ -435,15 +463,7 @@ static inline void pack_map(
          i++) {
         key = &map->via.map.ptr[i].key;
 
-        if (ctx->add_prefix) {
-            helper_pack_string_add_prefix(log_encoder, ctx, key->via.str.ptr, key->via.str.size);
-        }
-        else if (ctx->remove_prefix) {
-            helper_pack_string_remove_prefix(log_encoder, ctx, key->via.str.ptr, key->via.str.size);
-        }
-        else {
-            ret = flb_log_event_encoder_append_body_msgpack_object(log_encoder, key);
-        }
+        ret = helper_pack_key(log_encoder, ctx, key);
 
         if (ret == FLB_EVENT_ENCODER_SUCCESS) {
             ret = flb_log_event_encoder_append_body_msgpack_object(log_encoder,

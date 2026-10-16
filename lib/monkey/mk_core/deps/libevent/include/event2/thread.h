@@ -28,7 +28,7 @@
 
 /** @file event2/thread.h
 
-  Functions for multi-threaded applications using Libevent.
+  @brief Functions for multi-threaded applications using Libevent.
 
   When using a multi-threaded application in which multiple threads
   add and delete events from a single event base, Libevent needs to
@@ -39,8 +39,8 @@
   use them.
 
   Most programs will either be using Windows threads or Posix threads.  You
-  can configure Libevent to use one of these event_use_windows_threads() or
-  event_use_pthreads() respectively.  If you're using another threading
+  can configure Libevent to use one of these evthread_use_windows_threads() or
+  evthread_use_pthreads() respectively.  If you're using another threading
   library, you'll need to configure threading functions manually using
   evthread_set_lock_callbacks() and evthread_set_condition_callbacks().
 
@@ -107,7 +107,7 @@ struct evthread_lock_callbacks {
 	/** Function to allocate and initialize new lock of type 'locktype'.
 	 * Returns NULL on failure. */
 	void *(*alloc)(unsigned locktype);
-	/** Funtion to release all storage held in 'lock', which was created
+	/** Function to release all storage held in 'lock', which was created
 	 * with type 'locktype'. */
 	void (*free)(void *lock, unsigned locktype);
 	/** Acquire an already-allocated lock at 'lock' with mode 'mode'.
@@ -184,7 +184,6 @@ int evthread_set_condition_callbacks(
 /**
    Sets the function for determining the thread id.
 
-   @param base the event base for which to set the id function
    @param id_fn the identify function Libevent should invoke to
      determine the identity of a thread.
 */
@@ -213,6 +212,22 @@ int evthread_use_windows_threads(void);
     @return 0 on success, -1 on failure. */
 EVENT2_EXPORT_SYMBOL
 int evthread_use_pthreads(void);
+
+/* Enables posix mutex priority inheritance
+ * (if pthread_mutexattr_setprotocol() is supported). */
+#define EVTHREAD_PTHREAD_PRIO_INHERIT 0x01
+
+/**
+ * Sets up Libevent for use with Pthreads locking and thread ID functions.
+ * Use evthread_use_pthreads_with_flags() to use Pthreads locking, taking the
+ * specified flags under consideration.
+ *
+ * @param flags the flags to apply when setting up Pthreads locking. @see EVTHREAD_PTHREAD_*
+ * @return 0 on success, -1 on failure.
+ **/
+EVENT2_EXPORT_SYMBOL
+int evthread_use_pthreads_with_flags(int flags);
+
 /** Defined if Libevent was built with support for evthread_use_pthreads() */
 #define EVTHREAD_USE_PTHREADS_IMPLEMENTED 1
 

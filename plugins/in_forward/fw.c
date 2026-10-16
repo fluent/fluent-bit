@@ -22,6 +22,7 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_downstream.h>
+#include <fluent-bit/flb_downstream_worker.h>
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_network.h>
@@ -36,6 +37,13 @@
 #include "fw.h"
 #include "fw_conn.h"
 #include "fw_config.h"
+
+static int in_fw_collect(struct flb_input_instance *ins,
+                         struct flb_config *config, void *in_context);
+static int in_fw_collect_ctx(struct flb_in_fw_config *ctx);
+static void delete_users(struct flb_in_fw_config *ctx);
+static int setup_users(struct flb_in_fw_config *ctx,
+                       struct flb_input_instance *ins);
 
 #ifdef FLB_HAVE_UNIX_SOCKET
 static int remove_existing_socket_file(char *socket_path)
@@ -124,54 +132,88 @@ static int fw_unix_create(struct flb_in_fw_config *ctx)
 static int in_fw_collect(struct flb_input_instance *ins,
                          struct flb_config *config, void *in_context)
 {
-    int                      state_backup;
-    struct flb_connection   *connection;
+    (void) ins;
+    (void) config;
+
+    return in_fw_collect_ctx(in_context);
+}
+
+static int in_fw_conn_is_paused(struct flb_in_fw_config *ctx)
+{
+    if (ctx->is_paused == FLB_TRUE ||
+        ctx->state == FW_INSTANCE_STATE_PAUSED ||
+        ctx->downstream->paused == FLB_TRUE) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
+/*
+ * Accept callback: invoked from the connection event coroutine once the
+ * socket has been accepted and the TLS handshake (if any) completed. A
+ * non-zero return value makes the downstream release the connection.
+ */
+static int in_fw_conn_accept(struct flb_connection *connection, void *data)
+{
     struct fw_conn          *conn;
     struct flb_in_fw_config *ctx;
 
-    ctx = in_context;
+    ctx = data;
 
-    state_backup = ctx->state;
-    ctx->state = FW_INSTANCE_STATE_ACCEPTING_CLIENT;
-
-    connection = flb_downstream_conn_get(ctx->downstream);
-
-    if (connection == NULL) {
-        flb_plg_error(ctx->ins, "could not accept new connection");
-        ctx->state = state_backup;
-
+    if (!ctx->ins->config->is_ingestion_active) {
         return -1;
     }
 
-    if (!config->is_ingestion_active) {
-        flb_downstream_conn_release(connection);
-        ctx->state = state_backup;
-
+    if (in_fw_conn_is_paused(ctx)) {
+        flb_plg_trace(ctx->ins, "TCP connection will be closed FD=%i",
+                      connection->fd);
         return -1;
     }
 
-    if(ctx->is_paused) {
-        flb_downstream_conn_release(connection);
-        flb_plg_trace(ins, "TCP connection will be closed FD=%i", connection->fd);
-        ctx->state = state_backup;
-
-        return -1;
-    }
-
-    flb_plg_trace(ins, "new TCP connection arrived FD=%i", connection->fd);
+    flb_plg_trace(ctx->ins, "new TCP connection arrived FD=%i", connection->fd);
 
     conn = fw_conn_add(connection, ctx);
     if (!conn) {
-        flb_downstream_conn_release(connection);
-        ctx->state = state_backup;
-
+        flb_plg_error(ctx->ins, "could not accept new connection");
         return -1;
     }
 
-    ctx->state = state_backup;
+    /*
+     * The secure forward HELO write can suspend this coroutine, the plugin
+     * might have been paused and its connections closed meanwhile. The
+     * wrapper is released by the drop notification.
+     */
+    if (in_fw_conn_is_paused(ctx)) {
+        flb_plg_trace(ctx->ins, "TCP connection will be closed FD=%i",
+                      connection->fd);
+        return -1;
+    }
 
-    if (ctx->state == FW_INSTANCE_STATE_PAUSED) {
-        fw_conn_del_all(ctx);
+    return 0;
+}
+
+static int in_fw_collect_ctx(struct flb_in_fw_config *ctx)
+{
+    int ret;
+
+    /*
+     * Accept the client in its own event coroutine so the TLS handshake
+     * yields back to the event loop while it waits for the peer instead of
+     * blocking it.
+     */
+    ret = flb_downstream_conn_event_accept(ctx->downstream,
+                                           in_fw_conn_accept,
+                                           ctx,
+                                           fw_conn_event,
+                                           MK_EVENT_READ);
+    if (ret != 0) {
+        /*
+         * accept(2) and handshake failures are reported by the core, this
+         * also covers a client which was rejected or served and closed
+         * before the accept coroutine suspended.
+         */
+        flb_plg_trace(ctx->ins, "no new connection accepted");
     }
 
     return 0;
@@ -272,11 +314,220 @@ static int setup_users(struct flb_in_fw_config *ctx,
     return 0;
 }
 
+static int in_fw_worker_listener_event(void *data)
+{
+    struct mk_event *event;
+
+    event = data;
+
+    return in_fw_collect_ctx(event->data);
+}
+
+static int in_fw_start_tcp_listener(struct flb_in_fw_config *ctx,
+                                    struct flb_config *config,
+                                    struct flb_net_setup *net_setup,
+                                    struct mk_event_loop *event_loop,
+                                    int use_collector)
+{
+    int ret;
+    unsigned short int port;
+
+    port = (unsigned short int) strtoul(ctx->tcp_port, NULL, 10);
+
+    ctx->downstream = flb_downstream_create(FLB_TRANSPORT_TCP,
+                                            ctx->ins->flags,
+                                            ctx->listen,
+                                            port,
+                                            ctx->ins->tls,
+                                            config,
+                                            net_setup);
+
+    if (ctx->downstream == NULL) {
+        flb_plg_error(ctx->ins,
+                      "could not initialize downstream on %s:%s. Aborting",
+                      ctx->listen, ctx->tcp_port);
+        return -1;
+    }
+
+    flb_input_downstream_set(ctx->downstream, ctx->ins);
+    flb_net_socket_nonblocking(ctx->downstream->server_fd);
+
+    /* Connections are accepted and served from event coroutines */
+    flb_stream_enable_async_mode(&ctx->downstream->base);
+
+    if (use_collector == FLB_TRUE) {
+        ret = flb_input_set_collector_socket(ctx->ins,
+                                             in_fw_collect,
+                                             ctx->downstream->server_fd,
+                                             config);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "could not set server socket collector");
+            return -1;
+        }
+
+        ctx->coll_fd = ret;
+    }
+    else {
+        ctx->event_loop = event_loop;
+        MK_EVENT_NEW(&ctx->listener_event);
+        ctx->listener_event.type = FLB_ENGINE_EV_CUSTOM;
+        ctx->listener_event.data = ctx;
+        ctx->listener_event.handler = in_fw_worker_listener_event;
+
+        ret = mk_event_add(event_loop,
+                           ctx->downstream->server_fd,
+                           FLB_ENGINE_EV_CUSTOM,
+                           MK_EVENT_READ,
+                           &ctx->listener_event);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "could not register forward worker listener");
+            return -1;
+        }
+
+        ctx->listener_registered = FLB_TRUE;
+    }
+
+    return 0;
+}
+
+static int in_fw_worker_init(struct flb_downstream_worker *worker,
+                             void *parent,
+                             void **worker_context)
+{
+    int ret;
+    struct flb_in_fw_config *ctx;
+    struct flb_in_fw_config *parent_ctx;
+
+    parent_ctx = parent;
+
+    ctx = fw_config_init(parent_ctx->ins);
+    if (ctx == NULL) {
+        return -1;
+    }
+
+    *worker_context = ctx;
+
+    ctx->state = FW_INSTANCE_STATE_RUNNING;
+    ctx->coll_fd = -1;
+    ctx->ins = parent_ctx->ins;
+    ctx->workers = parent_ctx->workers;
+    ctx->worker_id = flb_downstream_worker_id_get(worker);
+    ctx->use_ingress_queue = FLB_TRUE;
+    ctx->is_paused = FLB_FALSE;
+    ctx->net_setup = parent_ctx->ins->net_setup;
+    ctx->net_setup.share_port = FLB_TRUE;
+    mk_list_init(&ctx->connections);
+    mk_list_init(&ctx->users);
+
+    ret = setup_users(ctx, parent_ctx->ins);
+    if (ret == -1) {
+        return -1;
+    }
+
+    ret = in_fw_start_tcp_listener(ctx,
+                                   parent_ctx->ins->config,
+                                   &ctx->net_setup,
+                                   flb_downstream_worker_event_loop_get(worker),
+                                   FLB_FALSE);
+    if (ret == 0) {
+        flb_downstream_thread_safe(ctx->downstream);
+        ret = flb_downstream_worker_listener_fd_set(
+                  worker, ctx->downstream->server_fd);
+    }
+
+    return ret;
+}
+
+static void in_fw_worker_exit(struct flb_downstream_worker *worker,
+                              void *worker_context)
+{
+    struct flb_in_fw_config *ctx;
+
+    (void) worker;
+
+    ctx = worker_context;
+
+    delete_users(ctx);
+    fw_conn_del_all(ctx);
+    fw_config_destroy(ctx);
+}
+
+static void in_fw_worker_maintenance(struct flb_downstream_worker *worker,
+                                     void *worker_context)
+{
+    struct flb_in_fw_config *ctx;
+
+    (void) worker;
+
+    ctx = worker_context;
+
+    if (ctx->downstream != NULL) {
+        flb_downstream_conn_timeouts_stream(ctx->downstream);
+        flb_downstream_conn_pending_destroy(ctx->downstream);
+    }
+}
+
+static int in_fw_workers_start(struct flb_in_fw_config *ctx)
+{
+    struct flb_downstream_worker_options options;
+
+    memset(&options, 0, sizeof(struct flb_downstream_worker_options));
+    options.workers = ctx->workers;
+    options.parent = ctx;
+    options.cb_init = in_fw_worker_init;
+    options.cb_exit = in_fw_worker_exit;
+    options.cb_maintenance = in_fw_worker_maintenance;
+
+    return flb_downstream_worker_runtime_start(&ctx->runtime, &options);
+}
+
+static void in_fw_workers_stop(struct flb_in_fw_config *ctx)
+{
+    flb_downstream_worker_runtime_stop(ctx->runtime);
+    ctx->runtime = NULL;
+}
+
+static void in_fw_worker_pause(struct flb_downstream_worker *worker,
+                               void *worker_context,
+                               void *data)
+{
+    struct flb_in_fw_config *ctx;
+
+    (void) worker;
+    (void) data;
+
+    ctx = worker_context;
+
+    if (ctx->downstream != NULL) {
+        flb_downstream_pause(ctx->downstream);
+        ctx->is_paused = FLB_TRUE;
+        ctx->state = FW_INSTANCE_STATE_PAUSED;
+        fw_conn_del_all(ctx);
+    }
+}
+
+static void in_fw_worker_resume(struct flb_downstream_worker *worker,
+                                void *worker_context,
+                                void *data)
+{
+    struct flb_in_fw_config *ctx;
+
+    (void) worker;
+    (void) data;
+
+    ctx = worker_context;
+
+    if (ctx->downstream != NULL) {
+        flb_downstream_resume(ctx->downstream);
+        ctx->is_paused = FLB_FALSE;
+        ctx->state = FW_INSTANCE_STATE_RUNNING;
+    }
+}
+
 /* Initialize plugin */
 static int in_fw_init(struct flb_input_instance *ins,
                       struct flb_config *config, void *data)
 {
-    unsigned short int       port;
     int                      ret;
     struct flb_in_fw_config *ctx;
 
@@ -300,8 +551,18 @@ static int in_fw_init(struct flb_input_instance *ins,
     /* Set plugin ingestion to active */
     ctx->is_paused = FLB_FALSE;
 
+    if (ctx->workers <= 0) {
+        ctx->workers = 1;
+    }
+
     /* Unix Socket mode */
     if (ctx->unix_path) {
+        if (ctx->workers > 1) {
+            flb_plg_error(ctx->ins, "workers is not supported with unix_path");
+            fw_config_destroy(ctx);
+            return -1;
+        }
+
 #ifndef FLB_HAVE_UNIX_SOCKET
         flb_plg_error(ctx->ins, "unix address is not supported %s:%s. Aborting",
                       ctx->listen, ctx->tcp_port);
@@ -319,38 +580,7 @@ static int in_fw_init(struct flb_input_instance *ins,
 #endif
     }
     else {
-        port = (unsigned short int) strtoul(ctx->tcp_port, NULL, 10);
-
-        ctx->downstream = flb_downstream_create(FLB_TRANSPORT_TCP,
-                                                ctx->ins->flags,
-                                                ctx->listen,
-                                                port,
-                                                ctx->ins->tls,
-                                                config,
-                                                &ctx->ins->net_setup);
-
-        if (ctx->downstream == NULL) {
-            flb_plg_error(ctx->ins,
-                          "could not initialize downstream on unix://%s. Aborting",
-                          ctx->listen);
-
-            fw_config_destroy(ctx);
-
-            return -1;
-        }
-
-        if (ctx->downstream != NULL) {
-            flb_plg_info(ctx->ins, "listening on %s:%s",
-                         ctx->listen, ctx->tcp_port);
-        }
-        else {
-            flb_plg_error(ctx->ins, "could not bind address %s:%s. Aborting",
-                          ctx->listen, ctx->tcp_port);
-
-            fw_config_destroy(ctx);
-
-            return -1;
-        }
+        /* TCP listener startup happens after security.users validation. */
     }
 
     /* Load users */
@@ -370,24 +600,68 @@ static int in_fw_init(struct flb_input_instance *ins,
         return -1;
     }
 
-    flb_input_downstream_set(ctx->downstream, ctx->ins);
-
-    flb_net_socket_nonblocking(ctx->downstream->server_fd);
-
-    /* Collect upon data available on the standard input */
-    ret = flb_input_set_collector_socket(ins,
-                                         in_fw_collect,
-                                         ctx->downstream->server_fd,
-                                         config);
-    if (ret == -1) {
-        flb_plg_error(ctx->ins, "could not set server socket collector");
+    ret = pthread_mutex_init(&ctx->conn_mutex, NULL);
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "could not initialize connection mutex");
+        delete_users(ctx);
         fw_config_destroy(ctx);
         return -1;
     }
+    ctx->conn_mutex_initialized = FLB_TRUE;
 
-    ctx->coll_fd = ret;
+    if (ctx->unix_path) {
+        flb_input_downstream_set(ctx->downstream, ctx->ins);
+        flb_net_socket_nonblocking(ctx->downstream->server_fd);
 
-    pthread_mutex_init(&ctx->conn_mutex, NULL);
+        /* Connections are accepted and served from event coroutines */
+        flb_stream_enable_async_mode(&ctx->downstream->base);
+
+        ret = flb_input_set_collector_socket(ins,
+                                             in_fw_collect,
+                                             ctx->downstream->server_fd,
+                                             config);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "could not set server socket collector");
+            delete_users(ctx);
+            fw_config_destroy(ctx);
+            return -1;
+        }
+
+        ctx->coll_fd = ret;
+    }
+    else {
+        if (ctx->workers > 1) {
+            ret = flb_input_ingress_enable(ins);
+            if (ret != 0) {
+                delete_users(ctx);
+                fw_config_destroy(ctx);
+                return -1;
+            }
+
+            ret = in_fw_workers_start(ctx);
+            if (ret != 0) {
+                flb_plg_error(ctx->ins,
+                              "could not start forward listener workers on %s:%s. Aborting",
+                              ctx->listen, ctx->tcp_port);
+                delete_users(ctx);
+                fw_config_destroy(ctx);
+                return -1;
+            }
+        }
+        else {
+            ret = in_fw_start_tcp_listener(ctx, config, &ins->net_setup, NULL, FLB_TRUE);
+            if (ret != 0) {
+                delete_users(ctx);
+                fw_config_destroy(ctx);
+                return -1;
+            }
+        }
+
+        flb_plg_info(ctx->ins,
+                     "listening on %s:%s with %i worker%s",
+                     ctx->listen, ctx->tcp_port, ctx->workers,
+                     ctx->workers == 1 ? "" : "s");
+    }
 
     return 0;
 }
@@ -404,7 +678,25 @@ static void in_fw_pause(void *data, struct flb_config *config)
          * pause the ingestion. The plugin should close all the connections
          * and wait for the ingestion to resume.
          */
-        flb_input_collector_pause(ctx->coll_fd, ctx->ins);
+        if (ctx->runtime != NULL) {
+            /*
+             * Publish the request before blocking on the workers: a worker
+             * waiting for space in the ingress queue (drained by this
+             * thread) would otherwise never get back to its event loop to
+             * acknowledge the pause.
+             */
+            cfl_atomic_store(&ctx->pause_requested, FLB_TRUE);
+
+            ret = flb_downstream_worker_runtime_foreach(ctx->runtime,
+                                                        in_fw_worker_pause,
+                                                        NULL);
+            if (ret != 0) {
+                flb_plg_error(ctx->ins, "could not pause all downstream workers");
+            }
+        }
+        else {
+            flb_input_collector_pause(ctx->coll_fd, ctx->ins);
+        }
 
         ret = pthread_mutex_lock(&ctx->conn_mutex);
         if (ret != 0) {
@@ -412,11 +704,9 @@ static void in_fw_pause(void *data, struct flb_config *config)
             return;
         }
 
-        if (ctx->state == FW_INSTANCE_STATE_RUNNING) {
-            fw_conn_del_all(ctx);
-        }
-
+        ctx->state = FW_INSTANCE_STATE_PAUSED;
         ctx->is_paused = FLB_TRUE;
+        fw_conn_del_all(ctx);
         ret = pthread_mutex_unlock(&ctx->conn_mutex);
         if (ret != 0) {
             flb_plg_error(ctx->ins, "cannot unlock collector mutex");
@@ -444,7 +734,23 @@ static void in_fw_resume(void *data, struct flb_config *config) {
     struct flb_in_fw_config *ctx = data;
 
     if (config->is_running == FLB_TRUE) {
-        flb_input_collector_resume(ctx->coll_fd, ctx->ins);
+        if (ctx->runtime != NULL) {
+            /*
+             * Workers are resumed one at a time: clear the request first so
+             * the ones already resumed do not observe a stale pause.
+             */
+            cfl_atomic_store(&ctx->pause_requested, FLB_FALSE);
+
+            ret = flb_downstream_worker_runtime_foreach(ctx->runtime,
+                                                        in_fw_worker_resume,
+                                                        NULL);
+            if (ret != 0) {
+                flb_plg_error(ctx->ins, "could not resume all downstream workers");
+            }
+        }
+        else {
+            flb_input_collector_resume(ctx->coll_fd, ctx->ins);
+        }
 
         ret = pthread_mutex_lock(&ctx->conn_mutex);
         if (ret != 0) {
@@ -474,6 +780,7 @@ static int in_fw_exit(void *data, struct flb_config *config)
     }
 
     delete_users(ctx);
+    in_fw_workers_stop(ctx);
     fw_conn_del_all(ctx);
     fw_config_destroy(ctx);
     return 0;
@@ -522,9 +829,22 @@ static struct flb_config_map config_map[] = {
     "The maximum buffer memory size used to receive a Forward message."
    },
    {
+    FLB_CONFIG_MAP_SIZE, "msgpack_memory_limit", "0",
+    0, FLB_TRUE, offsetof(struct flb_in_fw_config, msgpack_memory_limit),
+    "Maximum decoded MessagePack zone memory. Zero uses the greater of 65536 "
+    "bytes and 16 times buffer_max_size; an explicit size overrides this budget. "
+    "Includes the outer frame and cumulative PackedForward log entry zones, "
+    "including retained group records and zone overhead."
+   },
+   {
     FLB_CONFIG_MAP_BOOL, "empty_shared_key", "false",
     0, FLB_TRUE, offsetof(struct flb_in_fw_config, empty_shared_key),
     "Enable an empty string as the shared key for authentication."
+   },
+   {
+    FLB_CONFIG_MAP_INT, "workers", "1",
+    0, FLB_TRUE, offsetof(struct flb_in_fw_config, workers),
+    "Set the number of Forward listener workers"
    },
    {0}
 };

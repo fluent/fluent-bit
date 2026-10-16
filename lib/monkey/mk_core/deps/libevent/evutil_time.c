@@ -43,7 +43,7 @@
 #ifndef EVENT__HAVE_GETTIMEOFDAY
 #include <sys/timeb.h>
 #endif
-#if !defined(EVENT__HAVE_NANOSLEEP) && !defined(EVENT_HAVE_USLEEP) && \
+#if !defined(EVENT__HAVE_NANOSLEEP) && !defined(EVENT__HAVE_USLEEP) && \
 	!defined(_WIN32)
 #include <sys/select.h>
 #endif
@@ -65,9 +65,15 @@
 
 #ifndef EVENT__HAVE_GETTIMEOFDAY
 /* No gettimeofday; this must be windows. */
+
+typedef void (WINAPI *GetSystemTimePreciseAsFileTime_fn_t) (LPFILETIME);
+
 int
 evutil_gettimeofday(struct timeval *tv, struct timezone *tz)
 {
+	static GetSystemTimePreciseAsFileTime_fn_t GetSystemTimePreciseAsFileTime_fn = NULL;
+	static int check_precise = 1;
+
 #ifdef _MSC_VER
 #define U64_LITERAL(n) n##ui64
 #else
@@ -90,7 +96,19 @@ evutil_gettimeofday(struct timeval *tv, struct timezone *tz)
 	if (tv == NULL)
 		return -1;
 
-	GetSystemTimeAsFileTime(&ft.ft_ft);
+	if (EVUTIL_UNLIKELY(check_precise)) {
+		HMODULE h = evutil_load_windows_system_library_(TEXT("kernel32.dll"));
+		if (h != NULL)
+			GetSystemTimePreciseAsFileTime_fn =
+				(GetSystemTimePreciseAsFileTime_fn_t)
+					GetProcAddress(h, "GetSystemTimePreciseAsFileTime");
+		check_precise = 0;
+	}
+
+	if (GetSystemTimePreciseAsFileTime_fn != NULL)
+		GetSystemTimePreciseAsFileTime_fn(&ft.ft_ft);
+	else
+		GetSystemTimeAsFileTime(&ft.ft_ft);
 
 	if (EVUTIL_UNLIKELY(ft.ft_64 < EPOCH_BIAS)) {
 		/* Time before the unix epoch. */
@@ -126,8 +144,22 @@ evutil_usleep_(const struct timeval *tv)
 		return;
 #if defined(_WIN32)
 	{
-		long msec = evutil_tv_to_msec_(tv);
-		Sleep((DWORD)msec);
+		__int64 usec;
+		LARGE_INTEGER li;
+		HANDLE timer;
+
+		usec = tv->tv_sec * 1000000LL + tv->tv_usec;
+		if (!usec)
+			return;
+
+		li.QuadPart = -10LL * usec;
+		timer = CreateWaitableTimer(NULL, TRUE, NULL);
+		if (!timer)
+			return;
+
+		SetWaitableTimer(timer, &li, 0, NULL, NULL, 0);
+		WaitForSingleObject(timer, INFINITE);
+		CloseHandle(timer);
 	}
 #elif defined(EVENT__HAVE_NANOSLEEP)
 	{
@@ -141,12 +173,16 @@ evutil_usleep_(const struct timeval *tv)
 	sleep(tv->tv_sec);
 	usleep(tv->tv_usec);
 #else
-	select(0, NULL, NULL, NULL, tv);
+	{
+		struct timeval tv2 = *tv;
+		select(0, NULL, NULL, NULL, &tv2);
+	}
 #endif
 }
 
 int
-evutil_date_rfc1123(char *date, const size_t datelen, struct tm *cur_p) {
+evutil_date_rfc1123(char *date, const size_t datelen, const struct tm *tm)
+{
 	static const char *DAYS[] =
 		{ "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
 	static const char *MONTHS[] =
@@ -154,23 +190,35 @@ evutil_date_rfc1123(char *date, const size_t datelen, struct tm *cur_p) {
 
 	time_t t = time(NULL);
 
-	/* If `cur_p` is null, set system's current time. */
-	if (cur_p == NULL) {
-#ifdef _WIN32
-		cur_p = gmtime(&t);
-#else
-		{
-			struct tm cur;
-			gmtime_r(&t, &cur);
-			cur_p = &cur;
+#if defined(EVENT__HAVE__GMTIME64_S) || !defined(_WIN32)
+	struct tm sys;
+#endif
+
+	/* If `tm` is null, set system's current time. */
+	if (tm == NULL) {
+#if !defined(_WIN32)
+		gmtime_r(&t, &sys);
+		tm = &sys;
+		/** detect _gmtime64()/_gmtime64_s() */
+#elif defined(EVENT__HAVE__GMTIME64_S)
+		errno_t err;
+		err = _gmtime64_s(&sys, &t);
+		if (err) {
+			event_errx(1, "Invalid argument to _gmtime64_s");
+		} else {
+			tm = &sys;
 		}
+#elif defined(EVENT__HAVE__GMTIME64)
+		tm = _gmtime64(&t);
+#else
+		tm = gmtime(&t);
 #endif
 	}
 
 	return evutil_snprintf(
 		date, datelen, "%s, %02d %s %4d %02d:%02d:%02d GMT",
-		DAYS[cur_p->tm_wday], cur_p->tm_mday, MONTHS[cur_p->tm_mon],
-		1900+cur_p->tm_year, cur_p->tm_hour, cur_p->tm_min, cur_p->tm_sec);
+		DAYS[tm->tm_wday], tm->tm_mday, MONTHS[tm->tm_mon],
+		1900 + tm->tm_year, tm->tm_hour, tm->tm_min, tm->tm_sec);
 }
 
 /*
@@ -267,6 +315,8 @@ evutil_configure_monotonic_time_(struct evutil_monotonic_timer *base,
 #endif
 	const int fallback = flags & EV_MONOT_FALLBACK;
 	struct timespec	ts;
+
+	memset(base, 0, sizeof(*base));
 
 #ifdef CLOCK_MONOTONIC_COARSE
 	if (CLOCK_MONOTONIC_COARSE < 0) {
@@ -376,7 +426,7 @@ evutil_gettime_monotonic_(struct evutil_monotonic_timer *base,
 
 #if defined(HAVE_WIN32_MONOTONIC)
 /* =====
-   Turn we now to Windows.  Want monontonic time on Windows?
+   Turn we now to Windows.  Want monotonic time on Windows?
 
    Windows has QueryPerformanceCounter(), which gives time most high-
    resolution time.  It's a pity it's not so monotonic in practice; it's
@@ -526,7 +576,7 @@ evutil_gettime_monotonic_(struct evutil_monotonic_timer *base,
 			/* It appears that the QueryPerformanceCounter()
 			 * result is more than 1 second away from
 			 * GetTickCount() result. Let's adjust it to be as
-			 * accurate as we can; adjust_monotnonic_time() below
+			 * accurate as we can; adjust_monotonic_time() below
 			 * will keep it monotonic. */
 			counter_usec_elapsed = ticks_elapsed * 1000;
 			base->first_counter = (ev_uint64_t) (counter.QuadPart - counter_usec_elapsed / base->usec_per_count);

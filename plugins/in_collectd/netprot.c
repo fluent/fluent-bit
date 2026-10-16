@@ -100,6 +100,12 @@ static int netprot_pack_value(char *ptr, int size, struct netprot_header *hdr,
      * Since each value uses (1 + 8) bytes, the total buffer size must
      * be 2-byte header plus <count * 9> bytes.
      */
+    if (size < sizeof(uint16_t)) {
+        flb_error("[in_collectd] data truncated (%i < %zu)",
+                  size, sizeof(uint16_t));
+        return -1;
+    }
+
     count = be16read(ptr);
     if (size != 2 + count * 9) {
         flb_error("[in_collectd] data corrupted (size=%i, count=%i)",
