@@ -9,6 +9,7 @@ if(CIO_BACKEND_FILESYSTEM)
   set(UNIT_TESTS_FILES
     ${UNIT_TESTS_FILES}
     fs.c
+    fs_pool.c
     metadata_update.c
     )
 endif()

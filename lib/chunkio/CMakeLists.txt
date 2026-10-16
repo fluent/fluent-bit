@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.20)
 project(chunk-io C)
 
+if(NOT WIN32)
+  find_package(Threads REQUIRED)
+endif()
+
 set(CIO_VERSION_MAJOR  1)
 set(CIO_VERSION_MINOR  5)
 set(CIO_VERSION_PATCH  4)

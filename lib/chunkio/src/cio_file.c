@@ -486,8 +486,8 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
     cf->st_content = cio_file_st_get_content(cf->map);
     cio_log_debug(ctx, "%s:%s mapped OK", ch->st->name, ch->name);
 
-    /* The mmap succeeded, adjust the counters */
-    cio_chunk_counter_total_up_add(ctx);
+    /* Counter accounting is done by the caller, which reserves the slot
+     * atomically before mapping (see cio_chunk_counter_total_up_try_inc) */
 
     return CIO_OK;
 }
@@ -504,6 +504,13 @@ int cio_file_lookup_group(char *group, void **result)
 
 int cio_file_read_prepare(struct cio_ctx *ctx, struct cio_chunk *ch)
 {
+    /*
+     * Map a file for a metadata/content read without enforcing max_chunks_up.
+     * No counter accounting happens here: a 'down' chunk has no file
+     * descriptor and cio_file_native_map() refuses to map it, so this either
+     * fails or returns early when the file is already mapped (which the stock
+     * mmap_file() did not count either).
+     */
     return mmap_file(ctx, ch, 0);
 }
 
@@ -563,11 +570,8 @@ int cio_file_content_copy(struct cio_chunk *ch,
  */
 static inline int open_and_up(struct cio_ctx *ctx)
 {
-    if (ctx->total_chunks_up >= ctx->max_chunks_up) {
-        return CIO_FALSE;
-    }
-
-    return CIO_TRUE;
+    /* atomically reserves an 'up' slot (counter incremented on success) */
+    return cio_chunk_counter_total_up_try_inc(ctx);
 }
 
 /*
@@ -641,11 +645,17 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
                                int *err)
 {
     char             error_message[256];
+    char             slot_name[64];
     char            *path;
     int              ret;
+    int              slot;
+    int              pool_slot;
+    int              reserved;
     struct cio_file *cf;
 
     (void) size;
+
+    reserved = CIO_FALSE;
 
     ret = cio_file_native_filename_check(ch->name);
     if (ret != CIO_OK) {
@@ -659,10 +669,53 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
         return NULL;
     }
 
+    /*
+     * File-slot pool: a chunk name that is not a slot name is a new chunk, so
+     * take a free slot and use its file name. Never look up the caller's
+     * (unique) logical path: a failed lookup would leave a negative dentry in
+     * the cache on every flush, which is exactly the growth we are avoiding.
+     * Recovery opens existing files by their slot names; during a scan, a
+     * non-slot name is a legacy or fallback chunk file that must be recovered
+     * in place (no slot is allocated and no path is redirected).
+     */
+    pool_slot = -1;
+    if (st->pool_size > 0) {
+        slot = cio_stream_pool_slot_from_name(ch->name);
+        if (slot >= 0) {
+            cio_stream_pool_mark_busy(st, slot);
+            pool_slot = slot;
+        }
+        else if (st->scanning == CIO_TRUE) {
+            /* legacy file: keep its own path, it is unlinked on delete */
+        }
+        else {
+            slot = cio_stream_pool_acquire(st);
+            if (slot >= 0) {
+                cio_stream_pool_slot_name(slot, slot_name, sizeof(slot_name));
+                free(path);
+                path = cio_file_native_compose_path(ctx->options.root_path,
+                                                    st->name, slot_name);
+                if (path == NULL) {
+                    cio_stream_pool_release(st, slot);
+
+                    return NULL;
+                }
+                pool_slot = slot;
+            }
+            else if (!cio_stream_pool_exhausted_warned(st)) {
+                cio_log_warn(ctx, "[cio file] file pool exhausted (%d slots), "
+                             "falling back to unique chunk names", st->pool_size);
+            }
+        }
+    }
+
     /* Create file context */
     cf = calloc(1, sizeof(struct cio_file));
     if (!cf) {
         cio_errno();
+        if (pool_slot >= 0) {
+            cio_stream_pool_release(st, pool_slot);
+        }
         free(path);
 
         return NULL;
@@ -687,6 +740,7 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
     cf->ctx = ctx;
     cf->auto_remap_warned = CIO_FALSE;
     cf->map_truncated_warned = CIO_FALSE;
+    cf->pool_slot = pool_slot;
     ch->backend = cf;
 
 #ifdef _WIN32
@@ -714,10 +768,19 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
         return cf;
     }
 
+    /* up-slot reserved: counter already incremented */
+    reserved = CIO_TRUE;
+
     /* Open the file */
     ret = cio_file_native_open(cf);
 
     if (ret != CIO_OK) {
+        if (reserved == CIO_TRUE) {
+            cio_chunk_counter_total_up_sub(ctx);
+        }
+        if (cf->pool_slot >= 0) {
+            cio_stream_pool_release(st, cf->pool_slot);
+        }
         free(path);
         free(cf);
 
@@ -732,6 +795,12 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
     if (ret != CIO_OK) {
         cio_file_native_close(cf);
 
+        if (reserved == CIO_TRUE) {
+            cio_chunk_counter_total_up_sub(ctx);
+        }
+        if (cf->pool_slot >= 0) {
+            cio_stream_pool_release(st, cf->pool_slot);
+        }
         free(path);
         free(cf);
 
@@ -757,6 +826,12 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
 
         cio_file_native_close(cf);
 
+        if (reserved == CIO_TRUE) {
+            cio_chunk_counter_total_up_sub(ctx);
+        }
+        if (cf->pool_slot >= 0) {
+            cio_stream_pool_release(st, cf->pool_slot);
+        }
         free(path);
         free(cf);
 
@@ -768,6 +843,12 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
     if (ret == CIO_ERROR || ret == CIO_CORRUPTED || ret == CIO_RETRY) {
         cio_file_native_close(cf);
 
+        if (reserved == CIO_TRUE) {
+            cio_chunk_counter_total_up_sub(ctx);
+        }
+        if (cf->pool_slot >= 0) {
+            cio_stream_pool_release(st, cf->pool_slot);
+        }
         free(path);
         free(cf);
 
@@ -789,6 +870,7 @@ int cio_file_delete(struct cio_ctx *ctx, struct cio_stream *st, const char *name
 {
     char *path;
     int   ret;
+    int   slot;
 
     ret = cio_file_native_filename_check((char *) name);
     if (ret != CIO_OK) {
@@ -802,7 +884,28 @@ int cio_file_delete(struct cio_ctx *ctx, struct cio_stream *st, const char *name
         return CIO_ERROR;
     }
 
-    ret = cio_file_native_delete_by_path(path);
+    /*
+     * Pooled slot files are truncated (not unlinked) and returned to the pool
+     * so their kernel dentry/inode objects stay cached and reusable. Only
+     * truncate when the slot belongs to the current pool; otherwise unlink
+     * (pool disabled, or slot left over from a larger pool).
+     */
+    slot = cio_stream_pool_slot_from_name(name);
+    if (cio_stream_pool_slot_valid(st, slot) == CIO_TRUE) {
+        ret = cio_file_native_truncate_by_path(path);
+        if (ret == CIO_OK) {
+            cio_stream_pool_release(st, slot);
+        }
+        else {
+            cio_log_error(ctx,
+                          "[cio file] cannot recycle pooled chunk file %s/%s; "
+                          "slot kept busy",
+                          st->name, name);
+        }
+    }
+    else {
+        ret = cio_file_native_delete_by_path(path);
+    }
 
     free(path);
 
@@ -816,6 +919,7 @@ int cio_file_delete(struct cio_ctx *ctx, struct cio_stream *st, const char *name
 static int _cio_file_up(struct cio_chunk *ch, int enforced)
 {
     int ret;
+    int reserved = CIO_FALSE;
     struct cio_file *cf = (struct cio_file *) ch->backend;
 
     if (cf->map) {
@@ -839,12 +943,17 @@ static int _cio_file_up(struct cio_chunk *ch, int enforced)
         if (ret == CIO_FALSE) {
             return CIO_ERROR;
         }
+        /* up-slot reserved: counter already incremented */
+        reserved = CIO_TRUE;
     }
 
     /* Open file */
     ret = cio_file_native_open(cf);
 
     if (ret != CIO_OK) {
+        if (reserved == CIO_TRUE) {
+            cio_chunk_counter_total_up_sub(ch->ctx);
+        }
         cio_log_error(ch->ctx, "[cio file] cannot open chunk: %s/%s",
                       ch->st->name, ch->name);
         return CIO_ERROR;
@@ -852,6 +961,11 @@ static int _cio_file_up(struct cio_chunk *ch, int enforced)
 
     ret = cio_file_update_size(cf);
     if (ret != CIO_OK) {
+        cio_file_native_close(cf);
+
+        if (reserved == CIO_TRUE) {
+            cio_chunk_counter_total_up_sub(ch->ctx);
+        }
         return CIO_ERROR;
     }
 
@@ -877,6 +991,19 @@ static int _cio_file_up(struct cio_chunk *ch, int enforced)
          * the caller must take that action.
          */
         cio_file_native_close(cf);
+    }
+
+    if (ret != CIO_OK) {
+        if (reserved == CIO_TRUE) {
+            cio_chunk_counter_total_up_sub(ch->ctx);
+        }
+        return ret;
+    }
+
+    /* non-enforced bring-up: account the new up chunk here, the enforced
+     * path already reserved the slot atomically */
+    if (reserved == CIO_FALSE) {
+        cio_chunk_counter_total_up_add(ch->ctx);
     }
 
     return ret;
@@ -977,12 +1104,30 @@ void cio_file_close(struct cio_chunk *ch, int delete)
 
     /* Should we delete the content from the file system ? */
     if (delete == CIO_TRUE) {
-        ret = cio_file_native_delete(cf);
+        if (cio_stream_pool_slot_valid(ch->st, cf->pool_slot) == CIO_TRUE) {
+            /* pooled files are recycled: truncate and free the slot only if
+             * the truncate succeeded, otherwise the slot stays busy so stale
+             * content is never handed to a new chunk */
+            ret = cio_file_native_truncate_by_path(cf->path);
+            if (ret == CIO_OK) {
+                cio_stream_pool_release(ch->st, cf->pool_slot);
+            }
+            else {
+                cio_log_error(ch->ctx,
+                              "[cio file] cannot recycle pooled chunk %s:%s; "
+                              "slot kept busy",
+                              ch->st->name, ch->name);
+            }
+        }
+        else {
+            /* not a slot of the current pool (disabled or shrunk): unlink */
+            ret = cio_file_native_delete(cf);
 
-        if (ret != CIO_OK) {
-            cio_log_error(ch->ctx,
-                          "[cio file] error deleting file at close %s:%s",
-                          ch->st->name, ch->name);
+            if (ret != CIO_OK) {
+                cio_log_error(ch->ctx,
+                              "[cio file] error deleting file at close %s:%s",
+                              ch->st->name, ch->name);
+            }
         }
     }
 
