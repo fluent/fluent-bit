@@ -243,8 +243,11 @@ static int process_json_payload_log_records_entry(
         }
     }
 
-    /* traceFlags */
-    result = flb_otel_utils_find_map_entry_by_key(log_records_entry, "traceFlags", 0, FLB_TRUE);
+    /* Canonical OTLP JSON flags, with legacy traceFlags compatibility. */
+    result = flb_otel_utils_find_map_entry_by_key(log_records_entry, "flags", 0, FLB_TRUE);
+    if (result < 0) {
+        result = flb_otel_utils_find_map_entry_by_key(log_records_entry, "traceFlags", 0, FLB_TRUE);
+    }
     if (result >= 0) {
         trace_flags = &log_records_entry->ptr[result].val;
     }
@@ -773,6 +776,16 @@ static int process_json_payload_resource_logs_entry (struct flb_log_event_encode
                                                                 FLB_LOG_EVENT_CSTRING_VALUE("version"),
                                                                 FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(obj));
                     }
+                }
+
+                /* Preserve the scope's dropped attribute count like the resource's. */
+                result = flb_otel_utils_find_map_entry_by_key(&scope->via.map,
+                                                             "droppedAttributesCount", 0, FLB_TRUE);
+                if (result >= 0) {
+                    obj = &scope->via.map.ptr[result].val;
+                    flb_log_event_encoder_append_body_values(tmp_encoder,
+                        FLB_LOG_EVENT_CSTRING_VALUE("dropped_attributes_count"),
+                        FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(obj));
                 }
 
                 /* scope attributes */
