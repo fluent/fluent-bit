@@ -625,7 +625,67 @@ static void processor_metrics_counters()
     flb_sds_destroy(regex_prop_key);
 }
 
+static int create_intermediate_metrics(struct flb_processor_instance *ins,
+                                       struct cmt *input, struct cmt **output,
+                                       const char *tag, int tag_len)
+{
+    *output = cmt_create();
+    return *output == NULL ? -1 : FLB_PROCESSOR_SUCCESS;
+}
+
+static int fail_metrics_processing(struct flb_processor_instance *ins,
+                                   struct cmt *input, struct cmt **output,
+                                   const char *tag, int tag_len)
+{
+    *output = NULL;
+    return -1;
+}
+
+static void processor_metrics_failure_clears_output(void)
+{
+    struct flb_config *config;
+    struct flb_processor *proc;
+    struct cmt *input;
+    void *output;
+    size_t output_size = 123;
+    struct flb_processor_plugin first = {
+        .name = "test_metrics_copy",
+        .description = "create intermediate metrics",
+        .cb_process_metrics = create_intermediate_metrics
+    };
+    struct flb_processor_plugin second = {
+        .name = "test_metrics_failure",
+        .description = "fail metrics processing",
+        .cb_process_metrics = fail_metrics_processing
+    };
+
+    flb_init_env();
+    config = flb_config_init();
+    TEST_ASSERT(config != NULL);
+    mk_list_add(&first._head, &config->processor_plugins);
+    mk_list_add(&second._head, &config->processor_plugins);
+    proc = flb_processor_create(config, "failure", NULL, 0);
+    TEST_ASSERT(proc != NULL);
+    TEST_ASSERT(flb_processor_unit_create(proc, FLB_PROCESSOR_METRICS, first.name) != NULL);
+    TEST_ASSERT(flb_processor_unit_create(proc, FLB_PROCESSOR_METRICS, second.name) != NULL);
+    TEST_ASSERT(flb_processor_init(proc) == 0);
+    input = cmt_create();
+    TEST_ASSERT(input != NULL);
+    output = input;
+    TEST_CHECK(flb_processor_run(proc, 0, FLB_PROCESSOR_METRICS, "test", 4,
+                                input, 0, &output, &output_size) == -1);
+    TEST_CHECK(output == NULL);
+    TEST_CHECK(output_size == 0);
+    /* The caller still owns the original input after a failed pipeline. */
+    cmt_destroy(input);
+    flb_processor_destroy(proc);
+    mk_list_del(&first._head);
+    mk_list_del(&second._head);
+    flb_config_exit(config);
+}
+
 TEST_LIST = {
+    {"processor_metrics_failure_clears_output", processor_metrics_failure_clears_output},
     { "processor_private_inputs_use_main_loop", processor_private_inputs_use_main_loop },
     { "processor", processor },
     { "processor_grouped_filter_counters", processor_grouped_filter_counters },
