@@ -32,6 +32,7 @@
 #include <fluent-bit/flb_log_event_encoder.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 
+#include <cfl/cfl_arena.h>
 #include <msgpack.h>
 #include <mpack/mpack.h>
 #include <ctraces/ctr_decode_msgpack.h>
@@ -46,13 +47,203 @@ int flb_mp_count(const void *data, size_t bytes)
     return flb_mp_count_remaining(data, bytes, NULL);
 }
 
+/*
+ * Validate a MessagePack value with a read-only traversal: no msgpack object
+ * tree or zone is constructed. Unusual or deeper inputs are rejected so the
+ * counting API can fall back to the event decoder.
+ */
+static int scan_log_value(mpack_reader_t *reader, mpack_tag_t tag, int depth, int typed)
+{
+    int ret;
+    uint32_t index;
+    uint32_t count;
+    mpack_tag_t key;
+
+    if (depth >= 64 || mpack_reader_error(reader) != mpack_ok) {
+        return -1;
+    }
+
+    switch (mpack_tag_type(&tag)) {
+    case mpack_type_array:
+        count = mpack_tag_array_count(&tag);
+        for (index = 0; index < count; index++) {
+            ret = scan_log_value(reader, mpack_read_tag(reader), depth + 1, typed);
+            if (ret != 0) {
+                return -1;
+            }
+        }
+        mpack_done_array(reader);
+        break;
+    case mpack_type_map:
+        count = mpack_tag_map_count(&tag);
+        for (index = 0; index < count; index++) {
+            key = mpack_read_tag(reader);
+
+            /* typed mode requires string keys */
+            if (typed && mpack_tag_type(&key) != mpack_type_str) {
+                return -1;
+            }
+
+            if (scan_log_value(reader, key, depth + 1, 0) != 0) {
+                return -1;
+            }
+
+            ret = scan_log_value(reader, mpack_read_tag(reader), depth + 1, typed);
+            if (ret != 0) {
+                return -1;
+            }
+        }
+        mpack_done_map(reader);
+        break;
+    case mpack_type_str:
+        mpack_skip_bytes(reader, mpack_tag_str_length(&tag));
+        mpack_done_str(reader);
+        break;
+    case mpack_type_bin:
+        mpack_skip_bytes(reader, mpack_tag_bin_length(&tag));
+        mpack_done_bin(reader);
+        break;
+    case mpack_type_ext:
+        if (typed) {
+            return -1;
+        }
+        mpack_skip_bytes(reader, mpack_tag_ext_length(&tag));
+        mpack_done_ext(reader);
+        break;
+    default:
+        break;
+    }
+
+    if (mpack_reader_error(reader) != mpack_ok) {
+        return -1;
+    }
+
+    return 0;
+}
+
+int flb_mp_scan_log_records(const void *data, size_t bytes, int typed, int *records, int *plain)
+{
+    mpack_reader_t reader;
+    mpack_tag_t tag;
+    msgpack_object timestamp = {0};
+    struct flb_time time;
+    char extension[8];
+    int header;
+    int count = 0;
+    int ungrouped = FLB_TRUE;
+    int ret = -1;
+
+    if (!data && bytes) {
+        return -1;
+    }
+
+    mpack_reader_init_data(&reader, data, bytes);
+
+    while (mpack_reader_remaining(&reader, NULL) > 0) {
+        /* every event is a two entries array: [header|timestamp, body] */
+        tag = mpack_read_tag(&reader);
+        if (mpack_tag_type(&tag) != mpack_type_array || mpack_tag_array_count(&tag) != 2) {
+            goto done;
+        }
+
+        /* the header form is [timestamp, metadata] */
+        tag = mpack_read_tag(&reader);
+        header = mpack_tag_type(&tag) == mpack_type_array;
+        if (header) {
+            if (mpack_tag_array_count(&tag) != 2) {
+                goto done;
+            }
+            tag = mpack_read_tag(&reader);
+        }
+
+        if (mpack_tag_type(&tag) == mpack_type_uint) {
+            timestamp.type = MSGPACK_OBJECT_POSITIVE_INTEGER;
+            timestamp.via.u64 = mpack_tag_uint_value(&tag);
+        }
+        else if (mpack_tag_type(&tag) == mpack_type_ext &&
+                 mpack_tag_ext_length(&tag) == 8 && mpack_tag_ext_exttype(&tag) == 0) {
+            mpack_read_bytes(&reader, extension, sizeof(extension));
+            mpack_done_ext(&reader);
+
+            timestamp.type = MSGPACK_OBJECT_EXT;
+            timestamp.via.ext.ptr = extension;
+            timestamp.via.ext.size = sizeof(extension);
+            timestamp.via.ext.type = 0;
+        }
+        else {
+            /* the legacy decoder remains authoritative for float/int timestamps */
+            goto done;
+        }
+
+        if (mpack_reader_error(&reader) != mpack_ok ||
+            flb_log_event_decoder_decode_timestamp(&timestamp, &time) != 0) {
+            goto done;
+        }
+
+        /* metadata */
+        if (header) {
+            tag = mpack_read_tag(&reader);
+            if (mpack_tag_type(&tag) != mpack_type_map ||
+                scan_log_value(&reader, tag, 0, typed) != 0) {
+                goto done;
+            }
+            mpack_done_array(&reader);
+        }
+
+        /* body */
+        tag = mpack_read_tag(&reader);
+        if (mpack_tag_type(&tag) != mpack_type_map ||
+            scan_log_value(&reader, tag, 0, typed) != 0) {
+            goto done;
+        }
+        mpack_done_array(&reader);
+
+        if (mpack_reader_error(&reader) != mpack_ok) {
+            goto done;
+        }
+
+        /* group markers are not counted as records */
+        if (time.tm.tv_sec == FLB_LOG_EVENT_GROUP_START ||
+            time.tm.tv_sec == FLB_LOG_EVENT_GROUP_END) {
+            ungrouped = FLB_FALSE;
+        }
+        else if (flb_time_is_valid_eventtime(&time) == FLB_TRUE && count < INT_MAX) {
+            count++;
+        }
+        else {
+            goto done;
+        }
+    }
+
+    *records = count;
+    *plain = ungrouped;
+    ret = 0;
+
+done:
+    /*
+     * Flag an error on early exits so the reader does not complain about
+     * unfinished compound types when it is destroyed.
+     */
+    if (ret != 0) {
+        mpack_reader_flag_error(&reader, mpack_error_invalid);
+    }
+    mpack_reader_destroy(&reader);
+
+    return ret;
+}
+
 /* Return the number of log events excluding group markers */
 int flb_mp_count_log_records(const void *data, size_t bytes)
 {
     int count;
     int ret;
+    int plain;
     struct flb_log_event log_event;
     struct flb_log_event_decoder decoder;
+
+    if (flb_mp_scan_log_records(data, bytes, FLB_FALSE, &count, &plain) == 0) {
+        return count;
+    }
 
     count = 0;
 
@@ -1030,210 +1221,288 @@ void flb_mp_accessor_destroy(struct flb_mp_accessor *mpa)
 }
 
 
-static int mp_object_to_cfl(void **ptr, msgpack_object *o)
+/*
+ * Convert a msgpack object into a CFL variant. When 'arena' is set, the
+ * variant and its children are allocated from it, otherwise from the heap.
+ */
+static struct cfl_variant *mp_variant_to_cfl(msgpack_object *object, struct cfl_arena *arena)
 {
-    int i;
-    int ret = -1;
+    struct cfl_variant *value;
+    struct cfl_variant *child;
     struct cfl_array *array;
-    struct cfl_kvlist *kvlist;
-    void *var;
-    msgpack_object key;
-    msgpack_object val;
+    struct cfl_kvlist *map;
+    msgpack_object_kv *pair;
+    size_t index;
 
-    switch(o->type) {
+    switch (object->type) {
     case MSGPACK_OBJECT_NIL:
-        var = cfl_variant_create_from_null();
-        if (!var) {
-            return -1;
-        }
-        *ptr = var;
-        ret = CFL_OBJECT_VARIANT;
-        break;
+        return cfl_variant_create_from_null_in(arena);
     case MSGPACK_OBJECT_BOOLEAN:
-        var = cfl_variant_create_from_bool(o->via.boolean);
-        if (!var) {
-            return -1;
-        }
-        *ptr = var;
-        ret = CFL_OBJECT_VARIANT;
-        break;
+        return cfl_variant_create_from_bool_in(arena, object->via.boolean);
     case MSGPACK_OBJECT_POSITIVE_INTEGER:
-        var = cfl_variant_create_from_uint64(o->via.u64);
-        if (!var) {
-            return -1;
-        }
-        *ptr = var;
-        ret = CFL_OBJECT_VARIANT;
-        break;
+        return cfl_variant_create_from_uint64_in(arena, object->via.u64);
     case MSGPACK_OBJECT_NEGATIVE_INTEGER:
-        var = cfl_variant_create_from_int64(o->via.i64);
-        if (!var) {
-            return -1;
-        }
-        *ptr = var;
-        ret = CFL_OBJECT_VARIANT;
-        break;
+        return cfl_variant_create_from_int64_in(arena, object->via.i64);
     case MSGPACK_OBJECT_FLOAT32:
     case MSGPACK_OBJECT_FLOAT64:
-        var = cfl_variant_create_from_double(o->via.f64);
-        if (!var) {
-            return -1;
-        }
-        *ptr = var;
-        ret = CFL_OBJECT_VARIANT;
-        break;
+        return cfl_variant_create_from_double_in(arena, object->via.f64);
     case MSGPACK_OBJECT_STR:
-        var = cfl_variant_create_from_string_s((char *) o->via.str.ptr,
-                                               o->via.str.size, CFL_TRUE);
-        if (!var) {
-            return -1;
-        }
-        *ptr = var;
-        ret = CFL_OBJECT_VARIANT;
-        break;
+        return cfl_variant_create_from_string_s_in(arena, (char *) object->via.str.ptr,
+                                                   object->via.str.size, CFL_TRUE);
     case MSGPACK_OBJECT_BIN:
-        var = cfl_variant_create_from_bytes((char *) o->via.str.ptr,
-                                            o->via.str.size, CFL_TRUE);
-        if (!var) {
-            return -1;
-        }
-
-        *ptr = var;
-        ret = CFL_OBJECT_VARIANT;
-        break;
-    case MSGPACK_OBJECT_EXT:
-        /* we do not pack extension type content */
-        *ptr = NULL;
-        ret = CFL_OBJECT_NONE;
-        break;
+        return cfl_variant_create_from_bytes_in(arena, (char *) object->via.bin.ptr,
+                                                object->via.bin.size, CFL_TRUE);
     case MSGPACK_OBJECT_ARRAY:
-        array = cfl_array_create(o->via.map.size);
+        array = cfl_array_create_in(arena, object->via.array.size);
         if (!array) {
-            return -1;
+            return NULL;
         }
-        ret = 0;
 
-        for (i = 0; i < o->via.map.size; i++) {
-            ret = mp_object_to_cfl((void *) &var, &o->via.array.ptr[i]);
-            if (ret == CFL_OBJECT_KVLIST) {
-                ret = cfl_array_append_kvlist(array, var);
-            }
-            else if (ret == CFL_OBJECT_VARIANT) {
-                ret = cfl_array_append(array, var);
-            }
-            else if (ret == CFL_OBJECT_ARRAY) {
-                ret = cfl_array_append_array(array, var);
-            }
-            else {
-                ret = -1;
-                break;
+        for (index = 0; index < object->via.array.size; index++) {
+            child = mp_variant_to_cfl(&object->via.array.ptr[index], arena);
+            if (!child || cfl_array_append(array, child) != 0) {
+                cfl_variant_destroy(child);
+                cfl_array_destroy(array);
+                return NULL;
             }
         }
 
-        if (ret == -1) {
+        value = cfl_variant_create_from_array_in(arena, array);
+        if (!value) {
             cfl_array_destroy(array);
-            return -1;
         }
-
-        *ptr = array;
-        ret = CFL_OBJECT_ARRAY;
-        break;
+        return value;
     case MSGPACK_OBJECT_MAP:
-        kvlist = cfl_kvlist_create();
-        if (!kvlist) {
-            return -1;
+        map = cfl_kvlist_create_in(arena);
+        if (!map) {
+            return NULL;
         }
 
-        ret = 0;
-        for (i = 0; i < o->via.map.size; i++) {
-            key = o->via.map.ptr[i].key;
-            val = o->via.map.ptr[i].val;
+        for (index = 0; index < object->via.map.size; index++) {
+            pair = &object->via.map.ptr[index];
 
-            /* force key type to be strin, otherwise just abort */
-            if (key.type != MSGPACK_OBJECT_STR) {
-                ret = -1;
-                break;
+            /* only string keys are supported */
+            if (pair->key.type != MSGPACK_OBJECT_STR) {
+                cfl_kvlist_destroy(map);
+                return NULL;
             }
 
-            /* key variant is ready, now we need the value variant */
-            ret = mp_object_to_cfl((void *) &var, &val);
-            if (ret == -1) {
-                 break;
-            }
-
-            if (ret == CFL_OBJECT_KVLIST) {
-                ret = cfl_kvlist_insert_kvlist_s(kvlist,
-                                                 (char *) key.via.str.ptr, key.via.str.size,
-                                                 var);
-            }
-            else if (ret == CFL_OBJECT_VARIANT) {
-                ret = cfl_kvlist_insert_s(kvlist,
-                                          (char *) key.via.str.ptr, key.via.str.size,
-                                          var);
-            }
-            else if (ret == CFL_OBJECT_ARRAY) {
-                ret = cfl_kvlist_insert_array_s(kvlist,
-                                                (char *) key.via.str.ptr, key.via.str.size,
-                                                var);
-            }
-            else {
-                ret = -1;
-                break;
+            child = mp_variant_to_cfl(&pair->val, arena);
+            if (!child || cfl_kvlist_insert_s(map, (char *) pair->key.via.str.ptr,
+                                              pair->key.via.str.size, child) != 0) {
+                cfl_variant_destroy(child);
+                cfl_kvlist_destroy(map);
+                return NULL;
             }
         }
 
-        if (ret == -1) {
-            cfl_kvlist_destroy(kvlist);
-            return -1;
+        value = cfl_variant_create_from_kvlist_in(arena, map);
+        if (!value) {
+            cfl_kvlist_destroy(map);
         }
-
-        *ptr = kvlist;
-        ret = CFL_OBJECT_KVLIST;
-        break;
+        return value;
     default:
-        break;
+        /* extension types are not converted */
+        return NULL;
     }
-
-    return ret;
 }
 
+/* Only maps (kvlist) and arrays can be converted to a cfl_object */
+static struct cfl_object *mp_object_to_cfl_in(msgpack_object *object, struct cfl_arena *arena)
+{
+    struct cfl_object *result;
+
+    if (object->type != MSGPACK_OBJECT_MAP && object->type != MSGPACK_OBJECT_ARRAY) {
+        return NULL;
+    }
+
+    result = cfl_object_create();
+    if (!result) {
+        return NULL;
+    }
+
+    result->variant = mp_variant_to_cfl(object, arena);
+    if (!result->variant) {
+        cfl_object_destroy(result);
+        return NULL;
+    }
+
+    if (object->type == MSGPACK_OBJECT_MAP) {
+        result->type = CFL_OBJECT_KVLIST;
+    }
+    else {
+        result->type = CFL_OBJECT_ARRAY;
+    }
+
+    return result;
+}
 
 /* Convert a msgpack object to a cfl_object */
 struct cfl_object *flb_mp_object_to_cfl(msgpack_object *o)
 {
-    int ret;
-    void *out = NULL;
-    struct cfl_object *obj;
+    return mp_object_to_cfl_in(o, NULL);
+}
 
-    /* For now, only allow to convert to map (kvlist) or array */
-    if (o->type != MSGPACK_OBJECT_MAP && o->type != MSGPACK_OBJECT_ARRAY) {
+/*
+ * Bytes a chunk value pool can hold before new record trees use the heap, and
+ * its arena block size. Trees already in the pool can keep growing, so edits
+ * on them never fail because the pool is full.
+ */
+#define FLB_MP_VALUE_POOL_LIMIT (1024 * 1024)
+#define FLB_MP_VALUE_POOL_BLOCK 16384
+
+/* Prefix of every pool allocation, it keeps the size for accounting */
+union value_pool_header {
+    size_t size;
+    long double alignment;
+    void *pointer;
+};
+
+static void *value_pool_malloc(void *context, size_t size)
+{
+    struct flb_mp_chunk_cobj *chunk = context;
+    union value_pool_header *header;
+
+    if (size > SIZE_MAX - sizeof(*header)) {
         return NULL;
     }
 
-    obj = cfl_object_create();
-    if (!obj) {
+    header = flb_malloc(sizeof(*header) + size);
+    if (!header) {
+        flb_errno();
         return NULL;
     }
 
-    ret = mp_object_to_cfl(&out, o);
-    if (ret < 0) {
-        cfl_object_destroy(obj);
+    header->size = sizeof(*header) + size;
+    chunk->value_pool_bytes += header->size;
+
+    return header + 1;
+}
+
+static void value_pool_free(void *context, void *pointer)
+{
+    struct flb_mp_chunk_cobj *chunk = context;
+    union value_pool_header *header = (union value_pool_header *) pointer - 1;
+
+    chunk->value_pool_bytes -= header->size;
+    flb_free(header);
+}
+
+void flb_mp_chunk_cobj_value_pool_enable(struct flb_mp_chunk_cobj *chunk)
+{
+    struct cfl_arena_options options;
+
+    if (chunk->value_pool) {
+        return;
+    }
+
+    /* fixed size blocks, accounted against the chunk through the hooks */
+    cfl_arena_options_init(&options);
+    options.chunk_size = FLB_MP_VALUE_POOL_BLOCK;
+    options.maximum_chunk_size = FLB_MP_VALUE_POOL_BLOCK;
+    options.large_object_threshold = FLB_MP_VALUE_POOL_BLOCK;
+    options.malloc_fn = value_pool_malloc;
+    options.free_fn = value_pool_free;
+    options.allocator_context = chunk;
+
+    chunk->value_pool = cfl_arena_create_with_options(&options);
+    if (chunk->value_pool) {
+        cfl_arena_external_cache_limit_set(chunk->value_pool, 0);
+    }
+}
+
+struct cfl_arena *flb_mp_chunk_cobj_value_pool_get(struct flb_mp_chunk_cobj *chunk,
+                                                  size_t estimated_bytes)
+{
+    size_t available;
+
+    if (!chunk || !chunk->value_pool ||
+        chunk->value_pool_bytes >= FLB_MP_VALUE_POOL_LIMIT) {
         return NULL;
     }
 
-    ret = cfl_object_set(obj, ret, out);
-    if (ret == -1) {
-        if (ret == CFL_OBJECT_KVLIST) {
-            cfl_kvlist_destroy(out);
+    available = FLB_MP_VALUE_POOL_LIMIT - chunk->value_pool_bytes;
+
+    /*
+     * Leave room for a new arena block and its allocation headers. Oversized
+     * roots use heap ownership as a whole, never mixed container ownership.
+     */
+    if (available < 2 * FLB_MP_VALUE_POOL_BLOCK ||
+        estimated_bytes > available - 2 * FLB_MP_VALUE_POOL_BLOCK) {
+        return NULL;
+    }
+
+    return chunk->value_pool;
+}
+
+/*
+ * Upper estimate for arena nodes, aligned slots, kvpairs and copied map keys.
+ * MessagePack string/byte payloads themselves remain borrowed from the decoder.
+ */
+static size_t mp_value_pool_cost(msgpack_object *object, int depth)
+{
+    size_t cost = 512;
+    size_t child;
+    size_t index;
+    msgpack_object *value;
+
+    if (depth >= 64) {
+        return SIZE_MAX;
+    }
+
+    if (object->type != MSGPACK_OBJECT_MAP && object->type != MSGPACK_OBJECT_ARRAY) {
+        return cost;
+    }
+
+    /* maps and arrays share the same 'size' layout in the msgpack union */
+    for (index = 0; index < object->via.array.size; index++) {
+        if (object->type == MSGPACK_OBJECT_MAP) {
+            value = &object->via.map.ptr[index].val;
+
+            child = 0;
+            if (object->via.map.ptr[index].key.type == MSGPACK_OBJECT_STR) {
+                child = object->via.map.ptr[index].key.via.str.size;
+            }
+
+            if (cost > SIZE_MAX - 512 || child > (SIZE_MAX - cost - 512) / 2) {
+                return SIZE_MAX;
+            }
+            cost += 512 + 2 * child;
         }
-        else if (ret == CFL_OBJECT_ARRAY) {
-            cfl_array_destroy(out);
+        else {
+            value = &object->via.array.ptr[index];
         }
-        cfl_object_destroy(obj);
-        return NULL;
+
+        child = mp_value_pool_cost(value, depth + 1);
+        if (child > SIZE_MAX - cost) {
+            return SIZE_MAX;
+        }
+        cost += child;
     }
 
-    return obj;
+    return cost;
+}
+
+/*
+ * Convert a decoded msgpack object for a chunk record. The chunk value pool is
+ * used when enabled and large enough, falling back to heap allocations.
+ */
+static struct cfl_object *chunk_object_from_msgpack(struct flb_mp_chunk_cobj *chunk,
+                                                    msgpack_object *object)
+{
+    struct cfl_arena *arena = NULL;
+    struct cfl_object *result;
+
+    if (chunk->value_pool) {
+        arena = flb_mp_chunk_cobj_value_pool_get(chunk, mp_value_pool_cost(object, 0));
+    }
+
+    result = mp_object_to_cfl_in(object, arena);
+    if (!result && arena) {
+        result = mp_object_to_cfl_in(object, NULL);
+    }
+
+    return result;
 }
 
 static int mp_cfl_to_msgpack(struct cfl_variant *var,
@@ -1347,20 +1616,76 @@ int flb_mp_cfl_to_msgpack(struct cfl_object *obj, char **out_buf, size_t *out_si
     return 0;
 }
 
+/* Records per pool block and maximum number of blocks per chunk */
+#define FLB_MP_RECORD_BLOCK_ENTRIES 64
+#define FLB_MP_RECORD_BLOCK_LIMIT 8
+
+/*
+ * A block has one owner reference plus one reference per live record. Moving
+ * records between chunks does not change their storage lifetime.
+ */
+struct flb_mp_record_block {
+    struct flb_mp_record_block *next;
+    size_t references;
+    size_t used;
+    struct flb_mp_chunk_record records[FLB_MP_RECORD_BLOCK_ENTRIES];
+};
+
+static void record_block_release(struct flb_mp_record_block *block)
+{
+    block->references--;
+    if (block->references == 0) {
+        flb_free(block);
+    }
+}
+
+static void record_storage_release(struct flb_mp_chunk_record *record)
+{
+    if (record->storage_block) {
+        record_block_release(record->storage_block);
+    }
+    else {
+        flb_free(record);
+    }
+}
+
 struct flb_mp_chunk_record *flb_mp_chunk_record_create(struct flb_mp_chunk_cobj *chunk_cobj)
 {
     struct flb_mp_chunk_record *record;
+    struct flb_mp_record_block *block;
 
+    if (chunk_cobj && chunk_cobj->record_pool_enabled) {
+        block = chunk_cobj->record_pool;
+
+        /* the current block is full (or missing), try to add a new one */
+        if ((!block || block->used == FLB_MP_RECORD_BLOCK_ENTRIES) &&
+            chunk_cobj->record_pool_blocks < FLB_MP_RECORD_BLOCK_LIMIT) {
+            block = flb_calloc(1, sizeof(struct flb_mp_record_block));
+            if (!block) {
+                flb_errno();
+            }
+            else {
+                block->references = 1;
+                block->next = chunk_cobj->record_pool;
+                chunk_cobj->record_pool = block;
+                chunk_cobj->record_pool_blocks++;
+            }
+        }
+
+        if (block && block->used < FLB_MP_RECORD_BLOCK_ENTRIES) {
+            record = &block->records[block->used++];
+            record->storage_block = block;
+            block->references++;
+            return record;
+        }
+    }
+
+    /* pool disabled or exhausted: allocate the record individually */
     record = flb_calloc(1, sizeof(struct flb_mp_chunk_record));
     if (!record) {
         flb_errno();
         return NULL;
     }
-    record->modified = FLB_FALSE;
-    record->cobj_group_metadata = NULL;
-    record->cobj_group_attributes = NULL;
-    record->owns_group_metadata = FLB_FALSE;
-    record->owns_group_attributes = FLB_FALSE;
 
     return record;
 }
@@ -1389,117 +1714,92 @@ struct flb_mp_chunk_cobj *flb_mp_chunk_cobj_create(struct flb_log_event_encoder 
     return chunk_cobj;
 }
 
-static int generate_empty_msgpack_map(char **out_buf, size_t *out_size)
+/*
+ * Pack a record field into the scratch buffer, an empty map when the field is
+ * not set. The buffer capacity is reused by every field of an encode call.
+ */
+static int encode_cfl_field(struct cfl_object *obj, msgpack_sbuffer *buffer,
+                            msgpack_packer *packer)
 {
-    msgpack_sbuffer mp_sbuf;
-    msgpack_packer mp_pck;
+    msgpack_sbuffer_clear(buffer);
 
-    /* initialize msgpack buffer */
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    if (!obj) {
+        return msgpack_pack_map(packer, 0);
+    }
 
-    msgpack_pack_map(&mp_pck, 0);
+    if (obj->type == CFL_OBJECT_NONE || !obj->variant) {
+        return -1;
+    }
 
-    *out_buf = mp_sbuf.data;
-    *out_size = mp_sbuf.size;
-
-    return 0;
+    return mp_cfl_to_msgpack(obj->variant, buffer, packer);
 }
 
 int flb_mp_chunk_cobj_encode(struct flb_mp_chunk_cobj *chunk_cobj, char **out_buf, size_t *out_size)
 {
     int ret;
-    int record_type;
-    char *mp_buf;
-    size_t mp_size;
     struct cfl_list *head;
     struct flb_mp_chunk_record *record;
+    struct cfl_object *body;
+    msgpack_sbuffer buffer;
+    msgpack_packer packer;
 
     if (!chunk_cobj) {
         return -1;
     }
+
+    msgpack_sbuffer_init(&buffer);
+    msgpack_packer_init(&packer, &buffer, msgpack_sbuffer_write);
 
     /* Iterate all records */
     cfl_list_foreach(head, &chunk_cobj->records) {
         record = cfl_list_entry(head, struct flb_mp_chunk_record, _head);
 
         ret = flb_log_event_encoder_begin_record(chunk_cobj->log_encoder);
-        if (ret == -1) {
-            return -1;
-        }
-
-        ret = flb_log_event_encoder_set_timestamp(chunk_cobj->log_encoder, &record->event.timestamp);
-        if (ret == -1) {
-            return -1;
-        }
-
-        /* Determine record type from timestamp */
-        if (record->event.timestamp.tm.tv_sec >= 0) {
-            record_type = FLB_LOG_EVENT_NORMAL;
-        }
-        else if (record->event.timestamp.tm.tv_sec == FLB_LOG_EVENT_GROUP_START) {
-            record_type = FLB_LOG_EVENT_GROUP_START;
-        }
-        else if (record->event.timestamp.tm.tv_sec == FLB_LOG_EVENT_GROUP_END) {
-            record_type = FLB_LOG_EVENT_GROUP_END;
-        }
-        else {
-            record_type = FLB_LOG_EVENT_NORMAL;
-        }
-
-
-        if (record->cobj_metadata) {
-            ret = flb_mp_cfl_to_msgpack(record->cobj_metadata, &mp_buf, &mp_size);
-            if (ret == -1) {
-                return -1;
-            }
-        }
-        else {
-            ret = generate_empty_msgpack_map(&mp_buf, &mp_size);
-            if (ret == -1) {
-                return -1;
-            }
-        }
-
-        ret = flb_log_event_encoder_set_metadata_from_raw_msgpack(chunk_cobj->log_encoder, mp_buf, mp_size);
         if (ret != FLB_EVENT_ENCODER_SUCCESS) {
-            flb_free(mp_buf);
-            return -1;
-        }
-        flb_free(mp_buf);
-
-        /* For group start records, use group attributes as body if available */
-        if (record_type == FLB_LOG_EVENT_GROUP_START && record->cobj_group_attributes) {
-            ret = flb_mp_cfl_to_msgpack(record->cobj_group_attributes, &mp_buf, &mp_size);
-            if (ret == -1) {
-                return -1;
-            }
-        }
-        else if (record->cobj_record) {
-            ret = flb_mp_cfl_to_msgpack(record->cobj_record, &mp_buf, &mp_size);
-            if (ret == -1) {
-                return -1;
-            }
-        }
-        else {
-            ret = generate_empty_msgpack_map(&mp_buf, &mp_size);
-            if (ret == -1) {
-                return -1;
-            }
+            goto failure;
         }
 
-        ret = flb_log_event_encoder_set_body_from_raw_msgpack(chunk_cobj->log_encoder, mp_buf, mp_size);
+        ret = flb_log_event_encoder_set_timestamp(chunk_cobj->log_encoder,
+                                                  &record->event.timestamp);
         if (ret != FLB_EVENT_ENCODER_SUCCESS) {
-            flb_free(mp_buf);
-            return -1;
+            goto failure;
         }
-        flb_free(mp_buf);
+
+        /* metadata */
+        if (encode_cfl_field(record->cobj_metadata, &buffer, &packer) != 0) {
+            goto failure;
+        }
+
+        ret = flb_log_event_encoder_set_metadata_from_raw_msgpack(chunk_cobj->log_encoder,
+                                                                 buffer.data, buffer.size);
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            goto failure;
+        }
+
+        /* for group start records, use group attributes as body if available */
+        body = record->cobj_record;
+        if (record->event.timestamp.tm.tv_sec == FLB_LOG_EVENT_GROUP_START &&
+            record->cobj_group_attributes) {
+            body = record->cobj_group_attributes;
+        }
+
+        if (encode_cfl_field(body, &buffer, &packer) != 0) {
+            goto failure;
+        }
+
+        ret = flb_log_event_encoder_set_body_from_raw_msgpack(chunk_cobj->log_encoder,
+                                                             buffer.data, buffer.size);
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            goto failure;
+        }
 
         ret = flb_log_event_encoder_commit_record(chunk_cobj->log_encoder);
-        if (ret == -1) {
-            return -1;
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            goto failure;
         }
     }
+
+    msgpack_sbuffer_destroy(&buffer);
 
     /* set new output buffer */
     *out_buf = chunk_cobj->log_encoder->output_buffer;
@@ -1507,6 +1807,13 @@ int flb_mp_chunk_cobj_encode(struct flb_mp_chunk_cobj *chunk_cobj, char **out_bu
 
     flb_log_event_encoder_claim_internal_buffer_ownership(chunk_cobj->log_encoder);
     return 0;
+
+failure:
+    /* never leave partial records behind for the next chunk using this encoder */
+    flb_log_event_encoder_reset(chunk_cobj->log_encoder);
+    msgpack_sbuffer_destroy(&buffer);
+
+    return -1;
 }
 
 int flb_mp_chunk_cobj_count_log_records(struct flb_mp_chunk_cobj *chunk_cobj)
@@ -1677,6 +1984,7 @@ int flb_mp_chunk_cobj_destroy(struct flb_mp_chunk_cobj *chunk_cobj)
     struct cfl_list *tmp;
     struct cfl_list *head;
     struct flb_mp_chunk_record *record;
+    struct flb_mp_record_block *block;
 
     if (!chunk_cobj) {
         return -1;
@@ -1699,9 +2007,17 @@ int flb_mp_chunk_cobj_destroy(struct flb_mp_chunk_cobj *chunk_cobj)
             cfl_object_destroy(record->cobj_group_attributes);
         }
         cfl_list_del(&record->_head);
-        flb_free(record);
+        record_storage_release(record);
     }
 
+    /* drop the owner reference, blocks still used by moved records survive */
+    while (chunk_cobj->record_pool) {
+        block = chunk_cobj->record_pool;
+        chunk_cobj->record_pool = block->next;
+        record_block_release(block);
+    }
+
+    cfl_arena_destroy(chunk_cobj->value_pool);
     flb_free(chunk_cobj);
     return 0;
 }
@@ -1747,20 +2063,21 @@ int flb_mp_chunk_cobj_record_next(struct flb_mp_chunk_cobj *chunk_cobj,
 
             ret = flb_log_event_decoder_next(chunk_cobj->log_decoder, &record->event);
             if (ret != FLB_EVENT_DECODER_SUCCESS) {
-                flb_free(record);
+                record_storage_release(record);
                 return -1;
             }
 
-            record->cobj_metadata = flb_mp_object_to_cfl(record->event.metadata);
+            record->cobj_metadata = chunk_object_from_msgpack(chunk_cobj,
+                                                              record->event.metadata);
             if (!record->cobj_metadata) {
-                flb_free(record);
+                record_storage_release(record);
                 return FLB_MP_CHUNK_RECORD_ERROR;
             }
 
-            record->cobj_record = flb_mp_object_to_cfl(record->event.body);
+            record->cobj_record = chunk_object_from_msgpack(chunk_cobj, record->event.body);
             if (!record->cobj_record) {
                 cfl_object_destroy(record->cobj_metadata);
-                flb_free(record);
+                record_storage_release(record);
                 return -1;
             }
 
@@ -1768,7 +2085,7 @@ int flb_mp_chunk_cobj_record_next(struct flb_mp_chunk_cobj *chunk_cobj,
             if (ret != FLB_EVENT_DECODER_SUCCESS) {
                 cfl_object_destroy(record->cobj_record);
                 cfl_object_destroy(record->cobj_metadata);
-                flb_free(record);
+                record_storage_release(record);
                 return FLB_MP_CHUNK_RECORD_ERROR;
             }
 
@@ -1804,14 +2121,15 @@ int flb_mp_chunk_cobj_record_next(struct flb_mp_chunk_cobj *chunk_cobj,
                 record->event.group_metadata &&
                 (record->event.group_metadata->type == MSGPACK_OBJECT_MAP ||
                  record->event.group_metadata->type == MSGPACK_OBJECT_ARRAY)) {
-                record->cobj_group_metadata = flb_mp_object_to_cfl(record->event.group_metadata);
+                record->cobj_group_metadata =
+                    chunk_object_from_msgpack(chunk_cobj, record->event.group_metadata);
                 if (!record->cobj_group_metadata) {
                     if (record->owns_group_attributes && record->cobj_group_attributes) {
                         cfl_object_destroy(record->cobj_group_attributes);
                     }
                     cfl_object_destroy(record->cobj_record);
                     cfl_object_destroy(record->cobj_metadata);
-                    flb_free(record);
+                    record_storage_release(record);
                     return FLB_MP_CHUNK_RECORD_ERROR;
                 }
                 record->owns_group_metadata = FLB_TRUE;
@@ -1824,14 +2142,15 @@ int flb_mp_chunk_cobj_record_next(struct flb_mp_chunk_cobj *chunk_cobj,
                 record->event.group_attributes &&
                 (record->event.group_attributes->type == MSGPACK_OBJECT_MAP ||
                  record->event.group_attributes->type == MSGPACK_OBJECT_ARRAY)) {
-                record->cobj_group_attributes = flb_mp_object_to_cfl(record->event.group_attributes);
+                record->cobj_group_attributes =
+                    chunk_object_from_msgpack(chunk_cobj, record->event.group_attributes);
                 if (!record->cobj_group_attributes) {
                     if (record->owns_group_metadata && record->cobj_group_metadata) {
                         cfl_object_destroy(record->cobj_group_metadata);
                     }
                     cfl_object_destroy(record->cobj_record);
                     cfl_object_destroy(record->cobj_metadata);
-                    flb_free(record);
+                    record_storage_release(record);
                     return FLB_MP_CHUNK_RECORD_ERROR;
                 }
                 record->owns_group_attributes = FLB_TRUE;
@@ -1967,7 +2286,7 @@ int flb_mp_chunk_cobj_record_destroy(struct flb_mp_chunk_cobj *chunk_cobj,
     }
 
     cfl_list_del(&record->_head);
-    flb_free(record);
+    record_storage_release(record);
 
     return 0;
 }

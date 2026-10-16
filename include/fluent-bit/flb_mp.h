@@ -27,6 +27,12 @@
 #define FLB_MP_ARRAY      MSGPACK_OBJECT_ARRAY
 
 int flb_mp_count(const void *data, size_t bytes);
+
+/*
+ * Allocation-free in non-tracking builds; rejects unsupported/deep shapes.
+ * 'typed' requires string map keys and CFL-compatible value types/depth.
+ */
+int flb_mp_scan_log_records(const void *data, size_t bytes, int typed, int *records, int *plain);
 int flb_mp_count_log_records(const void *data, size_t bytes);
 int flb_mp_normalize_log_buffer_groups_msgpack(const void *in_buf, size_t in_size,
                                                char **out_buf, size_t *out_size);
