@@ -196,6 +196,7 @@ static void map_metric_destroy(struct cmt_metric *metric)
         free(metric->sum_quantiles);
     }
 
+    cfl_kvlist_destroy(metric->otlp_metadata);
     cfl_list_del(&metric->_head);
     free(metric);
 }
@@ -806,6 +807,7 @@ int metrics_map_convert_static_metric(struct cmt_map *map,
                                       char *label_value)
 {
     struct cmt_metric *metric;
+    struct cfl_list labels;
     int                result;
     size_t             index;
     cfl_hash_state_t   state;
@@ -861,23 +863,22 @@ int metrics_map_convert_static_metric(struct cmt_map *map,
         }
     }
 
-    metric->val = map->metric.val;
+    /* Transfer the complete sample, including exact scalar types, start time,
+     * distributions and owned metadata. Preserve the newly allocated labels. */
+    labels = metric->labels;
+    memcpy(metric, &map->metric, sizeof(*metric));
+    metric->labels = labels;
+    metric->map = map;
+    metric->hash = hash;
+    metric->hash_indexed = CMT_FALSE;
+    cfl_list_init(&metric->_hash_head);
+    map->metric_static_set = CMT_FALSE;
 
-    metric->hist_buckets = map->metric.hist_buckets;
-    metric->hist_count = map->metric.hist_count;
-    metric->hist_sum = map->metric.hist_sum;
-
-    metric->sum_quantiles_set = map->metric.sum_quantiles_set;
-    metric->sum_quantiles = map->metric.sum_quantiles;
-    metric->sum_quantiles_count = map->metric.sum_quantiles_count;
-    metric->sum_count = map->metric.sum_count;
-    metric->sum_sum = map->metric.sum_sum;
-
-    metric->timestamp = map->metric.timestamp;
-
-    map->metric_static_set = 0;
-
-    cfl_list_add(&metric->_head, &map->metrics);
+    /* The static sample preceded dynamic samples before the conversion. */
+    cfl_list_add_before(&metric->_head, map->metrics.next, &map->metrics);
+    if (map->last_metric == &map->metric) {
+        map->last_metric = metric;
+    }
 
     memset(&map->metric, 0, sizeof(struct cmt_metric));
 
