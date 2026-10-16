@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 from hpack import Decoder, Encoder
-from hyperframe.frame import Frame, HeadersFrame, ContinuationFrame, SettingsFrame
+from hyperframe.frame import Frame, HeadersFrame, ContinuationFrame, DataFrame, SettingsFrame
 
 from utils.test_service import FluentBitTestService
 
@@ -44,8 +44,14 @@ class Client:
         self.socket.sendall(b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n" + SettingsFrame().serialize())
 
     def headers(self, stream, headers, end=True):
+        frames = self.header_frames(stream, headers, end=end)
+        self.socket.sendall(frames)
+        return len(frames)
+
+    def header_frames(self, stream, headers, end=True):
         # Bypass client-side advisory limits; keep valid frame sizes.
         block = self.encoder.encode(headers, huffman=False)
+        frames = bytearray()
         for offset in range(0, len(block), 16384):
             frame = HeadersFrame(stream) if offset == 0 else ContinuationFrame(stream)
             frame.data = block[offset:offset + 16384]
@@ -53,8 +59,8 @@ class Client:
                 frame.flags.add("END_HEADERS")
             if offset == 0 and end:
                 frame.flags.add("END_STREAM")
-            self.socket.sendall(frame.serialize())
-        return len(block)
+            frames.extend(frame.serialize())
+        return bytes(frames)
 
     def result(self, stream):
         while True:
@@ -203,6 +209,33 @@ def test_http2_invalid_regular_header_resets_stream(listener):
         client.headers(1, headers)
         result = client.result(1)
         assert result.type == 3
+        client.headers(3, BASE_HEADERS)
+        assert client.result(3).type == 1
+    finally:
+        client.socket.close()
+
+
+@pytest.mark.parametrize("budget", ["count", "bytes"])
+def test_http2_trailers_after_complete_data(listener, budget):
+    service, tls = listener
+    client = Client(service.flb_listener_port, tls)
+    headers = list(BASE_HEADERS) + [(b"content-length", b"2")]
+    if budget == "count":
+        trailers = [(b"x-repeat", b"a")] * (MAX_FIELDS - len(headers) + 1)
+    else:
+        initial_size = sum(len(name) + len(value) + 32 for name, value in headers)
+        trailers = [(b"x-pad", b"a" * (MAX_BYTES - initial_size - 36))]
+    data = DataFrame(1)
+    data.data = b"{}"
+    try:
+        client.socket.sendall(
+            client.header_frames(1, headers, end=False)
+            + data.serialize()
+            + client.header_frames(1, trailers)
+        )
+        result = client.result(1)
+        assert result.type == 3
+        assert result.error_code == 11
         client.headers(3, BASE_HEADERS)
         assert client.result(3).type == 1
     finally:
