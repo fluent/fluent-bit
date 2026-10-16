@@ -6,6 +6,8 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_mp_preflight.h>
+#include <fluent-bit/flb_log_event_encoder.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 #include <msgpack.h>
 #include <ctraces/ctraces.h>
 
@@ -742,7 +744,73 @@ static void test_preflight_formats(void)
     flb_mp_preflight_destroy(scan);
 }
 
+/* Compare optimized counts with the authoritative decoder, including every
+ * truncated prefix and byte corruption of grouped and ordinary records. */
+static int reference_log_count(const char *data, size_t size)
+{
+    struct flb_log_event_decoder decoder;
+    struct flb_log_event event;
+    int count = 0;
+
+    if (flb_log_event_decoder_init(&decoder, (char *) data, size) != 0) {
+        return 0;
+    }
+    while (flb_log_event_decoder_next(&decoder, &event) == 0) {
+        count++;
+    }
+    flb_log_event_decoder_destroy(&decoder);
+    return count;
+}
+
+static void test_log_scan_matches_decoder(void)
+{
+    struct flb_log_event_encoder *encoder;
+    struct flb_time timestamp;
+    size_t length;
+    size_t index;
+    int ret;
+    int count;
+    int plain;
+    int record;
+    char saved;
+
+    encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+    TEST_ASSERT(encoder != NULL);
+    for (record = 0; record < 4; record++) {
+        if (record == 1) {
+            TEST_ASSERT(flb_log_event_encoder_group_init(encoder) == 0);
+            TEST_ASSERT(flb_log_event_encoder_group_header_end(encoder) == 0);
+        }
+        TEST_ASSERT(flb_log_event_encoder_begin_record(encoder) == 0);
+        flb_time_set(&timestamp, 1700000000 + record, record);
+        TEST_ASSERT(flb_log_event_encoder_set_timestamp(encoder, &timestamp) == 0);
+        ret = flb_log_event_encoder_append_body_values(encoder,
+            FLB_LOG_EVENT_CSTRING_VALUE("key"), FLB_LOG_EVENT_CSTRING_VALUE("value"));
+        TEST_ASSERT(ret == 0);
+        TEST_ASSERT(flb_log_event_encoder_commit_record(encoder) == 0);
+        if (record == 2) {
+            TEST_ASSERT(flb_log_event_encoder_group_end(encoder) == 0);
+        }
+    }
+    TEST_CHECK(flb_mp_scan_log_records(encoder->output_buffer, encoder->output_length,
+                                      FLB_TRUE, &count, &plain) == 0);
+    TEST_CHECK(count == 4 && plain == FLB_FALSE);
+    for (length = 0; length <= encoder->output_length; length++) {
+        TEST_CHECK(flb_mp_count_log_records(encoder->output_buffer, length) ==
+                   reference_log_count(encoder->output_buffer, length));
+    }
+    for (index = 0; index < encoder->output_length; index++) {
+        saved = encoder->output_buffer[index];
+        encoder->output_buffer[index] = (char) 0xc1;
+        TEST_CHECK(flb_mp_count_log_records(encoder->output_buffer, encoder->output_length) ==
+                   reference_log_count(encoder->output_buffer, encoder->output_length));
+        encoder->output_buffer[index] = saved;
+    }
+    flb_log_event_encoder_destroy(encoder);
+}
+
 TEST_LIST = {
+    {"log_scan_matches_decoder", test_log_scan_matches_decoder},
     {"preflight", test_preflight},
     {"preflight_formats", test_preflight_formats},
     {"validate_trace_chunk" , test_validate_trace_chunk},
