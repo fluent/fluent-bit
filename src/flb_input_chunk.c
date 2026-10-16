@@ -57,6 +57,9 @@
 
 #define FLB_INPUT_CHUNK_RAW_LOG_ROUTING      (1 << 0)
 
+/* Return to the engine even when a threaded producer keeps the queue full. */
+#define FLB_INPUT_CHUNK_RING_BUFFER_BATCH   32
+
 /*
  * chunkio file header overhead:
  * 2 header bytes + 4 CRC32 + 16 padding + 2 metadata length bytes.
@@ -736,6 +739,11 @@ static int flb_input_chunk_release_space(
     }
 
     *required_space -= released_space;
+
+    /* Task-free eviction must also refresh accounting and resume paused inputs. */
+    if (released_space > 0) {
+        flb_input_chunk_set_limits(input_plugin);
+    }
 
     return 0;
 }
@@ -3740,6 +3748,7 @@ void flb_input_chunk_ring_buffer_cleanup(struct flb_input_instance *ins)
 void flb_input_chunk_ring_buffer_collector(struct flb_config *ctx, void *data)
 {
     int ret;
+    int count;
     int tag_len = 0;
     struct mk_list *head;
     struct flb_input_instance *ins;
@@ -3749,7 +3758,7 @@ void flb_input_chunk_ring_buffer_collector(struct flb_config *ctx, void *data)
         ins = mk_list_entry(head, struct flb_input_instance, _head);
         cr = NULL;
 
-        while (1) {
+        for (count = 0; count < FLB_INPUT_CHUNK_RING_BUFFER_BATCH; count++) {
             if (flb_input_paused(ins) == FLB_TRUE) {
                 break;
             }
@@ -3785,7 +3794,10 @@ void flb_input_chunk_ring_buffer_collector(struct flb_config *ctx, void *data)
             cr = NULL;
         }
 
-        flb_ring_buffer_mark_flushed(ins->rb);
+        /* Paused inputs are revisited by the periodic collector after resume. */
+        if (flb_input_paused(ins) == FLB_FALSE) {
+            flb_ring_buffer_mark_flushed(ins->rb);
+        }
     }
 }
 

@@ -240,6 +240,7 @@ int flb_ring_buffer_read(struct flb_ring_buffer *rb, void *ptr, size_t size)
 void flb_ring_buffer_mark_flushed(struct flb_ring_buffer *rb)
 {
     size_t pending_bytes;
+    int should_signal = FLB_FALSE;
 
     if (rb == NULL) {
         return;
@@ -251,5 +252,15 @@ void flb_ring_buffer_mark_flushed(struct flb_ring_buffer *rb)
     if (pending_bytes == 0 || pending_bytes < rb->data_window) {
         rb->flush_pending = FLB_FALSE;
     }
+    else if (rb->event_loop != NULL) {
+        /* A bounded collector pass may leave work above the flush window. */
+        rb->flush_pending = FLB_TRUE;
+        should_signal = FLB_TRUE;
+    }
     pthread_mutex_unlock(&rb->lock);
+
+    if (should_signal == FLB_TRUE) {
+        /* A full pipe already has a pending wakeup; never wait for space here. */
+        (void) flb_pipe_w(rb->signal_channels[1], ".", 1);
+    }
 }
