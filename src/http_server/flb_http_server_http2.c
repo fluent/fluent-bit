@@ -37,6 +37,12 @@ static int http2_header_callback(nghttp2_session *inner_session,
                                  uint8_t flags, 
                                  void *user_data);
 
+static int http2_invalid_header_callback(nghttp2_session *inner_session,
+                                         const nghttp2_frame *frame,
+                                         const uint8_t *name, size_t name_length,
+                                         const uint8_t *value, size_t value_length,
+                                         uint8_t flags, void *user_data);
+
 static int http2_frame_recv_callback(nghttp2_session *inner_session,
                                      const nghttp2_frame *frame, 
                                      void *user_data);
@@ -420,6 +426,8 @@ int flb_http2_server_session_init(struct flb_http2_server_session *session,
     nghttp2_session_callbacks_set_on_data_chunk_recv_callback(callbacks, http2_data_chunk_recv_callback);
 
     nghttp2_session_callbacks_set_on_header_callback(callbacks, http2_header_callback);
+    nghttp2_session_callbacks_set_on_invalid_header_callback(
+        callbacks, http2_invalid_header_callback);
 
     result = nghttp2_session_server_new(&session->inner_session, callbacks, session);
 
@@ -524,6 +532,64 @@ static ssize_t http2_send_callback(nghttp2_session *inner_session,
     return length;
 }
 
+static int http2_account_header(nghttp2_session *inner_session,
+                                const nghttp2_frame *frame,
+                                struct flb_http_stream *stream,
+                                size_t name_length, size_t value_length)
+{
+    int result;
+
+    if (stream->incoming_header_count >= FLB_HTTP2_MAX_HEADER_COUNT ||
+        name_length > FLB_HTTP2_MAX_HEADER_LIST_SIZE - 32 ||
+        value_length > FLB_HTTP2_MAX_HEADER_LIST_SIZE - 32 - name_length ||
+        stream->incoming_header_size >
+            FLB_HTTP2_MAX_HEADER_LIST_SIZE - 32 - name_length - value_length) {
+        stream->status = HTTP_STREAM_STATUS_RELEASED;
+
+        result = nghttp2_submit_rst_stream(inner_session, NGHTTP2_FLAG_NONE,
+                                           frame->hd.stream_id, NGHTTP2_ENHANCE_YOUR_CALM);
+        if (result != 0) {
+            return NGHTTP2_ERR_CALLBACK_FAILURE;
+        }
+
+        return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
+    }
+
+    stream->incoming_header_count++;
+    stream->incoming_header_size += name_length + value_length + 32;
+
+    return 0;
+}
+
+static int http2_invalid_header_callback(nghttp2_session *inner_session,
+                                         const nghttp2_frame *frame,
+                                         const uint8_t *name, size_t name_length,
+                                         const uint8_t *value, size_t value_length,
+                                         uint8_t flags, void *user_data)
+{
+    struct flb_http_stream *stream;
+    int result;
+
+    stream = nghttp2_session_get_stream_user_data(inner_session, frame->hd.stream_id);
+    if (stream == NULL) {
+        return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
+    }
+
+    if (stream->status != HTTP_STREAM_STATUS_RECEIVING_HEADERS &&
+        stream->status != HTTP_STREAM_STATUS_RECEIVING_DATA) {
+        return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
+    }
+
+    result = http2_account_header(inner_session, frame, stream, name_length, value_length);
+    if (result != 0) {
+        return result;
+    }
+
+    /* Reject invalid fields on every nghttp2 version, including 1.67+. */
+    stream->status = HTTP_STREAM_STATUS_RELEASED;
+    return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
+}
+
 static int http2_header_callback(nghttp2_session *inner_session,
                                  const nghttp2_frame *frame, 
                                  const uint8_t *name,
@@ -555,24 +621,10 @@ static int http2_header_callback(nghttp2_session *inner_session,
      * before any copies, including replacements and trailer fields. RFC 9113
      * counts 32 bytes of overhead per field. Subtract to avoid size overflow.
      */
-    if (stream->incoming_header_count >= FLB_HTTP2_MAX_HEADER_COUNT ||
-        name_length > FLB_HTTP2_MAX_HEADER_LIST_SIZE - 32 ||
-        value_length > FLB_HTTP2_MAX_HEADER_LIST_SIZE - 32 - name_length ||
-        stream->incoming_header_size >
-            FLB_HTTP2_MAX_HEADER_LIST_SIZE - 32 - name_length - value_length) {
-        stream->status = HTTP_STREAM_STATUS_RELEASED;
-
-        result = nghttp2_submit_rst_stream(inner_session, NGHTTP2_FLAG_NONE,
-                                           frame->hd.stream_id, NGHTTP2_ENHANCE_YOUR_CALM);
-        if (result != 0) {
-            return NGHTTP2_ERR_CALLBACK_FAILURE;
-        }
-
-        return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
+    result = http2_account_header(inner_session, frame, stream, name_length, value_length);
+    if (result != 0) {
+        return result;
     }
-
-    stream->incoming_header_count++;
-    stream->incoming_header_size += name_length + value_length + 32;
 
     if (flb_http_server_strncasecmp(name, name_length, ":method", 0) == 0) {
         strncpy(temporary_buffer, 
