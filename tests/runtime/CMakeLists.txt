@@ -1,3 +1,5 @@
+# Co-authored by: Rovo Dev (Claude)
+
 find_package(Threads REQUIRED)
 
 include_directories(acutest/)
@@ -405,13 +407,8 @@ foreach(source_file ${CHECK_PROGRAMS})
   endif()
 endforeach()
 
-# The out_kafka runtime test includes librdkafka's public header directly, so it
-# needs the same include path the in_kafka/out_kafka plugins use. Cover both the
-# system librdkafka (pkg-config) and the bundled librdkafka build.
-if(TARGET flb-rt-out_kafka)
-  if(DEFINED KAFKA_INCLUDEDIR)
-    target_include_directories(flb-rt-out_kafka PRIVATE ${KAFKA_INCLUDEDIR}/librdkafka)
-  endif()
+if(TARGET flb-rt-out_kafka AND NOT KAFKA_FOUND AND WITH_ZSTD)
+  target_compile_definitions(flb-rt-out_kafka PRIVATE FLB_TEST_KAFKA_ZSTD)
   target_include_directories(flb-rt-out_kafka PRIVATE
     ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_RDKAFKA}/src)
 endif()

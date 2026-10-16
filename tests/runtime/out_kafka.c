@@ -1,27 +1,31 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* @author Rovo Dev (Claude) - co-author */
 
 #include <fluent-bit.h>
 #include "flb_tests_runtime.h"
 
+#ifdef FLB_TEST_KAFKA_ZSTD
 #include "rdkafka.h"
+#endif
 
 /* Test data */
 #include "data/td/json_td.h"
 
+#ifdef FLB_TEST_KAFKA_ZSTD
 /*
  * Ensure librdkafka was compiled with zstd support so Kafka producers can
  * negotiate zstd compression. Setting compression.codec to zstd only succeeds
  * when WITH_ZSTD was enabled at build time, otherwise rd_kafka_conf_set
  * reports the codec as not built in.
  */
-void flb_test_zstd_compression_available()
+void flb_test_zstd_compression_available(void)
 {
     rd_kafka_conf_t *conf;
     rd_kafka_conf_res_t res;
     char errstr[512] = {0};
 
     conf = rd_kafka_conf_new();
-    TEST_CHECK(conf != NULL);
+    TEST_ASSERT(conf != NULL);
 
     res = rd_kafka_conf_set(conf, "compression.codec", "zstd",
                             errstr, sizeof(errstr));
@@ -30,6 +34,7 @@ void flb_test_zstd_compression_available()
 
     rd_kafka_conf_destroy(conf);
 }
+#endif
 
 
 void flb_test_raw_format()
@@ -69,7 +74,9 @@ void flb_test_raw_format()
 }
 
 TEST_LIST = {
+#ifdef FLB_TEST_KAFKA_ZSTD
   { "zstd_compression_available", flb_test_zstd_compression_available },
+#endif
   { "raw_format", flb_test_raw_format },
   { NULL, NULL },
 };
