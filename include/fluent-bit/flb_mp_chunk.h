@@ -30,6 +30,7 @@
 
 /* Forward declaration to avoid circular dependencies */
 struct flb_condition;
+struct flb_mp_record_block;
 
 struct flb_mp_chunk_record {
     int modified;
@@ -41,6 +42,9 @@ struct flb_mp_chunk_record {
     int owns_group_metadata;
     int owns_group_attributes;
     struct cfl_list _head;
+
+    /* Pool block holding this record, NULL when allocated individually. */
+    struct flb_mp_record_block *storage_block;
 };
 
 struct flb_mp_chunk_cobj {
@@ -56,6 +60,15 @@ struct flb_mp_chunk_cobj {
 
     /* Condition for filtering records during processing */
     struct flb_condition *condition;
+
+    /* Opt-in, bounded native value storage for the final serialization stage. */
+    struct cfl_arena *value_pool;
+    size_t value_pool_bytes;
+
+    /* Reference-counted wrapper blocks remain valid when records move. */
+    int record_pool_enabled;
+    size_t record_pool_blocks;
+    struct flb_mp_record_block *record_pool;
 };
 
 
@@ -69,6 +82,12 @@ int flb_mp_chunk_cobj_record_next(struct flb_mp_chunk_cobj *chunk_cobj,
 struct flb_mp_chunk_cobj *flb_mp_chunk_cobj_create(struct flb_log_event_encoder *log_encoder,
                                                    struct flb_log_event_decoder *log_decoder);
 int flb_mp_chunk_cobj_destroy(struct flb_mp_chunk_cobj *chunk_cobj);
+
+/* Only enable when CFL values will be read and serialized, without mutation by
+ * a later native processor. The chunk owns the arena until destruction. */
+void flb_mp_chunk_cobj_value_pool_enable(struct flb_mp_chunk_cobj *chunk_cobj);
+struct cfl_arena *flb_mp_chunk_cobj_value_pool_get(struct flb_mp_chunk_cobj *chunk_cobj,
+                                                  size_t estimated_bytes);
 
 int flb_mp_chunk_cobj_encode(struct flb_mp_chunk_cobj *chunk_cobj, char **out_buf, size_t *out_size);
 int flb_mp_chunk_cobj_count_log_records(struct flb_mp_chunk_cobj *chunk_cobj);
