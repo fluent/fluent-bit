@@ -1,5 +1,4 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-/* @author Rovo Dev (Claude) - co-author */
 
 #include <fluent-bit.h>
 #include "flb_tests_runtime.h"

@@ -1,5 +1,3 @@
-# Co-authored by: Rovo Dev (Claude)
-
 find_package(Threads REQUIRED)
 
 include_directories(acutest/)
