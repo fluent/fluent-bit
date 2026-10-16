@@ -22,3 +22,8 @@ testdata:
 
 clean:
 	rm -f *.wasm
+
+# ABI v2 fixture is built from the runnable TinyGo example.
+# TinyGo 0.35 requires Go 1.19-1.23; use a compatible GOROOT/PATH.
+v2:
+	tinygo build -target=wasi -scheduler=none -o ../../data/wasm/filter_go_v2.wasm ../../../../examples/filter_wasm_go/v2/filter.go
