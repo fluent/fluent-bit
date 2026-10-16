@@ -131,6 +131,9 @@ struct flb_http_stream {
     int                             role;
     int                             status;
 
+    size_t                          incoming_header_size;
+    size_t                          incoming_header_count;
+
     struct flb_http_request         request;
     struct flb_http_response        response;
 

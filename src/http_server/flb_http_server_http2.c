@@ -393,7 +393,7 @@ void flb_http2_server_stream_release(struct flb_http_stream *stream)
 int flb_http2_server_session_init(struct flb_http2_server_session *session, 
                        struct flb_http_server_session *parent)
 {
-    nghttp2_settings_entry     session_settings[1];
+    nghttp2_settings_entry     session_settings[2];
     nghttp2_session_callbacks *callbacks;
     int                        result;
 
@@ -432,10 +432,13 @@ int flb_http2_server_session_init(struct flb_http2_server_session *session,
     session_settings[0].settings_id = NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS;
     session_settings[0].value = 1;
 
+    session_settings[1].settings_id = NGHTTP2_SETTINGS_MAX_HEADER_LIST_SIZE;
+    session_settings[1].value = FLB_HTTP2_MAX_HEADER_LIST_SIZE;
+
     result = nghttp2_submit_settings(session->inner_session, 
                                      NGHTTP2_FLAG_NONE, 
                                      session_settings,
-                                     1);
+                                     2);
 
     if (result != 0) {
         return -3;
@@ -546,6 +549,30 @@ static int http2_header_callback(nghttp2_session *inner_session,
         stream->status != HTTP_STREAM_STATUS_RECEIVING_DATA) {
         return 0;
     }
+
+    /*
+     * SETTINGS_MAX_HEADER_LIST_SIZE is advisory. Enforce the decoded budget
+     * before any copies, including replacements and trailer fields. RFC 9113
+     * counts 32 bytes of overhead per field. Subtract to avoid size overflow.
+     */
+    if (stream->incoming_header_count >= FLB_HTTP2_MAX_HEADER_COUNT ||
+        name_length > FLB_HTTP2_MAX_HEADER_LIST_SIZE - 32 ||
+        value_length > FLB_HTTP2_MAX_HEADER_LIST_SIZE - 32 - name_length ||
+        stream->incoming_header_size >
+            FLB_HTTP2_MAX_HEADER_LIST_SIZE - 32 - name_length - value_length) {
+        stream->status = HTTP_STREAM_STATUS_RELEASED;
+
+        result = nghttp2_submit_rst_stream(inner_session, NGHTTP2_FLAG_NONE,
+                                           frame->hd.stream_id, NGHTTP2_ENHANCE_YOUR_CALM);
+        if (result != 0) {
+            return NGHTTP2_ERR_CALLBACK_FAILURE;
+        }
+
+        return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
+    }
+
+    stream->incoming_header_count++;
+    stream->incoming_header_size += name_length + value_length + 32;
 
     if (flb_http_server_strncasecmp(name, name_length, ":method", 0) == 0) {
         strncpy(temporary_buffer, 
