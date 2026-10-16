@@ -77,6 +77,51 @@ if (FLB_SYSTEM_MACOS)
   FLB_OPTION(WITH_CURL Off)
 endif()
 
+# Enable zstd compression for librdkafka using the library already resolved
+# by the top-level zstd detection block (LIBZSTD_LIBRARIES is set for all
+# cases: bundled, system CMake config, and system pkg-config fallback).
+if(LIBZSTD_LIBRARIES)
+  if(TARGET libzstd_static)
+    # Bundled: force-inject vars — librdkafka's find_package(ZSTD) cannot
+    # discover an in-tree target on its own.
+    set(ZSTD_FOUND TRUE CACHE BOOL "" FORCE)
+    set(ZSTD_INCLUDE_DIR "${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_ZSTD}/lib" CACHE PATH "" FORCE)
+    set(ZSTD_LIBRARY_DEBUG libzstd_static CACHE STRING "" FORCE)
+    set(ZSTD_LIBRARY_RELEASE libzstd_static CACHE STRING "" FORCE)
+    set(ZSTD_LIBRARY libzstd_static CACHE STRING "" FORCE)
+    FLB_OPTION(WITH_ZSTD ON)
+    set(FLB_KAFKA_ZSTD_SOURCE "bundled")
+  else()
+    # System: clear stale bundled-sentinel entries and WITH_ZSTD so librdkafka
+    # re-runs find_package(ZSTD) fresh and its option() sets its own default.
+    # Preserve explicit caller overrides such as -DZSTD_LIBRARY=/custom/path.
+    if(ZSTD_LIBRARY STREQUAL "libzstd_static")
+      unset(ZSTD_FOUND CACHE)
+      unset(ZSTD_INCLUDE_DIR CACHE)
+      unset(ZSTD_LIBRARY CACHE)
+      unset(ZSTD_LIBRARY_DEBUG CACHE)
+      unset(ZSTD_LIBRARY_RELEASE CACHE)
+      unset(WITH_ZSTD CACHE)
+    endif()
+    set(FLB_KAFKA_ZSTD_SOURCE "system")
+  endif()
+else()
+  # FLB didn't find zstd. Clear stale bundled entries so librdkafka's
+  # find_package/option() runs fresh and defaults to OFF.
+  # Preserve user-supplied custom paths (ZSTD_LIBRARY != sentinel).
+  if(ZSTD_LIBRARY STREQUAL "libzstd_static")
+    unset(ZSTD_FOUND CACHE)
+    unset(ZSTD_INCLUDE_DIR CACHE)
+    unset(ZSTD_LIBRARY CACHE)
+    unset(ZSTD_LIBRARY_DEBUG CACHE)
+    unset(ZSTD_LIBRARY_RELEASE CACHE)
+    unset(WITH_ZSTD CACHE)
+  elseif(NOT ZSTD_LIBRARY)
+    unset(WITH_ZSTD CACHE)
+  endif()
+  set(FLB_KAFKA_ZSTD_SOURCE "disabled")
+endif()
+
 include_directories(${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_RDKAFKA}/src/)
 
 add_subdirectory(${FLB_PATH_LIB_RDKAFKA} EXCLUDE_FROM_ALL)
@@ -88,4 +133,5 @@ message(STATUS "=== Kafka Feature Summary ===")
 message(STATUS "SASL Auth:     ${FLB_SASL_ENABLED}")
 message(STATUS "OAuth Bearer:  ${FLB_SASL_OAUTHBEARER_ENABLED}")
 message(STATUS "MSK IAM:       ${FLB_KAFKA_MSK_IAM_ENABLED}")
+message(STATUS "ZSTD:          ${FLB_KAFKA_ZSTD_SOURCE}")
 message(STATUS "===============================")
