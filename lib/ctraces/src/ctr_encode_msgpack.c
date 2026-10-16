@@ -363,7 +363,7 @@ static void pack_span(mpack_writer_t *writer, struct ctrace_span *span)
 
     /* kind */
     mpack_write_cstr(writer, "kind");
-    mpack_write_u32(writer, span->kind);
+    mpack_write_i32(writer, span->kind);
 
     /* start_time_unix_nano */
     mpack_write_cstr(writer, "start_time_unix_nano");
