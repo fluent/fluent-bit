@@ -175,6 +175,32 @@ static msgpack_object *msgpack_map_get_object(msgpack_object_map *map,
     return &map->ptr[index].val;
 }
 
+static uint32_t dropped_attribute_count(msgpack_object *object)
+{
+    msgpack_object *field;
+
+    if (!object || object->type != MSGPACK_OBJECT_MAP) {
+        return 0;
+    }
+
+    field = msgpack_map_get_object(&object->via.map, "dropped_attributes_count");
+    if (field && field->type == MSGPACK_OBJECT_POSITIVE_INTEGER &&
+        field->via.u64 <= UINT32_MAX) {
+        return (uint32_t) field->via.u64;
+    }
+
+    return 0;
+}
+
+static uint32_t group_dropped_attribute_count(msgpack_object *body, const char *kind)
+{
+    if (!body || body->type != MSGPACK_OBJECT_MAP) {
+        return 0;
+    }
+
+    return dropped_attribute_count(msgpack_map_get_object(&body->via.map, kind));
+}
+
 static uint64_t msgpack_object_hash(msgpack_object *object)
 {
     uint64_t hash;
@@ -570,6 +596,8 @@ static int append_v1_logs_metadata_and_fields(struct opentelemetry_context *ctx,
     int trace_flags_set = FLB_FALSE;
     size_t attr_count = 0;
     struct flb_ra_value *ra_val;
+    msgpack_object *otlp_metadata;
+    msgpack_object *event_name;
     Opentelemetry__Proto__Common__V1__KeyValue **attrs = NULL;
 
     if (ctx == NULL || event == NULL || log_record == NULL) {
@@ -824,6 +852,25 @@ static int append_v1_logs_metadata_and_fields(struct opentelemetry_context *ctx,
         }
     }
 
+    if (event->metadata && event->metadata->type == MSGPACK_OBJECT_MAP) {
+        otlp_metadata = msgpack_map_get_object(&event->metadata->via.map, "otlp");
+        log_record->dropped_attributes_count = dropped_attribute_count(otlp_metadata);
+
+        event_name = NULL;
+        if (otlp_metadata && otlp_metadata->type == MSGPACK_OBJECT_MAP) {
+            event_name = msgpack_map_get_object(&otlp_metadata->via.map, "event_name");
+        }
+
+        if (event_name && event_name->type == MSGPACK_OBJECT_STR) {
+            log_record->event_name = flb_strndup(event_name->via.str.ptr,
+                                                 event_name->via.str.size);
+            if (!log_record->event_name) {
+                flb_errno();
+                return -1;
+            }
+        }
+    }
+
     return 0;
 }
 
@@ -850,6 +897,9 @@ static void free_log_records(Opentelemetry__Proto__Logs__V1__LogRecord **logs, s
         }
         if (log->severity_text != NULL && log->severity_text != protobuf_c_empty_string) {
             flb_free(log->severity_text);
+        }
+        if (log->event_name != NULL && log->event_name != protobuf_c_empty_string) {
+            flb_free(log->event_name);
         }
         if (log->span_id.data != NULL) {
             flb_free(log->span_id.data);
@@ -1355,6 +1405,8 @@ start_resource:
 
                 /* group body: $resource['attributes'] */
                 set_resource_attributes(ctx->ra_resource_attr, event.body, resource_log->resource);
+                resource_log->resource->dropped_attributes_count =
+                    group_dropped_attribute_count(event.body, "resource");
 
                 /* group body: $schema_url */
                 set_resource_schema_url(ctx->ra_resource_schema_url, event.body, resource_log);
@@ -1476,6 +1528,8 @@ start_resource:
 
                 /* group body: $scope['attributes'] */
                 set_scope_attributes(ctx->ra_scope_attr, event.body, scope_log->scope);
+                scope_log->scope->dropped_attributes_count =
+                    group_dropped_attribute_count(event.body, "scope");
 
                 /* group body: $scope['schema_url'] */
                 set_scope_schema_url(ctx->ra_scope_schema_url, event.body, scope_log);
