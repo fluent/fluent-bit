@@ -716,6 +716,89 @@ static int cb_file_init(struct flb_output_instance *ins,
     return 0;
 }
 
+/* Emit MessagePack's text representation inside a quoted CSV field. */
+static void csv_field_content(FILE *fp, msgpack_object obj, int nested)
+{
+    size_t i;
+    const char *value;
+    size_t length;
+
+    switch (obj.type) {
+    case MSGPACK_OBJECT_STR:
+    case MSGPACK_OBJECT_BIN:
+        if (obj.type == MSGPACK_OBJECT_STR) {
+            value = obj.via.str.ptr;
+            length = obj.via.str.size;
+        }
+        else {
+            value = obj.via.bin.ptr;
+            length = obj.via.bin.size;
+        }
+        if (nested) {
+            fputs("\"\"", fp);
+        }
+        for (i = 0; i < length; i++) {
+            if (value[i] == '"') {
+                fputc('"', fp);
+            }
+            fputc((unsigned char) value[i], fp);
+        }
+        if (nested) {
+            fputs("\"\"", fp);
+        }
+        break;
+    case MSGPACK_OBJECT_ARRAY:
+        fputc('[', fp);
+        for (i = 0; i < obj.via.array.size; i++) {
+            if (i > 0) {
+                fputs(", ", fp);
+            }
+            csv_field_content(fp, obj.via.array.ptr[i], FLB_TRUE);
+        }
+        fputc(']', fp);
+        break;
+    case MSGPACK_OBJECT_MAP:
+        fputc('{', fp);
+        for (i = 0; i < obj.via.map.size; i++) {
+            if (i > 0) {
+                fputs(", ", fp);
+            }
+            csv_field_content(fp, obj.via.map.ptr[i].key, FLB_TRUE);
+            fputs("=>", fp);
+            csv_field_content(fp, obj.via.map.ptr[i].val, FLB_TRUE);
+        }
+        fputc('}', fp);
+        break;
+    case MSGPACK_OBJECT_EXT:
+        fprintf(fp, "(ext: %d)", (int) obj.via.ext.type);
+        fputs("\"\"", fp);
+        for (i = 0; i < obj.via.ext.size; i++) {
+            fprintf(fp, "\\x%02x", (unsigned char) obj.via.ext.ptr[i]);
+        }
+        fputs("\"\"", fp);
+        break;
+    default:
+        msgpack_object_print(fp, obj);
+        break;
+    }
+}
+
+static void csv_field(FILE *fp, msgpack_object obj)
+{
+    int quote;
+
+    quote = obj.type == MSGPACK_OBJECT_STR || obj.type == MSGPACK_OBJECT_BIN ||
+            obj.type == MSGPACK_OBJECT_EXT || obj.type == MSGPACK_OBJECT_ARRAY ||
+            obj.type == MSGPACK_OBJECT_MAP;
+    if (quote) {
+        fputc('"', fp);
+    }
+    csv_field_content(fp, obj, FLB_FALSE);
+    if (quote) {
+        fputc('"', fp);
+    }
+}
+
 static int csv_output(FILE *fp, int column_names,
                       struct flb_time *tm, msgpack_object *obj,
                       struct flb_file_conf *ctx)
@@ -731,7 +814,7 @@ static int csv_output(FILE *fp, int column_names,
         if (column_names == FLB_TRUE) {
             fprintf(fp, "timestamp%s", ctx->delimiter);
             for (i = 0; i < map_size; i++) {
-                msgpack_object_print(fp, (kv+i)->key);
+                csv_field(fp, (kv+i)->key);
                 if (i + 1 < map_size) {
                     fprintf(fp, "%s", ctx->delimiter);
                 }
@@ -743,11 +826,11 @@ static int csv_output(FILE *fp, int column_names,
                 (long long) tm->tm.tv_sec, tm->tm.tv_nsec, ctx->delimiter);
 
         for (i = 0; i < map_size - 1; i++) {
-            msgpack_object_print(fp, (kv+i)->val);
+            csv_field(fp, (kv+i)->val);
             fprintf(fp, "%s", ctx->delimiter);
         }
 
-        msgpack_object_print(fp, (kv+(map_size-1))->val);
+        csv_field(fp, (kv+(map_size-1))->val);
         fprintf(fp, NEWLINE);
     }
     return 0;
