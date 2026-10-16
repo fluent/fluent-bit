@@ -192,3 +192,18 @@ def test_http1_health_with_http2_enabled(listener):
         response.read()
     finally:
         connection.close()
+
+
+def test_http2_invalid_regular_header_resets_stream(listener):
+    service, tls = listener
+    client = Client(service.flb_listener_port, tls)
+    try:
+        headers = list(BASE_HEADERS)
+        headers.append((b"x-invalid", b"bad\rvalue"))
+        client.headers(1, headers)
+        result = client.result(1)
+        assert result.type == 3
+        client.headers(3, BASE_HEADERS)
+        assert client.result(3).type == 1
+    finally:
+        client.socket.close()
