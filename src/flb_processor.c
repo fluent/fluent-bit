@@ -1321,12 +1321,26 @@ int flb_processor_run(struct flb_processor *proc,
                       void *data, size_t data_size,
                       void **out_buf, size_t *out_size)
 {
+    return flb_processor_run_with_count(proc, starting_stage, type, tag, tag_len,
+                                        data, data_size, out_buf, out_size, -1, NULL);
+}
+
+int flb_processor_run_with_count(struct flb_processor *proc,
+                                 size_t starting_stage,
+                                 int type,
+                                 const char *tag, size_t tag_len,
+                                 void *data, size_t data_size,
+                                 void **out_buf, size_t *out_size,
+                                 int input_records, int *output_records)
+{
     int ret;
     int pu_error;
     int unit_in_items;
     int unit_out_items;
     int item_metrics_available;
     int finalize;
+    int log_buffer_normalized = FLB_FALSE;
+    int log_buffer_records = input_records;
     void *cur_buf = NULL;
     size_t cur_size;
     void *tmp_buf = NULL;
@@ -1348,6 +1362,10 @@ int flb_processor_run(struct flb_processor *proc,
     uint64_t ts;
     char *name;
 #endif
+
+    if (output_records) {
+        *output_records = -1;
+    }
 
     if (type == FLB_PROCESSOR_LOGS) {
         list = &proc->logs;
@@ -1395,7 +1413,12 @@ int flb_processor_run(struct flb_processor *proc,
         item_metrics_available = FLB_FALSE;
 
         if (type == FLB_PROCESSOR_LOGS) {
-            unit_in_items = flb_mp_count_log_records(cur_buf, cur_size);
+            if (!chunk_cobj && log_buffer_records >= 0) {
+                unit_in_items = log_buffer_records;
+            }
+            else {
+                unit_in_items = flb_mp_count_log_records(cur_buf, cur_size);
+            }
             unit_out_items = unit_in_items;
             item_metrics_available = FLB_TRUE;
         }
@@ -1436,7 +1459,12 @@ int flb_processor_run(struct flb_processor *proc,
             }
 #ifdef FLB_HAVE_METRICS
             name = (char *) (flb_filter_name(f_ins));
-            in_records = flb_mp_count_log_records(cur_buf, cur_size);
+            if (log_buffer_records >= 0) {
+                in_records = log_buffer_records;
+            }
+            else {
+                in_records = flb_mp_count_log_records(cur_buf, cur_size);
+            }
             cmt_counter_add(f_ins->cmt_records, ts, in_records,
                     1, (char *[]) {name});
             cmt_counter_add(f_ins->cmt_bytes, ts, tmp_size,
@@ -1500,6 +1528,8 @@ int flb_processor_run(struct flb_processor *proc,
                 cur_buf = tmp_buf;
                 cur_size = tmp_size;
                 out_records = flb_mp_count_log_records(tmp_buf, tmp_size);
+                log_buffer_normalized = FLB_FALSE;
+                log_buffer_records = out_records;
                 unit_out_items = out_records;
 #ifdef FLB_HAVE_METRICS
                     if (out_records > in_records) {
@@ -1610,9 +1640,19 @@ int flb_processor_run(struct flb_processor *proc,
                     }
 
                     if (finalize == FLB_TRUE) {
-                        flb_mp_chunk_cobj_normalize_groups(chunk_cobj);
+                        /*
+                         * The encoder preserves normalized groups and the logical
+                         * count. Reuse them until a filter replaces this serialized
+                         * buffer.
+                         */
+                        log_buffer_normalized =
+                            flb_mp_chunk_cobj_normalize_groups(chunk_cobj) == 0;
+                        log_buffer_records = flb_mp_chunk_cobj_count_log_records(chunk_cobj);
 
                         if (cfl_list_size(&chunk_cobj->records) == 0) {
+                            if (output_records) {
+                                *output_records = 0;
+                            }
                             flb_log_event_encoder_reset(p_ins->log_encoder);
                             flb_mp_chunk_cobj_destroy(chunk_cobj);
 
@@ -1638,6 +1678,8 @@ int flb_processor_run(struct flb_processor *proc,
                         ret = flb_mp_chunk_cobj_encode(chunk_cobj, (char **) &tmp_buf, &tmp_size);
                         if (ret != 0) {
                             flb_log_event_decoder_reset(p_ins->log_decoder, NULL, 0);
+                            flb_log_event_encoder_reset(p_ins->log_encoder);
+                            flb_mp_chunk_cobj_destroy(chunk_cobj);
 
                             if (cur_buf != data) {
                                 flb_free(cur_buf);
@@ -1677,7 +1719,12 @@ int flb_processor_run(struct flb_processor *proc,
                         unit_out_items = flb_mp_chunk_cobj_count_log_records(chunk_cobj);
                     }
                     else if (cur_buf != NULL) {
-                        unit_out_items = flb_mp_count_log_records(cur_buf, cur_size);
+                        if (log_buffer_records >= 0) {
+                            unit_out_items = log_buffer_records;
+                        }
+                        else {
+                            unit_out_items = flb_mp_count_log_records(cur_buf, cur_size);
+                        }
                     }
                 }
             }
@@ -1704,7 +1751,16 @@ int flb_processor_run(struct flb_processor *proc,
                                      FLB_PROCESSOR_LOCK_RETRY_LIMIT,
                                      FLB_PROCESSOR_LOCK_RETRY_DELAY);
 
-                        out_buf = NULL;
+                        if (cur_buf != data) {
+                            cmt_destroy(cur_buf);
+                        }
+
+                        if (out_buf != NULL) {
+                            *out_buf = NULL;
+                        }
+                        if (out_size != NULL) {
+                            *out_size = 0;
+                        }
 
                         return -1;
                     }
@@ -1810,7 +1866,7 @@ int flb_processor_run(struct flb_processor *proc,
 
     /* set output buffer */
     if (type == FLB_PROCESSOR_LOGS &&
-        cur_buf != NULL) {
+        cur_buf != NULL && !log_buffer_normalized) {
         ret = flb_mp_normalize_log_buffer_groups_msgpack(cur_buf, cur_size,
                                                          (char **) &tmp_buf,
                                                          &tmp_size);
@@ -1821,11 +1877,15 @@ int flb_processor_run(struct flb_processor *proc,
 
             cur_buf = tmp_buf;
             cur_size = tmp_size;
+            log_buffer_records = -1;
         }
     }
 
-    if (type == FLB_PROCESSOR_LOGS &&
-        (cur_buf == NULL || flb_mp_count_log_records(cur_buf, cur_size) == 0)) {
+    if (type == FLB_PROCESSOR_LOGS && cur_buf != NULL && log_buffer_records < 0) {
+        log_buffer_records = flb_mp_count_log_records(cur_buf, cur_size);
+    }
+
+    if (type == FLB_PROCESSOR_LOGS && (cur_buf == NULL || log_buffer_records == 0)) {
         if (cur_buf != data) {
             flb_free(cur_buf);
         }
@@ -1838,6 +1898,10 @@ int flb_processor_run(struct flb_processor *proc,
             *out_size = 0;
         }
 
+        if (output_records) {
+            *output_records = 0;
+        }
+
         return 0;
     }
 
@@ -1847,6 +1911,10 @@ int flb_processor_run(struct flb_processor *proc,
 
     if (out_size != NULL) {
         *out_size = cur_size;
+    }
+
+    if (output_records && type == FLB_PROCESSOR_LOGS) {
+        *output_records = log_buffer_records;
     }
 
     return 0;

@@ -240,6 +240,12 @@ int flb_processor_run(struct flb_processor *proc,
                       void **out_buf, size_t *out_size);
 
 
+/* Carry known logical log counts through the pipeline. -1 means unknown. */
+int flb_processor_run_with_count(struct flb_processor *proc, size_t starting_stage, int type,
+                                 const char *tag, size_t tag_len, void *data, size_t data_size,
+                                 void **out_buf, size_t *out_size,
+                                 int input_records, int *output_records);
+
 struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
                                                      int event_type,
                                                      char *unit_name);
