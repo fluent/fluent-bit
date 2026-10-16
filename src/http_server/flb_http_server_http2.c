@@ -881,7 +881,6 @@ static int http2_data_chunk_recv_callback(nghttp2_session *inner_session,
                                           size_t len, 
                                           void *user_data)
 {
-    struct flb_http_server_session  *parent_session;
     cfl_sds_t                        resized_buffer;
     struct flb_http_stream          *stream;
 
@@ -933,25 +932,6 @@ static int http2_data_chunk_recv_callback(nghttp2_session *inner_session,
         }
 
         stream->request.body = resized_buffer;
-    }
-
-    if (stream->status == HTTP_STREAM_STATUS_RECEIVING_DATA) {
-        if (stream->request.content_length == cfl_sds_len(stream->request.body)) {
-            stream->status = HTTP_STREAM_STATUS_READY;
-
-            if (!cfl_list_entry_is_orphan(&stream->request._head)) {
-                cfl_list_del(&stream->request._head);
-            }
-
-            parent_session = (struct flb_http_server_session *) stream->parent;
-
-            if (parent_session == NULL) {
-                return -1;
-            }
-
-            cfl_list_add(&stream->request._head, 
-                         &parent_session->request_queue);
-        }
     }
 
     return 0;
