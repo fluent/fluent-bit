@@ -152,6 +152,29 @@ static int msgpack_to_json(struct flb_out_nats_config *ctx,
     return 0;
 }
 
+/* A publish subject must contain nonempty tokens and no protocol separators. */
+static int valid_publish_subject(const char *tag, size_t length)
+{
+    size_t i;
+    unsigned char c;
+
+    if (length == 0) {
+        return FLB_FALSE;
+    }
+
+    for (i = 0; i < length; i++) {
+        c = (unsigned char) tag[i];
+        if (c <= 0x20 || c == 0x7f || c == '*' || c == '>') {
+            return FLB_FALSE;
+        }
+        if (c == '.' && (i == 0 || i + 1 == length || tag[i - 1] == '.')) {
+            return FLB_FALSE;
+        }
+    }
+
+    return FLB_TRUE;
+}
+
 static void cb_nats_flush(struct flb_event_chunk *event_chunk,
                           struct flb_output_flush *out_flush,
                           struct flb_input_instance *i_ins,
@@ -166,6 +189,11 @@ static void cb_nats_flush(struct flb_event_chunk *event_chunk,
     int req_len;
     struct flb_out_nats_config *ctx = out_context;
     struct flb_connection *u_conn;
+
+    if (!valid_publish_subject(event_chunk->tag, flb_sds_len(event_chunk->tag))) {
+        flb_plg_error(ctx->ins, "invalid NATS publish subject in tag");
+        FLB_OUTPUT_RETURN(FLB_ERROR);
+    }
 
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
