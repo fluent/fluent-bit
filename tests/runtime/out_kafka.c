@@ -36,6 +36,7 @@ void flb_test_zstd_compression_available(void)
 #endif
 
 
+/* Exercise Kafka raw output with a selected log field. */
 void flb_test_raw_format()
 {
     int ret;
