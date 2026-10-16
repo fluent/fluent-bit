@@ -1078,6 +1078,21 @@ static void close_output_file(FILE *fp, struct file_rotate_entry *entry)
     file_rotate_release(entry);
 }
 
+/* Keep tags in one unambiguous, whitespace-free field in text records. */
+static void write_record_tag(FILE *fp, const char *tag)
+{
+    const unsigned char *cursor;
+
+    for (cursor = (const unsigned char *) tag; *cursor; cursor++) {
+        if (*cursor <= 0x20 || *cursor == 0x7f || *cursor == '%') {
+            fprintf(fp, "%%%02X", (unsigned int) *cursor);
+        }
+        else {
+            fputc(*cursor, fp);
+        }
+    }
+}
+
 static int write_log_record(FILE *fp,
                             long *file_pos,
                             struct flb_event_chunk *event_chunk,
@@ -1096,8 +1111,8 @@ static int write_log_record(FILE *fp,
             return FLB_RETRY;
         }
 
-        fprintf(fp, "%s: [%"PRIu64".%09lu, %s]" NEWLINE,
-                event_chunk->tag,
+        write_record_tag(fp, event_chunk->tag);
+        fprintf(fp, ": [%"PRIu64".%09lu, %s]" NEWLINE,
                 (uint64_t) log_event->timestamp.tm.tv_sec,
                 log_event->timestamp.tm.tv_nsec,
                 buf);
@@ -1376,8 +1391,8 @@ static void cb_file_flush(struct flb_event_chunk *event_chunk,
             buf = flb_msgpack_to_json_str(alloc_size, log_event.body,
                                           config->json_escape_unicode);
             if (buf) {
-                fprintf(fp, "%s: [%"PRIu64".%09lu, %s]" NEWLINE,
-                        event_chunk->tag,
+                write_record_tag(fp, event_chunk->tag);
+                fprintf(fp, ": [%"PRIu64".%09lu, %s]" NEWLINE,
                         (uint64_t) log_event.timestamp.tm.tv_sec, log_event.timestamp.tm.tv_nsec,
                         buf);
                 flb_free(buf);
