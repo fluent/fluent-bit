@@ -609,6 +609,18 @@ int flb_tail_db_file_rotate(const char *new_name,
 }
 
 /* Delete file entry from the database */
+int flb_tail_db_file_delete_id(struct flb_tail_config *ctx, uint64_t id)
+{
+    int ret;
+
+    if (tail_db_lock(ctx) != 0) {
+        return -1;
+    }
+    ret = flb_tail_db_file_delete_by_id(ctx, id);
+    tail_db_unlock(ctx);
+    return ret;
+}
+
 int flb_tail_db_file_delete(struct flb_tail_file *file,
                             struct flb_tail_config *ctx)
 {

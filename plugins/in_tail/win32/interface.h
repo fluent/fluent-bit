@@ -23,9 +23,13 @@
 #include <wchar.h>
 
 struct win32_stat {
+   uint64_t st_dev;
    uint64_t st_ino;
    uint16_t st_mode;
    int64_t  st_mtime;
+   int64_t  st_ctime;
+   uint32_t st_mtime_nsec;
+   uint32_t st_ctime_nsec;
    int16_t  st_nlink;
    int64_t  st_size;
 };
