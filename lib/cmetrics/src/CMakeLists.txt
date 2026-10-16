@@ -15,6 +15,7 @@ set(src
   cmt_summary.c
   cmt_histogram.c
   cmt_exp_histogram.c
+  cmt_otlp_metadata.c
   cmt_metric.c
   cmt_metric_histogram.c
   cmt_map.c

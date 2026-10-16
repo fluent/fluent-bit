@@ -18,6 +18,7 @@
  */
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_metric.h>
+#include <cmetrics/cmt_otlp_metadata.h>
 #include <cmetrics/cmt_map.h>
 #include <cmetrics/cmt_gauge.h>
 #include <cmetrics/cmt_counter.h>
@@ -82,7 +83,7 @@ struct cfl_kvlist *fetch_metadata_kvlist_key(struct cfl_kvlist *kvlist, char *ke
 
     entry_variant = cfl_kvlist_fetch(kvlist, key);
 
-    if (entry_variant != NULL) {
+    if (entry_variant != NULL && entry_variant->type == CFL_VARIANT_KVLIST) {
         entry_kvlist = entry_variant->data.as_kvlist;
     }
     else {
@@ -154,6 +155,10 @@ static struct cfl_kvlist *get_metric_otlp_metadata_context(struct cmt *cmt, stru
         return NULL;
     }
 
+    if (map->otlp_metadata) {
+        return map->otlp_metadata;
+    }
+
     otlp_root = fetch_metadata_kvlist_key(cmt->external_metadata, "otlp");
     if (otlp_root == NULL) {
         return NULL;
@@ -179,6 +184,10 @@ static struct cfl_kvlist *get_data_point_otlp_metadata_context(struct cmt *cmt,
     char key[128];
     struct cfl_kvlist *metric_context;
     struct cfl_kvlist *datapoints_context;
+
+    if (sample != NULL && sample->otlp_metadata != NULL) {
+        return sample->otlp_metadata;
+    }
 
     metric_context = get_metric_otlp_metadata_context(cmt, map);
     if (metric_context == NULL) {
@@ -541,7 +550,10 @@ static size_t resolve_target_scope_index(struct cmt_opentelemetry_context *conte
         return 0;
     }
 
-    metadata = fetch_metadata_kvlist_key(metric_context, "metadata");
+    metadata = fetch_metadata_kvlist_key(metric_context, "routing");
+    if (metadata == NULL) {
+        metadata = fetch_metadata_kvlist_key(metric_context, "metadata");
+    }
     if (metadata == NULL) {
         return 0;
     }
@@ -1294,6 +1306,108 @@ static inline Opentelemetry__Proto__Common__V1__KeyValue **cfl_kvlist_to_otlp_kv
 }
 
 
+static void *attribute_arena_alloc(void *data, size_t size)
+{
+    return cfl_arena_malloc(data, size);
+}
+
+static void attribute_arena_free(void *data, void *pointer)
+{
+    /* The encoder releases all datapoint objects with their arena. */
+}
+
+static int apply_typed_point_attributes(struct cmt_opentelemetry_context *context,
+                                        struct cmt_map *map, struct cmt_metric *sample,
+                                        void *data_point)
+{
+    struct cfl_kvlist *metadata;
+    struct cfl_kvlist *attributes;
+    struct cfl_arena *arena;
+    struct cfl_list *head;
+    struct cmt_label *label;
+    ProtobufCAllocator allocator;
+    Opentelemetry__Proto__Common__V1__KeyValue **heap;
+    Opentelemetry__Proto__Common__V1__KeyValue **replacement;
+    Opentelemetry__Proto__Common__V1__KeyValue ***target;
+    size_t *target_count;
+    uint8_t *buffer;
+    size_t count;
+    size_t size;
+    size_t index;
+    size_t static_count;
+
+    metadata = get_data_point_otlp_metadata_context(context->cmt, map, sample);
+    attributes = fetch_metadata_kvlist_key(metadata, "attributes");
+    if (attributes == NULL || !cmt_otlp_attributes_match_labels(map, sample)) {
+        return CMT_ENCODE_OPENTELEMETRY_SUCCESS;
+    }
+    count = cfl_kvlist_count(attributes);
+    static_count = cfl_list_size(&context->cmt->static_labels->list);
+    heap = cfl_kvlist_to_otlp_kvpair_list(attributes);
+    if (heap == NULL) {
+        return CMT_ENCODE_OPENTELEMETRY_ALLOCATION_ERROR;
+    }
+    arena = get_context_arena(context);
+    allocator.alloc = attribute_arena_alloc;
+    allocator.free = attribute_arena_free;
+    allocator.allocator_data = arena;
+    replacement = cfl_arena_calloc(arena, count + static_count + 1, sizeof(*replacement));
+    if (replacement == NULL) {
+        otlp_kvpair_list_destroy(heap, count);
+        return CMT_ENCODE_OPENTELEMETRY_ALLOCATION_ERROR;
+    }
+    for (index = 0; index < count; index++) {
+        size = opentelemetry__proto__common__v1__key_value__get_packed_size(heap[index]);
+        buffer = malloc(size ? size : 1);
+        if (buffer == NULL) {
+            otlp_kvpair_list_destroy(heap, count);
+            return CMT_ENCODE_OPENTELEMETRY_ALLOCATION_ERROR;
+        }
+        opentelemetry__proto__common__v1__key_value__pack(heap[index], buffer);
+        replacement[index] = opentelemetry__proto__common__v1__key_value__unpack(
+                                 &allocator, size, buffer);
+        free(buffer);
+        if (replacement[index] == NULL) {
+            otlp_kvpair_list_destroy(heap, count);
+            return CMT_ENCODE_OPENTELEMETRY_ALLOCATION_ERROR;
+        }
+    }
+    otlp_kvpair_list_destroy(heap, count);
+    index = count;
+    cfl_list_foreach(head, &context->cmt->static_labels->list) {
+        label = cfl_list_entry(head, struct cmt_label, _head);
+        replacement[index] = initialize_string_attribute(arena, label->key, label->val);
+        if (replacement[index++] == NULL) {
+            return CMT_ENCODE_OPENTELEMETRY_ALLOCATION_ERROR;
+        }
+    }
+    switch (map->type) {
+    case CMT_COUNTER:
+    case CMT_GAUGE:
+    case CMT_UNTYPED:
+        target = &((Opentelemetry__Proto__Metrics__V1__NumberDataPoint *) data_point)->attributes;
+        target_count = &((Opentelemetry__Proto__Metrics__V1__NumberDataPoint *) data_point)->n_attributes;
+        break;
+    case CMT_HISTOGRAM:
+        target = &((Opentelemetry__Proto__Metrics__V1__HistogramDataPoint *) data_point)->attributes;
+        target_count = &((Opentelemetry__Proto__Metrics__V1__HistogramDataPoint *) data_point)->n_attributes;
+        break;
+    case CMT_EXP_HISTOGRAM:
+        target = &((Opentelemetry__Proto__Metrics__V1__ExponentialHistogramDataPoint *) data_point)->attributes;
+        target_count = &((Opentelemetry__Proto__Metrics__V1__ExponentialHistogramDataPoint *) data_point)->n_attributes;
+        break;
+    case CMT_SUMMARY:
+        target = &((Opentelemetry__Proto__Metrics__V1__SummaryDataPoint *) data_point)->attributes;
+        target_count = &((Opentelemetry__Proto__Metrics__V1__SummaryDataPoint *) data_point)->n_attributes;
+        break;
+    default:
+        return CMT_ENCODE_OPENTELEMETRY_DATA_POINT_INIT_ERROR;
+    }
+    *target = replacement;
+    *target_count = count + static_count;
+    return CMT_ENCODE_OPENTELEMETRY_SUCCESS;
+}
+
 static inline Opentelemetry__Proto__Common__V1__AnyValue *cfl_variant_kvlist_to_otlp_any_value(struct cfl_variant *value)
 {
     size_t                                      entry_count;
@@ -1453,6 +1567,7 @@ static inline Opentelemetry__Proto__Common__V1__AnyValue *cfl_variant_binary_to_
 static inline Opentelemetry__Proto__Common__V1__AnyValue *cfl_variant_to_otlp_any_value(struct cfl_variant *value)
 {
     Opentelemetry__Proto__Common__V1__AnyValue *result;
+    struct cfl_variant signed_value;
 
     if (value->type == CFL_VARIANT_STRING) {
         result = cfl_variant_string_to_otlp_any_value(value);
@@ -1462,6 +1577,17 @@ static inline Opentelemetry__Proto__Common__V1__AnyValue *cfl_variant_to_otlp_an
     }
     else if (value->type == CFL_VARIANT_INT) {
         result = cfl_variant_int64_to_otlp_any_value(value);
+    }
+    else if (value->type == CFL_VARIANT_UINT) {
+        if (value->data.as_uint64 > INT64_MAX) {
+            result = NULL;
+        }
+        else {
+            signed_value = *value;
+            signed_value.type = CFL_VARIANT_INT;
+            signed_value.data.as_int64 = (int64_t) value->data.as_uint64;
+            result = cfl_variant_int64_to_otlp_any_value(&signed_value);
+        }
     }
     else if (value->type == CFL_VARIANT_DOUBLE) {
         result = cfl_variant_double_to_otlp_any_value(value);
@@ -1516,6 +1642,10 @@ static int64_t fetch_metadata_int64_key(struct cfl_kvlist *metadata, char *key_n
 
     if (value == NULL) {
         return 0;
+    }
+
+    if (value->type == CFL_VARIANT_UINT && value->data.as_uint64 <= INT64_MAX) {
+        return (int64_t) value->data.as_uint64;
     }
 
     if (value->type != CFL_VARIANT_INT) {
@@ -1751,11 +1881,11 @@ static Opentelemetry__Proto__Metrics__V1__ResourceMetrics **
 
 void destroy_instrumentation_scope(Opentelemetry__Proto__Common__V1__InstrumentationScope *scope)
 {
-    if (scope->name != NULL) {
+    if (is_string_releaseable(scope->name)) {
         cfl_sds_destroy(scope->name);
     }
 
-    if (scope->version != NULL) {
+    if (is_string_releaseable(scope->version)) {
         cfl_sds_destroy(scope->version);
     }
 
@@ -2367,7 +2497,9 @@ static Opentelemetry__Proto__Metrics__V1__HistogramDataPoint *
 
         if (bucket_list != NULL) {
             for (index = 0 ; index < bucket_count ; index++) {
-                data_point->bucket_counts[index] = bucket_list[index];
+                data_point->bucket_counts[index] = index == 0 ? bucket_list[index] :
+                    (bucket_list[index] >= bucket_list[index - 1] ?
+                     bucket_list[index] - bucket_list[index - 1] : 0);
             }
         }
     }
@@ -3417,6 +3549,11 @@ int append_sample_to_metric(struct cmt_opentelemetry_context *context,
         }
     }
 
+    result = apply_typed_point_attributes(context, map, sample, data_point);
+    if (result != CMT_ENCODE_OPENTELEMETRY_SUCCESS) {
+        destroy_data_point(data_point, map->type);
+        return result;
+    }
     apply_data_point_metadata_from_otlp_context(context->cmt, map, sample, data_point);
 
     result = append_data_point_to_metric(metric, (void *) data_point, sample_index);

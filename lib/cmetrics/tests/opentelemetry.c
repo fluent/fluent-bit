@@ -25,6 +25,7 @@
 #include <cmetrics/cmt_histogram.h>
 #include <cmetrics/cmt_exp_histogram.h>
 #include <cmetrics/cmt_map.h>
+#include <cmetrics/cmt_otlp_metadata.h>
 #include <cmetrics/cmt_metric.h>
 #include <cmetrics/cmt_encode_text.h>
 #include <cmetrics/cmt_encode_prometheus.h>
@@ -1856,11 +1857,8 @@ static void test_opentelemetry_zero_length_bytes_attribute(void)
                                 attribute = roundtrip_dp->attributes[0];
                                 TEST_CHECK(strcmp(attribute->key, "empty_bytes") == 0);
                                 TEST_CHECK(attribute->value->value_case ==
-                                           OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE);
-                                TEST_CHECK(attribute->value->string_value != NULL);
-                                if (attribute->value->string_value != NULL) {
-                                    TEST_CHECK(attribute->value->string_value[0] == '\0');
-                                }
+                                           OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_BYTES_VALUE);
+                                TEST_CHECK(attribute->value->bytes_value.len == 0);
                             }
                         }
                     }
@@ -2813,7 +2811,214 @@ static void test_opentelemetry_summary_layout_mismatch(void)
     cfl_sds_destroy(payload);
 }
 
+static void test_otlp_unsigned_attribute_preserves_signed_range(void)
+{
+    struct cmt *ctx;
+    struct cmt_gauge *gauge;
+    struct cfl_kvlist *attrs;
+    cfl_sds_t wire;
+    Opentelemetry__Proto__Collector__Metrics__V1__ExportMetricsServiceRequest *request;
+    Opentelemetry__Proto__Metrics__V1__NumberDataPoint *point;
+
+    ctx = cmt_create();
+    TEST_ASSERT(ctx != NULL);
+    gauge = cmt_gauge_create(ctx, "", "", "uint_attributes", "uint attributes", 0, NULL);
+    TEST_ASSERT(gauge != NULL);
+    TEST_ASSERT(cmt_gauge_set(gauge, 100, 42, 0, NULL) == 0);
+    gauge->map->metric.otlp_metadata = cfl_kvlist_create();
+    TEST_ASSERT(gauge->map->metric.otlp_metadata != NULL);
+    attrs = cfl_kvlist_create();
+    TEST_ASSERT(attrs != NULL);
+    TEST_ASSERT(cfl_kvlist_insert_uint64(attrs, "small", 3) == 0);
+    TEST_ASSERT(cfl_kvlist_insert_uint64(attrs, "maximum", INT64_MAX) == 0);
+    TEST_ASSERT(cfl_kvlist_insert_kvlist(gauge->map->metric.otlp_metadata, "attributes", attrs) == 0);
+    TEST_ASSERT(cmt_otlp_capture_labels(gauge->map, &gauge->map->metric) == 0);
+    wire = cmt_encode_opentelemetry_create(ctx);
+    TEST_CHECK(wire != NULL);
+    if (wire != NULL) {
+        request = opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__unpack(
+            NULL, cfl_sds_len(wire), (const uint8_t *) wire);
+        TEST_ASSERT(request != NULL);
+        point = request->resource_metrics[0]->scope_metrics[0]->metrics[0]->gauge->data_points[0];
+        TEST_ASSERT(point->n_attributes == 2);
+        TEST_CHECK(point->attributes[0]->value->value_case ==
+                   OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_INT_VALUE);
+        TEST_CHECK(point->attributes[0]->value->int_value == 3);
+        TEST_CHECK(point->attributes[1]->value->int_value == INT64_MAX);
+        opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__free_unpacked(request, NULL);
+        cmt_encode_opentelemetry_destroy(wire);
+    }
+    cmt_destroy(ctx);
+}
+
+/* Repeated label-less points of one metric are the same series: the last one
+ * replaces the static sample, as released versions behave. */
+static cfl_sds_t generate_repeated_unlabeled_points_payload()
+{
+    Opentelemetry__Proto__Collector__Metrics__V1__ExportMetricsServiceRequest request;
+    Opentelemetry__Proto__Metrics__V1__ResourceMetrics resource_metrics;
+    Opentelemetry__Proto__Metrics__V1__ScopeMetrics scope_metrics;
+    Opentelemetry__Proto__Metrics__V1__Metric gauge_metric;
+    Opentelemetry__Proto__Metrics__V1__Metric histogram_metric;
+    Opentelemetry__Proto__Metrics__V1__Gauge gauge;
+    Opentelemetry__Proto__Metrics__V1__Histogram histogram;
+    Opentelemetry__Proto__Metrics__V1__NumberDataPoint number_points[2];
+    Opentelemetry__Proto__Metrics__V1__HistogramDataPoint histogram_points[2];
+    Opentelemetry__Proto__Metrics__V1__ResourceMetrics *resource_metrics_list[1];
+    Opentelemetry__Proto__Metrics__V1__ScopeMetrics *scope_metrics_list[1];
+    Opentelemetry__Proto__Metrics__V1__Metric *metric_list[2];
+    Opentelemetry__Proto__Metrics__V1__NumberDataPoint *number_point_list[2];
+    Opentelemetry__Proto__Metrics__V1__HistogramDataPoint *histogram_point_list[2];
+    uint64_t first_buckets[] = {5, 1, 3};
+    uint64_t second_buckets[] = {1, 1, 1};
+    double bounds[] = {1.0, 2.0};
+    size_t payload_size;
+    size_t index;
+    unsigned char *packed_payload;
+    cfl_sds_t payload;
+
+    opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__init(&request);
+    opentelemetry__proto__metrics__v1__resource_metrics__init(&resource_metrics);
+    opentelemetry__proto__metrics__v1__scope_metrics__init(&scope_metrics);
+    opentelemetry__proto__metrics__v1__metric__init(&gauge_metric);
+    opentelemetry__proto__metrics__v1__metric__init(&histogram_metric);
+    opentelemetry__proto__metrics__v1__gauge__init(&gauge);
+    opentelemetry__proto__metrics__v1__histogram__init(&histogram);
+
+    for (index = 0; index < 2; index++) {
+        opentelemetry__proto__metrics__v1__number_data_point__init(&number_points[index]);
+        number_points[index].time_unix_nano = index + 1;
+        number_points[index].flags = index;
+        number_points[index].value_case =
+            OPENTELEMETRY__PROTO__METRICS__V1__NUMBER_DATA_POINT__VALUE_AS_DOUBLE;
+        number_points[index].as_double = index + 1.0;
+        number_point_list[index] = &number_points[index];
+
+        opentelemetry__proto__metrics__v1__histogram_data_point__init(&histogram_points[index]);
+        histogram_points[index].time_unix_nano = index + 1;
+        histogram_points[index].n_bucket_counts = 3;
+        histogram_points[index].bucket_counts = index == 0 ? first_buckets : second_buckets;
+        histogram_points[index].n_explicit_bounds = 2;
+        histogram_points[index].explicit_bounds = bounds;
+        histogram_points[index].count = index == 0 ? 9 : 3;
+        histogram_points[index].has_sum = 1;
+        histogram_points[index].sum = 1.0;
+        histogram_point_list[index] = &histogram_points[index];
+    }
+
+    gauge.n_data_points = 2;
+    gauge.data_points = number_point_list;
+    gauge_metric.name = "u";
+    gauge_metric.data_case = OPENTELEMETRY__PROTO__METRICS__V1__METRIC__DATA_GAUGE;
+    gauge_metric.gauge = &gauge;
+
+    histogram.n_data_points = 2;
+    histogram.data_points = histogram_point_list;
+    histogram.aggregation_temporality =
+        OPENTELEMETRY__PROTO__METRICS__V1__AGGREGATION_TEMPORALITY__AGGREGATION_TEMPORALITY_CUMULATIVE;
+    histogram_metric.name = "h";
+    histogram_metric.data_case = OPENTELEMETRY__PROTO__METRICS__V1__METRIC__DATA_HISTOGRAM;
+    histogram_metric.histogram = &histogram;
+
+    metric_list[0] = &gauge_metric;
+    metric_list[1] = &histogram_metric;
+    scope_metrics.n_metrics = 2;
+    scope_metrics.metrics = metric_list;
+
+    scope_metrics_list[0] = &scope_metrics;
+    resource_metrics.n_scope_metrics = 1;
+    resource_metrics.scope_metrics = scope_metrics_list;
+
+    resource_metrics_list[0] = &resource_metrics;
+    request.n_resource_metrics = 1;
+    request.resource_metrics = resource_metrics_list;
+
+    payload_size = opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__get_packed_size(&request);
+    packed_payload = calloc(1, payload_size);
+    if (packed_payload == NULL) {
+        return NULL;
+    }
+
+    opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__pack(&request,
+                                                                                         packed_payload);
+
+    payload = cfl_sds_create_len((char *) packed_payload, payload_size);
+    free(packed_payload);
+
+    return payload;
+}
+
+static void test_opentelemetry_repeated_unlabeled_points_last_wins(void)
+{
+    cfl_sds_t payload;
+    cfl_sds_t encoded;
+    size_t offset;
+    int result;
+    struct cfl_list decoded_context_list;
+    struct cmt *decoded_context;
+    struct cmt_gauge *gauge;
+    struct cmt_histogram *histogram;
+    struct cfl_variant *flags;
+    Opentelemetry__Proto__Collector__Metrics__V1__ExportMetricsServiceRequest *request;
+    Opentelemetry__Proto__Metrics__V1__Metric *metric;
+
+    payload = generate_repeated_unlabeled_points_payload();
+    TEST_ASSERT(payload != NULL);
+
+    offset = 0;
+    result = cmt_decode_opentelemetry_create(&decoded_context_list, payload,
+                                             cfl_sds_len(payload), &offset);
+    TEST_ASSERT(result == CMT_DECODE_OPENTELEMETRY_SUCCESS);
+
+    decoded_context = cfl_list_entry_first(&decoded_context_list, struct cmt, _head);
+    TEST_ASSERT(decoded_context != NULL);
+
+    gauge = cfl_list_entry_first(&decoded_context->gauges, struct cmt_gauge, _head);
+    TEST_ASSERT(gauge != NULL);
+    TEST_CHECK(cfl_list_size(&gauge->map->metrics) == 0);
+    TEST_CHECK(gauge->map->metric_static_set == CMT_TRUE);
+    TEST_CHECK(cmt_metric_get_value(&gauge->map->metric) == 2.0);
+    TEST_CHECK(cmt_metric_get_timestamp(&gauge->map->metric) == 2);
+    flags = cfl_kvlist_fetch(gauge->map->metric.otlp_metadata, "flags");
+    TEST_ASSERT(flags != NULL);
+    TEST_CHECK(flags->type == CFL_VARIANT_UINT && flags->data.as_uint64 == 1);
+
+    histogram = cfl_list_entry_first(&decoded_context->histograms, struct cmt_histogram, _head);
+    TEST_ASSERT(histogram != NULL);
+    TEST_CHECK(cfl_list_size(&histogram->map->metrics) == 0);
+    TEST_CHECK(cmt_metric_hist_get_value(&histogram->map->metric, 0) == 1);
+    TEST_CHECK(cmt_metric_hist_get_value(&histogram->map->metric, 1) == 2);
+    TEST_CHECK(cmt_metric_hist_get_value(&histogram->map->metric, 2) == 3);
+    TEST_CHECK(cmt_metric_hist_get_count_value(&histogram->map->metric) == 3);
+
+    encoded = cmt_encode_opentelemetry_create(decoded_context);
+    TEST_ASSERT(encoded != NULL);
+    request = opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__unpack(
+                  NULL, cfl_sds_len(encoded), (const uint8_t *) encoded);
+    TEST_ASSERT(request != NULL);
+
+    metric = find_otlp_metric_by_name(request, "u");
+    TEST_ASSERT(metric != NULL && metric->gauge != NULL);
+    TEST_CHECK(metric->gauge->n_data_points == 1);
+    TEST_CHECK(metric->gauge->data_points[0]->as_double == 2.0);
+
+    metric = find_otlp_metric_by_name(request, "h");
+    TEST_ASSERT(metric != NULL && metric->histogram != NULL);
+    TEST_CHECK(metric->histogram->n_data_points == 1);
+    TEST_CHECK(metric->histogram->data_points[0]->n_bucket_counts == 3);
+    TEST_CHECK(metric->histogram->data_points[0]->bucket_counts[0] == 1);
+    TEST_CHECK(metric->histogram->data_points[0]->bucket_counts[1] == 1);
+    TEST_CHECK(metric->histogram->data_points[0]->bucket_counts[2] == 1);
+
+    opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__free_unpacked(request, NULL);
+    cmt_encode_opentelemetry_destroy(encoded);
+    cmt_decode_opentelemetry_destroy(&decoded_context_list);
+    cfl_sds_destroy(payload);
+}
+
 TEST_LIST = {
+    {"repeated_unlabeled_points_last_wins", test_opentelemetry_repeated_unlabeled_points_last_wins},
+    {"otlp_unsigned_attribute_signed_range", test_otlp_unsigned_attribute_preserves_signed_range},
     {"opentelemetry_api_full_roundtrip_with_msgpack", test_opentelemetry_api_full_roundtrip_with_msgpack},
     {"opentelemetry_encode_multi_resource_scope_containers", test_opentelemetry_encode_multi_resource_scope_containers},
     {"opentelemetry_encode_scope_attributes_cleanup", test_opentelemetry_encode_scope_attributes_cleanup},

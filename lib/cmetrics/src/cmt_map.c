@@ -46,6 +46,8 @@ static void metric_release_storage(struct cmt_metric *metric)
     free(metric->exp_hist_positive_buckets);
     free(metric->exp_hist_negative_buckets);
     free(metric->sum_quantiles);
+    cfl_kvlist_destroy(metric->otlp_metadata);
+    metric->otlp_metadata = NULL;
 
     metric->hist_buckets = NULL;
     metric->exp_hist_positive_buckets = NULL;
@@ -506,16 +508,13 @@ void cmt_map_destroy(struct cmt_map *map)
     }
 
     /* histogram and quantile allocation for static metric */
-    if (map->metric_static_set) {
-        metric = &map->metric;
-
-        metric_release_storage(metric);
-    }
+    metric_release_storage(&map->metric);
 
     if (map->unit != NULL) {
         cfl_sds_destroy(map->unit);
     }
 
+    cfl_kvlist_destroy(map->otlp_metadata);
     free(map->metric_buckets);
 
     free(map);

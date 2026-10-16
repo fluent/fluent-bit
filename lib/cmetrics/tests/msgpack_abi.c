@@ -347,7 +347,228 @@ void test_msgpack_abi_histogram_buckets_reject_mismatch()
     cmt_destroy(cmt);
 }
 
+static struct cmt *create_static_gauge_with_metadata(void)
+{
+    struct cmt *source;
+    struct cmt_gauge *gauge;
+    struct cfl_kvlist *metadata;
+
+    source = cmt_create();
+    if (source == NULL) {
+        return NULL;
+    }
+
+    gauge = cmt_gauge_create(source, "", "", "windows", "windows", 0, NULL);
+    if (gauge == NULL || cmt_gauge_set(gauge, 1, 1.0, 0, NULL) != 0) {
+        cmt_destroy(source);
+        return NULL;
+    }
+
+    metadata = cfl_kvlist_create();
+    gauge->map->metric.otlp_metadata = metadata;
+    if (metadata == NULL ||
+        cfl_kvlist_insert_uint64(metadata, "flags", 7) != 0 ||
+        cfl_kvlist_insert_string(metadata, "text", "value") != 0 ||
+        cfl_kvlist_insert_bytes(metadata, "binary", "\0\xff", 2, CFL_FALSE) != 0) {
+        cmt_destroy(source);
+        return NULL;
+    }
+
+    return source;
+}
+
+static void test_point_metadata_and_unlabeled_windows(void)
+{
+    struct cmt *source;
+    struct cmt *decoded;
+    struct cmt_gauge *gauge;
+    struct cmt_gauge *result;
+    struct cmt_metric *point;
+    struct cfl_variant *value;
+    char *buffer;
+    size_t size;
+    size_t offset;
+    int ret;
+
+    /* Typed static point metadata survives a round trip. */
+    source = create_static_gauge_with_metadata();
+    TEST_ASSERT(source != NULL);
+    TEST_CHECK(cmt_encode_msgpack_create(source, &buffer, &size) == 0);
+    offset = 0;
+    ret = cmt_decode_msgpack_create(&decoded, buffer, size, &offset);
+    TEST_ASSERT(ret == CMT_DECODE_MSGPACK_SUCCESS);
+    TEST_CHECK(offset == size);
+    result = cfl_list_entry_first(&decoded->gauges, struct cmt_gauge, _head);
+    TEST_ASSERT(result != NULL);
+    TEST_CHECK(cmt_metric_get_timestamp(&result->map->metric) == 1);
+    value = cfl_kvlist_fetch(result->map->metric.otlp_metadata, "flags");
+    TEST_ASSERT(value != NULL);
+    TEST_CHECK((value->type == CFL_VARIANT_UINT && value->data.as_uint64 == 7) ||
+               (value->type == CFL_VARIANT_INT && value->data.as_int64 == 7));
+    value = cfl_kvlist_fetch(result->map->metric.otlp_metadata, "text");
+    TEST_ASSERT(value != NULL);
+    TEST_CHECK(value->type == CFL_VARIANT_STRING && cfl_variant_size_get(value) == 5);
+    TEST_CHECK(memcmp(value->data.as_string, "value", 5) == 0);
+    value = cfl_kvlist_fetch(result->map->metric.otlp_metadata, "binary");
+    TEST_ASSERT(value != NULL);
+    TEST_CHECK(value->type == CFL_VARIANT_BYTES && cfl_variant_size_get(value) == 2);
+    TEST_CHECK(memcmp(value->data.as_bytes, "\0\xff", 2) == 0);
+    TEST_CHECK(cfl_list_size(&result->map->metrics) == 0);
+    cmt_decode_msgpack_destroy(decoded);
+    cmt_encode_msgpack_destroy(buffer);
+    cmt_destroy(source);
+
+    /* A further label-less point is the same series: like released readers,
+     * it replaces the static metric (last one wins) instead of creating a
+     * duplicate series. Its point metadata no longer lines up with the
+     * sidecar and is skipped, while the values and the chunk survive. */
+    source = create_static_gauge_with_metadata();
+    TEST_ASSERT(source != NULL);
+    gauge = cfl_list_entry_first(&source->gauges, struct cmt_gauge, _head);
+    point = calloc(1, sizeof(*point));
+    TEST_ASSERT(point != NULL);
+    cfl_list_init(&point->labels);
+    point->otlp_metadata = cfl_kvlist_create();
+    TEST_ASSERT(point->otlp_metadata != NULL);
+    TEST_CHECK(cfl_kvlist_insert_uint64(point->otlp_metadata, "flags", 3) == 0);
+    cmt_metric_set_double(point, 2, 2.0);
+    cfl_list_add(&point->_head, &gauge->map->metrics);
+    TEST_CHECK(cmt_encode_msgpack_create(source, &buffer, &size) == 0);
+    offset = 0;
+    ret = cmt_decode_msgpack_create(&decoded, buffer, size, &offset);
+    TEST_ASSERT(ret == CMT_DECODE_MSGPACK_SUCCESS);
+    TEST_CHECK(offset == size);
+    result = cfl_list_entry_first(&decoded->gauges, struct cmt_gauge, _head);
+    TEST_ASSERT(result != NULL);
+    TEST_CHECK(cfl_list_size(&result->map->metrics) == 0);
+    TEST_CHECK(cmt_metric_get_timestamp(&result->map->metric) == 2);
+    TEST_CHECK(cmt_metric_get_value(&result->map->metric) == 2.0);
+    TEST_CHECK(result->map->metric.otlp_metadata == NULL);
+    cmt_decode_msgpack_destroy(decoded);
+    cmt_encode_msgpack_destroy(buffer);
+    cmt_destroy(source);
+}
+
+static void test_index_resize_preserves_family_metadata(void)
+{
+    struct cmt *ctx;
+    struct cmt_gauge *gauge;
+    struct cfl_variant *value;
+    char label[32];
+    char *values[] = {label};
+    char *keys[] = {"series"};
+    size_t index;
+    char *buffer;
+    size_t size;
+
+    ctx = cmt_create();
+    TEST_ASSERT(ctx != NULL);
+    gauge = cmt_gauge_create(ctx, "", "", "resize", "resize", 1, keys);
+    TEST_ASSERT(gauge != NULL);
+    gauge->map->otlp_metadata = cfl_kvlist_create();
+    TEST_ASSERT(gauge->map->otlp_metadata != NULL);
+    TEST_ASSERT(cfl_kvlist_insert_string(gauge->map->otlp_metadata, "family", "retained") == 0);
+    for (index = 0; index < 300; index++) {
+        snprintf(label, sizeof(label), "%zu", index);
+        TEST_ASSERT(cmt_gauge_set(gauge, 100, index, 1, values) == 0);
+    }
+    TEST_CHECK(gauge->map->metric_bucket_count > 64);
+    value = cfl_kvlist_fetch(gauge->map->otlp_metadata, "family");
+    TEST_CHECK(value != NULL && value->type == CFL_VARIANT_STRING);
+    if (value != NULL && value->type == CFL_VARIANT_STRING) {
+        TEST_CHECK(strcmp(value->data.as_string, "retained") == 0);
+    }
+    TEST_ASSERT(cmt_encode_msgpack_create(ctx, &buffer, &size) == 0);
+    cmt_encode_msgpack_destroy(buffer);
+    cmt_destroy(ctx);
+}
+
+static void test_stale_metadata_sidecar_does_not_drop_chunk(void)
+{
+    struct cmt *ctx;
+    struct cmt *decoded;
+    struct cmt_gauge *gauge;
+    struct cfl_array *sidecar;
+    char *buffer;
+    size_t size;
+    size_t offset = 0;
+    int result;
+
+    ctx = cmt_create();
+    TEST_ASSERT(ctx != NULL);
+    gauge = cmt_gauge_create(ctx, "", "", "retained", "retained", 0, NULL);
+    TEST_ASSERT(gauge != NULL);
+    TEST_ASSERT(cmt_gauge_set(gauge, 100, 42, 0, NULL) == 0);
+    /* An intermediary removed a family without updating the optional sidecar. */
+    sidecar = cfl_array_create(0);
+    TEST_ASSERT(sidecar != NULL);
+    TEST_ASSERT(cfl_kvlist_insert_array(ctx->internal_metadata,
+                                      "__cmetrics_native_metadata_v1", sidecar) == 0);
+    TEST_ASSERT(cmt_encode_msgpack_create(ctx, &buffer, &size) == 0);
+    decoded = NULL;
+    result = cmt_decode_msgpack_create(&decoded, buffer, size, &offset);
+    TEST_CHECK(result == CMT_DECODE_MSGPACK_SUCCESS);
+    if (decoded != NULL) {
+        gauge = cfl_list_entry_first(&decoded->gauges, struct cmt_gauge, _head);
+        TEST_ASSERT(gauge != NULL);
+        TEST_CHECK(cmt_metric_get_value(&gauge->map->metric) == 42);
+        TEST_CHECK(cfl_kvlist_fetch(decoded->internal_metadata,
+                                  "__cmetrics_native_metadata_v1") == NULL);
+        cmt_destroy(decoded);
+    }
+    cmt_encode_msgpack_destroy(buffer);
+    cmt_destroy(ctx);
+}
+
+static void test_invalid_optional_metadata_does_not_drop_chunk(void)
+{
+    struct cmt *ctx;
+    struct cmt *decoded;
+    struct cmt_gauge *gauge;
+    struct cfl_array *sidecar;
+    struct cfl_array *points;
+    struct cfl_kvlist *family;
+    char *buffer;
+    size_t size;
+    size_t offset = 0;
+    int result;
+
+    ctx = cmt_create();
+    TEST_ASSERT(ctx != NULL);
+    gauge = cmt_gauge_create(ctx, "", "", "retained", "retained", 0, NULL);
+    TEST_ASSERT(gauge != NULL);
+    TEST_ASSERT(cmt_gauge_set(gauge, 100, 42, 0, NULL) == 0);
+    sidecar = cfl_array_create(1);
+    points = cfl_array_create(1);
+    family = cfl_kvlist_create();
+    TEST_ASSERT(sidecar != NULL && points != NULL && family != NULL);
+    TEST_ASSERT(cfl_array_append_null(points) == 0);
+    TEST_ASSERT(cfl_kvlist_insert_array(family, "points", points) == 0);
+    TEST_ASSERT(cfl_kvlist_insert_bool(family, "allow_reset", CFL_FALSE) == 0);
+    TEST_ASSERT(cfl_kvlist_insert_bytes(family, "family", "\xc1", 1, CFL_FALSE) == 0);
+    TEST_ASSERT(cfl_array_append_kvlist(sidecar, family) == 0);
+    TEST_ASSERT(cfl_kvlist_insert_array(ctx->internal_metadata,
+                                      "__cmetrics_native_metadata_v1", sidecar) == 0);
+    TEST_ASSERT(cmt_encode_msgpack_create(ctx, &buffer, &size) == 0);
+    decoded = NULL;
+    result = cmt_decode_msgpack_create(&decoded, buffer, size, &offset);
+    TEST_CHECK(result == CMT_DECODE_MSGPACK_SUCCESS);
+    if (decoded != NULL) {
+        gauge = cfl_list_entry_first(&decoded->gauges, struct cmt_gauge, _head);
+        TEST_ASSERT(gauge != NULL);
+        TEST_CHECK(cmt_metric_get_value(&gauge->map->metric) == 42);
+        TEST_CHECK(gauge->map->otlp_metadata == NULL);
+        cmt_destroy(decoded);
+    }
+    cmt_encode_msgpack_destroy(buffer);
+    cmt_destroy(ctx);
+}
+
 TEST_LIST = {
+    {"invalid_optional_metadata_retains_chunk", test_invalid_optional_metadata_does_not_drop_chunk},
+    {"stale_metadata_sidecar_does_not_drop_chunk", test_stale_metadata_sidecar_does_not_drop_chunk},
+    {"index_resize_preserves_family_metadata", test_index_resize_preserves_family_metadata},
+    {"point_metadata_and_unlabeled_windows", test_point_metadata_and_unlabeled_windows},
     {"msgpack_abi_legacy_value_only_decode", test_msgpack_abi_legacy_value_only_decode},
     {"msgpack_abi_typed_int64_decode",        test_msgpack_abi_typed_int64_decode},
     {"msgpack_abi_summary_quantiles_reject_mismatch", test_msgpack_abi_summary_quantiles_reject_mismatch},

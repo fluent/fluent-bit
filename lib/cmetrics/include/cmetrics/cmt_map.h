@@ -51,6 +51,8 @@ struct cmt_map {
     size_t indexed_metric_count;
     /* Most recently created metric; only changed with the metric list. */
     struct cmt_metric *last_metric;
+    /* Owned family metadata; independent of metric names and sibling scopes. */
+    struct cfl_kvlist *otlp_metadata;
 };
 
 struct cmt_map *cmt_map_create(int type, struct cmt_opts *opts,

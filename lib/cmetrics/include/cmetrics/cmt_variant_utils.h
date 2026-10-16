@@ -477,6 +477,7 @@ static inline int unpack_cfl_variant_string(mpack_reader_t *reader,
     }
 
     (*value)->type = CFL_VARIANT_STRING;
+    (*value)->size = value_length;
 
     return 0;
 }
@@ -528,6 +529,7 @@ static inline int unpack_cfl_variant_binary(mpack_reader_t *reader,
     }
 
     (*value)->type = CFL_VARIANT_BYTES;
+    (*value)->size = value_length;
 
     return 0;
 }

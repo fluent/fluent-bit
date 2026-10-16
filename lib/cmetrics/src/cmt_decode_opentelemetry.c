@@ -20,6 +20,7 @@
 #include "cmt_protobuf.h"
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_metric.h>
+#include <cmetrics/cmt_otlp_metadata.h>
 #include <cmetrics/cmt_map.h>
 #include <cmetrics/cmt_gauge.h>
 #include <cmetrics/cmt_counter.h>
@@ -35,6 +36,7 @@
 #include <inttypes.h>
 #include <stdint.h>
 #include <limits.h>
+#include <string.h>
 
 static struct cfl_variant *clone_variant(Opentelemetry__Proto__Common__V1__AnyValue *source);
 
@@ -341,52 +343,12 @@ static uint64_t compute_metric_hash(struct cmt_map *map, struct cmt_metric *samp
     return cfl_hash_64bits_digest(&state);
 }
 
-static char *map_type_to_key(int map_type)
-{
-    switch (map_type) {
-    case CMT_COUNTER:
-        return "counter";
-    case CMT_GAUGE:
-        return "gauge";
-    case CMT_UNTYPED:
-        return "untyped";
-    case CMT_SUMMARY:
-        return "summary";
-    case CMT_HISTOGRAM:
-        return "histogram";
-    case CMT_EXP_HISTOGRAM:
-        return "exp_histogram";
-    default:
-        return "unknown";
-    }
-}
-
 static struct cfl_kvlist *get_or_create_metric_metadata_context(struct cmt *cmt, struct cmt_map *map)
 {
-    struct cfl_kvlist *otlp_root;
-    struct cfl_kvlist *metrics_root;
-    struct cfl_kvlist *type_root;
-
-    if (cmt == NULL || map == NULL || map->opts == NULL || map->opts->fqname == NULL) {
-        return NULL;
+    if (!map->otlp_metadata) {
+        map->otlp_metadata = cfl_kvlist_create();
     }
-
-    otlp_root = get_or_create_external_metadata_kvlist(cmt->external_metadata, "otlp");
-    if (otlp_root == NULL) {
-        return NULL;
-    }
-
-    metrics_root = get_or_create_external_metadata_kvlist(otlp_root, "metrics");
-    if (metrics_root == NULL) {
-        return NULL;
-    }
-
-    type_root = get_or_create_external_metadata_kvlist(metrics_root, map_type_to_key(map->type));
-    if (type_root == NULL) {
-        return NULL;
-    }
-
-    return get_or_create_external_metadata_kvlist(type_root, map->opts->fqname);
+    return map->otlp_metadata;
 }
 
 static struct cfl_kvlist *get_or_create_data_point_metadata_context(struct cmt *cmt,
@@ -394,28 +356,50 @@ static struct cfl_kvlist *get_or_create_data_point_metadata_context(struct cmt *
                                                                      struct cmt_metric *sample,
                                                                      uint64_t timestamp)
 {
-    char key[128];
-    struct cfl_kvlist *metric_context;
-    struct cfl_kvlist *datapoints_context;
-
-    if (sample != NULL && sample->hash == 0 && cfl_list_size(&sample->labels) > 0) {
+    if (sample == NULL) {
+        return NULL;
+    }
+    if (sample->hash == 0 && cfl_list_size(&sample->labels) > 0) {
         sample->hash = compute_metric_hash(map, sample);
     }
-
-    metric_context = get_or_create_metric_metadata_context(cmt, map);
-    if (metric_context == NULL) {
-        return NULL;
+    if (sample->otlp_metadata == NULL) {
+        sample->otlp_metadata = cfl_kvlist_create();
+        if (sample->otlp_metadata && cmt_otlp_capture_labels(map, sample) != 0) {
+            return NULL;
+        }
     }
+    return sample->otlp_metadata;
+}
 
-    datapoints_context = get_or_create_external_metadata_kvlist(metric_context, "datapoints");
-    if (datapoints_context == NULL) {
-        return NULL;
+/* Keep telemetry attributes typed; string labels remain available to native exporters. */
+static int clone_point_attributes(struct cfl_kvlist *metadata,
+                                  Opentelemetry__Proto__Common__V1__KeyValue **attributes,
+                                  size_t count)
+{
+    struct cfl_kvlist *copy;
+    size_t index;
+
+    copy = cfl_kvlist_create();
+    if (copy == NULL) {
+        return -1;
     }
-
-    snprintf(key, sizeof(key) - 1, "%" PRIx64 ":%" PRIu64,
-             sample != NULL ? sample->hash : 0, timestamp);
-
-    return get_or_create_external_metadata_kvlist(datapoints_context, key);
+    for (index = 0; index < count; index++) {
+        if (attributes[index] != NULL &&
+            (attributes[index]->value == NULL ||
+             attributes[index]->value->value_case ==
+             OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE__NOT_SET)) {
+            continue;
+        }
+        if (attributes[index] == NULL || clone_kvlist_entry(copy, attributes[index]) != 0) {
+            cfl_kvlist_destroy(copy);
+            return -1;
+        }
+    }
+    if (cfl_kvlist_insert_kvlist(metadata, "attributes", copy) != 0) {
+        cfl_kvlist_destroy(copy);
+        return -1;
+    }
+    return 0;
 }
 
 static int clone_exemplars_to_kvlist(struct cfl_kvlist *target,
@@ -724,6 +708,30 @@ static int decode_data_point_labels(struct cmt *cmt,
     return result;
 }
 
+/* A repeated label-less point replaces the static sample's previous point. */
+static void reset_static_data_point(struct cmt_map *map)
+{
+    struct cmt_metric *metric;
+    struct cmt_histogram *histogram;
+
+    metric = &map->metric;
+
+    if (metric->otlp_metadata != NULL) {
+        cfl_kvlist_destroy(metric->otlp_metadata);
+        metric->otlp_metadata = NULL;
+    }
+
+    if (map->type == CMT_HISTOGRAM && metric->hist_buckets != NULL) {
+        histogram = (struct cmt_histogram *) map->parent;
+        memset(metric->hist_buckets, 0,
+               sizeof(uint64_t) * (histogram->buckets->count + 1));
+    }
+    else if (map->type == CMT_SUMMARY && metric->sum_quantiles != NULL) {
+        memset(metric->sum_quantiles, 0,
+               sizeof(uint64_t) * metric->sum_quantiles_count);
+    }
+}
+
 static int decode_numerical_data_point(struct cmt *cmt,
                                        struct cmt_map *map,
                                        Opentelemetry__Proto__Metrics__V1__NumberDataPoint *data_point)
@@ -737,9 +745,9 @@ static int decode_numerical_data_point(struct cmt *cmt,
     result = CMT_DECODE_OPENTELEMETRY_SUCCESS;
 
     if (data_point->n_attributes == 0) {
-        if (map->metric_static_set == CMT_FALSE) {
-            static_metric_detected = CMT_TRUE;
-        }
+        /* Label-less points always target the static sample, the last
+         * one wins, as released versions behave. */
+        static_metric_detected = CMT_TRUE;
     }
 
     if (static_metric_detected == CMT_FALSE) {
@@ -768,7 +776,9 @@ static int decode_numerical_data_point(struct cmt *cmt,
     }
     else {
         sample = &map->metric;
-
+        if (map->metric_static_set) {
+            reset_static_data_point(map);
+        }
         map->metric_static_set = CMT_TRUE;
     }
 
@@ -799,6 +809,10 @@ static int decode_numerical_data_point(struct cmt *cmt,
         }
 
         point_metadata = get_or_create_data_point_metadata_context(cmt, map, sample, data_point->time_unix_nano);
+        if (point_metadata == NULL || clone_point_attributes(point_metadata, data_point->attributes,
+                                                            data_point->n_attributes) != 0) {
+            return CMT_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
+        }
         if (point_metadata != NULL) {
             cfl_kvlist_insert_uint64(point_metadata, "start_time_unix_nano", data_point->start_time_unix_nano);
             cfl_kvlist_insert_uint64(point_metadata, "flags", data_point->flags);
@@ -909,9 +923,9 @@ static int decode_summary_data_point(struct cmt *cmt,
     static_metric_detected = CMT_FALSE;
 
     if (data_point->n_attributes == 0) {
-        if (map->metric_static_set == CMT_FALSE) {
-            static_metric_detected = CMT_TRUE;
-        }
+        /* Label-less points always target the static sample, the last
+         * one wins, as released versions behave. */
+        static_metric_detected = CMT_TRUE;
     }
 
     if (static_metric_detected == CMT_FALSE) {
@@ -942,7 +956,9 @@ static int decode_summary_data_point(struct cmt *cmt,
     }
     else {
         sample = &map->metric;
-
+        if (map->metric_static_set) {
+            reset_static_data_point(map);
+        }
         map->metric_static_set = CMT_TRUE;
     }
 
@@ -973,6 +989,10 @@ static int decode_summary_data_point(struct cmt *cmt,
                               data_point->count);
 
         point_metadata = get_or_create_data_point_metadata_context(cmt, map, sample, data_point->time_unix_nano);
+        if (point_metadata == NULL || clone_point_attributes(point_metadata, data_point->attributes,
+                                                            data_point->n_attributes) != 0) {
+            return CMT_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
+        }
         if (point_metadata != NULL) {
             cfl_kvlist_insert_uint64(point_metadata, "start_time_unix_nano", data_point->start_time_unix_nano);
             cfl_kvlist_insert_uint64(point_metadata, "flags", data_point->flags);
@@ -1022,6 +1042,7 @@ static int decode_histogram_data_point(struct cmt *cmt,
 {
     int                   static_metric_detected;
     struct cmt_histogram *histogram;
+    uint64_t cumulative = 0;
     struct cmt_metric    *sample;
     int                   result;
     size_t                index;
@@ -1079,9 +1100,9 @@ static int decode_histogram_data_point(struct cmt *cmt,
     static_metric_detected = CMT_FALSE;
 
     if (data_point->n_attributes == 0) {
-        if (map->metric_static_set == CMT_FALSE) {
-            static_metric_detected = CMT_TRUE;
-        }
+        /* Label-less points always target the static sample, the last
+         * one wins, as released versions behave. */
+        static_metric_detected = CMT_TRUE;
     }
 
     if (static_metric_detected == CMT_FALSE) {
@@ -1112,7 +1133,9 @@ static int decode_histogram_data_point(struct cmt *cmt,
     }
     else {
         sample = &map->metric;
-
+        if (map->metric_static_set) {
+            reset_static_data_point(map);
+        }
         map->metric_static_set = CMT_TRUE;
     }
 
@@ -1135,8 +1158,11 @@ static int decode_histogram_data_point(struct cmt *cmt,
         for (index = 0 ;
              index < data_point->n_bucket_counts;
              index++) {
-            cmt_metric_hist_set(sample, data_point->time_unix_nano,
-                                index, data_point->bucket_counts[index]);
+            if (UINT64_MAX - cumulative < data_point->bucket_counts[index]) {
+                return CMT_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
+            }
+            cumulative += data_point->bucket_counts[index];
+            cmt_metric_hist_set(sample, data_point->time_unix_nano, index, cumulative);
         }
 
         cmt_metric_hist_sum_set(sample, data_point->time_unix_nano,
@@ -1145,6 +1171,10 @@ static int decode_histogram_data_point(struct cmt *cmt,
                                   data_point->count);
 
         point_metadata = get_or_create_data_point_metadata_context(cmt, map, sample, data_point->time_unix_nano);
+        if (point_metadata == NULL || clone_point_attributes(point_metadata, data_point->attributes,
+                                                            data_point->n_attributes) != 0) {
+            return CMT_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
+        }
         if (point_metadata != NULL) {
             cfl_kvlist_insert_uint64(point_metadata, "start_time_unix_nano", data_point->start_time_unix_nano);
             cfl_kvlist_insert_uint64(point_metadata, "flags", data_point->flags);
@@ -1345,9 +1375,9 @@ static int decode_exponential_histogram_data_point(struct cmt *cmt,
     static_metric_detected = CMT_FALSE;
 
     if (data_point->n_attributes == 0) {
-        if (map->metric_static_set == CMT_FALSE) {
-            static_metric_detected = CMT_TRUE;
-        }
+        /* Label-less points always target the static sample, the last
+         * one wins, as released versions behave. */
+        static_metric_detected = CMT_TRUE;
     }
 
     if (static_metric_detected == CMT_FALSE) {
@@ -1376,6 +1406,9 @@ static int decode_exponential_histogram_data_point(struct cmt *cmt,
     }
     else {
         sample = &map->metric;
+        if (map->metric_static_set) {
+            reset_static_data_point(map);
+        }
         map->metric_static_set = CMT_TRUE;
     }
 
@@ -1438,6 +1471,10 @@ static int decode_exponential_histogram_data_point(struct cmt *cmt,
         struct cfl_kvlist *point_metadata;
 
         point_metadata = get_or_create_data_point_metadata_context(cmt, map, sample, data_point->time_unix_nano);
+        if (point_metadata == NULL || clone_point_attributes(point_metadata, data_point->attributes,
+                                                            data_point->n_attributes) != 0) {
+            return CMT_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
+        }
         if (point_metadata != NULL) {
             cfl_kvlist_insert_uint64(point_metadata, "start_time_unix_nano", data_point->start_time_unix_nano);
             cfl_kvlist_insert_uint64(point_metadata, "flags", data_point->flags);
