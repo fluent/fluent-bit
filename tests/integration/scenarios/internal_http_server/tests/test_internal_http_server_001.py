@@ -5,7 +5,9 @@ import socket
 import subprocess
 
 import pytest
+import requests
 import yaml
+from server.http_server import data_storage, http_server_run
 from utils.fluent_bit_manager import FluentBitManager, FluentBitStartupError
 from utils.http_matrix import curl_supports_http2, run_curl_request
 from utils.test_service import FluentBitTestService
@@ -153,6 +155,97 @@ def test_internal_http_server_trace_rejects_unsafe_outputs(tmp_path):
 
         result = service.request("/api/v1/trace/dummy.0", method="DELETE")
         assert result["status_code"] == 201
+    finally:
+        service.stop()
+
+
+class TraceHttpService(Service):
+    def __init__(self):
+        super().__init__(os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "../config/internal_http_server_trace_http.yaml")
+        ))
+        self.service = FluentBitTestService(
+            self.config_file,
+            data_storage=data_storage,
+            data_keys=["payloads", "requests"],
+            pre_start=self._start_receiver,
+            post_stop=self._stop_receiver,
+        )
+
+    def _start_receiver(self, service):
+        http_server_run(service.test_suite_http_port)
+        service.wait_for_http_endpoint(
+            f"http://127.0.0.1:{service.test_suite_http_port}/ping", timeout=10, interval=0.5,
+        )
+
+    def _stop_receiver(self, service):
+        try:
+            requests.post(f"http://127.0.0.1:{service.test_suite_http_port}/shutdown", timeout=2)
+        except requests.RequestException:
+            pass
+
+
+def test_internal_http_server_trace_http_output_allowlist():
+    service = TraceHttpService()
+    service.start()
+    port = str(service.service.test_suite_http_port)
+    allowed = {"host": "127.0.0.1", "port": port, "uri": "/data", "format": "json"}
+    rejected = [
+        {**allowed, "uri": "/other"},
+        {**allowed, "port": "1"},
+        {**allowed, "host": "localhost"},
+        {**allowed, "port": port + "x"},
+        {key: value for key, value in allowed.items() if key != "host"},
+        {**allowed, "proxy": "http://127.0.0.1:9"},
+        {**allowed, "tls.ca_file": "/etc/passwd"},
+        {**allowed, "http_user": "user"},
+        {**allowed, "header": "X-Leak ${HOME}"},
+        {**allowed, "uri": "/data${HOME}"},
+    ]
+
+    try:
+        for params in rejected:
+            for path, inputs in [("/api/v1/trace/traced", {}),
+                                 ("/api/v1/traces/", {"inputs": ["traced"]})]:
+                result = service.request(path, method="POST", payload=json.dumps({
+                    **inputs, "output": "http", "params": params,
+                }))
+                if inputs:
+                    assert result["status_code"] == 200
+                    assert '"returncode":403' in result["body"], params
+                else:
+                    assert result["status_code"] == 403, params
+
+        assert data_storage["requests"] == []
+
+        result = service.request("/api/v1/trace/traced", method="POST", payload=json.dumps({
+            "output": "http", "prefix": "http-trace.", "params": allowed,
+        }))
+        assert result["status_code"] == 200, result
+
+        requests_seen = service.service.wait_for_condition(
+            lambda: data_storage["requests"] or None,
+            timeout=10, interval=0.5, description="trace records sent to the allowed endpoint",
+        )
+        assert all(request["path"] == "/data" for request in requests_seen)
+        assert any("http-trace." in request["decoded_data"] for request in requests_seen)
+
+        result = service.request("/api/v1/trace/traced", method="DELETE")
+        assert result["status_code"] == 201
+    finally:
+        service.stop()
+
+
+def test_internal_http_server_trace_http_output_disabled_by_default():
+    service = Service()
+    service.start()
+    try:
+        result = service.request("/api/v1/trace/dummy.0", method="POST", payload=json.dumps({
+            "output": "http", "params": {"host": "127.0.0.1", "port": "9", "uri": "/"},
+        }))
+        assert result["status_code"] == 403
+        with open(service.flb.log_file, encoding="utf-8", errors="replace") as stream:
+            assert "chunk_trace_http_allowed_endpoints" in stream.read().lower()
     finally:
         service.stop()
 
