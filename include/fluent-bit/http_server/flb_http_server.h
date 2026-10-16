@@ -84,6 +84,8 @@ struct flb_http_server_options {
     int                                  protocol_version;
     uint64_t                             flags;
     flb_http_server_request_processor_callback request_callback;
+    /* Runs before inflation; nonzero means a rejection response was committed. */
+    flb_http_server_request_processor_callback authorization_callback;
     void                                *user_data;
 
     char                                *address;
@@ -140,6 +142,8 @@ struct flb_http_server {
     struct cfl_list                     clients;
     struct cfl_list                     detached_clients;
     flb_http_server_request_processor_callback request_callback;
+    /* Runs before inflation; nonzero means a rejection response was committed. */
+    flb_http_server_request_processor_callback authorization_callback;
     void                               *user_data;
     size_t                              buffer_max_size;
     size_t                              buffer_chunk_size;
