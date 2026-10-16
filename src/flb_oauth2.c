@@ -20,6 +20,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_file.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_uri.h>
 #include <fluent-bit/flb_oauth2.h>
@@ -34,6 +35,7 @@
 #include <errno.h>
 #include <string.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <limits.h>
 
@@ -86,6 +88,18 @@ struct flb_config_map oauth2_config_map[] = {
      FLB_CONFIG_MAP_STR, "oauth2.resource", NULL,
      0, FLB_TRUE, offsetof(struct flb_oauth2_config, resource),
      "Optional OAuth2 resource parameter"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.authorization_details", NULL,
+     0, FLB_TRUE, offsetof(struct flb_oauth2_config, authorization_details),
+     "Optional OAuth2 authorization_details JSON parameter; mutually exclusive "
+     "with oauth2.authorization_details_file"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "oauth2.authorization_details_file", NULL,
+     0, FLB_TRUE, offsetof(struct flb_oauth2_config, authorization_details_file),
+     "Path to an authorization_details JSON file, read at initialization; "
+     "mutually exclusive with oauth2.authorization_details"
     },
     {
      FLB_CONFIG_MAP_STR, "oauth2.auth_method", "basic",
@@ -194,6 +208,8 @@ static void oauth2_apply_defaults(struct flb_oauth2_config *cfg)
     cfg->scope = NULL;
     cfg->audience = NULL;
     cfg->resource = NULL;
+    cfg->authorization_details = NULL;
+    cfg->authorization_details_file = NULL;
     cfg->jwt_key_file = NULL;
     cfg->jwt_cert_file = NULL;
     cfg->jwt_aud = NULL;
@@ -207,6 +223,12 @@ static int oauth2_clone_config(struct flb_oauth2_config *dst,
 
     if (!src) {
         return 0;
+    }
+
+    if (src->authorization_details && src->authorization_details_file) {
+        flb_error("[oauth2] oauth2.authorization_details and "
+                  "oauth2.authorization_details_file are mutually exclusive");
+        return -1;
     }
 
     dst->enabled = src->enabled;
@@ -285,6 +307,24 @@ static int oauth2_clone_config(struct flb_oauth2_config *dst,
         }
     }
 
+    if (src->authorization_details) {
+        dst->authorization_details = flb_sds_create(src->authorization_details);
+        if (!dst->authorization_details) {
+            flb_errno();
+            flb_oauth2_config_destroy(dst);
+            return -1;
+        }
+    }
+    else if (src->authorization_details_file) {
+        dst->authorization_details = flb_file_read(src->authorization_details_file);
+        if (!dst->authorization_details || flb_sds_trim(dst->authorization_details) <= 0) {
+            flb_error("[oauth2] authorization details file '%s' is unreadable or empty",
+                      src->authorization_details_file);
+            flb_oauth2_config_destroy(dst);
+            return -1;
+        }
+    }
+
     if (src->jwt_key_file) {
         dst->jwt_key_file =
             flb_sds_create(src->jwt_key_file);
@@ -347,6 +387,10 @@ void flb_oauth2_config_destroy(struct flb_oauth2_config *cfg)
     cfg->audience = NULL;
     flb_sds_destroy(cfg->resource);
     cfg->resource = NULL;
+    flb_sds_destroy(cfg->authorization_details);
+    cfg->authorization_details = NULL;
+    flb_sds_destroy(cfg->authorization_details_file);
+    cfg->authorization_details_file = NULL;
     flb_sds_destroy(cfg->jwt_key_file);
     cfg->jwt_key_file = NULL;
     flb_sds_destroy(cfg->jwt_cert_file);
@@ -458,7 +502,7 @@ int flb_oauth2_parse_json_response(const char *json_data, size_t json_size,
     int key_len;
     int val_len;
     char *end;
-    int tokens_size = 32;
+    size_t tokens_size = 32;
     const char *key;
     const char *val;
     unsigned long long parsed_expires_in;
@@ -467,8 +511,14 @@ int flb_oauth2_parse_json_response(const char *json_data, size_t json_size,
     flb_sds_t new_token_type = NULL;
     jsmntok_t *t;
     jsmntok_t *tokens;
+    jsmntok_t *tmp_tokens;
     char tmp_num[32];
     uint64_t new_expires_in = 0;
+
+    if (json_size > INT_MAX) {
+        flb_error("[oauth2] response is too large (size=%zu)", json_size);
+        return -1;
+    }
 
     jsmn_init(&parser);
     tokens = flb_calloc(1, sizeof(jsmntok_t) * tokens_size);
@@ -478,6 +528,21 @@ int flb_oauth2_parse_json_response(const char *json_data, size_t json_size,
     }
 
     ret = jsmn_parse(&parser, json_data, json_size, tokens, tokens_size);
+    while (ret == JSMN_ERROR_NOMEM && tokens_size < json_size) {
+        tokens_size *= 2;
+        if (tokens_size > SIZE_MAX / sizeof(*tokens)) {
+            break;
+        }
+
+        tmp_tokens = flb_realloc(tokens, sizeof(*tokens) * tokens_size);
+        if (!tmp_tokens) {
+            flb_errno();
+            flb_free(tokens);
+            return -1;
+        }
+        tokens = tmp_tokens;
+        ret = jsmn_parse(&parser, json_data, json_size, tokens, tokens_size);
+    }
     if (ret <= 0) {
         flb_error("[oauth2] cannot parse payload (size=%zu)", json_size);
         flb_free(tokens);
@@ -579,6 +644,46 @@ int flb_oauth2_parse_json_response(const char *json_data, size_t json_size,
     return 0;
 }
 
+static flb_sds_t oauth2_form_encode(const char *value, size_t len)
+{
+    char *start;
+    char *ampersand;
+    flb_sds_t encoded;
+    flb_sds_t escaped;
+
+    encoded = flb_uri_encode(value, len);
+    if (!encoded || !strchr(encoded, '&')) {
+        return encoded;
+    }
+
+    escaped = flb_sds_create_size(flb_sds_len(encoded));
+    if (!escaped) {
+        goto error;
+    }
+
+    /* URI encoding preserves '&', escape it within individual form values. */
+    start = encoded;
+    while ((ampersand = strchr(start, '&')) != NULL) {
+        if (flb_sds_cat_safe(&escaped, start, ampersand - start) == -1 ||
+            flb_sds_cat_safe(&escaped, "%26", 3) == -1) {
+            goto error;
+        }
+        start = ampersand + 1;
+    }
+
+    if (flb_sds_cat_safe(&escaped, start, strlen(start)) == -1) {
+        goto error;
+    }
+    flb_sds_destroy(encoded);
+
+    return escaped;
+
+error:
+    flb_sds_destroy(encoded);
+    flb_sds_destroy(escaped);
+    return NULL;
+}
+
 static int oauth2_append_kv(flb_sds_t *buffer, const char *key,
                             const char *value)
 {
@@ -588,7 +693,7 @@ static int oauth2_append_kv(flb_sds_t *buffer, const char *key,
         return 0;
     }
 
-    tmp = flb_uri_encode(value, strlen(value));
+    tmp = oauth2_form_encode(value, strlen(value));
     if (!tmp) {
         flb_errno();
         return -1;
@@ -1006,6 +1111,14 @@ static flb_sds_t oauth2_build_body(struct flb_oauth2 *ctx)
         }
     }
 
+    if (ctx->cfg.authorization_details) {
+        if (oauth2_append_kv(&body, "authorization_details",
+                             ctx->cfg.authorization_details) == -1) {
+            flb_sds_destroy(body);
+            return NULL;
+        }
+    }
+
     if (ctx->cfg.auth_method == FLB_OAUTH2_AUTH_METHOD_POST) {
         if (ctx->cfg.client_id) {
             if (oauth2_append_kv(&body, "client_id", ctx->cfg.client_id) == -1) {
@@ -1080,6 +1193,8 @@ static int oauth2_http_request(struct flb_oauth2 *ctx, flb_sds_t body)
         flb_upstream_conn_release(u_conn);
         return -1;
     }
+
+    flb_http_buffer_size(c, 64 * 1024);
 
     if (ctx->cfg.timeout > 0) {
         flb_http_set_response_timeout(c, ctx->cfg.timeout);
