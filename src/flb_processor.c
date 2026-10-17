@@ -1459,12 +1459,43 @@ static struct log_window *log_windows_scan(void *data, size_t data_size, int *co
     return windows;
 }
 
+/* TRUE when a decoded chunk holds group markers */
+static int chunk_has_group_markers(struct flb_mp_chunk_cobj *chunk)
+{
+    int type;
+    struct cfl_list *head;
+    struct flb_mp_chunk_record *record;
+
+    cfl_list_foreach(head, &chunk->records) {
+        record = cfl_list_entry(head, struct flb_mp_chunk_record, _head);
+        if (flb_log_event_decoder_get_record_type(&record->event, &type) == 0 &&
+            (type == FLB_LOG_EVENT_GROUP_START || type == FLB_LOG_EVENT_GROUP_END)) {
+            return FLB_TRUE;
+        }
+    }
+
+    return FLB_FALSE;
+}
+
+/*
+ * Group boundary flags of the processor input, scanned once and only when a
+ * chunk to normalize has group markers: plain logs never pay for the scan.
+ */
+static int input_group_flags(int *cache, void *data, size_t data_size)
+{
+    if (*cache < 0) {
+        *cache = flb_mp_log_group_boundaries(data, data_size);
+    }
+    return *cache;
+}
+
 static int run_log_windows(struct flb_processor *proc, struct chunk_codec *codec,
                            struct mk_list *first, int unit_count,
                            const char *tag, size_t tag_len,
                            void *data, size_t data_size,
                            void **out_buf, size_t *out_size,
                            int *out_records, int *out_normalized,
+                           void *input, size_t input_size, int *group_flags,
                            const char *metrics_scope,
                            const char *metrics_owner,
                            const char *metrics_signal)
@@ -1477,6 +1508,9 @@ static int run_log_windows(struct flb_processor *proc, struct chunk_codec *codec
     int total_records = 0;
     int normalized = FLB_TRUE;
     int window_count;
+    int window_flags;
+    int input_flags;
+    int seen_start = FLB_FALSE;
     size_t offset;
     struct mk_list *head;
     struct log_window *windows;
@@ -1547,7 +1581,28 @@ static int run_log_windows(struct flb_processor *proc, struct chunk_codec *codec
             units[i].out_items += records;
         }
 
-        if (flb_mp_chunk_cobj_normalize_groups(chunk_cobj) != 0) {
+        /*
+         * Boundary markers of the input stay with the window holding them: a
+         * leading end until a group starts, the open group in the last window.
+         */
+        window_flags = 0;
+        if (chunk_has_group_markers(chunk_cobj)) {
+            input_flags = input_group_flags(group_flags, input, input_size);
+            if (!seen_start) {
+                window_flags |= input_flags & FLB_MP_GROUPS_KEEP_LEADING_END;
+            }
+            if (w == window_count - 1) {
+                window_flags |= input_flags & FLB_MP_GROUPS_KEEP_TRAILING_OPEN;
+            }
+        }
+        /* only inputs opening with a continued group need the start count */
+        if (*group_flags > 0 && (*group_flags & FLB_MP_GROUPS_KEEP_LEADING_END) &&
+            !seen_start &&
+            flb_mp_log_group_starts((char *) data + offset, windows[w].end - offset) > 0) {
+            seen_start = FLB_TRUE;
+        }
+
+        if (flb_mp_chunk_cobj_normalize_groups_ex(chunk_cobj, window_flags) != 0) {
             normalized = FLB_FALSE;
         }
         total_records += flb_mp_chunk_cobj_count_log_records(chunk_cobj);
@@ -1642,6 +1697,7 @@ static int processor_run(struct flb_processor *proc, struct chunk_codec *codec,
     int run_units;
     int window_records;
     int window_normalized;
+    int group_flags = -1;
     const char *metrics_scope;
     const char *metrics_owner;
     const char *metrics_signal;
@@ -1722,6 +1778,7 @@ static int processor_run(struct flb_processor *proc, struct chunk_codec *codec,
                 ret = run_log_windows(proc, codec, head, run_units, tag, tag_len,
                                       cur_buf, cur_size, &tmp_buf, &tmp_size,
                                       &window_records, &window_normalized,
+                                      data, data_size, &group_flags,
                                       metrics_scope, metrics_owner, metrics_signal);
                 if (ret == LOG_WINDOWS_ERROR) {
                     if (cur_buf != data) {
@@ -1995,8 +2052,11 @@ static int processor_run(struct flb_processor *proc, struct chunk_codec *codec,
                          * count. Reuse them until a filter replaces this serialized
                          * buffer.
                          */
+                        /* keep only the boundary markers the input already had */
                         log_buffer_normalized =
-                            flb_mp_chunk_cobj_normalize_groups(chunk_cobj) == 0;
+                            flb_mp_chunk_cobj_normalize_groups_ex(chunk_cobj,
+                                chunk_has_group_markers(chunk_cobj) ?
+                                input_group_flags(&group_flags, data, data_size) : 0) == 0;
                         log_buffer_records = flb_mp_chunk_cobj_count_log_records(chunk_cobj);
 
                         if (cfl_list_size(&chunk_cobj->records) == 0) {
@@ -2217,9 +2277,11 @@ static int processor_run(struct flb_processor *proc, struct chunk_codec *codec,
     /* set output buffer */
     if (type == FLB_PROCESSOR_LOGS &&
         cur_buf != NULL && !log_buffer_normalized) {
-        ret = flb_mp_normalize_log_buffer_groups_msgpack(cur_buf, cur_size,
-                                                         (char **) &tmp_buf,
-                                                         &tmp_size);
+        ret = flb_mp_normalize_log_buffer_groups_msgpack_ex(cur_buf, cur_size,
+                                                            (char **) &tmp_buf, &tmp_size,
+                                                            input_group_flags(&group_flags,
+                                                                              data,
+                                                                              data_size));
         if (ret == 0) {
             if (cur_buf != data) {
                 flb_free(cur_buf);
