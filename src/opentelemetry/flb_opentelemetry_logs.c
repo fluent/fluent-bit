@@ -452,7 +452,7 @@ static int process_json_payload_log_records_entry(
     if (result == FLB_EVENT_ENCODER_SUCCESS) {
         result = flb_log_event_encoder_commit_record(encoder);
     }
-    else {
+    if (result != FLB_EVENT_ENCODER_SUCCESS) {
         if (error_status) {
             *error_status = FLB_OTEL_LOGS_ERR_ENCODER_FAILURE;
         }
@@ -516,8 +516,10 @@ static int process_json_payload_scope_logs_entry(
                     sizeof(FLB_OTEL_LOGS_METADATA_KEY) - 1,
                     logs_body_key,
                     &entry_status);
-        if (result < 0 && error_status) {
-            *error_status = entry_status;
+        if (result < 0) {
+            if (error_status) {
+                *error_status = entry_status;
+            }
             return result;
         }
     }
@@ -629,6 +631,22 @@ static int process_json_payload_resource_logs_entry (struct flb_log_event_encode
             return -FLB_OTEL_LOGS_ERR_UNEXPECTED_SCOPELOGS_TYPE;
         }
 
+        /* Empty scopes must not repeatedly serialize discarded resource metadata. */
+        result = flb_otel_utils_find_map_entry_by_key(&scope_logs->ptr[index].via.map,
+                                                     "logRecords", 0, FLB_TRUE);
+        if (result < 0) {
+            if (error_status) {
+                *error_status = FLB_OTEL_LOGS_ERR_EMPTY_PAYLOAD;
+            }
+            result = 0;
+            continue;
+        }
+        obj = &scope_logs->ptr[index].via.map.ptr[result].val;
+        if (obj->type == MSGPACK_OBJECT_ARRAY && obj->via.array.size == 0) {
+            result = 0;
+            continue;
+        }
+
         /*
          * we use a temporary encoder to hold the group information, if no record entries are added
          * we will discard it.
@@ -640,6 +658,7 @@ static int process_json_payload_resource_logs_entry (struct flb_log_event_encode
             }
             return -FLB_OTEL_LOGS_ERR_ENCODER_FAILURE;
         }
+        tmp_encoder->output_limit = encoder->output_limit - encoder->buffer.size;
         flb_log_event_encoder_group_init(tmp_encoder);
 
         /* pack internal schema */
@@ -794,7 +813,14 @@ static int process_json_payload_resource_logs_entry (struct flb_log_event_encode
             /* close scope map */
             flb_log_event_encoder_commit_map(tmp_encoder, FLB_LOG_EVENT_BODY);
         }
-        flb_log_event_encoder_group_header_end(tmp_encoder);
+        ret = flb_log_event_encoder_group_header_end(tmp_encoder);
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            if (error_status) {
+                *error_status = FLB_OTEL_LOGS_ERR_ENCODER_FAILURE;
+            }
+            flb_log_event_encoder_destroy(tmp_encoder);
+            return -FLB_OTEL_LOGS_ERR_ENCODER_FAILURE;
+        }
 
         /* before processing the scope logs, grab the number of bytes written */
         size_before = tmp_encoder->buffer.size;
@@ -817,13 +843,26 @@ static int process_json_payload_resource_logs_entry (struct flb_log_event_encode
          * the main encoder
          */
         if (size_after > size_before) {
-            flb_log_event_encoder_group_end(tmp_encoder);
+            ret = flb_log_event_encoder_group_end(tmp_encoder);
+            if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+                if (error_status) {
+                    *error_status = FLB_OTEL_LOGS_ERR_ENCODER_FAILURE;
+                }
+                flb_log_event_encoder_destroy(tmp_encoder);
+                return -FLB_OTEL_LOGS_ERR_ENCODER_FAILURE;
+            }
 
             /* Append the temporary encoder output to the main encoder */
-            msgpack_sbuffer_write(&encoder->buffer,
-                                  tmp_encoder->output_buffer,
-                                  tmp_encoder->output_length);
-
+            ret = msgpack_pack_str_body(&encoder->packer,
+                                        tmp_encoder->output_buffer,
+                                        tmp_encoder->output_length);
+            if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+                if (error_status) {
+                    *error_status = FLB_OTEL_LOGS_ERR_ENCODER_FAILURE;
+                }
+                flb_log_event_encoder_destroy(tmp_encoder);
+                return -FLB_OTEL_LOGS_ERR_ENCODER_FAILURE;
+            }
             encoder->output_buffer = encoder->buffer.data;
             encoder->output_length = encoder->buffer.size;
         }
@@ -932,6 +971,9 @@ int flb_opentelemetry_logs_json_to_msgpack(struct flb_log_event_encoder *encoder
     if (encoder == NULL) {
         return -1;
     }
+    if (encoder->buffer.size > encoder->output_limit) {
+        return -FLB_OTEL_LOGS_ERR_ENCODER_FAILURE;
+    }
 
     /* Convert JSON to messagepack */
     result = flb_pack_json(body, len, &msgpack_body, &msgpack_body_length,
@@ -947,6 +989,7 @@ int flb_opentelemetry_logs_json_to_msgpack(struct flb_log_event_encoder *encoder
         flb_free(msgpack_body);
         return -1;
     }
+    local_log_encoder.output_limit = encoder->output_limit - encoder->buffer.size;
 
     offset = 0;
     msgpack_unpacked_init(&unpacked_root);
@@ -983,9 +1026,9 @@ int flb_opentelemetry_logs_json_to_msgpack(struct flb_log_event_encoder *encoder
 
     /* copy local buffer into caller encoder buffer */
     if (local_log_encoder.output_length > 0) {
-        msgpack_sbuffer_write(&encoder->buffer,
-                            local_log_encoder.output_buffer,
-                            local_log_encoder.output_length);
+        result = msgpack_pack_str_body(&encoder->packer,
+                                       local_log_encoder.output_buffer,
+                                       local_log_encoder.output_length);
         encoder->output_buffer = encoder->buffer.data;
         encoder->output_length = encoder->buffer.size;
     }
