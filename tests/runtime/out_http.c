@@ -18,9 +18,19 @@
  *  limitations under the License.
  */
 
+#include <stdlib.h>
+#include <string.h>
+#ifndef _WIN32
+#include <pthread.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <unistd.h>
+#endif
+
 #include <fluent-bit.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_network.h>
 #include <float.h>
 #include <math.h>
 #include <msgpack.h>
@@ -1201,6 +1211,276 @@ void flb_test_in_http()
     test_ctx_destroy(ctx);
 }
 
+#ifndef _WIN32
+struct patch_method_mock_server {
+    flb_sockfd_t listen_fd;
+    int port;
+    int stop;
+    pthread_t thread;
+    pthread_mutex_t lock;
+    char request_method[16];
+};
+
+static int patch_method_mock_server_stopping(struct patch_method_mock_server *server)
+{
+    int stop;
+
+    pthread_mutex_lock(&server->lock);
+    stop = server->stop;
+    pthread_mutex_unlock(&server->lock);
+
+    return stop;
+}
+
+static void patch_method_mock_server_set_method(struct patch_method_mock_server *server,
+                                                const char *method)
+{
+    pthread_mutex_lock(&server->lock);
+    strncpy(server->request_method, method,
+            sizeof(server->request_method) - 1);
+    pthread_mutex_unlock(&server->lock);
+}
+
+static void patch_method_mock_server_get_method(struct patch_method_mock_server *server,
+                                                char *out, size_t size)
+{
+    pthread_mutex_lock(&server->lock);
+    strncpy(out, server->request_method, size - 1);
+    out[size - 1] = '\0';
+    pthread_mutex_unlock(&server->lock);
+}
+
+static void *patch_method_mock_server_thread(void *data)
+{
+    struct patch_method_mock_server *server;
+    flb_sockfd_t conn_fd;
+    ssize_t bytes;
+    char request[4096];
+    const char response[] =
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Length: 0\r\n"
+        "Connection: close\r\n"
+        "\r\n";
+
+    server = data;
+
+    while (!patch_method_mock_server_stopping(server)) {
+        conn_fd = accept(server->listen_fd, NULL, NULL);
+        if (patch_method_mock_server_stopping(server)) {
+            if (conn_fd >= 0) {
+                flb_socket_close(conn_fd);
+            }
+            break;
+        }
+        if (conn_fd < 0) {
+            flb_time_msleep(10);
+            continue;
+        }
+
+        bytes = recv(conn_fd, request, sizeof(request) - 1, 0);
+        if (bytes > 0) {
+            request[bytes] = '\0';
+            if (strncmp(request, "PATCH ", 6) == 0) {
+                patch_method_mock_server_set_method(server, "PATCH");
+            }
+            else if (strncmp(request, "POST ", 5) == 0) {
+                patch_method_mock_server_set_method(server, "POST");
+            }
+            else if (strncmp(request, "PUT ", 4) == 0) {
+                patch_method_mock_server_set_method(server, "PUT");
+            }
+        }
+
+        send(conn_fd, response, strlen(response), 0);
+        flb_socket_close(conn_fd);
+        break;
+    }
+
+    return NULL;
+}
+
+static int patch_method_mock_server_start(struct patch_method_mock_server *server)
+{
+    int on = 1;
+    struct sockaddr_in addr;
+    socklen_t len;
+
+    memset(server, 0, sizeof(struct patch_method_mock_server));
+    if (pthread_mutex_init(&server->lock, NULL) != 0) {
+        server->listen_fd = -1;
+        return -1;
+    }
+
+    server->listen_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (server->listen_fd < 0) {
+        pthread_mutex_destroy(&server->lock);
+        return -1;
+    }
+
+    setsockopt(server->listen_fd, SOL_SOCKET, SO_REUSEADDR, (const char *) &on,
+               sizeof(on));
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = 0;
+
+    if (bind(server->listen_fd, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
+        flb_socket_close(server->listen_fd);
+        server->listen_fd = -1;
+        pthread_mutex_destroy(&server->lock);
+        return -1;
+    }
+
+    len = sizeof(addr);
+    if (getsockname(server->listen_fd, (struct sockaddr *) &addr, &len) < 0) {
+        flb_socket_close(server->listen_fd);
+        server->listen_fd = -1;
+        pthread_mutex_destroy(&server->lock);
+        return -1;
+    }
+
+    server->port = ntohs(addr.sin_port);
+
+    if (listen(server->listen_fd, 4) < 0) {
+        flb_socket_close(server->listen_fd);
+        server->listen_fd = -1;
+        pthread_mutex_destroy(&server->lock);
+        return -1;
+    }
+
+    server->stop = 0;
+    if (pthread_create(&server->thread, NULL, patch_method_mock_server_thread,
+                       server) != 0) {
+        flb_socket_close(server->listen_fd);
+        server->listen_fd = -1;
+        pthread_mutex_destroy(&server->lock);
+        return -1;
+    }
+
+    return 0;
+}
+
+static void patch_method_mock_server_stop(struct patch_method_mock_server *server)
+{
+    if (server->listen_fd < 0) {
+        return;
+    }
+
+    flb_sockfd_t wake_fd;
+    struct sockaddr_in addr;
+
+    pthread_mutex_lock(&server->lock);
+    server->stop = 1;
+    pthread_mutex_unlock(&server->lock);
+
+    /* wake the listener in case no client ever connected */
+    wake_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (wake_fd >= 0) {
+        memset(&addr, 0, sizeof(addr));
+        addr.sin_family = AF_INET;
+        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        addr.sin_port = htons(server->port);
+        connect(wake_fd, (struct sockaddr *) &addr, sizeof(addr));
+        flb_socket_close(wake_fd);
+    }
+    shutdown(server->listen_fd, SHUT_RDWR);
+
+    pthread_join(server->thread, NULL);
+    flb_socket_close(server->listen_fd);
+    server->listen_fd = -1;
+    pthread_mutex_destroy(&server->lock);
+}
+
+void flb_test_http_method_patch(void)
+{
+    struct patch_method_mock_server server;
+    struct test_ctx *ctx;
+    int ret;
+    int attempts;
+    char port[16];
+    char method[16];
+    char *buf = "[1, {\"msg\":\"hello world\"}]";
+    size_t size = strlen(buf);
+
+    memset(&server, 0, sizeof(server));
+    server.listen_fd = -1;
+
+    if (!TEST_CHECK(patch_method_mock_server_start(&server) == 0)) {
+        TEST_MSG("failed to start mock HTTP server");
+        return;
+    }
+
+    snprintf(port, sizeof(port), "%d", server.port);
+
+    clear_output_num();
+
+    ctx = test_ctx_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        patch_method_mock_server_stop(&server);
+        TEST_MSG("test_ctx_create failed");
+        return;
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "format", "json",
+                         "host", "127.0.0.1",
+                         "port", port,
+                         "http_method", "patch",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_lib_push(ctx->flb, ctx->i_ffd, (char *) buf, size);
+    TEST_CHECK(ret >= 0);
+
+    for (attempts = 0; attempts < 50; attempts++) {
+        patch_method_mock_server_get_method(&server, method, sizeof(method));
+        if (method[0] != '\0') {
+            break;
+        }
+        flb_time_msleep(100);
+    }
+
+    patch_method_mock_server_stop(&server);
+
+    /* server thread is joined, safe to read */
+    if (!TEST_CHECK(strcmp(server.request_method, "PATCH") == 0)) {
+        TEST_MSG("expected PATCH request, got '%s'", server.request_method);
+    }
+
+    test_ctx_destroy(ctx);
+}
+
+void flb_test_http_method_invalid(void)
+{
+    struct test_ctx *ctx;
+    int ret;
+
+    ctx = test_ctx_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        return;
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "format", "json",
+                         "http_method", "DELETE",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret != 0);
+
+    flb_destroy(ctx->flb);
+    flb_free(ctx);
+}
+#endif
+
 /* Test list */
 TEST_LIST = {
     {"format_msgpack" , flb_test_format_msgpack},
@@ -1218,5 +1498,9 @@ TEST_LIST = {
     {"json_date_format_iso8601" , flb_test_json_date_format_iso8601},
     {"json_date_format_java_sql_timestamp" , flb_test_json_date_format_java_sql_timestamp},
     {"in_http", flb_test_in_http},
+#ifndef _WIN32
+    {"http_method_patch", flb_test_http_method_patch},
+    {"http_method_invalid", flb_test_http_method_invalid},
+#endif
     {NULL, NULL}
 };
