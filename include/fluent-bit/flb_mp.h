@@ -29,10 +29,11 @@
 int flb_mp_count(const void *data, size_t bytes);
 
 /*
- * Allocation-free in non-tracking builds; rejects unsupported/deep shapes.
- * 'typed' requires string map keys and CFL-compatible value types/depth.
+ * Count log records without building msgpack objects; allocation-free in
+ * non-tracking builds. Rejects unsupported or deep shapes, so callers can fall
+ * back to the event decoder.
  */
-int flb_mp_scan_log_records(const void *data, size_t bytes, int typed, int *records, int *plain);
+int flb_mp_scan_log_records(const void *data, size_t bytes, int *records);
 int flb_mp_count_log_records(const void *data, size_t bytes);
 int flb_mp_log_window_next(const void *data, size_t bytes, size_t offset,
                            size_t limit_bytes, int limit_records,
