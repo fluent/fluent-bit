@@ -466,14 +466,20 @@ static int write_repeated(const ProtobufCFieldDescriptor *field, struct cfl_vari
                 return -1;
             }
 
-            entry->key = flb_strdup(pair->key);
-            entry->value = (void *) fts_proto_build(
-                                &opentelemetry__proto__common__v1__any_value__descriptor,
-                                pair->val, budget, depth + 1);
+            /*
+             * protobuf-c releases the message with the system allocator, so
+             * the key is copied with malloc() like every other string.
+             */
+            entry->key = malloc(cfl_sds_len(pair->key) + 1);
             if (!entry->key) {
                 flb_errno();
                 return -1;
             }
+            memcpy(entry->key, pair->key, cfl_sds_len(pair->key) + 1);
+
+            entry->value = (void *) fts_proto_build(
+                                &opentelemetry__proto__common__v1__any_value__descriptor,
+                                pair->val, budget, depth + 1);
 
             if (!entry->value) {
                 return -1;
