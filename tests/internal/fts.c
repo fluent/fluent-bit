@@ -249,7 +249,8 @@ static void run_policy(const char *code, int grouped, const char *error_mode,
                 }
             }
         }
-        TEST_CHECK(depth == 0);
+        /* a group left open by the input stays open for the next append */
+        TEST_CHECK(depth == (grouped == 2 ? 1 : 0));
         flb_log_event_decoder_destroy(&decoder);
     }
     TEST_CHECK(records == expected_records);
