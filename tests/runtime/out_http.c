@@ -389,10 +389,13 @@ void flb_test_format_json()
     int ret;
     int num;
 
-    char *buf1 = "[1, {\"msg\":\"hello world\"}]";
+    /*
+     * Both records in one push: in_lib appends them together, so a flush
+     * cannot split them across formatter calls.
+     */
+    char *buf1 = "[1, {\"msg\":\"hello world\"}]"
+                 "[2, {\"msg\":\"hello world\"}]";
     size_t size1 = strlen(buf1);
-    char *buf2 = "[2, {\"msg\":\"hello world\"}]";
-    size_t size2 = strlen(buf2);
 
     char *expected_strs[] = {"[{\"date\":1.0,\"msg\":\"hello world\"},{\"date\":2.0,\"msg\":\"hello world\"}]"};
     struct str_list expected = {
@@ -426,8 +429,6 @@ void flb_test_format_json()
     /* Ingest data sample */
     ret = flb_lib_push(ctx->flb, ctx->i_ffd, (char *) buf1, size1);
     TEST_CHECK(ret >= 0);
-    ret = flb_lib_push(ctx->flb, ctx->i_ffd, (char *) buf2, size2);
-    TEST_CHECK(ret >= 0);
 
     /* waiting to flush */
     flb_time_msleep(500);
@@ -446,10 +447,13 @@ void flb_test_format_json_stream()
     int ret;
     int num;
 
-    char *buf1 = "[1, {\"msg\":\"hello world\"}]";
+    /*
+     * Both records in one push: in_lib appends them together, so a flush
+     * cannot split them across formatter calls.
+     */
+    char *buf1 = "[1, {\"msg\":\"hello world\"}]"
+                 "[2, {\"msg\":\"hello world\"}]";
     size_t size1 = strlen(buf1);
-    char *buf2 = "[2, {\"msg\":\"hello world\"}]";
-    size_t size2 = strlen(buf2);
 
     char *expected_strs[] = {"{\"date\":1.0,\"msg\":\"hello world\"}{\"date\":2.0,\"msg\":\"hello world\"}"};
     struct str_list expected = {
@@ -483,8 +487,6 @@ void flb_test_format_json_stream()
     /* Ingest data sample */
     ret = flb_lib_push(ctx->flb, ctx->i_ffd, (char *) buf1, size1);
     TEST_CHECK(ret >= 0);
-    ret = flb_lib_push(ctx->flb, ctx->i_ffd, (char *) buf2, size2);
-    TEST_CHECK(ret >= 0);
 
     /* waiting to flush */
     flb_time_msleep(500);
@@ -503,10 +505,13 @@ void flb_test_format_json_lines()
     int ret;
     int num;
 
-    char *buf1 = "[1, {\"msg\":\"hello world\"}]";
+    /*
+     * Both records in one push: in_lib appends them together, so a flush
+     * cannot split them across formatter calls.
+     */
+    char *buf1 = "[1, {\"msg\":\"hello world\"}]"
+                 "[2, {\"msg\":\"hello world\"}]";
     size_t size1 = strlen(buf1);
-    char *buf2 = "[2, {\"msg\":\"hello world\"}]";
-    size_t size2 = strlen(buf2);
 
     char *expected_strs[] = {"{\"date\":1.0,\"msg\":\"hello world\"}\n{\"date\":2.0,\"msg\":\"hello world\"}"};
     struct str_list expected = {
@@ -539,8 +544,6 @@ void flb_test_format_json_lines()
 
     /* Ingest data sample */
     ret = flb_lib_push(ctx->flb, ctx->i_ffd, (char *) buf1, size1);
-    TEST_CHECK(ret >= 0);
-    ret = flb_lib_push(ctx->flb, ctx->i_ffd, (char *) buf2, size2);
     TEST_CHECK(ret >= 0);
 
     /* waiting to flush */
