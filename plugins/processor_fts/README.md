@@ -84,6 +84,12 @@ processors, are processed in batches of about 64 KiB or 1024 records, so
 decoded records never hold more than one batch in memory. Groups, such as one
 OpenTelemetry resource and scope, are never split across batches.
 
+A group can also span appends, for example when its start and end markers
+arrive in separate forward messages. A group still open at the end of a batch
+stays open for the records that follow. Records that arrive before the end
+marker of a group opened earlier are processed without a context, keep their
+place in that group, and cannot set one.
+
 For privacy policies such as redaction, keep the default `error_mode: drop`.
 With `keep`, an item whose policy fails is forwarded unmodified.
 
