@@ -1162,6 +1162,63 @@ static int serializes_after_callback(struct flb_processor_instance *ins)
     return unit->unit_type == FLB_PROCESSOR_UNIT_FILTER;
 }
 
+/*
+ * Open a group with the source context of a group that continues in the next
+ * append, charging it to the output limit. OTLP transport IDs are fresh, so
+ * the group never merges with an earlier group of this chunk.
+ */
+static int reopen_source_group(struct fts_runtime *ctx, struct flb_mp_chunk_cobj *out,
+                               struct cfl_object *source_attrs,
+                               struct cfl_object *source_meta,
+                               int resource_id, int scope_id, size_t *output_bytes)
+{
+    size_t cost;
+    struct cfl_object attrs = {0};
+    struct cfl_object meta = {0};
+    struct cfl_variant *id_value;
+    struct flb_mp_chunk_record *group = NULL;
+
+    cost = 32;
+    if (*output_bytes > ctx->output_limit || ctx->output_limit - *output_bytes < cost) {
+        return -1;
+    }
+    *output_bytes += cost;
+
+    attrs.type = CFL_OBJECT_KVLIST;
+    attrs.variant = source_attrs->variant;
+    meta.type = CFL_OBJECT_KVLIST;
+    meta.variant = source_meta ? source_meta->variant : NULL;
+
+    cost = wire_value_size(attrs.variant, 0);
+    if (cost > ctx->output_limit || *output_bytes > ctx->output_limit - cost) {
+        return -1;
+    }
+    *output_bytes += cost;
+
+    cost = wire_value_size(meta.variant, 0);
+    if (cost > ctx->output_limit || *output_bytes > ctx->output_limit - cost) {
+        return -1;
+    }
+    *output_bytes += cost;
+
+    if (append_marker(out, FLB_LOG_EVENT_GROUP_START, &attrs, &meta, &group) != 0) {
+        return -1;
+    }
+
+    if (has_otel_context(group->cobj_metadata)) {
+        id_value = cfl_variant_create_from_int64(resource_id);
+        if (set_transport_id(group->cobj_metadata->variant, "resource_id", id_value) != 0) {
+            return -1;
+        }
+        id_value = cfl_variant_create_from_int64(scope_id);
+        if (set_transport_id(group->cobj_metadata->variant, "scope_id", id_value) != 0) {
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
 int fts_process_logs(struct flb_processor_instance *ins, void *data,
                      const char *tag, int tag_len)
 {
@@ -1202,6 +1259,8 @@ int fts_process_logs(struct flb_processor_instance *ins, void *data,
     int base;
     int emitted_id = 0;
     int errors = 0;
+    int source_open = FLB_FALSE;
+    struct flb_mp_chunk_record *continuation_end = NULL;
     size_t undo_mark;
     struct cfl_variant *id_value;
     size_t output_bytes = 0;
@@ -1235,6 +1294,25 @@ int fts_process_logs(struct flb_processor_instance *ins, void *data,
     cfl_list_init(&out->records);
     out->record_pool_enabled = FLB_TRUE;
 
+    /*
+     * Records before an end marker that precedes any start belong to a group
+     * opened by a previous append: they keep no context and the end marker is
+     * forwarded to close that group.
+     */
+    cfl_list_foreach(head, &chunk->records) {
+        record = cfl_list_entry(head, struct flb_mp_chunk_record, _head);
+        if (flb_log_event_decoder_get_record_type(&record->event, &type) != 0) {
+            goto failure;
+        }
+        if (type == FLB_LOG_EVENT_GROUP_END) {
+            continuation_end = record;
+            break;
+        }
+        if (type == FLB_LOG_EVENT_GROUP_START) {
+            break;
+        }
+    }
+
     cfl_list_foreach(head, &chunk->records) {
         record = cfl_list_entry(head, struct flb_mp_chunk_record, _head);
 
@@ -1247,14 +1325,28 @@ int fts_process_logs(struct flb_processor_instance *ins, void *data,
             /* A nested start establishes a new flat transport context. */
             source_attrs = record->cobj_record;
             source_meta = record->cobj_metadata;
+            source_open = FLB_TRUE;
             group_number++;
             continue;
         }
 
         if (type == FLB_LOG_EVENT_GROUP_END) {
+            if (record == continuation_end) {
+                if (output_bytes > ctx->output_limit || ctx->output_limit - output_bytes < 32) {
+                    goto failure;
+                }
+                output_bytes += 32;
+                if (append_marker(out, FLB_LOG_EVENT_GROUP_END, NULL, NULL, NULL) != 0) {
+                    goto failure;
+                }
+                continuation_end = NULL;
+                continue;
+            }
+
             /* Stray ends carry no record and do not invalidate healthy siblings. */
             source_attrs = NULL;
             source_meta = NULL;
+            source_open = FLB_FALSE;
             continue;
         }
 
@@ -1320,6 +1412,26 @@ int fts_process_logs(struct flb_processor_instance *ins, void *data,
                 if (context_meta) {
                     meta.variant = context_meta->owned;
                 }
+            }
+
+            /* a group context would split the group continued from a previous append */
+            if (continuation_end && attrs.variant) {
+                fts_undo_rollback(ctx, undo_mark);
+                errors++;
+                if (errors <= 5) {
+                    flb_plg_error(ins, "log policy failed: records continuing a group "
+                                  "from a previous chunk cannot set a context; "
+                                  "edits rolled back");
+                }
+                if (strcmp(ctx->error_mode, "drop") == 0) {
+                    lua_settop(l, base);
+                    continue;
+                }
+                ret = -1;
+                body = NULL;
+                metadata = NULL;
+                attrs.variant = NULL;
+                meta.variant = NULL;
             }
         }
 
@@ -1494,8 +1606,33 @@ int fts_process_logs(struct flb_processor_instance *ins, void *data,
         lua_settop(l, base);
     }
 
-    /* Close an unterminated transport group after its last retained record. */
-    if (group && append_marker(out, FLB_LOG_EVENT_GROUP_END, NULL, NULL, NULL) != 0) {
+    /*
+     * A source group still open at the end continues in the next append: keep
+     * the output group open when it carries the source context, otherwise close
+     * it and reopen the source context for the records that follow.
+     */
+    if (source_open && source_attrs && group &&
+        (emitted_group_number != group_number ||
+         !values_equal(group->cobj_record->variant, source_attrs->variant) ||
+         !(has_otel_context(group->cobj_metadata) ?
+           context_metadata_equal(group->cobj_metadata->variant, source_meta->variant) :
+           values_equal(group->cobj_metadata->variant, source_meta->variant)))) {
+        if (append_marker(out, FLB_LOG_EVENT_GROUP_END, NULL, NULL, NULL) != 0) {
+            goto failure;
+        }
+        group = NULL;
+    }
+
+    if (source_open && source_attrs) {
+        if (!group) {
+            if (reopen_source_group(ctx, out, source_attrs, source_meta, resource_id,
+                                    emitted_id, &output_bytes) != 0) {
+                goto failure;
+            }
+        }
+    }
+    else if (group && append_marker(out, FLB_LOG_EVENT_GROUP_END, NULL, NULL, NULL) != 0) {
+        /* Close an unterminated transport group after its last retained record. */
         goto failure;
     }
 
