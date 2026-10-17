@@ -167,5 +167,5 @@ struct flb_processor_plugin processor_content_modifier_plugin = {
     .cb_process_traces  = cb_process_traces,
     .cb_exit            = cb_exit,
     .config_map         = config_map,
-    .flags              = 0
+    .flags              = FLB_PROCESSOR_FLAG_LOG_WINDOWS
 };

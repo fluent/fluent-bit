@@ -1,0 +1,15 @@
+/* Generated from the processor_fts Lua helper sources. Do not edit. */
+
+#ifndef FLB_PROCESSOR_FTS_HELPERS_H
+#define FLB_PROCESSOR_FTS_HELPERS_H
+
+static const char fts_value_helpers[] =
+"@FTS_VALUE_HELPERS@";
+
+static const char fts_log_helpers[] =
+"@FTS_LOG_HELPERS@";
+
+static const char fts_telemetry_helpers[] =
+"@FTS_TELEMETRY_HELPERS@";
+
+#endif

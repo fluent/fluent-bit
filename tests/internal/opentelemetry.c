@@ -44,6 +44,21 @@
 #include <fluent-otel-proto/fluent-otel.h>
 #include <msgpack.h>
 #include <limits.h>
+#include <stddef.h>
+#include <stdio.h>
+#ifdef _WIN32
+#include <io.h>
+#define test_dup(fd)          _dup(fd)
+#define test_dup2(fd, target) _dup2(fd, target)
+#define test_close(fd)        _close(fd)
+#define test_fileno(stream)   _fileno(stream)
+#else
+#include <unistd.h>
+#define test_dup(fd)          dup(fd)
+#define test_dup2(fd, target) dup2(fd, target)
+#define test_close(fd)        close(fd)
+#define test_fileno(stream)   fileno(stream)
+#endif
 #include <string.h>
 #include <fluent-bit/flb_json.h>
 
@@ -1353,6 +1368,15 @@ static void run_metrics_case(msgpack_object *case_obj, const char *case_name)
                     exp_histogram = cfl_list_entry(context->exp_histograms.next,
                                                    struct cmt_exp_histogram, _head);
                     metric = &exp_histogram->map->metric;
+                    /* JSON decoding preserves previous windows; check the latest
+                     * point for cases that supplied several unlabeled observations. */
+                    if (exp_histogram->map->label_count == 0 &&
+                        !cfl_list_is_empty(&exp_histogram->map->metrics)) {
+                        metric = cfl_list_entry(exp_histogram->map->metrics.prev,
+                                               struct cmt_metric, _head);
+                        TEST_CHECK(cmt_metric_get_timestamp(metric) >=
+                                   cmt_metric_get_timestamp(&exp_histogram->map->metric));
+                    }
                     test_check_metric_description_unit(exp_histogram_obj,
                                                        &exp_histogram->opts,
                                                        exp_histogram->map);
@@ -3532,8 +3556,468 @@ void test_opentelemetry_metrics_cutoff()
     cmt_destroy(cmt);
 }
 
+static void *test_find_metric_family(struct cfl_list *families, size_t head_offset,
+                                     size_t opts_offset, const char *name)
+{
+    struct cfl_list *head;
+    struct cmt_opts *opts;
+    char            *family;
+
+    cfl_list_foreach(head, families) {
+        family = ((char *) head) - head_offset;
+        opts = (struct cmt_opts *) (family + opts_offset);
+        if (opts->fqname != NULL && strcmp(opts->fqname, name) == 0) {
+            return family;
+        }
+    }
+
+    return NULL;
+}
+
+#define TEST_FIND_FAMILY(list, type, name) \
+    ((type *) test_find_metric_family(list, offsetof(type, _head), offsetof(type, opts), name))
+
+static struct cmt_metric *test_single_dynamic_sample(struct cmt_map *map)
+{
+    if (map == NULL || map->metric_static_set || cfl_list_size(&map->metrics) != 1) {
+        return NULL;
+    }
+
+    return cfl_list_entry_first(&map->metrics, struct cmt_metric, _head);
+}
+
+static size_t test_kvlist_key_count(struct cfl_kvlist *list, const char *key)
+{
+    size_t             count;
+    struct cfl_list   *head;
+    struct cfl_kvpair *pair;
+
+    count = 0;
+    cfl_list_foreach(head, &list->list) {
+        pair = cfl_list_entry(head, struct cfl_kvpair, _head);
+        if (strcmp(pair->key, key) == 0) {
+            count++;
+        }
+    }
+
+    return count;
+}
+
+/* the typed OTLP metadata of a merged sample must describe the last point */
+static void test_check_last_point_metadata(struct cmt_metric *sample, uint64_t start_time)
+{
+    struct cfl_variant *value;
+
+    TEST_CHECK(sample->otlp_metadata != NULL);
+    if (sample->otlp_metadata == NULL) {
+        return;
+    }
+
+    TEST_CHECK(test_kvlist_key_count(sample->otlp_metadata, "attributes") == 1);
+    TEST_CHECK(test_kvlist_key_count(sample->otlp_metadata, "start_time_unix_nano") == 1);
+
+    value = cfl_kvlist_fetch(sample->otlp_metadata, "start_time_unix_nano");
+    TEST_CHECK(value != NULL &&
+               (value->type == CFL_VARIANT_UINT || value->type == CFL_VARIANT_INT));
+    if (value != NULL && value->type == CFL_VARIANT_UINT) {
+        TEST_CHECK(value->data.as_uint64 == start_time);
+    }
+}
+
+/* Repeated series inside one OTLP JSON request update one sample, last wins. */
+void test_opentelemetry_metrics_json_merges_repeated_series()
+{
+    int                       ret;
+    int                       result;
+    char                     *payload;
+    char                     *msgpack_buffer;
+    size_t                    msgpack_size;
+    flb_sds_t                 otlp_json;
+    struct cfl_list           contexts;
+    struct cmt               *context;
+    struct cmt_gauge         *gauge;
+    struct cmt_counter       *counter;
+    struct cmt_histogram     *histogram;
+    struct cmt_summary       *summary;
+    struct cmt_exp_histogram *exp_histogram;
+    struct cmt_metric        *sample;
+
+    payload =
+        "{\"resourceMetrics\":[{\"resource\":{},\"scopeMetrics\":[{\"scope\":{\"name\":\"s\"},"
+        "\"metrics\":["
+        "{\"name\":\"g\",\"gauge\":{\"dataPoints\":["
+        "{\"attributes\":[{\"key\":\"host\",\"value\":{\"stringValue\":\"h1\"}}],"
+        "\"startTimeUnixNano\":\"1\",\"timeUnixNano\":\"1700000001000000000\",\"asDouble\":1.0},"
+        "{\"attributes\":[{\"key\":\"host\",\"value\":{\"stringValue\":\"h1\"}}],"
+        "\"startTimeUnixNano\":\"2\",\"timeUnixNano\":\"1700000002000000000\",\"asDouble\":2.0}"
+        "]}},"
+        "{\"name\":\"u\",\"gauge\":{\"dataPoints\":["
+        "{\"startTimeUnixNano\":\"1\",\"timeUnixNano\":\"1700000001000000000\",\"asDouble\":1.0},"
+        "{\"startTimeUnixNano\":\"2\",\"timeUnixNano\":\"1700000002000000000\",\"asDouble\":2.0}"
+        "]}},"
+        "{\"name\":\"c\",\"sum\":{\"aggregationTemporality\":2,\"isMonotonic\":true,"
+        "\"dataPoints\":["
+        "{\"attributes\":[{\"key\":\"host\",\"value\":{\"stringValue\":\"h1\"}}],"
+        "\"startTimeUnixNano\":\"1\",\"timeUnixNano\":\"1700000001000000000\",\"asInt\":\"10\"},"
+        "{\"attributes\":[{\"key\":\"host\",\"value\":{\"stringValue\":\"h1\"}}],"
+        "\"startTimeUnixNano\":\"2\",\"timeUnixNano\":\"1700000002000000000\",\"asInt\":\"20\"}"
+        "]}},"
+        "{\"name\":\"h\",\"histogram\":{\"aggregationTemporality\":2,\"dataPoints\":["
+        "{\"attributes\":[{\"key\":\"host\",\"value\":{\"stringValue\":\"h1\"}}],"
+        "\"startTimeUnixNano\":\"1\",\"timeUnixNano\":\"1700000001000000000\","
+        "\"count\":\"3\",\"sum\":3.0,\"bucketCounts\":[\"1\",\"2\"],\"explicitBounds\":[1.0]},"
+        "{\"attributes\":[{\"key\":\"host\",\"value\":{\"stringValue\":\"h1\"}}],"
+        "\"startTimeUnixNano\":\"2\",\"timeUnixNano\":\"1700000002000000000\","
+        "\"count\":\"7\",\"sum\":9.0,\"bucketCounts\":[\"3\",\"4\"],\"explicitBounds\":[1.0]}"
+        "]}},"
+        "{\"name\":\"sm\",\"summary\":{\"dataPoints\":["
+        "{\"attributes\":[{\"key\":\"host\",\"value\":{\"stringValue\":\"h1\"}}],"
+        "\"startTimeUnixNano\":\"1\",\"timeUnixNano\":\"1700000001000000000\","
+        "\"count\":\"2\",\"sum\":4.0,"
+        "\"quantileValues\":[{\"quantile\":0.5,\"value\":1.0}]},"
+        "{\"attributes\":[{\"key\":\"host\",\"value\":{\"stringValue\":\"h1\"}}],"
+        "\"startTimeUnixNano\":\"2\",\"timeUnixNano\":\"1700000002000000000\","
+        "\"count\":\"5\",\"sum\":8.0,"
+        "\"quantileValues\":[{\"quantile\":0.5,\"value\":6.0}]}"
+        "]}},"
+        "{\"name\":\"e\",\"exponentialHistogram\":{\"aggregationTemporality\":2,"
+        "\"dataPoints\":["
+        "{\"attributes\":[{\"key\":\"host\",\"value\":{\"stringValue\":\"h1\"}}],"
+        "\"startTimeUnixNano\":\"1\",\"timeUnixNano\":\"1700000001000000000\","
+        "\"count\":\"1\",\"sum\":1.0,\"scale\":0,\"zeroCount\":\"0\","
+        "\"positive\":{\"offset\":0,\"bucketCounts\":[\"1\"]}},"
+        "{\"attributes\":[{\"key\":\"host\",\"value\":{\"stringValue\":\"h1\"}}],"
+        "\"startTimeUnixNano\":\"2\",\"timeUnixNano\":\"1700000002000000000\","
+        "\"count\":\"4\",\"sum\":6.0,\"scale\":0,\"zeroCount\":\"1\","
+        "\"positive\":{\"offset\":1,\"bucketCounts\":[\"1\",\"2\"]}}"
+        "]}}"
+        "]}]}]}";
+
+    cfl_list_init(&contexts);
+
+    ret = flb_opentelemetry_metrics_json_to_cmt(&contexts, payload, strlen(payload));
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(cfl_list_size(&contexts) == 1);
+    if (ret != 0 || cfl_list_size(&contexts) != 1) {
+        destroy_metrics_context_list(&contexts);
+        return;
+    }
+
+    context = cfl_list_entry_first(&contexts, struct cmt, _head);
+
+    /* gauge with labels */
+    gauge = TEST_FIND_FAMILY(&context->gauges, struct cmt_gauge, "g");
+    TEST_CHECK(gauge != NULL);
+    sample = gauge != NULL ? test_single_dynamic_sample(gauge->map) : NULL;
+    TEST_CHECK(sample != NULL);
+    if (sample != NULL) {
+        TEST_CHECK(cmt_metric_get_value(sample) == 2.0);
+        test_check_last_point_metadata(sample, 2);
+    }
+
+    /* gauge without labels: both points land on the static sample */
+    gauge = TEST_FIND_FAMILY(&context->gauges, struct cmt_gauge, "u");
+    TEST_CHECK(gauge != NULL);
+    if (gauge != NULL) {
+        TEST_CHECK(gauge->map->metric_static_set == CMT_TRUE);
+        TEST_CHECK(cfl_list_size(&gauge->map->metrics) == 0);
+        TEST_CHECK(cmt_metric_get_value(&gauge->map->metric) == 2.0);
+        test_check_last_point_metadata(&gauge->map->metric, 2);
+    }
+
+    /* sum */
+    counter = TEST_FIND_FAMILY(&context->counters, struct cmt_counter, "c");
+    TEST_CHECK(counter != NULL);
+    sample = counter != NULL ? test_single_dynamic_sample(counter->map) : NULL;
+    TEST_CHECK(sample != NULL);
+    if (sample != NULL) {
+        TEST_CHECK(cmt_metric_get_value(sample) == 20.0);
+        test_check_last_point_metadata(sample, 2);
+    }
+
+    /* histogram */
+    histogram = TEST_FIND_FAMILY(&context->histograms, struct cmt_histogram, "h");
+    TEST_CHECK(histogram != NULL);
+    sample = histogram != NULL ? test_single_dynamic_sample(histogram->map) : NULL;
+    TEST_CHECK(sample != NULL);
+    if (sample != NULL) {
+        TEST_CHECK(cmt_metric_hist_get_count_value(sample) == 7);
+        TEST_CHECK(cmt_metric_hist_get_sum_value(sample) == 9.0);
+        TEST_CHECK(cmt_metric_hist_get_bucket_count(sample, 0) == 3);
+        TEST_CHECK(cmt_metric_hist_get_bucket_count(sample, 1) == 4);
+        test_check_last_point_metadata(sample, 2);
+    }
+
+    /* summary */
+    summary = TEST_FIND_FAMILY(&context->summaries, struct cmt_summary, "sm");
+    TEST_CHECK(summary != NULL);
+    sample = summary != NULL ? test_single_dynamic_sample(summary->map) : NULL;
+    TEST_CHECK(sample != NULL);
+    if (sample != NULL) {
+        TEST_CHECK(cmt_summary_get_count_value(sample) == 5);
+        TEST_CHECK(cmt_summary_get_sum_value(sample) == 8.0);
+        TEST_CHECK(cmt_summary_quantile_get_value(sample, 0) == 6.0);
+        test_check_last_point_metadata(sample, 2);
+    }
+
+    /* exponential histogram */
+    exp_histogram = TEST_FIND_FAMILY(&context->exp_histograms, struct cmt_exp_histogram, "e");
+    TEST_CHECK(exp_histogram != NULL);
+    sample = exp_histogram != NULL ? test_single_dynamic_sample(exp_histogram->map) : NULL;
+    TEST_CHECK(sample != NULL);
+    if (sample != NULL) {
+        TEST_CHECK(sample->exp_hist_count == 4);
+        TEST_CHECK(sample->exp_hist_zero_count == 1);
+        TEST_CHECK(sample->exp_hist_positive_offset == 1);
+        TEST_CHECK(sample->exp_hist_positive_count == 2);
+        if (sample->exp_hist_positive_count == 2) {
+            TEST_CHECK(sample->exp_hist_positive_buckets[1] == 2);
+        }
+        test_check_last_point_metadata(sample, 2);
+    }
+
+    /* the re-encoded payload carries a single data point per series */
+    ret = cmt_encode_msgpack_create(context, &msgpack_buffer, &msgpack_size);
+    TEST_CHECK(ret == 0);
+    if (ret == 0) {
+        otlp_json = flb_opentelemetry_metrics_msgpack_to_otlp_json(msgpack_buffer,
+                                                                   msgpack_size,
+                                                                   &result);
+        TEST_CHECK(otlp_json != NULL);
+        if (otlp_json != NULL) {
+            TEST_CHECK(strstr(otlp_json, "\"asInt\":\"20\"") != NULL);
+            TEST_CHECK(strstr(otlp_json, "\"asInt\":\"10\"") == NULL);
+            TEST_CHECK(strstr(otlp_json, "\"startTimeUnixNano\":\"1\"") == NULL);
+            flb_sds_destroy(otlp_json);
+        }
+        flb_free(msgpack_buffer);
+    }
+
+    destroy_metrics_context_list(&contexts);
+}
+
+static size_t test_count_substring(const char *haystack, const char *needle)
+{
+    size_t      count;
+    const char *cursor;
+
+    count = 0;
+    cursor = haystack;
+    while ((cursor = strstr(cursor, needle)) != NULL) {
+        count++;
+        cursor += strlen(needle);
+    }
+
+    return count;
+}
+
+/* A list with many invalid attributes is reported once, healthy ones are kept. */
+void test_json_invalid_attributes_warn_once()
+{
+    int                ret;
+    int                type;
+    int                saved_stderr;
+    int                index;
+    char              *buffer;
+    char               log_buffer[4096];
+    size_t             size;
+    size_t             offset;
+    size_t             log_size;
+    FILE              *capture;
+    flb_sds_t          json;
+    msgpack_unpacked   unpacked;
+    struct cfl_kvlist *attributes;
+
+    json = flb_sds_create("[");
+    TEST_ASSERT(json != NULL);
+    for (index = 0; index < 50; index++) {
+        flb_sds_printf(&json, "{\"key\":\"b%d\",\"value\":{\"bytesValue\":\"!!!\"}},", index);
+    }
+    flb_sds_cat_safe(&json, "{\"key\":\"ok\",\"value\":{\"stringValue\":\"kept\"}}]",
+                     sizeof("{\"key\":\"ok\",\"value\":{\"stringValue\":\"kept\"}}]") - 1);
+
+    ret = flb_pack_json(json, flb_sds_len(json), &buffer, &size, &type, NULL);
+    TEST_ASSERT(ret == 0);
+
+    offset = 0;
+    msgpack_unpacked_init(&unpacked);
+    TEST_ASSERT(msgpack_unpack_next(&unpacked, buffer, size, &offset));
+
+    attributes = cfl_kvlist_create();
+    TEST_ASSERT(attributes != NULL);
+
+    capture = tmpfile();
+    TEST_ASSERT(capture != NULL);
+
+    fflush(stderr);
+    saved_stderr = test_dup(test_fileno(stderr));
+    TEST_ASSERT(saved_stderr >= 0);
+    test_dup2(test_fileno(capture), test_fileno(stderr));
+
+    ret = flb_otel_utils_clone_kvlist_from_otlp_json_array(attributes, &unpacked.data);
+
+    fflush(stderr);
+    test_dup2(saved_stderr, test_fileno(stderr));
+    test_close(saved_stderr);
+
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(cfl_kvlist_count(attributes) == 1);
+    TEST_CHECK(cfl_kvlist_fetch(attributes, "ok") != NULL);
+
+    rewind(capture);
+    log_size = fread(log_buffer, 1, sizeof(log_buffer) - 1, capture);
+    log_buffer[log_size] = '\0';
+    fclose(capture);
+
+    TEST_CHECK(test_count_substring(log_buffer, "invalid OTLP JSON attribute") == 1);
+    TEST_CHECK(strstr(log_buffer, "ignoring 50 invalid") != NULL);
+    TEST_MSG("captured log: %s", log_buffer);
+
+    cfl_kvlist_destroy(attributes);
+    msgpack_unpacked_destroy(&unpacked);
+    flb_free(buffer);
+    flb_sds_destroy(json);
+}
+
+static int test_logs_json_to_otlp_json(char *payload, flb_sds_t *out)
+{
+    int                                       ret;
+    int                                       result;
+    struct flb_log_event_encoder              encoder;
+    struct flb_opentelemetry_otlp_logs_options options;
+
+    *out = NULL;
+
+    ret = flb_log_event_encoder_init(&encoder, FLB_LOG_EVENT_FORMAT_DEFAULT);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -1;
+    }
+
+    result = 0;
+    ret = flb_opentelemetry_logs_json_to_msgpack(&encoder, payload, strlen(payload),
+                                                 "log", &result);
+    if (ret != 0 || result != 0) {
+        flb_log_event_encoder_destroy(&encoder);
+        return -1;
+    }
+
+    memset(&options, 0, sizeof(options));
+    options.logs_require_otel_metadata = FLB_TRUE;
+    options.logs_body_key = "log";
+
+    *out = flb_opentelemetry_logs_to_otlp_json(encoder.output_buffer, encoder.output_length,
+                                               &options, &result);
+    flb_log_event_encoder_destroy(&encoder);
+
+    return *out != NULL ? 0 : -1;
+}
+
+/* OTLP JSON bytesValue is base64 decoded and round trips as bytesValue. */
+void test_opentelemetry_logs_json_bytes_value()
+{
+    int        ret;
+    char      *payload;
+    flb_sds_t  actual;
+
+    payload =
+        "{\"resourceLogs\":[{\"resource\":{\"attributes\":[{\"key\":\"rb\","
+        "\"value\":{\"bytesValue\":\"AAE=\"}}]},\"scopeLogs\":[{\"scope\":{\"name\":\"s\"},"
+        "\"logRecords\":[{\"timeUnixNano\":\"1700000001000000000\","
+        "\"body\":{\"bytesValue\":\"aGVsbG8=\"},"
+        "\"attributes\":[{\"key\":\"padded\",\"value\":{\"bytesValue\":\"AAH/\"}},"
+        "{\"key\":\"unpadded\",\"value\":{\"bytesValue\":\"aGVsbG8\"}},"
+        "{\"key\":\"urlsafe\",\"value\":{\"bytesValue\":\"-_8\"}},"
+        "{\"key\":\"empty\",\"value\":{\"bytesValue\":\"\"}}]}]}]}]}";
+
+    ret = test_logs_json_to_otlp_json(payload, &actual);
+    TEST_CHECK(ret == 0);
+    if (ret == 0) {
+        TEST_CHECK(strstr(actual, "\"body\":{\"bytesValue\":\"aGVsbG8=\"}") != NULL);
+        TEST_CHECK(strstr(actual, "{\"key\":\"rb\",\"value\":{\"bytesValue\":\"AAE=\"}}") != NULL);
+        TEST_CHECK(strstr(actual,
+                          "{\"key\":\"padded\",\"value\":{\"bytesValue\":\"AAH/\"}}") != NULL);
+        TEST_CHECK(strstr(actual, "{\"key\":\"unpadded\","
+                          "\"value\":{\"bytesValue\":\"aGVsbG8=\"}}") != NULL);
+        TEST_CHECK(strstr(actual,
+                          "{\"key\":\"urlsafe\",\"value\":{\"bytesValue\":\"+/8=\"}}") != NULL);
+        TEST_CHECK(strstr(actual, "stringValue") == NULL);
+        TEST_MSG("actual: %s", actual);
+        flb_sds_destroy(actual);
+    }
+
+    /* invalid base64 is rejected like other invalid values */
+    payload =
+        "{\"resourceLogs\":[{\"scopeLogs\":[{\"logRecords\":[{"
+        "\"timeUnixNano\":\"1700000001000000000\",\"body\":{\"bytesValue\":\"!!!\"}}]}]}]}";
+    ret = test_logs_json_to_otlp_json(payload, &actual);
+    TEST_CHECK(ret != 0);
+    if (actual != NULL) {
+        flb_sds_destroy(actual);
+    }
+
+    payload =
+        "{\"resourceLogs\":[{\"scopeLogs\":[{\"logRecords\":[{"
+        "\"timeUnixNano\":\"1700000001000000000\",\"body\":{\"stringValue\":\"x\"},"
+        "\"attributes\":[{\"key\":\"b\",\"value\":{\"bytesValue\":\"A\"}}]}]}]}]}";
+    ret = test_logs_json_to_otlp_json(payload, &actual);
+    TEST_CHECK(ret != 0);
+    if (actual != NULL) {
+        flb_sds_destroy(actual);
+    }
+}
+
 /* Test list */
+static void test_json_anyvalue_signed_bytes_and_invalid_attributes(void)
+{
+    const char *json = "[{\"key\":\"negative\",\"value\":{\"intValue\":\"-9223372036854775808\"}},"
+                       "{\"key\":\"positive\",\"value\":{\"intValue\":\"9223372036854775807\"}},"
+                       "{\"key\":\"bytes\",\"value\":{\"bytesValue\":\"AAH/\"}},"
+                       "{\"key\":\"overflow\",\"value\":{\"intValue\":\"18446744073709551615\"}},"
+                       "{\"key\":\"invalid\",\"value\":{\"boolValue\":\"wrong\"}},"
+                       "{\"key\":\"healthy\",\"value\":{\"stringValue\":\"kept\"}}]";
+    char *buffer;
+    size_t size;
+    size_t offset = 0;
+    int type;
+    msgpack_unpacked unpacked;
+    struct cfl_kvlist *attributes;
+    struct cfl_variant *value;
+    const unsigned char bytes[] = {0, 1, 255};
+
+    TEST_ASSERT(flb_pack_json(json, strlen(json), &buffer, &size, &type, NULL) == 0);
+    msgpack_unpacked_init(&unpacked);
+    TEST_ASSERT(msgpack_unpack_next(&unpacked, buffer, size, &offset));
+    attributes = cfl_kvlist_create();
+    TEST_ASSERT(attributes != NULL);
+    TEST_CHECK(flb_otel_utils_clone_kvlist_from_otlp_json_array(attributes, &unpacked.data) == 0);
+    value = cfl_kvlist_fetch(attributes, "negative");
+    TEST_CHECK(value != NULL && value->type == CFL_VARIANT_INT);
+    if (value != NULL && value->type == CFL_VARIANT_INT) {
+        TEST_CHECK(value->data.as_int64 == INT64_MIN);
+    }
+    value = cfl_kvlist_fetch(attributes, "positive");
+    TEST_CHECK(value != NULL && value->type == CFL_VARIANT_INT);
+    if (value != NULL && value->type == CFL_VARIANT_INT) {
+        TEST_CHECK(value->data.as_int64 == INT64_MAX);
+    }
+    value = cfl_kvlist_fetch(attributes, "bytes");
+    TEST_CHECK(value != NULL && value->type == CFL_VARIANT_BYTES);
+    if (value != NULL && value->type == CFL_VARIANT_BYTES) {
+        TEST_CHECK(cfl_sds_len(value->data.as_bytes) == sizeof(bytes));
+        TEST_CHECK(memcmp(value->data.as_bytes, bytes, sizeof(bytes)) == 0);
+    }
+    TEST_CHECK(cfl_kvlist_fetch(attributes, "overflow") == NULL);
+    TEST_CHECK(cfl_kvlist_fetch(attributes, "invalid") == NULL);
+    value = cfl_kvlist_fetch(attributes, "healthy");
+    TEST_CHECK(value != NULL && value->type == CFL_VARIANT_STRING);
+    TEST_CHECK(cfl_kvlist_count(attributes) == 4);
+    cfl_kvlist_destroy(attributes);
+    msgpack_unpacked_destroy(&unpacked);
+    flb_free(buffer);
+}
+
 TEST_LIST = {
+    {"json_anyvalue_signed_bytes_invalid_attributes", test_json_anyvalue_signed_bytes_and_invalid_attributes},
     { "hex_to_id", test_hex_to_id },
     { "hex_to_id_error_cases", test_hex_to_id_error_cases },
     { "convert_string_number_to_u64", test_convert_string_number_to_u64 },
@@ -3573,5 +4057,9 @@ TEST_LIST = {
       test_opentelemetry_metrics_otlp_proto_batches_empty_context },
     { "opentelemetry_metrics_cutoff",
       test_opentelemetry_metrics_cutoff },
+    { "opentelemetry_metrics_json_merges_repeated_series",
+      test_opentelemetry_metrics_json_merges_repeated_series },
+    { "json_invalid_attributes_warn_once", test_json_invalid_attributes_warn_once },
+    { "opentelemetry_logs_json_bytes_value", test_opentelemetry_logs_json_bytes_value },
     { 0 }
 };

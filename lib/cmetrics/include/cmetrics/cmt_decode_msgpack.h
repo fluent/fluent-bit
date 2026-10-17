@@ -57,6 +57,8 @@ struct cmt_msgpack_decode_context {
     int                aggregation_type;
     int                metric_value_type_set;
     int                metric_section_set;
+    /* Appended to keep the established field layout. */
+    int                allow_reset;
 };
 
 int cmt_decode_msgpack_create(struct cmt **out_cmt, char *in_buf, size_t in_size, 

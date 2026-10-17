@@ -28,6 +28,9 @@
 #include <cmetrics/cmt_encode_text.h>
 #include <cmetrics/cmt_encode_prometheus.h>
 #include <cmetrics/cmt_cat.h>
+#include <cmetrics/cmt_metric.h>
+
+#include <string.h>
 
 #include "cmt_tests.h"
 
@@ -1083,7 +1086,200 @@ void test_cat_static_labels_empty()
     cmt_destroy(dst);
 }
 
+static struct cmt *create_otlp_gauge_context(char *label, double value, uint64_t flags)
+{
+    struct cmt *cmt;
+    struct cmt_gauge *gauge;
+    struct cmt_metric *sample;
+
+    cmt = cmt_create();
+    if (cmt == NULL) {
+        return NULL;
+    }
+
+    gauge = cmt_gauge_create(cmt, "", "", "otlp_gauge", "otlp gauge",
+                             1, (char *[]) {"key"});
+    if (gauge == NULL ||
+        cmt_gauge_set(gauge, 100, value, 1, (char *[]) {label}) != 0) {
+        cmt_destroy(cmt);
+        return NULL;
+    }
+
+    sample = cfl_list_entry_first(&gauge->map->metrics, struct cmt_metric, _head);
+    sample->otlp_metadata = cfl_kvlist_create();
+    if (sample->otlp_metadata == NULL ||
+        cfl_kvlist_insert_uint64(sample->otlp_metadata, "flags", flags) != 0) {
+        cmt_destroy(cmt);
+        return NULL;
+    }
+
+    return cmt;
+}
+
+static uint64_t sample_flags(struct cmt_metric *sample)
+{
+    struct cfl_variant *value;
+
+    value = cfl_kvlist_fetch(sample->otlp_metadata, "flags");
+    if (value == NULL) {
+        return UINT64_MAX;
+    }
+    if (value->type == CFL_VARIANT_UINT) {
+        return value->data.as_uint64;
+    }
+    if (value->type == CFL_VARIANT_INT) {
+        return (uint64_t) value->data.as_int64;
+    }
+    return UINT64_MAX;
+}
+
+/* Samples carrying OTLP metadata must merge by labels, never duplicate. */
+void test_cat_otlp_metadata_samples_merge_by_labels()
+{
+    int ret;
+    struct cmt *first;
+    struct cmt *second;
+    struct cmt *other;
+    struct cmt *final;
+    struct cmt_gauge *gauge;
+    struct cmt_metric *sample;
+    struct cmt_map_label *label;
+    struct cfl_list *head;
+    int found_v;
+    int found_w;
+
+    first = create_otlp_gauge_context("v", 1.0, 1);
+    second = create_otlp_gauge_context("v", 2.0, 2);
+    other = create_otlp_gauge_context("w", 3.0, 3);
+    final = cmt_create();
+    TEST_ASSERT(first != NULL && second != NULL && other != NULL && final != NULL);
+
+    ret = cmt_cat(final, first);
+    TEST_CHECK(ret == 0);
+    ret = cmt_cat(final, second);
+    TEST_CHECK(ret == 0);
+    ret = cmt_cat(final, second);
+    TEST_CHECK(ret == 0);
+
+    TEST_CHECK(cfl_list_size(&final->gauges) == 1);
+    gauge = cfl_list_entry_first(&final->gauges, struct cmt_gauge, _head);
+    TEST_ASSERT(gauge != NULL);
+    TEST_CHECK(cfl_list_size(&gauge->map->metrics) == 1);
+
+    sample = cfl_list_entry_first(&gauge->map->metrics, struct cmt_metric, _head);
+    TEST_CHECK(cmt_metric_get_value(sample) == 2.0);
+    TEST_CHECK(sample_flags(sample) == 2);
+
+    /* The merged sample remains reachable through the label index. */
+    ret = cmt_gauge_set(gauge, 200, 5.0, 1, (char *[]) {"v"});
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(cfl_list_size(&gauge->map->metrics) == 1);
+    TEST_CHECK(cmt_metric_get_value(sample) == 5.0);
+
+    /* A distinct label set is still appended. */
+    ret = cmt_cat(final, other);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(cfl_list_size(&gauge->map->metrics) == 2);
+
+    found_v = 0;
+    found_w = 0;
+    cfl_list_foreach(head, &gauge->map->metrics) {
+        sample = cfl_list_entry(head, struct cmt_metric, _head);
+        label = cfl_list_entry_first(&sample->labels, struct cmt_map_label, _head);
+        if (strcmp(label->name, "v") == 0) {
+            found_v++;
+            TEST_CHECK(sample_flags(sample) == 2);
+        }
+        else if (strcmp(label->name, "w") == 0) {
+            found_w++;
+            TEST_CHECK(sample_flags(sample) == 3);
+            TEST_CHECK(cmt_metric_get_value(sample) == 3.0);
+        }
+    }
+    TEST_CHECK(found_v == 1);
+    TEST_CHECK(found_w == 1);
+
+    cmt_destroy(first);
+    cmt_destroy(second);
+    cmt_destroy(other);
+    cmt_destroy(final);
+}
+
+/* Distinct OTLP data points of one series (different time windows) are kept,
+ * but concatenating them again must not duplicate either of them. */
+void test_cat_otlp_metadata_distinct_points_kept()
+{
+    int ret;
+    int pass;
+    struct cmt *source;
+    struct cmt *final;
+    struct cmt_gauge *gauge;
+    struct cmt_metric *first;
+    struct cmt_metric *second;
+    struct cmt_map_label *label;
+    struct cfl_list *head;
+    uint64_t timestamps;
+
+    source = create_otlp_gauge_context("v", 1.0, 1);
+    TEST_ASSERT(source != NULL);
+
+    /* Add a second data point of the same series at a later time, the way
+     * the OTLP decoder appends independent points. */
+    gauge = cfl_list_entry_first(&source->gauges, struct cmt_gauge, _head);
+    first = cfl_list_entry_first(&gauge->map->metrics, struct cmt_metric, _head);
+    second = calloc(1, sizeof(struct cmt_metric));
+    TEST_ASSERT(second != NULL);
+    cfl_list_init(&second->labels);
+    cfl_list_init(&second->_hash_head);
+    second->map = gauge->map;
+    second->hash = first->hash;
+    cfl_list_add(&second->_head, &gauge->map->metrics);
+    TEST_ASSERT(cmt_map_metric_get(&gauge->opts, gauge->map, 1, (char *[]) {"v"},
+                                   CMT_FALSE) == first);
+    label = calloc(1, sizeof(struct cmt_map_label));
+    TEST_ASSERT(label != NULL);
+    label->name = cfl_sds_create("v");
+    TEST_ASSERT(label->name != NULL);
+    cfl_list_add(&label->_head, &second->labels);
+    cmt_metric_set_double(second, 200, 2.0);
+    second->otlp_metadata = cfl_kvlist_create();
+    TEST_ASSERT(second->otlp_metadata != NULL);
+    TEST_ASSERT(cfl_kvlist_insert_uint64(second->otlp_metadata, "flags", 2) == 0);
+
+    final = cmt_create();
+    TEST_ASSERT(final != NULL);
+
+    for (pass = 0; pass < 2; pass++) {
+        ret = cmt_cat(final, source);
+        TEST_CHECK(ret == 0);
+
+        gauge = cfl_list_entry_first(&final->gauges, struct cmt_gauge, _head);
+        TEST_ASSERT(gauge != NULL);
+        TEST_CHECK(cfl_list_size(&gauge->map->metrics) == 2);
+
+        timestamps = 0;
+        cfl_list_foreach(head, &gauge->map->metrics) {
+            first = cfl_list_entry(head, struct cmt_metric, _head);
+            timestamps += cmt_metric_get_timestamp(first);
+            if (cmt_metric_get_timestamp(first) == 100) {
+                TEST_CHECK(sample_flags(first) == 1);
+                TEST_CHECK(cmt_metric_get_value(first) == 1.0);
+            }
+            else {
+                TEST_CHECK(sample_flags(first) == 2);
+                TEST_CHECK(cmt_metric_get_value(first) == 2.0);
+            }
+        }
+        TEST_CHECK(timestamps == 300);
+    }
+
+    cmt_destroy(source);
+    cmt_destroy(final);
+}
+
 TEST_LIST = {
+    {"cat_otlp_metadata_distinct_points_kept", test_cat_otlp_metadata_distinct_points_kept},
+    {"cat_otlp_metadata_samples_merge_by_labels", test_cat_otlp_metadata_samples_merge_by_labels},
     {"cat_static_labels_source_dynamic_conflict", test_cat_static_labels_source_dynamic_conflict},
     {"cat_static_labels_dynamic_conflict", test_cat_static_labels_dynamic_conflict},
     {"cat_static_labels_chain", test_cat_static_labels_chain},

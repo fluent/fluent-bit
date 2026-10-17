@@ -658,26 +658,8 @@ static void otel_span_set_parent_span_id(Opentelemetry__Proto__Trace__V1__Span *
 static void otel_span_set_kind(Opentelemetry__Proto__Trace__V1__Span *otel_span,
                                int kind)
 {
-    switch (kind) {
-    case CTRACE_SPAN_INTERNAL:
-        otel_span->kind = OPENTELEMETRY__PROTO__TRACE__V1__SPAN__SPAN_KIND__SPAN_KIND_INTERNAL;
-        break;
-    case CTRACE_SPAN_SERVER:
-        otel_span->kind = OPENTELEMETRY__PROTO__TRACE__V1__SPAN__SPAN_KIND__SPAN_KIND_SERVER;
-        break;
-    case CTRACE_SPAN_CLIENT:
-        otel_span->kind = OPENTELEMETRY__PROTO__TRACE__V1__SPAN__SPAN_KIND__SPAN_KIND_CLIENT;
-        break;
-    case CTRACE_SPAN_PRODUCER:
-        otel_span->kind = OPENTELEMETRY__PROTO__TRACE__V1__SPAN__SPAN_KIND__SPAN_KIND_PRODUCER;
-        break;
-    case CTRACE_SPAN_CONSUMER:
-        otel_span->kind = OPENTELEMETRY__PROTO__TRACE__V1__SPAN__SPAN_KIND__SPAN_KIND_CONSUMER;
-        break;
-    default:
-        otel_span->kind = OPENTELEMETRY__PROTO__TRACE__V1__SPAN__SPAN_KIND__SPAN_KIND_UNSPECIFIED;
-        break;
-    }
+    /* CTrace kind values match the OTLP enum. Preserve unknown proto3 values. */
+    otel_span->kind = kind;
 }
 
 static void otel_span_set_start_time(Opentelemetry__Proto__Trace__V1__Span *span,

@@ -17,6 +17,7 @@
  *  limitations under the License.
  */
 
+#include <cmetrics/cmt_otlp_metadata.h>
 #include <ctype.h>
 #include <errno.h>
 #include <inttypes.h>
@@ -1541,6 +1542,25 @@ static struct flb_json_mut_val *log_record_to_json(struct flb_json_mut_doc *doc,
         }
     }
 
+    if (otlp_metadata != NULL && otlp_metadata->type == MSGPACK_OBJECT_MAP &&
+        otlp_uint64_field_value(&otlp_metadata->via.map, "dropped_attributes_count", &timestamp) == 0 &&
+        !flb_json_mut_obj_add_uint(doc, record, "droppedAttributesCount", timestamp)) {
+        return NULL;
+    }
+    field = otlp_metadata != NULL && otlp_metadata->type == MSGPACK_OBJECT_MAP ?
+            msgpack_map_get_object(&otlp_metadata->via.map, "trace_flags") : NULL;
+    if (field != NULL && field->type == MSGPACK_OBJECT_POSITIVE_INTEGER &&
+        !flb_json_mut_obj_add_uint(doc, record, "flags", field->via.u64)) {
+        return NULL;
+    }
+
+    field = otlp_metadata != NULL && otlp_metadata->type == MSGPACK_OBJECT_MAP ?
+            msgpack_map_get_object(&otlp_metadata->via.map, "event_name") : NULL;
+    if (field != NULL && field->type == MSGPACK_OBJECT_STR &&
+        !flb_json_mut_obj_add_strncpy(doc, record, "eventName", field->via.str.ptr, field->via.str.size)) {
+        return NULL;
+    }
+
     body = extract_log_body_value(doc,
                                   event->body,
                                   logs_body_keys,
@@ -2068,6 +2088,10 @@ static struct cfl_kvlist *get_metric_otlp_metadata_context(struct cmt *cmt,
         return NULL;
     }
 
+    if (map->otlp_metadata) {
+        return map->otlp_metadata;
+    }
+
     otlp_root = fetch_metadata_kvlist_key(cmt->external_metadata, "otlp");
     metrics_root = fetch_metadata_kvlist_key(otlp_root, "metrics");
     type_root = fetch_metadata_kvlist_key(metrics_root, metrics_map_type_to_key(map->type));
@@ -2086,6 +2110,10 @@ static struct cfl_kvlist *get_data_point_otlp_metadata_context(struct cmt *cmt,
     char               key[128];
     struct cfl_kvlist *metric_context;
     struct cfl_kvlist *datapoints_context;
+
+    if (sample != NULL && sample->otlp_metadata != NULL) {
+        return sample->otlp_metadata;
+    }
 
     metric_context = get_metric_otlp_metadata_context(cmt, map);
     datapoints_context = fetch_metadata_kvlist_key(metric_context, "datapoints");
@@ -2131,7 +2159,10 @@ static size_t resolve_target_scope_index(struct cmt *cmt,
     struct cfl_kvlist *metric_context;
 
     metric_context = get_metric_otlp_metadata_context(cmt, map);
-    metadata = fetch_metadata_kvlist_key(metric_context, "metadata");
+    metadata = fetch_metadata_kvlist_key(metric_context, "routing");
+    if (metadata == NULL) {
+        metadata = fetch_metadata_kvlist_key(metric_context, "metadata");
+    }
 
     if (metadata == NULL) {
         return 0;
@@ -2397,6 +2428,7 @@ static int add_data_point_common_fields(struct flb_json_mut_doc *doc,
     struct cmt_map_label *label_name;
     struct cmt_map_label *label_value;
     struct cfl_kvlist *metadata;
+    struct cfl_kvlist *typed_attributes;
     struct cfl_variant *variant;
     struct cfl_array *array;
     struct flb_json_mut_val   *attributes;
@@ -2404,7 +2436,13 @@ static int add_data_point_common_fields(struct flb_json_mut_doc *doc,
     struct flb_json_mut_val   *value;
     struct flb_json_mut_val   *exemplars;
 
-    attributes = flb_json_mut_arr(doc);
+    metadata = get_data_point_otlp_metadata_context(cmt, map, sample);
+    typed_attributes = fetch_metadata_kvlist_key(metadata, "attributes");
+    if (!cmt_otlp_attributes_match_labels(map, sample)) {
+        typed_attributes = NULL;
+    }
+    attributes = typed_attributes ? cfl_kvlist_to_otlp_kv_array(doc, typed_attributes) :
+                                   flb_json_mut_arr(doc);
     if (attributes == NULL) {
         return -1;
     }
@@ -2429,6 +2467,7 @@ static int add_data_point_common_fields(struct flb_json_mut_doc *doc,
 
     label_index = 0;
     label_name = cfl_list_entry_first(&map->label_keys, struct cmt_map_label, _head);
+    if (typed_attributes == NULL) {
     cfl_list_foreach(head, &sample->labels) {
         label_value = cfl_list_entry(head, struct cmt_map_label, _head);
         attribute = flb_json_mut_obj(doc);
@@ -2452,6 +2491,8 @@ static int add_data_point_common_fields(struct flb_json_mut_doc *doc,
                                          struct cmt_map_label,
                                          _head,
                                          &map->label_keys);
+    }
+
     }
 
     if (flb_json_mut_arr_size(attributes) > 0 &&
@@ -2697,7 +2738,7 @@ static struct flb_json_mut_val *create_histogram_data_point_json(struct flb_json
         int  length;
 
         length = snprintf(buffer, sizeof(buffer), "%" PRIu64,
-                          sample->hist_buckets[index]);
+                          cmt_metric_hist_get_bucket_count(sample, index));
         if (length <= 0 || (size_t) length >= sizeof(buffer) ||
             !flb_json_mut_arr_add_strncpy(doc, bucket_counts, buffer, length)) {
             return NULL;
@@ -3628,8 +3669,7 @@ static struct flb_json_mut_val *create_trace_span_json(struct flb_json_mut_doc *
         return NULL;
     }
 
-    if (span->kind >= 0 &&
-        !flb_json_mut_obj_add_int(doc, json, "kind", span->kind)) {
+    if (!flb_json_mut_obj_add_int(doc, json, "kind", span->kind)) {
         return NULL;
     }
 

@@ -17,6 +17,7 @@
  *  limitations under the License.
  */
 
+#include <cmetrics/cmt_otlp_metadata.h>
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_log.h>
 #include <cmetrics/cmt_map.h>
@@ -500,6 +501,151 @@ static inline void cat_scalar_value(struct cmt_metric *metric_dst,
     }
 }
 
+static int copy_point_metadata(struct cmt_metric *dst, struct cmt_metric *src)
+{
+    struct cfl_kvlist *copy;
+
+    if (src->otlp_metadata == NULL) {
+        return 0;
+    }
+
+    copy = cmt_otlp_metadata_clone(src->otlp_metadata);
+    if (copy == NULL) {
+        return -1;
+    }
+
+    cfl_kvlist_destroy(dst->otlp_metadata);
+    dst->otlp_metadata = copy;
+
+    return 0;
+}
+
+static int sample_labels_match(struct cmt_metric *metric, int count, char **labels)
+{
+    int index;
+    struct cfl_list *head;
+    struct cmt_map_label *label;
+
+    index = 0;
+    cfl_list_foreach(head, &metric->labels) {
+        if (index >= count) {
+            return CMT_FALSE;
+        }
+
+        label = cfl_list_entry(head, struct cmt_map_label, _head);
+        if ((label->name == NULL) != (labels[index] == NULL)) {
+            return CMT_FALSE;
+        }
+        if (label->name != NULL && strcmp(label->name, labels[index]) != 0) {
+            return CMT_FALSE;
+        }
+        index++;
+    }
+
+    return index == count;
+}
+
+/* OTLP permits several data points of one series in a single request when
+ * their time windows differ; those are distinct points, not duplicates. */
+static int same_data_point(struct cmt_metric *a, struct cmt_metric *b)
+{
+    if (cmt_metric_get_timestamp(a) != cmt_metric_get_timestamp(b)) {
+        return CMT_FALSE;
+    }
+
+    if (cmt_metric_has_start_timestamp(a) != cmt_metric_has_start_timestamp(b)) {
+        return CMT_FALSE;
+    }
+
+    if (cmt_metric_has_start_timestamp(a) &&
+        cmt_metric_get_start_timestamp(a) != cmt_metric_get_start_timestamp(b)) {
+        return CMT_FALSE;
+    }
+
+    return CMT_TRUE;
+}
+
+static struct cmt_metric *append_point_sample(struct cmt_map *dst,
+                                              struct cmt_metric *src,
+                                              int count, char **labels)
+{
+    int index;
+    struct cmt_metric *metric;
+    struct cmt_map_label *label;
+
+    metric = calloc(1, sizeof(struct cmt_metric));
+    if (metric == NULL) {
+        cmt_errno();
+        return NULL;
+    }
+
+    cfl_list_init(&metric->labels);
+    cfl_list_init(&metric->_hash_head);
+    metric->map = dst;
+    metric->hash = src->hash;
+    cfl_list_add(&metric->_head, &dst->metrics);
+
+    for (index = 0; index < count; index++) {
+        label = calloc(1, sizeof(struct cmt_map_label));
+        if (label == NULL) {
+            cmt_errno();
+            cmt_map_metric_destroy(metric);
+            return NULL;
+        }
+
+        if (labels[index] != NULL) {
+            label->name = cfl_sds_create(labels[index]);
+            if (label->name == NULL) {
+                free(label);
+                cmt_map_metric_destroy(metric);
+                return NULL;
+            }
+        }
+        cfl_list_add(&label->_head, &metric->labels);
+    }
+
+    return metric;
+}
+
+/*
+ * Resolve the destination for a sample carrying OTLP metadata. Like any other
+ * sample it merges into an existing sample with the same labels, so contexts
+ * concatenated more than once never duplicate a series. A new sample is only
+ * appended for a distinct data point (different time window) of a series.
+ */
+static struct cmt_metric *get_point_sample(struct cmt_opts *opts, struct cmt_map *dst,
+                                           struct cmt_metric *src,
+                                           int count, char **labels)
+{
+    struct cfl_list *head;
+    struct cmt_metric *metric;
+
+    if (count == 0) {
+        /* Label-less points always merge into the static metric. */
+        return cmt_map_metric_get(opts, dst, 0, NULL, CMT_TRUE);
+    }
+
+    metric = cmt_map_metric_get(opts, dst, count, labels, CMT_FALSE);
+    if (metric == NULL) {
+        /* No sample has these labels yet: create an indexed one. */
+        return cmt_map_metric_get(opts, dst, count, labels, CMT_TRUE);
+    }
+
+    if (same_data_point(metric, src)) {
+        return metric;
+    }
+
+    /* Rare path: a series with several data points. */
+    cfl_list_foreach(head, &dst->metrics) {
+        metric = cfl_list_entry(head, struct cmt_metric, _head);
+        if (sample_labels_match(metric, count, labels) && same_data_point(metric, src)) {
+            return metric;
+        }
+    }
+
+    return append_point_sample(dst, src, count, labels);
+}
+
 int cmt_cat_copy_map(struct cmt_opts *opts, struct cmt_map *dst, struct cmt_map *src)
 {
     int c;
@@ -508,9 +654,19 @@ int cmt_cat_copy_map(struct cmt_opts *opts, struct cmt_map *dst, struct cmt_map 
     struct cfl_list *head;
     struct cmt_metric *metric_dst;
     struct cmt_metric *metric_src;
+    struct cfl_kvlist *metadata;
     struct cmt_summary *summary;
     struct cmt_histogram *histogram_src;
     struct cmt_histogram *histogram_dst;
+
+    if (src->otlp_metadata) {
+        metadata = cmt_otlp_metadata_clone(src->otlp_metadata);
+        if (!metadata) {
+            return -1;
+        }
+        cfl_kvlist_destroy(dst->otlp_metadata);
+        dst->otlp_metadata = metadata;
+    }
 
     /* Handle static metric (no labels case) */
     if (src->metric_static_set) {
@@ -542,6 +698,9 @@ int cmt_cat_copy_map(struct cmt_opts *opts, struct cmt_map *dst, struct cmt_map 
             }
         }
 
+        if (copy_point_metadata(metric_dst, metric_src) != 0) {
+            return -1;
+        }
         cat_scalar_value(metric_dst, metric_src);
     }
 
@@ -555,7 +714,12 @@ int cmt_cat_copy_map(struct cmt_opts *opts, struct cmt_map *dst, struct cmt_map 
         }
 
         c = cfl_list_size(&metric_src->labels);
-        metric_dst = cmt_map_metric_get(opts, dst, c, labels, CMT_TRUE);
+        if (metric_src->otlp_metadata != NULL) {
+            metric_dst = get_point_sample(opts, dst, metric_src, c, labels);
+        }
+        else {
+            metric_dst = cmt_map_metric_get(opts, dst, c, labels, CMT_TRUE);
+        }
         free(labels);
 
         if (!metric_dst) {
@@ -584,6 +748,9 @@ int cmt_cat_copy_map(struct cmt_opts *opts, struct cmt_map *dst, struct cmt_map 
             }
         }
 
+        if (copy_point_metadata(metric_dst, metric_src) != 0) {
+            return -1;
+        }
         cat_scalar_value(metric_dst, metric_src);
     }
 

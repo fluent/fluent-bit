@@ -27,9 +27,28 @@
 #define FLB_MP_ARRAY      MSGPACK_OBJECT_ARRAY
 
 int flb_mp_count(const void *data, size_t bytes);
+
+/*
+ * Count log records without building msgpack objects; allocation-free in
+ * non-tracking builds. Rejects unsupported or deep shapes, so callers can fall
+ * back to the event decoder.
+ */
+int flb_mp_scan_log_records(const void *data, size_t bytes, int *records);
 int flb_mp_count_log_records(const void *data, size_t bytes);
+int flb_mp_log_window_next(const void *data, size_t bytes, size_t offset,
+                           size_t limit_bytes, int limit_records,
+                           size_t *window_end, int *window_records);
+/* group markers that belong to neighbouring appends, see flb_mp_log_group_boundaries() */
+#define FLB_MP_GROUPS_KEEP_LEADING_END   1
+#define FLB_MP_GROUPS_KEEP_TRAILING_OPEN 2
+
+int flb_mp_log_group_boundaries(const void *data, size_t bytes);
+int flb_mp_log_group_starts(const void *data, size_t bytes);
 int flb_mp_normalize_log_buffer_groups_msgpack(const void *in_buf, size_t in_size,
                                                char **out_buf, size_t *out_size);
+int flb_mp_normalize_log_buffer_groups_msgpack_ex(const void *in_buf, size_t in_size,
+                                                  char **out_buf, size_t *out_size,
+                                                  int flags);
 int flb_mp_normalize_log_buffer_groups(const void *in_buf, size_t in_size,
                                        char **out_buf, size_t *out_size);
 int flb_mp_count_remaining(const void *data, size_t bytes, size_t *remaining_bytes);
