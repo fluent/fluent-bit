@@ -1314,6 +1314,245 @@ int flb_processor_is_active(struct flb_processor *proc)
  * context for metrics, a 'CTraces' context for traces or a 'CProfiles' context for
  * profiles.
  */
+/*
+ * Large log buffers, such as complete chunks reaching output processors, are
+ * processed in windows when every native unit of the run is record local:
+ * each window is decoded, processed by all the units, encoded and released
+ * before the next one, so decoded records never hold more than one window.
+ * Windows only close outside groups, keeping every group in one window.
+ */
+#define FLB_PROCESSOR_LOG_WINDOW_BYTES    65536
+#define FLB_PROCESSOR_LOG_WINDOW_RECORDS  1024
+
+#define LOG_WINDOWS_DONE    0
+#define LOG_WINDOWS_SKIP    1
+#define LOG_WINDOWS_ERROR  -1
+
+struct log_window_unit {
+    struct flb_processor_unit *pu;
+    int in_items;
+    int out_items;
+    int error;
+};
+
+/* last unit of the native run starting at 'head' if windows can be used */
+static struct mk_list *log_window_run_end(struct mk_list *head, struct mk_list *list,
+                                          int *units)
+{
+    struct mk_list *last = NULL;
+    struct flb_processor_unit *pu;
+    struct flb_processor_instance *p_ins;
+
+    *units = 0;
+    for (; head != list; head = head->next) {
+        pu = mk_list_entry(head, struct flb_processor_unit, _head);
+        if (pu->unit_type == FLB_PROCESSOR_UNIT_FILTER) {
+            break;
+        }
+
+        p_ins = pu->ctx;
+        if (p_ins->p->cb_process_logs == NULL ||
+            (p_ins->p->flags & FLB_PROCESSOR_FLAG_LOG_WINDOWS) == 0) {
+            return NULL;
+        }
+
+        last = head;
+        (*units)++;
+    }
+
+    return last;
+}
+
+struct log_window {
+    size_t end;
+    int records;
+};
+
+/* window boundaries for the complete buffer, NULL if one window is enough */
+static struct log_window *log_windows_scan(void *data, size_t data_size, int *count)
+{
+    int records;
+    int capacity = 0;
+    size_t offset = 0;
+    size_t end;
+    struct log_window *tmp;
+    struct log_window *windows = NULL;
+
+    *count = 0;
+    while (offset < data_size) {
+        if (flb_mp_log_window_next(data, data_size, offset,
+                                   FLB_PROCESSOR_LOG_WINDOW_BYTES,
+                                   FLB_PROCESSOR_LOG_WINDOW_RECORDS,
+                                   &end, &records) != 0) {
+            /* the single chunk path reports invalid content as usual */
+            flb_free(windows);
+            return NULL;
+        }
+
+        if (*count == capacity) {
+            capacity = capacity ? capacity * 2 : 32;
+            tmp = flb_realloc(windows, sizeof(struct log_window) * capacity);
+            if (!tmp) {
+                flb_errno();
+                flb_free(windows);
+                return NULL;
+            }
+            windows = tmp;
+        }
+
+        windows[*count].end = end;
+        windows[*count].records = records;
+        (*count)++;
+        offset = end;
+    }
+
+    if (*count < 2) {
+        flb_free(windows);
+        return NULL;
+    }
+
+    return windows;
+}
+
+static int run_log_windows(struct flb_processor *proc,
+                           struct mk_list *first, int unit_count,
+                           const char *tag, size_t tag_len,
+                           void *data, size_t data_size,
+                           void **out_buf, size_t *out_size,
+                           int *out_records, int *out_normalized,
+                           const char *metrics_scope,
+                           const char *metrics_owner,
+                           const char *metrics_signal)
+{
+    int i;
+    int w;
+    int ret;
+    int result = LOG_WINDOWS_ERROR;
+    int records;
+    int total_records = 0;
+    int normalized = FLB_TRUE;
+    int window_count;
+    size_t offset;
+    struct mk_list *head;
+    struct log_window *windows;
+    struct log_window_unit *units;
+    struct flb_processor_instance *p_ins;
+    struct flb_processor_instance *owner;
+    struct flb_mp_chunk_cobj *chunk_cobj = NULL;
+
+    windows = log_windows_scan(data, data_size, &window_count);
+    if (!windows) {
+        return LOG_WINDOWS_SKIP;
+    }
+
+    units = flb_calloc(unit_count, sizeof(struct log_window_unit));
+    if (!units) {
+        flb_errno();
+        flb_free(windows);
+        return LOG_WINDOWS_SKIP;
+    }
+
+    head = first;
+    for (i = 0; i < unit_count; i++) {
+        units[i].pu = mk_list_entry(head, struct flb_processor_unit, _head);
+        head = head->next;
+    }
+
+    /* the first unit owns the decoder and the encoder, as in a single chunk */
+    owner = units[0].pu->ctx;
+
+    offset = 0;
+    for (w = 0; w < window_count; w++) {
+        flb_log_event_decoder_reset(owner->log_decoder, (char *) data + offset,
+                                    windows[w].end - offset);
+        chunk_cobj = flb_mp_chunk_cobj_create(owner->log_encoder, owner->log_decoder);
+        if (!chunk_cobj) {
+            goto error;
+        }
+
+        records = windows[w].records;
+        for (i = 0; i < unit_count; i++) {
+            p_ins = units[i].pu->ctx;
+
+            ret = acquire_lock(&units[i].pu->lock,
+                               FLB_PROCESSOR_LOCK_RETRY_LIMIT,
+                               FLB_PROCESSOR_LOCK_RETRY_DELAY);
+            if (ret != FLB_TRUE) {
+                units[i].error = FLB_TRUE;
+                goto error;
+            }
+
+            chunk_cobj->condition = units[i].pu->condition;
+            ret = p_ins->p->cb_process_logs(p_ins, chunk_cobj, tag, tag_len);
+            if (ret != FLB_PROCESSOR_SUCCESS) {
+                units[i].error = FLB_TRUE;
+                flb_warn("[processor] failed to process chunk");
+            }
+            chunk_cobj->record_pos = NULL;
+            chunk_cobj->condition = NULL;
+
+            release_lock(&units[i].pu->lock,
+                         FLB_PROCESSOR_LOCK_RETRY_LIMIT,
+                         FLB_PROCESSOR_LOCK_RETRY_DELAY);
+
+            units[i].in_items += records;
+            records = flb_mp_chunk_cobj_count_log_records(chunk_cobj);
+            units[i].out_items += records;
+        }
+
+        if (flb_mp_chunk_cobj_normalize_groups(chunk_cobj) != 0) {
+            normalized = FLB_FALSE;
+        }
+        total_records += flb_mp_chunk_cobj_count_log_records(chunk_cobj);
+
+        if (cfl_list_size(&chunk_cobj->records) > 0 &&
+            flb_mp_chunk_cobj_encode_append(chunk_cobj) != 0) {
+            goto error;
+        }
+
+        flb_mp_chunk_cobj_destroy(chunk_cobj);
+        chunk_cobj = NULL;
+        offset = windows[w].end;
+    }
+
+    if (total_records == 0 || owner->log_encoder->output_length == 0) {
+        flb_log_event_encoder_reset(owner->log_encoder);
+        *out_buf = NULL;
+        *out_size = 0;
+        total_records = 0;
+    }
+    else {
+        *out_buf = owner->log_encoder->output_buffer;
+        *out_size = owner->log_encoder->output_length;
+        flb_log_event_encoder_claim_internal_buffer_ownership(owner->log_encoder);
+    }
+
+    *out_records = total_records;
+    *out_normalized = normalized;
+    result = LOG_WINDOWS_DONE;
+    goto exit;
+
+error:
+    if (chunk_cobj) {
+        flb_mp_chunk_cobj_destroy(chunk_cobj);
+    }
+    flb_log_event_encoder_reset(owner->log_encoder);
+
+exit:
+    flb_log_event_decoder_reset(owner->log_decoder, NULL, 0);
+
+    for (i = 0; i < unit_count; i++) {
+        processor_metrics_update(proc, units[i].pu,
+                                 metrics_scope, metrics_owner, metrics_signal,
+                                 units[i].in_items, units[i].out_items,
+                                 FLB_TRUE, units[i].error);
+    }
+    flb_free(units);
+    flb_free(windows);
+
+    return result;
+}
+
 int flb_processor_run(struct flb_processor *proc,
                       size_t starting_stage,
                       int type,
@@ -1352,6 +1591,10 @@ int flb_processor_run_with_count(struct flb_processor *proc,
     struct flb_filter_instance *f_ins;
     struct flb_processor_instance *p_ins;
     struct flb_mp_chunk_cobj *chunk_cobj = NULL;
+    struct mk_list *run_end;
+    int run_units;
+    int window_records;
+    int window_normalized;
     const char *metrics_scope;
     const char *metrics_owner;
     const char *metrics_signal;
@@ -1421,6 +1664,48 @@ int flb_processor_run_with_count(struct flb_processor *proc,
             }
             unit_out_items = unit_in_items;
             item_metrics_available = FLB_TRUE;
+        }
+
+        /* large buffers run record local native units in bounded windows */
+        if (type == FLB_PROCESSOR_LOGS && chunk_cobj == NULL &&
+            pu->unit_type == FLB_PROCESSOR_UNIT_NATIVE &&
+            cur_size > FLB_PROCESSOR_LOG_WINDOW_BYTES) {
+            run_end = log_window_run_end(head, list, &run_units);
+            if (run_end != NULL) {
+                ret = run_log_windows(proc, head, run_units, tag, tag_len,
+                                      cur_buf, cur_size, &tmp_buf, &tmp_size,
+                                      &window_records, &window_normalized,
+                                      metrics_scope, metrics_owner, metrics_signal);
+                if (ret == LOG_WINDOWS_ERROR) {
+                    if (cur_buf != data) {
+                        flb_free(cur_buf);
+                    }
+                    return -1;
+                }
+                else if (ret == LOG_WINDOWS_DONE) {
+                    if (cur_buf != data) {
+                        flb_free(cur_buf);
+                    }
+
+                    if (tmp_buf == NULL) {
+                        *out_buf = NULL;
+                        *out_size = 0;
+                        if (output_records) {
+                            *output_records = 0;
+                        }
+                        return 0;
+                    }
+
+                    cur_buf = tmp_buf;
+                    cur_size = tmp_size;
+                    log_buffer_records = window_records;
+                    log_buffer_normalized = window_normalized;
+
+                    /* continue after the last unit of the run */
+                    head = run_end;
+                    continue;
+                }
+            }
         }
 
         ret = acquire_lock(&pu->lock,
