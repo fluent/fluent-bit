@@ -123,8 +123,13 @@ int flb_mp_scan_log_records(const void *data, size_t bytes, int *records)
     int count = 0;
     int ret = -1;
 
-    if (!data && bytes) {
-        return -1;
+    /* mpack asserts on a NULL buffer even when it is empty */
+    if (!data) {
+        if (bytes) {
+            return -1;
+        }
+        *records = 0;
+        return 0;
     }
 
     mpack_reader_init_data(&reader, data, bytes);
