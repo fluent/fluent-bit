@@ -185,7 +185,8 @@ def test_unknown_inherited_kind_does_not_bypass_privacy(batch_runner):
     items[0]["parentSpanId"] = "0" * 16
     items[0]["endTimeUnixNano"] = "1"
     _, rows = batch_runner.send(items)
-    assert len(rows) == 2 and rows[0]["kind"] == 9
+    # the span is kept; stored traces record an unknown kind as unspecified
+    assert len(rows) == 2 and rows[0].get("kind", 0) == 0
     assert all(attributes(r["attributes"])["secret"] == "[REDACTED]" for r in rows)
     assert "edits rolled back" not in batch_runner.recent_log()
 

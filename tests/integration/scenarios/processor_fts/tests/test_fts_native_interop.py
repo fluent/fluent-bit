@@ -245,7 +245,8 @@ def test_without_fts_unknown_signed_span_kind_keeps_siblings(tmp_path, export):
             Path(service.flb.log_file).read_text().splitlines() if line.startswith("{")], timeout=30)
         rows = [span for batch in batches for resource in batch.get("resourceSpans", [])
                 for scope in resource["scopeSpans"] for span in scope["spans"]]
-        assert [(row["name"], row["kind"]) for row in rows] == [("negative-kind", -1), ("healthy", 2)]
+        # stored traces keep the span; an unknown kind is stored as unspecified
+        assert [(row["name"], row.get("kind", 0)) for row in rows] == [("negative-kind", 0), ("healthy", 2)]
         diagnostics = Path(service.flb.log_file).read_text()
         assert "could not decode" not in diagnostics and "could not convert" not in diagnostics
     finally:
