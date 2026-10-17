@@ -2,27 +2,139 @@
 
 #include <fluent-bit.h>
 #include "flb_tests_runtime.h"
-#include "../include/flb_tests_tmpdir.h"
+#include <string.h>
 #include <stdio.h>
 #include <stdarg.h>
-#include <unistd.h>
 
 /* Test data */
 #include "data/es/json_es.h" /* JSON_ES */
 #include "../../plugins/out_es/es.h"
+
+static const char * const es_upstream_section_property_prefix = "    ";
+static const char * const es_upstream_section_value_prefix    = " ";
+
+static char *create_upstream_conf_file(const char *first_property, ...)
+{
+    char *upstream_conf_filename;
+    FILE *upstream_conf_file;
+    int ret;
+    const char *arg;
+    int arg_idx;
+    va_list args;
+
+    upstream_conf_filename = (char *) flb_malloc(L_tmpnam);
+    if (!upstream_conf_filename) {
+        return NULL;
+    }
+
+    if (!tmpnam(upstream_conf_filename)) {
+        flb_free(upstream_conf_filename);
+        return NULL;
+    }
+
+    upstream_conf_file = fopen(upstream_conf_filename, "w");
+    if (upstream_conf_file == NULL) {
+        flb_free(upstream_conf_filename);
+        return NULL;
+    }
+
+    ret = fprintf(upstream_conf_file, "%s\n%s%s%s%s\n%s\n%s%s%s%s\n%s%s%s%s\n%s%s%s%s\n",
+                  "[UPSTREAM]",
+                  es_upstream_section_property_prefix,
+                  "name", es_upstream_section_value_prefix, "es-balancing",
+                  "[NODE]",
+                  es_upstream_section_property_prefix,
+                  "name", es_upstream_section_value_prefix, "node1",
+                  es_upstream_section_property_prefix,
+                  "host", es_upstream_section_value_prefix, FLB_ES_DEFAULT_HOST,
+                  es_upstream_section_property_prefix,
+                  "port", es_upstream_section_value_prefix, "9200");
+    if (ret < 0) {
+        fclose(upstream_conf_file);
+        remove(upstream_conf_filename);
+        flb_free(upstream_conf_filename);
+        return NULL;
+    }
+
+    arg = first_property;
+    arg_idx = 0;
+    va_start(args, first_property);
+    while (arg != NULL) {
+        if (arg_idx == 0) {
+            ret = fprintf(upstream_conf_file, "%s%s",
+                          es_upstream_section_property_prefix, arg);
+        }
+        else {
+            if (strlen(arg) > 0) {
+                ret = fprintf(upstream_conf_file, "%s%s\n",
+                              es_upstream_section_value_prefix, arg);
+            }
+            else {
+                ret = fprintf(upstream_conf_file, "\n");
+            }
+        }
+        if (ret < 0) {
+            va_end(args);
+            fclose(upstream_conf_file);
+            remove(upstream_conf_filename);
+            flb_free(upstream_conf_filename);
+            return NULL;
+        }
+        arg = va_arg(args, const char *);
+        arg_idx ^= 1;
+    }
+    va_end(args);
+
+    if (arg_idx != 0) {
+        ret = fprintf(upstream_conf_file, "\n");
+        if (ret < 0) {
+            fclose(upstream_conf_file);
+            remove(upstream_conf_filename);
+            flb_free(upstream_conf_filename);
+            return NULL;
+        }
+    }
+
+    ret = fclose(upstream_conf_file);
+    if (ret != 0) {
+        remove(upstream_conf_filename);
+        flb_free(upstream_conf_filename);
+        return NULL;
+    }
+
+    return upstream_conf_filename;
+}
+
+static void *cb_flush_context(struct flb_config *config, struct flb_input_instance *ins,
+                              void *plugin_context, void *flush_ctx)
+{
+    struct flb_upstream_node *node;
+    struct flb_elasticsearch *ctx = plugin_context;
+    (void) config;
+    (void) ins;
+    (void) flush_ctx;
+    return flb_elasticsearch_target(ctx, &node);
+}
 
 static void *cb_check_drop_unrecoverable_records(
                         struct flb_config *config,
                         struct flb_input_instance *ins,
                         void *plugin_context, void *flush_ctx)
 {
+    struct flb_upstream_node *node;
     struct flb_elasticsearch *ctx = plugin_context;
+    struct flb_elasticsearch_config *ec;
 
     (void) config;
     (void) ins;
+    (void) flush_ctx;
 
-    TEST_CHECK(ctx->drop_unrecoverable_records == FLB_TRUE);
-    return flush_ctx;
+    ec = flb_elasticsearch_target(ctx, &node);
+    if (TEST_CHECK(ec != NULL)) {
+        TEST_CHECK(ec->drop_unrecoverable_records == FLB_TRUE);
+    }
+
+    return ec;
 }
 
 static void cb_check_http_api_key(void *ctx, int ffd,
@@ -114,29 +226,6 @@ static void cb_check_index_type(void *ctx, int ffd,
 
     p = strstr(out_js, index_line);
     TEST_CHECK(p != NULL);
-
-    flb_free(res_data);
-}
-
-static void cb_check_node_index_type(void *ctx, int ffd,
-                                     int res_ret, void *res_data, size_t res_size,
-                                     void *data)
-{
-    char *index_match;
-    char *type_match;
-    char *out_js = res_data;
-    char *index_line = "\"_index\":\"another_index_test\"";
-    char *type_line = "\"_type\":\"another_type_test\"";
-
-    index_match = strstr(out_js, index_line);
-    if (!TEST_CHECK(index_match != NULL)) {
-        TEST_MSG("Got: %s", out_js);
-    }
-
-    type_match = strstr(out_js, type_line);
-    if (!TEST_CHECK(type_match != NULL)) {
-        TEST_MSG("Got: %s", out_js);
-    }
 
     flb_free(res_data);
 }
@@ -260,9 +349,10 @@ void flb_test_write_operation_index()
                    NULL);
 
     /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_write_op_index,
-                              NULL, NULL);
+    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
+                                                cb_check_write_op_index,
+                                                NULL, NULL, cb_flush_context);
+    TEST_CHECK(ret == 0);
 
     /* Start */
     ret = flb_start(ctx);
@@ -304,9 +394,10 @@ void flb_test_write_operation_create()
                    NULL);
 
     /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_write_op_create,
-                              NULL, NULL);
+    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
+                                                cb_check_write_op_create,
+                                                NULL, NULL, cb_flush_context);
+    TEST_CHECK(ret == 0);
 
     /* Start */
     ret = flb_start(ctx);
@@ -350,9 +441,10 @@ void flb_test_write_operation_update()
                    NULL);
 
     /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_write_op_update,
-                              NULL, NULL);
+    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
+                                                cb_check_write_op_update,
+                                                NULL, NULL, cb_flush_context);
+    TEST_CHECK(ret == 0);
 
     /* Start */
     ret = flb_start(ctx);
@@ -365,7 +457,6 @@ void flb_test_write_operation_update()
     flb_stop(ctx);
     flb_destroy(ctx);
 }
-
 
 void flb_test_write_operation_upsert()
 {
@@ -396,9 +487,10 @@ void flb_test_write_operation_upsert()
                    NULL);
 
     /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_write_op_upsert,
-                              NULL, NULL);
+    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
+                                                cb_check_write_op_upsert,
+                                                NULL, NULL, cb_flush_context);
+    TEST_CHECK(ret == 0);
 
     /* Start */
     ret = flb_start(ctx);
@@ -415,7 +507,6 @@ void flb_test_write_operation_upsert()
 void flb_test_null_index()
 {
     int ret;
-    int size = sizeof(JSON_ES) - 1;
     flb_ctx_t *ctx;
     int in_ffd;
     int out_ffd;
@@ -440,9 +531,10 @@ void flb_test_null_index()
                    NULL);
 
     /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_index_type,
-                              NULL, NULL);
+    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
+                                                cb_check_index_type,
+                                                NULL, NULL, cb_flush_context);
+    TEST_CHECK(ret == 0);
 
     /* Start */
     ret = flb_start(ctx);
@@ -482,9 +574,10 @@ void flb_test_index_type()
                    NULL);
 
     /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_index_type,
-                              NULL, NULL);
+    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
+                                                cb_check_index_type,
+                                                NULL, NULL, cb_flush_context);
+    TEST_CHECK(ret == 0);
 
     /* Start */
     ret = flb_start(ctx);
@@ -528,9 +621,10 @@ void flb_test_logstash_format()
                    NULL);
 
     /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_logstash_format,
-                              NULL, NULL);
+    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
+                                                cb_check_logstash_format,
+                                                NULL, NULL, cb_flush_context);
+    TEST_CHECK(ret == 0);
 
     /* Start */
     ret = flb_start(ctx);
@@ -575,9 +669,10 @@ void flb_test_logstash_format_nanos()
                    NULL);
 
     /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_logstash_format_nanos,
-                              NULL, NULL);
+    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
+                                                cb_check_logstash_format_nanos,
+                                                NULL, NULL, cb_flush_context);
+    TEST_CHECK(ret == 0);
 
     /* Start */
     ret = flb_start(ctx);
@@ -620,9 +715,10 @@ void flb_test_tag_key()
                    NULL);
 
     /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_tag_key,
-                              NULL, NULL);
+    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
+                                                cb_check_tag_key,
+                                                NULL, NULL, cb_flush_context);
+    TEST_CHECK(ret == 0);
 
     /* Start */
     ret = flb_start(ctx);
@@ -664,9 +760,10 @@ void flb_test_replace_dots()
                    NULL);
 
     /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_replace_dots,
-                              NULL, NULL);
+    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
+                                                cb_check_replace_dots,
+                                                NULL, NULL, cb_flush_context);
+    TEST_CHECK(ret == 0);
 
     /* Start */
     ret = flb_start(ctx);
@@ -708,9 +805,10 @@ void flb_test_id_key()
                    NULL);
 
     /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_id_key,
-                              NULL, NULL);
+    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
+                                                cb_check_id_key,
+                                                NULL, NULL, cb_flush_context);
+    TEST_CHECK(ret == 0);
 
     /* Start */
     ret = flb_start(ctx);
@@ -762,9 +860,10 @@ void flb_test_div0()
                    NULL);
 
     /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_nothing,
-                              NULL, NULL);
+    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
+                                                cb_check_nothing,
+                                                NULL, NULL, cb_flush_context);
+    TEST_CHECK(ret == 0);
 
     /* Start */
     ret = flb_start(ctx);
@@ -816,9 +915,11 @@ void flb_test_http_api_key()
                    NULL);
 
     /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_http_api_key,
-                              api_key, NULL);
+    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
+                                                cb_check_http_api_key,
+                                                api_key, NULL,
+                                                cb_flush_context);
+    TEST_CHECK(ret == 0);
 
     /* Start */
     ret = flb_start(ctx);
@@ -887,9 +988,10 @@ void flb_test_long_index()
                    NULL);
 
     /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_long_index,
-                              NULL, NULL);
+    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
+                                                cb_check_long_index,
+                                                NULL, NULL, cb_flush_context);
+    TEST_CHECK(ret == 0);
 
     /* Start */
     ret = flb_start(ctx);
@@ -934,9 +1036,10 @@ void flb_test_logstash_prefix_separator()
                    NULL);
 
     /* Enable test mode */
-    ret = flb_output_set_test(ctx, out_ffd, "formatter",
-                              cb_check_logstash_prefix_separator,
-                              NULL, NULL);
+    ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
+                                                cb_check_logstash_prefix_separator,
+                                                NULL, NULL, cb_flush_context);
+    TEST_CHECK(ret == 0);
 
     /* Start */
     ret = flb_start(ctx);
@@ -1108,202 +1211,64 @@ void flb_test_response_partially_success()
     flb_destroy(ctx);
 }
 
-static int create_upstream_file_va(char *path, size_t size,
-                                   const char *first_property,
-                                   va_list args)
-{
-#ifndef _WIN32
-    int fd;
-#else
-    FILE *fp;
-    size_t written;
-#endif
-    char *tmp_path;
-    size_t content_len;
-    const char *property;
-    const char *value;
-    int ret;
-    flb_sds_t content = NULL;
-    flb_sds_t tmp_content = NULL;
-    const char *base_content =
-        "[UPSTREAM]\n"
-        "    name es_cluster\n"
-        "\n"
-        "[NODE]\n"
-        "    name es_node_1\n"
-        "    host 127.0.0.1\n"
-        "    port 9200\n";
-
-    content = flb_sds_create(base_content);
-    if (content == NULL) {
-        return -1;
-    }
-
-    property = first_property;
-    while (property != NULL) {
-        value = va_arg(args, const char *);
-        if (value == NULL) {
-            flb_sds_destroy(content);
-            return -1;
-        }
-
-        tmp_content = flb_sds_printf(&content, "    %s %s\n", property, value);
-        if (tmp_content == NULL) {
-            if (content != NULL) {
-                flb_sds_destroy(content);
-            }
-            return -1;
-        }
-        content = tmp_content;
-
-        property = va_arg(args, const char *);
-    }
-
-    tmp_path = flb_test_tmpdir_cat("/flb-es-upstream-XXXXXX");
-    if (tmp_path == NULL) {
-        flb_sds_destroy(content);
-        return -1;
-    }
-
-    if (strlen(tmp_path) + 1 > size) {
-        flb_free(tmp_path);
-        flb_sds_destroy(content);
-        return -1;
-    }
-
-    strncpy(path, tmp_path, size);
-    flb_free(tmp_path);
-
-#ifndef _WIN32
-    fd = mkstemp(path);
-    if (fd == -1) {
-        flb_sds_destroy(content);
-        return -1;
-    }
-
-    content_len = flb_sds_len(content);
-    ret = write(fd, content, content_len);
-    close(fd);
-    flb_sds_destroy(content);
-    if (ret != (int) content_len) {
-        unlink(path);
-        return -1;
-    }
-#else
-    if (_mktemp_s(path, size) != 0) {
-        flb_sds_destroy(content);
-        return -1;
-    }
-
-    fp = fopen(path, "wb");
-    if (fp == NULL) {
-        flb_sds_destroy(content);
-        return -1;
-    }
-
-    content_len = flb_sds_len(content);
-    written = fwrite(content, 1, content_len, fp);
-    ret = fclose(fp);
-    flb_sds_destroy(content);
-    if (written != content_len || ret != 0) {
-        unlink(path);
-        return -1;
-    }
-#endif
-
-    return 0;
-}
-
-static flb_ctx_t *create_upstream_test_ctx(char *upstream_file,
-                                           size_t upstream_file_size,
-                                           int *in_ffd,
-                                           int *out_ffd,
-                                           const char *first_property, ...)
-{
-    int ret;
-    flb_ctx_t *ctx;
-    va_list args;
-
-    va_start(args, first_property);
-    ret = create_upstream_file_va(upstream_file, upstream_file_size,
-                                  first_property, args);
-    va_end(args);
-    TEST_CHECK(ret == 0);
-    if (ret != 0) {
-        return NULL;
-    }
-
-    ctx = flb_create();
-    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-
-    *in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    flb_input_set(ctx, *in_ffd, "tag", "test", NULL);
-
-    *out_ffd = flb_output(ctx, (char *) "es", NULL);
-    flb_output_set(ctx, *out_ffd,
-                   "match", "test",
-                   "upstream", upstream_file,
-                   NULL);
-
-    return ctx;
-}
-
-static void *cb_upstream_flush_ctx(struct flb_config *config,
-                                   struct flb_input_instance *ins,
-                                   void *plugin_context,
-                                   void *flush_ctx)
-{
-    struct flb_elasticsearch *ctx = plugin_context;
-
-    (void) config;
-    (void) ins;
-    (void) flush_ctx;
-
-    if (ctx->ha_mode != FLB_TRUE || ctx->ha == NULL) {
-        return NULL;
-    }
-
-    return flb_upstream_ha_node_get(ctx->ha);
-}
-
 void flb_test_upstream_write_operation()
 {
     int ret;
     int size = sizeof(JSON_ES) - 1;
     int in_ffd;
     int out_ffd;
-    char upstream_file[256];
+    char *upstream_conf_filename;
     flb_ctx_t *ctx;
 
-    ctx = create_upstream_test_ctx(upstream_file, sizeof(upstream_file),
-                                   &in_ffd, &out_ffd,
-                                   "write_operation", "upsert",
-                                   "generate_id", "on", NULL);
-    if (!ctx) {
-        return;
-    }
-    (void) in_ffd;
+    /* Override write_operation to index at upstream node level */
+    upstream_conf_filename = create_upstream_conf_file("write_operation", "index", NULL);
+    TEST_ASSERT(upstream_conf_filename != NULL);
 
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Elasticsearch output */
+    out_ffd = flb_output(ctx, (char *) "es", NULL);
     flb_output_set(ctx, out_ffd,
-                   "write_operation", "create",
-                   "generate_id", "off",
+                   "match", "test",
                    NULL);
 
+    /* Override defaults of index and type */
+    flb_output_set(ctx, out_ffd,
+                   "Write_Operation", "Upsert",
+                   "Generate_Id", "True",
+                   NULL);
+
+    /* Use upstream servers */
+    flb_output_set(ctx, out_ffd,
+                   "Upstream", upstream_conf_filename,
+                   NULL);
+
+    /* Enable test mode */
     ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
-                                                cb_check_write_op_upsert,
-                                                NULL, NULL,
-                                                cb_upstream_flush_ctx);
+                                                cb_check_write_op_index,
+                                                NULL, NULL, cb_flush_context);
     TEST_CHECK(ret == 0);
 
+    /* Start */
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
 
+    /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) JSON_ES, size);
 
     sleep(2);
     flb_stop(ctx);
     flb_destroy(ctx);
-    unlink(upstream_file);
+
+    /* Cleanup temporary configuration file */
+    TEST_CHECK(remove(upstream_conf_filename) == 0);
+    flb_free(upstream_conf_filename);
 }
 
 void flb_test_upstream_update_unsafe_id()
@@ -1311,22 +1276,40 @@ void flb_test_upstream_update_unsafe_id()
     int ret;
     int in_ffd;
     int out_ffd;
-    char upstream_file[256];
+    char *upstream_conf_filename;
     char input[] = "[1448403340,{\"key_2\":\"unsafe\\\\id\"}]";
     flb_ctx_t *ctx;
 
-    ctx = create_upstream_test_ctx(upstream_file, sizeof(upstream_file),
-                                   &in_ffd, &out_ffd,
-                                   "write_operation", "update",
-                                   "id_key", "key_2", NULL);
-    if (!ctx) {
-        return;
-    }
+    upstream_conf_filename = create_upstream_conf_file("write_operation", "update",
+                                                       "index", "fluent-bit-node1",
+                                                       "id_key", "key_2", NULL);
+    TEST_ASSERT(upstream_conf_filename != NULL);
+
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "es", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   NULL);
+
+    flb_output_set(ctx, out_ffd,
+                   "write_operation", "upsert",
+                   "index", "fluent-bit",
+                   "id_key", "key_1",
+                   NULL);
+
+    flb_output_set(ctx, out_ffd,
+                   "Upstream", upstream_conf_filename,
+                   NULL);
 
     ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
                                                 cb_check_empty_bulk,
                                                 NULL, NULL,
-                                                cb_upstream_flush_ctx);
+                                                cb_flush_context);
     TEST_CHECK(ret == 0);
 
     ret = flb_start(ctx);
@@ -1336,7 +1319,9 @@ void flb_test_upstream_update_unsafe_id()
     sleep(2);
     flb_stop(ctx);
     flb_destroy(ctx);
-    unlink(upstream_file);
+
+    TEST_CHECK(remove(upstream_conf_filename) == 0);
+    flb_free(upstream_conf_filename);
 }
 
 void flb_test_upstream_null_index()
@@ -1344,33 +1329,51 @@ void flb_test_upstream_null_index()
     int ret;
     int in_ffd;
     int out_ffd;
-    char upstream_file[256];
+    char *upstream_conf_filename;
     flb_ctx_t *ctx;
 
-    ctx = create_upstream_test_ctx(upstream_file, sizeof(upstream_file),
-                                   &in_ffd, &out_ffd,
-                                   "generate_id", "off", NULL);
-    if (!ctx) {
-        return;
-    }
+    /* Override index at upstream node level */
+    upstream_conf_filename = create_upstream_conf_file("generate_id", "off", NULL);
+    TEST_ASSERT(upstream_conf_filename != NULL);
 
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Elasticsearch output */
+    out_ffd = flb_output(ctx, (char *) "es", NULL);
     flb_output_set(ctx, out_ffd,
                    "index", "",
-                   "type", "type_test",
+                   "generate_id", "on",
+                   "match", "test",
                    NULL);
 
+    /* Use upstream servers */
+    flb_output_set(ctx, out_ffd,
+                   "Upstream", upstream_conf_filename,
+                   NULL);
+
+    /* Enable test mode */
     ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
-                                                cb_check_index_type,
-                                                NULL, NULL,
-                                                cb_upstream_flush_ctx);
+                                                cb_check_write_op_index,
+                                                NULL, NULL, cb_flush_context);
     TEST_CHECK(ret == 0);
 
+    /* Start */
     ret = flb_start(ctx);
     TEST_CHECK(ret == -1);
 
+    sleep(2);
     flb_stop(ctx);
     flb_destroy(ctx);
-    unlink(upstream_file);
+
+    /* Cleanup temporary configuration file */
+    TEST_CHECK(remove(upstream_conf_filename) == 0);
+    flb_free(upstream_conf_filename);
 }
 
 void flb_test_upstream_index_type()
@@ -1379,36 +1382,57 @@ void flb_test_upstream_index_type()
     int size = sizeof(JSON_ES) - 1;
     int in_ffd;
     int out_ffd;
-    char upstream_file[256];
+    char *upstream_conf_filename;
     flb_ctx_t *ctx;
 
-    ctx = create_upstream_test_ctx(upstream_file, sizeof(upstream_file),
-                                   &in_ffd, &out_ffd,
-                                   "index", "another_index_test",
-                                   "type", "another_type_test", NULL);
-    if (!ctx) {
-        return;
-    }
+    /* Override default index and type at upstream node level */
+    upstream_conf_filename = create_upstream_conf_file("index", "index_test",
+                                                       "type", "type_test",
+                                                       NULL);
+    TEST_ASSERT(upstream_conf_filename != NULL);
 
+
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Elasticsearch output */
+    out_ffd = flb_output(ctx, (char *) "es", NULL);
     flb_output_set(ctx, out_ffd,
-                   "index", "index_test",
-                   "type", "type_test",
+                   "match", "test",
+                   "index", "another_index_test",
+                   "type", "another_type_test",
                    NULL);
 
+    /* Use upstream servers */
+    flb_output_set(ctx, out_ffd,
+                   "Upstream", upstream_conf_filename,
+                   NULL);
+
+    /* Enable test mode */
     ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
-                                                cb_check_node_index_type,
-                                                NULL, NULL,
-                                                cb_upstream_flush_ctx);
+                                                cb_check_index_type,
+                                                NULL, NULL, cb_flush_context);
     TEST_CHECK(ret == 0);
 
+    /* Start */
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) JSON_ES, size);
 
     sleep(2);
     flb_stop(ctx);
     flb_destroy(ctx);
-    unlink(upstream_file);
+
+    /* Cleanup temporary configuration file */
+    TEST_CHECK(remove(upstream_conf_filename) == 0);
+    flb_free(upstream_conf_filename);
 }
 
 void flb_test_upstream_logstash_format()
@@ -1417,20 +1441,32 @@ void flb_test_upstream_logstash_format()
     int size = sizeof(JSON_ES) - 1;
     int in_ffd;
     int out_ffd;
-    char upstream_file[256];
+    char *upstream_conf_filename;
     flb_ctx_t *ctx;
 
-    ctx = create_upstream_test_ctx(upstream_file, sizeof(upstream_file),
-                                   &in_ffd, &out_ffd,
-                                   "logstash_format", "on",
-                                   "logstash_prefix", "prefix",
-                                   "logstash_prefix_separator", "SEP",
-                                   "logstash_dateformat", "%Y-%m-%d",
-                                   NULL);
-    if (!ctx) {
-        return;
-    }
+    /* Specify Logstash format at upstream node level */
+    upstream_conf_filename = create_upstream_conf_file("logstash_format", "on",
+                                                       "logstash_prefix", "prefix",
+                                                       "logstash_prefix_separator", "SEP",
+                                                       "logstash_dateformat", "%Y-%m-%d",
+                                                       NULL);
+    TEST_ASSERT(upstream_conf_filename != NULL);
 
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Elasticsearch output */
+    out_ffd = flb_output(ctx, (char *) "es", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   NULL);
+
+    /* Use configuration different from upstream node configuration */
     flb_output_set(ctx, out_ffd,
                    "logstash_format", "off",
                    "logstash_prefix", "logstash",
@@ -1438,20 +1474,31 @@ void flb_test_upstream_logstash_format()
                    "logstash_dateformat", "%Y.%m.%d",
                    NULL);
 
+    /* Use upstream servers */
+    flb_output_set(ctx, out_ffd,
+                   "Upstream", upstream_conf_filename,
+                   NULL);
+
+    /* Enable test mode */
     ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
                                                 cb_check_logstash_prefix_separator,
-                                                NULL, NULL,
-                                                cb_upstream_flush_ctx);
+                                                NULL, NULL, cb_flush_context);
     TEST_CHECK(ret == 0);
 
+    /* Start */
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) JSON_ES, size);
 
     sleep(2);
     flb_stop(ctx);
     flb_destroy(ctx);
-    unlink(upstream_file);
+
+    /* Cleanup temporary configuration file */
+    TEST_CHECK(remove(upstream_conf_filename) == 0);
+    flb_free(upstream_conf_filename);
 }
 
 void flb_test_upstream_replace_dots()
@@ -1460,34 +1507,58 @@ void flb_test_upstream_replace_dots()
     int size = sizeof(JSON_DOTS) - 1;
     int in_ffd;
     int out_ffd;
-    char upstream_file[256];
+    char *upstream_conf_filename;
     flb_ctx_t *ctx;
 
-    ctx = create_upstream_test_ctx(upstream_file, sizeof(upstream_file),
-                                   &in_ffd, &out_ffd,
-                                   "replace_dots", "on", NULL);
-    if (!ctx) {
-        return;
-    }
+    /* Specify Logstash format at upstream node level */
+    upstream_conf_filename = create_upstream_conf_file("replace_dots", "on",
+                                                       NULL);
+    TEST_ASSERT(upstream_conf_filename != NULL);
 
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Elasticsearch output */
+    out_ffd = flb_output(ctx, (char *) "es", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   NULL);
+
+    /* Use configuration different from upstream node configuration */
     flb_output_set(ctx, out_ffd,
                    "replace_dots", "off",
                    NULL);
 
+    /* Use upstream servers */
+    flb_output_set(ctx, out_ffd,
+                   "Upstream", upstream_conf_filename,
+                   NULL);
+
+    /* Enable test mode */
     ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
                                                 cb_check_replace_dots,
-                                                NULL, NULL,
-                                                cb_upstream_flush_ctx);
+                                                NULL, NULL, cb_flush_context);
     TEST_CHECK(ret == 0);
 
+    /* Start */
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) JSON_DOTS, size);
 
     sleep(2);
     flb_stop(ctx);
     flb_destroy(ctx);
-    unlink(upstream_file);
+
+    /* Cleanup temporary configuration file */
+    TEST_CHECK(remove(upstream_conf_filename) == 0);
+    flb_free(upstream_conf_filename);
 }
 
 void flb_test_upstream_id_key()
@@ -1496,34 +1567,52 @@ void flb_test_upstream_id_key()
     int size = sizeof(JSON_ES) - 1;
     int in_ffd;
     int out_ffd;
-    char upstream_file[256];
+    char *upstream_conf_filename;
     flb_ctx_t *ctx;
 
-    ctx = create_upstream_test_ctx(upstream_file, sizeof(upstream_file),
-                                   &in_ffd, &out_ffd,
-                                   "id_key", "key_2", NULL);
-    if (!ctx) {
-        return;
-    }
+    /* Specify Logstash format at upstream node level */
+    upstream_conf_filename = create_upstream_conf_file("id_key", "key_2", NULL);
+    TEST_ASSERT(upstream_conf_filename != NULL);
 
+    /* Create context, flush every second (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Elasticsearch output */
+    out_ffd = flb_output(ctx, (char *) "es", NULL);
     flb_output_set(ctx, out_ffd,
-                   "id_key", "key_2",
+                   "match", "test",
                    NULL);
 
+    /* Use upstream servers */
+    flb_output_set(ctx, out_ffd,
+                   "Upstream", upstream_conf_filename,
+                   NULL);
+
+    /* Enable test mode */
     ret = flb_output_set_test_with_ctx_callback(ctx, out_ffd, "formatter",
                                                 cb_check_id_key,
-                                                NULL, NULL,
-                                                cb_upstream_flush_ctx);
+                                                NULL, NULL, cb_flush_context);
     TEST_CHECK(ret == 0);
 
+    /* Start */
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
     flb_lib_push(ctx, in_ffd, (char *) JSON_ES, size);
 
     sleep(2);
     flb_stop(ctx);
     flb_destroy(ctx);
-    unlink(upstream_file);
+
+    /* Cleanup temporary configuration file */
+    TEST_CHECK(remove(upstream_conf_filename) == 0);
+    flb_free(upstream_conf_filename);
 }
 
 void flb_test_drop_unrecoverable_records_config()
@@ -1604,6 +1693,7 @@ TEST_LIST = {
     {"write_operation_create", flb_test_write_operation_create },
     {"write_operation_update", flb_test_write_operation_update },
     {"write_operation_upsert", flb_test_write_operation_upsert },
+    {"null_index"            , flb_test_null_index },
     {"index_type"            , flb_test_index_type },
     {"logstash_format"       , flb_test_logstash_format },
     {"logstash_format_nanos" , flb_test_logstash_format_nanos },

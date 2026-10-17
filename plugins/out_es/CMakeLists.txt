@@ -1,5 +1,7 @@
 set(src
   es_bulk.c
+  es_type.c
+  es_conf_parse.c
   es_conf.c
   es.c
   murmur3.c)
