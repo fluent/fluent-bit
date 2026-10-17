@@ -116,6 +116,7 @@ extern const struct fts_signal_adapter fts_logs_adapter;
 int fts_runtime_initialize(struct fts_runtime *ctx, struct flb_config *config);
 void fts_runtime_destroy(struct fts_runtime *ctx);
 void fts_report_policy_error(struct flb_processor_instance *ins);
+void fts_sanitizer_forget_unwound_frames(void);
 int fts_runtime_call(struct fts_runtime *ctx, void *data, int results);
 int fts_register_values(lua_State *l);
 void fts_collect(struct fts_runtime *ctx, int emergency);
