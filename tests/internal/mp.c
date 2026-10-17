@@ -813,8 +813,103 @@ static void test_log_scan_matches_decoder(void)
     flb_log_event_encoder_destroy(encoder);
 }
 
+static void append_window_test_record(struct flb_log_event_encoder *encoder, int seq)
+{
+    int ret;
+    struct flb_time timestamp;
+
+    TEST_ASSERT(flb_log_event_encoder_begin_record(encoder) == 0);
+    flb_time_set(&timestamp, 1700000000 + seq, 0);
+    TEST_ASSERT(flb_log_event_encoder_set_timestamp(encoder, &timestamp) == 0);
+    ret = flb_log_event_encoder_append_body_values(encoder,
+        FLB_LOG_EVENT_CSTRING_VALUE("seq"), FLB_LOG_EVENT_INT64_VALUE(seq));
+    TEST_ASSERT(ret == 0);
+    TEST_ASSERT(flb_log_event_encoder_commit_record(encoder) == 0);
+}
+
+static void test_log_window_next(void)
+{
+    struct flb_log_event_encoder *encoder;
+    size_t offset;
+    size_t end;
+    size_t group_start;
+    size_t group_end;
+    int records;
+    int total;
+    int windows;
+    int seq;
+
+    encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+    TEST_ASSERT(encoder != NULL);
+
+    /* 10 plain records, a group of 6 records, 4 plain records */
+    for (seq = 0; seq < 10; seq++) {
+        append_window_test_record(encoder, seq);
+    }
+    group_start = encoder->output_length;
+    TEST_ASSERT(flb_log_event_encoder_group_init(encoder) == 0);
+    TEST_ASSERT(flb_log_event_encoder_group_header_end(encoder) == 0);
+    for (; seq < 16; seq++) {
+        append_window_test_record(encoder, seq);
+    }
+    TEST_ASSERT(flb_log_event_encoder_group_end(encoder) == 0);
+    group_end = encoder->output_length;
+    for (; seq < 20; seq++) {
+        append_window_test_record(encoder, seq);
+    }
+
+    /* record limited windows cover the buffer without splitting the group */
+    offset = 0;
+    total = 0;
+    windows = 0;
+    while (offset < encoder->output_length) {
+        TEST_ASSERT(flb_mp_log_window_next(encoder->output_buffer,
+                                           encoder->output_length, offset,
+                                           SIZE_MAX, 4, &end, &records) == 0);
+        TEST_CHECK(end > offset && end <= encoder->output_length);
+        TEST_CHECK(!(offset < group_start && end > group_start && end < group_end));
+        TEST_CHECK(!(offset > group_start && offset < group_end));
+        TEST_CHECK(flb_mp_count_log_records(encoder->output_buffer + offset,
+                                            end - offset) == records);
+        if (end <= group_start || offset >= group_end) {
+            TEST_CHECK(records <= 4);
+        }
+        total += records;
+        windows++;
+        offset = end;
+    }
+    TEST_CHECK(offset == encoder->output_length);
+    TEST_CHECK(total == 20);
+    /* 4 + 4 + (2 plain and the whole group of 6) + 4 */
+    TEST_CHECK(windows == 4);
+
+    /* a byte limit of one closes after every event outside the group */
+    TEST_ASSERT(flb_mp_log_window_next(encoder->output_buffer, encoder->output_length,
+                                       0, 1, INT_MAX, &end, &records) == 0);
+    TEST_CHECK(records == 1);
+    TEST_ASSERT(flb_mp_log_window_next(encoder->output_buffer, encoder->output_length,
+                                       group_start, 1, INT_MAX, &end, &records) == 0);
+    TEST_CHECK(end == group_end && records == 6);
+
+    /* a single window for the whole buffer */
+    TEST_ASSERT(flb_mp_log_window_next(encoder->output_buffer, encoder->output_length,
+                                       0, SIZE_MAX, INT_MAX, &end, &records) == 0);
+    TEST_CHECK(end == encoder->output_length && records == 20);
+
+    /* invalid input and offsets */
+    TEST_CHECK(flb_mp_log_window_next(encoder->output_buffer, encoder->output_length,
+                                      encoder->output_length, 1, 1, &end, &records) == -1);
+    TEST_CHECK(flb_mp_log_window_next(NULL, 10, 0, 1, 1, &end, &records) == -1);
+    TEST_CHECK(flb_mp_log_window_next(encoder->output_buffer, encoder->output_length - 1,
+                                      0, SIZE_MAX, INT_MAX, &end, &records) == -1);
+    TEST_CHECK(flb_mp_log_window_next("\x92\x01", 2, 0, 1, 1, &end, &records) == -1);
+
+    flb_log_event_encoder_destroy(encoder);
+}
+
 TEST_LIST = {
     {"log_scan_matches_decoder", test_log_scan_matches_decoder},
+    {"log_window_next", test_log_window_next},
     {"preflight", test_preflight},
     {"preflight_formats", test_preflight_formats},
     {"validate_trace_chunk" , test_validate_trace_chunk},
