@@ -1309,6 +1309,138 @@ static void processor_chunk_codec_is_per_run(void)
     window_config_destroy(config);
 }
 
+/* removes group end markers, as a filtering processor can do */
+static int drop_group_ends(struct flb_processor_instance *ins, void *data,
+                           const char *tag, int tag_len)
+{
+    int type;
+    struct cfl_list *head;
+    struct cfl_list *tmp;
+    struct flb_mp_chunk_cobj *chunk = data;
+    struct flb_mp_chunk_record *record;
+
+    while (flb_mp_chunk_cobj_record_next(chunk, &record) == FLB_MP_CHUNK_RECORD_OK) {
+    }
+    chunk->record_pos = NULL;
+
+    cfl_list_foreach_safe(head, tmp, &chunk->records) {
+        record = cfl_list_entry(head, struct flb_mp_chunk_record, _head);
+        if (flb_log_event_decoder_get_record_type(&record->event, &type) == 0 &&
+            type == FLB_LOG_EVENT_GROUP_END) {
+            flb_mp_chunk_cobj_record_destroy(chunk, record);
+        }
+    }
+
+    return FLB_PROCESSOR_SUCCESS;
+}
+
+static struct flb_processor_plugin drop_group_end_plugin = {
+    .name = "test_drop_group_end",
+    .description = "removes group end markers",
+    .cb_process_logs = drop_group_ends,
+    .flags = 0
+};
+
+/* layout tokens: r<n> record, S group start, E group end */
+static void run_group_layout(struct flb_config *config, char *unit,
+                             const char *layout, const char *expected)
+{
+    int ret;
+    int type;
+    int length;
+    char token[16];
+    char result[128];
+    const char *cursor;
+    void *output = NULL;
+    size_t output_size = 0;
+    msgpack_object *seq;
+    struct flb_processor *proc;
+    struct flb_input_instance owner;
+    struct flb_log_event event;
+    struct flb_log_event_decoder decoder;
+    struct flb_log_event_encoder *encoder;
+
+    memset(&owner, 0, sizeof(owner));
+    snprintf(owner.name, sizeof(owner.name), "%s", "window_input.0");
+    owner.cmt = cmt_create();
+    TEST_ASSERT(owner.cmt != NULL);
+    proc = window_processor_create(config, &owner, unit, NULL);
+    TEST_ASSERT(proc != NULL);
+
+    encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+    TEST_ASSERT(encoder != NULL);
+    for (cursor = layout; sscanf(cursor, "%15s%n", token, &length) == 1; cursor += length) {
+        if (token[0] == 'r') {
+            TEST_ASSERT(append_window_record(encoder, atoi(token + 1)) == 0);
+        }
+        else if (token[0] == 'S') {
+            TEST_ASSERT(flb_log_event_encoder_group_init(encoder) == 0);
+            TEST_ASSERT(flb_log_event_encoder_group_header_end(encoder) == 0);
+        }
+        else {
+            TEST_ASSERT(flb_log_event_encoder_group_end(encoder) == 0);
+        }
+    }
+
+    ret = flb_processor_run(proc, 0, FLB_PROCESSOR_LOGS, "test", 4,
+                            encoder->output_buffer, encoder->output_length,
+                            &output, &output_size);
+    TEST_CHECK(ret == 0);
+
+    result[0] = '\0';
+    if (output != NULL && output_size > 0) {
+        TEST_ASSERT(flb_log_event_decoder_init(&decoder, output, output_size) == 0);
+        flb_log_event_decoder_read_groups(&decoder, FLB_TRUE);
+        while (flb_log_event_decoder_next(&decoder, &event) == FLB_EVENT_DECODER_SUCCESS) {
+            TEST_ASSERT(flb_log_event_decoder_get_record_type(&event, &type) == 0);
+            if (type == FLB_LOG_EVENT_GROUP_START) {
+                snprintf(token, sizeof(token), "S ");
+            }
+            else if (type == FLB_LOG_EVENT_GROUP_END) {
+                snprintf(token, sizeof(token), "E ");
+            }
+            else {
+                seq = &event.body->via.map.ptr[0].val;
+                snprintf(token, sizeof(token), "r%d ", (int) seq->via.i64);
+            }
+            strncat(result, token, sizeof(result) - strlen(result) - 1);
+        }
+        flb_log_event_decoder_destroy(&decoder);
+    }
+    if (strlen(result) > 0) {
+        result[strlen(result) - 1] = '\0';
+    }
+    TEST_CHECK(strcmp(result, expected) == 0);
+    TEST_MSG("%s: '%s' produced '%s', expected '%s'", unit, layout, result, expected);
+
+    if (output != NULL && output != encoder->output_buffer) {
+        flb_free(output);
+    }
+    flb_log_event_encoder_destroy(encoder);
+    flb_processor_destroy(proc);
+    cmt_destroy(owner.cmt);
+}
+
+static void processor_group_boundaries_follow_the_input(void)
+{
+    struct flb_config *config;
+
+    config = window_config_create();
+    TEST_ASSERT(config != NULL);
+    mk_list_add(&drop_group_end_plugin._head, &config->processor_plugins);
+
+    /* a processor removing an end never leaves an orphan start behind */
+    run_group_layout(config, "test_drop_group_end", "S r0 r1 E r2", "r0 r1 r2");
+    /* groups split across appends keep their boundary markers */
+    run_group_layout(config, "test_single_mark", "S r0 r1", "S r0 r1");
+    run_group_layout(config, "test_single_mark", "r0 E S r1 E", "r0 E S r1 E");
+    /* stray and empty markers of a balanced input are removed as before */
+    run_group_layout(config, "test_single_mark", "S r0 E E r1", "S r0 E r1");
+
+    mk_list_del(&drop_group_end_plugin._head);
+    window_config_destroy(config);
+}
+
 TEST_LIST = {
     {"processor_metrics_failure_clears_output", processor_metrics_failure_clears_output},
     { "processor_private_inputs_use_main_loop", processor_private_inputs_use_main_loop },
@@ -1319,5 +1451,6 @@ TEST_LIST = {
     { "processor_log_windows_drop_all", processor_log_windows_drop_all },
     { "processor_log_windows_need_every_unit", processor_log_windows_need_every_unit },
     { "processor_chunk_codec_is_per_run", processor_chunk_codec_is_per_run },
+    { "processor_group_boundaries_follow_the_input", processor_group_boundaries_follow_the_input },
     { 0 }
 };
