@@ -862,6 +862,36 @@ static void free_log_records(Opentelemetry__Proto__Logs__V1__LogRecord **logs, s
     }
 }
 
+/*
+ * Release the log records of a request that was already sent, keeping its
+ * resources and scopes, so a later request of the same chunk does not repeat
+ * them.
+ */
+static void release_sent_log_records(Opentelemetry__Proto__Collector__Logs__V1__ExportLogsServiceRequest *export_logs)
+{
+    size_t i;
+    size_t j;
+    Opentelemetry__Proto__Logs__V1__ResourceLogs *resource_log;
+    Opentelemetry__Proto__Logs__V1__ScopeLogs *scope_log;
+
+    for (i = 0; i < export_logs->n_resource_logs; i++) {
+        resource_log = export_logs->resource_logs[i];
+        if (resource_log == NULL) {
+            continue;
+        }
+
+        for (j = 0; j < resource_log->n_scope_logs; j++) {
+            scope_log = resource_log->scope_logs[j];
+            if (scope_log == NULL || scope_log->log_records == NULL) {
+                continue;
+            }
+
+            free_log_records(scope_log->log_records, scope_log->n_log_records);
+            scope_log->n_log_records = 0;
+        }
+    }
+}
+
 static void free_resource_logs(Opentelemetry__Proto__Logs__V1__ResourceLogs **resource_logs, size_t resource_count)
 {
     int i;
@@ -1132,6 +1162,7 @@ int otel_process_logs(struct flb_event_chunk *event_chunk,
     int ret;
     int record_type;
     int log_record_count;
+    int pending_records = 0;
     int max_scopes_limit;
     int max_resources;
     int native_otel = FLB_FALSE;
@@ -1582,13 +1613,14 @@ start_resource:
 
         ret = FLB_OK;
         log_record_count++;
+        pending_records++;
         scope_log->n_log_records = log_record_count;
 
         if (log_record_count >= ctx->batch_size) {
             ret = logs_flush_to_otel(ctx, event_chunk, &export_logs);
-            free_log_records(log_records, log_record_count);
+            release_sent_log_records(&export_logs);
             log_record_count = 0;
-            scope_log->n_log_records = 0;
+            pending_records = 0;
 
             /* Do not let a later batch overwrite this failure. */
             if (ret != FLB_OK) {
@@ -1599,7 +1631,11 @@ start_resource:
 
     flb_log_event_decoder_destroy(decoder);
 
-    if (log_record_count > 0 && ret == FLB_OK) {
+    /*
+     * Records of earlier scopes are pending too: a chunk can end with a group
+     * that has no records yet, for example one opened by the previous append.
+     */
+    if (pending_records > 0 && ret == FLB_OK) {
         ret = logs_flush_to_otel(ctx, event_chunk, &export_logs);
     }
 
