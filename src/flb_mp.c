@@ -250,6 +250,47 @@ int flb_mp_count_log_records(const void *data, size_t bytes)
     return count;
 }
 
+/* TRUE when the event starting at 'data' is a group end marker */
+static int log_event_is_group_end(const char *data, size_t bytes)
+{
+    mpack_reader_t reader;
+    mpack_tag_t tag;
+    msgpack_object timestamp = {0};
+    struct flb_time time;
+    char extension[8];
+    int result = FLB_FALSE;
+
+    mpack_reader_init_data(&reader, data, bytes);
+
+    tag = mpack_read_tag(&reader);
+    if (mpack_tag_type(&tag) == mpack_type_array && mpack_tag_array_count(&tag) == 2) {
+        tag = mpack_read_tag(&reader);
+        if (mpack_tag_type(&tag) == mpack_type_array && mpack_tag_array_count(&tag) == 2) {
+            tag = mpack_read_tag(&reader);
+        }
+
+        /* group markers always use the EventTime extension */
+        if (mpack_tag_type(&tag) == mpack_type_ext &&
+            mpack_tag_ext_length(&tag) == 8 && mpack_tag_ext_exttype(&tag) == 0) {
+            mpack_read_bytes(&reader, extension, sizeof(extension));
+            if (mpack_reader_error(&reader) == mpack_ok) {
+                timestamp.type = MSGPACK_OBJECT_EXT;
+                timestamp.via.ext.ptr = extension;
+                timestamp.via.ext.size = sizeof(extension);
+                timestamp.via.ext.type = 0;
+                result = flb_log_event_decoder_decode_timestamp(&timestamp, &time) == 0 &&
+                         time.tm.tv_sec == FLB_LOG_EVENT_GROUP_END;
+            }
+        }
+    }
+
+    /* only the event header was read */
+    mpack_reader_flag_error(&reader, mpack_error_invalid);
+    mpack_reader_destroy(&reader);
+
+    return result;
+}
+
 /*
  * Find the end of the log window starting at 'offset'. A window closes after
  * 'limit_bytes' of serialized events or 'limit_records' log records, but only
@@ -345,7 +386,15 @@ int flb_mp_log_window_next(const void *data, size_t bytes, size_t offset,
         }
 
         position = (bytes - offset) - mpack_reader_remaining(&reader, NULL);
-        if (!in_group && (position >= limit_bytes || records >= limit_records)) {
+
+        /*
+         * Never start the next window with an end marker: per window it would
+         * look like the end of a group opened by a previous append.
+         */
+        if (!in_group && (position >= limit_bytes || records >= limit_records) &&
+            (offset + position >= bytes ||
+             !log_event_is_group_end((const char *) data + offset + position,
+                                     bytes - offset - position))) {
             break;
         }
     }
@@ -357,6 +406,10 @@ int flb_mp_log_window_next(const void *data, size_t bytes, size_t offset,
     }
 
 done:
+    /* flag early exits so unfinished compound types are not reported */
+    if (ret != 0) {
+        mpack_reader_flag_error(&reader, mpack_error_invalid);
+    }
     if (mpack_reader_destroy(&reader) != mpack_ok) {
         ret = -1;
     }
