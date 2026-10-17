@@ -250,6 +250,131 @@ int flb_mp_count_log_records(const void *data, size_t bytes)
     return count;
 }
 
+/*
+ * Report the group markers of a log buffer that belong to neighbouring
+ * appends: an end marker before any start (FLB_MP_GROUPS_KEEP_LEADING_END) and
+ * a single group still open at the end (FLB_MP_GROUPS_KEEP_TRAILING_OPEN).
+ * Returns the flags, or 0 when the buffer cannot be scanned.
+ */
+static int log_group_scan(const void *data, size_t bytes, int *starts);
+
+int flb_mp_log_group_boundaries(const void *data, size_t bytes)
+{
+    return log_group_scan(data, bytes, NULL);
+}
+
+/* number of group start markers in a log buffer, 0 when it cannot be scanned */
+int flb_mp_log_group_starts(const void *data, size_t bytes)
+{
+    int starts = 0;
+
+    log_group_scan(data, bytes, &starts);
+    return starts;
+}
+
+static int log_group_scan(const void *data, size_t bytes, int *starts)
+{
+    mpack_reader_t reader;
+    mpack_tag_t tag;
+    msgpack_object timestamp = {0};
+    struct flb_time time;
+    char extension[8];
+    int header;
+    int flags = 0;
+    int depth = 0;
+    int seen_start = FLB_FALSE;
+    int failed = FLB_TRUE;
+
+    if (!data || bytes == 0) {
+        return 0;
+    }
+
+    mpack_reader_init_data(&reader, data, bytes);
+
+    while (mpack_reader_remaining(&reader, NULL) > 0) {
+        tag = mpack_read_tag(&reader);
+        if (mpack_tag_type(&tag) != mpack_type_array || mpack_tag_array_count(&tag) != 2) {
+            goto done;
+        }
+
+        tag = mpack_read_tag(&reader);
+        header = mpack_tag_type(&tag) == mpack_type_array;
+        if (header) {
+            if (mpack_tag_array_count(&tag) != 2) {
+                goto done;
+            }
+            tag = mpack_read_tag(&reader);
+        }
+
+        /* only group markers matter, and they use the EventTime extension */
+        timestamp.type = MSGPACK_OBJECT_POSITIVE_INTEGER;
+        if (mpack_tag_type(&tag) == mpack_type_ext &&
+            mpack_tag_ext_length(&tag) == 8 && mpack_tag_ext_exttype(&tag) == 0) {
+            mpack_read_bytes(&reader, extension, sizeof(extension));
+            mpack_done_ext(&reader);
+            timestamp.type = MSGPACK_OBJECT_EXT;
+            timestamp.via.ext.ptr = extension;
+            timestamp.via.ext.size = sizeof(extension);
+            timestamp.via.ext.type = 0;
+        }
+        else if (mpack_tag_type(&tag) == mpack_type_ext) {
+            mpack_skip_bytes(&reader, mpack_tag_ext_length(&tag));
+            mpack_done_ext(&reader);
+        }
+        else if (mpack_tag_type(&tag) == mpack_type_array ||
+                 mpack_tag_type(&tag) == mpack_type_map ||
+                 mpack_tag_type(&tag) == mpack_type_str ||
+                 mpack_tag_type(&tag) == mpack_type_bin) {
+            goto done;
+        }
+
+        if (header) {
+            mpack_discard(&reader);
+            mpack_done_array(&reader);
+        }
+        mpack_discard(&reader);
+        mpack_done_array(&reader);
+
+        if (mpack_reader_error(&reader) != mpack_ok) {
+            goto done;
+        }
+
+        if (timestamp.type != MSGPACK_OBJECT_EXT ||
+            flb_log_event_decoder_decode_timestamp(&timestamp, &time) != 0) {
+            continue;
+        }
+
+        if (time.tm.tv_sec == FLB_LOG_EVENT_GROUP_START) {
+            seen_start = FLB_TRUE;
+            depth++;
+            if (starts) {
+                (*starts)++;
+            }
+        }
+        else if (time.tm.tv_sec == FLB_LOG_EVENT_GROUP_END) {
+            if (depth > 0) {
+                depth--;
+            }
+            else if (!seen_start) {
+                flags |= FLB_MP_GROUPS_KEEP_LEADING_END;
+            }
+        }
+    }
+
+    if (depth == 1) {
+        flags |= FLB_MP_GROUPS_KEEP_TRAILING_OPEN;
+    }
+    failed = FLB_FALSE;
+
+done:
+    if (failed) {
+        mpack_reader_flag_error(&reader, mpack_error_invalid);
+    }
+    mpack_reader_destroy(&reader);
+
+    return failed ? 0 : flags;
+}
+
 /* TRUE when the event starting at 'data' is a group end marker */
 static int log_event_is_group_end(const char *data, size_t bytes)
 {
@@ -427,10 +552,27 @@ struct flb_mp_record_span {
 int flb_mp_normalize_log_buffer_groups_msgpack(const void *in_buf, size_t in_size,
                                                char **out_buf, size_t *out_size)
 {
+    return flb_mp_normalize_log_buffer_groups_msgpack_ex(in_buf, in_size, out_buf, out_size, 0);
+}
+
+/*
+ * Group normalization removes empty groups, end markers without a start and
+ * groups left open at the end of the buffer. 'flags' keeps the markers at the
+ * append boundaries when the caller knows the input already had them: a group
+ * split across appends keeps its first end marker before any start
+ * (FLB_MP_GROUPS_KEEP_LEADING_END) and its single open trailing group
+ * (FLB_MP_GROUPS_KEEP_TRAILING_OPEN).
+ */
+int flb_mp_normalize_log_buffer_groups_msgpack_ex(const void *in_buf, size_t in_size,
+                                                  char **out_buf, size_t *out_size,
+                                                  int flags)
+{
     int i;
     int ret;
     int entry_count;
     int stack_count;
+    int seen_start = FLB_FALSE;
+    int leading_end = FLB_FALSE;
     int *group_stack;
     int *group_has_content;
     struct flb_log_event log_event;
@@ -518,12 +660,19 @@ int flb_mp_normalize_log_buffer_groups_msgpack(const void *in_buf, size_t in_siz
             group_stack[stack_count] = i;
             group_has_content[stack_count] = FLB_FALSE;
             stack_count++;
+            seen_start = FLB_TRUE;
             continue;
         }
 
         if (entries[i].type == FLB_LOG_EVENT_GROUP_END) {
             if (stack_count == 0) {
-                entries[i].keep = FLB_FALSE;
+                /* the first end before any start closes a previous append's group */
+                if ((flags & FLB_MP_GROUPS_KEEP_LEADING_END) && !seen_start && !leading_end) {
+                    leading_end = FLB_TRUE;
+                }
+                else {
+                    entries[i].keep = FLB_FALSE;
+                }
                 continue;
             }
 
@@ -543,6 +692,11 @@ int flb_mp_normalize_log_buffer_groups_msgpack(const void *in_buf, size_t in_siz
         if (stack_count > 0) {
             group_has_content[stack_count - 1] = FLB_TRUE;
         }
+    }
+
+    /* a single open group continues in the next append, nested ones are dropped */
+    if ((flags & FLB_MP_GROUPS_KEEP_TRAILING_OPEN) && stack_count == 1) {
+        stack_count = 0;
     }
 
     while (stack_count > 0) {
@@ -2042,8 +2196,16 @@ static int cobj_remove_list_add(struct flb_mp_chunk_record **remove_list,
 
 int flb_mp_chunk_cobj_normalize_groups(struct flb_mp_chunk_cobj *chunk_cobj)
 {
+    return flb_mp_chunk_cobj_normalize_groups_ex(chunk_cobj, 0);
+}
+
+/* see flb_mp_normalize_log_buffer_groups_msgpack_ex() for 'flags' */
+int flb_mp_chunk_cobj_normalize_groups_ex(struct flb_mp_chunk_cobj *chunk_cobj, int flags)
+{
     int ret;
     int record_type;
+    int seen_start = FLB_FALSE;
+    int leading_end = FLB_FALSE;
     size_t index;
     size_t stack_size;
     size_t stack_count;
@@ -2101,12 +2263,19 @@ int flb_mp_chunk_cobj_normalize_groups(struct flb_mp_chunk_cobj *chunk_cobj)
                 group_has_content[stack_count] = FLB_FALSE;
                 stack_count++;
             }
+            seen_start = FLB_TRUE;
             continue;
         }
 
         if (record_type == FLB_LOG_EVENT_GROUP_END) {
             if (stack_count == 0) {
-                cobj_remove_list_add(remove_list, stack_size, &remove_count, record);
+                /* the first end before any start closes a previous append's group */
+                if ((flags & FLB_MP_GROUPS_KEEP_LEADING_END) && !seen_start && !leading_end) {
+                    leading_end = FLB_TRUE;
+                }
+                else {
+                    cobj_remove_list_add(remove_list, stack_size, &remove_count, record);
+                }
                 continue;
             }
 
@@ -2127,6 +2296,11 @@ int flb_mp_chunk_cobj_normalize_groups(struct flb_mp_chunk_cobj *chunk_cobj)
         for (index = 0; index < stack_count; index++) {
             group_has_content[index] = FLB_TRUE;
         }
+    }
+
+    /* a single open group continues in the next append, nested ones are dropped */
+    if ((flags & FLB_MP_GROUPS_KEEP_TRAILING_OPEN) && stack_count == 1) {
+        stack_count = 0;
     }
 
     while (stack_count > 0) {
