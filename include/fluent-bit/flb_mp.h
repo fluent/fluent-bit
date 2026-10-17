@@ -34,6 +34,9 @@ int flb_mp_count(const void *data, size_t bytes);
  */
 int flb_mp_scan_log_records(const void *data, size_t bytes, int typed, int *records, int *plain);
 int flb_mp_count_log_records(const void *data, size_t bytes);
+int flb_mp_log_window_next(const void *data, size_t bytes, size_t offset,
+                           size_t limit_bytes, int limit_records,
+                           size_t *window_end, int *window_records);
 int flb_mp_normalize_log_buffer_groups_msgpack(const void *in_buf, size_t in_size,
                                                char **out_buf, size_t *out_size);
 int flb_mp_normalize_log_buffer_groups(const void *in_buf, size_t in_size,

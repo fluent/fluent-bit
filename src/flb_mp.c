@@ -262,6 +262,120 @@ int flb_mp_count_log_records(const void *data, size_t bytes)
     return count;
 }
 
+/*
+ * Find the end of the log window starting at 'offset'. A window closes after
+ * 'limit_bytes' of serialized events or 'limit_records' log records, but only
+ * outside a group: every group stays whole within one window, which can exceed
+ * the limits by up to one group.
+ */
+int flb_mp_log_window_next(const void *data, size_t bytes, size_t offset,
+                           size_t limit_bytes, int limit_records,
+                           size_t *window_end, int *window_records)
+{
+    mpack_reader_t reader;
+    mpack_tag_t tag;
+    msgpack_object timestamp = {0};
+    struct flb_time time;
+    char extension[8];
+    size_t position = 0;
+    int header;
+    int records = 0;
+    int in_group = FLB_FALSE;
+    int ret = -1;
+
+    if (!data || !window_end || !window_records || offset >= bytes) {
+        return -1;
+    }
+
+    mpack_reader_init_data(&reader, (const char *) data + offset, bytes - offset);
+
+    while (mpack_reader_remaining(&reader, NULL) > 0) {
+        /* every event is a two entries array: [header|timestamp, body] */
+        tag = mpack_read_tag(&reader);
+        if (mpack_tag_type(&tag) != mpack_type_array || mpack_tag_array_count(&tag) != 2) {
+            goto done;
+        }
+
+        /* the header form is [timestamp, metadata] */
+        tag = mpack_read_tag(&reader);
+        header = mpack_tag_type(&tag) == mpack_type_array;
+        if (header) {
+            if (mpack_tag_array_count(&tag) != 2) {
+                goto done;
+            }
+            tag = mpack_read_tag(&reader);
+        }
+
+        if (mpack_tag_type(&tag) == mpack_type_uint) {
+            timestamp.type = MSGPACK_OBJECT_POSITIVE_INTEGER;
+            timestamp.via.u64 = mpack_tag_uint_value(&tag);
+        }
+        else if (mpack_tag_type(&tag) == mpack_type_double) {
+            timestamp.type = MSGPACK_OBJECT_FLOAT;
+            timestamp.via.f64 = mpack_tag_double_value(&tag);
+        }
+        else if (mpack_tag_type(&tag) == mpack_type_float) {
+            timestamp.type = MSGPACK_OBJECT_FLOAT;
+            timestamp.via.f64 = mpack_tag_float_value(&tag);
+        }
+        else if (mpack_tag_type(&tag) == mpack_type_ext &&
+                 mpack_tag_ext_length(&tag) == 8 && mpack_tag_ext_exttype(&tag) == 0) {
+            mpack_read_bytes(&reader, extension, sizeof(extension));
+            mpack_done_ext(&reader);
+
+            timestamp.type = MSGPACK_OBJECT_EXT;
+            timestamp.via.ext.ptr = extension;
+            timestamp.via.ext.size = sizeof(extension);
+            timestamp.via.ext.type = 0;
+        }
+        else {
+            goto done;
+        }
+
+        if (header) {
+            mpack_discard(&reader);
+            mpack_done_array(&reader);
+        }
+
+        /* body */
+        mpack_discard(&reader);
+        mpack_done_array(&reader);
+
+        if (mpack_reader_error(&reader) != mpack_ok ||
+            flb_log_event_decoder_decode_timestamp(&timestamp, &time) != 0) {
+            goto done;
+        }
+
+        if (time.tm.tv_sec == FLB_LOG_EVENT_GROUP_START) {
+            in_group = FLB_TRUE;
+        }
+        else if (time.tm.tv_sec == FLB_LOG_EVENT_GROUP_END) {
+            in_group = FLB_FALSE;
+        }
+        else if (records < INT_MAX) {
+            records++;
+        }
+
+        position = (bytes - offset) - mpack_reader_remaining(&reader, NULL);
+        if (!in_group && (position >= limit_bytes || records >= limit_records)) {
+            break;
+        }
+    }
+
+    if (position > 0) {
+        *window_end = offset + position;
+        *window_records = records;
+        ret = 0;
+    }
+
+done:
+    if (mpack_reader_destroy(&reader) != mpack_ok) {
+        ret = -1;
+    }
+
+    return ret;
+}
+
 struct flb_mp_record_span {
     const char *base;
     size_t length;
@@ -1734,7 +1848,11 @@ static int encode_cfl_field(struct cfl_object *obj, msgpack_sbuffer *buffer,
     return mp_cfl_to_msgpack(obj->variant, buffer, packer);
 }
 
-int flb_mp_chunk_cobj_encode(struct flb_mp_chunk_cobj *chunk_cobj, char **out_buf, size_t *out_size)
+/*
+ * Append the chunk records to its log encoder output. A failure resets the
+ * encoder, including the output of previous appends.
+ */
+int flb_mp_chunk_cobj_encode_append(struct flb_mp_chunk_cobj *chunk_cobj)
 {
     int ret;
     struct cfl_list *head;
@@ -1800,12 +1918,6 @@ int flb_mp_chunk_cobj_encode(struct flb_mp_chunk_cobj *chunk_cobj, char **out_bu
     }
 
     msgpack_sbuffer_destroy(&buffer);
-
-    /* set new output buffer */
-    *out_buf = chunk_cobj->log_encoder->output_buffer;
-    *out_size = chunk_cobj->log_encoder->output_length;
-
-    flb_log_event_encoder_claim_internal_buffer_ownership(chunk_cobj->log_encoder);
     return 0;
 
 failure:
@@ -1814,6 +1926,20 @@ failure:
     msgpack_sbuffer_destroy(&buffer);
 
     return -1;
+}
+
+int flb_mp_chunk_cobj_encode(struct flb_mp_chunk_cobj *chunk_cobj, char **out_buf, size_t *out_size)
+{
+    if (flb_mp_chunk_cobj_encode_append(chunk_cobj) != 0) {
+        return -1;
+    }
+
+    /* set new output buffer */
+    *out_buf = chunk_cobj->log_encoder->output_buffer;
+    *out_size = chunk_cobj->log_encoder->output_length;
+
+    flb_log_event_encoder_claim_internal_buffer_ownership(chunk_cobj->log_encoder);
+    return 0;
 }
 
 int flb_mp_chunk_cobj_count_log_records(struct flb_mp_chunk_cobj *chunk_cobj)
