@@ -144,6 +144,66 @@ static void test_pushmpack()
     lua_close(l);
 }
 
+/* malformed or too deeply nested input is rejected without pushing values */
+static void test_pushmpack_invalid()
+{
+    int i;
+    int top;
+    char *nested;
+    size_t size;
+    mpack_reader_t reader;
+    lua_State *l = lua_setup(NULL);
+    /* str8 declaring 200 bytes with 3 present */
+    const char truncated_str[] = "\xd9\xc8" "abc";
+    /* array of 3 with a single element */
+    const char truncated_array[] = "\x93\x01";
+    /* bin8 declaring 10 bytes inside a map value */
+    const char truncated_bin[] = "\x81\xa1k\xc4\x0a" "xy";
+
+    top = lua_gettop(l);
+
+    mpack_reader_init_data(&reader, truncated_str, sizeof(truncated_str) - 1);
+    TEST_CHECK(flb_lua_pushmpack(l, &reader) == -1);
+    TEST_CHECK(lua_gettop(l) == top);
+
+    mpack_reader_init_data(&reader, truncated_array, sizeof(truncated_array) - 1);
+    TEST_CHECK(flb_lua_pushmpack(l, &reader) == -1);
+    TEST_CHECK(lua_gettop(l) == top);
+
+    mpack_reader_init_data(&reader, truncated_bin, sizeof(truncated_bin) - 1);
+    TEST_CHECK(flb_lua_pushmpack(l, &reader) == -1);
+    TEST_CHECK(lua_gettop(l) == top);
+
+    /* nesting: 512 nested arrays are accepted, 513 are rejected */
+    size = 514;
+    nested = flb_malloc(size);
+    TEST_ASSERT(nested != NULL);
+
+    memset(nested, 0x91, 512);
+    nested[512] = 0x01;
+    mpack_reader_init_data(&reader, nested, 513);
+    TEST_CHECK(flb_lua_pushmpack(l, &reader) == 0);
+    TEST_CHECK(lua_gettop(l) == top + 1);
+    lua_settop(l, top);
+
+    memset(nested, 0x91, 513);
+    nested[513] = 0x01;
+    mpack_reader_init_data(&reader, nested, 514);
+    TEST_CHECK(flb_lua_pushmpack(l, &reader) == -1);
+    TEST_CHECK(lua_gettop(l) == top);
+
+    /* a valid value still decodes after rejected ones */
+    for (i = 0; i < 2; i++) {
+        mpack_reader_init_data(&reader, "\x92\x01\xa2ok", 5);
+        TEST_CHECK(flb_lua_pushmpack(l, &reader) == 0);
+        check_equals(l, "{ [1] = 1 [2] = ok }");
+        lua_settop(l, top);
+    }
+
+    flb_free(nested);
+    lua_close(l);
+}
+
 static void test_tomsgpack()
 {
     const char expected[] = "[{\"key\"=>\"value\"}, \"msgpack-str\", 4]";
@@ -316,6 +376,7 @@ TEST_LIST = {
     { "lua_pushtimetable" , test_pushtimetable},
     { "lua_pushmsgpack" , test_pushmsgpack },
     { "lua_pushmpack" , test_pushmpack },
+    { "lua_pushmpack_invalid" , test_pushmpack_invalid },
     { "lua_tomsgpack" , test_tomsgpack },
     { "lua_tompack" , test_tompack },
     { "lua_arraylength" , test_lua_arraylength },
