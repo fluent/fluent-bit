@@ -902,9 +902,10 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
             normalized_buf = NULL;
             normalized_size = 0;
 
-            ret = flb_mp_normalize_log_buffer_groups_msgpack(p_buf, p_size,
-                                                             &normalized_buf,
-                                                             &normalized_size);
+            /* keep only the group markers that span chunks in the stored data */
+            ret = flb_mp_normalize_log_buffer_groups_msgpack_ex(
+                    p_buf, p_size, &normalized_buf, &normalized_size,
+                    flb_mp_log_group_boundaries(evc->data, evc->size));
             if (ret == 0) {
                 if (p_buf != evc->data) {
                     flb_free(p_buf);
