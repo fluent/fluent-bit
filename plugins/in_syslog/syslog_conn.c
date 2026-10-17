@@ -71,7 +71,7 @@ int syslog_stream_conn_event(void *data)
 {
     int ret;
     int bytes;
-    int available;
+    size_t available;
     size_t size;
     char *tmp;
     struct syslog_conn *conn;
