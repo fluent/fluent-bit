@@ -716,6 +716,94 @@ static int cb_file_init(struct flb_output_instance *ins,
     return 0;
 }
 
+/* Emit MessagePack's text representation inside a quoted CSV field. */
+static void csv_field_content(FILE *fp, msgpack_object obj, int nested)
+{
+    size_t i;
+    const char *value;
+    size_t length;
+
+    switch (obj.type) {
+    case MSGPACK_OBJECT_STR:
+    case MSGPACK_OBJECT_BIN:
+        if (obj.type == MSGPACK_OBJECT_STR) {
+            value = obj.via.str.ptr;
+            length = obj.via.str.size;
+        }
+        else {
+            value = obj.via.bin.ptr;
+            length = obj.via.bin.size;
+        }
+        if (nested) {
+            fputs("\"\"", fp);
+        }
+        for (i = 0; i < length; i++) {
+            if (obj.type == MSGPACK_OBJECT_BIN &&
+                ((unsigned char) value[i] < 0x20 || (unsigned char) value[i] >= 0x7f)) {
+                fprintf(fp, "\\x%02x", (unsigned char) value[i]);
+                continue;
+            }
+            if (value[i] == '"') {
+                fputc('"', fp);
+            }
+            fputc((unsigned char) value[i], fp);
+        }
+        if (nested) {
+            fputs("\"\"", fp);
+        }
+        break;
+    case MSGPACK_OBJECT_ARRAY:
+        fputc('[', fp);
+        for (i = 0; i < obj.via.array.size; i++) {
+            if (i > 0) {
+                fputs(", ", fp);
+            }
+            csv_field_content(fp, obj.via.array.ptr[i], FLB_TRUE);
+        }
+        fputc(']', fp);
+        break;
+    case MSGPACK_OBJECT_MAP:
+        fputc('{', fp);
+        for (i = 0; i < obj.via.map.size; i++) {
+            if (i > 0) {
+                fputs(", ", fp);
+            }
+            csv_field_content(fp, obj.via.map.ptr[i].key, FLB_TRUE);
+            fputs("=>", fp);
+            csv_field_content(fp, obj.via.map.ptr[i].val, FLB_TRUE);
+        }
+        fputc('}', fp);
+        break;
+    case MSGPACK_OBJECT_EXT:
+        fprintf(fp, "(ext: %d)", (int) obj.via.ext.type);
+        fputs("\"\"", fp);
+        for (i = 0; i < obj.via.ext.size; i++) {
+            fprintf(fp, "\\x%02x", (unsigned char) obj.via.ext.ptr[i]);
+        }
+        fputs("\"\"", fp);
+        break;
+    default:
+        msgpack_object_print(fp, obj);
+        break;
+    }
+}
+
+static void csv_field(FILE *fp, msgpack_object obj)
+{
+    int quote;
+
+    quote = obj.type == MSGPACK_OBJECT_STR || obj.type == MSGPACK_OBJECT_BIN ||
+            obj.type == MSGPACK_OBJECT_EXT || obj.type == MSGPACK_OBJECT_ARRAY ||
+            obj.type == MSGPACK_OBJECT_MAP;
+    if (quote) {
+        fputc('"', fp);
+    }
+    csv_field_content(fp, obj, FLB_FALSE);
+    if (quote) {
+        fputc('"', fp);
+    }
+}
+
 static int csv_output(FILE *fp, int column_names,
                       struct flb_time *tm, msgpack_object *obj,
                       struct flb_file_conf *ctx)
@@ -731,7 +819,7 @@ static int csv_output(FILE *fp, int column_names,
         if (column_names == FLB_TRUE) {
             fprintf(fp, "timestamp%s", ctx->delimiter);
             for (i = 0; i < map_size; i++) {
-                msgpack_object_print(fp, (kv+i)->key);
+                csv_field(fp, (kv+i)->key);
                 if (i + 1 < map_size) {
                     fprintf(fp, "%s", ctx->delimiter);
                 }
@@ -743,14 +831,99 @@ static int csv_output(FILE *fp, int column_names,
                 (long long) tm->tm.tv_sec, tm->tm.tv_nsec, ctx->delimiter);
 
         for (i = 0; i < map_size - 1; i++) {
-            msgpack_object_print(fp, (kv+i)->val);
+            csv_field(fp, (kv+i)->val);
             fprintf(fp, "%s", ctx->delimiter);
         }
 
-        msgpack_object_print(fp, (kv+(map_size-1))->val);
+        csv_field(fp, (kv+(map_size-1))->val);
         fprintf(fp, NEWLINE);
     }
     return 0;
+}
+
+/* Percent-encode separators and controls; encode percent to avoid ambiguity. */
+static void ltsv_bytes(FILE *fp, const char *value, size_t length,
+                       struct flb_file_conf *ctx)
+{
+    size_t i;
+    unsigned char c;
+
+    for (i = 0; i < length; i++) {
+        c = (unsigned char) value[i];
+        if (c < 0x20 || c == 0x7f || c == '%' ||
+            strchr(ctx->delimiter, c) != NULL ||
+            strchr(ctx->label_delimiter, c) != NULL) {
+            fprintf(fp, "%%%02X", (unsigned int) c);
+        }
+        else {
+            fputc(c, fp);
+        }
+    }
+}
+
+static void ltsv_field(FILE *fp, msgpack_object obj, struct flb_file_conf *ctx)
+{
+    size_t i;
+    int length;
+    char number[512];
+
+    switch (obj.type) {
+    case MSGPACK_OBJECT_STR:
+    case MSGPACK_OBJECT_BIN:
+        ltsv_bytes(fp, "\"", 1, ctx);
+        if (obj.type == MSGPACK_OBJECT_STR) {
+            ltsv_bytes(fp, obj.via.str.ptr, obj.via.str.size, ctx);
+        }
+        else {
+            for (i = 0; i < obj.via.bin.size; i++) {
+                if ((unsigned char) obj.via.bin.ptr[i] >= 0x80) {
+                    fprintf(fp, "%%%02X", (unsigned char) obj.via.bin.ptr[i]);
+                }
+                else {
+                    ltsv_bytes(fp, obj.via.bin.ptr + i, 1, ctx);
+                }
+            }
+        }
+        ltsv_bytes(fp, "\"", 1, ctx);
+        break;
+    case MSGPACK_OBJECT_ARRAY:
+        ltsv_bytes(fp, "[", 1, ctx);
+        for (i = 0; i < obj.via.array.size; i++) {
+            if (i > 0) {
+                ltsv_bytes(fp, ", ", 2, ctx);
+            }
+            ltsv_field(fp, obj.via.array.ptr[i], ctx);
+        }
+        ltsv_bytes(fp, "]", 1, ctx);
+        break;
+    case MSGPACK_OBJECT_MAP:
+        ltsv_bytes(fp, "{", 1, ctx);
+        for (i = 0; i < obj.via.map.size; i++) {
+            if (i > 0) {
+                ltsv_bytes(fp, ", ", 2, ctx);
+            }
+            ltsv_field(fp, obj.via.map.ptr[i].key, ctx);
+            ltsv_bytes(fp, "=>", 2, ctx);
+            ltsv_field(fp, obj.via.map.ptr[i].val, ctx);
+        }
+        ltsv_bytes(fp, "}", 1, ctx);
+        break;
+    case MSGPACK_OBJECT_EXT:
+        length = snprintf(number, sizeof(number), "(ext: %d)\"", (int) obj.via.ext.type);
+        ltsv_bytes(fp, number, length, ctx);
+        for (i = 0; i < obj.via.ext.size; i++) {
+            length = snprintf(number, sizeof(number), "\\x%02x", (unsigned char) obj.via.ext.ptr[i]);
+            ltsv_bytes(fp, number, length, ctx);
+        }
+        ltsv_bytes(fp, "\"", 1, ctx);
+        break;
+    default:
+        length = msgpack_object_print_buffer(number, sizeof(number), obj);
+        if (length > 0) {
+            ltsv_bytes(fp, number, length, ctx);
+        }
+        break;
+    }
 }
 
 static int ltsv_output(FILE *fp, struct flb_time *tm, msgpack_object *obj,
@@ -769,15 +942,15 @@ static int ltsv_output(FILE *fp, struct flb_time *tm, msgpack_object *obj,
                 ctx->delimiter);
 
         for (i = 0; i < map_size - 1; i++) {
-            msgpack_object_print(fp, (kv+i)->key);
+            ltsv_field(fp, (kv+i)->key, ctx);
             fprintf(fp, "%s", ctx->label_delimiter);
-            msgpack_object_print(fp, (kv+i)->val);
+            ltsv_field(fp, (kv+i)->val, ctx);
             fprintf(fp, "%s", ctx->delimiter);
         }
 
-        msgpack_object_print(fp, (kv+(map_size-1))->key);
+        ltsv_field(fp, (kv+(map_size-1))->key, ctx);
         fprintf(fp, "%s", ctx->label_delimiter);
-        msgpack_object_print(fp, (kv+(map_size-1))->val);
+        ltsv_field(fp, (kv+(map_size-1))->val, ctx);
         fprintf(fp, NEWLINE);
     }
     return 0;
@@ -1078,6 +1251,21 @@ static void close_output_file(FILE *fp, struct file_rotate_entry *entry)
     file_rotate_release(entry);
 }
 
+/* Keep tags in one unambiguous, whitespace-free field in text records. */
+static void write_record_tag(FILE *fp, const char *tag)
+{
+    const unsigned char *cursor;
+
+    for (cursor = (const unsigned char *) tag; *cursor; cursor++) {
+        if (*cursor <= 0x20 || *cursor == 0x7f || *cursor == '%') {
+            fprintf(fp, "%%%02X", (unsigned int) *cursor);
+        }
+        else {
+            fputc(*cursor, fp);
+        }
+    }
+}
+
 static int write_log_record(FILE *fp,
                             long *file_pos,
                             struct flb_event_chunk *event_chunk,
@@ -1096,8 +1284,8 @@ static int write_log_record(FILE *fp,
             return FLB_RETRY;
         }
 
-        fprintf(fp, "%s: [%"PRIu64".%09lu, %s]" NEWLINE,
-                event_chunk->tag,
+        write_record_tag(fp, event_chunk->tag);
+        fprintf(fp, ": [%"PRIu64".%09lu, %s]" NEWLINE,
                 (uint64_t) log_event->timestamp.tm.tv_sec,
                 log_event->timestamp.tm.tv_nsec,
                 buf);
@@ -1376,8 +1564,8 @@ static void cb_file_flush(struct flb_event_chunk *event_chunk,
             buf = flb_msgpack_to_json_str(alloc_size, log_event.body,
                                           config->json_escape_unicode);
             if (buf) {
-                fprintf(fp, "%s: [%"PRIu64".%09lu, %s]" NEWLINE,
-                        event_chunk->tag,
+                write_record_tag(fp, event_chunk->tag);
+                fprintf(fp, ": [%"PRIu64".%09lu, %s]" NEWLINE,
                         (uint64_t) log_event.timestamp.tm.tv_sec, log_event.timestamp.tm.tv_nsec,
                         buf);
                 flb_free(buf);

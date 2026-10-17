@@ -25,9 +25,13 @@
 #include <fluent-bit/flb_log_event_decoder.h>
 
 #include <stdio.h>
+#include <stdint.h>
+#include <string.h>
 #include <msgpack.h>
 
 #include "nats.h"
+
+#define NATS_ENCODED_SUBJECT_PREFIX "_flb_encoded."
 
 static int cb_nats_init(struct flb_output_instance *ins, struct flb_config *config,
                         void *data)
@@ -51,6 +55,14 @@ static int cb_nats_init(struct flb_output_instance *ins, struct flb_config *conf
     ret = flb_output_config_map_set(ins, ctx);
     if (ret == -1) {
         flb_plg_error(ins, "flb_output_config_map_set failed");
+        flb_free(ctx);
+        return -1;
+    }
+
+    if (strcmp(ctx->invalid_subject_action, "reject") != 0 &&
+        strcmp(ctx->invalid_subject_action, "encode") != 0) {
+        flb_plg_error(ins, "invalid value for invalid_subject_action: %s",
+                      ctx->invalid_subject_action);
         flb_free(ctx);
         return -1;
     }
@@ -152,6 +164,57 @@ static int msgpack_to_json(struct flb_out_nats_config *ctx,
     return 0;
 }
 
+/* A publish subject must contain nonempty tokens and no protocol separators. */
+static int valid_publish_subject(const char *tag, size_t length)
+{
+    size_t i;
+    unsigned char c;
+
+    if (length == 0) {
+        return FLB_FALSE;
+    }
+
+    for (i = 0; i < length; i++) {
+        c = (unsigned char) tag[i];
+        if (c <= 0x20 || c == 0x7f || c == '*' || c == '>') {
+            return FLB_FALSE;
+        }
+        if (c == '.' && (i == 0 || i + 1 == length || tag[i - 1] == '.')) {
+            return FLB_FALSE;
+        }
+    }
+
+    return FLB_TRUE;
+}
+
+/* Encode reserved-prefix tags too, so encoded and unchanged subjects cannot collide. */
+static char *encode_publish_subject(const char *tag, size_t length)
+{
+    size_t i;
+    size_t prefix_length;
+    char *subject;
+    static const char hex[] = "0123456789ABCDEF";
+
+    prefix_length = sizeof(NATS_ENCODED_SUBJECT_PREFIX) - 1;
+    if (length > (SIZE_MAX - prefix_length - 1) / 2) {
+        return NULL;
+    }
+
+    subject = flb_malloc(prefix_length + length * 2 + 1);
+    if (!subject) {
+        return NULL;
+    }
+
+    memcpy(subject, NATS_ENCODED_SUBJECT_PREFIX, prefix_length);
+    for (i = 0; i < length; i++) {
+        subject[prefix_length + i * 2] = hex[((unsigned char) tag[i]) >> 4];
+        subject[prefix_length + i * 2 + 1] = hex[((unsigned char) tag[i]) & 0x0f];
+    }
+    subject[prefix_length + length * 2] = '\0';
+
+    return subject;
+}
+
 static void cb_nats_flush(struct flb_event_chunk *event_chunk,
                           struct flb_output_flush *out_flush,
                           struct flb_input_instance *i_ins,
@@ -164,12 +227,58 @@ static void cb_nats_flush(struct flb_event_chunk *event_chunk,
     flb_sds_t json_msg;
     char *request;
     int req_len;
+    size_t tag_length;
+    size_t subject_length;
+    const char *subject;
+    char *encoded_subject = NULL;
     struct flb_out_nats_config *ctx = out_context;
     struct flb_connection *u_conn;
+
+    tag_length = flb_sds_len(event_chunk->tag);
+    subject = event_chunk->tag;
+    subject_length = tag_length;
+
+    if (strcmp(ctx->invalid_subject_action, "encode") == 0 &&
+        (!valid_publish_subject(subject, subject_length) ||
+         strncmp(subject, NATS_ENCODED_SUBJECT_PREFIX,
+                 sizeof(NATS_ENCODED_SUBJECT_PREFIX) - 1) == 0)) {
+        encoded_subject = encode_publish_subject(event_chunk->tag, tag_length);
+        if (!encoded_subject) {
+            flb_errno();
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
+        subject = encoded_subject;
+        subject_length = strlen(subject);
+    }
+    else if (!valid_publish_subject(subject, subject_length)) {
+        flb_plg_error(ctx->ins, "invalid NATS publish subject in tag");
+        FLB_OUTPUT_RETURN(FLB_ERROR);
+    }
+
+    /* Convert original Fluent Bit MsgPack format to JSON */
+    ret = msgpack_to_json(ctx,
+                          event_chunk->data, event_chunk->size,
+                          event_chunk->tag, flb_sds_len(event_chunk->tag),
+                          &json_msg, &json_len, config);
+    if (ret == -1) {
+        flb_free(encoded_subject);
+        FLB_OUTPUT_RETURN(FLB_ERROR);
+    }
+
+    /* Bound the complete PUB line to the NATS default max_control_line. */
+    req_len = snprintf(NULL, 0, "PUB %s %zu\r\n", subject, json_len);
+    if (req_len < 0 || req_len > 4096) {
+        flb_plg_error(ctx->ins, "NATS publish control line exceeds 4096 bytes");
+        flb_sds_destroy(json_msg);
+        flb_free(encoded_subject);
+        FLB_OUTPUT_RETURN(FLB_ERROR);
+    }
 
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
         flb_plg_error(ctx->ins, "no upstream connections available");
+        flb_sds_destroy(json_msg);
+        flb_free(encoded_subject);
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
 
@@ -180,31 +289,25 @@ static void cb_nats_flush(struct flb_event_chunk *event_chunk,
                            &bytes_sent);
     if (ret == -1) {
         flb_upstream_conn_release(u_conn);
+        flb_sds_destroy(json_msg);
+        flb_free(encoded_subject);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    /* Convert original Fluent Bit MsgPack format to JSON */
-    ret = msgpack_to_json(ctx,
-                          event_chunk->data, event_chunk->size,
-                          event_chunk->tag, flb_sds_len(event_chunk->tag),
-                          &json_msg, &json_len, config);
-    if (ret == -1) {
-        flb_upstream_conn_release(u_conn);
-        FLB_OUTPUT_RETURN(FLB_ERROR);
-    }
-
     /* Compose the NATS Publish request */
-    request = flb_malloc(json_len + flb_sds_len(event_chunk->tag) + 32);
+    request = flb_malloc(json_len + subject_length + 32);
     if (!request) {
         flb_errno();
         flb_sds_destroy(json_msg);
         flb_upstream_conn_release(u_conn);
+        flb_free(encoded_subject);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    req_len = snprintf(request, flb_sds_len(event_chunk->tag)+ 32,
+    req_len = snprintf(request, subject_length + 32,
                        "PUB %s %zu\r\n",
-                       event_chunk->tag, json_len);
+                       subject, json_len);
+    flb_free(encoded_subject);
 
     /* Append JSON message and ending CRLF */
     memcpy(request + req_len, json_msg, json_len);
@@ -238,6 +341,13 @@ int cb_nats_exit(void *data, struct flb_config *config)
 }
 
 static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_STR, "invalid_subject_action", "reject",
+     0, FLB_TRUE, offsetof(struct flb_out_nats_config, invalid_subject_action),
+     "Action for tags that are invalid NATS subjects: reject or encode. Encoding uses "
+     "_flb_encoded. followed by uppercase hex, and also encodes tags with that prefix. "
+     "Subscribers and publish permissions must use the encoded subject."
+    },
     /* EOF */
     {0}
 };
