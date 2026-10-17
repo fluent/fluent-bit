@@ -44,6 +44,15 @@
 #define FLB_PROCESSOR_UNIT_NATIVE    0
 #define FLB_PROCESSOR_UNIT_FILTER    1
 
+/*
+ * Plugin flags
+ *
+ * FLB_PROCESSOR_FLAG_LOG_WINDOWS: the logs callback only depends on each
+ * record and its group, so the processor chain can run it over large buffers
+ * in group aligned windows.
+ */
+#define FLB_PROCESSOR_FLAG_LOG_WINDOWS 1
+
 
 /* The current values mean the processor stack will
  * wait for 2 seconds at most in 50 millisecond increments
@@ -148,7 +157,7 @@ struct flb_processor {
 };
 
 struct flb_processor_plugin {
-    int flags;             /* Flags (not available at the moment */
+    int flags;             /* FLB_PROCESSOR_FLAG_* capabilities  */
     char *name;            /* Processor short name               */
     char *description;     /* Description                        */
 
