@@ -24,7 +24,35 @@
 #include <fluent-bit/flb_output.h>
 #include <limits.h>
 
+#ifdef FLB_HAVE_SANITIZE_ADDRESS
+#include <sanitizer/asan_interface.h>
+#endif
+
 #include "fts.h"
+
+/*
+ * LuaJIT raises errors by resetting the C stack pointer instead of calling
+ * longjmp(), so AddressSanitizer never sees the frames it skips and keeps
+ * their redzones poisoned. Later calls reusing that stack report bogus
+ * errors. After a failed protected call, clear the shadow of the stack below
+ * the current frame, which only holds those dead frames; the window covers
+ * nested C and Lua calls up to LuaJIT's C call limit. Builds without the
+ * sanitizer compile this to nothing.
+ */
+#define FTS_UNWOUND_STACK_SIZE (256 * 1024)
+
+#ifdef FLB_HAVE_SANITIZE_ADDRESS
+__attribute__((noinline))
+#endif
+void fts_sanitizer_forget_unwound_frames(void)
+{
+#ifdef FLB_HAVE_SANITIZE_ADDRESS
+    char *top;
+
+    top = (char *) __builtin_frame_address(0);
+    __asan_unpoison_memory_region(top - FTS_UNWOUND_STACK_SIZE, FTS_UNWOUND_STACK_SIZE);
+#endif
+}
 
 /* A policy cannot catch budget exhaustion and continue an endless loop. */
 static int policy_pcall(lua_State *l)
@@ -35,6 +63,9 @@ static int policy_pcall(lua_State *l)
 
     luaL_checktype(l, 1, LUA_TFUNCTION);
     ret = lua_pcall(l, lua_gettop(l) - 1, LUA_MULTRET, 0);
+    if (ret != 0) {
+        fts_sanitizer_forget_unwound_frames();
+    }
 
     lua_getallocf(l, &data);
     ctx = data;
@@ -180,7 +211,11 @@ int fts_load_helpers(lua_State *l, const char *code, size_t size, const char *na
 
     lua_rawgeti(l, LUA_REGISTRYINDEX, ctx->helpers_env_ref);
     lua_setfenv(l, -2);
-    return lua_pcall(l, 0, 0, 0);
+    if (lua_pcall(l, 0, 0, 0) != 0) {
+        fts_sanitizer_forget_unwound_frames();
+        return -1;
+    }
+    return 0;
 }
 
 static int initialize_policy(lua_State *l)
@@ -322,6 +357,7 @@ int fts_runtime_initialize(struct fts_runtime *ctx, struct flb_config *config)
     lua_pushlightuserdata(l, ctx);
     ret = lua_pcall(l, 1, 0, 0);
     if (ret != 0) {
+        fts_sanitizer_forget_unwound_frames();
         return FLB_PROCESSOR_FAILURE;
     }
 
@@ -368,6 +404,9 @@ int fts_runtime_call(struct fts_runtime *ctx, void *data, int results)
     lua_rawgeti(l, LUA_REGISTRYINDEX, ctx->callback_ref);
     lua_pushlightuserdata(l, data);
     ret = lua_pcall(l, 1, results, 0);
+    if (ret != 0) {
+        fts_sanitizer_forget_unwound_frames();
+    }
     if (ret == 0 && !ctx->jit && ctx->instructions_left <= 0) {
         lua_settop(l, base);
         lua_pushliteral(l, "Lua instruction limit exceeded");
