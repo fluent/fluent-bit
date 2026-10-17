@@ -6,6 +6,7 @@ import re
 import shutil
 import socket
 import threading
+import time
 from collections import Counter
 
 import requests
@@ -1454,3 +1455,91 @@ def test_out_opentelemetry_logs_max_scopes_enforcement():
     output = json.loads(json_format.MessageToJson(logs_seen[0]))
     assert len(output["resourceLogs"]) == 4
     assert all(len(resource_log["scopeLogs"]) == 1 for resource_log in output["resourceLogs"])
+
+
+def _pack(value):
+    """Encode forward fixtures without an optional MessagePack dependency."""
+    if isinstance(value, bytes):
+        return value
+    if isinstance(value, int):
+        return b"\xcf" + value.to_bytes(8, "big")
+    if isinstance(value, str):
+        data = value.encode("utf-8")
+        return b"\xdb" + len(data).to_bytes(4, "big") + data
+    if isinstance(value, list):
+        return b"\xdd" + len(value).to_bytes(4, "big") + b"".join(_pack(item) for item in value)
+    if isinstance(value, dict):
+        return b"\xdf" + len(value).to_bytes(4, "big") + b"".join(
+            _pack(key) + _pack(item) for key, item in value.items())
+    raise TypeError(type(value))
+
+
+def _event_time(seconds):
+    return b"\xd7\x00" + seconds.to_bytes(4, "big") + bytes(4)
+
+
+def _group_start(resource_id, name):
+    return [[_event_time(0xFFFFFFFF), {"schema": "otlp", "resource_id": resource_id, "scope_id": 0}],
+            {"resource": {"attributes": {"service.name": name}}, "scope": {"name": "scope"}}]
+
+
+def _group_end():
+    return [[_event_time(0xFFFFFFFE), {}], {}]
+
+
+def _log_record(record_id):
+    return [[_event_time(1700000000), {"otlp": {}}], {"id": record_id}]
+
+
+def _send_forward(service, entries):
+    with socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=10) as connection:
+        connection.sendall(_pack(["test", entries]))
+
+
+def _exported_record_ids():
+    ids = []
+    for export_request in data_storage["logs"]:
+        output = json.loads(json_format.MessageToJson(export_request))
+        for record, _, _ in iter_log_records(output):
+            for item in record["body"]["kvlistValue"]["values"]:
+                if item["key"] == "id":
+                    ids.append(int(item["value"]["intValue"]))
+    return sorted(ids)
+
+
+def test_out_opentelemetry_chunk_ending_with_empty_group_exports_its_records():
+    """A chunk that ends with a group start and no records still exports the earlier groups."""
+    service = Service("out_otel_http_logs_forward_groups.yaml")
+    service.start()
+    try:
+        # the next group starts in this append and receives its records later
+        _send_forward(service, [_group_start(0, "first"), _log_record(0), _log_record(1),
+                                _group_end(), _group_start(1, "second")])
+        service.service.wait_for_condition(
+            lambda: _exported_record_ids() == [0, 1] or None,
+            timeout=15, interval=0.5, description="records of the first group")
+
+        _send_forward(service, [_log_record(2), _group_end()])
+        service.service.wait_for_condition(
+            lambda: _exported_record_ids() == [0, 1, 2] or None,
+            timeout=15, interval=0.5, description="record appended to the open group")
+    finally:
+        service.stop()
+
+
+def test_out_opentelemetry_batch_size_exports_each_record_once():
+    """Records of earlier scopes are not sent again by a later batch."""
+    service = Service("out_otel_http_logs_forward_batch_size.yaml")
+    service.start()
+    try:
+        entries = [_group_start(0, "first")] + [_log_record(i) for i in range(2)] + [_group_end()]
+        entries += [_group_start(1, "second")] + [_log_record(i) for i in range(2, 7)] + [_group_end()]
+        _send_forward(service, entries)
+        service.service.wait_for_condition(
+            lambda: len(_exported_record_ids()) >= 7 or None,
+            timeout=15, interval=0.5, description="seven exported records")
+        # give a duplicated export time to arrive
+        time.sleep(2)
+        assert _exported_record_ids() == list(range(7))
+    finally:
+        service.stop()
