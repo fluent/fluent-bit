@@ -29,6 +29,8 @@ static int in_opentelemetry_init(struct flb_input_instance *ins,
                                  struct flb_config *config, void *data)
 {
     int                       ret;
+    int64_t                   logs_max_size_bytes;
+    const char               *logs_max_size;
     struct flb_opentelemetry *ctx;
     struct flb_http_server_options http_server_options;
 
@@ -45,6 +47,17 @@ static int in_opentelemetry_init(struct flb_input_instance *ins,
     ret = flb_input_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "configuration error");
+        opentelemetry_config_destroy(ctx);
+        return -1;
+    }
+
+    logs_max_size = flb_input_get_property("logs_max_size", ins);
+    logs_max_size_bytes = ctx->logs_max_size;
+    if (logs_max_size != NULL) {
+        logs_max_size_bytes = flb_utils_size_to_bytes(logs_max_size);
+    }
+    if (logs_max_size_bytes <= 0 || (uint64_t) logs_max_size_bytes > SIZE_MAX) {
+        flb_plg_error(ctx->ins, "logs_max_size must be a valid positive size");
         opentelemetry_config_destroy(ctx);
         return -1;
     }
@@ -205,6 +218,11 @@ static struct flb_config_map config_map[] = {
      "Forward traces without processing"
     },
 
+    {
+     FLB_CONFIG_MAP_SIZE, "logs_max_size", "4M",
+     0, FLB_TRUE, offsetof(struct flb_opentelemetry, logs_max_size),
+     "Maximum generated MessagePack bytes per logs request, including group metadata"
+    },
     {
      FLB_CONFIG_MAP_STR, "logs_metadata_key", "otlp",
      0, FLB_TRUE, offsetof(struct flb_opentelemetry, logs_metadata_key),
