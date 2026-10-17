@@ -1682,10 +1682,71 @@ static const luaL_Reg value_methods[] = {
     {NULL, NULL}
 };
 
-struct json_key_slot {
+static int json_key_compare(const void *a, const void *b)
+{
+    yyjson_val *left = *(yyjson_val * const *) a;
+    yyjson_val *right = *(yyjson_val * const *) b;
+    size_t left_length = yyjson_get_len(left);
+    size_t right_length = yyjson_get_len(right);
+
+    if (left_length != right_length) {
+        return left_length < right_length ? -1 : 1;
+    }
+
+    return memcmp(yyjson_get_str(left), yyjson_get_str(right), left_length);
+}
+
+/*
+ * Duplicate keys are found by sorting the object keys: O(n log n) for any
+ * input, unlike hashing, which crafted colliding keys can make quadratic.
+ */
+static int json_object_has_duplicates(yyjson_val *value, struct fts_runtime *ctx)
+{
+    size_t i;
+    size_t index;
+    size_t count;
     yyjson_val *key;
-    uint64_t hash;
-};
+    yyjson_val *item;
+    yyjson_val **keys;
+    int duplicate = FLB_FALSE;
+
+    count = yyjson_obj_size(value);
+    if (count < 2) {
+        return FLB_FALSE;
+    }
+
+    /* sorting is native work, charge it to the instruction budget */
+    if (!ctx->jit) {
+        if ((size_t) ctx->instructions_left <= count) {
+            ctx->instructions_left = 0;
+            return FLB_TRUE;
+        }
+        ctx->instructions_left -= count;
+    }
+
+    keys = flb_malloc(sizeof(yyjson_val *) * count);
+    if (!keys) {
+        flb_errno();
+        return FLB_TRUE;
+    }
+
+    i = 0;
+    yyjson_obj_foreach(value, index, count, key, item) {
+        (void) item;
+        keys[i++] = key;
+    }
+
+    qsort(keys, count, sizeof(yyjson_val *), json_key_compare);
+    for (i = 1; i < count; i++) {
+        if (json_key_compare(&keys[i - 1], &keys[i]) == 0) {
+            duplicate = FLB_TRUE;
+            break;
+        }
+    }
+
+    flb_free(keys);
+    return duplicate;
+}
 
 static size_t json_value_cost(yyjson_val *value, int depth)
 {
@@ -1738,10 +1799,6 @@ static struct cfl_variant *json_value(yyjson_val *value, int depth, struct fts_r
     yyjson_val *item;
     size_t index;
     size_t count;
-    size_t capacity;
-    size_t slot;
-    uint64_t hash;
-    struct json_key_slot *keys;
 
     if (depth >= FTS_MAX_DEPTH || (!ctx->jit && --ctx->instructions_left <= 0)) {
         return NULL;
@@ -1755,49 +1812,21 @@ static struct cfl_variant *json_value(yyjson_val *value, int depth, struct fts_r
             return NULL;
         }
 
-        count = yyjson_obj_size(value);
-        capacity = 1;
-        while (capacity < count * 2) {
-            capacity *= 2;
-        }
-
-        keys = calloc(capacity, sizeof(*keys));
-        if (keys == NULL) {
-            flb_errno();
+        if (json_object_has_duplicates(value, ctx)) {
             cfl_variant_destroy(out);
             return NULL;
         }
 
         yyjson_obj_foreach(value, index, count, key, item) {
-            hash = cfl_hash_64bits(yyjson_get_str(key), yyjson_get_len(key));
-            slot = hash & (capacity - 1);
-            while (keys[slot].key != NULL) {
-                if ((!ctx->jit && --ctx->instructions_left <= 0) ||
-                    (keys[slot].hash == hash &&
-                     yyjson_get_len(keys[slot].key) == yyjson_get_len(key) &&
-                     memcmp(yyjson_get_str(keys[slot].key), yyjson_get_str(key),
-                            yyjson_get_len(key)) == 0)) {
-                    free(keys);
-                    cfl_variant_destroy(out);
-                    return NULL;
-                }
-                slot = (slot + 1) & (capacity - 1);
-            }
-
-            keys[slot].key = key;
-            keys[slot].hash = hash;
-
             child = json_value(item, depth + 1, ctx);
             if (!child || cfl_kvlist_insert_s(map, (char *) yyjson_get_str(key),
                                               yyjson_get_len(key), child) != 0) {
-                free(keys);
                 cfl_variant_destroy(child);
                 cfl_variant_destroy(out);
                 return NULL;
             }
         }
 
-        free(keys);
         return out;
     }
 
