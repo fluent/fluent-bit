@@ -52,7 +52,7 @@ int flb_mp_count(const void *data, size_t bytes)
  * tree or zone is constructed. Unusual or deeper inputs are rejected so the
  * counting API can fall back to the event decoder.
  */
-static int scan_log_value(mpack_reader_t *reader, mpack_tag_t tag, int depth, int typed)
+static int scan_log_value(mpack_reader_t *reader, mpack_tag_t tag, int depth)
 {
     int ret;
     uint32_t index;
@@ -67,7 +67,7 @@ static int scan_log_value(mpack_reader_t *reader, mpack_tag_t tag, int depth, in
     case mpack_type_array:
         count = mpack_tag_array_count(&tag);
         for (index = 0; index < count; index++) {
-            ret = scan_log_value(reader, mpack_read_tag(reader), depth + 1, typed);
+            ret = scan_log_value(reader, mpack_read_tag(reader), depth + 1);
             if (ret != 0) {
                 return -1;
             }
@@ -78,17 +78,11 @@ static int scan_log_value(mpack_reader_t *reader, mpack_tag_t tag, int depth, in
         count = mpack_tag_map_count(&tag);
         for (index = 0; index < count; index++) {
             key = mpack_read_tag(reader);
-
-            /* typed mode requires string keys */
-            if (typed && mpack_tag_type(&key) != mpack_type_str) {
+            if (scan_log_value(reader, key, depth + 1) != 0) {
                 return -1;
             }
 
-            if (scan_log_value(reader, key, depth + 1, 0) != 0) {
-                return -1;
-            }
-
-            ret = scan_log_value(reader, mpack_read_tag(reader), depth + 1, typed);
+            ret = scan_log_value(reader, mpack_read_tag(reader), depth + 1);
             if (ret != 0) {
                 return -1;
             }
@@ -104,9 +98,6 @@ static int scan_log_value(mpack_reader_t *reader, mpack_tag_t tag, int depth, in
         mpack_done_bin(reader);
         break;
     case mpack_type_ext:
-        if (typed) {
-            return -1;
-        }
         mpack_skip_bytes(reader, mpack_tag_ext_length(&tag));
         mpack_done_ext(reader);
         break;
@@ -121,7 +112,7 @@ static int scan_log_value(mpack_reader_t *reader, mpack_tag_t tag, int depth, in
     return 0;
 }
 
-int flb_mp_scan_log_records(const void *data, size_t bytes, int typed, int *records, int *plain)
+int flb_mp_scan_log_records(const void *data, size_t bytes, int *records)
 {
     mpack_reader_t reader;
     mpack_tag_t tag;
@@ -130,7 +121,6 @@ int flb_mp_scan_log_records(const void *data, size_t bytes, int typed, int *reco
     char extension[8];
     int header;
     int count = 0;
-    int ungrouped = FLB_TRUE;
     int ret = -1;
 
     if (!data && bytes) {
@@ -184,7 +174,7 @@ int flb_mp_scan_log_records(const void *data, size_t bytes, int typed, int *reco
         if (header) {
             tag = mpack_read_tag(&reader);
             if (mpack_tag_type(&tag) != mpack_type_map ||
-                scan_log_value(&reader, tag, 0, typed) != 0) {
+                scan_log_value(&reader, tag, 0) != 0) {
                 goto done;
             }
             mpack_done_array(&reader);
@@ -193,7 +183,7 @@ int flb_mp_scan_log_records(const void *data, size_t bytes, int typed, int *reco
         /* body */
         tag = mpack_read_tag(&reader);
         if (mpack_tag_type(&tag) != mpack_type_map ||
-            scan_log_value(&reader, tag, 0, typed) != 0) {
+            scan_log_value(&reader, tag, 0) != 0) {
             goto done;
         }
         mpack_done_array(&reader);
@@ -205,7 +195,7 @@ int flb_mp_scan_log_records(const void *data, size_t bytes, int typed, int *reco
         /* group markers are not counted as records */
         if (time.tm.tv_sec == FLB_LOG_EVENT_GROUP_START ||
             time.tm.tv_sec == FLB_LOG_EVENT_GROUP_END) {
-            ungrouped = FLB_FALSE;
+            continue;
         }
         else if (flb_time_is_valid_eventtime(&time) == FLB_TRUE && count < INT_MAX) {
             count++;
@@ -216,7 +206,6 @@ int flb_mp_scan_log_records(const void *data, size_t bytes, int typed, int *reco
     }
 
     *records = count;
-    *plain = ungrouped;
     ret = 0;
 
 done:
@@ -237,11 +226,10 @@ int flb_mp_count_log_records(const void *data, size_t bytes)
 {
     int count;
     int ret;
-    int plain;
     struct flb_log_event log_event;
     struct flb_log_event_decoder decoder;
 
-    if (flb_mp_scan_log_records(data, bytes, FLB_FALSE, &count, &plain) == 0) {
+    if (flb_mp_scan_log_records(data, bytes, &count) == 0) {
         return count;
     }
 
