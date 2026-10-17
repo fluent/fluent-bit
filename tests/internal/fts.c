@@ -779,7 +779,7 @@ static void small_record_batch_uses_wire_budget(void)
         TEST_CHECK(flb_log_event_encoder_begin_record(encoder) == 0);
         TEST_CHECK(flb_log_event_encoder_set_timestamp(encoder, &timestamp) == 0);
         ret = flb_log_event_encoder_append_body_values(encoder,
-                   FLB_LOG_EVENT_CSTRING_VALUE("value"), FLB_LOG_EVENT_INT64_VALUE(index % 10));
+                   FLB_LOG_EVENT_CSTRING_VALUE("value"), FLB_LOG_EVENT_INT64_VALUE((index % 10)));
         TEST_CHECK(ret == 0);
         TEST_CHECK(flb_log_event_encoder_commit_record(encoder) == 0);
     }
@@ -825,16 +825,16 @@ static void replaced_and_redacted_values_do_not_accumulate_charges(void)
 static int exhaust_or_recover_memory(lua_State *l)
 {
     static char payload[300000];
-    char small[1024];
+    char entry[1024];
     size_t index;
 
     if (lua_touserdata(l, 1) == NULL) {
         lua_gc(l, LUA_GCSTOP, 0);
         lua_newtable(l);
         for (index = 0; index < 10000; index++) {
-            memset(small, 'x', sizeof(small));
-            snprintf(small, 32, "%zu", index);
-            lua_pushlstring(l, small, sizeof(small));
+            memset(entry, 'x', sizeof(entry));
+            snprintf(entry, 32, "%zu", index);
+            lua_pushlstring(l, entry, sizeof(entry));
             lua_rawseti(l, -2, index + 1);
         }
         return luaL_error(l, "expected memory exhaustion");
