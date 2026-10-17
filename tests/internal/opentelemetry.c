@@ -3533,7 +3533,46 @@ void test_opentelemetry_metrics_cutoff()
 }
 
 /* Test list */
+static void test_opentelemetry_logs_generated_limit(void)
+{
+    struct flb_log_event_encoder encoder;
+    const char *payload = "{\"resourceLogs\":[{\"scopeLogs\":[{\"logRecords\":[{},{}]}]}]}";
+    const char *empty = "{\"resourceLogs\":[{\"resource\":{\"attributes\":["
+                        "{\"key\":\"k\",\"value\":{\"stringValue\":\"v\"}}]},"
+                        "\"scopeLogs\":[{},{\"logRecords\":[]}]}]}";
+    size_t length;
+    int ret;
+
+    TEST_CHECK(flb_log_event_encoder_init(&encoder, FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2) == 0);
+    TEST_CHECK(flb_opentelemetry_logs_json_to_msgpack(&encoder, payload, strlen(payload),
+                                                     NULL, NULL) == 0);
+    length = encoder.output_length;
+    TEST_CHECK(length > 0);
+    flb_log_event_encoder_reset(&encoder);
+    encoder.output_limit = length;
+    TEST_CHECK(flb_opentelemetry_logs_json_to_msgpack(&encoder, payload, strlen(payload),
+                                                     NULL, NULL) == 0);
+    TEST_CHECK(encoder.output_length == length);
+
+    /* Existing caller output counts against the budget and survives rejection. */
+    ret = flb_opentelemetry_logs_json_to_msgpack(&encoder, payload, strlen(payload), NULL, NULL);
+    TEST_CHECK(ret < 0);
+    TEST_CHECK(encoder.output_length == length);
+    flb_log_event_encoder_reset(&encoder);
+    encoder.output_limit = length - 1;
+    TEST_CHECK(flb_opentelemetry_logs_json_to_msgpack(&encoder, payload, strlen(payload),
+                                                     NULL, NULL) < 0);
+    TEST_CHECK(encoder.output_length == 0);
+    /* Empty scopes must succeed without serializing even a temporary group header. */
+    encoder.output_limit = 0;
+    TEST_CHECK(flb_opentelemetry_logs_json_to_msgpack(&encoder, empty, strlen(empty),
+                                                     NULL, NULL) == 0);
+    TEST_CHECK(encoder.output_length == 0);
+    flb_log_event_encoder_destroy(&encoder);
+}
+
 TEST_LIST = {
+    { "opentelemetry_logs_generated_limit", test_opentelemetry_logs_generated_limit },
     { "hex_to_id", test_hex_to_id },
     { "hex_to_id_error_cases", test_hex_to_id_error_cases },
     { "convert_string_number_to_u64", test_convert_string_number_to_u64 },
