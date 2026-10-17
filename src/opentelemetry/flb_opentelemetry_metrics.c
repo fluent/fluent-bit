@@ -2770,6 +2770,8 @@ static int process_metric_summary_data_points(struct cmt *context,
             if (sample->sum_quantiles == NULL) {
                 destroy_label_arrays(point_label_count, NULL, point_label_values);
                 flb_free(point_quantile_values);
+                destroy_label_arrays(metric_label_count, metric_label_keys, NULL);
+                flb_free(metric_quantiles);
                 return CMT_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
             }
             sample->sum_quantiles_count = summary->quantiles_count;
