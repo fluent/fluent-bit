@@ -5,6 +5,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_mp.h>
+#include <fluent-bit/flb_mp_chunk.h>
 #include <fluent-bit/flb_mp_preflight.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 #include <fluent-bit/flb_log_event_decoder.h>
@@ -885,6 +886,8 @@ static void test_log_window_next(void)
     TEST_ASSERT(flb_mp_log_window_next(encoder->output_buffer, encoder->output_length,
                                        group_start, 1, INT_MAX, &end, &records) == 0);
     TEST_CHECK(end == group_end && records == 6);
+    TEST_CHECK(flb_mp_log_group_starts(encoder->output_buffer + group_start,
+                                       group_end - group_start) == 1);
 
     /* a single window for the whole buffer */
     TEST_ASSERT(flb_mp_log_window_next(encoder->output_buffer, encoder->output_length,
@@ -900,11 +903,217 @@ static void test_log_window_next(void)
     TEST_CHECK(flb_mp_log_window_next("\x92\x01", 2, 0, 1, 1, &end, &records) == -1);
 
     flb_log_event_encoder_destroy(encoder);
+
+    /* a full window keeps a following end marker instead of starting with it */
+    encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+    TEST_ASSERT(encoder != NULL);
+    for (seq = 0; seq < 4; seq++) {
+        append_window_test_record(encoder, seq);
+    }
+    TEST_ASSERT(flb_log_event_encoder_group_end(encoder) == 0);
+    group_end = encoder->output_length;
+    TEST_ASSERT(flb_log_event_encoder_group_init(encoder) == 0);
+    TEST_ASSERT(flb_log_event_encoder_group_header_end(encoder) == 0);
+    append_window_test_record(encoder, seq);
+    TEST_ASSERT(flb_log_event_encoder_group_end(encoder) == 0);
+
+    TEST_ASSERT(flb_mp_log_window_next(encoder->output_buffer, encoder->output_length,
+                                       0, SIZE_MAX, 4, &end, &records) == 0);
+    TEST_CHECK(end == group_end && records == 4);
+    TEST_ASSERT(flb_mp_log_window_next(encoder->output_buffer, encoder->output_length,
+                                       end, SIZE_MAX, 4, &end, &records) == 0);
+    TEST_CHECK(end == encoder->output_length && records == 1);
+
+    flb_log_event_encoder_destroy(encoder);
+}
+
+/* layout tokens: r<n> record, S group start, E group end */
+static void encode_group_layout(struct flb_log_event_encoder *encoder, const char *layout)
+{
+    int length;
+    char token[16];
+    const char *cursor;
+
+    for (cursor = layout; sscanf(cursor, "%15s%n", token, &length) == 1; cursor += length) {
+        if (token[0] == 'r') {
+            append_window_test_record(encoder, atoi(token + 1));
+        }
+        else if (token[0] == 'S') {
+            TEST_CHECK(flb_log_event_encoder_group_init(encoder) == 0);
+            TEST_CHECK(flb_log_event_encoder_group_header_end(encoder) == 0);
+        }
+        else {
+            TEST_CHECK(flb_log_event_encoder_group_end(encoder) == 0);
+        }
+    }
+}
+
+static void describe_group_layout(char *buf, size_t size, char *out, size_t out_size)
+{
+    int type;
+    char token[16];
+    msgpack_object *seq;
+    struct flb_log_event event;
+    struct flb_log_event_decoder decoder;
+
+    out[0] = '\0';
+    if (buf == NULL || size == 0) {
+        return;
+    }
+
+    TEST_ASSERT(flb_log_event_decoder_init(&decoder, buf, size) == 0);
+    flb_log_event_decoder_read_groups(&decoder, FLB_TRUE);
+    while (flb_log_event_decoder_next(&decoder, &event) == FLB_EVENT_DECODER_SUCCESS) {
+        TEST_ASSERT(flb_log_event_decoder_get_record_type(&event, &type) == 0);
+        if (type == FLB_LOG_EVENT_GROUP_START) {
+            snprintf(token, sizeof(token), "S ");
+        }
+        else if (type == FLB_LOG_EVENT_GROUP_END) {
+            snprintf(token, sizeof(token), "E ");
+        }
+        else {
+            seq = &event.body->via.map.ptr[0].val;
+            snprintf(token, sizeof(token), "r%d ", (int) seq->via.i64);
+        }
+        strncat(out, token, out_size - strlen(out) - 1);
+    }
+    flb_log_event_decoder_destroy(&decoder);
+    if (strlen(out) > 0) {
+        out[strlen(out) - 1] = '\0';
+    }
+}
+
+static void check_normalized_layout(char *output, size_t output_size,
+                                    const char *layout, const char *expected,
+                                    const char *mode)
+{
+    char result[128];
+
+    describe_group_layout(output, output ? output_size : 0, result, sizeof(result));
+    TEST_CHECK(strcmp(result, expected) == 0);
+    TEST_MSG("%s: '%s' produced '%s', expected '%s'", mode, layout, result, expected);
+}
+
+/*
+ * 'strict' is the default normalization. 'kept' keeps the boundary markers
+ * the input already had, as processor chains do for groups split across
+ * appends.
+ */
+static void check_group_normalization(const char *layout, const char *strict,
+                                      const char *kept)
+{
+    struct flb_log_event_encoder *encoder;
+    struct flb_log_event_encoder *copy;
+    struct flb_mp_chunk_cobj *chunk;
+    struct flb_log_event_decoder *decoder;
+    struct flb_mp_chunk_record *record;
+    char *output;
+    size_t output_size;
+    int flags;
+
+    encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+    TEST_ASSERT(encoder != NULL);
+    encode_group_layout(encoder, layout);
+    flags = flb_mp_log_group_boundaries(encoder->output_buffer, encoder->output_length);
+
+    output = NULL;
+    TEST_CHECK(flb_mp_normalize_log_buffer_groups_msgpack(encoder->output_buffer,
+                                                          encoder->output_length,
+                                                          &output, &output_size) == 0);
+    check_normalized_layout(output, output_size, layout, strict, "msgpack strict");
+    flb_free(output);
+
+    output = NULL;
+    TEST_CHECK(flb_mp_normalize_log_buffer_groups(encoder->output_buffer,
+                                                  encoder->output_length,
+                                                  &output, &output_size) == 0);
+    check_normalized_layout(output, output_size, layout, strict, "chunk strict");
+    flb_free(output);
+
+    output = NULL;
+    TEST_CHECK(flb_mp_normalize_log_buffer_groups_msgpack_ex(encoder->output_buffer,
+                                                             encoder->output_length,
+                                                             &output, &output_size,
+                                                             flags) == 0);
+    check_normalized_layout(output, output_size, layout, kept, "msgpack kept");
+    flb_free(output);
+
+    /* the chunk normalizer with the same flags */
+    decoder = flb_log_event_decoder_create(encoder->output_buffer, encoder->output_length);
+    TEST_ASSERT(decoder != NULL);
+    flb_log_event_decoder_read_groups(decoder, FLB_TRUE);
+    copy = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+    TEST_ASSERT(copy != NULL);
+    chunk = flb_mp_chunk_cobj_create(copy, decoder);
+    TEST_ASSERT(chunk != NULL);
+    while (flb_mp_chunk_cobj_record_next(chunk, &record) == FLB_MP_CHUNK_RECORD_OK) {
+    }
+    TEST_CHECK(flb_mp_chunk_cobj_normalize_groups_ex(chunk, flags) == 0);
+    output = NULL;
+    output_size = 0;
+    if (cfl_list_size(&chunk->records) > 0) {
+        TEST_CHECK(flb_mp_chunk_cobj_encode(chunk, &output, &output_size) == 0);
+    }
+    check_normalized_layout(output, output_size, layout, kept, "chunk kept");
+    flb_free(output);
+    flb_mp_chunk_cobj_destroy(chunk);
+    flb_log_event_encoder_destroy(copy);
+    flb_log_event_decoder_destroy(decoder);
+
+    flb_log_event_encoder_destroy(encoder);
+}
+
+static void test_group_normalization_keeps_append_boundaries(void)
+{
+    /* a group continued in the next append keeps its start when kept */
+    check_group_normalization("S r0 r1", "r0 r1", "S r0 r1");
+    check_group_normalization("S", "", "S");
+    /* records closing a group opened by a previous append keep their end */
+    check_group_normalization("r0 r1 E", "r0 r1", "r0 r1 E");
+    check_group_normalization("r0 E S r1 E S r2", "r0 S r1 E r2", "r0 E S r1 E S r2");
+    /* other stray ends, empty groups and nested open groups are always removed */
+    check_group_normalization("r0 E E S r1 E E r2", "r0 S r1 E r2", "r0 E S r1 E r2");
+    check_group_normalization("S E r0", "r0", "r0");
+    check_group_normalization("S S r0", "r0", "r0");
+    check_group_normalization("S r0 E S E r1", "S r0 E r1", "S r0 E r1");
+    check_group_normalization("S r0 E r1", "S r0 E r1", "S r0 E r1");
+}
+
+static void test_group_boundaries_follow_the_input(void)
+{
+    struct flb_log_event_encoder *encoder;
+    int flags;
+
+    encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+    TEST_ASSERT(encoder != NULL);
+    encode_group_layout(encoder, "r0 E S r1 E S r2");
+    flags = flb_mp_log_group_boundaries(encoder->output_buffer, encoder->output_length);
+    TEST_CHECK(flags == (FLB_MP_GROUPS_KEEP_LEADING_END | FLB_MP_GROUPS_KEEP_TRAILING_OPEN));
+    flb_log_event_encoder_destroy(encoder);
+
+    /* a balanced input keeps nothing, whatever a processor removes later */
+    encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+    TEST_ASSERT(encoder != NULL);
+    encode_group_layout(encoder, "S r0 E r1");
+    TEST_CHECK(flb_mp_log_group_boundaries(encoder->output_buffer, encoder->output_length) == 0);
+    flb_log_event_encoder_destroy(encoder);
+
+    /* nested open groups are not a single continued group */
+    encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+    TEST_ASSERT(encoder != NULL);
+    encode_group_layout(encoder, "S S r0");
+    TEST_CHECK(flb_mp_log_group_boundaries(encoder->output_buffer, encoder->output_length) == 0);
+    flb_log_event_encoder_destroy(encoder);
+
+    TEST_CHECK(flb_mp_log_group_boundaries(NULL, 0) == 0);
+    TEST_CHECK(flb_mp_log_group_boundaries("\x92\x01", 2) == 0);
 }
 
 TEST_LIST = {
     {"log_scan_matches_decoder", test_log_scan_matches_decoder},
     {"log_window_next", test_log_window_next},
+    {"group_normalization_append_boundaries", test_group_normalization_keeps_append_boundaries},
+    {"group_boundaries_follow_the_input", test_group_boundaries_follow_the_input},
     {"preflight", test_preflight},
     {"preflight_formats", test_preflight_formats},
     {"validate_trace_chunk" , test_validate_trace_chunk},
