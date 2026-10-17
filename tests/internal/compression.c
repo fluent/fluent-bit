@@ -144,6 +144,94 @@ static void test_snappy_framed_checksum(void)
     TEST_CHECK(output == NULL && output_size == 0);
 }
 
+static void test_snappy_framed_aggregation(void)
+{
+    unsigned char framed[] = {
+        FLB_SNAPPY_FRAME_TYPE_STREAM_IDENTIFIER, 6, 0, 0, 's', 'N', 'a', 'P', 'p', 'Y',
+        FLB_SNAPPY_FRAME_TYPE_UNCOMPRESSED_DATA, 7, 0, 0,
+        0x6e, 0x57, 0xf1, 0x21, 'a', 'b', 'c',
+        FLB_SNAPPY_FRAME_TYPE_UNCOMPRESSED_DATA, 7, 0, 0,
+        0x6e, 0x57, 0xf1, 0x21, 'a', 'b', 'c'
+    };
+    unsigned char mixed_framed[] = {
+        FLB_SNAPPY_FRAME_TYPE_STREAM_IDENTIFIER, 6, 0, 0, 's', 'N', 'a', 'P', 'p', 'Y',
+        FLB_SNAPPY_FRAME_TYPE_COMPRESSED_DATA, 9, 0, 0,
+        /* Masked checksum followed by a raw Snappy literal for "abc". */
+        0x6e, 0x57, 0xf1, 0x21, 3, 8, 'a', 'b', 'c',
+        FLB_SNAPPY_FRAME_TYPE_UNCOMPRESSED_DATA, 7, 0, 0,
+        0x6e, 0x57, 0xf1, 0x21, 'a', 'b', 'c'
+    };
+    char *output;
+    size_t output_size;
+    int ret;
+
+    /* Omit the second 11-byte chunk for the single-chunk case. */
+    ret = flb_snappy_uncompress_framed_data((char *) framed, sizeof(framed) - 11,
+                                            &output, &output_size);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(output_size == 3);
+    TEST_CHECK(output != NULL);
+    if (output != NULL) {
+        if (output_size == 3) {
+            TEST_CHECK(memcmp(output, "abc", 3) == 0);
+        }
+        flb_free(output);
+    }
+
+    ret = flb_snappy_uncompress_framed_data((char *) framed, sizeof(framed),
+                                            &output, &output_size);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(output_size == 6);
+    TEST_CHECK(output != NULL);
+    if (output != NULL) {
+        if (output_size == 6) {
+            TEST_CHECK(memcmp(output, "abcabc", 6) == 0);
+        }
+        flb_free(output);
+    }
+
+    ret = flb_snappy_uncompress_framed_data((char *) mixed_framed,
+                                            sizeof(mixed_framed) - 11,
+                                            &output, &output_size);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(output_size == 3);
+    TEST_CHECK(output != NULL);
+    if (output != NULL) {
+        if (output_size == 3) {
+            TEST_CHECK(memcmp(output, "abc", 3) == 0);
+        }
+        flb_free(output);
+    }
+
+    ret = flb_snappy_uncompress_framed_data((char *) mixed_framed,
+                                            sizeof(mixed_framed),
+                                            &output, &output_size);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(output_size == 6);
+    TEST_CHECK(output != NULL);
+    if (output != NULL) {
+        if (output_size == 6) {
+            TEST_CHECK(memcmp(output, "abcabc", 6) == 0);
+        }
+        flb_free(output);
+    }
+
+    framed[14] ^= 1;
+    ret = flb_snappy_uncompress_framed_data((char *) framed, sizeof(framed),
+                                            &output, &output_size);
+    TEST_CHECK(ret != 0);
+    TEST_CHECK(output == NULL);
+    TEST_CHECK(output_size == 0);
+
+    framed[14] ^= 1;
+    framed[25] ^= 1;
+    ret = flb_snappy_uncompress_framed_data((char *) framed, sizeof(framed),
+                                            &output, &output_size);
+    TEST_CHECK(ret != 0);
+    TEST_CHECK(output == NULL);
+    TEST_CHECK(output_size == 0);
+}
+
 static void test_invalid_input(void)
 {
     void *output;
@@ -281,6 +369,7 @@ TEST_LIST = {
     {"advertised_sizes", test_advertised_sizes},
     {"invalid_input", test_invalid_input},
     {"snappy_framed_checksum", test_snappy_framed_checksum},
+    {"snappy_framed_aggregation", test_snappy_framed_aggregation},
     {"context_output_growth", test_context_output_growth},
     {"zstd_window_budget", test_zstd_window_budget},
     {"gzip_optional_header", test_gzip_optional_header},

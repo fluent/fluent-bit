@@ -301,7 +301,6 @@ int flb_snappy_uncompress_framed_data(char *in_data, size_t in_len,
     }
 
     aggregated_data_buffer = NULL;
-    aggregated_data_length = 0;
 
     if (compressed_chunk_count == 1 &&
         uncompressed_chunk_count == 0 &&
@@ -321,7 +320,7 @@ int flb_snappy_uncompress_framed_data(char *in_data, size_t in_len,
         flb_free(chunk);
     }
     else {
-        if (aggregated_data_length > 0) {
+        if (result == 0 && aggregated_data_length > 0) {
             aggregated_data_buffer = flb_calloc(aggregated_data_length,
                                                 sizeof(char));
 
