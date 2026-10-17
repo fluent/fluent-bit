@@ -18,7 +18,7 @@
  */
 
 #include <fluent-bit/flb_info.h>
-#include <pthread.h>
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_lib.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_pack.h>
