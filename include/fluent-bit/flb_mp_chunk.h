@@ -89,6 +89,7 @@ void flb_mp_chunk_cobj_value_pool_enable(struct flb_mp_chunk_cobj *chunk_cobj);
 struct cfl_arena *flb_mp_chunk_cobj_value_pool_get(struct flb_mp_chunk_cobj *chunk_cobj,
                                                   size_t estimated_bytes);
 
+int flb_mp_chunk_cobj_encode_append(struct flb_mp_chunk_cobj *chunk_cobj);
 int flb_mp_chunk_cobj_encode(struct flb_mp_chunk_cobj *chunk_cobj, char **out_buf, size_t *out_size);
 int flb_mp_chunk_cobj_count_log_records(struct flb_mp_chunk_cobj *chunk_cobj);
 int flb_mp_chunk_cobj_normalize_groups(struct flb_mp_chunk_cobj *chunk_cobj);
