@@ -175,15 +175,45 @@ static void cb_check_format_multiple_records(void *ctx, int ffd,
     flb_sds_destroy(res_data);
 }
 
-static void cb_check_format_log_key_error(void *ctx, int ffd,
-                                          int res_ret, void *res_data,
-                                          size_t res_size, void *data)
+static void cb_check_format_log_key_oversized(void *ctx, int ffd,
+                                              int res_ret, void *res_data,
+                                              size_t res_size, void *data)
 {
-    if (res_ret == 0) {
-        set_callback_error("log_key conversion failure was not propagated");
+    char *out_json = res_data;
+    char *p;
+    int count = 0;
+
+    /*
+     * A log_key value whose JSON form exceeds the buffer initially sized
+     * from the MessagePack record must now be serialized in full: the
+     * extraction buffer grows and retries instead of dropping or
+     * truncating the value.
+     */
+    if (res_ret != 0 || out_json == NULL) {
+        set_callback_error("oversized log_key value should be serialized, not dropped");
+        flb_sds_destroy(res_data);
+        return;
     }
-    if (res_data != NULL || res_size != 0) {
-        set_callback_error("failed extraction returned a partial payload");
+
+    if (strstr(out_json, "record one") == NULL) {
+        set_callback_error("first record was not found");
+    }
+    if (strstr(out_json, "record three") == NULL) {
+        set_callback_error("third record was not found");
+    }
+
+    /*
+     * The middle record embeds 256 escaped control characters; every one
+     * must survive, proving the oversized value was neither truncated nor
+     * dropped.
+     */
+    p = out_json;
+    while ((p = strstr(p, "u0001")) != NULL) {
+        count++;
+        p += 5;
+    }
+    if (count < 256) {
+        set_callback_error("oversized middle record value was truncated or dropped");
     }
 
     increment_output_invoked();
@@ -511,7 +541,7 @@ void test_format_multiple_records()
     stop_and_check(ctx, 1);
 }
 
-void test_format_with_log_key_conversion_error()
+void test_format_with_log_key_oversized_value()
 {
     flb_ctx_t *ctx;
     int in_ffd, out_ffd;
@@ -536,7 +566,7 @@ void test_format_with_log_key_conversion_error()
                    "namespace", "tenant-a",
                    "label", "env production",
                    NULL);
-    flb_output_set_test(ctx, out_ffd, "formatter", cb_check_format_log_key_error, NULL, NULL);
+    flb_output_set_test(ctx, out_ffd, "formatter", cb_check_format_log_key_oversized, NULL, NULL);
 
     flb_start(ctx);
     clear_output_invoked();
@@ -551,7 +581,10 @@ void test_format_with_log_key_conversion_error()
     snprintf(records + offset, sizeof(records) - offset,
              "\"]}][3, {\"message\": \"record three\"}]");
 
-    /* The failing middle record must abort the batch, preserving it for retry. */
+    /*
+     * The oversized middle record must be serialized in full alongside its
+     * neighbours: the extraction buffer grows instead of dropping the value.
+     */
     ret = flb_lib_push(ctx, in_ffd, records, strlen(records));
     TEST_CHECK(ret == strlen(records));
 
@@ -733,7 +766,7 @@ TEST_LIST = {
     { "format_no_log_key",           test_format_no_log_key },
     { "format_with_log_key_found",   test_format_with_log_key_found },
     { "format_with_log_key_not_found", test_format_with_log_key_not_found },
-    { "format_with_log_key_conversion_error", test_format_with_log_key_conversion_error },
+    { "format_with_log_key_oversized_value", test_format_with_log_key_oversized_value },
     { "format_multiple_records",     test_format_multiple_records },
     { "format_partially_suceeded_records", test_format_partially_suceeded_records },
     { "format_namespace_and_labels", test_format_namespace_and_labels },

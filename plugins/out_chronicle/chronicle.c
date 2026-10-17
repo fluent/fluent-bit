@@ -533,9 +533,12 @@ static int flb_pack_msgpack_extract_log_key(void *out_context, uint64_t bytes,
     int ret;
     struct flb_chronicle *ctx = out_context;
     char *val_buf;
+    char *tmp_buf;
     char *key_str = NULL;
     size_t key_str_size = 0;
     size_t msgpack_size = bytes + bytes / 4;
+    size_t new_size;
+    size_t avail;
     size_t val_offset = 0;
     flb_sds_t out_buf;
     msgpack_object map;
@@ -601,13 +604,33 @@ static int flb_pack_msgpack_extract_log_key(void *out_context, uint64_t bytes,
                     val_offset++;
                 }
                 else {
-                    ret = flb_msgpack_to_json(val_buf + val_offset,
-                                              msgpack_size - val_offset, &val,
-                                              config->json_escape_unicode);
-                    if (ret <= 0) {
-                        flb_plg_error(ctx->ins, "Could not convert log_key value to JSON");
-                        flb_free(val_buf);
-                        return CHRONICLE_LOG_KEY_ERROR;
+                    /*
+                     * Serialize the value as JSON, growing the scratch buffer
+                     * and retrying if it does not fit, so an oversized value
+                     * is neither truncated nor dropped.
+                     */
+                    ret = -1;
+                    while (1) {
+                        avail = msgpack_size - val_offset;
+                        if (avail > 1) {
+                            ret = flb_msgpack_to_json(val_buf + val_offset,
+                                                      avail, &val,
+                                                      config->json_escape_unicode);
+                            if (ret > 0) {
+                                break;
+                            }
+                        }
+                        new_size = msgpack_size * 2;
+                        tmp_buf = flb_realloc(val_buf, new_size);
+                        if (tmp_buf == NULL) {
+                            flb_errno();
+                            flb_plg_error(ctx->ins, "Could not grow buffer to "
+                                          "convert log_key value to JSON");
+                            flb_free(val_buf);
+                            return CHRONICLE_LOG_KEY_ERROR;
+                        }
+                        val_buf = tmp_buf;
+                        msgpack_size = new_size;
                     }
                     val_offset += ret;
                     val_buf[val_offset] = '\0';
