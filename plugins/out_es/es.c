@@ -595,11 +595,16 @@ static int compose_index_header(int es_index_custom_len,
     if (es_index_custom_len > 0) {
         p = logstash_index + es_index_custom_len;
     } else {
-        p = logstash_index + strlen(logstash_prefix);
+        /* the prefix copy is capped to the buffer, cap the offset as well */
+        s = strlen(logstash_prefix);
+        if (s > logstash_index_size - 1) {
+            s = logstash_index_size - 1;
+        }
+        p = logstash_index + s;
     }
     len = p - logstash_index;
     ret = snprintf(p, logstash_index_size - len, "%s", separator);
-    if (ret > logstash_index_size - len) {
+    if (ret >= logstash_index_size - len) {
         /* exceed limit */
         return -1;
     }
@@ -936,11 +941,20 @@ static int elasticsearch_format(struct flb_config *config,
                                        logstash_dateformat, &tm);
             if (ret < 0) {
                 /* retry with default separator */
-                compose_index_header(es_index_custom_len,
-                                     &logstash_index[0], sizeof(logstash_index),
-                                     logstash_prefix,
-                                     "-",
-                                     logstash_dateformat, &tm);
+                ret = compose_index_header(es_index_custom_len,
+                                           &logstash_index[0], sizeof(logstash_index),
+                                           logstash_prefix,
+                                           "-",
+                                           logstash_dateformat, &tm);
+            }
+            if (ret < 0) {
+                /* the prefix leaves no room for the date, drop the record
+                 * instead of emitting an index without one */
+                flb_plg_warn(ctx->ins,
+                             "logstash_prefix too long to compose index, "
+                             "skipping record");
+                msgpack_sbuffer_destroy(&tmp_sbuf);
+                continue;
             }
 
             es_index = logstash_index;
