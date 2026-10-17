@@ -298,3 +298,74 @@ def test_pooled_batch_commit_rollback_and_retained_values(tmp_path, placement, r
             assert ("cannot construct policy output" in diagnostics) is rollback
     finally:
         service.stop()
+
+
+@pytest.mark.parametrize("chain", ["direct", "native"])
+def test_output_windows_keep_otlp_resources_whole(tmp_path, chain):
+    """Large output chunks are processed in windows without splitting resources."""
+    processors = [{"name": "fts", "code": '''function process(log)
+      log.body:set("seen", true)
+      log.resource.attributes:set("windowed", "yes")
+    end'''}]
+    if chain == "native":
+        processors.append({"name": "content_modifier", "context": "body", "action": "insert",
+                           "key": "following", "value": "native"})
+    source = {"name": "opentelemetry", "port": "${FLUENT_BIT_TEST_LISTENER_PORT}"}
+    output = {"name": "stdout", "match": "*", "format": "otlp_json",
+              "processors": {"logs": processors}}
+    config = tmp_path / "windows.yaml"
+    config.write_text(yaml.safe_dump({"service": {"flush": 1, "grace": 1,
+        "http_server": True, "http_port": "${FLUENT_BIT_HTTP_MONITORING_PORT}"},
+        "pipeline": {"inputs": [source], "outputs": [output]}}))
+    resources = 4
+    per_resource = 1500
+    service = FluentBitTestService(str(config))
+    try:
+        service.start()
+        payload = {"resourceLogs": [{
+            "resource": {"attributes": [{"key": "res.id", "value": {"stringValue": f"r{res}"}}]},
+            "scopeLogs": [{"scope": {"name": "windows"}, "logRecords": [
+                {"timeUnixNano": str(1700000000000000000 + index),
+                 "body": {"kvlistValue": {"values": [
+                     {"key": "index", "value": {"intValue": str(index)}},
+                     {"key": "text", "value": {"stringValue": "w" * 48}}]}}}
+                for index in range(per_resource)]}]} for res in range(resources)]}
+        response = requests.post(f"http://127.0.0.1:{service.flb_listener_port}/v1/logs",
+                                 json=payload, timeout=30)
+        response.raise_for_status()
+
+        def collect():
+            seen = {}
+            batches = []
+            for line in Path(service.flb.log_file).read_text().splitlines(keepends=True):
+                if not line.startswith("{") or not line.endswith("\n"):
+                    continue
+                batch = json.loads(line)
+                batches.append(batch)
+                for resource in batch["resourceLogs"]:
+                    res_id = attributes(resource["resource"]["attributes"])["res.id"]
+                    for scope in resource["scopeLogs"]:
+                        seen.setdefault(res_id, []).extend(scope["logRecords"])
+            total = sum(len(logs) for logs in seen.values())
+            return (seen, batches) if total >= resources * per_resource else None
+
+        seen, batches = service.wait_for_condition(collect, timeout=60)
+        assert sorted(seen) == [f"r{res}" for res in range(resources)]
+        for logs in seen.values():
+            bodies = [scalar(log["body"]) for log in logs]
+            assert [body["index"] for body in bodies] == list(range(per_resource))
+            assert all(body["seen"] is True and body["text"] == "w" * 48 for body in bodies)
+            assert all(body.get("following") == ("native" if chain == "native" else None)
+                       for body in bodies)
+        for batch in batches:
+            ids = [attributes(resource["resource"]["attributes"])["res.id"]
+                   for resource in batch["resourceLogs"]]
+            # a resource split across windows would be emitted more than once
+            assert len(ids) == len(set(ids))
+            for resource in batch["resourceLogs"]:
+                assert attributes(resource["resource"]["attributes"])["windowed"] == "yes"
+        diagnostics = Path(service.flb.log_file).read_text()
+        assert "cannot construct" not in diagnostics and "policy failed" not in diagnostics
+        assert "invalid log window" not in diagnostics
+    finally:
+        service.stop()
