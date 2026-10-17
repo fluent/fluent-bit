@@ -28,37 +28,108 @@
 #include <cmetrics/cmt_exp_histogram.h>
 
 #include <string.h>
+#include <inttypes.h>
+#include <stdio.h>
 
 #define METADATA_KEY "__cmetrics_native_metadata_v1"
 /* Written only by unreleased builds; ignored on input, never emitted. */
 #define HISTOGRAM_MARKER_KEY "__cmetrics_histogram_buckets"
 
+static struct cfl_kvlist *clone_kvlist(struct cfl_kvlist *source);
+
+static struct cfl_variant *clone_variant(struct cfl_variant *source)
+{
+    size_t index;
+    struct cfl_array *array;
+    struct cfl_kvlist *kvlist;
+    struct cfl_variant *entry;
+    struct cfl_variant *copy;
+
+    switch (source->type) {
+    case CFL_VARIANT_STRING:
+        return cfl_variant_create_from_string_s(source->data.as_string,
+                                                cfl_variant_size_get(source), CFL_FALSE);
+    case CFL_VARIANT_BYTES:
+        return cfl_variant_create_from_bytes(source->data.as_bytes,
+                                             cfl_variant_size_get(source), CFL_FALSE);
+    case CFL_VARIANT_BOOL:
+        return cfl_variant_create_from_bool(source->data.as_bool);
+    case CFL_VARIANT_INT:
+        return cfl_variant_create_from_int64(source->data.as_int64);
+    case CFL_VARIANT_UINT:
+        return cfl_variant_create_from_uint64(source->data.as_uint64);
+    case CFL_VARIANT_DOUBLE:
+        return cfl_variant_create_from_double(source->data.as_double);
+    case CFL_VARIANT_NULL:
+        return cfl_variant_create_from_null();
+    case CFL_VARIANT_ARRAY:
+        array = cfl_array_create(source->data.as_array->entry_count);
+        if (array == NULL) {
+            return NULL;
+        }
+        for (index = 0; index < source->data.as_array->entry_count; index++) {
+            entry = clone_variant(source->data.as_array->entries[index]);
+            if (entry == NULL || cfl_array_append(array, entry) != 0) {
+                cfl_variant_destroy(entry);
+                cfl_array_destroy(array);
+                return NULL;
+            }
+        }
+        copy = cfl_variant_create_from_array(array);
+        if (copy == NULL) {
+            cfl_array_destroy(array);
+        }
+        return copy;
+    case CFL_VARIANT_KVLIST:
+        kvlist = clone_kvlist(source->data.as_kvlist);
+        if (kvlist == NULL) {
+            return NULL;
+        }
+        copy = cfl_variant_create_from_kvlist(kvlist);
+        if (copy == NULL) {
+            cfl_kvlist_destroy(kvlist);
+        }
+        return copy;
+    default:
+        return NULL;
+    }
+}
+
+static struct cfl_kvlist *clone_kvlist(struct cfl_kvlist *source)
+{
+    struct cfl_list *head;
+    struct cfl_kvpair *pair;
+    struct cfl_kvlist *copy;
+    struct cfl_variant *value;
+
+    copy = cfl_kvlist_create();
+    if (copy == NULL) {
+        return NULL;
+    }
+    cfl_list_foreach(head, &source->list) {
+        pair = cfl_list_entry(head, struct cfl_kvpair, _head);
+        value = clone_variant(pair->val);
+        if (value == NULL ||
+            cfl_kvlist_insert_s(copy, pair->key, cfl_sds_len(pair->key), value) != 0) {
+            cfl_variant_destroy(value);
+            cfl_kvlist_destroy(copy);
+            return NULL;
+        }
+    }
+    return copy;
+}
+
+/*
+ * Deep copy, preserving key order and duplicate keys. Unlike a msgpack round
+ * trip it has no nesting limit, so metadata accepted by a decoder can always
+ * be copied.
+ */
 struct cfl_kvlist *cmt_otlp_metadata_clone(struct cfl_kvlist *source)
 {
-    mpack_writer_t writer;
-    mpack_reader_t reader;
-    struct cfl_kvlist *copy = NULL;
-    char *buffer = NULL;
-    size_t size = 0;
-    int result;
-
     if (source == NULL) {
         return NULL;
     }
-    mpack_writer_init_growable(&writer, &buffer, &size);
-    result = pack_cfl_variant_kvlist(&writer, source);
-    if (mpack_writer_destroy(&writer) != mpack_ok || result != 0) {
-        free(buffer);
-        return NULL;
-    }
-    mpack_reader_init_data(&reader, buffer, size);
-    result = unpack_cfl_kvlist(&reader, &copy);
-    if (mpack_reader_destroy(&reader) != mpack_ok || result != 0) {
-        cfl_kvlist_destroy(copy);
-        copy = NULL;
-    }
-    free(buffer);
-    return copy;
+    return clone_kvlist(source);
 }
 
 static int visit_maps(struct cmt *context,
@@ -261,6 +332,201 @@ int cmt_otlp_metadata_pack(mpack_writer_t *writer, struct cmt *context)
     return 0;
 }
 
+/*
+ * Fluent Bit 5.1 and older keep OTLP point metadata in the external metadata
+ * tree: otlp -> metrics -> <type> -> <name> -> {metadata, datapoints}, where a
+ * point is keyed by "<series hash>:<timestamp>". They do not read the binary
+ * sidecar, so the encoder also writes that tree for families with metadata,
+ * with the keys those readers use. The tree is built on a copy: the context
+ * itself is not modified.
+ */
+static const char *legacy_point_keys[] = {
+    "start_time_unix_nano", "flags", "number_value_case", "has_sum", "has_min",
+    "min", "has_max", "max", "exemplars", NULL
+};
+
+static const char *legacy_type_key(int map_type)
+{
+    switch (map_type) {
+    case CMT_COUNTER:
+        return "counter";
+    case CMT_GAUGE:
+        return "gauge";
+    case CMT_UNTYPED:
+        return "untyped";
+    case CMT_SUMMARY:
+        return "summary";
+    case CMT_HISTOGRAM:
+        return "histogram";
+    case CMT_EXP_HISTOGRAM:
+        return "exp_histogram";
+    default:
+        return "unknown";
+    }
+}
+
+static struct cfl_kvlist *legacy_child(struct cfl_kvlist *parent, const char *key)
+{
+    struct cfl_variant *value;
+    struct cfl_kvlist *child;
+
+    value = cfl_kvlist_fetch(parent, (char *) key);
+    if (value != NULL && value->type == CFL_VARIANT_KVLIST) {
+        return value->data.as_kvlist;
+    }
+    if (value != NULL) {
+        cfl_kvlist_remove(parent, (char *) key);
+    }
+    child = cfl_kvlist_create();
+    if (child == NULL) {
+        return NULL;
+    }
+    if (cfl_kvlist_insert_kvlist(parent, (char *) key, child) != 0) {
+        cfl_kvlist_destroy(child);
+        return NULL;
+    }
+    return child;
+}
+
+static int legacy_add_point(struct cfl_kvlist *datapoints, struct cmt_metric *sample)
+{
+    char key[64];
+    size_t index;
+    struct cfl_variant *value;
+    struct cfl_variant *copy;
+    struct cfl_kvlist *point;
+
+    if (sample->otlp_metadata == NULL) {
+        return 0;
+    }
+
+    snprintf(key, sizeof(key), "%" PRIx64 ":%" PRIu64,
+             sample->hash, cmt_metric_get_timestamp(sample));
+    cfl_kvlist_remove(datapoints, key);
+    point = legacy_child(datapoints, key);
+    if (point == NULL) {
+        return -1;
+    }
+
+    for (index = 0; legacy_point_keys[index] != NULL; index++) {
+        value = cfl_kvlist_fetch(sample->otlp_metadata, (char *) legacy_point_keys[index]);
+        if (value == NULL) {
+            continue;
+        }
+        copy = clone_variant(value);
+        if (copy == NULL ||
+            cfl_kvlist_insert(point, (char *) legacy_point_keys[index], copy) != 0) {
+            cfl_variant_destroy(copy);
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static int legacy_add_map(struct cmt_map *map, void *data)
+{
+    struct cfl_kvlist *metrics = data;
+    struct cfl_kvlist *type_root;
+    struct cfl_kvlist *family;
+    struct cfl_kvlist *datapoints;
+    struct cfl_kvlist *copy;
+    struct cfl_variant *metadata;
+    struct cfl_list *head;
+    struct cmt_metric *sample;
+    int points;
+
+    metadata = map->otlp_metadata ? cfl_kvlist_fetch(map->otlp_metadata, "metadata") : NULL;
+    points = map->metric_static_set && map->metric.otlp_metadata != NULL;
+    cfl_list_foreach(head, &map->metrics) {
+        sample = cfl_list_entry(head, struct cmt_metric, _head);
+        points |= sample->otlp_metadata != NULL;
+    }
+    if (!points && (metadata == NULL || metadata->type != CFL_VARIANT_KVLIST)) {
+        return 0;
+    }
+
+    type_root = legacy_child(metrics, legacy_type_key(map->type));
+    if (type_root == NULL) {
+        return -1;
+    }
+    family = legacy_child(type_root, map->opts->fqname);
+    if (family == NULL) {
+        return -1;
+    }
+
+    if (metadata != NULL && metadata->type == CFL_VARIANT_KVLIST) {
+        copy = clone_kvlist(metadata->data.as_kvlist);
+        cfl_kvlist_remove(family, "metadata");
+        if (copy == NULL || cfl_kvlist_insert_kvlist(family, "metadata", copy) != 0) {
+            cfl_kvlist_destroy(copy);
+            return -1;
+        }
+    }
+
+    if (!points) {
+        return 0;
+    }
+    datapoints = legacy_child(family, "datapoints");
+    if (datapoints == NULL) {
+        return -1;
+    }
+    if (map->metric_static_set && legacy_add_point(datapoints, &map->metric) != 0) {
+        return -1;
+    }
+    cfl_list_foreach(head, &map->metrics) {
+        sample = cfl_list_entry(head, struct cmt_metric, _head);
+        if (legacy_add_point(datapoints, sample) != 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static int has_legacy_metadata(struct cmt_map *map, void *data)
+{
+    struct cfl_list *head;
+    struct cmt_metric *sample;
+
+    if ((map->otlp_metadata && cfl_kvlist_fetch(map->otlp_metadata, "metadata")) ||
+        (map->metric_static_set && map->metric.otlp_metadata)) {
+        return 1;
+    }
+    cfl_list_foreach(head, &map->metrics) {
+        sample = cfl_list_entry(head, struct cmt_metric, _head);
+        if (sample->otlp_metadata) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int cmt_otlp_metadata_pack_external(mpack_writer_t *writer, struct cmt *context)
+{
+    int result;
+    struct cfl_kvlist *external;
+    struct cfl_kvlist *otlp;
+    struct cfl_kvlist *metrics;
+
+    if (visit_maps(context, has_legacy_metadata, NULL) == 0) {
+        return pack_cfl_variant_kvlist(writer, context->external_metadata);
+    }
+
+    external = clone_kvlist(context->external_metadata);
+    if (external == NULL) {
+        return -1;
+    }
+    otlp = legacy_child(external, "otlp");
+    metrics = otlp ? legacy_child(otlp, "metrics") : NULL;
+    if (metrics == NULL || visit_maps(context, legacy_add_map, metrics) != 0) {
+        cfl_kvlist_destroy(external);
+        return -1;
+    }
+
+    result = pack_cfl_variant_kvlist(writer, external);
+    cfl_kvlist_destroy(external);
+    return result;
+}
+
 struct staged_family_metadata {
     struct cmt_map *map;
     struct cfl_kvlist *family;
@@ -320,11 +586,16 @@ static int stage_map_metadata(struct cmt_map *map, void *data)
     staged->map = map;
     points = cfl_kvlist_fetch(family->data.as_kvlist, "points");
     reset = cfl_kvlist_fetch(family->data.as_kvlist, "allow_reset");
-    if (!reset || reset->type != CFL_VARIANT_BOOL ||
-        restore_optional_map(&staged->family, cfl_kvlist_fetch(family->data.as_kvlist, "family"))) {
+    if (!reset || reset->type != CFL_VARIANT_BOOL) {
         return -1;
     }
     staged->allow_reset = reset->data.as_bool;
+
+    /* metadata that cannot be read back is skipped for this family only */
+    if (restore_optional_map(&staged->family,
+                             cfl_kvlist_fetch(family->data.as_kvlist, "family")) != 0) {
+        staged->family = NULL;
+    }
 
     /* Label-less entries fold into the static metric on decode, so the point
      * list of that family may no longer line up: keep the family metadata
@@ -343,8 +614,10 @@ static int stage_map_metadata(struct cmt_map *map, void *data)
         }
     }
     for (index = 0; index < staged->point_count; index++) {
-        if (restore_optional_map(&staged->points[index], points->data.as_array->entries[index])) {
-            return -1;
+        /* a point whose metadata cannot be read back keeps none */
+        if (restore_optional_map(&staged->points[index],
+                                 points->data.as_array->entries[index]) != 0) {
+            staged->points[index] = NULL;
         }
     }
     return 0;
@@ -413,6 +686,27 @@ static int check_map_metadata_shape(struct cmt_map *map, void *data)
     return 0;
 }
 
+static void drop_legacy_family(struct cmt *context, struct cmt_map *map)
+{
+    struct cfl_variant *otlp;
+    struct cfl_variant *metrics;
+    struct cfl_variant *type_root;
+
+    otlp = cfl_kvlist_fetch(context->external_metadata, "otlp");
+    if (otlp == NULL || otlp->type != CFL_VARIANT_KVLIST) {
+        return;
+    }
+    metrics = cfl_kvlist_fetch(otlp->data.as_kvlist, "metrics");
+    if (metrics == NULL || metrics->type != CFL_VARIANT_KVLIST) {
+        return;
+    }
+    type_root = cfl_kvlist_fetch(metrics->data.as_kvlist, (char *) legacy_type_key(map->type));
+    if (type_root == NULL || type_root->type != CFL_VARIANT_KVLIST) {
+        return;
+    }
+    cfl_kvlist_remove(type_root->data.as_kvlist, map->opts->fqname);
+}
+
 int cmt_otlp_metadata_restore(struct cmt *context)
 {
     struct cfl_variant *value;
@@ -446,6 +740,8 @@ int cmt_otlp_metadata_restore(struct cmt *context)
     result = visit_maps(context, stage_map_metadata, &state);
     if (result == 0) {
         for (family_index = 0; family_index < state.families->entry_count; family_index++) {
+            /* the legacy copy written for older readers is superseded */
+            drop_legacy_family(context, state.staged[family_index].map);
             commit_map_metadata(&state.staged[family_index]);
         }
     }

@@ -486,7 +486,7 @@ static int pack_context_header(mpack_writer_t *writer, struct cmt *cmt)
     }
 
     mpack_write_cstr(writer, "external");
-    result = pack_cfl_variant_kvlist(writer, cmt->external_metadata);
+    result = cmt_otlp_metadata_pack_external(writer, cmt);
 
     if (result != 0) {
         return -2;

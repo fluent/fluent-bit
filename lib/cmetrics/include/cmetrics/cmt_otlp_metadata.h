@@ -26,6 +26,7 @@
 
 struct cfl_kvlist *cmt_otlp_metadata_clone(struct cfl_kvlist *source);
 int cmt_otlp_metadata_pack(mpack_writer_t *writer, struct cmt *context);
+int cmt_otlp_metadata_pack_external(mpack_writer_t *writer, struct cmt *context);
 int cmt_otlp_metadata_restore(struct cmt *context);
 int cmt_otlp_histogram_restore(struct cmt *context);
 int cmt_otlp_capture_labels(struct cmt_map *map, struct cmt_metric *sample);
