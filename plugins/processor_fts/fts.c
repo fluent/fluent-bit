@@ -172,7 +172,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_SIZE, "output_limit", "64M",
      0, FLB_TRUE, offsetof(struct fts_runtime, output_limit),
-     "Maximum serialized size of a processed chunk."
+     "Maximum serialized size of a processed batch."
     },
     {
      FLB_CONFIG_MAP_SIZE, "memory_limit", "32M",
@@ -193,5 +193,5 @@ struct flb_processor_plugin processor_fts_plugin = {
     .cb_process_traces = fts_process_traces,
     .cb_exit = cb_exit,
     .config_map = config_map,
-    .flags = 0
+    .flags = FLB_PROCESSOR_FLAG_LOG_WINDOWS
 };

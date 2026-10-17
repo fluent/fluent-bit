@@ -60,7 +60,7 @@ Use one processor entry and one script for each signal.
 | `instruction_limit` | `1000000` | Maximum Lua instructions per callback and during script load. Minimum `1000`. `0` is allowed only with `jit: true`. |
 | `jit`               | `false`   | Enable the LuaJIT compiler. Requires `instruction_limit: 0`. |
 | `memory_limit`      | `32M`     | Maximum memory for the policy: the Lua heap plus the typed values it holds. Minimum `262144`. |
-| `output_limit`      | `64M`     | Maximum serialized size of one processed chunk. Minimum `65536`. |
+| `output_limit`      | `64M`     | Maximum serialized size of one processed batch. Minimum `65536`. |
 
 Size suffixes are decimal: `64K` is 64000 bytes.
 
@@ -75,8 +75,14 @@ Size suffixes are decimal: `64K` is 64000 bytes.
 Changes are transactional per item. Edits to the body, metadata, timestamp,
 resource, and scope are committed or rolled back together.
 
-If a processed chunk exceeds `output_limit`, the whole chunk is treated as
-failed: `drop` discards it and `keep` forwards the original chunk.
+If a processed batch exceeds `output_limit`, the whole batch is treated as
+failed: `drop` discards it and `keep` forwards the original batch.
+
+A batch is the set of records handed to one callback run. Small chunks are
+processed as one batch. Larger buffers, such as complete chunks reaching output
+processors, are processed in batches of about 64 KiB or 1024 records, so
+decoded records never hold more than one batch in memory. Groups, such as one
+OpenTelemetry resource and scope, are never split across batches.
 
 For privacy policies such as redaction, keep the default `error_mode: drop`.
 With `keep`, an item whose policy fails is forwarded unmodified.
@@ -316,6 +322,6 @@ message text need an explicit string policy.
 
 ## Diagnostics
 
-Each chunk logs at most five policy errors plus a summary count. The processor
-error metric counts chunks with handled policy failures, and the drop metrics
+Each batch logs at most five policy errors plus a summary count. The processor
+error metric counts batches with handled policy failures, and the drop metrics
 count removed records.
