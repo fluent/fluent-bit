@@ -51,6 +51,7 @@ static void run_policy(const char *code, int grouped, const char *error_mode,
     int groups = 0;
     int ret;
     int depth = 0;
+    int dup_count;
     const char *kind;
     const char zero_id[16] = {0};
     msgpack_object empty_map = {.type = MSGPACK_OBJECT_MAP, .via.map = {0, NULL}};
@@ -107,6 +108,12 @@ static void run_policy(const char *code, int grouped, const char *error_mode,
                 ret = flb_log_event_encoder_append_body_values(encoder,
                     FLB_LOG_EVENT_CSTRING_VALUE("empty"),
                     FLB_LOG_EVENT_MSGPACK_OBJECT_VALUE(&empty_map));
+                TEST_CHECK(ret == 0);
+            }
+            if (grouped == 11) {
+                ret = flb_log_event_encoder_append_body_values(encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE("duplicate"), FLB_LOG_EVENT_CSTRING_VALUE("one"),
+                    FLB_LOG_EVENT_CSTRING_VALUE("duplicate"), FLB_LOG_EVENT_CSTRING_VALUE("two"));
                 TEST_CHECK(ret == 0);
             }
             ret = flb_log_event_encoder_append_body_values(encoder,
@@ -184,6 +191,22 @@ static void run_policy(const char *code, int grouped, const char *error_mode,
                            value->via.str.size == 8 && memcmp(value->via.str.ptr, "original", 8) == 0);
                 if (grouped == 6) {
                     TEST_CHECK(field(event.body, "empty") == NULL);
+                }
+                if (grouped == 11) {
+                    /* the edit left a single copy of the duplicated key */
+                    dup_count = 0;
+                    for (i = 0; i < (int) event.body->via.map.size; i++) {
+                        value = &event.body->via.map.ptr[i].key;
+                        if (value->via.str.size == 9 &&
+                            memcmp(value->via.str.ptr, "duplicate", 9) == 0) {
+                            dup_count++;
+                            value = &event.body->via.map.ptr[i].val;
+                            TEST_CHECK(value->type == MSGPACK_OBJECT_STR &&
+                                       value->via.str.size == 3 &&
+                                       memcmp(value->via.str.ptr, "one", 3) == 0);
+                        }
+                    }
+                    TEST_CHECK(dup_count == 1);
                 }
                 if (grouped == 8) {
                     TEST_CHECK(field(event.body, "resource") == NULL);
@@ -1176,6 +1199,189 @@ static void empty_metadata_is_materialized_independently(void)
                "previous=log.metadata:copy() end", 0, "drop", 6, 0, 0, NULL, NULL);
 }
 
+/* Group layouts split across appends: 'S<name>' starts a group, 'E' ends one */
+static void append_split_group(struct flb_log_event_encoder *encoder, const char *name)
+{
+    int ret;
+
+    TEST_CHECK(flb_log_event_encoder_group_init(encoder) == 0);
+    ret = flb_log_event_encoder_append_metadata_values(encoder,
+        FLB_LOG_EVENT_CSTRING_VALUE("batch"), FLB_LOG_EVENT_CSTRING_VALUE(name),
+        FLB_LOG_EVENT_CSTRING_VALUE("schema"), FLB_LOG_EVENT_BOOLEAN_VALUE(FLB_FALSE));
+    TEST_CHECK(ret == 0);
+    ret = flb_log_event_encoder_append_body_values(encoder,
+        FLB_LOG_EVENT_CSTRING_VALUE("producer"), FLB_LOG_EVENT_CSTRING_VALUE(name));
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(flb_log_event_encoder_group_header_end(encoder) == 0);
+}
+
+static void append_split_record(struct flb_log_event_encoder *encoder, int index)
+{
+    int ret;
+    struct flb_time ts;
+
+    TEST_CHECK(flb_log_event_encoder_begin_record(encoder) == 0);
+    flb_time_set(&ts, 1700000000 + index, 0);
+    TEST_CHECK(flb_log_event_encoder_set_timestamp(encoder, &ts) == 0);
+    ret = flb_log_event_encoder_append_body_values(encoder,
+        FLB_LOG_EVENT_CSTRING_VALUE("index"), FLB_LOG_EVENT_INT64_VALUE(index));
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(flb_log_event_encoder_commit_record(encoder) == 0);
+}
+
+/* layout tokens: r<n> record, S<name> group start, E group end */
+static void run_split_layout(const char *code, const char *error_mode,
+                             const char *layout, const char *expected)
+{
+    struct flb_config *config;
+    struct flb_processor *processor;
+    struct flb_processor_unit *unit;
+    struct flb_log_event_encoder *encoder;
+    struct flb_log_event_decoder decoder;
+    struct flb_log_event event;
+    msgpack_object *value;
+    void *output = NULL;
+    size_t output_size = 0;
+    char result[256];
+    char token[32];
+    const char *cursor;
+    int type;
+    int length;
+
+    config = flb_config_init();
+    TEST_ASSERT(config != NULL);
+    processor = flb_processor_create(config, "split_groups", NULL, 0);
+    TEST_ASSERT(processor != NULL);
+    unit = flb_processor_unit_create(processor, FLB_PROCESSOR_LOGS, "fts");
+    TEST_ASSERT(unit != NULL);
+    TEST_CHECK(flb_processor_unit_set_property_str(unit, "code", code) == 0);
+    TEST_CHECK(flb_processor_unit_set_property_str(unit, "error_mode", error_mode) == 0);
+    TEST_ASSERT(flb_processor_init(processor) == 0);
+
+    encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+    TEST_ASSERT(encoder != NULL);
+    for (cursor = layout; *cursor; ) {
+        if (sscanf(cursor, "%31s%n", token, &length) != 1) {
+            break;
+        }
+        cursor += length;
+        if (token[0] == 'r') {
+            append_split_record(encoder, atoi(token + 1));
+        }
+        else if (token[0] == 'S') {
+            append_split_group(encoder, token + 1);
+        }
+        else if (token[0] == 'E') {
+            TEST_CHECK(flb_log_event_encoder_group_end(encoder) == 0);
+        }
+    }
+
+    TEST_CHECK(flb_processor_run(processor, 0, FLB_PROCESSOR_LOGS, "test", 4,
+                                 encoder->output_buffer, encoder->output_length,
+                                 &output, &output_size) == 0);
+
+    result[0] = '\0';
+    if (output_size > 0) {
+        TEST_ASSERT(flb_log_event_decoder_init(&decoder, output, output_size) == 0);
+        flb_log_event_decoder_read_groups(&decoder, FLB_TRUE);
+        while (flb_log_event_decoder_next(&decoder, &event) == FLB_EVENT_DECODER_SUCCESS) {
+            TEST_ASSERT(flb_log_event_decoder_get_record_type(&event, &type) == 0);
+            if (type == FLB_LOG_EVENT_GROUP_START) {
+                value = field(event.body, "producer");
+                TEST_ASSERT(value != NULL && value->type == MSGPACK_OBJECT_STR);
+                snprintf(token, sizeof(token), "S%.*s ", (int) value->via.str.size,
+                         value->via.str.ptr);
+            }
+            else if (type == FLB_LOG_EVENT_GROUP_END) {
+                snprintf(token, sizeof(token), "E ");
+            }
+            else {
+                value = field(event.body, "index");
+                TEST_ASSERT(value != NULL);
+                snprintf(token, sizeof(token), "r%d ", (int) value->via.i64);
+            }
+            strncat(result, token, sizeof(result) - strlen(result) - 1);
+        }
+        flb_log_event_decoder_destroy(&decoder);
+    }
+    if (strlen(result) > 0) {
+        result[strlen(result) - 1] = '\0';
+    }
+    TEST_CHECK(strcmp(result, expected) == 0);
+    TEST_MSG("layout '%s' produced '%s', expected '%s'", layout, result, expected);
+
+    if (output && output != encoder->output_buffer) {
+        flb_free(output);
+    }
+    flb_log_event_encoder_destroy(encoder);
+    flb_processor_destroy(processor);
+    flb_config_exit(config);
+}
+
+static void groups_split_across_appends_are_preserved(void)
+{
+    const char *noop = "function process(log) end";
+
+    /* records continuing a group from a previous append, then their end */
+    run_split_layout(noop, "drop", "r0 r1 E Sg r2 E", "r0 r1 E Sg r2 E");
+    /* a group left open for the next append */
+    run_split_layout(noop, "drop", "Sg r0 r1", "Sg r0 r1");
+    run_split_layout(noop, "drop", "r0 E Sg r1 E Sh r2", "r0 E Sg r1 E Sh r2");
+    /* an open group whose records are all dropped still opens for the next append */
+    run_split_layout("local fb=require('fluentbit'); "
+                     "function process(log) if log.body:get_number('index') > 0 "
+                     "then return fb.DROP end end",
+                     "drop", "r0 E Sg r1 r2", "r0 E Sg");
+    /* only the first stray end before any start belongs to a previous append */
+    run_split_layout(noop, "drop", "r0 E E Sg r1 E E r2", "r0 E Sg r1 E r2");
+    /*
+     * a nested start begins a new flat context; nested open groups are not a
+     * single group continued by the next append, so the open one is dropped
+     */
+    run_split_layout(noop, "drop", "Sg r0 Sh r1", "Sg r0 E r1");
+}
+
+static void open_group_edits_reopen_the_source_context(void)
+{
+    /* the last record moves to an edited context, the source group stays open */
+    run_split_layout("function process(log) if log.body:get_number('index') == 1 then "
+                     "log.context.attributes:set('producer', 'edited') end end",
+                     "drop", "Sg r0 r1", "Sg r0 E Sedited r1 E Sg");
+}
+
+static void continuation_records_cannot_set_a_context(void)
+{
+    const char *code = "function process(log) if log.body:get_number('index') == 0 then "
+                       "log.context.attributes:set('producer', 'new') end end";
+
+    run_split_layout(code, "keep", "r0 r1 E Sg r2 E", "r0 r1 E Sg r2 E");
+    run_split_layout(code, "drop", "r0 r1 E Sg r2 E", "r1 E Sg r2 E");
+}
+
+static void duplicate_context_keys_keep_edits(void)
+{
+    /*
+     * 'duplicate' holds 'one' and 'two': setting it to the first value must
+     * still remove the second copy instead of looking unchanged.
+     */
+    run_policy("function process(log) log.context.attributes:set('duplicate', 'one'); "
+               "assert(log.context.attributes:get_string('duplicate') == 'one') end",
+               11, "drop", 6, 2, 0, NULL, NULL);
+}
+
+static void json_large_objects_parse_in_linear_time(void)
+{
+    /* 60000 distinct keys under the default instruction budget, then a duplicate */
+    run_policy("local fb=require('fluentbit'); local parts={}; "
+               "for i=1,60000 do parts[i]=string.format('\"k%06d\":0', i) end; "
+               "local text='{'..table.concat(parts, ',')..'}'; "
+               "local dup='{'..table.concat(parts, ',')..',\"k000001\":1}'; "
+               "function process(log) "
+               "assert(fb.parse_json(text):len() == 60000); "
+               "assert(not pcall(fb.parse_json, dup)) end",
+               0, "drop", 6, 0, 0, "memory_limit", "128M");
+}
+
 TEST_LIST = {
     {"empty_metadata_cow_isolation", empty_metadata_is_materialized_independently},
     {"edited_record_one_policy_tree", edited_record_needs_one_policy_tree},
@@ -1229,5 +1435,10 @@ TEST_LIST = {
     {"context_replacement_during_collection", context_replacement_during_collection},
     {"deep_mutable_views", deep_mutable_views},
     {"garbage_collector_is_private", garbage_collector_is_private},
+    {"groups_split_across_appends", groups_split_across_appends_are_preserved},
+    {"open_group_edits_reopen_source", open_group_edits_reopen_the_source_context},
+    {"continuation_records_no_context", continuation_records_cannot_set_a_context},
+    {"duplicate_context_keys_keep_edits", duplicate_context_keys_keep_edits},
+    {"json_large_objects_linear", json_large_objects_parse_in_linear_time},
     {NULL, NULL}
 };
