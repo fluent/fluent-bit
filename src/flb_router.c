@@ -198,8 +198,12 @@ int flb_router_io_set(struct flb_config *config)
     in_count = mk_list_size(&config->inputs);
     out_count = mk_list_size(&config->outputs);
 
-    /* Mostly used for command line tests */
-    if (in_count == 1 && out_count == 1) {
+    /*
+     * Mostly used for command line tests. Inputs with routes are connected by
+     * the router configuration below.
+     */
+    if (in_count == 1 && out_count == 1 &&
+        cfl_list_is_empty(&config->input_routes)) {
         i_ins = mk_list_entry_first(&config->inputs, struct flb_input_instance, _head);
         o_ins = mk_list_entry_first(&config->outputs, struct flb_output_instance, _head);
 
