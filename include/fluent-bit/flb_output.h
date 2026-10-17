@@ -1253,6 +1253,8 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
                 return NULL;
             }
 
+            /* Capacity can exceed the serialized profile bytes after processing. */
+            p_size = serialization_buffer_offset;
             out_flush->processed_event_chunk = flb_event_chunk_create(
                                                 evc->type,
                                                 0,
