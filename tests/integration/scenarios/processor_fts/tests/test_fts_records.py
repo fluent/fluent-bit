@@ -522,3 +522,99 @@ def test_missing_transport_ids_are_group_local(tmp_path, error_mode):
         assert "cannot construct policy output" not in log_text(service)
     finally:
         service.stop()
+
+
+def start_otlp_json_service(tmp_path, processors):
+    source = {"name": "forward", "port": "${FLUENT_BIT_TEST_LISTENER_PORT}", "tag": "stream"}
+    if processors:
+        source["processors"] = {"logs": processors}
+    output = {"name": "stdout", "match": "*", "format": "otlp_json"}
+    config = tmp_path / "otlp-json.yaml"
+    config.write_text(yaml.safe_dump({"service": {"flush": 1, "grace": 1,
+        "http_server": True, "http_port": "${FLUENT_BIT_HTTP_MONITORING_PORT}"},
+        "pipeline": {"inputs": [source], "outputs": [output]}}))
+    service = FluentBitTestService(str(config))
+    service.start()
+    return service
+
+
+def otlp_resources(service):
+    """(resource attributes, record bodies) for every exported resource."""
+    resources = []
+    for line in log_text(service).splitlines(keepends=True):
+        if not line.startswith("{") or not line.endswith("\n"):
+            continue
+        for resource in json.loads(line)["resourceLogs"]:
+            attrs = [(item["key"], item["value"]) for item in
+                     resource.get("resource", {}).get("attributes", [])]
+            bodies = [{item["key"]: item["value"] for item in log["body"]["kvlistValue"]["values"]}
+                      for scope in resource["scopeLogs"] for log in scope["logRecords"]]
+            resources.append((attrs, bodies))
+    return resources
+
+
+def raw_map(pairs):
+    """Map with explicit, possibly duplicated, keys."""
+    return Raw(b"\xdf" + len(pairs).to_bytes(4, "big") +
+               b"".join(pack(key) + pack(value) for key, value in pairs))
+
+
+@pytest.mark.parametrize("chain", ["fts", "content_modifier", "fts_and_content_modifier"])
+def test_groups_split_across_appends_keep_their_records(tmp_path, chain):
+    """A group whose end arrives in a later append keeps every record."""
+    fts = {"name": "fts", "code": "function process(log) log.body:set('edited', true) end"}
+    modifier = {"name": "content_modifier", "action": "insert", "key": "native", "value": "v"}
+    processors = {"fts": [fts], "content_modifier": [modifier],
+                  "fts_and_content_modifier": [fts, modifier]}[chain]
+    service = start_otlp_json_service(tmp_path, processors)
+    try:
+        start, end = event_time(0xFFFFFFFF), event_time(0xFFFFFFFE)
+        now = event_time(1700000000)
+        head = [[[start, {"schema": "otlp", "resource_id": 0, "scope_id": 0}],
+                 {"resource": {"attributes": {"service.name": "split"}}, "scope": {"name": "s"}}],
+                [[now, {"otlp": {}}], {"msg": "r1"}]]
+        tail = [[[now, {"otlp": {}}], {"msg": "r2"}], [[end, {}], {}]]
+        with socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=30) as connection:
+            connection.sendall(pack(["stream", head]))
+            time.sleep(0.1)
+            connection.sendall(pack(["stream", tail]))
+        resources = service.wait_for_condition(
+            lambda: otlp_resources(service) if sum(len(b) for _, b in otlp_resources(service)) >= 2
+            else None, timeout=20, description="two exported records")
+        # both records stay in the resource opened by the first append
+        assert len(resources) == 1
+        attrs, bodies = resources[0]
+        assert attrs == [("service.name", {"stringValue": "split"})]
+        assert [body["msg"]["stringValue"] for body in bodies] == ["r1", "r2"]
+        for body in bodies:
+            if "fts" in chain:
+                assert body["edited"] == {"boolValue": True}
+            if "content_modifier" in chain:
+                assert body["native"] == {"stringValue": "v"}
+        assert "cannot construct policy output" not in log_text(service)
+    finally:
+        service.stop()
+
+
+def test_duplicate_resource_attributes_collapse_on_edit(tmp_path):
+    """Setting a duplicated resource attribute exports a single value."""
+    fts = {"name": "fts", "code": '''function process(log)
+      log.context.attributes:get("resource"):get("attributes"):set("service.name", "a")
+    end'''}
+    service = start_otlp_json_service(tmp_path, [fts])
+    try:
+        start, end = event_time(0xFFFFFFFF), event_time(0xFFFFFFFE)
+        now = event_time(1700000000)
+        attributes = raw_map([("service.name", "a"), ("service.name", "b")])
+        entries = [[[start, {"schema": "otlp", "resource_id": 0, "scope_id": 0}],
+                    {"resource": {"attributes": attributes}, "scope": {"name": "s"}}],
+                   [[now, {"otlp": {}}], {"msg": "x"}],
+                   [[end, {}], {}]]
+        with socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=30) as connection:
+            connection.sendall(pack(["stream", entries]))
+        resources = service.wait_for_condition(lambda: otlp_resources(service), timeout=20,
+                                               description="exported resource")
+        assert resources[0][0] == [("service.name", {"stringValue": "a"})]
+        assert "policy failed" not in log_text(service)
+    finally:
+        service.stop()
