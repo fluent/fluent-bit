@@ -1316,6 +1316,67 @@ static void attribute_arena_free(void *data, void *pointer)
     /* The encoder releases all datapoint objects with their arena. */
 }
 
+/*
+ * TRUE when every value can be represented as an OTLP AnyValue: NULL values,
+ * unsigned integers above INT64_MAX and unknown types have no OTLP form.
+ */
+static int otlp_variant_is_representable(struct cfl_variant *value, int depth)
+{
+    size_t index;
+    struct cfl_list *head;
+    struct cfl_kvpair *pair;
+    struct cfl_array *array;
+
+    if (value == NULL || depth > 64) {
+        return CMT_FALSE;
+    }
+
+    switch (value->type) {
+    case CFL_VARIANT_STRING:
+    case CFL_VARIANT_BOOL:
+    case CFL_VARIANT_INT:
+    case CFL_VARIANT_DOUBLE:
+    case CFL_VARIANT_BYTES:
+    case CFL_VARIANT_REFERENCE:
+        return CMT_TRUE;
+    case CFL_VARIANT_UINT:
+        return value->data.as_uint64 <= INT64_MAX;
+    case CFL_VARIANT_ARRAY:
+        array = value->data.as_array;
+        for (index = 0; index < array->entry_count; index++) {
+            if (!otlp_variant_is_representable(array->entries[index], depth + 1)) {
+                return CMT_FALSE;
+            }
+        }
+        return CMT_TRUE;
+    case CFL_VARIANT_KVLIST:
+        cfl_list_foreach(head, &value->data.as_kvlist->list) {
+            pair = cfl_list_entry(head, struct cfl_kvpair, _head);
+            if (!otlp_variant_is_representable(pair->val, depth + 1)) {
+                return CMT_FALSE;
+            }
+        }
+        return CMT_TRUE;
+    default:
+        return CMT_FALSE;
+    }
+}
+
+static int otlp_kvlist_is_representable(struct cfl_kvlist *kvlist)
+{
+    struct cfl_list *head;
+    struct cfl_kvpair *pair;
+
+    cfl_list_foreach(head, &kvlist->list) {
+        pair = cfl_list_entry(head, struct cfl_kvpair, _head);
+        if (!otlp_variant_is_representable(pair->val, 0)) {
+            return CMT_FALSE;
+        }
+    }
+
+    return CMT_TRUE;
+}
+
 static int apply_typed_point_attributes(struct cmt_opentelemetry_context *context,
                                         struct cmt_map *map, struct cmt_metric *sample,
                                         void *data_point)
@@ -1339,6 +1400,11 @@ static int apply_typed_point_attributes(struct cmt_opentelemetry_context *contex
     metadata = get_data_point_otlp_metadata_context(context->cmt, map, sample);
     attributes = fetch_metadata_kvlist_key(metadata, "attributes");
     if (attributes == NULL || !cmt_otlp_attributes_match_labels(map, sample)) {
+        return CMT_ENCODE_OPENTELEMETRY_SUCCESS;
+    }
+
+    /* typed values without an OTLP form keep the label derived attributes */
+    if (!otlp_kvlist_is_representable(attributes)) {
         return CMT_ENCODE_OPENTELEMETRY_SUCCESS;
     }
     count = cfl_kvlist_count(attributes);

@@ -2851,6 +2851,44 @@ static void test_otlp_unsigned_attribute_preserves_signed_range(void)
     cmt_destroy(ctx);
 }
 
+/* Typed attributes without an OTLP form keep the label derived attributes. */
+static void test_otlp_unrepresentable_attribute_keeps_point(void)
+{
+    struct cmt *ctx;
+    struct cmt_gauge *gauge;
+    struct cfl_kvlist *attrs;
+    cfl_sds_t wire;
+    Opentelemetry__Proto__Collector__Metrics__V1__ExportMetricsServiceRequest *request;
+    Opentelemetry__Proto__Metrics__V1__Metric *metric;
+
+    ctx = cmt_create();
+    TEST_ASSERT(ctx != NULL);
+    gauge = cmt_gauge_create(ctx, "", "", "huge_attribute", "huge attribute", 0, NULL);
+    TEST_ASSERT(gauge != NULL);
+    TEST_ASSERT(cmt_gauge_set(gauge, 100, 42, 0, NULL) == 0);
+    gauge->map->metric.otlp_metadata = cfl_kvlist_create();
+    TEST_ASSERT(gauge->map->metric.otlp_metadata != NULL);
+    attrs = cfl_kvlist_create();
+    TEST_ASSERT(attrs != NULL);
+    TEST_ASSERT(cfl_kvlist_insert_uint64(attrs, "huge", UINT64_MAX) == 0);
+    TEST_ASSERT(cfl_kvlist_insert_kvlist(gauge->map->metric.otlp_metadata, "attributes", attrs) == 0);
+    TEST_ASSERT(cmt_otlp_capture_labels(gauge->map, &gauge->map->metric) == 0);
+
+    wire = cmt_encode_opentelemetry_create(ctx);
+    TEST_ASSERT(wire != NULL);
+    request = opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__unpack(
+        NULL, cfl_sds_len(wire), (const uint8_t *) wire);
+    TEST_ASSERT(request != NULL);
+    TEST_ASSERT(request->n_resource_metrics == 1);
+    metric = request->resource_metrics[0]->scope_metrics[0]->metrics[0];
+    TEST_CHECK(strcmp(metric->name, "huge_attribute") == 0);
+    TEST_ASSERT(metric->gauge->n_data_points == 1);
+    TEST_CHECK(metric->gauge->data_points[0]->as_double == 42);
+    opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__free_unpacked(request, NULL);
+    cmt_encode_opentelemetry_destroy(wire);
+    cmt_destroy(ctx);
+}
+
 /* Repeated label-less points of one metric are the same series: the last one
  * replaces the static sample, as released versions behave. */
 static cfl_sds_t generate_repeated_unlabeled_points_payload()
@@ -3017,6 +3055,7 @@ static void test_opentelemetry_repeated_unlabeled_points_last_wins(void)
 }
 
 TEST_LIST = {
+    {"otlp_unrepresentable_attribute_keeps_point", test_otlp_unrepresentable_attribute_keeps_point},
     {"repeated_unlabeled_points_last_wins", test_opentelemetry_repeated_unlabeled_points_last_wins},
     {"otlp_unsigned_attribute_signed_range", test_otlp_unsigned_attribute_preserves_signed_range},
     {"opentelemetry_api_full_roundtrip_with_msgpack", test_opentelemetry_api_full_roundtrip_with_msgpack},
