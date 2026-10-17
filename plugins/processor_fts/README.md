@@ -75,8 +75,13 @@ Size suffixes are decimal: `64K` is 64000 bytes.
 Changes are transactional per item. Edits to the body, metadata, timestamp,
 resource, and scope are committed or rolled back together.
 
-If a processed batch exceeds `output_limit`, the whole batch is treated as
-failed: `drop` discards it and `keep` forwards the original batch.
+For logs, if a processed batch exceeds `output_limit`, the whole batch is
+treated as failed: `drop` discards it and `keep` forwards the original batch.
+For metrics and traces the limit is checked per item: an item whose result does
+not fit follows `error_mode` (`drop` removes it, `keep` forwards the original
+item), and the whole batch fails only when the kept originals do not fit
+either. Internal failures, such as a batch that cannot be decoded, apply
+`error_mode` to the whole batch.
 
 A batch is the set of records handed to one callback run. Small chunks are
 processed as one batch. Larger buffers, such as complete chunks reaching output
@@ -136,10 +141,12 @@ and `fb.null`.
 
 ### Value lifetime
 
-Values passed to a callback, and the views obtained from them, are valid only
-during that callback. Using one later raises an error. To keep data between
-callbacks, store `v:copy()`. Copies are independent: changing them never
-changes a committed record.
+Log values passed to a callback, and the views obtained from them, are valid
+only during that callback. Using one later raises an error. Metric and span
+values are snapshots made for the callback: they stay readable afterwards, but
+changing them never affects later items or committed output, and keeping them
+retains their memory. To keep data between callbacks, store `v:copy()`. Copies
+are independent: changing them never changes a committed record.
 
 Lua globals persist for the lifetime of the processor instance.
 
