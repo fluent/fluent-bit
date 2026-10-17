@@ -625,7 +625,7 @@ void test_msgpack_preserves_flags()
     ctr_destroy(ctx);
 }
 
-void test_msgpack_preserves_signed_kind()
+void test_msgpack_stores_unknown_kind_as_unspecified()
 {
     char *buffer;
     size_t size;
@@ -647,7 +647,7 @@ void test_msgpack_preserves_signed_kind()
         TEST_ASSERT(ss != NULL);
         span = ctr_span_create(ctx, ss, "unknown-kind", NULL);
         TEST_ASSERT(span != NULL);
-        /* Decoders preserve unknown protobuf enum values. */
+        /* OTLP decoders keep unknown enum values, msgpack stores them as unspecified */
         span->kind = kinds[index];
         TEST_ASSERT(ctr_span_create(ctx, ss, "healthy-sibling", NULL) != NULL);
         TEST_ASSERT(ctr_encode_msgpack_create(ctx, &buffer, &size) == 0);
@@ -659,7 +659,12 @@ void test_msgpack_preserves_signed_kind()
                                 struct ctrace_resource_span, _head);
             ss = cfl_list_entry(rs->scope_spans.next, struct ctrace_scope_span, _head);
             span = cfl_list_entry(ss->spans.next, struct ctrace_span, _head);
-            TEST_CHECK(span->kind == kinds[index]);
+            if (kinds[index] >= CTRACE_SPAN_UNSPECIFIED && kinds[index] <= CTRACE_SPAN_CONSUMER) {
+                TEST_CHECK(span->kind == kinds[index]);
+            }
+            else {
+                TEST_CHECK(span->kind == CTRACE_SPAN_UNSPECIFIED);
+            }
             TEST_CHECK(cfl_list_size(&ss->spans) == 2);
             TEST_CHECK(offset == size);
             ctr_destroy(decoded);
@@ -1057,7 +1062,7 @@ void test_simple_to_msgpack_and_back()
 
 
 TEST_LIST = {
-    {"msgpack_preserves_signed_kind", test_msgpack_preserves_signed_kind},
+    {"msgpack_unknown_kind_unspecified", test_msgpack_stores_unknown_kind_as_unspecified},
     {"cmt_simple_to_msgpack_and_back", test_simple_to_msgpack_and_back},
     {"cmt_msgpack",                    test_msgpack_to_cmt},
     {"empty_spans",                    test_msgpack_to_ctr_with_empty_spans},

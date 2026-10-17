@@ -361,9 +361,18 @@ static void pack_span(mpack_writer_t *writer, struct ctrace_span *span)
         mpack_write_nil(writer);
     }
 
-    /* kind */
+    /*
+     * kind: decoders before unknown kinds were preserved reject a whole
+     * context when the value is outside the known range, so unknown kinds
+     * are stored as unspecified.
+     */
     mpack_write_cstr(writer, "kind");
-    mpack_write_i32(writer, span->kind);
+    if (span->kind >= CTRACE_SPAN_UNSPECIFIED && span->kind <= CTRACE_SPAN_CONSUMER) {
+        mpack_write_u32(writer, span->kind);
+    }
+    else {
+        mpack_write_u32(writer, CTRACE_SPAN_UNSPECIFIED);
+    }
 
     /* start_time_unix_nano */
     mpack_write_cstr(writer, "start_time_unix_nano");
