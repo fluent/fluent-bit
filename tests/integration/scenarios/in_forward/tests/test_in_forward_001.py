@@ -2539,3 +2539,180 @@ def test_in_forward_storage_limit_shared_success_route_deletes_old_chunk():
     assert any(b"shared-two" in content for content in chunk_contents)
     assert any(b"shared-three" in content for content in chunk_contents)
     assert failed_chunks & evicted_chunks
+
+
+def _event_time(seconds):
+    return ("__ext__", 0, seconds.to_bytes(4, "big") + bytes(4))
+
+
+def _group_start(name):
+    return [[_event_time(0xFFFFFFFF), {"schema": "otlp", "resource_id": 0, "scope_id": 0}],
+            {"resource": {"attributes": {"service.name": name}}, "scope": {"name": "scope"}}]
+
+
+def _group_end():
+    return [[_event_time(0xFFFFFFFE), {}], {}]
+
+
+def _group_record(record_id):
+    return [[_event_time(1700000000), {"otlp": {}}], {"id": record_id}]
+
+
+def _send_forward_entries(port, entries):
+    with socket.create_connection(("127.0.0.1", port), timeout=10) as connection:
+        connection.sendall(_pack_obj([TEST_TAG, entries]))
+
+
+def _marker(record):
+    timestamp = record.get("timestamp")
+    if isinstance(timestamp, dict) and "__ext__" in timestamp:
+        seconds = int.from_bytes(timestamp["__ext__"]["data"][:4], "big")
+        if seconds == 0xFFFFFFFF:
+            return "start"
+        if seconds == 0xFFFFFFFE:
+            return "end"
+    return None
+
+
+def _flushed_entries():
+    """Events of each captured chunk as 'start', 'end' or a record id."""
+    chunks = []
+    for message in forward_data_storage["messages"]:
+        events = []
+        for record in message["records"]:
+            marker = _marker(record)
+            body = record.get("body")
+            events.append(marker if marker else (body.get("id") if isinstance(body, dict) else None))
+        chunks.append(events)
+    return chunks
+
+
+def _flushed_record_ids():
+    return sorted(event for events in _flushed_entries() for event in events
+                  if isinstance(event, int))
+
+
+def test_in_forward_group_split_across_messages_stays_in_one_chunk():
+    """The end of a group received after a flush lands in the chunk of its start."""
+    service = ForwardReceiverService("in_forward_split_groups_to_forward_receiver.yaml")
+    service.start()
+    try:
+        _send_forward_entries(service.flb_listener_port,
+                              [_group_start("split"), _group_record(0), _group_record(1)])
+        # let at least one flush happen while the group is open
+        time.sleep(2.5)
+        _send_forward_entries(service.flb_listener_port, [_group_record(2), _group_end()])
+
+        service.service.wait_for_condition(
+            lambda: _flushed_record_ids() == [0, 1, 2] or None,
+            timeout=15, interval=0.2, description="all records of the split group")
+        chunks = [events for events in _flushed_entries() if events]
+        assert chunks == [["start", 0, 1, 2, "end"]]
+    finally:
+        service.stop()
+
+
+def test_in_forward_open_group_is_flushed_after_the_hold_limit():
+    """A group that never ends does not hold its records forever."""
+    service = ForwardReceiverService("in_forward_split_groups_to_forward_receiver.yaml")
+    service.start()
+    try:
+        _send_forward_entries(service.flb_listener_port, [_group_start("open"), _group_record(0)])
+        started = time.monotonic()
+        service.service.wait_for_condition(
+            lambda: _flushed_record_ids() == [0] or None,
+            timeout=20, interval=0.2, description="record of the open group")
+        # held for the open group, then released
+        assert time.monotonic() - started >= 3
+    finally:
+        service.stop()
+
+
+def test_in_forward_group_crossing_the_chunk_size_stays_in_one_chunk():
+    """A chunk that grows past its size limit inside a group takes the group end too."""
+    service = ForwardReceiverService("in_forward_split_groups_to_forward_receiver.yaml")
+    service.start()
+    try:
+        large = [[_event_time(1700000000), {"otlp": {}}], {"id": 0, "payload": "x" * (2100 * 1024)}]
+        with socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=10) as connection:
+            connection.sendall(_pack_obj([TEST_TAG, [_group_start("large"), large]]))
+            connection.sendall(_pack_obj([TEST_TAG, [_group_record(1), _group_end()]]))
+
+        service.service.wait_for_condition(
+            lambda: _flushed_record_ids() == [0, 1] or None,
+            timeout=20, interval=0.2, description="records of the large group")
+        chunks = [events for events in _flushed_entries() if events]
+        assert chunks == [["start", 0, 1, "end"]]
+    finally:
+        service.stop()
+
+
+def test_in_forward_workers_split_large_frames_between_groups(tmp_path):
+    """A frame above the ingress byte limit is split only between whole groups."""
+    service = ForwardReceiverService(
+        "in_forward_workers_groups_to_forward_receiver.yaml",
+        extra_env={"FORWARD_STORAGE_PATH": str(tmp_path / "storage")})
+    service.start()
+    try:
+        entries = []
+        expected = []
+        record_id = 0
+        for group in range(6):
+            entries.append(_group_start(f"group-{group}"))
+            for _ in range(5):
+                entries.append([[_event_time(1700000000), {"otlp": {}}],
+                                {"id": record_id, "group": group, "payload": "y" * 20000}])
+                expected.append(record_id)
+                record_id += 1
+            entries.append(_group_end())
+        _send_forward_entries(service.flb_listener_port, entries)
+
+        service.service.wait_for_condition(
+            lambda: _flushed_record_ids() == expected or None,
+            timeout=20, interval=0.2, description="every record of the large frame")
+
+        groups = []
+        for message in forward_data_storage["messages"]:
+            current = None
+            for record in message["records"]:
+                marker = _marker(record)
+                if marker == "start":
+                    assert current is None
+                    current = []
+                elif marker == "end":
+                    assert current is not None
+                    groups.append(current)
+                    current = None
+                else:
+                    assert current is not None
+                    current.append(record["body"]["group"])
+            assert current is None
+        assert sorted(groups) == [[group] * 5 for group in range(6)]
+    finally:
+        service.stop()
+
+
+def test_in_forward_conditional_route_keeps_a_split_group_whole():
+    """A routed group split across appends starts once and keeps its end."""
+    service = ForwardReceiverService("in_forward_conditional_groups_to_forward_receiver.yaml")
+    service.start()
+    try:
+        def record(record_id):
+            return [[_event_time(1700000000), {"otlp": {}}], {"id": record_id, "keep": "yes"}]
+
+        _send_forward_entries(service.flb_listener_port,
+                              [_group_start("routed"), record(0), record(1)])
+        time.sleep(2.5)
+        # the end of the open group, then a whole group
+        _send_forward_entries(service.flb_listener_port,
+                              [record(2), _group_end(), _group_start("next"), record(3),
+                               _group_end()])
+
+        service.service.wait_for_condition(
+            lambda: _flushed_record_ids() == [0, 1, 2, 3] or None,
+            timeout=15, interval=0.2, description="routed records of both groups")
+        time.sleep(1.5)
+        chunks = [events for events in _flushed_entries() if events]
+        assert chunks == [["start", 0, 1, 2, "end", "start", 3, "end"]]
+    finally:
+        service.stop()
