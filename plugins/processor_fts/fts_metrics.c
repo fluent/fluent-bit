@@ -391,6 +391,40 @@ static int prepare_rejected_families(struct cmt *out, struct cmt *input,
     return 0;
 }
 
+static int family_name_used(struct cmt *out, int type, const char *fqname)
+{
+    struct cfl_list *list;
+    struct cfl_list *head;
+    struct cmt_map *map;
+
+    if (type == CMT_COUNTER) {
+        list = &out->counters;
+    }
+    else if (type == CMT_GAUGE) {
+        list = &out->gauges;
+    }
+    else {
+        list = &out->untypeds;
+    }
+
+    cfl_list_foreach(head, list) {
+        if (type == CMT_COUNTER) {
+            map = cfl_list_entry(head, struct cmt_counter, _head)->map;
+        }
+        else if (type == CMT_GAUGE) {
+            map = cfl_list_entry(head, struct cmt_gauge, _head)->map;
+        }
+        else {
+            map = cfl_list_entry(head, struct cmt_untyped, _head)->map;
+        }
+        if (strcmp(map->opts->fqname, fqname) == 0) {
+            return FLB_TRUE;
+        }
+    }
+
+    return FLB_FALSE;
+}
+
 /* The input context stays owned by its producer, so kept families are copied. */
 static int copy_rejected_families(struct cmt *out, struct unsupported_family *families,
                                   size_t count)
@@ -405,6 +439,15 @@ static int copy_rejected_families(struct cmt *out, struct unsupported_family *fa
     struct cmt_untyped *untyped;
 
     for (index = 0; index < count; index++) {
+        /*
+         * cmt_cat merges into an existing family with the same name: a policy
+         * output family must never absorb the kept samples and their routing.
+         */
+        if (family_name_used(out, families[index].type,
+                             families[index].map->opts->fqname)) {
+            return -1;
+        }
+
         if (families[index].type == CMT_COUNTER) {
             ret = cmt_cat_counter(out, families[index].family, NULL);
             list = &out->counters;
