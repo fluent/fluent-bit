@@ -46,7 +46,19 @@
 #include <limits.h>
 #include <stddef.h>
 #include <stdio.h>
+#ifdef _WIN32
+#include <io.h>
+#define test_dup(fd)          _dup(fd)
+#define test_dup2(fd, target) _dup2(fd, target)
+#define test_close(fd)        _close(fd)
+#define test_fileno(stream)   _fileno(stream)
+#else
 #include <unistd.h>
+#define test_dup(fd)          dup(fd)
+#define test_dup2(fd, target) dup2(fd, target)
+#define test_close(fd)        close(fd)
+#define test_fileno(stream)   fileno(stream)
+#endif
 #include <string.h>
 #include <fluent-bit/flb_json.h>
 
@@ -3821,7 +3833,8 @@ void test_json_invalid_attributes_warn_once()
     for (index = 0; index < 50; index++) {
         flb_sds_printf(&json, "{\"key\":\"b%d\",\"value\":{\"bytesValue\":\"!!!\"}},", index);
     }
-    flb_sds_cat_safe(&json, "{\"key\":\"ok\",\"value\":{\"stringValue\":\"kept\"}}]", 46);
+    flb_sds_cat_safe(&json, "{\"key\":\"ok\",\"value\":{\"stringValue\":\"kept\"}}]",
+                     sizeof("{\"key\":\"ok\",\"value\":{\"stringValue\":\"kept\"}}]") - 1);
 
     ret = flb_pack_json(json, flb_sds_len(json), &buffer, &size, &type, NULL);
     TEST_ASSERT(ret == 0);
@@ -3837,15 +3850,15 @@ void test_json_invalid_attributes_warn_once()
     TEST_ASSERT(capture != NULL);
 
     fflush(stderr);
-    saved_stderr = dup(fileno(stderr));
+    saved_stderr = test_dup(test_fileno(stderr));
     TEST_ASSERT(saved_stderr >= 0);
-    dup2(fileno(capture), fileno(stderr));
+    test_dup2(test_fileno(capture), test_fileno(stderr));
 
     ret = flb_otel_utils_clone_kvlist_from_otlp_json_array(attributes, &unpacked.data);
 
     fflush(stderr);
-    dup2(saved_stderr, fileno(stderr));
-    close(saved_stderr);
+    test_dup2(saved_stderr, test_fileno(stderr));
+    test_close(saved_stderr);
 
     TEST_CHECK(ret == 0);
     TEST_CHECK(cfl_kvlist_count(attributes) == 1);
