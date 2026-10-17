@@ -774,7 +774,6 @@ static void test_log_scan_matches_decoder(void)
     size_t index;
     int ret;
     int count;
-    int plain;
     int record;
     char saved;
 
@@ -797,8 +796,8 @@ static void test_log_scan_matches_decoder(void)
         }
     }
     TEST_CHECK(flb_mp_scan_log_records(encoder->output_buffer, encoder->output_length,
-                                      FLB_TRUE, &count, &plain) == 0);
-    TEST_CHECK(count == 4 && plain == FLB_FALSE);
+                                      &count) == 0);
+    TEST_CHECK(count == 4);
     for (length = 0; length <= encoder->output_length; length++) {
         TEST_CHECK(flb_mp_count_log_records(encoder->output_buffer, length) ==
                    reference_log_count(encoder->output_buffer, length));
