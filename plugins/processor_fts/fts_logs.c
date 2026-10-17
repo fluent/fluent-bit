@@ -345,6 +345,124 @@ static int empty_context_map(struct cfl_variant *value, int kind)
     return FLB_FALSE;
 }
 
+static int key_pair_compare(const void *a, const void *b)
+{
+    const struct cfl_kvpair *left = *(struct cfl_kvpair * const *) a;
+    const struct cfl_kvpair *right = *(struct cfl_kvpair * const *) b;
+    size_t left_length = cfl_sds_len(left->key);
+    size_t right_length = cfl_sds_len(right->key);
+
+    if (left_length != right_length) {
+        return left_length < right_length ? -1 : 1;
+    }
+
+    return memcmp(left->key, right->key, left_length);
+}
+
+/* TRUE when a map repeats a key; sorting keeps adversarial maps O(n log n) */
+static int has_duplicate_keys(struct cfl_variant *value)
+{
+    int count;
+    int i;
+    int j;
+    int duplicate = FLB_FALSE;
+    struct cfl_list *head;
+    struct cfl_kvpair **pairs;
+
+    if (!value || value->type != CFL_VARIANT_KVLIST) {
+        return FLB_FALSE;
+    }
+
+    count = cfl_kvlist_count(value->data.as_kvlist);
+    if (count < 2) {
+        return FLB_FALSE;
+    }
+
+    pairs = flb_malloc(sizeof(struct cfl_kvpair *) * count);
+    if (!pairs) {
+        flb_errno();
+        /* without memory to check, compare strictly */
+        return FLB_TRUE;
+    }
+
+    i = 0;
+    cfl_list_foreach(head, &value->data.as_kvlist->list) {
+        pairs[i++] = cfl_list_entry(head, struct cfl_kvpair, _head);
+    }
+
+    if (count <= 8) {
+        for (i = 0; i < count && !duplicate; i++) {
+            for (j = i + 1; j < count; j++) {
+                if (key_pair_compare(&pairs[i], &pairs[j]) == 0) {
+                    duplicate = FLB_TRUE;
+                    break;
+                }
+            }
+        }
+    }
+    else {
+        qsort(pairs, count, sizeof(struct cfl_kvpair *), key_pair_compare);
+        for (i = 1; i < count; i++) {
+            if (key_pair_compare(&pairs[i - 1], &pairs[i]) == 0) {
+                duplicate = FLB_TRUE;
+                break;
+            }
+        }
+    }
+
+    flb_free(pairs);
+    return duplicate;
+}
+
+static int pair_key_equal(struct cfl_kvpair *left, struct cfl_kvpair *right)
+{
+    return cfl_sds_len(left->key) == cfl_sds_len(right->key) &&
+           memcmp(left->key, right->key, cfl_sds_len(left->key)) == 0;
+}
+
+static int empty_attributes_pair(struct cfl_kvpair *pair)
+{
+    return cfl_sds_len(pair->key) == 10 && memcmp(pair->key, "attributes", 10) == 0 &&
+           empty_context_map(pair->val, FLB_FALSE);
+}
+
+/*
+ * Positional comparison of a resource or scope map with duplicate keys, where
+ * matching by name would hide edits to later duplicates. Empty attributes
+ * placeholders are ignored on both sides.
+ */
+static int context_kind_equal_positional(struct cfl_variant *left, struct cfl_variant *right)
+{
+    struct cfl_list *a;
+    struct cfl_list *b;
+    struct cfl_list *a_end = &left->data.as_kvlist->list;
+    struct cfl_list *b_end = &right->data.as_kvlist->list;
+    struct cfl_kvpair *pa;
+    struct cfl_kvpair *pb;
+
+    a = a_end->next;
+    b = b_end->next;
+    while (1) {
+        while (a != a_end && empty_attributes_pair(cfl_list_entry(a, struct cfl_kvpair, _head))) {
+            a = a->next;
+        }
+        while (b != b_end && empty_attributes_pair(cfl_list_entry(b, struct cfl_kvpair, _head))) {
+            b = b->next;
+        }
+        if (a == a_end || b == b_end) {
+            return a == a_end && b == b_end;
+        }
+
+        pa = cfl_list_entry(a, struct cfl_kvpair, _head);
+        pb = cfl_list_entry(b, struct cfl_kvpair, _head);
+        if (!pair_key_equal(pa, pb) || !values_equal(pa->val, pb->val)) {
+            return FLB_FALSE;
+        }
+        a = a->next;
+        b = b->next;
+    }
+}
+
 static int context_kind_equal(struct cfl_variant *left, struct cfl_variant *right)
 {
     struct cfl_list *head;
@@ -357,6 +475,10 @@ static int context_kind_equal(struct cfl_variant *left, struct cfl_variant *righ
 
     if (left->type != CFL_VARIANT_KVLIST || right->type != CFL_VARIANT_KVLIST) {
         return values_equal(left, right);
+    }
+
+    if (has_duplicate_keys(left) || has_duplicate_keys(right)) {
+        return context_kind_equal_positional(left, right);
     }
 
     cfl_list_foreach(head, &left->data.as_kvlist->list) {
@@ -386,12 +508,39 @@ static int context_kind_equal(struct cfl_variant *left, struct cfl_variant *righ
 static int context_attributes_equal(struct cfl_variant *left, struct cfl_variant *right)
 {
     struct cfl_list *head;
+    struct cfl_list *a;
+    struct cfl_list *b;
     struct cfl_kvpair *pair;
+    struct cfl_kvpair *pb;
     struct cfl_variant *other;
 
     if (!left || !right ||
         left->type != CFL_VARIANT_KVLIST || right->type != CFL_VARIANT_KVLIST) {
         return values_equal(left, right);
+    }
+
+    /* duplicate keys are compared by position so later duplicates count */
+    if (has_duplicate_keys(left) || has_duplicate_keys(right)) {
+        a = left->data.as_kvlist->list.next;
+        b = right->data.as_kvlist->list.next;
+        while (a != &left->data.as_kvlist->list && b != &right->data.as_kvlist->list) {
+            pair = cfl_list_entry(a, struct cfl_kvpair, _head);
+            pb = cfl_list_entry(b, struct cfl_kvpair, _head);
+            if (!pair_key_equal(pair, pb)) {
+                return FLB_FALSE;
+            }
+            if (strcmp(pair->key, "resource") == 0 || strcmp(pair->key, "scope") == 0) {
+                if (!context_kind_equal(pair->val, pb->val)) {
+                    return FLB_FALSE;
+                }
+            }
+            else if (!values_equal(pair->val, pb->val)) {
+                return FLB_FALSE;
+            }
+            a = a->next;
+            b = b->next;
+        }
+        return a == &left->data.as_kvlist->list && b == &right->data.as_kvlist->list;
     }
 
     cfl_list_foreach(head, &left->data.as_kvlist->list) {
