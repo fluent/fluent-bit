@@ -18,6 +18,7 @@
  */
 
 #include <fluent-bit/flb_info.h>
+#include <pthread.h>
 #include <fluent-bit/flb_lib.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_pack.h>
@@ -1167,6 +1168,147 @@ static void processor_log_windows_need_every_unit(void)
     window_config_destroy(config);
 }
 
+/*
+ * The decoded chunk outlives the first unit's lock, so it must decode and
+ * encode with its own codec: another worker thread can reset the first
+ * unit's decoder while later units still read records from the chunk.
+ */
+static int codec_shared;
+
+static int probe_codec_and_stop(struct flb_processor_instance *ins, void *data,
+                                const char *tag, int tag_len)
+{
+    struct flb_mp_chunk_cobj *chunk = data;
+    struct flb_mp_chunk_record *record;
+
+    /* callbacks run under the unit lock, so the counter needs no atomics */
+    if (chunk->log_decoder == ins->log_decoder || chunk->log_encoder == ins->log_encoder) {
+        codec_shared++;
+    }
+
+    /* leave the remaining records for the next unit to decode */
+    flb_mp_chunk_cobj_record_next(chunk, &record);
+    return FLB_PROCESSOR_SUCCESS;
+}
+
+static struct flb_processor_plugin codec_probe_plugin = {
+    .name = "test_codec_probe",
+    .description = "checks the chunk codec and stops early",
+    .cb_process_logs = probe_codec_and_stop,
+    .flags = 0
+};
+
+static struct flb_processor_plugin codec_window_probe_plugin = {
+    .name = "test_codec_window_probe",
+    .description = "checks the chunk codec and stops early, windowed",
+    .cb_process_logs = probe_codec_and_stop,
+    .flags = FLB_PROCESSOR_FLAG_LOG_WINDOWS
+};
+
+struct codec_worker {
+    struct flb_processor *proc;
+    char *input;
+    size_t input_size;
+    int expected;
+    int failures;
+};
+
+static void *codec_worker_run(void *data)
+{
+    int i;
+    int ret;
+    int records;
+    void *output;
+    size_t output_size;
+    struct codec_worker *worker = data;
+
+    for (i = 0; i < 50; i++) {
+        records = -1;
+        output = NULL;
+        ret = flb_processor_run_with_count(worker->proc, 0, FLB_PROCESSOR_LOGS, "test", 4,
+                                           worker->input, worker->input_size,
+                                           &output, &output_size, -1, &records);
+        if (ret != 0 || records != worker->expected || output == NULL) {
+            worker->failures++;
+        }
+        if (output != NULL && output != worker->input) {
+            flb_free(output);
+        }
+    }
+
+    return NULL;
+}
+
+static void run_codec_workers(struct flb_config *config, char *first, char *second,
+                              char *input, size_t input_size, int expected)
+{
+    int i;
+    struct flb_processor *proc;
+    struct flb_input_instance owner;
+    struct codec_worker workers[4];
+    pthread_t threads[4];
+
+    memset(&owner, 0, sizeof(owner));
+    snprintf(owner.name, sizeof(owner.name), "%s", "window_input.0");
+    owner.cmt = cmt_create();
+    TEST_ASSERT(owner.cmt != NULL);
+    proc = window_processor_create(config, &owner, first, second);
+    TEST_ASSERT(proc != NULL);
+
+    for (i = 0; i < 4; i++) {
+        workers[i].proc = proc;
+        workers[i].input = input;
+        workers[i].input_size = input_size;
+        workers[i].expected = expected;
+        workers[i].failures = 0;
+        TEST_ASSERT(pthread_create(&threads[i], NULL, codec_worker_run, &workers[i]) == 0);
+    }
+    for (i = 0; i < 4; i++) {
+        pthread_join(threads[i], NULL);
+        TEST_CHECK(workers[i].failures == 0);
+    }
+
+    flb_processor_destroy(proc);
+    cmt_destroy(owner.cmt);
+}
+
+static void processor_chunk_codec_is_per_run(void)
+{
+    int i;
+    char *input;
+    size_t input_size;
+    struct flb_config *config;
+    struct flb_log_event_encoder *encoder;
+
+    config = window_config_create();
+    TEST_ASSERT(config != NULL);
+    mk_list_add(&codec_probe_plugin._head, &config->processor_plugins);
+    mk_list_add(&codec_window_probe_plugin._head, &config->processor_plugins);
+    codec_shared = 0;
+
+    /* single chunk path: the second unit decodes what the first one left */
+    encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+    TEST_ASSERT(encoder != NULL);
+    for (i = 0; i < 300; i++) {
+        TEST_ASSERT(append_window_record(encoder, i) == 0);
+    }
+    run_codec_workers(config, "test_codec_probe", "test_single_mark",
+                      encoder->output_buffer, encoder->output_length, 300);
+    flb_log_event_encoder_destroy(encoder);
+
+    /* windowed path */
+    TEST_ASSERT(create_window_records(&input, &input_size) == 0);
+    run_codec_workers(config, "test_codec_window_probe", "test_window_mark",
+                      input, input_size, WINDOW_TOTAL_RECORDS);
+    flb_free(input);
+
+    TEST_CHECK(codec_shared == 0);
+
+    mk_list_del(&codec_probe_plugin._head);
+    mk_list_del(&codec_window_probe_plugin._head);
+    window_config_destroy(config);
+}
+
 TEST_LIST = {
     {"processor_metrics_failure_clears_output", processor_metrics_failure_clears_output},
     { "processor_private_inputs_use_main_loop", processor_private_inputs_use_main_loop },
@@ -1176,5 +1318,6 @@ TEST_LIST = {
     { "processor_log_windows_match_single_chunk", processor_log_windows_match_single_chunk },
     { "processor_log_windows_drop_all", processor_log_windows_drop_all },
     { "processor_log_windows_need_every_unit", processor_log_windows_need_every_unit },
+    { "processor_chunk_codec_is_per_run", processor_chunk_codec_is_per_run },
     { 0 }
 };
