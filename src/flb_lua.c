@@ -103,16 +103,24 @@ static int flb_lua_is_valid_key(lua_State *l, int index)
     return FLB_TRUE;
 }
 
-int flb_lua_pushmpack(lua_State *l, mpack_reader_t *reader)
+/* nesting limit for MessagePack values pushed to Lua, as for JSON packing */
+#define FLB_LUA_MPACK_MAX_DEPTH 512
+
+static int lua_pushmpack_value(lua_State *l, mpack_reader_t *reader, int depth)
 {
     int ret = 0;
     mpack_tag_t tag;
     uint32_t length;
     uint32_t i;
     int index;
+    const char *data;
     struct flb_lua_metadata meta;
 
     tag = mpack_read_tag(reader);
+    if (mpack_reader_error(reader) != mpack_ok) {
+        return -1;
+    }
+
     switch (mpack_tag_type(&tag)) {
         case mpack_type_nil:
             lua_getglobal(l, FLB_LUA_VAR_FLB_NULL);
@@ -135,11 +143,19 @@ int flb_lua_pushmpack(lua_State *l, mpack_reader_t *reader)
         case mpack_type_str:
         case mpack_type_bin:
         case mpack_type_ext:
+            /* the reader checks the length against the remaining data */
             length = mpack_tag_bytes(&tag);
-            lua_pushlstring(l, reader->data, length);
-            reader->data += length;
+            data = mpack_read_bytes_inplace(reader, length);
+            if (mpack_reader_error(reader) != mpack_ok) {
+                return -1;
+            }
+            lua_pushlstring(l, data, length);
+            mpack_done_type(reader, mpack_tag_type(&tag));
             break;
         case mpack_type_array:
+            if (depth >= FLB_LUA_MPACK_MAX_DEPTH || !lua_checkstack(l, 3)) {
+                return -1;
+            }
             flb_lua_metadata_init(&meta);
             meta.data_type = FLB_LUA_L2C_TYPE_ARRAY;
 
@@ -147,16 +163,20 @@ int flb_lua_pushmpack(lua_State *l, mpack_reader_t *reader)
             lua_createtable(l, length, 0);
             index = lua_gettop(l); /* save index of created table */
             for (i = 0; i < length; i++) {
-                ret = flb_lua_pushmpack(l, reader);
+                ret = lua_pushmpack_value(l, reader, depth + 1);
                 if (ret) {
                     return ret;
                 }
                 lua_rawseti(l, -2, i+1);
             }
+            mpack_done_array(reader);
             flb_lua_setmetatable(l, &meta, index);
 
             break;
         case mpack_type_map:
+            if (depth >= FLB_LUA_MPACK_MAX_DEPTH || !lua_checkstack(l, 4)) {
+                return -1;
+            }
             flb_lua_metadata_init(&meta);
             meta.data_type = FLB_LUA_L2C_TYPE_MAP;
 
@@ -164,11 +184,11 @@ int flb_lua_pushmpack(lua_State *l, mpack_reader_t *reader)
             lua_createtable(l, length, 0);
             index = lua_gettop(l); /* save index of created table */
             for (i = 0; i < length; i++) {
-                ret = flb_lua_pushmpack(l, reader);
+                ret = lua_pushmpack_value(l, reader, depth + 1);
                 if (ret) {
                     return ret;
                 }
-                ret = flb_lua_pushmpack(l, reader);
+                ret = lua_pushmpack_value(l, reader, depth + 1);
                 if (ret) {
                     return ret;
                 }
@@ -179,13 +199,37 @@ int flb_lua_pushmpack(lua_State *l, mpack_reader_t *reader)
                 }
                 lua_settable(l, -3);
             }
+            mpack_done_map(reader);
             flb_lua_setmetatable(l, &meta, index);
 
             break;
         default:
             return -1;
     }
+
+    if (mpack_reader_error(reader) != mpack_ok) {
+        return -1;
+    }
+
     return 0;
+}
+
+/*
+ * Push the next MessagePack value of the reader. On failure, such as truncated
+ * or too deeply nested data, nothing is pushed and -1 is returned.
+ */
+int flb_lua_pushmpack(lua_State *l, mpack_reader_t *reader)
+{
+    int ret;
+    int top;
+
+    top = lua_gettop(l);
+    ret = lua_pushmpack_value(l, reader, 0);
+    if (ret != 0) {
+        lua_settop(l, top);
+    }
+
+    return ret;
 }
 
 void flb_lua_pushmsgpack(lua_State *l, msgpack_object *o)
