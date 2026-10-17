@@ -654,6 +654,76 @@ static void native_metric_scalar_preservation(void)
     }
 }
 
+static void kept_native_family_does_not_merge_into_outputs(void)
+{
+    struct flb_config *config;
+    struct flb_processor *processor;
+    struct flb_processor_unit *unit;
+    struct cmt *input;
+    struct cmt *output;
+    struct cmt_gauge *native;
+    struct cmt_gauge *healthy;
+    struct cmt_gauge *gauge;
+    struct cfl_list *head;
+    void *result;
+    size_t result_size;
+    int seen_native = 0;
+    int seen_healthy = 0;
+
+    config = flb_config_init();
+    TEST_ASSERT(config != NULL);
+    processor = flb_processor_create(config, "fts_metric_collision", NULL, 0);
+    TEST_ASSERT(processor != NULL);
+    unit = flb_processor_unit_create(processor, FLB_PROCESSOR_METRICS, "fts");
+    TEST_ASSERT(unit != NULL);
+    /* the policy output reuses the name of a family kept outside the policy */
+    TEST_CHECK(flb_processor_unit_set_property_str(unit, "code",
+               "function process(metric) metric.name = 'native' end") == 0);
+    TEST_CHECK(flb_processor_unit_set_property_str(unit, "error_mode", "keep") == 0);
+    TEST_ASSERT(flb_processor_init(processor) == 0);
+
+    input = cmt_create();
+    TEST_ASSERT(input != NULL);
+    native = cmt_gauge_create(input, "", "", "native", "shared", 0, NULL);
+    TEST_ASSERT(native != NULL);
+    native->map->metric_static_set = CMT_TRUE;
+    cmt_metric_set_uint64(&native->map->metric, 100, UINT64_MAX);
+    healthy = cmt_gauge_create(input, "", "", "healthy", "shared", 0, NULL);
+    TEST_ASSERT(healthy != NULL);
+    TEST_ASSERT(cmt_gauge_set(healthy, 100, 42, 0, NULL) == 0);
+
+    result = NULL;
+    result_size = 0;
+    TEST_CHECK(flb_processor_run(processor, 0, FLB_PROCESSOR_METRICS, "native", 6,
+                                 input, 0, &result, &result_size) == 0);
+    output = result;
+    TEST_ASSERT(output != NULL);
+
+    /* the batch falls back to its original families instead of merging them */
+    TEST_CHECK(cfl_list_size(&output->gauges) == 2);
+    cfl_list_foreach(head, &output->gauges) {
+        gauge = cfl_list_entry(head, struct cmt_gauge, _head);
+        if (strcmp(gauge->opts.name, "native") == 0) {
+            seen_native++;
+            TEST_CHECK(cmt_metric_get_value_type(&gauge->map->metric) == CMT_METRIC_VALUE_UINT64);
+            TEST_CHECK(cmt_metric_get_uint64_value(&gauge->map->metric) == UINT64_MAX);
+            TEST_CHECK(cfl_list_size(&gauge->map->metrics) == 0);
+        }
+        else if (strcmp(gauge->opts.name, "healthy") == 0) {
+            seen_healthy++;
+            TEST_CHECK(cmt_metric_get_value(&gauge->map->metric) == 42);
+        }
+    }
+    TEST_CHECK(seen_native == 1 && seen_healthy == 1);
+
+    if (output != input) {
+        cmt_destroy(output);
+    }
+    cmt_destroy(input);
+    flb_processor_destroy(processor);
+    flb_config_exit(config);
+}
+
 static void untouched_otel_fields_are_preserved(void)
 {
     run_policy("function process(log) end", 3, "drop", 6, 2, 0, NULL, NULL);
@@ -1415,6 +1485,7 @@ TEST_LIST = {
     {"trusted_policy_jit_compiles", trusted_policy_jit_compiles},
     {"native_histogram_buckets_are_preserved", native_histogram_buckets_are_preserved},
     {"native_metric_scalar_preservation", native_metric_scalar_preservation},
+    {"kept_native_family_no_merge", kept_native_family_does_not_merge_into_outputs},
     {"generic_context_isolation", generic_context_isolation},
     {"generic_read_does_not_split", generic_read_does_not_split},
     {"plain_logs_do_not_gain_context", plain_logs_do_not_gain_context},
