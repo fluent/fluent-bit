@@ -767,6 +767,32 @@ static int reference_log_count(const char *data, size_t size)
     return count;
 }
 
+/* a processor that drops every record leaves an empty, NULL buffer */
+static void test_log_helpers_accept_empty_buffers(void)
+{
+    int count;
+    int records;
+    char *out_buf;
+    size_t out_size;
+    size_t window_end;
+
+    count = -1;
+    TEST_CHECK(flb_mp_scan_log_records(NULL, 0, &count) == 0 && count == 0);
+    TEST_CHECK(flb_mp_scan_log_records(NULL, 1, &count) == -1);
+    TEST_CHECK(flb_mp_count_log_records(NULL, 0) == 0);
+    TEST_CHECK(flb_mp_log_group_boundaries(NULL, 0) == 0);
+    TEST_CHECK(flb_mp_log_group_starts(NULL, 0) == 0);
+    TEST_CHECK(flb_mp_log_window_next(NULL, 0, 0, 65536, 1024,
+                                      &window_end, &records) == -1);
+
+    out_buf = (char *) 1;
+    out_size = 1;
+    TEST_CHECK(flb_mp_normalize_log_buffer_groups_msgpack_ex(NULL, 0, &out_buf, &out_size,
+                                                             FLB_MP_GROUPS_KEEP_LEADING_END |
+                                                             FLB_MP_GROUPS_KEEP_TRAILING_OPEN) == 0);
+    TEST_CHECK(out_buf == NULL && out_size == 0);
+}
+
 static void test_log_scan_matches_decoder(void)
 {
     struct flb_log_event_encoder *encoder;
@@ -1125,6 +1151,7 @@ static void test_group_boundaries_follow_the_input(void)
 }
 
 TEST_LIST = {
+    {"log_helpers_accept_empty_buffers", test_log_helpers_accept_empty_buffers},
     {"log_scan_matches_decoder", test_log_scan_matches_decoder},
     {"log_window_next", test_log_window_next},
     {"group_normalization_append_boundaries", test_group_normalization_keeps_append_boundaries},
