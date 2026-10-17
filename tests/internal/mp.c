@@ -809,6 +809,17 @@ static void test_log_scan_matches_decoder(void)
         TEST_CHECK(flb_mp_count_log_records(encoder->output_buffer, encoder->output_length) ==
                    reference_log_count(encoder->output_buffer, encoder->output_length));
         encoder->output_buffer[index] = saved;
+
+        /*
+         * Leave the counts of 16 and 32 bit array and map headers intact: a
+         * corrupted count makes the msgpack-c fallback request gigabytes.
+         */
+        if ((unsigned char) saved == 0xdc || (unsigned char) saved == 0xde) {
+            index += 2;
+        }
+        else if ((unsigned char) saved == 0xdd || (unsigned char) saved == 0xdf) {
+            index += 4;
+        }
     }
     flb_log_event_encoder_destroy(encoder);
 }
