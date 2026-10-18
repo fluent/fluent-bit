@@ -70,8 +70,14 @@ static struct flb_condition_rule *rule_create(const char *field,
     switch (op) {
     case FLB_RULE_OP_EQ:
     case FLB_RULE_OP_NEQ:
+        /* Allow empty string values for equality comparisons */
+        if (!value) {
+            return NULL;
+        }
+        break;
     case FLB_RULE_OP_REGEX:
     case FLB_RULE_OP_NOT_REGEX:
+        /* Regex patterns must not be empty */
         if (!value || !((char *)value)[0]) {
             return NULL;
         }
