@@ -77,7 +77,7 @@ static inline size_t flb_sds_avail(flb_sds_t s)
     return (size_t) (h->alloc - h->len);
 }
 
-static inline int flb_sds_cmp(flb_sds_t s, const char *str, int len)
+static inline int flb_sds_cmp(flb_sds_t s, const char *str, size_t len)
 {
     if (flb_sds_len(s) != len) {
         return -1;
@@ -86,7 +86,7 @@ static inline int flb_sds_cmp(flb_sds_t s, const char *str, int len)
     return strncmp(s, str, len);
 }
 
-static inline int flb_sds_casecmp(flb_sds_t s, const char *str, int len)
+static inline int flb_sds_casecmp(flb_sds_t s, const char *str, size_t len)
 {
     if (flb_sds_len(s) != len) {
         return -1;
