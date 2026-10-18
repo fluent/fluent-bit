@@ -592,13 +592,13 @@ static struct flb_aws_provider *standard_chain_create(struct flb_config
     }
 
     sub_provider = flb_ec2_provider_create(config, generator);
-    if (!sub_provider) {
-        /* EC2 provider will only fail creation if a memory alloc failed */
-        flb_aws_provider_destroy(provider);
-        return NULL;
+    if (sub_provider) {
+        /* EC2 provider will only fail creation if we are  not running in EC2 
+         * and have an HTTP proxy configured 
+         * */
+        mk_list_add(&sub_provider->_head, &implementation->sub_providers);
+        flb_debug("[aws_credentials] Initialized EC2 Provider in standard chain");
     }
-    mk_list_add(&sub_provider->_head, &implementation->sub_providers);
-    flb_debug("[aws_credentials] Initialized EC2 Provider in standard chain");
 
     return provider;
 }
