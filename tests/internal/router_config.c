@@ -265,6 +265,11 @@ static int build_log_chunk_with_otel(const char *service_name,
         return -1;
     }
 
+    ret = flb_log_event_encoder_init(encoder, FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -1;
+    }
+
     /* Extract attribute key from "scope.attr" format if needed */
     if (strncmp(scope_attribute_key, "scope.", 6) == 0) {
         attr_key = scope_attribute_key + 6; /* Skip "scope." prefix */
@@ -343,16 +348,11 @@ static int build_log_chunk_with_otel(const char *service_name,
         "}",
         service_name, scope_name, scope_version, attr_key, scope_attribute_value);
 
-    /* Initialize encoder buffer (needed for msgpack_sbuffer_write) */
-    memset(encoder, 0, sizeof(*encoder));
-    msgpack_sbuffer_init(&encoder->buffer);
-
     /* Convert OTLP JSON to msgpack using the actual converter */
     ret = flb_opentelemetry_logs_json_to_msgpack(encoder, otlp_json, json_len, NULL, &error_status);
     flb_free(otlp_json);
 
     if (ret != 0) {
-        msgpack_sbuffer_destroy(&encoder->buffer);
         return -1;
     }
 
@@ -2188,7 +2188,6 @@ static void test_router_condition_eval_logs_otel_contexts()
         TEST_CHECK(flb_condition_eval_logs(&chunk, &context, &route) == FLB_TRUE);
     }
     flb_router_chunk_context_reset(&context);
-    msgpack_sbuffer_destroy(&encoder.buffer);
     flb_log_event_encoder_destroy(&encoder);
 
     ret = build_log_chunk_with_otel("api", "demo", "1.0.0",
@@ -2199,7 +2198,6 @@ static void test_router_condition_eval_logs_otel_contexts()
         TEST_CHECK(flb_condition_eval_logs(&chunk, &context, &route) == FLB_FALSE);
     }
     flb_router_chunk_context_reset(&context);
-    msgpack_sbuffer_destroy(&encoder.buffer);
     flb_log_event_encoder_destroy(&encoder);
 
     free_route_condition(condition);
@@ -2265,7 +2263,6 @@ static void test_router_condition_eval_logs_otel_contexts()
         TEST_CHECK(flb_condition_eval_logs(&chunk, &context, &route) == FLB_TRUE);
     }
     flb_router_chunk_context_reset(&context);
-    msgpack_sbuffer_destroy(&encoder.buffer);
     flb_log_event_encoder_destroy(&encoder);
 
     ret = build_log_chunk_with_otel("backend", "other", "1.0.0",
@@ -2276,7 +2273,6 @@ static void test_router_condition_eval_logs_otel_contexts()
         TEST_CHECK(flb_condition_eval_logs(&chunk, &context, &route) == FLB_FALSE);
     }
     flb_router_chunk_context_reset(&context);
-    msgpack_sbuffer_destroy(&encoder.buffer);
     flb_log_event_encoder_destroy(&encoder);
 
     free_route_condition(condition);
@@ -2342,7 +2338,6 @@ static void test_router_condition_eval_logs_otel_contexts()
         TEST_CHECK(flb_condition_eval_logs(&chunk, &context, &route) == FLB_TRUE);
     }
     flb_router_chunk_context_reset(&context);
-    msgpack_sbuffer_destroy(&encoder.buffer);
     flb_log_event_encoder_destroy(&encoder);
 
     ret = build_log_chunk_with_otel("backend", "demo", "1.0.0",
@@ -2353,7 +2348,6 @@ static void test_router_condition_eval_logs_otel_contexts()
         TEST_CHECK(flb_condition_eval_logs(&chunk, &context, &route) == FLB_FALSE);
     }
     flb_router_chunk_context_reset(&context);
-    msgpack_sbuffer_destroy(&encoder.buffer);
     flb_log_event_encoder_destroy(&encoder);
 
     free_route_condition(condition);
