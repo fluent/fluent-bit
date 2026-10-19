@@ -1008,6 +1008,38 @@ void test_parse_duplicate_keys_last_wins(void)
     destroy_parse_ctx(&ctx);
 }
 
+void test_parse_ignores_nested_fields(void)
+{
+    int ret;
+    size_t index;
+    struct flb_oauth2 ctx;
+    const char *payloads[] = {
+        /* Nested fields must not override top-level token fields. */
+        "{\"access_token\":\"root-token\",\"token_type\":\"Bearer\",\"expires_in\":3600,"
+        "\"extra\":{\"access_token\":\"nested-token\","
+        "\"token_type\":\"NestedBearer\",\"expires_in\":7200}}",
+        /* A nested string array must not consume following top-level fields. */
+        "{\"access_token\":\"root-token\","
+        "\"authorization_details\":[{\"privileges\":[\"USE CATALOG\"]}],"
+        "\"token_type\":\"Bearer\",\"expires_in\":3600}"
+    };
+
+    for (index = 0; index < sizeof(payloads) / sizeof(payloads[0]); index++) {
+        memset(&ctx, 0, sizeof(ctx));
+        ctx.refresh_skew = FLB_OAUTH2_DEFAULT_SKEW_SECS;
+
+        ret = flb_oauth2_parse_json_response(payloads[index], strlen(payloads[index]), &ctx);
+        TEST_CHECK(ret == 0);
+        if (ret == 0) {
+            TEST_CHECK(strcmp(ctx.access_token, "root-token") == 0);
+            TEST_CHECK(strcmp(ctx.token_type, "Bearer") == 0);
+            TEST_CHECK(ctx.expires_in == 3240);
+        }
+
+        destroy_parse_ctx(&ctx);
+    }
+}
+
 void test_parse_grows_token_buffer(void)
 {
     int i;
@@ -1653,6 +1685,7 @@ TEST_LIST = {
      test_parse_refreshes_token_transactionally},
     {"parse_accepts_quoted_expires_in", test_parse_accepts_quoted_expires_in},
     {"parse_duplicate_keys_last_wins", test_parse_duplicate_keys_last_wins},
+    {"parse_ignores_nested_fields", test_parse_ignores_nested_fields},
     {"parse_grows_token_buffer", test_parse_grows_token_buffer},
     {"parse_rejects_invalid_after_growth", test_parse_rejects_invalid_after_growth},
     {"parse_rejects_invalid_input_size", test_parse_rejects_invalid_input_size},
