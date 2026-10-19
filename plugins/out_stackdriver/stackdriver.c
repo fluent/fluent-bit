@@ -423,7 +423,8 @@ static int get_oauth2_token(struct flb_stackdriver *ctx)
         flb_plg_error(ctx->ins, "JWT signature generation failed");
         return -1;
     }
-    flb_plg_debug(ctx->ins, "JWT signature:\n%s", sig_data);
+    /* The assertion is a replayable credential; never log its contents. */
+    flb_plg_debug(ctx->ins, "JWT assertion generated");
 
     ret = flb_oauth2_payload_append(ctx->o,
                                     "grant_type", -1,
