@@ -1025,6 +1025,49 @@ static void test_ec2_imds_create_and_destroy()
     flb_config_exit(config_fluent);
 }
 
+/*
+ * upstream_set() turns TLS off while it configures the plain-HTTP IMDS
+ * upstream. It must give the output instance back its own 'tls' setting
+ * instead of forcing it on.
+ */
+static void test_ec2_provider_upstream_set_keeps_use_tls()
+{
+    struct flb_aws_provider *ec2_provider;
+    struct flb_output_instance *ins;
+    struct flb_config *cfg;
+
+    cfg = flb_config_init();
+    if (!TEST_CHECK(cfg != NULL)) {
+        return;
+    }
+
+    ec2_provider = flb_ec2_provider_create(cfg, flb_aws_client_generator());
+    if (!TEST_CHECK(ec2_provider != NULL)) {
+        flb_config_exit(cfg);
+        return;
+    }
+
+    ins = flb_output_new(cfg, "null", NULL, FLB_FALSE);
+    if (!TEST_CHECK(ins != NULL)) {
+        flb_aws_provider_destroy(ec2_provider);
+        flb_config_exit(cfg);
+        return;
+    }
+
+    ins->use_tls = FLB_FALSE;
+    ec2_provider->provider_vtable->upstream_set(ec2_provider, ins);
+    TEST_CHECK(ins->use_tls == FLB_FALSE);
+
+    ins->use_tls = FLB_TRUE;
+    ec2_provider->provider_vtable->upstream_set(ec2_provider, ins);
+    TEST_CHECK(ins->use_tls == FLB_TRUE);
+
+    /* the provider upstream is linked to the instance, destroy it first */
+    flb_aws_provider_destroy(ec2_provider);
+    flb_output_instance_destroy(ins);
+    flb_config_exit(cfg);
+}
+
 TEST_LIST = {
     { "test_ec2_provider_v2" , test_ec2_provider_v2},
     { "test_ec2_provider_v1" , test_ec2_provider_v1},
@@ -1033,5 +1076,7 @@ TEST_LIST = {
     { "test_ec2_provider_acquire_token_error" , test_ec2_provider_acquire_token_error},
     { "test_ec2_provider_metadata_request_error" , test_ec2_provider_metadata_request_error},
     { "test_ec2_imds_create_and_destroy" , test_ec2_imds_create_and_destroy},
+    { "test_ec2_provider_upstream_set_keeps_use_tls" ,
+      test_ec2_provider_upstream_set_keeps_use_tls},
     { 0 }
 };
