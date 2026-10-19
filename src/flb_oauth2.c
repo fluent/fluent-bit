@@ -559,7 +559,7 @@ int flb_oauth2_parse_json_response(const char *json_data, size_t json_size,
     for (i = 1; i < ret; i++) {
         t = &tokens[i];
 
-        if (t->type != JSMN_STRING) {
+        if (t->type != JSMN_STRING || t->parent != 0) {
             continue;
         }
 
