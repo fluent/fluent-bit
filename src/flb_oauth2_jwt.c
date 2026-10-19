@@ -390,9 +390,8 @@ static int oauth2_jwt_parse_header(const char *json, size_t json_len,
     size_t i;
     size_t map_size;
     size_t key_len;
-    size_t val_len;
     const char *key_str;
-    const char *val_str;
+    flb_sds_t *field;
 
     /* Convert JSON to msgpack */
     ret = flb_pack_json(json, json_len, &mp_buf, &mp_size,
@@ -429,23 +428,41 @@ static int oauth2_jwt_parse_header(const char *json, size_t json_len,
             continue;
         }
 
-        if (v->type == MSGPACK_OBJECT_STR) {
-            key_len = k->via.str.size;
-            val_len = v->via.str.size;
-            key_str = (const char *) k->via.str.ptr;
-            val_str = (const char *) v->via.str.ptr;
+        key_len = k->via.str.size;
+        key_str = k->via.str.ptr;
 
-            if (key_len == 3 && strncmp(key_str, "kid", 3) == 0) {
-                claims->kid = flb_sds_create_len(val_str, val_len);
-            }
-            else if (key_len == 3 && strncmp(key_str, "alg", 3) == 0) {
-                claims->alg = flb_sds_create_len(val_str, val_len);
-            }
+        if (key_len == 3 && strncmp(key_str, "kid", 3) == 0) {
+            field = &claims->kid;
+        }
+        else if (key_len == 3 && strncmp(key_str, "alg", 3) == 0) {
+            field = &claims->alg;
+        }
+        else {
+            continue;
+        }
+
+        /* Reject duplicates before overwriting an owned value. */
+        if (*field || v->type != MSGPACK_OBJECT_STR) {
+            ret = FLB_OAUTH2_JWT_ERR_JSON_HEADER;
+            goto cleanup;
+        }
+
+        *field = flb_sds_create_len(v->via.str.ptr, v->via.str.size);
+        if (!*field) {
+            ret = FLB_OAUTH2_JWT_ERR_INVALID_ARGUMENT;
+            goto cleanup;
         }
     }
 
+    ret = FLB_OAUTH2_JWT_OK;
+
+cleanup:
     flb_free(mp_buf);
     msgpack_unpacked_destroy(&result);
+
+    if (ret != FLB_OAUTH2_JWT_OK) {
+        return ret;
+    }
 
     if (!claims->kid) {
         return FLB_OAUTH2_JWT_ERR_MISSING_KID;
@@ -727,6 +744,7 @@ static int oauth2_jwks_parse_key(msgpack_object *key_obj,
     flb_sds_t kid = NULL;
     flb_sds_t n = NULL;
     flb_sds_t e = NULL;
+    flb_sds_t *field;
     msgpack_object *k;
     msgpack_object *v;
     size_t i;
@@ -764,58 +782,44 @@ static int oauth2_jwks_parse_key(msgpack_object *key_obj,
                 }
                 else {
                     /* Not an RSA key */
-                    if (kid) {
-                        flb_sds_destroy(kid);
-                    }
-                    if (n) {
-                        flb_sds_destroy(n);
-                    }
-                    if (e) {
-                        flb_sds_destroy(e);
-                    }
-                    return -1;
+                    goto error;
                 }
             }
+            continue;
         }
         else if (key_len == 3 && strncmp(key_str, "kid", 3) == 0) {
-            if (v->type == MSGPACK_OBJECT_STR) {
-                kid = flb_sds_create_len((const char *) v->via.str.ptr,
-                                         v->via.str.size);
-            }
+            field = &kid;
         }
         else if (key_len == 1 && strncmp(key_str, "n", 1) == 0) {
-            if (v->type == MSGPACK_OBJECT_STR) {
-                n = flb_sds_create_len((const char *) v->via.str.ptr, v->via.str.size);
-            }
+            field = &n;
         }
         else if (key_len == 1 && strncmp(key_str, "e", 1) == 0) {
-            if (v->type == MSGPACK_OBJECT_STR) {
-                e = flb_sds_create_len((const char *) v->via.str.ptr, v->via.str.size);
-            }
+            field = &e;
         }
-        /* Ignore other fields (e.g. x5c array) - msgpack handles nested structures automatically */
+        else {
+            /* Ignore other fields (e.g. x5c arrays). */
+            continue;
+        }
+
+        /* Reject duplicates and invalid types without losing prior allocations. */
+        if (*field || v->type != MSGPACK_OBJECT_STR) {
+            goto error;
+        }
+
+        *field = flb_sds_create_len(v->via.str.ptr, v->via.str.size);
+        if (!*field) {
+            goto error;
+        }
     }
 
     if (!kid || !n || !e) {
-        if (kid) {
-            flb_sds_destroy(kid);
-        }
-        if (n) {
-            flb_sds_destroy(n);
-        }
-        if (e) {
-            flb_sds_destroy(e);
-        }
-        return -1;
+        goto error;
     }
 
     key = flb_calloc(1, sizeof(struct flb_oauth2_jwks_key));
     if (!key) {
         flb_errno();
-        flb_sds_destroy(kid);
-        flb_sds_destroy(n);
-        flb_sds_destroy(e);
-        return -1;
+        goto error;
     }
 
     key->kid = kid;
@@ -825,6 +829,12 @@ static int oauth2_jwks_parse_key(msgpack_object *key_obj,
 
     *key_out = key;
     return 0;
+
+error:
+    flb_sds_destroy(kid);
+    flb_sds_destroy(n);
+    flb_sds_destroy(e);
+    return -1;
 }
 
 static int oauth2_jwks_parse_json(flb_sds_t jwks_json, struct flb_oauth2_jwks_cache *cache)
