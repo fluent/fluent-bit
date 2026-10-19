@@ -37,6 +37,7 @@ from google.protobuf import json_format
 # local imports
 from utils.data_utils import read_json_file
 from utils.http_matrix import PROTOCOL_CASES, run_curl_request
+from utils.oauth2 import duplicate_header_token, track_jwks_requests
 from utils.input_pause_resume import (
     assert_pause_resume_cycles,
     assert_shutdown_while_paused,
@@ -1582,6 +1583,78 @@ def test_in_opentelemetry_grpc_oauth2_accepts_valid_jwt(case):
     service.stop()
 
     assert len(response_payload["resourceLogs"]) > 0
+
+
+@pytest.mark.parametrize("field", ["kid", "alg"])
+@pytest.mark.parametrize("case", PROTOCOL_CASES, ids=[case["id"] for case in PROTOCOL_CASES])
+def test_in_opentelemetry_oauth2_rejects_duplicate_header(monkeypatch, case, field):
+    jwks_requests = track_jwks_requests(monkeypatch)
+    token = duplicate_header_token(MOCK_VALID_JWT, field)
+    service = Service(
+        IN_OPENTELEMETRY_OAUTH2_PROTOCOL_CONFIGS[case["config_key"]],
+        use_auth_server=True,
+    )
+    service.start()
+    try:
+        scheme = "https" if case["use_tls"] else "http"
+        payload = service.build_otel_payload("test_logs_001.in.json", "logs")
+        for _ in range(8):
+            result = run_curl_request(
+                f"{scheme}://localhost:{service.flb_listener_port}/v1/logs",
+                payload,
+                headers=["Content-Type: application/x-protobuf", f"Authorization: Bearer {token}"],
+                http_mode=case["http_mode"],
+                ca_cert_path=service.tls_crt_file if case["use_tls"] else None,
+            )
+            assert result["status_code"] == 401
+        assert jwks_requests == []
+        assert data_storage["logs"] == []
+
+        result = run_curl_request(
+            f"{scheme}://localhost:{service.flb_listener_port}/v1/logs",
+            payload,
+            headers=["Content-Type: application/x-protobuf", f"Authorization: Bearer {MOCK_VALID_JWT}"],
+            http_mode=case["http_mode"],
+            ca_cert_path=service.tls_crt_file if case["use_tls"] else None,
+        )
+        assert result["status_code"] == 201
+        assert service.read_response("logs")["resourceLogs"]
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("field", ["kid", "alg"])
+@pytest.mark.parametrize(
+    "case", IN_OPENTELEMETRY_GRPC_OAUTH2_CASES,
+    ids=[case["id"] for case in IN_OPENTELEMETRY_GRPC_OAUTH2_CASES],
+)
+def test_in_opentelemetry_grpc_oauth2_rejects_duplicate_header(monkeypatch, case, field):
+    jwks_requests = track_jwks_requests(monkeypatch)
+    token = duplicate_header_token(MOCK_VALID_JWT, field)
+    service = Service(case["config_file"], use_auth_server=True)
+    service.start()
+    try:
+        payload = json_format.Parse(
+            json.dumps(read_json_file(os.path.join(
+                os.path.dirname(__file__), "data_files/test_logs_001.in.json"
+            ))),
+            ExportLogsServiceRequest(),
+        )
+        for _ in range(8):
+            with pytest.raises(grpc.RpcError) as exc_info:
+                service.send_grpc_request(
+                    "logs", payload, authorization=f"Bearer {token}", use_tls=case["use_tls"],
+                )
+            assert exc_info.value.code() == grpc.StatusCode.UNAUTHENTICATED
+        assert jwks_requests == []
+        assert data_storage["logs"] == []
+
+        service.send_grpc_request(
+            "logs", payload, authorization=f"Bearer {MOCK_VALID_JWT}", use_tls=case["use_tls"],
+        )
+        assert service.read_response("logs")["resourceLogs"]
+    finally:
+        service.stop()
 
 
 def test_out_opentelemetry_receiver_error_is_observable():

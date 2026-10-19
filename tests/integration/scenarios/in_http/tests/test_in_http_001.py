@@ -12,6 +12,7 @@ import requests
 
 from server.http_server import data_storage, http_server_run
 from utils.http_matrix import PROTOCOL_CASES, run_curl_request
+from utils.oauth2 import duplicate_header_token, duplicate_jwks_body, track_jwks_requests
 from utils.input_pause_resume import (
     assert_connection_closed,
     assert_pause_resume_cycles,
@@ -751,6 +752,58 @@ def test_in_http_oauth2_accepts_valid_jwt():
     assert result["status_code"] == 201
     assert len(forwarded_payloads) == 1
     assert forwarded_payloads[0][0]["message"] == "Este es un mensaje de prueba"
+
+
+@pytest.mark.parametrize("field", ["kid", "alg"])
+def test_in_http_oauth2_rejects_duplicate_header(monkeypatch, field):
+    jwks_requests = track_jwks_requests(monkeypatch)
+    token = duplicate_header_token(MOCK_VALID_JWT, field)
+    service = Service("in_http_oauth2.yaml")
+    service.start()
+    try:
+        for _ in range(8):
+            result = run_curl_request(
+                f"http://localhost:{service.flb_listener_port}/",
+                create_payload("sample_data.json"),
+                headers=["Content-Type: application/json", f"Authorization: Bearer {token}"],
+                http_mode="http1.1",
+            )
+            assert result["status_code"] == 401
+        # Rejection must happen during parsing, before fetching a verification key.
+        assert jwks_requests == []
+        assert data_storage["payloads"] == []
+
+        result = run_curl_request(
+            f"http://localhost:{service.flb_listener_port}/",
+            create_payload("sample_data.json"),
+            headers=["Content-Type: application/json", f"Authorization: Bearer {MOCK_VALID_JWT}"],
+            http_mode="http1.1",
+        )
+        assert result["status_code"] == 201
+        assert len(service.read_forwarded_payloads()) == 1
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("field", ["kid", "n", "e"])
+@pytest.mark.parametrize("first_value", ["earlier-value", "", None, []])
+def test_in_http_oauth2_rejects_duplicate_jwks(monkeypatch, field, first_value):
+    jwks_requests = track_jwks_requests(monkeypatch, duplicate_jwks_body(field, first_value))
+    service = Service("in_http_oauth2.yaml")
+    service.start()
+    try:
+        for _ in range(3):
+            result = run_curl_request(
+                f"http://localhost:{service.flb_listener_port}/",
+                create_payload("sample_data.json"),
+                headers=["Content-Type: application/json", f"Authorization: Bearer {MOCK_VALID_JWT}"],
+                http_mode="http1.1",
+            )
+            assert result["status_code"] == 401
+        assert jwks_requests
+        assert data_storage["payloads"] == []
+    finally:
+        service.stop()
 
 
 class Service:
