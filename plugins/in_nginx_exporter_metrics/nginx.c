@@ -207,6 +207,7 @@ int process_connections(void *ctx, uint64_t ts, char *buf, size_t size)
     msgpack_object_kv *cur;
     msgpack_object_str *key;
     int i = 0;
+    int ret = -1;
 
 
     msgpack_unpacked_init(&result);
@@ -234,11 +235,12 @@ int process_connections(void *ctx, uint64_t ts, char *buf, size_t size)
                                     (double)cur->val.via.i64, 0, NULL);
                 }
             }
+            ret = 0;
             break;
         }
     }
     msgpack_unpacked_destroy(&result);
-    return 0;
+    return ret;
 }
 
 int process_ssl(void *ctx, uint64_t ts, char *buf, size_t size)
@@ -249,6 +251,7 @@ int process_ssl(void *ctx, uint64_t ts, char *buf, size_t size)
     msgpack_object_kv *cur;
     msgpack_object_str *key;
     int i = 0;
+    int ret = -1;
 
 
     msgpack_unpacked_init(&result);
@@ -270,11 +273,12 @@ int process_ssl(void *ctx, uint64_t ts, char *buf, size_t size)
                                     (double)cur->val.via.i64, 0, NULL);
                 }
             }
+            ret = 0;
             break;
         }
     }
     msgpack_unpacked_destroy(&result);
-    return 0;
+    return ret;
 }
 
 int process_http_requests(void *ctx, uint64_t ts, char *buf, size_t size)
@@ -285,6 +289,7 @@ int process_http_requests(void *ctx, uint64_t ts, char *buf, size_t size)
     msgpack_object_kv *cur;
     msgpack_object_str *key;
     int i = 0;
+    int ret = -1;
 
 
     msgpack_unpacked_init(&result);
@@ -302,11 +307,12 @@ int process_http_requests(void *ctx, uint64_t ts, char *buf, size_t size)
                                     (double)cur->val.via.i64, 0, NULL);
                 }
             }
+            ret = 0;
             break;
         }
     }
     msgpack_unpacked_destroy(&result);
-    return 0;
+    return ret;
 }
 
 static ssize_t parse_payload_json(struct nginx_ctx *nginx, void *ctx, uint64_t ts,
@@ -340,10 +346,10 @@ static ssize_t parse_payload_json(struct nginx_ctx *nginx, void *ctx, uint64_t t
     }
 
     /* Process the packaged JSON and return the last byte used */
-    process(ctx, ts, pack, out_size);
+    ret = process(ctx, ts, pack, out_size);
     flb_free(pack);
 
-    return 0;
+    return ret;
 }
 
 /**
@@ -398,10 +404,8 @@ static int nginx_collect_plus_connections(struct flb_input_instance *ins,
         goto http_error;
     }
 
-    parse_payload_json(ctx, ctx->plus_connections, ts, process_connections,
+    rc = parse_payload_json(ctx, ctx->plus_connections, ts, process_connections,
                        client->resp.payload, client->resp.payload_size);
-
-    rc = 0;
 http_error:
     flb_http_client_destroy(client);
 client_error:
@@ -461,10 +465,8 @@ static int nginx_collect_plus_ssl(struct flb_input_instance *ins,
         goto http_error;
     }
 
-    parse_payload_json(ctx, ctx->plus_ssl, ts, process_ssl,
+    rc = parse_payload_json(ctx, ctx->plus_ssl, ts, process_ssl,
                        client->resp.payload, client->resp.payload_size);
-
-    rc = 0;
 http_error:
     flb_http_client_destroy(client);
 client_error:
@@ -525,10 +527,8 @@ static int nginx_collect_plus_http_requests(struct flb_input_instance *ins,
         goto http_error;
     }
 
-    parse_payload_json(ctx, ctx->plus_http_requests, ts, process_http_requests,
+    rc = parse_payload_json(ctx, ctx->plus_http_requests, ts, process_http_requests,
                        client->resp.payload, client->resp.payload_size);
-
-    rc = 0;
 http_error:
     flb_http_client_destroy(client);
 client_error:
@@ -572,6 +572,9 @@ void *process_server_zone(struct nginx_ctx *ctx, char *zone, uint64_t ts,
                             (double)map->ptr[i].val.via.i64, 1, (char *[]){zone});
         }
         else if (strncmp(key->ptr, "responses", key->size) == 0) {
+            if (map->ptr[i].val.type != MSGPACK_OBJECT_MAP) {
+                return NULL;
+            }
             for (x = 0; x < map->ptr[i].val.via.map.size; x++) {
                 responses = &map->ptr[i].val.via.map.ptr[x];
                 if (responses->key.via.str.size == 3 &&
@@ -618,6 +621,9 @@ void *process_location_zone(struct nginx_ctx *ctx, char *zone, uint64_t ts,
                             (double)map->ptr[i].val.via.i64, 1, (char *[]){zone});
         }
         else if (strncmp(str->ptr, "responses", str->size) == 0) {
+            if (map->ptr[i].val.type != MSGPACK_OBJECT_MAP) {
+                return NULL;
+            }
             for (x = 0; x < map->ptr[i].val.via.map.size; x++) {
                 responses = &map->ptr[i].val.via.map.ptr[x];
                 if (responses->key.via.str.size == 3 &&
@@ -670,6 +676,9 @@ void *process_stream_server_zone(struct nginx_ctx *ctx, char *zone, uint64_t ts,
                             (double)map->ptr[i].val.via.i64, 1, (char *[]){zone});
         }
         else if (strncmp(str->ptr, "sessions", str->size) == 0) {
+            if (map->ptr[i].val.type != MSGPACK_OBJECT_MAP) {
+                return NULL;
+            }
             for (x = 0; x < map->ptr[i].val.via.map.size; x++) {
                 sessions = &map->ptr[i].val.via.map.ptr[x];
                 if (sessions->key.via.str.size == 3 &&
@@ -702,19 +711,29 @@ static int process_upstream_peers(struct nginx_ctx *ctx, char *backend, uint64_t
 
 
     for (i = 0; i < peers->size; i++) {
+        if (peers->ptr[i].type != MSGPACK_OBJECT_MAP) {
+            return -1;
+        }
         map = &peers->ptr[i].via.map;
         for (p = 0, server = NULL; p < map->size; p++) {
             key = &map->ptr[p].key.via.str;
             kv = &map->ptr[p].val;
             if (strncmp(key->ptr, "server", key->size) == 0) {
-                server = flb_calloc(1, kv->via.str.size+1);
+                if (kv->type != MSGPACK_OBJECT_STR) {
+                    return -1;
+                }
+                server = flb_calloc(1, (size_t) kv->via.str.size + 1);
+                if (server == NULL) {
+                    flb_errno();
+                    return -1;
+                }
                 memcpy(server, kv->via.str.ptr, kv->via.str.size);
                 break;
             }
         }
         if (server == NULL) {
             flb_plg_warn(ctx->ins, "no server for upstream");
-            continue;
+            return -1;
         }
         for (p = 0; p < map->size; p++) {
             key = &map->ptr[p].key.via.str;
@@ -758,6 +777,10 @@ static int process_upstream_peers(struct nginx_ctx *ctx, char *backend, uint64_t
                                 (char *[]){backend, server});
             }
             else if (strncmp(key->ptr, "responses", key->size) == 0) {
+                if (map->ptr[p].val.type != MSGPACK_OBJECT_MAP) {
+                    flb_free(server);
+                    return -1;
+                }
                 for (x = 0; x < map->ptr[p].val.via.map.size; x++) {
                     responses = &map->ptr[p].val.via.map.ptr[x];
                     if (responses->key.via.str.size == 3 &&
@@ -814,7 +837,12 @@ void *process_upstreams(struct nginx_ctx *ctx, char *backend, uint64_t ts,
         }
         // go into the peer...
         else if (strncmp(key->ptr, "peers", key->size) == 0) {
-            process_upstream_peers(ctx, backend, ts, &map->ptr[i].val.via.array);
+            if (map->ptr[i].val.type != MSGPACK_OBJECT_ARRAY) {
+                return NULL;
+            }
+            if (process_upstream_peers(ctx, backend, ts, &map->ptr[i].val.via.array) != 0) {
+                return NULL;
+            }
         }
     }
     //msgpack_unpacked_destroy(&result);
@@ -832,18 +860,28 @@ static int process_stream_upstream_peers(struct nginx_ctx *ctx, char *backend,
 
 
     for (i = 0; i < peers->size; i++) {
+        if (peers->ptr[i].type != MSGPACK_OBJECT_MAP) {
+            return -1;
+        }
         map = &peers->ptr[i].via.map;
         for (p = 0, server = NULL; p < map->size; p++) {
             key = &map->ptr[p].key.via.str;
             if (strncmp(key->ptr, "server", key->size) == 0) {
-                server = flb_calloc(1, map->ptr[p].val.via.str.size+1);
+                if (map->ptr[p].val.type != MSGPACK_OBJECT_STR) {
+                    return -1;
+                }
+                server = flb_calloc(1, (size_t) map->ptr[p].val.via.str.size + 1);
+                if (server == NULL) {
+                    flb_errno();
+                    return -1;
+                }
                 memcpy(server, map->ptr[p].val.via.str.ptr, map->ptr[p].val.via.str.size);
                 break;
             }
         }
         if (server == NULL) {
             flb_plg_warn(ctx->ins, "no server for stream upstream");
-            continue;
+            return -1;
         }
         for (p = 0; p < map->size; p++) {
             // initialize to zero for now to respond
@@ -933,7 +971,12 @@ void *process_stream_upstreams(struct nginx_ctx *ctx, char *backend, uint64_t ts
         }
         // go into the peer...
         else if (strncmp(key->ptr, "peers", key->size) == 0) {
-            process_stream_upstream_peers(ctx, backend, ts, &map->ptr[i].val.via.array);
+            if (map->ptr[i].val.type != MSGPACK_OBJECT_ARRAY) {
+                return NULL;
+            }
+            if (process_stream_upstream_peers(ctx, backend, ts, &map->ptr[i].val.via.array) != 0) {
+                return NULL;
+            }
         }
     }
     //msgpack_unpacked_destroy(&result);
@@ -975,23 +1018,39 @@ static ssize_t parse_payload_json_table(struct nginx_ctx *ctx, int64_t ts,
         return -1;
     }
 
+    ret = -1;
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, pack, out_size, &off) == MSGPACK_UNPACK_SUCCESS) {
-        if (result.data.type == MSGPACK_OBJECT_MAP) {
-            for (i = 0; i < result.data.via.map.size; i++) {
-                name = &result.data.via.map.ptr[i].key.via.str;
-                zone = flb_calloc(1, name->size+1);
-                memcpy(zone, name->ptr, name->size);
-                process(ctx, zone, ts, &result.data.via.map.ptr[i].val.via.map);
-                flb_free(zone);
-            }
-        } else {
-            msgpack_object_print(stdout, result.data);
-        }
+    if (msgpack_unpack_next(&result, pack, out_size, &off) != MSGPACK_UNPACK_SUCCESS ||
+        result.data.type != MSGPACK_OBJECT_MAP) {
+        goto cleanup;
     }
 
+    for (i = 0; i < result.data.via.map.size; i++) {
+        if (result.data.via.map.ptr[i].val.type != MSGPACK_OBJECT_MAP) {
+            goto cleanup;
+        }
+        name = &result.data.via.map.ptr[i].key.via.str;
+        zone = flb_calloc(1, (size_t) name->size + 1);
+        if (zone == NULL) {
+            flb_errno();
+            goto cleanup;
+        }
+        memcpy(zone, name->ptr, name->size);
+        if (process(ctx, zone, ts, &result.data.via.map.ptr[i].val.via.map) == NULL) {
+            flb_free(zone);
+            goto cleanup;
+        }
+        flb_free(zone);
+    }
+    ret = 0;
+
+cleanup:
+    if (ret != 0) {
+        flb_plg_warn(ctx->ins, "invalid NGINX Plus table response, skipping");
+    }
+    msgpack_unpacked_destroy(&result);
     flb_free(pack);
-    return 0;
+    return ret;
 }
 
 /**
@@ -1046,9 +1105,8 @@ static int nginx_collect_plus_server_zones(struct flb_input_instance *ins,
         goto http_error;
     }
 
-    parse_payload_json_table(ctx, ts, process_server_zone,
+    rc = parse_payload_json_table(ctx, ts, process_server_zone,
                        client->resp.payload, client->resp.payload_size);
-    rc = 0;
 http_error:
     flb_http_client_destroy(client);
 client_error:
@@ -1109,9 +1167,8 @@ static int nginx_collect_plus_location_zones(struct flb_input_instance *ins,
         goto http_error;
     }
 
-    parse_payload_json_table(ctx, ts, process_location_zone,
+    rc = parse_payload_json_table(ctx, ts, process_location_zone,
                        client->resp.payload, client->resp.payload_size);
-    rc = 0;
 http_error:
     flb_http_client_destroy(client);
 client_error:
@@ -1172,9 +1229,8 @@ static int nginx_collect_plus_upstreams(struct flb_input_instance *ins,
         goto http_error;
     }
 
-    parse_payload_json_table(ctx, ts, process_upstreams,
+    rc = parse_payload_json_table(ctx, ts, process_upstreams,
                        client->resp.payload, client->resp.payload_size);
-    rc = 0;
 http_error:
     flb_http_client_destroy(client);
 client_error:
@@ -1235,9 +1291,8 @@ static int nginx_collect_plus_stream_server_zones(struct flb_input_instance *ins
         goto http_error;
     }
 
-    parse_payload_json_table(ctx, ts, process_stream_server_zone,
+    rc = parse_payload_json_table(ctx, ts, process_stream_server_zone,
                        client->resp.payload, client->resp.payload_size);
-    rc = 0;
 http_error:
     flb_http_client_destroy(client);
 client_error:
@@ -1299,9 +1354,8 @@ static int nginx_collect_plus_stream_upstreams(struct flb_input_instance *ins,
         goto http_error;
     }
 
-    parse_payload_json_table(ctx, ts, process_stream_upstreams,
+    rc = parse_payload_json_table(ctx, ts, process_stream_upstreams,
                        client->resp.payload, client->resp.payload_size);
-    rc = 0;
 http_error:
     flb_http_client_destroy(client);
 client_error:
@@ -1329,11 +1383,11 @@ static int nginx_plus_get_version(struct flb_input_instance *ins,
     size_t b_sent;
     int rc = -1;
     int out_size;
-    char *pack;
+    char *pack = NULL;
     struct flb_pack_state pack_state;
     size_t off = 0;
     msgpack_unpacked result;
-    int maxversion = 1;
+    int maxversion = -1;
     int i = 0;
 
 
@@ -1393,6 +1447,11 @@ static int nginx_plus_get_version(struct flb_input_instance *ins,
     while (msgpack_unpack_next(&result, pack, out_size, &off) == MSGPACK_UNPACK_SUCCESS) {
         if (result.data.type == MSGPACK_OBJECT_ARRAY) {
             for (i = 0; i < result.data.via.array.size; i++) {
+                if (result.data.via.array.ptr[i].type != MSGPACK_OBJECT_POSITIVE_INTEGER ||
+                    result.data.via.array.ptr[i].via.u64 > INT_MAX) {
+                    maxversion = -1;
+                    goto rest_error;
+                }
                 if (result.data.via.array.ptr[i].via.i64 > maxversion) {
                     maxversion = result.data.via.array.ptr[i].via.i64;
                 }
