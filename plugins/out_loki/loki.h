@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_hash_table.h>
 #include <fluent-bit/flb_pthread.h>
+#include <fluent-bit/flb_oauth2.h>
 #include <cfl/cfl_list.h>
 
 #define FLB_LOKI_CT              "Content-Type"
@@ -79,6 +80,11 @@ struct flb_loki {
 
     /* Bearer Token Auth */
     flb_sds_t bearer_token;
+
+    /* OAuth2 */
+    struct flb_oauth2_config oauth2_config;
+    struct flb_oauth2 *oauth2_ctx;
+    const char *oauth2_auth_method;
 
     /* Labels */
     struct mk_list *labels;
