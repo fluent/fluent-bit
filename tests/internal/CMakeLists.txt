@@ -216,6 +216,10 @@ if(FLB_IN_OPENTELEMETRY)
   list(APPEND UNIT_TESTS_FILES opentelemetry_protobuf.c)
 endif()
 
+if(FLB_IN_COLLECTD)
+  list(APPEND UNIT_TESTS_FILES collectd.c)
+endif()
+
 set(UNIT_TESTS_DATA
   data/fips/disabled.cnf
   data/tls/certificate.pem
