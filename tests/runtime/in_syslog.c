@@ -51,9 +51,14 @@ char *RFC5424_EXPECTED_STRS_1[] = {"\"pri\":\"34\"", "\"message\":\"'su root' fa
     "<13>1 2026-10-15T09:23:23.279036+00:00 host1 root - - [timeQuality tzKnown=\"1\"] \n" \
     "<13>1 2026-10-15T09:23:24.000000+00:00 host1 root - - [timeQuality tzKnown=\"1\"]\n"
 
+/*
+ * Both forms keep the message key as an empty string: an empty capture and
+ * a non-participating optional group are both reported with zero length.
+ */
 char *RFC5424_EMPTY_MSG_EXPECTED_STRS[] = {"\"pri\":\"13\"", "\"host\":\"host1\"",
                                            "\"ident\":\"root\"",
-                                           "\"extradata\":\"[timeQuality tzKnown=\\\"1\\\"]\""
+                                           "\"extradata\":\"[timeQuality tzKnown=\\\"1\\\"]\"",
+                                           "\"message\":\"\""
 };
 
 char *RFC5424_EXPECTED_STRS_TCP[] = {"\"pri\":\"34\"", "\"message\":\"'su root' failed for lonvick on /dev/pts/8\"",
