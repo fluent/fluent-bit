@@ -2392,6 +2392,20 @@ static int nginx_exit(void *data, struct flb_config *config)
     return 0;
 }
 
+static void nginx_pause(void *data, struct flb_config *config)
+{
+    struct nginx_ctx *ctx = data;
+
+    flb_input_collector_pause(ctx->coll_id, ctx->ins);
+}
+
+static void nginx_resume(void *data, struct flb_config *config)
+{
+    struct nginx_ctx *ctx = data;
+
+    flb_input_collector_resume(ctx->coll_id, ctx->ins);
+}
+
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
     {
@@ -2422,6 +2436,8 @@ struct flb_input_plugin in_nginx_exporter_metrics_plugin = {
     .cb_collect   = nginx_collect,
     .cb_flush_buf = NULL,
     .cb_exit      = nginx_exit,
+    .cb_pause     = nginx_pause,
+    .cb_resume    = nginx_resume,
     .config_map   = config_map,
     .flags        = FLB_INPUT_NET|FLB_INPUT_CORO,
 };
