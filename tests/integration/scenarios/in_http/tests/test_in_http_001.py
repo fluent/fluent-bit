@@ -220,6 +220,48 @@ def test_send_data():
         raise
 
 
+@pytest.mark.parametrize("chunk_count", [1, 2])
+def test_snappy_framed_uncompressed_data(chunk_count):
+    payload = b'{"message":"snappy-framed"}'
+    chunks = [payload] if chunk_count == 1 else [payload[:12], payload[12:]]
+    framed = bytearray(b'\xff\x06\x00\x00sNaPpY')
+
+    for chunk in chunks:
+        # Snappy frames store a masked CRC32C of each uncompressed chunk.
+        crc = 0xffffffff
+        for byte in chunk:
+            crc ^= byte
+            for _ in range(8):
+                crc = (crc >> 1) ^ (0x82f63b78 if crc & 1 else 0)
+        crc = (~crc) & 0xffffffff
+        checksum = (((crc >> 15) | (crc << 17)) + 0xa282ead8) & 0xffffffff
+        framed.extend(b'\x01' + (len(chunk) + 4).to_bytes(3, 'little'))
+        framed.extend(checksum.to_bytes(4, 'little') + chunk)
+
+    service = Service("in_http_config")
+    try:
+        service.start()
+        connection = create_connection('localhost', service.flb_listener_port)
+        try:
+            connection.request('POST', '/', body=framed, headers={
+                'Content-Type': 'application/json',
+                'Content-Encoding': 'snappy',
+            })
+            response = connection.getresponse()
+            status = response.status
+            response.read()
+        finally:
+            connection.close()
+
+        forwarded_payloads = service.read_forwarded_payloads()
+    finally:
+        service.stop()
+
+    assert status == 201
+    assert len(forwarded_payloads) == 1
+    assert forwarded_payloads[0][0]['message'] == 'snappy-framed'
+
+
 @pytest.mark.parametrize("case", PROTOCOL_CASES, ids=[case["id"] for case in PROTOCOL_CASES])
 def test_in_http_protocol_matrix(case):
     service = Service(IN_HTTP_PROTOCOL_CONFIGS[case["config_key"]])
