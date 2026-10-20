@@ -1277,7 +1277,13 @@ int flb_http_add_header(struct flb_http_client *c,
     struct mk_list *tmp;
     struct mk_list *head;
 
-    if (key_len < 1 || val_len < 1) {
+    if (flb_http_header_validate(key, key_len, val, val_len) != 0) {
+        /* Callers may ignore errors: never send a request missing this field. */
+        c->invalid_header = FLB_TRUE;
+        return -1;
+    }
+
+    if (val_len < 1) {
         return -1;
     }
 
@@ -1393,6 +1399,10 @@ static int http_header_push(struct flb_http_client *c, struct flb_kv *header)
     key_len = flb_sds_len(header->key);
     val = header->val;
     val_len = flb_sds_len(header->val);
+
+    if (flb_http_header_validate(key, key_len, val, val_len) != 0) {
+        return -1;
+    }
 
     /*
      * The new header will need enough space in the buffer:
@@ -1865,6 +1875,10 @@ int flb_http_do_request(struct flb_http_client *c, size_t *bytes)
     size_t bytes_header = 0;
     size_t bytes_body = 0;
     char *tmp;
+
+    if (c->invalid_header) {
+        return FLB_HTTP_ERROR;
+    }
 
     c->header_len = c->base_header_len;
 
