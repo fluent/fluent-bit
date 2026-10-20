@@ -858,14 +858,18 @@ def test_in_forward_preflight_invalid_budget(tmp_path, memory_limit, wire_limit,
     assert error in read_file(service.flb.log_file)
 
 
-def test_in_forward_invalid_signal_object_memory_limit(tmp_path):
-    config = _preflight_config(tmp_path, "16K", signal_limit="0")
+@pytest.mark.parametrize("signal_limit,error", [
+    ("0", "must be at least 1024 bytes"),
+    ("-1", "must be a positive size"),
+    ("-1K", "must be a positive size"),
+    ("bogus", "must be a positive size"),
+])
+def test_in_forward_invalid_signal_object_memory_limit(tmp_path, signal_limit, error):
+    config = _preflight_config(tmp_path, "16K", signal_limit=signal_limit)
     service = FluentBitTestService(config)
     with pytest.raises(FluentBitStartupError):
         service.start()
-    assert "signal_object_memory_limit must be at least 1024 bytes" in read_file(
-        service.flb.log_file
-    )
+    assert f"signal_object_memory_limit {error}" in read_file(service.flb.log_file)
 
 
 @pytest.mark.parametrize("memory_limit,accepted", [("64K", False), ("128K", True)])
