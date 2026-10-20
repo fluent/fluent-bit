@@ -5,6 +5,7 @@
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_socket.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_kv.h>
 
 #include "flb_tests_internal.h"
 
