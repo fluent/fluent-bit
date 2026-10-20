@@ -939,6 +939,38 @@ def test_in_forward_preflight_mpack_signal_not_zone_limited(tmp_path, signal):
         receiver.stop()
 
 
+@pytest.mark.parametrize("compressed", [False, True])
+@pytest.mark.parametrize("spans,accepted", [(8, True), (102401, False)])
+def test_in_forward_trace_object_budget(tmp_path, spans, accepted, compressed):
+    config = _preflight_config(tmp_path, "16K", output="stdout")
+    receiver = FluentBitTestService(config, extra_env={"FORWARD_INPUT_WORKERS": 1})
+    packed = _pack_obj({"resourceSpans": [
+        {"scope_spans": [{"spans": [{"name": "budget-span"} for _ in range(spans)]}]}
+    ]})
+    options = {"fluent_signal": 2, "chunk": "budget"}
+    if compressed:
+        packed = gzip.compress(packed)
+        options["compressed"] = "gzip"
+    receiver.start()
+    try:
+        with socket.create_connection(("127.0.0.1", receiver.flb_listener_port), timeout=10) as sock:
+            sock.sendall(_pack_obj([TEST_TAG, packed, options]))
+            if accepted:
+                assert _recv_msgpack_value(sock) == {"ack": "budget"}
+                receiver.wait_for_condition(
+                    lambda: "[span #0 'budget-span']" in read_file(receiver.flb.log_file),
+                    timeout=10,
+                    description="accepted trace at stdout output",
+                )
+            else:
+                try:
+                    assert sock.recv(1) == b""
+                except ConnectionResetError:
+                    pass
+    finally:
+        receiver.stop()
+
+
 @pytest.mark.parametrize("kind", ["array", "map", "nested", "dense", "packed", "gzip", "zstd"])
 def test_in_forward_preflight_rejects_allocation_amplification(kind, tmp_path):
     service = Service(_preflight_config(tmp_path, "6M"))
