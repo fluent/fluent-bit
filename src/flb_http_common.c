@@ -218,6 +218,10 @@ int flb_http_request_commit(struct flb_http_request *request)
 {
     int version;
 
+    if (request->invalid_header) {
+        return -1;
+    }
+
     version = flb_http_request_get_version(request);
 
     if (version == HTTP_PROTOCOL_VERSION_20) {
@@ -278,41 +282,69 @@ const char *flb_http_request_get_remote_address(struct flb_http_request *request
     return flb_connection_get_remote_address(server_session->connection);
 }
 
+/* RFC 9110 field names are tokens; values exclude controls except HTAB. */
+int flb_http_header_validate(const char *name, size_t name_length,
+                             const char *value, size_t value_length)
+{
+    size_t index;
+    unsigned char byte;
+
+    if (name == NULL || name_length == 0 || value == NULL) {
+        return -1;
+    }
+
+    for (index = 0; index < name_length; index++) {
+        byte = (unsigned char) name[index];
+        if ((byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z') ||
+            (byte >= '0' && byte <= '9')) {
+            continue;
+        }
+        if (byte == 0 || strchr("!#$%&'*+-.^_`|~", byte) == NULL) {
+            return -1;
+        }
+    }
+
+    for (index = 0; index < value_length; index++) {
+        byte = (unsigned char) value[index];
+        if ((byte < 0x20 && byte != '\t') || byte == 0x7f) {
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
 int flb_http_request_set_header(struct flb_http_request *request,
                                 char *name, size_t name_length,
                                 char *value, size_t value_length)
 {
-    char  *lowercase_name;
-    int    result;
+    int result;
+    size_t name_offset = 0;
 
-    if (name_length == 0) {
+    if (name != NULL && name_length == 0) {
         name_length = strlen(name);
     }
+    if (value != NULL && value_length == 0) {
+        value_length = strlen(value);
+    }
 
-    lowercase_name = flb_http_server_convert_string_to_lowercase(
-                        name, name_length);
+    /* The HTTP/2 server also stores pseudo-headers validated by nghttp2. */
+    if (name != NULL && name_length > 1 && name[0] == ':' &&
+        request->stream != NULL && request->stream->role == HTTP_STREAM_ROLE_SERVER &&
+        request->protocol_version == HTTP_PROTOCOL_VERSION_20) {
+        name_offset = 1;
+    }
 
-    if (lowercase_name == NULL) {
+    if (flb_http_header_validate(name == NULL ? NULL : name + name_offset,
+                                 name_length - name_offset, value, value_length) != 0) {
+        /* Callers may ignore errors: never send a request missing this field. */
+        request->invalid_header = FLB_TRUE;
         return -1;
     }
 
-    if (value_length == 0) {
-        if (value[0] == '\0') {
-            value_length = 1;
-        }
-        else {
-            value_length = strlen(value);
-        }
-    }
-
-    result = flb_hash_table_add(request->headers,
-                                (const char *) name,
-                                name_length,
-                                (void *) value,
-                                value_length);
-
-    flb_free(lowercase_name);
-
+    /* Zero-sized hash values are borrowed: use static storage for empty fields. */
+    result = flb_hash_table_add(request->headers, name, name_length,
+                               value_length == 0 ? "" : value, value_length);
     if (result == -1) {
         return -1;
     }
