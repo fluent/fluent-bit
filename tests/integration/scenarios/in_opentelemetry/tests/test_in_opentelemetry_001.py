@@ -37,7 +37,7 @@ from google.protobuf import json_format
 # local imports
 from utils.data_utils import read_json_file
 from utils.fluent_bit_manager import FluentBitStartupError
-from utils.http_matrix import PROTOCOL_CASES, run_curl_request
+from utils.http_matrix import PROTOCOL_CASES, curl_supports_http2, run_curl_request
 from utils.oauth2 import duplicate_header_token, track_jwks_requests
 from utils.input_pause_resume import (
     assert_pause_resume_cycles,
@@ -2637,3 +2637,60 @@ def test_in_opentelemetry_grpc_preserves_groups_across_chunks(encoding):
                                scope.scope.version, scope.schema_url, scope_id, record.body.string_value)
                               for record in scope.log_records)
     assert sorted(actual) == sorted(expected)
+
+
+@pytest.mark.parametrize("case", PROTOCOL_CASES[:2], ids=[case["id"] for case in PROTOCOL_CASES[:2]])
+@pytest.mark.parametrize("encoding", ["snappy", "snappy-framed", "snappy-mixed"])
+def test_in_opentelemetry_http_snappy_content_encoding(case, encoding):
+    if case["http_mode"] == "http2-prior-knowledge" and not curl_supports_http2():
+        pytest.skip("Installed curl lacks HTTP/2 support")
+    service = Service(IN_OPENTELEMETRY_PROTOCOL_CONFIGS[case["config_key"]])
+    try:
+        service.start()
+        payload = ExportLogsServiceRequest()
+        scope = payload.resource_logs.add().scope_logs.add()
+        expected = "snappy HTTP checksum regression " + "x" * 4096
+        scope.log_records.add().body.string_value = expected
+        encoded = encode_grpc_limit_payload(payload.SerializeToString(), encoding)
+        result = run_curl_request(
+            f"http://localhost:{service.flb_listener_port}/v1/logs",
+            encoded,
+            headers=["Content-Type: application/x-protobuf", "Content-Encoding: snappy"],
+            http_mode=case["http_mode"],
+        )
+        assert result["status_code"] == 201
+        records = service.service.wait_for_condition(
+            received_grpc_log_records, timeout=20, interval=0.25,
+            description="Snappy Content-Encoding log delivery",
+        )
+        assert [record.body.string_value for record in records] == [expected]
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("frame_type", [0, 1])
+def test_in_opentelemetry_http_snappy_invalid_checksum(frame_type):
+    service = Service("otlp_http1_cleartext.yaml")
+    try:
+        service.start()
+        payload = service.build_otel_payload("test_logs_001.in.json", "logs")
+        encoded = payload if frame_type else encode_grpc_limit_payload(payload, "snappy")
+        checksum = snappy_test_crc32c(payload) ^ 1
+        framed = (b"\xff\x06\x00\x00sNaPpY" + bytes([frame_type])
+                  + (len(encoded) + 4).to_bytes(3, "little")
+                  + checksum.to_bytes(4, "little") + encoded)
+        url = f"http://localhost:{service.flb_listener_port}/v1/logs"
+        # Invalid compressed bodies must not produce log records.
+        for invalid in [framed, framed[:-1],
+                        b"\xff\x06\x00\x00sNaPpY\x01\x04\x00\x00\x00\x00\x00\x00"]:
+            response = requests.post(url, data=invalid, timeout=5, headers={
+                "Content-Type": "application/x-protobuf", "Content-Encoding": "snappy",
+            })
+            assert response.status_code == 400
+        assert not received_grpc_log_records()
+        # The listener must remain usable after malformed compressed requests.
+        response = service.send_raw_request("/v1/logs", payload)
+        assert response.status_code == 201
+        service.wait_for_signal_count("logs", 1)
+    finally:
+        service.stop()
