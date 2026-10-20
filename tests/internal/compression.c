@@ -144,6 +144,80 @@ static void test_snappy_framed_checksum(void)
     TEST_CHECK(output == NULL && output_size == 0);
 }
 
+static void test_snappy_legacy_framed(void)
+{
+    const unsigned char frames[][23] = {
+        {0xff, 6, 0, 0, 's', 'N', 'a', 'P', 'p', 'Y',
+         1, 7, 0, 0, 0x6e, 0x57, 0xf1, 0x21, 'a', 'b', 'c'},
+        {0xff, 6, 0, 0, 's', 'N', 'a', 'P', 'p', 'Y',
+         0, 9, 0, 0, 0x6e, 0x57, 0xf1, 0x21, 3, 8, 'a', 'b', 'c'}
+    };
+    const size_t lengths[] = {21, 23};
+    unsigned char *storage;
+    unsigned char *input;
+    char *output;
+    size_t output_size;
+    size_t alignment;
+    size_t kind;
+    size_t length;
+    int ret;
+
+    storage = flb_malloc(64);
+    TEST_ASSERT(storage != NULL);
+    for (kind = 0; kind < 2; kind++) {
+        for (alignment = 0; alignment < 4; alignment++) {
+            input = storage + alignment;
+            length = lengths[kind];
+            memcpy(input, frames[kind], length);
+            /* Fixed wire bytes verify little-endian CRCs at every alignment. */
+            ret = flb_snappy_uncompress_framed_data((char *) input, length,
+                                                    &output, &output_size);
+            TEST_CHECK(ret == 0);
+            TEST_CHECK(output_size == 3);
+            if (output != NULL && output_size == 3) {
+                TEST_CHECK(memcmp(output, "abc", 3) == 0);
+            }
+            flb_free(output);
+
+            input[14] ^= 1;
+            ret = flb_snappy_uncompress_framed_data((char *) input, length,
+                                                    &output, &output_size);
+            TEST_CHECK(ret != 0);
+            TEST_CHECK(output == NULL && output_size == 0);
+            input[14] ^= 1;
+            ret = flb_snappy_uncompress_framed_data((char *) input, length - 1,
+                                                    &output, &output_size);
+            TEST_CHECK(ret != 0);
+            TEST_CHECK(output == NULL && output_size == 0);
+
+            /* Append the other frame type, without a second identifier. */
+            memcpy(input + length, frames[1 - kind] + 10, lengths[1 - kind] - 10);
+            ret = flb_snappy_uncompress_framed_data((char *) input, 34,
+                                                    &output, &output_size);
+            TEST_CHECK(ret == 0);
+            TEST_CHECK(output_size == 6);
+            if (output != NULL && output_size == 6) {
+                TEST_CHECK(memcmp(output, "abcabc", 6) == 0);
+            }
+            flb_free(output);
+        }
+    }
+    /* The report's minimal frame and a checksum shorter than four bytes. */
+    memcpy(storage, frames[0], 18);
+    storage[11] = 4;
+    ret = flb_snappy_uncompress_framed_data((char *) storage, 18, &output, &output_size);
+    TEST_CHECK(ret != 0);
+    TEST_CHECK(output == NULL && output_size == 0);
+    storage[11] = 3;
+    ret = flb_snappy_uncompress_framed_data((char *) storage, 17, &output, &output_size);
+    TEST_CHECK(ret != 0);
+    TEST_CHECK(output == NULL && output_size == 0);
+    ret = flb_snappy_uncompress_framed_data(NULL, 0, &output, &output_size);
+    TEST_CHECK(ret != 0);
+    TEST_CHECK(output == NULL && output_size == 0);
+    flb_free(storage);
+}
+
 static void test_invalid_input(void)
 {
     void *output;
@@ -281,6 +355,7 @@ TEST_LIST = {
     {"advertised_sizes", test_advertised_sizes},
     {"invalid_input", test_invalid_input},
     {"snappy_framed_checksum", test_snappy_framed_checksum},
+    {"snappy_legacy_framed", test_snappy_legacy_framed},
     {"context_output_growth", test_context_output_growth},
     {"zstd_window_budget", test_zstd_window_budget},
     {"gzip_optional_header", test_gzip_optional_header},
