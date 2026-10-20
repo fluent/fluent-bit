@@ -1146,7 +1146,123 @@ static void test_http_request_target_validation(void)
     test_ctx_destroy(ctx);
 }
 
+void test_http_header_validation(void)
+{
+    unsigned int byte;
+    int expected;
+    size_t sent;
+    char name[] = "X-Test";
+    char value[] = "aXb";
+    struct test_ctx *ctx;
+    struct flb_http_client *client;
+    struct flb_http_request *request;
+    struct flb_kv *header;
+
+    ctx = test_ctx_create();
+    TEST_ASSERT(ctx != NULL);
+    for (byte = 0; byte <= 255; byte++) {
+        value[1] = (char) byte;
+        expected = (byte < 0x20 && byte != '\t') || byte == 0x7f ? -1 : 0;
+        client = flb_http_client(ctx->u_conn, FLB_HTTP_GET, "/", NULL, 0, NULL, 0, NULL, 0);
+        request = flb_http_request_create();
+        TEST_ASSERT(client != NULL);
+        TEST_ASSERT(request != NULL);
+        TEST_CHECK(flb_http_add_header(client, name, 6, value, 3) == expected);
+        TEST_CHECK(flb_http_request_set_header(request, name, 6, value, 3) == expected);
+        if (expected == -1) {
+            sent = 0;
+            TEST_CHECK(flb_http_do_request(client, &sent) == FLB_HTTP_ERROR);
+            TEST_CHECK(sent == 0);
+            TEST_CHECK(flb_http_request_commit(request) == -1);
+        }
+        flb_http_request_destroy(request);
+        flb_free(request);
+        flb_http_client_destroy(client);
+    }
+    for (byte = 0; byte <= 255; byte++) {
+        name[2] = (char) byte;
+        expected = ((byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z') ||
+                    (byte >= '0' && byte <= '9') ||
+                    (byte != 0 && strchr("!#$%&'*+-.^_`|~", byte) != NULL)) ? 0 : -1;
+        TEST_CHECK(flb_http_header_validate(name, 6, "ok", 2) == expected);
+        client = flb_http_client(ctx->u_conn, FLB_HTTP_GET, "/", NULL, 0, NULL, 0, NULL, 0);
+        request = flb_http_request_create();
+        TEST_ASSERT(client != NULL);
+        TEST_ASSERT(request != NULL);
+        TEST_CHECK(flb_http_add_header(client, name, 6, "ok", 2) == expected);
+        TEST_CHECK(flb_http_request_set_header(request, name, 6, "ok", 2) == expected);
+        flb_http_request_destroy(request);
+        flb_free(request);
+        flb_http_client_destroy(client);
+    }
+    TEST_CHECK(flb_http_header_validate("", 0, "ok", 2) == -1);
+    TEST_CHECK(flb_http_header_validate(NULL, 1, "ok", 2) == -1);
+    TEST_CHECK(flb_http_header_validate("X", 1, NULL, 1) == -1);
+    TEST_CHECK(flb_http_header_validate("X", 1, "", 0) == 0);
+    TEST_CHECK(flb_http_header_validate("X", 1, "acme\r\nX-Evil: yes", 17) == -1);
+    TEST_CHECK(flb_http_header_validate("X", 1, "acme\r\n\r\n", 8) == -1);
+    client = flb_http_client(ctx->u_conn, FLB_HTTP_GET, "/", NULL, 0, NULL, 0, NULL, 0);
+    TEST_ASSERT(client != NULL);
+    header = flb_kv_item_create_len(&client->headers, "X-Test", 6, "bad\r\nvalue", 10);
+    TEST_ASSERT(header != NULL);
+    sent = 0;
+    TEST_CHECK(flb_http_do_request(client, &sent) == FLB_HTTP_ERROR);
+    TEST_CHECK(sent == 0);
+    flb_http_client_destroy(client);
+
+    request = flb_http_request_create();
+    TEST_ASSERT(request != NULL);
+    TEST_CHECK(flb_http_request_set_header(request, "X-Test", 0, "", 0) == 0);
+    TEST_CHECK(strcmp(flb_http_request_get_header(request, "x-test"), "") == 0);
+    TEST_CHECK(flb_http_request_set_header(request, "X-Test", 0, "safe", 0) == 0);
+    TEST_CHECK(flb_http_request_set_header(request, "X-Test", 0, "bad\n", 0) == -1);
+    TEST_CHECK(strcmp(flb_http_request_get_header(request, "x-test"), "safe") == 0);
+    flb_http_request_destroy(request);
+    flb_free(request);
+    test_ctx_destroy(ctx);
+}
+
+void test_http1_header_serialization_validation(void)
+{
+    struct flb_http_request *request;
+    struct flb_http_client_session session = {0};
+    struct flb_http_stream stream = {0};
+
+    request = flb_http_request_create();
+    TEST_ASSERT(request != NULL);
+    stream.parent = &session;
+    request->stream = &stream;
+    request->protocol_version = HTTP_PROTOCOL_VERSION_11;
+    request->method = HTTP_METHOD_GET;
+    request->path = cfl_sds_create("/");
+    TEST_ASSERT(request->path != NULL);
+    TEST_CHECK(flb_hash_table_add(request->headers, "X-Test", 6, "bad\r\nvalue", 10) >= 0);
+    TEST_CHECK(flb_http1_request_commit(request) == -6);
+    TEST_CHECK(session.outgoing_data == NULL);
+    flb_hash_table_del(request->headers, "X-Test");
+    request->host = cfl_sds_create("localhost\r\nX-Evil: yes");
+    TEST_ASSERT(request->host != NULL);
+    TEST_CHECK(flb_http1_request_commit(request) == -7);
+    TEST_CHECK(session.outgoing_data == NULL);
+    flb_http_request_destroy(request);
+    flb_free(request);
+
+    request = flb_http_request_create();
+    TEST_ASSERT(request != NULL);
+    request->stream = &stream;
+    request->protocol_version = HTTP_PROTOCOL_VERSION_20;
+    stream.role = HTTP_STREAM_ROLE_SERVER;
+    TEST_CHECK(flb_http_request_set_header(request, ":method", 0, "GET", 0) == 0);
+    TEST_CHECK(flb_http_request_set_header(request, ":path", 0, "/", 0) == 0);
+    stream.role = HTTP_STREAM_ROLE_CLIENT;
+    TEST_CHECK(flb_http_request_set_header(request, ":method", 0, "GET", 0) == -1);
+    flb_http_request_destroy(request);
+    flb_free(request);
+}
+
 TEST_LIST = {
+    { "http1_header_serialization_validation", test_http1_header_serialization_validation},
+    { "header_validation", test_http_header_validation},
     { "request_target_validation", test_http_request_target_validation},
     { "http_buffer_increase"  , test_http_buffer_increase},
     { "add_get_header"        , test_http_add_get_header},
