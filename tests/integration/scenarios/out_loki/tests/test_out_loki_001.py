@@ -4,6 +4,8 @@ from pathlib import Path
 import tempfile
 
 import requests
+import pytest
+import yaml
 
 from server.http_server import data_storage, http_server_run
 from utils.memory_check import memory_check_enabled
@@ -157,3 +159,39 @@ def test_out_loki_preserves_nested_records_on_small_stack():
     assert len(records) == RECORD_COUNT
     for record in records:
         assert record == {"msg": nested}
+
+
+@pytest.mark.parametrize("tenant", ["acme\r\nX-Injected-By: attacker", "acme\r\n\r\n", "acme\x00other"])
+def test_out_loki_rejects_injected_tenant_header(tenant):
+    with tempfile.TemporaryDirectory(prefix="flb-loki-header-") as temp_directory:
+        input_path = Path(temp_directory) / "input.log"
+        with input_path.open("w", encoding="utf-8") as input_file:
+            for tenant_id, message in [(tenant, "malicious"), ("safe-tenant", "valid")]:
+                json.dump({"tenant": tenant_id, "msg": message}, input_file)
+                input_file.write("\n")
+
+        service = Service(input_path)
+        config = yaml.safe_load(Path(service.service.config_path).read_text())
+        config["pipeline"]["outputs"][0]["tenant_id_key"] = "tenant"
+        config_path = Path(temp_directory) / "loki.yaml"
+        config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+        service.service.config_path = str(config_path)
+        try:
+            service.start()
+            service.service.wait_for_condition(
+                lambda: count_loki_values() >= 1
+                and "invalid tenant header" in Path(service.service.flb.log_file).read_text(
+                    encoding="utf-8", errors="replace"
+                ),
+                timeout=60 if memory_check_enabled() else 20,
+                interval=0.2,
+                description="rejected malicious tenant and delivered valid tenant",
+            )
+        finally:
+            service.stop()
+        records = collect_loki_records()
+        assert records == [{"tenant": "safe-tenant", "msg": "valid"}]
+        assert len(data_storage["requests"]) == 1
+        headers = {key.lower(): value for key, value in data_storage["requests"][0]["headers"].items()}
+        assert headers["x-scope-orgid"] == "safe-tenant"
+        assert "x-injected-by" not in headers
