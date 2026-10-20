@@ -66,9 +66,11 @@
 
 struct flb_aws_provider_eks;
 void bytes_to_string(unsigned char *data, char *buf, size_t len);
-static int assume_with_web_identity(struct flb_aws_provider_eks
+static int assume_with_web_identity(struct flb_aws_provider *provider,
+                                    struct flb_aws_provider_eks
                                     *implementation);
-static int sts_assume_role_request(struct flb_aws_client *sts_client,
+static int sts_assume_role_request(struct flb_aws_provider *provider,
+                                   struct flb_aws_client *sts_client,
                                    struct flb_aws_credentials **creds,
                                    char *uri,
                                    time_t *next_refresh);
@@ -98,31 +100,41 @@ struct flb_aws_credentials *get_credentials_fn_sts(struct flb_aws_provider
                                                    *provider)
 {
     struct flb_aws_credentials *creds;
+    time_t next_refresh;
     int refresh = FLB_FALSE;
     struct flb_aws_provider_sts *implementation = provider->implementation;
 
     flb_debug("[aws_credentials] Requesting credentials from the "
               "STS provider..");
 
+    next_refresh = flb_aws_cache_get_refresh_time(provider,
+                                                  &implementation->next_refresh);
+
     /* a negative next_refresh means that auto-refresh is disabled */
-    if (implementation->next_refresh > 0
-        && time(NULL) > implementation->next_refresh) {
+    if (next_refresh > 0 && time(NULL) > next_refresh) {
         refresh = FLB_TRUE;
     }
-    if (!implementation->creds || refresh == FLB_TRUE) {
+
+    /* return a copy of the existing cached credentials */
+    creds = flb_aws_cache_get_credentials(provider, &implementation->creds);
+    if (!creds || refresh == FLB_TRUE) {
         /* credentials need to be refreshed/obtained */
         if (try_lock_provider(provider)) {
             flb_debug("[aws_credentials] STS Provider: Refreshing credential "
                       "cache.");
-            sts_assume_role_request(implementation->sts_client,
+            sts_assume_role_request(provider, implementation->sts_client,
                                     &implementation->creds,
                                     implementation->uri,
                                     &implementation->next_refresh);
             unlock_provider(provider);
+
+            flb_aws_credentials_destroy(creds);
+            creds = flb_aws_cache_get_credentials(provider,
+                                                  &implementation->creds);
         }
     }
 
-    if (!implementation->creds) {
+    if (!creds) {
         /*
          * We failed to lock the provider and creds are unset. This means that
          * another co-routine is performing the refresh.
@@ -134,40 +146,7 @@ struct flb_aws_credentials *get_credentials_fn_sts(struct flb_aws_provider
         return NULL;
     }
 
-    /* return a copy of the existing cached credentials */
-    creds = flb_calloc(1, sizeof(struct flb_aws_credentials));
-    if (!creds) {
-        goto error;
-    }
-
-    creds->access_key_id = flb_sds_create(implementation->creds->access_key_id);
-    if (!creds->access_key_id) {
-        goto error;
-    }
-
-    creds->secret_access_key = flb_sds_create(implementation->creds->
-                                              secret_access_key);
-    if (!creds->secret_access_key) {
-        goto error;
-    }
-
-    if (implementation->creds->session_token) {
-        creds->session_token = flb_sds_create(implementation->creds->
-                                              session_token);
-        if (!creds->session_token) {
-            goto error;
-        }
-
-    } else {
-        creds->session_token = NULL;
-    }
-
     return creds;
-
-error:
-    flb_errno();
-    flb_aws_credentials_destroy(creds);
-    return NULL;
 }
 
 int refresh_fn_sts(struct flb_aws_provider *provider) {
@@ -177,7 +156,7 @@ int refresh_fn_sts(struct flb_aws_provider *provider) {
     flb_debug("[aws_credentials] Refresh called on the STS provider");
 
     if (try_lock_provider(provider)) {
-        ret = sts_assume_role_request(implementation->sts_client,
+        ret = sts_assume_role_request(provider, implementation->sts_client,
                                       &implementation->creds, implementation->uri,
                                       &implementation->next_refresh);
         unlock_provider(provider);
@@ -198,7 +177,7 @@ int init_fn_sts(struct flb_aws_provider *provider) {
     implementation->sts_client->debug_only = FLB_TRUE;
 
     if (try_lock_provider(provider)) {
-        ret = sts_assume_role_request(implementation->sts_client,
+        ret = sts_assume_role_request(provider, implementation->sts_client,
                                       &implementation->creds, implementation->uri,
                                       &implementation->next_refresh);
         unlock_provider(provider);
@@ -309,6 +288,7 @@ struct flb_aws_provider *flb_sts_provider_create(struct flb_config *config,
     }
 
     pthread_mutex_init(&provider->lock, NULL);
+    pthread_mutex_init(&provider->cache_lock, NULL);
 
     implementation = flb_calloc(1, sizeof(struct flb_aws_provider_sts));
     if (!implementation) {
@@ -407,27 +387,36 @@ struct flb_aws_credentials *get_credentials_fn_eks(struct flb_aws_provider
                                                    *provider)
 {
     struct flb_aws_credentials *creds = NULL;
+    time_t next_refresh;
     int refresh = FLB_FALSE;
     struct flb_aws_provider_eks *implementation = provider->implementation;
 
     flb_debug("[aws_credentials] Requesting credentials from the "
               "EKS provider..");
 
+    next_refresh = flb_aws_cache_get_refresh_time(provider,
+                                                  &implementation->next_refresh);
+
     /* a negative next_refresh means that auto-refresh is disabled */
-    if (implementation->next_refresh > 0
-        && time(NULL) > implementation->next_refresh) {
+    if (next_refresh > 0 && time(NULL) > next_refresh) {
         refresh = FLB_TRUE;
     }
-    if (!implementation->creds || refresh == FLB_TRUE) {
+
+    creds = flb_aws_cache_get_credentials(provider, &implementation->creds);
+    if (!creds || refresh == FLB_TRUE) {
         if (try_lock_provider(provider)) {
             flb_debug("[aws_credentials] EKS Provider: Refreshing credential "
                       "cache.");
-            assume_with_web_identity(implementation);
+            assume_with_web_identity(provider, implementation);
             unlock_provider(provider);
+
+            flb_aws_credentials_destroy(creds);
+            creds = flb_aws_cache_get_credentials(provider,
+                                                  &implementation->creds);
         }
     }
 
-    if (!implementation->creds) {
+    if (!creds) {
         /*
          * We failed to lock the provider and creds are unset. This means that
          * another co-routine is performing the refresh.
@@ -439,40 +428,7 @@ struct flb_aws_credentials *get_credentials_fn_eks(struct flb_aws_provider
         return NULL;
     }
 
-    creds = flb_calloc(1, sizeof(struct flb_aws_credentials));
-    if (!creds) {
-        goto error;
-    }
-
-    creds->access_key_id = flb_sds_create(implementation->creds->access_key_id);
-    if (!creds->access_key_id) {
-        goto error;
-    }
-
-    creds->secret_access_key = flb_sds_create(implementation->creds->
-                                              secret_access_key);
-    if (!creds->secret_access_key) {
-        goto error;
-    }
-
-    if (implementation->creds->session_token) {
-        creds->session_token = flb_sds_create(implementation->creds->
-                                              session_token);
-        if (!creds->session_token) {
-            goto error;
-        }
-
-    }
-    else {
-        creds->session_token = NULL;
-    }
-
     return creds;
-
-error:
-    flb_errno();
-    flb_aws_credentials_destroy(creds);
-    return NULL;
 }
 
 int refresh_fn_eks(struct flb_aws_provider *provider) {
@@ -481,7 +437,7 @@ int refresh_fn_eks(struct flb_aws_provider *provider) {
 
     flb_debug("[aws_credentials] Refresh called on the EKS provider");
     if (try_lock_provider(provider)) {
-        ret = assume_with_web_identity(implementation);
+        ret = assume_with_web_identity(provider, implementation);
         unlock_provider(provider);
     }
     return ret;
@@ -495,7 +451,7 @@ int init_fn_eks(struct flb_aws_provider *provider) {
 
     flb_debug("[aws_credentials] Init called on the EKS provider");
     if (try_lock_provider(provider)) {
-        ret = assume_with_web_identity(implementation);
+        ret = assume_with_web_identity(provider, implementation);
         unlock_provider(provider);
     }
 
@@ -582,6 +538,7 @@ struct flb_aws_provider *flb_eks_provider_create(struct flb_config *config,
     }
     
     pthread_mutex_init(&provider->lock, NULL);
+    pthread_mutex_init(&provider->cache_lock, NULL);
     
     implementation = flb_calloc(1, sizeof(struct flb_aws_provider_eks));
 
@@ -709,7 +666,8 @@ void bytes_to_string(unsigned char *data, char *buf, size_t len) {
     }
 }
 
-static int assume_with_web_identity(struct flb_aws_provider_eks
+static int assume_with_web_identity(struct flb_aws_provider *provider,
+                                    struct flb_aws_provider_eks
                                     *implementation)
 {
     int ret;
@@ -736,7 +694,7 @@ static int assume_with_web_identity(struct flb_aws_provider_eks
         return -1;
     }
 
-    ret = sts_assume_role_request(implementation->sts_client,
+    ret = sts_assume_role_request(provider, implementation->sts_client,
                                   &implementation->creds, uri,
                                   &implementation->next_refresh);
     flb_free(web_token);
@@ -744,7 +702,8 @@ static int assume_with_web_identity(struct flb_aws_provider_eks
     return ret;
 }
 
-static int sts_assume_role_request(struct flb_aws_client *sts_client,
+static int sts_assume_role_request(struct flb_aws_provider *provider,
+                                   struct flb_aws_client *sts_client,
                                    struct flb_aws_credentials **creds,
                                    char *uri,
                                    time_t *next_refresh)
@@ -773,12 +732,10 @@ static int sts_assume_role_request(struct flb_aws_client *sts_client,
             return -1;
         }
 
-        /* unset and free existing credentials first */
-        flb_aws_credentials_destroy(*creds);
-        *creds = NULL;
-
-        *next_refresh = expiration - FLB_AWS_REFRESH_WINDOW;
-        *creds = credentials;
+        /* publish the new credentials; the old ones are freed for us */
+        flb_aws_cache_set_credentials(provider, creds, credentials,
+                                      next_refresh,
+                                      expiration - FLB_AWS_REFRESH_WINDOW);
         flb_http_client_destroy(c);
         return 0;
     }
