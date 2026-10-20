@@ -357,6 +357,10 @@ int flb_http1_request_commit(struct flb_http_request *request)
     struct flb_http_stream          *stream;
     int                              result;
 
+    if (request->invalid_header) {
+        return -1;
+    }
+
     parent_session = (struct flb_http_client_session *) request->stream->parent;
 
     if (parent_session == NULL) {
@@ -586,6 +590,10 @@ static int compose_header_line(cfl_sds_t *output_buffer,
 
     if (value_length == 0) {
         value_length = strlen(value);
+    }
+
+    if (flb_http_header_validate(name, name_length, value, value_length) != 0) {
+        return -1;
     }
 
     sds_result = cfl_sds_printf(output_buffer,
