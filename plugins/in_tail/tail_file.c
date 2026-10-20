@@ -47,6 +47,7 @@
 #include "tail_dockermode.h"
 #include "tail_multiline.h"
 #include "tail_scan.h"
+#include <fluent-bit/flb_compression.h>
 
 #ifdef FLB_SYSTEM_WINDOWS
 #include "win32.h"
@@ -225,6 +226,45 @@ int flb_tail_file_offset_marker_matches(struct flb_tail_file *file)
     return FLB_TRUE;
 }
 
+/*
+ * Advance the gzip resume bookkeeping after 'processed_bytes' decompressed
+ * bytes have been handed to the record pipeline. Must be called before the
+ * offset state is persisted so anchor/skip are stored consistently.
+ */
+static void gzip_advance_resume_state(struct flb_tail_file *file,
+                                      size_t processed_bytes)
+{
+    if (file->decompression_context == NULL) {
+        return;
+    }
+
+    file->skip_bytes += processed_bytes;
+
+    /*
+     * Gzip member boundary: update anchor when we complete a member
+     * and all decompressed data is consumed.
+     */
+    if (file->decompression_context->state ==
+            FLB_DECOMPRESSOR_STATE_EXPECTING_HEADER &&
+        file->decompression_context->input_buffer_length == 0 &&
+        file->buf_len == 0) {
+        flb_plg_debug(file->config->ins,
+                     "Gzip member completed: updating anchor "
+                     "from %jd to %jd, skip %"PRIu64" -> %"PRIu64,
+                     (intmax_t)file->anchor_offset,
+                     (intmax_t)file->offset,
+                     file->skip_bytes, file->exclude_bytes);
+        file->anchor_offset = file->offset;
+
+        /*
+         * Carry over whatever is still pending to skip so it stays relative
+         * to the new anchor. exclude_bytes is zero unless a resume is still
+         * discarding data that was already emitted before the restart.
+         */
+        file->skip_bytes = file->exclude_bytes;
+    }
+}
+
 static void update_resumable_offset_state(struct flb_tail_file *file)
 {
 #ifdef FLB_HAVE_SQLDB
@@ -258,6 +298,12 @@ int flb_tail_file_reset_on_truncate(struct flb_tail_file *file,
     file->stream_offset = offset;
     file->last_processed_bytes = 0;
     file->buf_len = 0;
+
+    /* compressed files: reset the skip/anchor resume bookkeeping */
+    file->anchor_offset = offset;
+    file->skip_bytes = 0;
+    file->exclude_bytes = 0;
+    file->skipping_mode = FLB_FALSE;
 
     update_resumable_offset_state(file);
     return 0;
@@ -1245,6 +1291,8 @@ static int set_file_position(struct flb_tail_config *ctx,
                              int explicit_offset)
 {
     int64_t ret;
+    int64_t seek_pos;
+    int has_db_position;
 
 #ifdef FLB_HAVE_SQLDB
     /*
@@ -1264,17 +1312,42 @@ static int set_file_position(struct flb_tail_config *ctx,
                  */
                 file->offset = 0;
                 file->stream_offset = 0;
+                file->skip_bytes = 0;
+                file->anchor_offset = 0;
+                file->exclude_bytes = 0;
+                file->skipping_mode = FLB_FALSE;
                 flb_tail_db_file_offset(file, ctx);
             }
 
-            if (file->offset > 0) {
-                ret = lseek(file->fd, file->offset, SEEK_SET);
+            /*
+             * Determine seek position based on file type and DB state:
+             *
+             * - Gzip files with anchor/skip info: use anchor_offset
+             * - Normal files or gzip migration fallback: use offset
+             * - No DB position + read_from_head=off: seek to EOF
+             */
+            seek_pos = file->offset;
+            has_db_position = (file->offset > 0);
+
+            /* Override for gzip files with proper anchor tracking */
+            if (file->decompression_context != NULL &&
+                (file->anchor_offset > 0 || file->skip_bytes > 0)) {
+                seek_pos = file->anchor_offset;
+                has_db_position = FLB_TRUE;
+            }
+
+            if (has_db_position) {
+                ret = lseek(file->fd, seek_pos, SEEK_SET);
                 if (ret == -1) {
                     flb_errno();
                     return -1;
                 }
-                if (file->decompression_context == NULL) {
-                    file->stream_offset = ret;
+                file->offset = ret;
+
+                /* Initialize skip state for gzip resume */
+                if (file->decompression_context != NULL && file->skip_bytes > 0) {
+                    file->exclude_bytes = file->skip_bytes;
+                    file->skipping_mode = FLB_TRUE;
                 }
             }
             else if (ctx->read_from_head == FLB_FALSE) {
@@ -1284,11 +1357,32 @@ static int set_file_position(struct flb_tail_config *ctx,
                     return -1;
                 }
                 file->offset = ret;
+                file->anchor_offset = ret;
+
+                /*
+                 * Settle the logical position before persisting: nothing has
+                 * been decompressed yet, so a compressed file starts at 0.
+                 */
                 if (file->decompression_context == NULL) {
                     file->stream_offset = ret;
                 }
+                else {
+                    file->stream_offset = 0;
+                }
+
                 flb_tail_db_file_offset(file, ctx);
             }
+
+            /*
+             * For compressed files the logical position was already restored
+             * from the database by flb_tail_db_file_set(). It cannot be derived
+             * from skip_bytes, which only counts bytes within the current
+             * gzip member.
+             */
+            if (file->decompression_context == NULL) {
+                file->stream_offset = file->offset;
+            }
+
             return 0;
         }
     }
@@ -1328,6 +1422,15 @@ static int set_file_position(struct flb_tail_config *ctx,
 
     if (file->decompression_context == NULL) {
         file->stream_offset = ret;
+    }
+    else {
+        /*
+         * Compressed file without DB: no persistent state available.
+         * Initialize skip-related fields to 0 for code consistency.
+         */
+        file->anchor_offset = file->offset;
+        file->exclude_bytes = 0;
+        file->stream_offset = 0;
     }
 
     return 0;
@@ -1535,12 +1638,18 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     }
     file->dmode_firstline = false;
 #ifdef FLB_HAVE_SQLDB
-    file->db_id     = 0;
+    file->db_id     = FLB_TAIL_DB_ID_NONE;
 #endif
     file->db_offset_marker = 0;
     file->db_offset_marker_size = 0;
     file->skip_next = FLB_FALSE;
     file->skip_warn = FLB_FALSE;
+
+    /* Initialize gzip resume fields */
+    file->anchor_offset = 0;
+    file->skip_bytes = 0;
+    file->exclude_bytes = 0;
+    file->skipping_mode = FLB_FALSE;
 
     /* Multiline core mode */
     if (ctx->ml_ctx) {
@@ -1766,6 +1875,20 @@ void flb_tail_file_remove(struct flb_tail_file *file)
     flb_plg_debug(ctx->ins, "inode=%"PRIu64" removing file name %s",
                   file->inode, file->name);
 
+    /*
+     * Persist the current offset before removal. flb_tail_file_db_offset()
+     * automatically rewinds to the last resumable position when buf_len > 0
+     * (for plain files), so no manual rewind is needed here.
+     */
+#ifdef FLB_HAVE_SQLDB
+    if (file->buf_len > 0 && ctx->db && file->db_id > FLB_TAIL_DB_ID_NONE) {
+        flb_plg_debug(ctx->ins, "inode=%"PRIu64" persisting offset for %s "
+                      "with buffered data (buf_len=%zu)",
+                      file->inode, file->name, file->buf_len);
+        flb_tail_db_file_offset(file, ctx);
+    }
+#endif
+
     if (file->decompression_context != NULL) {
         flb_decompression_context_destroy(file->decompression_context);
     }
@@ -1904,6 +2027,7 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
     uint8_t                *read_buffer;
     size_t                  read_size;
     size_t                  size;
+    size_t                  remain;
     char                   *tmp;
     int                     ret;
     int                     lines;
@@ -1938,6 +2062,8 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
                 consume_bytes(file->buf_data, processed_bytes, file->buf_len);
                 file->buf_len -= processed_bytes;
                 file->buf_data[file->buf_len] = '\0';
+
+                gzip_advance_resume_state(file, processed_bytes);
 
                 update_resumable_offset_state(file);
                 return adjust_counters(ctx, file);
@@ -2084,6 +2210,28 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
                     return FLB_TAIL_ERROR;
                 }
 
+                if (file->skipping_mode == FLB_TRUE && decompressed_data_length > 0) {
+                    flb_plg_debug(ctx->ins,
+                                 "Skipping: anchor=%jd offset=%jd "
+                                 "exclude=%" PRIu64 " decompressed=%zu",
+                                 (intmax_t)file->anchor_offset,
+                                 (intmax_t)file->offset,
+                                 file->exclude_bytes, decompressed_data_length);
+                    if (file->exclude_bytes >= decompressed_data_length) {
+                        file->exclude_bytes -= decompressed_data_length;
+                        decompressed_data_length = 0;
+                    }
+                    else {
+                        remain = decompressed_data_length - file->exclude_bytes;
+                        memmove(&file->buf_data[file->buf_len],
+                                &file->buf_data[file->buf_len + file->exclude_bytes],
+                                remain);
+                        decompressed_data_length = remain;
+                        file->exclude_bytes = 0;
+                        file->skipping_mode = FLB_FALSE;
+                    }
+                }
+
                 stream_data_length = decompressed_data_length;
             }
         }
@@ -2122,6 +2270,8 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
         consume_bytes(file->buf_data, processed_bytes, file->buf_len);
         file->buf_len -= processed_bytes;
         file->buf_data[file->buf_len] = '\0';
+
+        gzip_advance_resume_state(file, processed_bytes);
 
         update_resumable_offset_state(file);
 
