@@ -24,6 +24,8 @@
 
 #include <stdlib.h>
 #include <fcntl.h>
+#include <limits.h>
+#include <math.h>
 
 #include "tail_fs.h"
 #include "tail_db.h"
@@ -106,6 +108,8 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
     ctx->ins = ins;
     ctx->ignore_older = 0;
     ctx->skip_long_lines = FLB_FALSE;
+    ctx->keep_file_handle = FLB_TRUE;  /* default: keep file handle open */
+    ctx->fstat_interval_nsec = 250000000; /* default: 250ms */
 #ifdef FLB_HAVE_SQLDB
     ctx->db_sync = 1;  /* sqlite sync 'normal' */
 #endif
@@ -189,6 +193,65 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
                       tmp);
             flb_tail_config_destroy(ctx);
             return NULL;
+        }
+    }
+
+    /* Config: fstat mode event polling interval */
+    tmp = flb_input_get_property("fstat_interval", ins);
+    if (tmp) {
+        /* Support suffixes: s, ms, us, ns; also allow plain seconds and fractional seconds */
+        char *end = NULL;
+        double val;
+        double nsec_d;
+        uint64_t mult = 1000000000ULL; /* default: seconds */
+        uint64_t nsec_u;
+
+        val = strtod(tmp, &end);
+
+        if (end != NULL && *end != '\0') {
+            if (strcasecmp(end, "s") == 0)        mult = 1000000000ULL;
+            else if (strcasecmp(end, "ms") == 0)  mult = 1000000ULL;
+            else if (strcasecmp(end, "us") == 0)  mult = 1000ULL;
+            else if (strcasecmp(end, "ns") == 0)  mult = 1ULL;
+            else {
+                flb_plg_error(ctx->ins, "invalid 'fstat_interval' unit in value (%s)", tmp);
+                flb_tail_config_destroy(ctx);
+                return NULL;
+            }
+        }
+
+        /* Reject NaN, inf, and non-positive values before scaling. */
+        if (!isfinite(val) || val <= 0.0) {
+            flb_plg_error(ctx->ins, "invalid 'fstat_interval' value (%s)", tmp);
+            flb_tail_config_destroy(ctx);
+            return NULL;
+        }
+
+        /* Convert to nanoseconds. 2^64 is the first value that does not fit uint64_t. */
+        nsec_d = val * (double) mult;
+        if (!isfinite(nsec_d) || nsec_d >= 18446744073709551616.0) {
+            flb_plg_error(ctx->ins, "invalid 'fstat_interval' value (%s)", tmp);
+            flb_tail_config_destroy(ctx);
+            return NULL;
+        }
+        if (nsec_d < 1.0) {
+            flb_plg_error(ctx->ins, "'fstat_interval' too small (%s)", tmp);
+            flb_tail_config_destroy(ctx);
+            return NULL;
+        }
+
+        nsec_u = (uint64_t) nsec_d;
+        /* tail_fs_stat casts the seconds component to int for the collector timer. */
+        if ((nsec_u / 1000000000ULL) > (uint64_t) INT_MAX) {
+            flb_plg_error(ctx->ins, "invalid 'fstat_interval' value (%s)", tmp);
+            flb_tail_config_destroy(ctx);
+            return NULL;
+        }
+        ctx->fstat_interval_nsec = nsec_u;
+
+        if (ctx->fstat_interval_nsec <= 1000000ULL) {
+            flb_plg_warn(ctx->ins, "very low fstat_interval (%" PRIu64 " ns) may cause high CPU usage",
+                         ctx->fstat_interval_nsec);
         }
     }
 
