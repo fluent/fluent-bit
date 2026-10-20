@@ -1353,13 +1353,26 @@ static int append_log(struct flb_input_instance *ins, struct fw_conn *conn,
     int ret;
     size_t off = 0;
     size_t preflight_limit = SIZE_MAX;
+    size_t object_limit;
     struct ctrace *ctr;
 
     /* Metrics and traces use mpack readers, not msgpack-c object zones. */
     if (event_type == FLB_EVENT_TYPE_LOGS) {
         preflight_limit = conn->ctx->msgpack_memory_limit - conn->frame_zone_cost;
     }
-    if (flb_mp_preflight_sequence(data, len, preflight_limit) != 0) {
+    /* Mpack signals build independent heap objects. Bound their cumulative
+     * container entries before invoking the allocating decoders. */
+    /* Allow roughly 100 MiB of decoded signal objects, charging 1 KiB per
+     * entry. This is independent of the msgpack-c zone limit for logs. */
+    object_limit = (100 * 1024 * 1024) / 1024;
+    if (event_type != FLB_EVENT_TYPE_LOGS &&
+        flb_mp_preflight_sequence_limited(data, len, preflight_limit,
+                                          object_limit) != 0) {
+        flb_plg_warn(ins, "PackedForward signal object budget exceeded or invalid payload");
+        return -1;
+    }
+    if (event_type == FLB_EVENT_TYPE_LOGS &&
+        flb_mp_preflight_sequence(data, len, preflight_limit) != 0) {
         flb_plg_warn(ins, "invalid PackedForward payload or MessagePack allocation budget exceeded");
         return -1;
     }
