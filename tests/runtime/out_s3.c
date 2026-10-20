@@ -531,6 +531,47 @@ void flb_test_s3_putobject_success(void)
     unsetenv("TEST_PutObject_CALL_COUNT");
 }
 
+void flb_test_s3_parquet_omit_empty_objects_requires_parquet(void)
+{
+    int ret;
+    int in_ffd;
+    int out_ffd;
+    flb_ctx_t *ctx;
+    char *store_dir;
+
+    store_dir = create_test_store_directory(
+            "/flb-s3-test-parquet-empty-objects-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (store_dir == NULL) {
+        return;
+    }
+
+    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+
+    ctx = flb_create();
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "s3", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "region", "us-west-2", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+    flb_output_set(ctx, out_ffd, "parquet_omit_empty_objects", "true", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == -1);
+    if (ret == 0) {
+        flb_stop(ctx);
+    }
+    flb_destroy(ctx);
+
+    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
+    flb_free(store_dir);
+}
+
 void flb_test_s3_putobject_error(void)
 {
     int ret;
@@ -2486,6 +2527,8 @@ TEST_LIST = {
     {"credentials_serialized", flb_test_s3_credentials_serialized },
     {"multipart_success", flb_test_s3_multipart_success },
     {"putobject_success", flb_test_s3_putobject_success },
+    {"parquet_omit_empty_objects_requires_parquet",
+     flb_test_s3_parquet_omit_empty_objects_requires_parquet },
     {"putobject_error", flb_test_s3_putobject_error },
     {"putobject_retry_limit_semantics", flb_test_s3_putobject_retry_limit_semantics },
     {"default_retry_limit", flb_test_s3_default_retry_limit },

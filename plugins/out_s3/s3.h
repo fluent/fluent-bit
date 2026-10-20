@@ -146,6 +146,7 @@ struct flb_s3 {
     int retry_exhausted_action;
     int compression;
     int s3_format;
+    int parquet_omit_empty_objects;
     int port;
     int insecure;
     size_t store_dir_limit_size;
