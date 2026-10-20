@@ -26,4 +26,8 @@ int we_wmi_process_info_init(struct flb_we *ctx);
 int we_wmi_process_info_exit(struct flb_we *ctx);
 int we_wmi_process_info_update(struct flb_we *ctx);
 
+int we_wmi_process_init(struct flb_we *ctx);
+int we_wmi_process_exit(struct flb_we *ctx);
+int we_wmi_process_update(struct flb_we *ctx);
+
 #endif

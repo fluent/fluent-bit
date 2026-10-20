@@ -21,7 +21,7 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 
-#include <Windows.h>
+#include <windows.h>
 #include <string.h>
 
 #include <fluent-bit/flb_mem.h>
