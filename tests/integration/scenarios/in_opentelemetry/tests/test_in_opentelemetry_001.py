@@ -561,9 +561,14 @@ def test_in_opentelemetry_generated_limit(tmp_path, workers, encoding, attribute
 
 
 @pytest.mark.parametrize("encoding", ["json", "protobuf"])
-def test_in_opentelemetry_generated_limit_default(tmp_path, encoding):
+@pytest.mark.parametrize("attributes,scopes,expected_status", [
+    (64, 1000, 201),
+    (512, 3000, 400),
+])
+def test_in_opentelemetry_generated_limit_default(tmp_path, encoding, attributes,
+                                                 scopes, expected_status):
     service = generated_limit_service(tmp_path, 1, limit=None)
-    request = generated_limit_payload(64, 1000)
+    request = generated_limit_payload(attributes, scopes)
     if encoding == "json":
         payload = json_format.MessageToJson(request).encode()
         content_type = "application/json"
@@ -571,9 +576,17 @@ def test_in_opentelemetry_generated_limit_default(tmp_path, encoding):
         payload = request.SerializeToString()
         content_type = "application/x-protobuf"
     assert len(payload) < 4_000_000
+    # Count only repeated key/value bytes: MessagePack headers add more bytes.
+    generated_lower_bound = attributes * scopes * (len("key0000") + 64)
+    assert generated_lower_bound > 4_000_000
+    if expected_status == 400:
+        assert generated_lower_bound > 100_000_000
     try:
         service.start()
-        assert service.send_raw_request("/v1/logs", payload, content_type).status_code == 400
+        assert service.send_raw_request("/v1/logs", payload, content_type).status_code == expected_status
+        # Large conversion buffers must be cleaned up without poisoning later requests.
+        small = generated_limit_payload(1, 1).SerializeToString()
+        assert service.send_raw_request("/v1/logs", small).status_code == 201
     finally:
         service.stop()
 
