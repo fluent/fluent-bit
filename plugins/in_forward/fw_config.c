@@ -126,13 +126,22 @@ struct flb_in_fw_config *fw_config_init(struct flb_input_instance *i_ins)
         config->owns_shared_key = FLB_TRUE;
     }
 
-    p = flb_input_get_property("msgpack_memory_limit", i_ins);
+    p = flb_input_get_property("signal_object_memory_limit", i_ins);
+    if (p != NULL) {
+        memory_limit = flb_utils_size_to_bytes(p);
+        if (memory_limit < 0 || (uint64_t) memory_limit > SIZE_MAX) {
+            flb_plg_error(i_ins, "signal_object_memory_limit must be a positive size");
+            fw_config_destroy(config);
+            return NULL;
+        }
+    }
     if (config->signal_object_memory_limit < 1024) {
         flb_plg_error(i_ins, "signal_object_memory_limit must be at least 1024 bytes");
         fw_config_destroy(config);
         return NULL;
     }
 
+    p = flb_input_get_property("msgpack_memory_limit", i_ins);
     if (p != NULL) {
         memory_limit = flb_utils_size_to_bytes(p);
         if (memory_limit < 0 || (uint64_t) memory_limit > SIZE_MAX) {
