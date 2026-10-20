@@ -227,6 +227,20 @@ int flb_tail_file_offset_marker_matches(struct flb_tail_file *file)
 
 static void update_resumable_offset_state(struct flb_tail_file *file)
 {
+#ifdef FLB_HAVE_METRICS
+    off_t current_db_offset;
+    int64_t delta;
+    struct flb_tail_config *ctx = file->config;
+
+    current_db_offset = flb_tail_file_db_offset(file);
+    if (current_db_offset > file->last_accounted_offset) {
+        delta = current_db_offset - file->last_accounted_offset;
+        file->last_accounted_offset = current_db_offset;
+        cmt_counter_add(ctx->cmt_files_processed_bytes, cfl_time_now(),
+                        (double) delta, 1, (char *[]) {(char *) flb_input_name(ctx->ins)});
+    }
+#endif
+
 #ifdef FLB_HAVE_SQLDB
     if (file->config->db) {
         flb_tail_db_file_offset(file, file->config);
@@ -243,6 +257,24 @@ int flb_tail_file_reset_on_truncate(struct flb_tail_file *file,
 {
     int64_t offset;
     struct flb_tail_config *ctx = file->config;
+#ifdef FLB_HAVE_METRICS
+    int64_t old_size;
+    int64_t unread_before_trunc;
+    off_t prev_db_offset;
+#endif
+
+#ifdef FLB_HAVE_METRICS
+    prev_db_offset = flb_tail_file_db_offset(file);
+    old_size = file->size - size_delta;
+    if (old_size > (int64_t) prev_db_offset) {
+        unread_before_trunc = old_size - (int64_t) prev_db_offset;
+        if (unread_before_trunc > 0) {
+            cmt_counter_add(ctx->cmt_files_abandoned_bytes, cfl_time_now(),
+                            (double) unread_before_trunc, 1,
+                            (char *[]) {(char *) flb_input_name(ctx->ins)});
+        }
+    }
+#endif
 
     offset = lseek(file->fd, 0, SEEK_SET);
     if (offset == -1) {
@@ -258,6 +290,7 @@ int flb_tail_file_reset_on_truncate(struct flb_tail_file *file,
     file->stream_offset = offset;
     file->last_processed_bytes = 0;
     file->buf_len = 0;
+    file->last_accounted_offset = 0;
 
     update_resumable_offset_state(file);
     return 0;
@@ -1662,6 +1695,9 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
         goto err_fs_remove;
     }
 
+    file->last_accounted_offset = flb_tail_file_db_offset(file);
+    file->abandoned_accounted = FLB_FALSE;
+
     /* Remaining bytes to read */
     file->pending_bytes = file->size - file->offset;
 
@@ -1753,6 +1789,61 @@ err_free_file:
 err_close_fd:
     close(fd);
     return -1;
+}
+
+void flb_tail_file_abandoned(struct flb_tail_file *file, struct stat *st)
+{
+#ifdef FLB_HAVE_METRICS
+    int ret;
+    uint64_t ts;
+    int64_t remaining;
+    int64_t offset;
+    int64_t size;
+    char *name;
+    struct flb_tail_config *ctx;
+    struct stat local_st;
+
+    if (!file || file->abandoned_accounted == FLB_TRUE) {
+        return;
+    }
+
+    ctx = file->config;
+    if (!ctx) {
+        return;
+    }
+
+    if (st == NULL) {
+        ret = fstat(file->fd, &local_st);
+        if (ret == 0) {
+            st = &local_st;
+        }
+    }
+
+    if (st != NULL) {
+        size = (int64_t) st->st_size;
+    }
+    else {
+        size = file->size;
+    }
+
+    offset = (int64_t) flb_tail_file_db_offset(file);
+    remaining = size - offset;
+
+    file->abandoned_accounted = FLB_TRUE;
+
+    if (remaining <= 0) {
+        return;
+    }
+
+    name = (char *) flb_input_name(ctx->ins);
+    ts = cfl_time_now();
+
+    cmt_counter_add(ctx->cmt_files_abandoned_bytes, ts, (double) remaining,
+                    1, (char *[]) {name});
+#else
+    (void) file;
+    (void) st;
+#endif
 }
 
 void flb_tail_file_remove(struct flb_tail_file *file)
@@ -2516,6 +2607,7 @@ static int check_purge_deleted_file(struct flb_tail_config *ctx,
     if (st.st_nlink == 0) {
         flb_plg_debug(ctx->ins, "purge: monitored file has been deleted: %s",
                       file->name);
+        flb_tail_file_abandoned(file, &st);
 #ifdef FLB_HAVE_SQLDB
         if (ctx->db) {
             /* Remove file entry from the database */
@@ -2582,11 +2674,13 @@ int flb_tail_file_purge(struct flb_input_instance *ins,
                                  "ingestion is paused, consider increasing "
                                  "rotate_wait");
                 }
+                flb_tail_file_abandoned(file, &st);
             }
             else {
                 flb_plg_debug(ctx->ins,
                               "inode=%"PRIu64" purge rotated file %s (offset=%"PRId64")",
                               file->inode, file->name, file->offset);
+                flb_tail_file_abandoned(file, NULL);
             }
 
             flb_tail_file_remove(file);

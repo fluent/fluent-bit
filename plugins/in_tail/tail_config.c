@@ -498,6 +498,9 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
 #endif
 
 #ifdef FLB_HAVE_METRICS
+    uint64_t ts = cfl_time_now();
+    char *name = (char *) flb_input_name(ins);
+
     ctx->cmt_files_opened = cmt_counter_create(ins->cmt,
                                                "fluentbit", "input",
                                                "files_opened_total",
@@ -515,6 +518,23 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
                                                 "files_rotated_total",
                                                 "Total number of rotated files",
                                                 1, (char *[]) {"name"});
+
+    ctx->cmt_files_processed_bytes = cmt_counter_create(ins->cmt,
+                                                        "fluentbit", "input",
+                                                        "files_processed_bytes_total",
+                                                        "Total number of raw source-file bytes "
+                                                        "successfully processed",
+                                                        1, (char *[]) {"name"});
+    cmt_counter_set(ctx->cmt_files_processed_bytes, ts, 0, 1, (char *[]) {name});
+
+    ctx->cmt_files_abandoned_bytes = cmt_counter_create(ins->cmt,
+                                                        "fluentbit", "input",
+                                                        "files_abandoned_bytes_total",
+                                                        "Total number of unread raw bytes "
+                                                        "lost when files were removed "
+                                                        "from the monitored list",
+                                                        1, (char *[]) {"name"});
+    cmt_counter_set(ctx->cmt_files_abandoned_bytes, ts, 0, 1, (char *[]) {name});
 
     ctx->cmt_multiline_truncated = \
             cmt_counter_create(ins->cmt,
