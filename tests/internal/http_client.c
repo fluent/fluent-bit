@@ -1160,6 +1160,7 @@ void test_http_header_validation(void)
 
     ctx = test_ctx_create();
     TEST_ASSERT(ctx != NULL);
+    ctx->u_conn->stream = &ctx->u->base;
     for (byte = 0; byte <= 255; byte++) {
         value[1] = (char) byte;
         expected = (byte < 0x20 && byte != '\t') || byte == 0x7f ? -1 : 0;
@@ -1260,7 +1261,46 @@ void test_http1_header_serialization_validation(void)
     flb_free(request);
 }
 
+void test_http1_empty_header_serialization(void)
+{
+    struct flb_http_request *request;
+    struct flb_http_client_session session = {0};
+    struct flb_http_stream stream = {0};
+    const char expected[] = "GET / HTTP/1.1\r\nX-Empty: \r\n\r\n";
+
+    request = flb_http_request_create();
+    TEST_ASSERT(request != NULL);
+    stream.parent = &session;
+    stream.role = HTTP_STREAM_ROLE_CLIENT;
+    session.http1.parent = &session;
+    session.outgoing_data = cfl_sds_create("");
+    TEST_ASSERT(session.outgoing_data != NULL);
+    request->stream = &stream;
+    request->protocol_version = HTTP_PROTOCOL_VERSION_11;
+    request->method = HTTP_METHOD_GET;
+    request->path = cfl_sds_create("/");
+    TEST_ASSERT(request->path != NULL);
+
+    TEST_CHECK(flb_http_request_set_header(request, "X-Empty", 0, "", 0) == 0);
+    TEST_CHECK(flb_http1_request_commit(request) == 0);
+    TEST_CHECK(cfl_sds_len(session.outgoing_data) == sizeof(expected) - 1);
+    TEST_CHECK(strcmp(session.outgoing_data, expected) == 0);
+
+    /* Replacing a nonempty value must preserve the same empty wire value. */
+    TEST_CHECK(flb_http_request_set_header(request, "X-Empty", 0, "value", 0) == 0);
+    TEST_CHECK(flb_http_request_set_header(request, "X-Empty", 0, "", 0) == 0);
+    cfl_sds_len_set(session.outgoing_data, 0);
+    TEST_CHECK(flb_http1_request_commit(request) == 0);
+    TEST_CHECK(cfl_sds_len(session.outgoing_data) == sizeof(expected) - 1);
+    TEST_CHECK(strcmp(session.outgoing_data, expected) == 0);
+
+    cfl_sds_destroy(session.outgoing_data);
+    flb_http_request_destroy(request);
+    flb_free(request);
+}
+
 TEST_LIST = {
+    { "http1_empty_header_serialization", test_http1_empty_header_serialization},
     { "http1_header_serialization_validation", test_http1_header_serialization_validation},
     { "header_validation", test_http_header_validation},
     { "request_target_validation", test_http_request_target_validation},
