@@ -54,6 +54,36 @@ static void expose_aws_meta(struct flb_filter_aws *ctx)
 
     flb_env_set(env, "aws", "enabled");
 
+    if (ctx->group_partition.done &&
+            !ctx->group_partition.exposed) {
+        if (ctx->partition_include) {
+            flb_env_set(env,
+                        "aws." FLB_FILTER_AWS_PARTITION_KEY,
+                        ctx->partition);
+        }
+        ctx->group_partition.exposed = FLB_TRUE;
+    }
+
+    if (ctx->group_domain.done &&
+            !ctx->group_domain.exposed) {
+        if (ctx->domain_include) {
+            flb_env_set(env,
+                        "aws." FLB_FILTER_AWS_DOMAIN_KEY,
+                        ctx->domain);
+        }
+        ctx->group_domain.exposed = FLB_TRUE;
+    }
+
+    if (ctx->group_region.done &&
+            !ctx->group_region.exposed) {
+        if (ctx->region_include) {
+            flb_env_set(env,
+                        "aws." FLB_FILTER_AWS_REGION_KEY,
+                        ctx->region);
+        }
+        ctx->group_region.exposed = FLB_TRUE;
+    }
+
     if (ctx->group_az.done &&
             !ctx->group_az.exposed) {
         if (ctx->availability_zone_include) {
@@ -62,6 +92,46 @@ static void expose_aws_meta(struct flb_filter_aws *ctx)
                         ctx->availability_zone);
         }
         ctx->group_az.exposed = FLB_TRUE;
+    }
+
+    if (ctx->group_az_id.done &&
+            !ctx->group_az_id.exposed) {
+        if (ctx->availability_zone_id_include) {
+            flb_env_set(env,
+                        "aws." FLB_FILTER_AWS_AVAILABILITY_ZONE_ID_KEY,
+                        ctx->availability_zone_id);
+        }
+        ctx->group_az_id.exposed = FLB_TRUE;
+    }
+
+    if (ctx->group_placement_group.done &&
+            !ctx->group_placement_group.exposed) {
+        if (ctx->placement_group_include) {
+            flb_env_set(env,
+                        "aws." FLB_FILTER_AWS_PLACEMENT_GROUP_KEY,
+                        ctx->placement_group);
+        }
+        ctx->group_placement_group.exposed = FLB_TRUE;
+    }
+
+    if (ctx->group_partition_number.done &&
+            !ctx->group_partition_number.exposed) {
+        if (ctx->partition_number_include) {
+            flb_env_set(env,
+                        "aws." FLB_FILTER_AWS_PARTITION_NUMBER_KEY,
+                        ctx->partition_number);
+        }
+        ctx->group_partition_number.exposed = FLB_TRUE;
+    }
+
+    if (ctx->group_host_id.done &&
+            !ctx->group_host_id.exposed) {
+        if (ctx->host_id_include) {
+            flb_env_set(env,
+                        "aws." FLB_FILTER_AWS_HOST_ID_KEY,
+                        ctx->host_id);
+        }
+        ctx->group_host_id.exposed = FLB_TRUE;
     }
 
     if (ctx->group_instance_id.done &&
@@ -92,6 +162,26 @@ static void expose_aws_meta(struct flb_filter_aws *ctx)
                         ctx->private_ip);
         }
         ctx->group_private_ip.exposed = FLB_TRUE;
+    }
+
+    if (ctx->group_public_ip.done &&
+            !ctx->group_public_ip.exposed) {
+        if (ctx->public_ip_include) {
+            flb_env_set(env,
+                        "aws." FLB_FILTER_AWS_PUBLIC_IP_KEY,
+                        ctx->public_ip);
+        }
+        ctx->group_public_ip.exposed = FLB_TRUE;
+    }
+
+    if (ctx->group_ipv6.done &&
+            !ctx->group_ipv6.exposed) {
+        if (ctx->ipv6_include) {
+            flb_env_set(env,
+                        "aws." FLB_FILTER_AWS_IPV6_KEY,
+                        ctx->ipv6);
+        }
+        ctx->group_ipv6.exposed = FLB_TRUE;
     }
 
     if (ctx->group_vpc_id.done &&
@@ -687,6 +777,40 @@ static int get_ec2_metadata_private_ip(struct flb_filter_aws *ctx)
     return 0;
 }
 
+static int get_ec2_metadata_public_ip(struct flb_filter_aws *ctx)
+{
+    int ret;
+
+    if (ctx->public_ip_include && !ctx->public_ip) {
+        ret = flb_aws_imds_request(ctx->client_imds, FLB_AWS_IMDS_PUBLIC_IP_PATH,
+                           &ctx->public_ip, &ctx->public_ip_len);
+
+        if (ret < 0) {
+            flb_plg_error(ctx->ins, "Failed to get instance public IP");
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+static int get_ec2_metadata_ipv6(struct flb_filter_aws *ctx)
+{
+    int ret;
+
+    if (ctx->ipv6_include && !ctx->ipv6) {
+        ret = flb_aws_imds_request(ctx->client_imds, FLB_AWS_IMDS_IPV6_PATH,
+                           &ctx->ipv6, &ctx->ipv6_len);
+
+        if (ret < 0) {
+            flb_plg_error(ctx->ins, "Failed to get instance IPv6");
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
 static int get_ec2_metadata_vpc_id(struct flb_filter_aws *ctx)
 {
     int ret;
@@ -756,6 +880,60 @@ static int get_ec2_metadata_hostname(struct flb_filter_aws *ctx)
     return 0;
 }
 
+static int get_ec2_metadata_partition(struct flb_filter_aws *ctx)
+{
+    int ret;
+
+    if (ctx->partition_include && !ctx->partition) {
+        ret = flb_aws_imds_request(ctx->client_imds, FLB_AWS_IMDS_PARTITION_PATH,
+                           &ctx->partition,
+                           &ctx->partition_len);
+
+        if (ret < 0) {
+            flb_plg_error(ctx->ins, "Failed to get instance partition");
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+static int get_ec2_metadata_domain(struct flb_filter_aws *ctx)
+{
+    int ret;
+
+    if (ctx->domain_include && !ctx->domain) {
+        ret = flb_aws_imds_request(ctx->client_imds, FLB_AWS_IMDS_DOMAIN_PATH,
+                           &ctx->domain,
+                           &ctx->domain_len);
+
+        if (ret < 0) {
+            flb_plg_error(ctx->ins, "Failed to get instance domain");
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+static int get_ec2_metadata_region(struct flb_filter_aws *ctx)
+{
+    int ret;
+
+    if (ctx->region_include && !ctx->region) {
+        ret = flb_aws_imds_request(ctx->client_imds, FLB_AWS_IMDS_REGION_PATH,
+                           &ctx->region,
+                           &ctx->region_len);
+
+        if (ret < 0) {
+            flb_plg_error(ctx->ins, "Failed to get instance region");
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
 static int get_ec2_metadata_az(struct flb_filter_aws *ctx)
 {
     int ret;
@@ -774,6 +952,77 @@ static int get_ec2_metadata_az(struct flb_filter_aws *ctx)
     return 0;
 }
 
+static int get_ec2_metadata_az_id(struct flb_filter_aws *ctx)
+{
+    int ret;
+
+    if (ctx->availability_zone_id_include && !ctx->availability_zone_id) {
+        ret = flb_aws_imds_request(ctx->client_imds, FLB_AWS_IMDS_AZ_ID_PATH,
+                           &ctx->availability_zone_id,
+                           &ctx->availability_zone_id_len);
+
+        if (ret < 0) {
+            flb_plg_error(ctx->ins, "Failed to get instance AZ ID");
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+static int get_ec2_metadata_placement_group(struct flb_filter_aws *ctx)
+{
+    int ret;
+
+    if (ctx->placement_group_include && !ctx->placement_group) {
+        ret = flb_aws_imds_request(ctx->client_imds, FLB_AWS_IMDS_PLACEMENT_GROUP_PATH,
+                           &ctx->placement_group,
+                           &ctx->placement_group_len);
+
+        if (ret < 0) {
+            flb_plg_error(ctx->ins, "Failed to get instance placement group");
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+static int get_ec2_metadata_partition_number(struct flb_filter_aws *ctx)
+{
+    int ret;
+
+    if (ctx->partition_number_include && !ctx->partition_number) {
+        ret = flb_aws_imds_request(ctx->client_imds, FLB_AWS_IMDS_PARTITION_NUMBER_PATH,
+                           &ctx->partition_number,
+                           &ctx->partition_number_len);
+
+        if (ret < 0) {
+            flb_plg_error(ctx->ins, "Failed to get instance partition number");
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+static int get_ec2_metadata_host_id(struct flb_filter_aws *ctx)
+{
+    int ret;
+
+    if (ctx->host_id_include && !ctx->host_id) {
+        ret = flb_aws_imds_request(ctx->client_imds, FLB_AWS_IMDS_HOST_ID_PATH,
+                           &ctx->host_id,
+                           &ctx->host_id_len);
+
+        if (ret < 0) {
+            flb_plg_error(ctx->ins, "Failed to get instance host ID");
+            return -1;
+        }
+    }
+
+    return 0;
+}
 
 static int get_ec2_metadata_tags(struct flb_filter_aws *ctx)
 {
@@ -804,7 +1053,7 @@ static int ec2_metadata_group_should_fetch(struct flb_filter_aws *ctx,
 
     interval = now - group->last_fetch_attempt;
 
-    if (group->last_fetch_attempt > 0 && 
+    if (group->last_fetch_attempt > 0 &&
         interval < required_interval) {
         return FLB_FALSE;
     }
@@ -882,6 +1131,23 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
         metadata_fetched = FLB_FALSE;
     }
 
+    ret = get_ec2_metadata_group(ctx, &ctx->group_public_ip,
+                                 get_ec2_metadata_public_ip);
+    if (ret < 0) {
+        if (ret == FLB_FILTER_AWS_CONFIGURATION_ERROR) {
+            return ret;
+        }
+        metadata_fetched = FLB_FALSE;
+    }
+
+    ret = get_ec2_metadata_group(ctx, &ctx->group_ipv6, get_ec2_metadata_ipv6);
+    if (ret < 0) {
+        if (ret == FLB_FILTER_AWS_CONFIGURATION_ERROR) {
+            return ret;
+        }
+        metadata_fetched = FLB_FALSE;
+    }
+
     ret = get_ec2_metadata_group(ctx, &ctx->group_vpc_id, get_ec2_metadata_vpc_id);
     if (ret < 0) {
         if (ret == FLB_FILTER_AWS_CONFIGURATION_ERROR) {
@@ -906,7 +1172,63 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
         metadata_fetched = FLB_FALSE;
     }
 
+    ret = get_ec2_metadata_group(ctx, &ctx->group_partition, get_ec2_metadata_partition);
+    if (ret < 0) {
+        if (ret == FLB_FILTER_AWS_CONFIGURATION_ERROR) {
+            return ret;
+        }
+        metadata_fetched = FLB_FALSE;
+    }
+
+    ret = get_ec2_metadata_group(ctx, &ctx->group_domain, get_ec2_metadata_domain);
+    if (ret < 0) {
+        if (ret == FLB_FILTER_AWS_CONFIGURATION_ERROR) {
+            return ret;
+        }
+        metadata_fetched = FLB_FALSE;
+    }
+
+    ret = get_ec2_metadata_group(ctx, &ctx->group_region, get_ec2_metadata_region);
+    if (ret < 0) {
+        if (ret == FLB_FILTER_AWS_CONFIGURATION_ERROR) {
+            return ret;
+        }
+        metadata_fetched = FLB_FALSE;
+    }
+
     ret = get_ec2_metadata_group(ctx, &ctx->group_az, get_ec2_metadata_az);
+    if (ret < 0) {
+        if (ret == FLB_FILTER_AWS_CONFIGURATION_ERROR) {
+            return ret;
+        }
+        metadata_fetched = FLB_FALSE;
+    }
+
+    ret = get_ec2_metadata_group(ctx, &ctx->group_az_id, get_ec2_metadata_az_id);
+    if (ret < 0) {
+        if (ret == FLB_FILTER_AWS_CONFIGURATION_ERROR) {
+            return ret;
+        }
+        metadata_fetched = FLB_FALSE;
+    }
+
+    ret = get_ec2_metadata_group(ctx, &ctx->group_placement_group, get_ec2_metadata_placement_group);
+    if (ret < 0) {
+        if (ret == FLB_FILTER_AWS_CONFIGURATION_ERROR) {
+            return ret;
+        }
+        metadata_fetched = FLB_FALSE;
+    }
+
+    ret = get_ec2_metadata_group(ctx, &ctx->group_partition_number, get_ec2_metadata_partition_number);
+    if (ret < 0) {
+        if (ret == FLB_FILTER_AWS_CONFIGURATION_ERROR) {
+            return ret;
+        }
+        metadata_fetched = FLB_FALSE;
+    }
+
+    ret = get_ec2_metadata_group(ctx, &ctx->group_host_id, get_ec2_metadata_host_id);
     if (ret < 0) {
         if (ret == FLB_FILTER_AWS_CONFIGURATION_ERROR) {
             return ret;
@@ -1032,6 +1354,36 @@ static int cb_aws_filter(const void *data, size_t bytes,
         }
 
         /* append new keys */
+        if (ctx->partition_include &&
+            ctx->group_partition.done &&
+            ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_append_body_values(
+                    &log_encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE(FLB_FILTER_AWS_PARTITION_KEY),
+                    FLB_LOG_EVENT_STRING_VALUE(ctx->partition,
+                                               ctx->partition_len));
+        }
+
+        if (ctx->domain_include &&
+            ctx->group_domain.done &&
+            ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_append_body_values(
+                    &log_encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE(FLB_FILTER_AWS_DOMAIN_KEY),
+                    FLB_LOG_EVENT_STRING_VALUE(ctx->domain,
+                                               ctx->domain_len));
+        }
+
+        if (ctx->region_include &&
+            ctx->group_region.done &&
+            ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_append_body_values(
+                    &log_encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE(FLB_FILTER_AWS_REGION_KEY),
+                    FLB_LOG_EVENT_STRING_VALUE(ctx->region,
+                                               ctx->region_len));
+        }
+
         if (ctx->availability_zone_include &&
             ctx->group_az.done &&
             ret == FLB_EVENT_ENCODER_SUCCESS) {
@@ -1040,6 +1392,46 @@ static int cb_aws_filter(const void *data, size_t bytes,
                     FLB_LOG_EVENT_CSTRING_VALUE(FLB_FILTER_AWS_AVAILABILITY_ZONE_KEY),
                     FLB_LOG_EVENT_STRING_VALUE(ctx->availability_zone,
                                                ctx->availability_zone_len));
+        }
+
+        if (ctx->availability_zone_id_include &&
+            ctx->group_az_id.done &&
+            ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_append_body_values(
+                    &log_encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE(FLB_FILTER_AWS_AVAILABILITY_ZONE_ID_KEY),
+                    FLB_LOG_EVENT_STRING_VALUE(ctx->availability_zone_id,
+                                               ctx->availability_zone_id_len));
+        }
+
+        if (ctx->placement_group_include &&
+            ctx->group_placement_group.done &&
+            ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_append_body_values(
+                    &log_encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE(FLB_FILTER_AWS_PLACEMENT_GROUP_KEY),
+                    FLB_LOG_EVENT_STRING_VALUE(ctx->placement_group,
+                                               ctx->placement_group_len));
+        }
+
+        if (ctx->partition_number_include &&
+            ctx->group_partition_number.done &&
+            ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_append_body_values(
+                    &log_encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE(FLB_FILTER_AWS_PARTITION_NUMBER_KEY),
+                    FLB_LOG_EVENT_STRING_VALUE(ctx->partition_number,
+                                               ctx->partition_number_len));
+        }
+
+        if (ctx->host_id_include &&
+            ctx->group_host_id.done &&
+            ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_append_body_values(
+                    &log_encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE(FLB_FILTER_AWS_HOST_ID_KEY),
+                    FLB_LOG_EVENT_STRING_VALUE(ctx->host_id,
+                                               ctx->host_id_len));
         }
 
         if (ctx->instance_id_include &&
@@ -1070,6 +1462,26 @@ static int cb_aws_filter(const void *data, size_t bytes,
                     FLB_LOG_EVENT_CSTRING_VALUE(FLB_FILTER_AWS_PRIVATE_IP_KEY),
                     FLB_LOG_EVENT_STRING_VALUE(ctx->private_ip,
                                                ctx->private_ip_len));
+        }
+
+        if (ctx->public_ip_include &&
+            ctx->group_public_ip.done &&
+            ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_append_body_values(
+                    &log_encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE(FLB_FILTER_AWS_PUBLIC_IP_KEY),
+                    FLB_LOG_EVENT_STRING_VALUE(ctx->public_ip,
+                                               ctx->public_ip_len));
+        }
+
+        if (ctx->ipv6_include &&
+            ctx->group_ipv6.done &&
+            ret == FLB_EVENT_ENCODER_SUCCESS) {
+            ret = flb_log_event_encoder_append_body_values(
+                    &log_encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE(FLB_FILTER_AWS_IPV6_KEY),
+                    FLB_LOG_EVENT_STRING_VALUE(ctx->ipv6,
+                                               ctx->ipv6_len));
         }
 
         if (ctx->vpc_id_include &&
@@ -1191,8 +1603,36 @@ static void flb_filter_aws_destroy(struct flb_filter_aws *ctx)
         flb_aws_imds_destroy(ctx->client_imds);
     }
 
+    if (ctx->partition) {
+        flb_sds_destroy(ctx->partition);
+    }
+
+    if (ctx->domain) {
+        flb_sds_destroy(ctx->domain);
+    }
+
+    if (ctx->region) {
+        flb_sds_destroy(ctx->region);
+    }
+
     if (ctx->availability_zone) {
         flb_sds_destroy(ctx->availability_zone);
+    }
+
+    if (ctx->availability_zone_id) {
+        flb_sds_destroy(ctx->availability_zone_id);
+    }
+
+    if (ctx->placement_group) {
+        flb_sds_destroy(ctx->placement_group);
+    }
+
+    if (ctx->partition_number) {
+        flb_sds_destroy(ctx->partition_number);
+    }
+
+    if (ctx->host_id) {
+        flb_sds_destroy(ctx->host_id);
     }
 
     if (ctx->instance_id) {
@@ -1205,6 +1645,14 @@ static void flb_filter_aws_destroy(struct flb_filter_aws *ctx)
 
     if (ctx->private_ip) {
         flb_sds_destroy(ctx->private_ip);
+    }
+
+    if (ctx->public_ip) {
+        flb_sds_destroy(ctx->public_ip);
+    }
+
+    if (ctx->ipv6) {
+        flb_sds_destroy(ctx->ipv6);
     }
 
     if (ctx->vpc_id) {
@@ -1248,9 +1696,44 @@ static struct flb_config_map config_map[] = {
      " if you run Fluent Bit in a container."
     },
     {
+     FLB_CONFIG_MAP_BOOL, "partition", "false",
+     0, FLB_TRUE, offsetof(struct flb_filter_aws, partition_include),
+     "Enable EC2 instance partition"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "domain", "false",
+     0, FLB_TRUE, offsetof(struct flb_filter_aws, domain_include),
+     "Enable EC2 instance domain"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "region", "false",
+     0, FLB_TRUE, offsetof(struct flb_filter_aws, region_include),
+     "Enable EC2 instance region"
+    },
+    {
      FLB_CONFIG_MAP_BOOL, "az", "true",
      0, FLB_TRUE, offsetof(struct flb_filter_aws, availability_zone_include),
      "Enable EC2 instance availability zone"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "az_id", "false",
+     0, FLB_TRUE, offsetof(struct flb_filter_aws, availability_zone_id_include),
+     "Enable EC2 instance availability zone ID"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "placement_group", "false",
+     0, FLB_TRUE, offsetof(struct flb_filter_aws, placement_group_include),
+     "Enable EC2 instance placement group"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "partition_number", "false",
+     0, FLB_TRUE, offsetof(struct flb_filter_aws, partition_number_include),
+     "Enable EC2 instance partition number"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "host_id", "false",
+     0, FLB_TRUE, offsetof(struct flb_filter_aws, host_id_include),
+     "Enable EC2 instance host ID"
     },
     {
      FLB_CONFIG_MAP_BOOL, "ec2_instance_id", "true",
@@ -1266,6 +1749,16 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "private_ip", "false",
      0, FLB_TRUE, offsetof(struct flb_filter_aws, private_ip_include),
      "Enable EC2 instance private IP"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "public_ip", "false",
+     0, FLB_TRUE, offsetof(struct flb_filter_aws, public_ip_include),
+     "Enable EC2 instance public IP"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "ipv6", "false",
+     0, FLB_TRUE, offsetof(struct flb_filter_aws, ipv6_include),
+     "Enable EC2 instance IPv6"
     },
     {
      FLB_CONFIG_MAP_BOOL, "vpc_id", "false",
