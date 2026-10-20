@@ -1863,6 +1863,7 @@ int flb_tail_file_remove_all(struct flb_tail_config *ctx)
 static int adjust_counters(struct flb_tail_config *ctx, struct flb_tail_file *file)
 {
     int ret;
+    int64_t size_delta;
     struct stat st;
 
     (void) ctx;
@@ -1873,13 +1874,13 @@ static int adjust_counters(struct flb_tail_config *ctx, struct flb_tail_file *fi
         return FLB_TAIL_ERROR;
     }
 
-    int64_t size_delta = st.st_size - file->size;
+    size_delta = st.st_size - file->size;
     if (size_delta != 0) {
         file->size = st.st_size;
     }
 
-    /* Check if the file was truncated by comparing current size with previous size */
-    if (size_delta < 0) {
+    /* The pending collector may already have refreshed the cached size. */
+    if (size_delta < 0 || st.st_size < file->offset) {
         if (flb_tail_file_reset_on_truncate(file, size_delta,
                                             "adjust_counters") == -1) {
             return FLB_TAIL_ERROR;
