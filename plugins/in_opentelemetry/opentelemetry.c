@@ -219,7 +219,7 @@ static struct flb_config_map config_map[] = {
     },
 
     {
-     FLB_CONFIG_MAP_SIZE, "logs_max_size", "4M",
+     FLB_CONFIG_MAP_SIZE, "logs_max_size", "100M",
      0, FLB_TRUE, offsetof(struct flb_opentelemetry, logs_max_size),
      "Maximum generated MessagePack bytes per logs request, including group metadata"
     },
