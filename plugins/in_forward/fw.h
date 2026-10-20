@@ -58,6 +58,7 @@ struct flb_downstream_worker_runtime;
 
 struct flb_in_fw_config {
     size_t msgpack_memory_limit;    /* Decoded MessagePack zone budget */
+    size_t signal_object_memory_limit; /* Estimated decoded signal budget */
     size_t buffer_max_size;         /* Max Buffer size             */
     size_t buffer_chunk_size;       /* Chunk allocation size       */
 

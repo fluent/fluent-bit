@@ -1362,9 +1362,8 @@ static int append_log(struct flb_input_instance *ins, struct fw_conn *conn,
     }
     /* Mpack signals build independent heap objects. Bound their cumulative
      * container entries before invoking the allocating decoders. */
-    /* Allow roughly 100 MiB of decoded signal objects, charging 1 KiB per
-     * entry. This is independent of the msgpack-c zone limit for logs. */
-    object_limit = (100 * 1024 * 1024) / 1024;
+    /* Estimate decoded signal objects independently of the log zone budget. */
+    object_limit = conn->ctx->signal_object_memory_limit / 1024;
     if (event_type != FLB_EVENT_TYPE_LOGS &&
         flb_mp_preflight_sequence_limited(data, len, preflight_limit,
                                           object_limit) != 0) {

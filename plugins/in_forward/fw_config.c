@@ -127,6 +127,12 @@ struct flb_in_fw_config *fw_config_init(struct flb_input_instance *i_ins)
     }
 
     p = flb_input_get_property("msgpack_memory_limit", i_ins);
+    if (config->signal_object_memory_limit < 1024) {
+        flb_plg_error(i_ins, "signal_object_memory_limit must be at least 1024 bytes");
+        fw_config_destroy(config);
+        return NULL;
+    }
+
     if (p != NULL) {
         memory_limit = flb_utils_size_to_bytes(p);
         if (memory_limit < 0 || (uint64_t) memory_limit > SIZE_MAX) {
