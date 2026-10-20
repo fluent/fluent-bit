@@ -54,4 +54,8 @@ int flb_snappy_uncompress(char *in_data, size_t in_len,
 int flb_snappy_uncompress_framed_data(char *in_data, size_t in_len,
                                       char **out_data, size_t *out_len);
 
+/* Decode raw or framed Snappy within limit; returns FLB_DECOMPRESSOR_* status. */
+int flb_snappy_uncompress_bounded(char **out_data, size_t *out_len,
+                                   char *in_data, size_t in_len, size_t limit);
+
 #endif
