@@ -95,6 +95,7 @@ struct flb_http_request {
     cfl_sds_t                         host;
     uint16_t                          port;
     cfl_sds_t                         query_string;
+    int                              invalid_header;
     struct flb_hash_table            *headers;
     struct flb_hash_table           *trailer_headers;
     cfl_sds_t                         user_agent;
@@ -145,6 +146,9 @@ struct flb_aws_provider;
 struct flb_connection;
 
 /* HTTP REQUEST */
+
+int flb_http_header_validate(const char *name, size_t name_length,
+                             const char *value, size_t value_length);
 
 int flb_http_request_init(struct flb_http_request *request);
 
