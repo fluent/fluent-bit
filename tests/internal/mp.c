@@ -656,6 +656,10 @@ static void test_preflight(void)
     TEST_CHECK(flb_mp_preflight_sequence(array, 5, 6144000) == -1);
     TEST_CHECK(flb_mp_preflight_sequence(sequence, sizeof(sequence) - 1, required) == -1);
     TEST_CHECK(flb_mp_preflight_sequence(sequence, sizeof(sequence) - 1, 2 * required) == 0);
+    TEST_CHECK(flb_mp_preflight_sequence_limited(sequence, sizeof(sequence) - 1,
+                                                  2 * required, 3) == -1);
+    TEST_CHECK(flb_mp_preflight_sequence_limited(sequence, sizeof(sequence) - 1,
+                                                  2 * required, 4) == 0);
     flb_mp_preflight_reset(scan, 6144000, 6144000);
     TEST_CHECK(flb_mp_preflight_scan(scan, long_string, 5, &consumed, &cost) == -1);
     memset(large_string, 'a', sizeof(large_string));
