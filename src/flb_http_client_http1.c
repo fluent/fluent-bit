@@ -462,11 +462,12 @@ int flb_http1_request_commit(struct flb_http_request *request)
             return -5;
         }
 
+        /* Borrowed hash values use -1; let the composer measure the string. */
         result = compose_header_line(&request_buffer,
                                       header_entry->key,
                                       header_entry->key_len,
                                       header_entry->val,
-                                      header_entry->val_size);
+                                      header_entry->val_size == -1 ? 0 : header_entry->val_size);
 
         if (result != 0) {
             cfl_sds_destroy(request_buffer);
