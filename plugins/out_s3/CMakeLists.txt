@@ -1,5 +1,6 @@
 set(src
   s3.c
+  s3_protobuf.c
   s3_store.c
   s3_multipart.c)
 

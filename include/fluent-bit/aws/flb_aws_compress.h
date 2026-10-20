@@ -89,4 +89,50 @@ int out_s3_compress_columnar(int columnar_format, void *json, size_t size,
                              void **out_buf, size_t *out_size,
                              int compression_type);
 
+#if defined(FLB_HAVE_ARROW) && defined(FLB_HAVE_PROTOBUF)
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/*
+ * A single Protobuf message. Message boundaries are supplied by the caller so
+ * the encoder never needs to infer framing from the wire payload.
+ */
+struct flb_aws_protobuf_record {
+    const void *data;
+    size_t size;
+};
+
+struct flb_aws_protobuf_schema;
+
+/*
+ * Load a binary google.protobuf.FileDescriptorSet and prepare a reusable
+ * Protobuf-to-Arrow schema mapping for message_type.
+ */
+struct flb_aws_protobuf_schema *flb_aws_protobuf_schema_create(
+                                          const void *descriptor_set,
+                                          size_t descriptor_set_size,
+                                          const char *message_type,
+                                          char *error, size_t error_size);
+
+void flb_aws_protobuf_schema_destroy(struct flb_aws_protobuf_schema *schema);
+
+/*
+ * Decode a batch of Protobuf records with a previously loaded descriptor and
+ * write a typed Arrow or Parquet buffer.
+ */
+int flb_aws_compression_compress_protobuf_columnar(
+                                  int columnar_format,
+                                  struct flb_aws_protobuf_schema *schema,
+                                  const struct flb_aws_protobuf_record *records,
+                                  size_t record_count,
+                                  void **out_buf, size_t *out_size,
+                                  int compression_type,
+                                  char *error, size_t error_size);
+
+#ifdef __cplusplus
+}
+#endif
+#endif
+
 #endif

@@ -189,6 +189,10 @@ if(FLB_AWS)
       aws_credentials_process.c
       )
   endif()
+
+  if(FLB_ARROW AND FLB_PROTOBUF)
+    list(APPEND UNIT_TESTS_FILES aws_compress_protobuf.cpp)
+  endif()
 endif()
 
 if(FLB_AWS_ERROR_REPORTER)
@@ -298,6 +302,40 @@ function(prepare_unit_tests TEST_PREFIX SOURCEFILES)
 endfunction(prepare_unit_tests)
 
 prepare_unit_tests(flb-it- "${UNIT_TESTS_FILES}")
+
+if(TARGET flb-it-aws_compress_protobuf)
+  if(NOT TARGET protobuf::protoc)
+    message(FATAL_ERROR "Protobuf compression tests require protoc")
+  endif()
+
+  set(AWS_COMPRESS_PROTOBUF_DESCRIPTOR
+      "${CMAKE_CURRENT_BINARY_DIR}/wire_log.desc")
+  add_custom_command(
+    OUTPUT "${AWS_COMPRESS_PROTOBUF_DESCRIPTOR}"
+    COMMAND $<TARGET_FILE:protobuf::protoc>
+            --descriptor_set_out=${AWS_COMPRESS_PROTOBUF_DESCRIPTOR}
+            --include_imports
+            --proto_path=${CMAKE_CURRENT_SOURCE_DIR}/data/protobuf
+            ${CMAKE_CURRENT_SOURCE_DIR}/data/protobuf/wire_log.proto
+    DEPENDS
+      protobuf::protoc
+      ${CMAKE_CURRENT_SOURCE_DIR}/data/protobuf/wire_log.proto
+    VERBATIM)
+  add_custom_target(flb-it-aws_compress_protobuf_descriptor
+    DEPENDS "${AWS_COMPRESS_PROTOBUF_DESCRIPTOR}")
+  add_dependencies(flb-it-aws_compress_protobuf
+    flb-it-aws_compress_protobuf_descriptor)
+  target_compile_features(flb-it-aws_compress_protobuf PRIVATE cxx_std_11)
+  target_include_directories(flb-it-aws_compress_protobuf PRIVATE
+    ${PROJECT_SOURCE_DIR}/src/aws/compression/arrow)
+  target_compile_definitions(flb-it-aws_compress_protobuf PRIVATE
+    FLB_TEST_INIT_NOP
+    FLB_TEST_FINI_NOP
+    FLB_TEST_PROTOBUF_DESCRIPTOR_PATH="${AWS_COMPRESS_PROTOBUF_DESCRIPTOR}")
+  target_link_libraries(flb-it-aws_compress_protobuf
+    protobuf::libprotobuf
+    ${ARROW_GLIB_PARQUET_LDFLAGS})
+endif()
 
 if(TARGET flb-it-engine_dispatch)
   target_include_directories(flb-it-engine_dispatch PRIVATE

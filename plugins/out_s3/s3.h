@@ -33,6 +33,10 @@
 #define FLB_S3_FORMAT_PARQUET     100
 #define FLB_S3_FORMAT_ARROW       101
 
+/* Input representation consumed by the columnar writer */
+#define FLB_S3_COLUMNAR_INPUT_JSON      0
+#define FLB_S3_COLUMNAR_INPUT_PROTOBUF  1
+
 /* Upload data to S3 in 5MB chunks */
 #define MIN_CHUNKED_UPLOAD_SIZE 5242880
 #define MAX_CHUNKED_UPLOAD_SIZE 50000000
@@ -86,6 +90,7 @@ struct upload_queue {
 };
 
 struct flb_s3;
+struct flb_aws_protobuf_schema;
 
 typedef struct flb_http_client *s3_request_fn(struct flb_s3 *ctx, int method,
                                             const char *uri, const char *body, size_t body_size,
@@ -136,6 +141,10 @@ struct flb_s3 {
     char *retry_exhausted_action_str;
     char *storage_class;
     char *log_key;
+    char *columnar_input_format_str;
+    char *protobuf_data_key;
+    char *protobuf_descriptor_file;
+    char *protobuf_message_type;
     char *external_id;
     char *profile;
     int free_endpoint;
@@ -146,6 +155,7 @@ struct flb_s3 {
     int retry_exhausted_action;
     int compression;
     int s3_format;
+    int columnar_input_format;
     int port;
     int insecure;
     size_t store_dir_limit_size;
@@ -184,6 +194,8 @@ struct flb_s3 {
     flb_sds_t date_key;
 
     flb_sds_t buffer_dir;
+    char protobuf_buffer_id[65];
+    struct flb_aws_protobuf_schema *protobuf_schema;
 
     char *store_dir;
     struct flb_fstore *fs;
