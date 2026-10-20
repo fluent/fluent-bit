@@ -800,7 +800,8 @@ def _secure_forward_handshake(sock, *, username, password, shared_key, hostname=
     return _recv_msgpack_value(sock)
 
 
-def _preflight_config(tmp_path, memory_limit, wire_limit="6M", *, output="http"):
+def _preflight_config(tmp_path, memory_limit, wire_limit="6M", *, output="http",
+                      signal_limit=None):
     template = "in_forward.yaml" if output == "http" else "in_forward_multi_metrics_stdout.yaml"
     source = Path(__file__).resolve().parent.parent / "config" / template
     config = source.read_text().replace(
@@ -808,6 +809,11 @@ def _preflight_config(tmp_path, memory_limit, wire_limit="6M", *, output="http")
         f"    - name: forward\n      msgpack_memory_limit: {memory_limit}\n"
         f"      buffer_max_size: {wire_limit}\n      buffer_chunk_size: 512\n",
     )
+    if signal_limit is not None:
+        config = config.replace(
+            "      msgpack_memory_limit:",
+            f"      signal_object_memory_limit: {signal_limit}\n      msgpack_memory_limit:",
+        )
     target = tmp_path / "preflight.yaml"
     target.write_text(config)
     return str(target)
@@ -850,6 +856,16 @@ def test_in_forward_preflight_invalid_budget(tmp_path, memory_limit, wire_limit,
     with pytest.raises(FluentBitStartupError):
         service.start()
     assert error in read_file(service.flb.log_file)
+
+
+def test_in_forward_invalid_signal_object_memory_limit(tmp_path):
+    config = _preflight_config(tmp_path, "16K", signal_limit="0")
+    service = FluentBitTestService(config)
+    with pytest.raises(FluentBitStartupError):
+        service.start()
+    assert "signal_object_memory_limit must be at least 1024 bytes" in read_file(
+        service.flb.log_file
+    )
 
 
 @pytest.mark.parametrize("memory_limit,accepted", [("64K", False), ("128K", True)])
@@ -940,9 +956,12 @@ def test_in_forward_preflight_mpack_signal_not_zone_limited(tmp_path, signal):
 
 
 @pytest.mark.parametrize("compressed", [False, True])
-@pytest.mark.parametrize("spans,accepted", [(8, True), (102401, False)])
-def test_in_forward_trace_object_budget(tmp_path, spans, accepted, compressed):
-    config = _preflight_config(tmp_path, "16K", output="stdout")
+@pytest.mark.parametrize("signal_limit,spans,accepted", [
+    (None, 8, True), (None, 102401, False),
+    ("1M", 1200, False), ("3M", 1200, True),
+])
+def test_in_forward_trace_object_budget(tmp_path, signal_limit, spans, accepted, compressed):
+    config = _preflight_config(tmp_path, "16K", output="stdout", signal_limit=signal_limit)
     receiver = FluentBitTestService(config, extra_env={"FORWARD_INPUT_WORKERS": 1})
     packed = _pack_obj({"resourceSpans": [
         {"scope_spans": [{"spans": [{"name": "budget-span"} for _ in range(spans)]}]}
