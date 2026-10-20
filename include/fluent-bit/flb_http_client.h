@@ -232,6 +232,7 @@ struct flb_http_client {
     char *header_buf;
 
     /* Config */
+    int invalid_header;            /* reject requests with invalid headers */
     int allow_dup_headers;          /* allow duplicated headers      */
 
     /* incoming parameters */
