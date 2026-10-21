@@ -1879,8 +1879,10 @@ static int adjust_counters(struct flb_tail_config *ctx, struct flb_tail_file *fi
         file->size = st.st_size;
     }
 
-    /* The pending collector may already have refreshed the cached size. */
-    if (size_delta < 0 || st.st_size < file->offset) {
+    /* Confirm a size/offset discrepancy against the saved content marker. */
+    if (size_delta < 0 ||
+        (st.st_size < file->offset &&
+         flb_tail_file_offset_marker_matches(file) != FLB_TRUE)) {
         if (flb_tail_file_reset_on_truncate(file, size_delta,
                                             "adjust_counters") == -1) {
             return FLB_TAIL_ERROR;
