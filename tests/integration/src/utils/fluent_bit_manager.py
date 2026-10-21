@@ -276,6 +276,8 @@ class FluentBitManager:
             if os.name == "nt":
                 try:
                     self._send_windows_shutdown(pid)
+                except subprocess.TimeoutExpired:
+                    logger.warning("Windows shutdown helper timed out; waiting for Fluent Bit")
                 except subprocess.CalledProcessError as error:
                     if (error.returncode != _WINDOWS_ATTACH_CONSOLE_FAILED
                             or self.process.poll() is None):
@@ -340,7 +342,7 @@ finally:
     k.FreeConsole()
 """
         subprocess.run([sys.executable, "-c", helper, str(pid)], check=True,
-                       creationflags=subprocess.CREATE_NO_WINDOW)
+                       creationflags=subprocess.CREATE_NO_WINDOW, timeout=5)
 
     def send_signal(self, signal_number):
         if not self.process:
