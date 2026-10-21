@@ -225,6 +225,31 @@ int flb_tail_file_offset_marker_matches(struct flb_tail_file *file)
     return FLB_TRUE;
 }
 
+int flb_tail_file_read_offset_is_valid(struct flb_tail_file *file)
+{
+    int ret;
+    uint64_t marker;
+    size_t marker_size;
+
+    /*
+     * The saved marker covers the resumable offset, not buffered bytes.
+     * Probe through the raw read offset even when no saved marker exists.
+     * This distinguishes stale size metadata from EOF without replacing
+     * the persisted resumable-offset marker.
+     */
+    ret = compute_offset_marker(file, file->offset, &marker, &marker_size);
+    if (ret != 0) {
+        return FLB_FALSE;
+    }
+
+    if (file->db_offset_marker_size > 0 &&
+        flb_tail_file_offset_marker_matches(file) != FLB_TRUE) {
+        return FLB_FALSE;
+    }
+
+    return FLB_TRUE;
+}
+
 static void update_resumable_offset_state(struct flb_tail_file *file)
 {
 #ifdef FLB_HAVE_SQLDB
@@ -1879,10 +1904,10 @@ static int adjust_counters(struct flb_tail_config *ctx, struct flb_tail_file *fi
         file->size = st.st_size;
     }
 
-    /* Confirm a size/offset discrepancy against the saved content marker. */
+    /* Confirm a size/offset discrepancy through the raw read position. */
     if (size_delta < 0 ||
         (st.st_size < file->offset &&
-         flb_tail_file_offset_marker_matches(file) != FLB_TRUE)) {
+         flb_tail_file_read_offset_is_valid(file) != FLB_TRUE)) {
         if (flb_tail_file_reset_on_truncate(file, size_delta,
                                             "adjust_counters") == -1) {
             return FLB_TAIL_ERROR;
