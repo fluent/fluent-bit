@@ -136,10 +136,10 @@ static int tail_fs_check(struct flb_input_instance *ins,
             file->size = st.st_size;
         }
 
-        /* Confirm a size/offset discrepancy against the saved content marker. */
+        /* Confirm a size/offset discrepancy through the raw read position. */
         if (size_delta < 0 ||
             (st.st_size < file->offset &&
-             flb_tail_file_offset_marker_matches(file) != FLB_TRUE)) {
+             flb_tail_file_read_offset_is_valid(file) != FLB_TRUE)) {
             ret = flb_tail_file_reset_on_truncate(file, size_delta, "tail_fs_check");
             if (ret == -1) {
                 return -1;
