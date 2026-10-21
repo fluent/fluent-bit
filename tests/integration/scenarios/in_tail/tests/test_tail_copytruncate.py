@@ -1,6 +1,7 @@
 """Issue #12617: pending collection must not hide copytruncate from watchers."""
 
 import os
+from contextlib import closing
 import sqlite3
 import sys
 import time
@@ -36,6 +37,20 @@ def wait_for_positions(pid, log_dir, targets, timeout=15):
             return
         time.sleep(0.05)
     pytest.fail(f"tail failed to read content (offset, size): {stale}")
+
+
+def wait_for_db_offsets(db_path, targets, timeout=15):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        with closing(sqlite3.connect(db_path, timeout=1)) as db:
+            offsets = dict(db.execute("SELECT name, offset FROM in_tail_files"))
+        stale = {path.name: (offsets.get(str(path)), path.stat().st_size)
+                 for path in targets
+                 if offsets.get(str(path)) != path.stat().st_size}
+        if not stale:
+            return
+        time.sleep(0.05)
+    pytest.fail(f"tail failed to persist offsets (offset, size): {stale}")
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="uses Linux /proc fd positions")
@@ -104,8 +119,6 @@ pipeline:
             with target.open("ab") as handle:
                 handle.write(b"next-line\n")
         wait_for_positions(pid, log_dir, targets)
-        with sqlite3.connect(tmp_path / "tail.db") as db:
-            offsets = dict(db.execute("SELECT name, offset FROM in_tail_files"))
-        assert all(offsets[str(path)] == path.stat().st_size for path in targets)
+        wait_for_db_offsets(tmp_path / "tail.db", targets)
     finally:
         service.stop()
