@@ -1349,6 +1349,26 @@ jobs:
           token: ${{ secrets.GH_PA_TOKEN }}
           ref: master
 
+      - name: Verify release branch
+        id: release-branch
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          if [[ ! "$RELEASE_VERSION" =~ ^([0-9]+)\.([0-9]+)\.[0-9]+$ ]]; then
+            echo "::error::Invalid release version: $RELEASE_VERSION"
+            exit 1
+          fi
+          release_branch="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+          if [[ "$release_branch" == "5.2" ]]; then
+            release_branch=master
+          fi
+          if [[ "$(git branch --show-current)" != "$release_branch" ]]; then
+            echo "::error::Release $RELEASE_VERSION must target branch $release_branch"
+            exit 1
+          fi
+          echo "name=$release_branch" >> "$GITHUB_OUTPUT"
+
       - name: Ensure we have the script we need
         run: |
           if [[ ! -f update-release-version-docs.sh ]] ; then
@@ -1374,6 +1394,7 @@ jobs:
         id: cpr
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
+          base: ${{ steps.release-branch.outputs.name }}
           commit-message: 'release: update to v${{ inputs.version }}'
           signoff: true
           delete-branch: true
@@ -1476,8 +1497,28 @@ jobs:
         with:
           ref: master
           
+      - name: Verify release branch
+        id: release-branch
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          if [[ ! "$RELEASE_VERSION" =~ ^([0-9]+)\.([0-9]+)\.[0-9]+$ ]]; then
+            echo "::error::Invalid release version: $RELEASE_VERSION"
+            exit 1
+          fi
+          release_branch="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+          if [[ "$release_branch" == "5.2" ]]; then
+            release_branch=master
+          fi
+          if [[ "$(git branch --show-current)" != "$release_branch" ]]; then
+            echo "::error::Release $RELEASE_VERSION must target branch $release_branch"
+            exit 1
+          fi
+          echo "name=$release_branch" >> "$GITHUB_OUTPUT"
+
       # Get the new version to use
-      - name: 'Get next minor version'
+      - name: 'Get next patch version'
         id: semvers
         uses: "WyriHaximus/github-action-next-semvers@18aa9ed4152808ab99b88d71f5481e41f8d89930" # v1.2.1
         with:
@@ -1495,6 +1536,7 @@ jobs:
         id: cpr
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
+          base: ${{ steps.release-branch.outputs.name }}
           branch: create-pull-request/bump-version-${{ steps.semvers.outputs.patch }}
           branch-suffix: timestamp
           commit-message: 'release: update to ${{ steps.semvers.outputs.patch }}'
