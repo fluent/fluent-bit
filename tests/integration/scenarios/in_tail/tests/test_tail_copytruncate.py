@@ -1,7 +1,9 @@
 """Issue #12617: pending collection must not hide copytruncate from watchers."""
 
-import os
+from collections import Counter
 from contextlib import closing
+import json
+import os
 import sqlite3
 import sys
 import time
@@ -74,6 +76,7 @@ def test_copytruncate_with_pending_collector(tmp_path, inotify, replacement, ini
         target.write_text(initial)
     busy = log_dir / "busy.log"
     busy.touch()
+    output = tmp_path / "output.json"
     config = tmp_path / "tail.yaml"
     config.write_text(f"""
 service:
@@ -85,7 +88,9 @@ service:
 pipeline:
   inputs:
     - name: tail
+      tag: tail.*
       path: {log_dir}/*.log
+      path_key: file
       read_from_head: true
       refresh_interval: 1
       watcher_interval: 1
@@ -95,10 +100,27 @@ pipeline:
       buffer_max_size: 2k
       db: {tmp_path}/tail.db
   outputs:
-    - name: null
-      match: '*'
+    - name: file
+      match: '*target-*'
+      path: {tmp_path}
+      file: {output.name}
+      format: plain
 """)
     service = FluentBitTestService(str(config))
+    expected_logs = ["next-line"]
+    if replacement:
+        expected_logs.append(replacement.decode().rstrip("\n"))
+    expected = Counter((str(path), log) for path in targets for log in expected_logs)
+
+    def recovered_records():
+        if not output.exists():
+            return Counter()
+        # A flush can still be writing the final JSON line while we poll.
+        records = [json.loads(line) for line in output.read_text().splitlines(keepends=True)
+                   if line.endswith("\n")]
+        return Counter((record["file"], record["log"]) for record in records
+                       if record["log"] in expected_logs)
+
     try:
         service.start()
         pid = service.flb.process.pid
@@ -129,5 +151,10 @@ pipeline:
                 handle.write(b"next-line\n")
         wait_for_positions(pid, log_dir, targets)
         wait_for_db_offsets(tmp_path / "tail.db", targets)
+        service.wait_for_condition(
+            lambda: recovered_records() == expected, timeout=15, interval=0.05,
+            description="replacement records and subsequent appends from every target",
+        )
     finally:
         service.stop()
+    assert recovered_records() == expected
