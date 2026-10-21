@@ -526,6 +526,15 @@ struct flb_upstream *flb_upstream_create_url(struct flb_config *config,
         goto out;
     }
 
+    /* Transport is determined by the scheme, even when the URL has a port. */
+    if (strcasecmp(prot, "https") == 0) {
+        flags |= FLB_IO_TLS;
+        if (tls == NULL) {
+            flb_error("[upstream] TLS context required for URL: %s", url);
+            goto out;
+        }
+    }
+
     /* Manage some default ports */
     if (!port) {
         if (strcasecmp(prot, "http") == 0) {
@@ -533,9 +542,6 @@ struct flb_upstream *flb_upstream_create_url(struct flb_config *config,
         }
         else if (strcasecmp(prot, "https") == 0) {
             tmp_port = 443;
-            if ((flags & FLB_IO_TLS) == 0) {
-                flags |= FLB_IO_TLS;
-            }
         }
     }
     else {
