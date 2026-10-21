@@ -1,4 +1,7 @@
 """Guard required release metadata dependencies and explicit file transfers."""
+import os
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -76,6 +79,54 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("--github-repository", steps[-1]["run"])
         for name in ("staging-release-create-docs-pr", "staging-release-create-version-update-pr"):
             self.assertIn("staging-release-create-release", self.ancestors(name))
+
+    def test_release_prs_use_verified_branch_as_explicit_base(self):
+        for suffix in ("docs", "version-update"):
+            job = self.release[f"staging-release-create-{suffix}-pr"]
+            steps = job["steps"]
+            guard = next(step for step in steps if step.get("id") == "release-branch")
+            create = next(step for step in steps
+                          if "peter-evans/create-pull-request@" in step.get("uses", ""))
+            self.assertEqual(create["with"]["base"], "${{ steps.release-branch.outputs.name }}")
+            self.assertEqual(guard["env"]["RELEASE_VERSION"], "${{ inputs.version }}")
+            self.assertLess(steps.index(guard), steps.index(create))
+            for series, expected in (("5.0", "5.0"), ("5.1", "5.1"), ("5.2", "master")):
+                with self.subTest(job=suffix, series=series):
+                    checkouts = [step for step in steps if "actions/checkout@" in step.get("uses", "")
+                                 and step.get("if") == f"startsWith(inputs.version, '{series}')"]
+                    self.assertEqual(len(checkouts), 1)
+                    self.assertEqual(checkouts[0]["with"]["ref"], expected)
+                    self.assertLess(steps.index(checkouts[0]), steps.index(guard))
+            update = next(step for step in steps
+                          if step.get("run", "").strip() in
+                          ("./update_version.sh", "./update-release-version-docs.sh"))
+            self.assertLess(steps.index(guard), steps.index(update))
+
+    def test_release_branch_guard_rejects_wrong_checkout_before_updates(self):
+        cases = [("5.1.5", "5.1", "5.1"), ("5.2.0", "master", "master"),
+                 ("5.0.9", "5.0", "5.0"), ("5.1.5", "master", None),
+                 ("5.2.0", "5.1", None), ("5.10.0", "5.1", None),
+                 ("invalid", "master", None), ("5.1", "5.1", None)]
+        for suffix in ("docs", "version-update"):
+            steps = self.release[f"staging-release-create-{suffix}-pr"]["steps"]
+            guard = next(step for step in steps if step.get("id") == "release-branch")
+            for version, branch, expected in cases:
+                with self.subTest(job=suffix, version=version, branch=branch):
+                    with tempfile.TemporaryDirectory() as directory:
+                        subprocess.run(["git", "init", "--quiet", "--initial-branch", branch, directory],
+                                       check=True)
+                        output = Path(directory) / "output"
+                        result = subprocess.run(
+                            ["bash", "-e", "-o", "pipefail", "-c", guard["run"]], cwd=directory,
+                            env={**os.environ, "RELEASE_VERSION": version, "GITHUB_OUTPUT": str(output)},
+                            capture_output=True, text=True)
+                        if expected is None:
+                            self.assertNotEqual(result.returncode, 0)
+                            self.assertIn("::error::", result.stdout)
+                            self.assertFalse(output.exists())
+                        else:
+                            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                            self.assertEqual(output.read_text(), f"name={expected}\n")
 
     def test_staging_generation_and_transfer(self):
         jobs = workflow("staging-build.yaml")["jobs"]
