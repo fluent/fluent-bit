@@ -63,7 +63,8 @@ def test_copytruncate_with_pending_collector(tmp_path, inotify, replacement, ini
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
     targets = [log_dir / f"target-{i}.log" for i in range(32)]
-    initial = ("before " + "x" * 120 + "\n") * 512
+    initial_log = "before " + "x" * 120
+    initial = (initial_log + "\n") * 512
     retained_prefix = b""
     if initial_mode == "partial":
         # No complete line means there is no persisted offset marker.
@@ -111,6 +112,10 @@ pipeline:
     if replacement:
         expected_logs.append(replacement.decode().rstrip("\n"))
     expected = Counter((str(path), log) for path in targets for log in expected_logs)
+    # A rewind also delivers the retained prefix again in buffered mode.
+    initial_count = initial.count("\n") + retained_prefix.count(b"\n")
+    if initial_count:
+        expected.update({(str(path), initial_log): initial_count for path in targets})
 
     def recovered_records():
         if not output.exists():
@@ -118,8 +123,7 @@ pipeline:
         # A flush can still be writing the final JSON line while we poll.
         records = [json.loads(line) for line in output.read_text().splitlines(keepends=True)
                    if line.endswith("\n")]
-        return Counter((record["file"], record["log"]) for record in records
-                       if record["log"] in expected_logs)
+        return Counter((record["file"], record["log"]) for record in records)
 
     try:
         service.start()
