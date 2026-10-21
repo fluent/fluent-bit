@@ -369,14 +369,22 @@ static int flb_azure_blob_apply_remote_configuration(struct flb_azure_blob *cont
     }
 
     tls_context = flb_tls_create(FLB_TLS_CLIENT_MODE,
-                                 FLB_FALSE,
-                                 FLB_FALSE,
+                                 context->ins->tls_verify,
+                                 context->ins->tls_debug,
                                  host,
-                                 NULL,
-                                 NULL,
-                                 NULL,
-                                 NULL,
-                                 NULL);
+                                 context->ins->tls_ca_path,
+                                 context->ins->tls_ca_file,
+                                 context->ins->tls_crt_file,
+                                 context->ins->tls_key_file,
+                                 context->ins->tls_key_passwd);
+
+    if (tls_context != NULL && context->ins->tls_verify == FLB_TRUE) {
+        ret = flb_tls_set_verify_hostname(tls_context, FLB_TRUE);
+        if (ret != 0) {
+            flb_tls_destroy(tls_context);
+            tls_context = NULL;
+        }
+    }
 
     if (tls_context == NULL) {
         flb_free(host);
