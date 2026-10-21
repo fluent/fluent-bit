@@ -56,11 +56,20 @@ def wait_for_db_offsets(db_path, targets, timeout=15):
 @pytest.mark.skipif(sys.platform != "linux", reason="uses Linux /proc fd positions")
 @pytest.mark.parametrize("inotify", [False, True], ids=["stat", "inotify"])
 @pytest.mark.parametrize("replacement", [b"", b"after-truncate\n"], ids=["empty", "short"])
-def test_copytruncate_with_pending_collector(tmp_path, inotify, replacement):
+@pytest.mark.parametrize("initial_mode", ["complete", "partial", "buffered"])
+def test_copytruncate_with_pending_collector(tmp_path, inotify, replacement, initial_mode):
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
     targets = [log_dir / f"target-{i}.log" for i in range(32)]
     initial = ("before " + "x" * 120 + "\n") * 512
+    retained_prefix = b""
+    if initial_mode == "partial":
+        # No complete line means there is no persisted offset marker.
+        initial = "x" * 512
+    elif initial_mode == "buffered":
+        # Preserve the resumable marker while truncating buffered bytes beyond it.
+        retained_prefix = initial.encode()
+        initial += "x" * 512
     for target in targets:
         target.write_text(initial)
     busy = log_dir / "busy.log"
@@ -110,7 +119,7 @@ pipeline:
             pytest.fail("did not observe busy-file backlog")
         for target in targets:
             with target.open("wb") as handle:
-                handle.write(replacement)
+                handle.write(retained_prefix + replacement)
         wait_for_positions(pid, log_dir, targets)
 
         # Recovery must also reset the persisted stream offset and continue
