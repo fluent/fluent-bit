@@ -715,8 +715,8 @@ jobs:
           TAG: ${{ steps.get-tag.outputs.tag }}
 
   staging-release-images-latest-tags:
-    # Only update latest tags for 5.1 releases
-    if: startsWith(github.event.inputs.version, '5.1')
+    # Only update latest tags for 5.2 releases
+    if: startsWith(github.event.inputs.version, '5.2')
     name: Release latest Linux container images
     runs-on: ubuntu-latest
     needs:
@@ -1159,7 +1159,7 @@ jobs:
           target_commitish: '5.0'
           make_latest: false
 
-      - name: Release 5.1 and latest
+      - name: Release 5.1 - not latest
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         if: startsWith(inputs.version, '5.1')
         with:
@@ -1173,6 +1173,24 @@ jobs:
           generate_release_notes: true
           name: "Fluent Bit ${{ inputs.version }}"
           tag_name: v${{ inputs.version }}
+          target_commitish: '5.1'
+          make_latest: false
+
+      - name: Release 5.2 and latest
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        if: startsWith(inputs.version, '5.2')
+        with:
+          body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
+          files: |
+            metadata/fluent-bit-schema-${{ inputs.version }}.json
+            metadata/fluent-bit-schema-pretty-${{ inputs.version }}.json
+          fail_on_unmatched_files: true
+          overwrite_files: true
+          draft: false
+          generate_release_notes: true
+          name: "Fluent Bit ${{ inputs.version }}"
+          tag_name: v${{ inputs.version }}
+          target_commitish: master
           make_latest: true
           
       - name: Verify anonymous GitHub release asset downloads
@@ -1315,8 +1333,16 @@ jobs:
           token: ${{ secrets.GH_PA_TOKEN }}
           ref: '5.0'
 
-      - name: Release 5.1 and latest
+      - name: Release 5.1 - not latest
         if: startsWith(inputs.version, '5.1')
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: fluent/fluent-bit-docs
+          token: ${{ secrets.GH_PA_TOKEN }}
+          ref: '5.1'
+
+      - name: Release 5.2 and latest
+        if: startsWith(inputs.version, '5.2')
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: fluent/fluent-bit-docs
@@ -1440,6 +1466,12 @@ jobs:
 
       - name: Release 5.1
         if: startsWith(inputs.version, '5.1')
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: '5.1'
+
+      - name: Release 5.2
+        if: startsWith(inputs.version, '5.2')
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: master
