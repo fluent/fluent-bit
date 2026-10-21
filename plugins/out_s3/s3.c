@@ -5386,7 +5386,9 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "authorization_endpoint_url", NULL,
      0, FLB_TRUE, offsetof(struct flb_s3, authorization_endpoint_url),
-     "Authorization endpoint URL"
+     "Authorization endpoint URL. With tls.verify enabled, tls.ca_file must "
+     "trust both the S3 and authorization endpoints when tls.ca_path is unset. "
+     "If tls.ca_path is set, it takes precedence over tls.ca_file."
     },
 
     {
