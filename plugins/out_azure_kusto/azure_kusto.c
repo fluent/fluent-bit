@@ -1016,6 +1016,7 @@ static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_confi
         flb_azure_kusto_conf_destroy(ctx);
         return -1;
     }
+    flb_tls_set_verify_hostname(ctx->o->tls, ins->tls_verify_hostname);
     flb_output_upstream_set(ctx->u, ins);
 
     flb_plg_debug(ctx->ins, "azure kusto init completed");
