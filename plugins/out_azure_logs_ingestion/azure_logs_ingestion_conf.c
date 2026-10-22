@@ -197,6 +197,7 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
         flb_az_li_ctx_destroy(ctx);
         return NULL;
     }
+    flb_tls_set_verify_hostname(ctx->u_auth->tls, ins->tls_verify_hostname);
 
     /* Create upstream context for Log Ingsetion endpoint */
     ctx->u_dce = flb_upstream_create_url(config, ctx->dce_url,
