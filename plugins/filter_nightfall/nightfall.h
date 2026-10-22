@@ -45,6 +45,7 @@ struct flb_filter_nightfall {
     double sampling_rate;
     int tls_debug;
     int tls_verify;
+    int tls_verify_hostname;
     char *tls_ca_path;
     flb_sds_t tls_vhost;
 
