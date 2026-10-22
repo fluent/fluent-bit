@@ -34,6 +34,21 @@
 #define FLB_PROCESSOR_SUCCESS        0
 #define FLB_PROCESSOR_FAILURE       -1
 
+/*
+ * Optional raw callbacks execute a complete native segment in configuration
+ * order and preserve record cardinality. All units must use the same callback
+ * and enable logs_raw_enabled during init, with no conditions. The runner
+ * locks all participating units and accounts
+ * for each separately. Existing CFL callbacks remain the fallback for the whole
+ * segment. Raw callbacks never modify or release the input buffer.
+ * MODIFIED transfers a separately allocated output buffer to the caller.
+ * NOTOUCH, UNSUPPORTED and FAILURE leave output NULL/zero. UNSUPPORTED must
+ * discard any partial output and invoke no externally visible side effects.
+ */
+#define FLB_PROCESSOR_RAW_NOTOUCH      0
+#define FLB_PROCESSOR_RAW_MODIFIED     1
+#define FLB_PROCESSOR_RAW_UNSUPPORTED  2
+
 /* Processor event types */
 #define FLB_PROCESSOR_LOGS           1
 #define FLB_PROCESSOR_METRICS        2
@@ -166,6 +181,11 @@ struct flb_processor_plugin {
                             const char *,
                             int);
 
+    int (*cb_process_logs_raw) (struct flb_processor_instance **, size_t,
+                                const void *, size_t,
+                                void **, size_t *,
+                                const char *, int);
+
     int (*cb_process_metrics) (struct flb_processor_instance *,
                                struct cmt *, /* in */
                                struct cmt **, /* out */
@@ -195,6 +215,7 @@ struct flb_processor_instance {
     int id;                                /* instance id              */
     int log_level;                         /* instance log level       */
     int event_type;                        /* event type               */
+    int logs_raw_enabled;                  /* set during init for compatible configurations */
     char name[32];                         /* numbered name            */
     char *alias;                           /* alias name               */
     void *context;                         /* Instance local context   */
