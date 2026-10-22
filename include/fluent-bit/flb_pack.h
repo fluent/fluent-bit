@@ -103,6 +103,15 @@ flb_sds_t flb_pack_msgpack_to_json_format(const char *data, uint64_t bytes,
 int flb_pack_to_json_format_type(const char *str);
 int flb_pack_to_json_date_type(const char *str);
 
+/*
+ * Convert a double to its shortest string representation that round-trips
+ * back to the same value (e.g. 0.072 -> "0.072" instead of
+ * "0.07199999999999999"). Non-finite values (nan/inf) fall back to the
+ * legacy "%.17g" formatting. A 64-byte buffer is always sufficient. Returns
+ * the number of bytes written (excluding the NUL) or -1 on error.
+ */
+int flb_pack_double_to_str(double val, char *out_buf, size_t buf_size);
+
 void flb_pack_print(const char *data, size_t bytes);
 int flb_msgpack_to_json(char *json_str, size_t str_len,
                         const msgpack_object *obj,
