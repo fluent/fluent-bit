@@ -389,6 +389,7 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
             flb_http_conf_destroy(ctx);
             return NULL;
         }
+        flb_tls_set_verify_hostname(ctx->oauth2_ctx->tls, ins->tls_verify_hostname);
     }
 
     /* Set instance flags into upstream */
