@@ -493,6 +493,7 @@ static int mqtt_handle_subscription(struct mqtt_conn *conn)
     int filters = 0;
     int offset;
     int filter_len;
+    int hlen;
     size_t sent;
     size_t out_len;
     uint8_t *body;
@@ -527,16 +528,20 @@ static int mqtt_handle_subscription(struct mqtt_conn *conn)
             return -1;
         }
 
-        /* one return code per topic filter, after the packet identifier */
-        out_len = 2 + 2 + filters;
-        reply = flb_malloc(out_len);
+        /*
+         * One return code per topic filter, after the packet identifier. The
+         * remaining length can need more than one byte, so reserve room for
+         * the largest fixed header.
+         */
+        reply = flb_malloc(5 + 2 + filters);
         if (reply == NULL) {
             flb_errno();
             return -1;
         }
 
-        mqtt_packet_header(MQTT_SUBACK, 2 + filters, (char *) reply);
-        memset(&reply[4], MQTT_SUBACK_FAILURE, filters);
+        hlen = mqtt_packet_header(MQTT_SUBACK, 2 + filters, (char *) reply);
+        memset(&reply[hlen + 2], MQTT_SUBACK_FAILURE, filters);
+        out_len = hlen + 2 + filters;
     }
     else {
         /* Payload: one or more { filter length (2), filter } */
@@ -556,13 +561,13 @@ static int mqtt_handle_subscription(struct mqtt_conn *conn)
         }
 
         reply = small_reply;
-        mqtt_packet_header(MQTT_UNSUBACK, 2, (char *) reply);
-        out_len = 4;
+        hlen = mqtt_packet_header(MQTT_UNSUBACK, 2, (char *) reply);
+        out_len = hlen + 2;
     }
 
     /* Set the identifier that we are replying to */
-    reply[2] = body[0];
-    reply[3] = body[1];
+    reply[hlen] = body[0];
+    reply[hlen + 1] = body[1];
 
     ret = flb_io_net_write(conn->connection, (void *) reply, out_len, &sent);
     flb_plg_trace(ctx->ins, "[fd=%i] CMD SUBSCRIPTION (reply=%i)",
