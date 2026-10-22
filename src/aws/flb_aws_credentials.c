@@ -389,6 +389,7 @@ struct flb_aws_provider *flb_managed_chain_provider_create(struct flb_output_ins
         flb_errno();
         goto error;
     }
+    flb_tls_set_verify_hostname(cred_tls, ins->tls_verify_hostname);
 
     region = flb_output_get_property(config_key_region, ins);
     if (!region) {
@@ -441,6 +442,7 @@ struct flb_aws_provider *flb_managed_chain_provider_create(struct flb_output_ins
             flb_errno();
             goto error;
         }
+        flb_tls_set_verify_hostname(sts_tls, ins->tls_verify_hostname);
 
         aws_provider = flb_sts_provider_create(config,
                                                sts_tls,
