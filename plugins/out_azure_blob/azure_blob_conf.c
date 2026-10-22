@@ -316,6 +316,7 @@ static int flb_azure_blob_apply_remote_configuration(struct flb_azure_blob *cont
     char *port = NULL;
     char *uri = NULL;
     uint16_t port_as_short;
+    int io_flags = FLB_IO_TCP;
 
     /* Parse and split URL */
     ret = flb_utils_url_split(context->configuration_endpoint_url,
@@ -343,6 +344,9 @@ static int flb_azure_blob_apply_remote_configuration(struct flb_azure_blob *cont
     }
 
     if (scheme != NULL) {
+        if (strcasecmp(scheme, "https") == 0) {
+            io_flags = FLB_IO_TLS;
+        }
         flb_free(scheme);
         scheme = NULL;
     }
@@ -398,7 +402,7 @@ static int flb_azure_blob_apply_remote_configuration(struct flb_azure_blob *cont
 
     upstream = flb_upstream_create_url(context->config,
                                        context->configuration_endpoint_url,
-                                       FLB_IO_TCP,
+                                       io_flags,
                                        tls_context);
 
     if (upstream == NULL) {
