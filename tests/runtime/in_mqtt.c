@@ -622,6 +622,36 @@ void flb_test_subscribe_suback()
         }
     }
 
+    /* a SUBACK whose remaining length needs two bytes */
+    {
+        int i;
+        int pos = 0;
+        unsigned char many[3 + 2 + 130 * 4] = {0};
+        unsigned char many_reply[3 + 2 + 130] = {0};
+
+        many[pos++] = 0x82;
+        many[pos++] = 0x80 | ((2 + 130 * 4) & 0x7f);
+        many[pos++] = (2 + 130 * 4) >> 7;
+        many[pos++] = 0x00;
+        many[pos++] = 0x04;
+        for (i = 0; i < 130; i++) {
+            many[pos++] = 0x00;
+            many[pos++] = 0x01;
+            many[pos++] = 'f';
+            many[pos++] = 0x00;
+        }
+        TEST_CHECK(send_raw(fd, many, pos) == 0);
+        TEST_CHECK(recv_exact(fd, many_reply, sizeof(many_reply)) ==
+                   (int) sizeof(many_reply));
+        TEST_CHECK(many_reply[0] == 0x90);
+        TEST_CHECK(many_reply[1] == (0x80 | ((2 + 130) & 0x7f)));
+        TEST_CHECK(many_reply[2] == (2 + 130) >> 7);
+        TEST_CHECK(many_reply[3] == 0x00 && many_reply[4] == 0x04);
+        for (i = 0; i < 130; i++) {
+            TEST_CHECK(many_reply[5 + i] == 0x80);
+        }
+    }
+
     flb_socket_close(fd);
 
     /* an UNSUBSCRIBE with an empty topic filter closes the connection */
