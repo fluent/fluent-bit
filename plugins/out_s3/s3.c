@@ -1424,6 +1424,7 @@ skip_size_validation:
             flb_plg_error(ctx->ins, "Failed to create tls context");
             return -1;
         }
+        flb_tls_set_verify_hostname(ctx->client_tls, ins->tls_verify_hostname);
     }
 
     /* AWS provider needs a separate TLS instance */
@@ -1440,6 +1441,7 @@ skip_size_validation:
         flb_errno();
         return -1;
     }
+    flb_tls_set_verify_hostname(ctx->provider_tls, ins->tls_verify_hostname);
 
     ctx->provider = flb_standard_chain_provider_create(config,
                                                        ctx->provider_tls,
@@ -1475,6 +1477,7 @@ skip_size_validation:
             flb_errno();
             return -1;
         }
+        flb_tls_set_verify_hostname(ctx->sts_provider_tls, ins->tls_verify_hostname);
 
         session_name = flb_sts_session_name();
         if (!session_name) {
@@ -2897,6 +2900,7 @@ static int blob_initialize_authorization_endpoint_upstream(struct flb_s3 *contex
     char *port = NULL;
     char *uri = NULL;
     int upstream_flags;
+    int io_flags = FLB_IO_TCP;
 
     context->authorization_endpoint_upstream = NULL;
     context->authorization_endpoint_tls_context = NULL;
@@ -2914,6 +2918,9 @@ static int blob_initialize_authorization_endpoint_upstream(struct flb_s3 *contex
     }
 
     if (scheme != NULL) {
+        if (strcasecmp(scheme, "https") == 0) {
+            io_flags = FLB_IO_TLS;
+        }
         flb_free(scheme);
 
         scheme = NULL;
@@ -2942,11 +2949,11 @@ static int blob_initialize_authorization_endpoint_upstream(struct flb_s3 *contex
     }
 
     tls_context = flb_tls_create(FLB_TLS_CLIENT_MODE,
-                                 FLB_FALSE,
+                                 context->ins->tls_verify,
                                  FLB_FALSE,
                                  host,
-                                 NULL,
-                                 NULL,
+                                 context->ins->tls_ca_path,
+                                 context->ins->tls_ca_file,
                                  NULL,
                                  NULL,
                                  NULL);
@@ -2960,10 +2967,11 @@ static int blob_initialize_authorization_endpoint_upstream(struct flb_s3 *contex
 
         return -2;
     }
+    flb_tls_set_verify_hostname(tls_context, context->ins->tls_verify_hostname);
 
     upstream = flb_upstream_create_url(context->ins->config,
                                        context->authorization_endpoint_url,
-                                       FLB_IO_TCP,
+                                       io_flags,
                                        tls_context);
 
     if (upstream == NULL) {
