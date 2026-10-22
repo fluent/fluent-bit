@@ -1971,6 +1971,7 @@ static int cb_gcs_init(struct flb_output_instance *ins, struct flb_config *confi
         if (!ctx->o) {
             goto error;
         }
+        flb_tls_set_verify_hostname(ctx->o->tls, ins->tls_verify_hostname);
     }
 
     ctx->u = flb_upstream_create(config, FLB_GCS_DEFAULT_HOST, FLB_GCS_DEFAULT_PORT,
