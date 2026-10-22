@@ -417,7 +417,7 @@ static void pack_msgpack_basic_meta(mpack_writer_t *writer,
     mpack_write_cstr(writer, "meta");
 
     if (payload_type == MSGPACK_MALFORMED_DUPLICATE_TYPE) {
-        mpack_start_map(writer, 5);
+        mpack_start_map(writer, 6);
 
         mpack_write_cstr(writer, "ver");
         mpack_write_uint(writer, MSGPACK_ENCODER_VERSION);
@@ -427,7 +427,7 @@ static void pack_msgpack_basic_meta(mpack_writer_t *writer,
         mpack_write_uint(writer, CMT_GAUGE);
     }
     else {
-        mpack_start_map(writer, 4);
+        mpack_start_map(writer, payload_type == MSGPACK_MALFORMED_EXP_HIST_SCALE_OVERFLOW ? 4 : 5);
 
         mpack_write_cstr(writer, "ver");
         mpack_write_uint(writer, MSGPACK_ENCODER_VERSION);
@@ -583,6 +583,7 @@ static void assert_malformed_msgpack_rejected(enum malformed_msgpack_payload pay
 
     ret = cmt_decode_msgpack_create(&decoded, payload, payload_size, &offset);
     TEST_CHECK(ret != CMT_DECODE_MSGPACK_SUCCESS);
+    TEST_MSG("malformed payload type: %d", payload_type);
     TEST_CHECK(decoded == NULL);
 
     cmt_encode_msgpack_destroy(payload);

@@ -49,8 +49,11 @@ struct cmt_map {
     struct cfl_list *metric_buckets;
     size_t metric_bucket_count;
     size_t indexed_metric_count;
-    /* Most recently created metric; only changed with the metric list. */
+    /* End of the indexed prefix. Direct list insertions must append; removal
+     * must use cmt_map_metric_destroy so this cursor cannot dangle. */
     struct cmt_metric *last_metric;
+    /* Owned family metadata; independent of metric names and sibling scopes. */
+    struct cfl_kvlist *otlp_metadata;
 };
 
 struct cmt_map *cmt_map_create(int type, struct cmt_opts *opts,
