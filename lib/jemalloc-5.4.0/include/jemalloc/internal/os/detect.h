@@ -15,8 +15,12 @@
  * dispatchers work whether reached through os.h or directly.
  */
 #if !defined(_WIN32)
-#  if !defined(__has_include) || __has_include(<unistd.h>)
+#  ifndef __has_include
 #    include <unistd.h>
+#  else
+#    if __has_include(<unistd.h>)
+#      include <unistd.h>
+#    endif
 #  endif
 #  if defined(_POSIX_VERSION) || defined(__unix__) || defined(__unix)
 #    define JEMALLOC_OS_POSIX
