@@ -41,7 +41,7 @@ jobs:
         uses: crazy-max/ghaction-chocolatey@dfdcf5bba9c0a16358a21c13a06ec5c89024b3ac # v4
         with:
           args: install -y cmake --installargs 'ADD_CMAKE_TO_PATH=System'
-      - uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2
+      - uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2
         with:
           update: true
           msystem: UCRT64
@@ -147,7 +147,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Build on ${{ matrix.os }} with ${{ matrix.compiler }}
-        uses: uraimo/run-on-arch-action@460cb8e6d9f726a588fc9b5e681c8a6cab09ae41 # v3.2.0
+        uses: uraimo/run-on-arch-action@fa1f3e7de95534497266c7265950b5188355fbfb # v3.2.1
         with:
           arch: aarch64
           distro: ubuntu_latest
