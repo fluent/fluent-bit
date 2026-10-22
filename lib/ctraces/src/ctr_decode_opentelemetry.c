@@ -774,10 +774,8 @@ int ctr_decode_opentelemetry_create(struct ctrace **out_ctr,
                     ctr_span_set_trace_state(span, otel_span->trace_state, strlen(otel_span->trace_state));
                 }
 
-                if (ctr_span_kind_set(span, otel_span->kind) != 0) {
-                    return decode_opentelemetry_error(
-                        service_request, ctr, CTR_DECODE_OPENTELEMETRY_INVALID_PAYLOAD);
-                }
+                /* Preserve unknown proto3 enum values received on the wire. */
+                span->kind = otel_span->kind;
                 ctr_span_set_flags(span, otel_span->flags);
                 ctr_span_start_ts(ctr, span, otel_span->start_time_unix_nano);
                 ctr_span_end_ts(ctr, span, otel_span->end_time_unix_nano);
