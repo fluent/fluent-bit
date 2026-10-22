@@ -121,7 +121,9 @@ int azure_blob_store_buffer_put(struct flb_azure_blob *ctx, struct azure_blob_fi
     struct flb_fstore_file *fsf;
     size_t space_remaining;
 
-    if (ctx->store_dir_limit_size > 0 && ctx->current_buffer_size + bytes >= ctx->store_dir_limit_size) {
+    if (ctx->store_dir_limit_size > 0 &&
+        (ctx->current_buffer_size >= ctx->store_dir_limit_size ||
+         bytes >= ctx->store_dir_limit_size - ctx->current_buffer_size)) {
         flb_plg_error(ctx->ins, "Buffer is full: current_buffer_size=%zu, new_data=%zu, store_dir_limit_size=%zu bytes",
                       ctx->current_buffer_size, bytes, ctx->store_dir_limit_size);
         return -1;
@@ -204,6 +206,8 @@ int azure_blob_store_buffer_put(struct flb_azure_blob *ctx, struct azure_blob_fi
 
 static int set_files_context(struct flb_azure_blob *ctx)
 {
+    int was_up;
+    ssize_t size;
     struct mk_list *head;
     struct mk_list *f_head;
     struct flb_fstore_stream *fs_stream;
@@ -212,11 +216,6 @@ static int set_files_context(struct flb_azure_blob *ctx)
 
     mk_list_foreach(head, &ctx->fs->streams) {
         fs_stream = mk_list_entry(head, struct flb_fstore_stream, _head);
-
-        /* skip current stream since it's new */
-        if (fs_stream == ctx->stream_active) {
-            continue;
-        }
 
         /* skip multi-upload */
         if (fs_stream == ctx->stream_upload) {
@@ -229,15 +228,36 @@ static int set_files_context(struct flb_azure_blob *ctx)
                 continue;
             }
 
+            /* Down chunks do not retain their logical payload size in memory. */
+            was_up = cio_chunk_is_up(fsf->chunk);
+            if (was_up == CIO_FALSE && cio_chunk_up_force(fsf->chunk) != CIO_OK) {
+                flb_plg_error(ctx->ins, "cannot load buffered file: %s/%s",
+                              fs_stream->name, fsf->name);
+                return -1;
+            }
+            size = cio_chunk_get_content_size(fsf->chunk);
+            if (was_up == CIO_FALSE && cio_chunk_down(fsf->chunk) != CIO_OK) {
+                flb_plg_error(ctx->ins, "cannot unload buffered file: %s/%s",
+                              fs_stream->name, fsf->name);
+                return -1;
+            }
+            if (size < 0 || (size_t) size > SIZE_MAX - ctx->current_buffer_size) {
+                flb_plg_error(ctx->ins, "cannot account for buffered file: %s/%s",
+                              fs_stream->name, fsf->name);
+                return -1;
+            }
+
             /* Allocate local context */
             azure_blob_file = flb_calloc(1, sizeof(struct azure_blob_file));
             if (!azure_blob_file) {
                 flb_errno();
                 flb_plg_error(ctx->ins, "cannot allocate azure_blob file context");
-                continue;
+                return -1;
             }
             azure_blob_file->fsf = fsf;
             azure_blob_file->create_time = time(NULL);
+            azure_blob_file->size = size;
+            ctx->current_buffer_size += size;
 
             /* Use fstore opaque 'data' reference to keep our context */
             fsf->data = azure_blob_file;
@@ -275,17 +295,7 @@ int azure_blob_store_init(struct flb_azure_blob *ctx)
     }
     ctx->fs = fs;
 
-    /*
-     * On every start we create a new stream, this stream in the file system
-     * is directory with the name using the date like '2020-10-03T13:00:02'. So
-     * all the 'new' data that is generated on this process is stored there.
-     *
-     * Note that previous data in similar directories from previous runs is
-     * considered backlog data, in the azure_blob plugin we need to differenciate the
-     * new v/s the older buffered data.
-     *
-     * Compose a stream name...
-     */
+    /* Timestamp streams can already contain files when a process restarts. */
     now = time(NULL);
     tm = localtime(&now);
 
@@ -307,7 +317,13 @@ int azure_blob_store_init(struct flb_azure_blob *ctx)
     }
     ctx->stream_active = fs_stream;
 
-    set_files_context(ctx);
+    if (set_files_context(ctx) == -1) {
+        azure_blob_store_exit(ctx);
+        ctx->fs = NULL;
+        ctx->stream_active = NULL;
+        ctx->current_buffer_size = 0;
+        return -1;
+    }
     return 0;
 }
 
@@ -397,19 +413,6 @@ int azure_blob_store_file_inactive(struct flb_azure_blob *ctx, struct azure_blob
     ret = flb_fstore_file_inactive(ctx->fs, fsf);
 
     return ret;
-}
-
-int azure_blob_store_file_cleanup(struct flb_azure_blob *ctx, struct azure_blob_file *azure_blob_file)
-{
-    struct flb_fstore_file *fsf;
-
-    fsf = azure_blob_file->fsf;
-
-    /* permanent deletion */
-    flb_fstore_file_delete(ctx->fs, fsf);
-    flb_free(azure_blob_file);
-
-    return 0;
 }
 
 int azure_blob_store_file_delete(struct flb_azure_blob *ctx, struct azure_blob_file *azure_blob_file)

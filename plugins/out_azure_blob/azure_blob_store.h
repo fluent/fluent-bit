@@ -48,7 +48,6 @@ int azure_blob_store_has_uploads(struct flb_azure_blob *ctx);
 int azure_blob_store_file_inactive(struct flb_azure_blob *ctx, struct azure_blob_file *azure_blob_file);
 struct azure_blob_file *azure_blob_store_file_get(struct flb_azure_blob *ctx, const char *tag,
                                                     int tag_len);
-int azure_blob_store_file_cleanup(struct flb_azure_blob *ctx, struct azure_blob_file *azure_blob_file);
 int azure_blob_store_file_delete(struct flb_azure_blob *ctx, struct azure_blob_file *azure_blob_file);
 int azure_blob_store_file_upload_read(struct flb_azure_blob *ctx, struct flb_fstore_file *fsf,
                                        char **out_buf, size_t *out_size);
