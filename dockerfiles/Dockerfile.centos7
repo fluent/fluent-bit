@@ -10,7 +10,7 @@ RUN sed -i -e "s/^mirrorlist=http:\/\/mirrorlist.centos.org/#mirrorlist=http:\/\
     yum install -y rpm-build curl ca-certificates gcc gcc-c++ make bash \
     wget unzip systemd-devel flex bison \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libcurl-devel \
-    postgresql-libs postgresql-devel postgresql-server postgresql libyaml-devel \
+    postgresql-libs postgresql-devel postgresql-server postgresql libyaml-devel libsnmp-devel \
     tar gzip
 
 ENV CMAKE_HOME="/opt/cmake"
