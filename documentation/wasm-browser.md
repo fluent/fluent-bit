@@ -30,7 +30,7 @@ retains only the ChunkIO changes in a separate library commit:
 
 Use a base containing the flb_libco and Monkey upgrades and retain the ChunkIO
 update when applying the Fluent Bit core/SDK commits. No Emscripten SDK files are patched. The browser profile also builds
-SHA-256-pinned OpenSSL 3.5.8, libyaml 0.2.5, and portable Lua 5.4.9 for the same
+SHA-256-pinned OpenSSL 3.5.9, libyaml 0.2.5, and portable Lua 5.4.9 for the same
 Emscripten 6.0.9 toolchain; it does not use host libraries or provide LuaJIT/FFI.
 
 ## Embeddable JavaScript SDK
@@ -128,7 +128,7 @@ The legacy shared HTTP client selects Fetch for browser builds. `out_http` and
 For older build caches, explicitly add `-DFLB_OUT_HTTP=ON -DFLB_OUT_LOKI=ON`.
 
 Crypto primitives still require OpenSSL with native TLS disabled. The build
-downloads SHA-256-pinned OpenSSL 3.5.8, cross-compiles its static crypto library,
+downloads SHA-256-pinned OpenSSL 3.5.9, cross-compiles its static crypto library,
 and installs it in the build directory. No host OpenSSL is linked, and no
 OpenSSL sources are added to `lib/`. Initial builds need network access;
 subsequent builds reuse the downloaded source.

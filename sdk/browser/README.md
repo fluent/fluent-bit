@@ -159,6 +159,31 @@ configuration. Browser HTTP still follows Fetch/CORS restrictions; secrets in a
 browser are visible to its user. No remote service, telemetry collection, or
 automatic update is built into the facade.
 
+## Experimental CI artifacts
+
+The Browser WebAssembly workflow builds and tests optimized and AddressSanitizer
+configurations for every branch push, pull request update, and manual run. After
+the optimized build, CTests and SDK unit tests pass, its run exposes the Actions artifact
+`fluent-bit-browser-experimental-<source-commit>` for 30 days.
+
+Download that artifact from the workflow run, then verify and extract it:
+
+```sh
+sha256sum -c fluent-bit-browser-experimental.tar.gz.sha256
+tar -xzf fluent-bit-browser-experimental.tar.gz
+cd fluent-bit-browser-experimental
+sha256sum -c SHA256SUMS
+```
+
+Deploy the entire extracted directory on the application origin. Import
+`createFluentBit` from `fluent-bit.js`; the worker and runtime assets must remain
+beside it. See the hosting instructions above for HTTPS and COOP/COEP headers.
+`build-info.json` records the Emscripten version, source commit, and exact build
+commit (the PR merge commit for pull request runs). These are experimental,
+unsanitized browser assets, not a production release or an npm publication.
+Artifact availability does not imply the subsequent browser tests or the ASan
+job passed; check the workflow results before choosing a build.
+
 ## Release gates
 
 Before promoting this experimental API: run ASan lifecycle/network/storage and
