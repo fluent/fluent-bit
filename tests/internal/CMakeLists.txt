@@ -17,6 +17,7 @@ set(UNIT_TESTS_FILES
   router.c
   router_config.c
   network.c
+  network_dns.c
   unit_sizes.c
   hashtable.c
   http_client.c
