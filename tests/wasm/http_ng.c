@@ -10,6 +10,35 @@
 
 static int completed;
 
+static void timeout_requests(struct flb_connection *connection)
+{
+    struct flb_http_client *client;
+    int timeouts[] = {0, 1, 120, 121, 300, -1, 300, 300};
+    int expected[] = {30000, 1000, 120000, 120000, 120000, 0, 50000, 120000};
+    size_t bytes;
+    int i;
+
+    MAIN_THREAD_EM_ASM({ Module.timeoutCase = true; });
+    for (i = 0; i < 8; i++) {
+        client = flb_http_client(connection, FLB_HTTP_POST, "/", NULL, 0,
+                                 "example.invalid", 443, NULL, 0);
+        CHECK(client != NULL);
+        client->response_timeout = timeouts[i];
+        client->request_net_setup.io_timeout = i == 6 ? 50 : (i == 7 ? 240 : 0);
+        MAIN_THREAD_EM_ASM({ Module.lastTimeout = 0; });
+        if (timeouts[i] < 0) {
+            CHECK(flb_http_do(client, &bytes) == -1);
+        }
+        else {
+            CHECK(flb_http_do(client, &bytes) == 0);
+            CHECK(client->resp.status == 201);
+        }
+        CHECK(MAIN_THREAD_EM_ASM_INT({ return Module.lastTimeout; }) == expected[i]);
+        flb_http_client_destroy(client);
+    }
+    MAIN_THREAD_EM_ASM({ Module.timeoutCase = false; });
+}
+
 static void requests(void)
 {
     struct flb_coro *coro;
@@ -108,6 +137,7 @@ static void requests(void)
     CHECK(bytes == 0);
     flb_http_client_destroy(legacy);
     CHECK(MAIN_THREAD_EM_ASM_INT({ return Module.rejectedCalls; }) == 0);
+    timeout_requests(&connection);
     request = flb_http_client_request_builder(client,
                 FLB_HTTP_CLIENT_ARGUMENT_METHOD(HTTP_METHOD_POST),
                 FLB_HTTP_CLIENT_ARGUMENT_URI("/"));
@@ -179,9 +209,18 @@ int main(int argc, char **argv)
         return 0;
     }
     MAIN_THREAD_EM_ASM({
+        Module.lastTimeout = 0;
+        const begin = Module.flbBrowserHttp.begin;
+        Module.flbBrowserHttp.begin = function(...args) {
+            Module.lastTimeout = args[5];
+            return begin.apply(this, args);
+        };
         Module.testCalls = 0;
         Module.rejectedCalls = 0;
         globalThis.fetch = async (url, options) => {
+            if (Module.timeoutCase) {
+                return new Response(new Uint8Array([0, 255, 42, 17]), {status: 201});
+            }
             if (options.headers.has('X-Good')) { Module.rejectedCalls++; }
             if (url !== 'https://example.invalid:443/binary?a=1&b=%2F' ||
                 options.method !== Module.expectedMethod ||
