@@ -1,0 +1,2 @@
+{"message":"bad record 1", "logging.googleapis.com/labels": "not_a_map"}
+{"message":"bad record 2", "logging.googleapis.com/labels": 12345}
