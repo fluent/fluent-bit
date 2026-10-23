@@ -26,7 +26,7 @@ struct flb_http_response *flb_wasm_http_request_execute(struct flb_http_request 
 
     method = FLB_HTTP_POST;
 
-    if (!request || !request->stream || !request->stream->parent) {
+    if (!request || request->invalid_header || !request->stream || !request->stream->parent) {
         return NULL;
     }
     session = request->stream->parent;
@@ -158,6 +158,9 @@ static int browser_execute(struct flb_http_client *c, size_t *bytes, const char 
         return -1;
     }
     *bytes = 0;
+    if (c->invalid_header) {
+        return -1;
+    }
     if (!c->u_conn || !c->u_conn->upstream || c->proxy.host || c->read_idle_timeout) {
         return -1;
     }
