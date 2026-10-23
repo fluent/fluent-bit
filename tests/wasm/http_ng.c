@@ -19,6 +19,9 @@ static void requests(void)
     struct flb_http_request *request;
     struct flb_http_client_session *session;
     struct flb_http_response *response;
+    struct flb_http_client *legacy;
+    struct flb_connection connection = {0};
+    size_t bytes;
     int methods[] = {HTTP_METHOD_GET, HTTP_METHOD_HEAD, HTTP_METHOD_POST,
                      HTTP_METHOD_PUT, HTTP_METHOD_DELETE, HTTP_METHOD_OPTIONS};
     const char *names[] = {"GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"};
@@ -83,6 +86,28 @@ static void requests(void)
         CHECK(header && strcmp(header, "4") == 0);
         flb_http_client_request_destroy(request, FLB_TRUE);
     }
+    /* A rejected field must poison both APIs even if its caller ignores it. */
+    request = flb_http_client_request_builder(client,
+                FLB_HTTP_CLIENT_ARGUMENT_METHOD(HTTP_METHOD_POST),
+                FLB_HTTP_CLIENT_ARGUMENT_URI("/binary"));
+    CHECK(request != NULL);
+    CHECK(flb_http_request_set_header(request, "X-Bad", 0, "a\rb", 0) == -1);
+    CHECK(flb_http_request_set_header(request, "X-Good", 0, "valid", 0) == 0);
+    CHECK(flb_http_client_request_execute(request) == NULL);
+    flb_http_client_request_destroy(request, FLB_TRUE);
+    connection.upstream = upstream;
+    connection.net = &upstream->base.net;
+    connection.fd = -1;
+    legacy = flb_http_client(&connection, FLB_HTTP_POST, "/binary", NULL, 0,
+                             "example.invalid", 443, NULL, 0);
+    CHECK(legacy != NULL);
+    CHECK(flb_http_add_header(legacy, "X-Bad", 5, "a\rb", 3) == -1);
+    CHECK(flb_http_add_header(legacy, "X-Good", 6, "valid", 5) == 0);
+    bytes = 123;
+    CHECK(flb_http_do(legacy, &bytes) == -1);
+    CHECK(bytes == 0);
+    flb_http_client_destroy(legacy);
+    CHECK(MAIN_THREAD_EM_ASM_INT({ return Module.rejectedCalls; }) == 0);
     request = flb_http_client_request_builder(client,
                 FLB_HTTP_CLIENT_ARGUMENT_METHOD(HTTP_METHOD_POST),
                 FLB_HTTP_CLIENT_ARGUMENT_URI("/"));
@@ -155,7 +180,9 @@ int main(int argc, char **argv)
     }
     MAIN_THREAD_EM_ASM({
         Module.testCalls = 0;
+        Module.rejectedCalls = 0;
         globalThis.fetch = async (url, options) => {
+            if (options.headers.has('X-Good')) { Module.rejectedCalls++; }
             if (url !== 'https://example.invalid:443/binary?a=1&b=%2F' ||
                 options.method !== Module.expectedMethod ||
                 options.headers.get('authorization') !== 'Basic dGVzdDpzZWNyZXQ=' ||
