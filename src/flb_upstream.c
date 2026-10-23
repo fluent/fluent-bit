@@ -1099,18 +1099,18 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
             if (drop) {
                 if (!flb_upstream_is_shutting_down(u)) {
                     if (u->base.net.connect_timeout_log_error) {
-                        flb_error("[upstream] connection #%i to %s timed "
+                        flb_error("[upstream] connection #%i to %s:%i timed "
                                   "out after %i seconds (%s)",
                                   u_conn->fd,
-                                  flb_connection_get_remote_address(u_conn),
+                                  u->tcp_host, u->tcp_port,
                                   elapsed_time,
                                   reason);
                     }
                     else {
-                        flb_debug("[upstream] connection #%i to %s timed "
+                        flb_debug("[upstream] connection #%i to %s:%i timed "
                                   "out after %i seconds (%s)",
                                   u_conn->fd,
-                                  flb_connection_get_remote_address(u_conn),
+                                  u->tcp_host, u->tcp_port,
                                   elapsed_time,
                                   reason);
                     }
