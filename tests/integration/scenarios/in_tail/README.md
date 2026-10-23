@@ -33,6 +33,8 @@ harness, not just unit or runtime-library coverage.
 - `ignore_older`
 - `ignore_active_older_files`
 - delayed readability after startup
+- `max_open_files` limits, deferred discovery, slot release, and 75% usage warnings
+- a shared file budget with four threaded Tail inputs and multiple output workers
 
 ## Notes
 
@@ -46,3 +48,47 @@ harness, not just unit or runtime-library coverage.
 - This suite still cannot fully replace testing on a real NFS mount or kernel
   fault-injection environment. Those remain separate environment-dependent
   validation phases.
+
+## Open-file budget
+
+Set `max_open_files: 1024` on a Tail input to limit all Tail inputs in the process
+to 1,024 simultaneously open monitored files in total. Omitted or zero values
+inherit the shared limit; if no input specifies a positive value, it is unlimited.
+Positive values must agree, and negative or conflicting values fail startup.
+The limit is resolved across all inputs before the first input opens files.
+Separate embedded engines in the same process also share the active pool; a
+conflicting positive limit cannot replace it until its last user has exited.
+
+Static, continuously monitored, and retained rotated files share the budget.
+Database, watcher, and other process handles are outside it. CFL atomic
+compare-and-exchange reserves capacity before opening, without fixed shares per
+worker. Failed opens, failed initialization, and file removal return their slots.
+
+At 75% shared usage (rounded up to a whole file), Tail warns once and continues
+opening files up to the hard cap. The warning is rearmed when usage falls below
+75%. At the cap, excess files are retried on subsequent `refresh_interval` scans.
+On each refresh scan, inputs proactively release their own eligible files until
+shared usage is below 75%. Only plain files at clean EOF are eligible: partial
+records, symlinks, retained rotation, compressed files, and multiline/Docker modes
+keep their handles. Dormant identity, offset, and a content marker remain in
+memory; database offsets are retained when configured. Unchanged dormant files
+are skipped. A metadata change triggers a budgeted reopen, with identity and
+content-marker validation before resuming; detected replacement/truncation starts
+at offset zero. Reopening is subject to the refresh interval and available slots.
+Without a database, dormant state does not survive a process restart. The dormant
+indexes share one owner per file. Reopening consumes both saved index keys. After
+all path patterns have been scanned successfully, unobserved owners and their
+database rows are removed. An inode found at a renamed path preserves resume state
+even if the old path has disappeared or been replaced. Incomplete scans preserve
+owners; failed database deletions are retried. Shutdown retains database offsets
+for restart. Dormant files have
+no open handle or watcher: writes followed by deletion/rotation between scans may
+be missed. Changes that preserve size and filesystem timestamps cannot be detected
+reliably, particularly on filesystems with coarse timestamp resolution. Windows compares
+volume serial number and file index, plus write/change timestamps with the 100 ns
+precision supplied by `FILE_BASIC_INFO`. POSIX platforms use device/inode and
+subsecond timestamps where available.
+There is no fairness guarantee between inputs;
+files that disappear before admission may never be read. Existing offset and
+read-from-head settings still determine where an admitted file starts reading.
+Saved database offsets for deferred files are retained during startup cleanup.
