@@ -1791,6 +1791,10 @@ void flb_tail_file_remove(struct flb_tail_file *file)
     flb_plg_debug(ctx->ins, "inode=%"PRIu64" removing file name %s",
                   file->inode, file->name);
 
+    if (file->read_retry_pending) {
+        mk_list_del(&file->_retry_head);
+    }
+
     if (file->decompression_context != NULL) {
         flb_decompression_context_destroy(file->decompression_context);
     }
@@ -1942,6 +1946,10 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
 
     if (flb_input_buf_paused(ctx->ins) == FLB_TRUE) {
         return FLB_TAIL_BUSY;
+    }
+
+    if (file->read_retry_pending) {
+        return FLB_TAIL_RETRY;
     }
 
     file_buffer_capacity = (file->buf_size - file->buf_len) - 1;
@@ -2121,7 +2129,9 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
                                &file->buf_data[file->buf_len],
                                read_size);
 
-        stream_data_length = (size_t) raw_data_length;
+        if (raw_data_length > 0) {
+            stream_data_length = (size_t) raw_data_length;
+        }
     }
 
     if (stream_data_length > 0 || raw_data_length > 0) {
@@ -2170,7 +2180,17 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
         }
     }
     else {
-        /* error */
+        /* Preserve the buffer and offsets so transient failures can be retried. */
+        if (errno == EAGAIN || errno == EINTR
+#ifdef FLB_SYSTEM_WINDOWS
+            || errno == EACCES
+#endif
+           ) {
+            file->read_retry_pending = FLB_TRUE;
+            mk_list_add(&file->_retry_head, &ctx->files_retry);
+            return FLB_TAIL_RETRY;
+        }
+
         flb_errno();
         flb_plg_error(ctx->ins, "error reading %s", file->name);
         return FLB_TAIL_ERROR;
