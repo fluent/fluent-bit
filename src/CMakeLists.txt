@@ -37,6 +37,7 @@ set(src
   flb_input_thread.c
   flb_filter.c
   flb_output.c
+  flb_output_throttle.c
   flb_output_thread.c
   flb_config.c
   flb_fips.c
@@ -80,6 +81,7 @@ set(src
   flb_http_client_http1.c
   flb_http_client_http2.c
   flb_http_client.c
+  flb_http_retry_after.c
   flb_callback.c
   flb_strptime.c
   flb_fstore.c

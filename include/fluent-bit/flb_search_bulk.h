@@ -62,6 +62,7 @@ int flb_search_bulk_process_response(const char *response,
                                      int acknowledge_all_conflicts,
                                      int drop_unrecoverable_records,
                                      struct flb_search_bulk_stats *stats,
+                                     int *throttled,
                                      struct flb_search_bulk_retry **retry);
 void flb_search_bulk_retry_destroy(void *data);
 
