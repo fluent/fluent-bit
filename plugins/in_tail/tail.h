@@ -28,6 +28,7 @@
 #define FLB_TAIL_OK      0
 #define FLB_TAIL_WAIT    1
 #define FLB_TAIL_BUSY    2
+#define FLB_TAIL_RETRY   3  /* Deferred until the watcher timer runs */
 
 /* Consuming mode */
 #define FLB_TAIL_STATIC  0  /* Data is being consumed through read(2) */

@@ -114,6 +114,9 @@ static int in_tail_collect_pending(struct flb_input_instance *ins,
         }
 
         switch (ret) {
+        case FLB_TAIL_RETRY:
+            /* The watcher timer will resignal this file. */
+            break;
         case FLB_TAIL_ERROR:
             /* Could not longer read the file */
             flb_tail_file_remove(file);
@@ -205,6 +208,9 @@ static int in_tail_collect_static(struct flb_input_instance *ins,
         }
 
         switch (ret) {
+        case FLB_TAIL_RETRY:
+            /* Keep static files registered without treating the failure as EOF. */
+            break;
         case FLB_TAIL_ERROR:
             /* Could not longer read the file */
             flb_plg_debug(ctx->ins, "inode=%"PRIu64" collect static ERROR",
@@ -316,11 +322,32 @@ static int in_tail_watcher_callback(struct flb_input_instance *ins,
                                     struct flb_config *config, void *context)
 {
     int ret = 0;
+    int retry_static = FLB_FALSE;
+    int retry_event = FLB_FALSE;
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_tail_config *ctx = context;
     struct flb_tail_file *file;
     (void) config;
+
+    /* Only this timer releases deferred reads, even when other files are busy. */
+    mk_list_foreach_safe(head, tmp, &ctx->files_retry) {
+        file = mk_list_entry(head, struct flb_tail_file, _retry_head);
+        mk_list_del(&file->_retry_head);
+        file->read_retry_pending = FLB_FALSE;
+        if (file->tail_mode == FLB_TAIL_STATIC) {
+            retry_static = FLB_TRUE;
+        }
+        else {
+            retry_event = FLB_TRUE;
+        }
+    }
+    if (retry_static) {
+        tail_signal_manager(ctx);
+    }
+    if (retry_event) {
+        tail_signal_pending(ctx);
+    }
 
     mk_list_foreach_safe(head, tmp, &ctx->files_event) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
@@ -350,6 +377,7 @@ int in_tail_collect_event(void *file, struct flb_config *config)
         break;
     case FLB_TAIL_OK:
     case FLB_TAIL_WAIT:
+    case FLB_TAIL_RETRY:
         break;
     }
 
@@ -603,7 +631,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_TIME, "watcher_interval", "2s",
      0, FLB_TRUE, offsetof(struct flb_tail_config, watcher_interval),
-     "interval to check if monitored symbolic link files have been rotated."
+     "interval to check symbolic link rotation and retry transient file read failures."
     },
     {
      FLB_CONFIG_MAP_TIME, "progress_check_interval", "2s",
