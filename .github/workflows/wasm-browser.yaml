@@ -23,6 +23,8 @@ jobs:
         sanitizer: [none, address]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install build prerequisites
         run: sudo apt-get update && sudo apt-get install -y cmake make flex bison perl pkg-config
       - name: Install pinned Emscripten SDK
