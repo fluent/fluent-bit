@@ -3,6 +3,10 @@
 #include <fluent-bit.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_sds.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 #include "flb_tests_runtime.h"
 
 struct test_ctx {
@@ -539,6 +543,94 @@ void flb_test_key_val_eq_not_matched()
     test_ctx_destroy(ctx);
 }
 
+void flb_test_key_exists_all_conditions_checked()
+{
+    int i_ffd;
+    int f_ffd;
+    int o_ffd;
+    int len;
+    int ret;
+    int bytes;
+    int log_fd;
+    FILE *log_fp;
+    size_t log_len;
+    char log_path[] = "/tmp/flb_expect_test_XXXXXX";
+    char log_buf[65536];
+    char *input = "[0, {\"field1\":\"1\"}]";
+    flb_ctx_t *flb;
+
+    log_fd = mkstemp(log_path);
+    if (!TEST_CHECK(log_fd >= 0)) {
+        return;
+    }
+    close(log_fd);
+
+    flb = flb_create();
+    if (!TEST_CHECK(flb != NULL)) {
+        unlink(log_path);
+        return;
+    }
+
+    flb_service_set(flb,
+                    "Flush", "0.200000000",
+                    "Grace", "1",
+                    "Log_Level", "error",
+                    "Log_File", log_path,
+                    NULL);
+
+    i_ffd = flb_input(flb, (char *) "lib", NULL);
+    TEST_CHECK(i_ffd >= 0);
+    flb_input_set(flb, i_ffd, "tag", "test", NULL);
+
+    f_ffd = flb_filter(flb, (char *) "expect", NULL);
+    TEST_CHECK(f_ffd >= 0);
+    ret = flb_filter_set(flb, f_ffd,
+                         "match", "*",
+                         "action", "warn",
+                         "key_exists", "field1",
+                         "key_exists", "field2",
+                         "key_exists", "field3",
+                         "key_exists", "field4",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    o_ffd = flb_output(flb, (char *) "null", NULL);
+    TEST_CHECK(o_ffd >= 0);
+    flb_output_set(flb, o_ffd, "match", "*", NULL);
+
+    ret = flb_start(flb);
+    TEST_CHECK(ret == 0);
+
+    len = strlen(input);
+    bytes = flb_lib_push(flb, i_ffd, input, len);
+    TEST_CHECK(bytes == len);
+    flb_time_msleep(500);
+
+    flb_stop(flb);
+    flb_destroy(flb);
+
+    log_fp = fopen(log_path, "rb");
+    if (!TEST_CHECK(log_fp != NULL)) {
+        unlink(log_path);
+        return;
+    }
+
+    log_len = fread(log_buf, 1, sizeof(log_buf) - 1, log_fp);
+    log_buf[log_len] = '\0';
+    fclose(log_fp);
+    unlink(log_path);
+
+    if (!TEST_CHECK(strstr(log_buf, "key 'field2' not found") != NULL)) {
+        TEST_MSG("missing field2 error in log: %s", log_buf);
+    }
+    if (!TEST_CHECK(strstr(log_buf, "key 'field3' not found") != NULL)) {
+        TEST_MSG("missing field3 error in log: %s", log_buf);
+    }
+    if (!TEST_CHECK(strstr(log_buf, "key 'field4' not found") != NULL)) {
+        TEST_MSG("missing field4 error in log: %s", log_buf);
+    }
+}
+
 
 TEST_LIST = {
     {"key_exists_matched", flb_test_key_exists_matched},
@@ -551,5 +643,6 @@ TEST_LIST = {
     {"key_val_is_not_null_not_matched", flb_test_key_val_is_not_null_not_matched},
     {"key_val_eq_matched", flb_test_key_val_eq_matched},
     {"key_val_eq_not_matched", flb_test_key_val_eq_not_matched},
+    {"key_exists_all_conditions_checked", flb_test_key_exists_all_conditions_checked},
     {NULL, NULL}
 };
