@@ -1208,7 +1208,7 @@ int flb_net_getaddrinfo(const char *node, const char *service, struct addrinfo *
                      flb_net_getaddrinfo_callback, lookup_context);
 
     if (!lookup_context->finished) {
-        if (lookup_context->ares_socket_created) {
+        if (lookup_context->ares_socket_created && timeout > 0) {
             /* Bound both UDP and TCP lookups, including a TCP connection to a
              * DNS server that never completes. Cancellation schedules cleanup
              * and resumes the waiting coroutine.
@@ -1241,6 +1241,10 @@ int flb_net_getaddrinfo(const char *node, const char *service, struct addrinfo *
             else {
                 flb_coro_yield(coroutine, FLB_FALSE);
             }
+        }
+        else if (lookup_context->ares_socket_created) {
+            /* A non-positive connect timeout disables the DNS deadline too. */
+            flb_coro_yield(coroutine, FLB_FALSE);
         }
         else {
             /* Do we want to do anything special for this condition? */
