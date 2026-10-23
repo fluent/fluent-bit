@@ -584,7 +584,9 @@ def test_in_opentelemetry_generated_limit_default(tmp_path, encoding, attributes
         assert generated_lower_bound > 100_000_000
     try:
         service.start()
-        assert service.send_raw_request("/v1/logs", payload, content_type).status_code == expected_status
+        # Expanding over 100 MB of generated data needs more time under Valgrind.
+        assert service.send_raw_request("/v1/logs", payload, content_type,
+                                        timeout=60).status_code == expected_status
         # Large conversion buffers must be cleaned up without poisoning later requests.
         small = generated_limit_payload(1, 1).SerializeToString()
         assert service.send_raw_request("/v1/logs", small).status_code == 201
@@ -710,10 +712,10 @@ class Service:
         print(f'Response text: {response.text}')
         return response
 
-    def send_raw_request(self, endpoint, payload, content_type='application/x-protobuf'):
+    def send_raw_request(self, endpoint, payload, content_type='application/x-protobuf', *, timeout=5):
         url = f'http://localhost:{self.flb_listener_port}{endpoint}'
         headers = {'Content-Type': content_type}
-        return requests.post(url, data=payload, headers=headers, timeout=5)
+        return requests.post(url, data=payload, headers=headers, timeout=timeout)
 
     def send_json_as_otel_protobuf(self, json_input, signal_type):
         base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../tests', 'data_files'))
