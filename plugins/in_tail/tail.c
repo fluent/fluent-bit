@@ -541,6 +541,19 @@ static void in_tail_pause(void *data, struct flb_config *config)
 
     /* Pause file system backend handlers */
     flb_tail_fs_pause(ctx);
+
+#ifdef FLB_HAVE_PARSER
+    if (config->is_shutting_down == FLB_TRUE && ctx->ml_ctx != NULL &&
+        ctx->multiline_shutdown_flushed == FLB_FALSE) {
+        /*
+         * Flush while processors, routes and outputs are still alive. Mark
+         * this first: appending the records can re-enter pause on a buffer
+         * limit, and the engine also pauses inputs again during teardown.
+         */
+        ctx->multiline_shutdown_flushed = FLB_TRUE;
+        flb_ml_flush_pending_now(ctx->ml_ctx);
+    }
+#endif
 }
 
 static void in_tail_resume(void *data, struct flb_config *config)
@@ -862,5 +875,5 @@ struct flb_input_plugin in_tail_plugin = {
     .cb_resume    = in_tail_resume,
     .cb_exit      = in_tail_exit,
     .config_map   = config_map,
-    .flags        = 0
+    .flags        = FLB_INPUT_SHUTDOWN_FLUSH
 };

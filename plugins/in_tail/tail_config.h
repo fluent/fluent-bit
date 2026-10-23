@@ -158,6 +158,7 @@ struct flb_tail_config {
     /* Multiline core engine */
     struct flb_ml *ml_ctx;
     struct mk_list *multiline_parsers;
+    int multiline_shutdown_flushed;
 
     uint64_t files_static_count;   /* number of items in the static file list */
     struct mk_list files_static;
