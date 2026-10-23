@@ -876,9 +876,8 @@ int metrics_map_convert_static_metric(struct cmt_map *map,
 
     /* The static sample preceded dynamic samples before the conversion. */
     cfl_list_add_before(&metric->_head, map->metrics.next, &map->metrics);
-    if (map->last_metric == &map->metric) {
-        map->last_metric = metric;
-    }
+    /* Inserting before the indexed prefix requires indexing from the start. */
+    map->last_metric = NULL;
 
     memset(&map->metric, 0, sizeof(struct cmt_metric));
 
