@@ -405,6 +405,12 @@ foreach(source_file ${CHECK_PROGRAMS})
   endif()
 endforeach()
 
+if(TARGET flb-rt-out_kafka AND NOT KAFKA_FOUND AND WITH_ZSTD)
+  target_compile_definitions(flb-rt-out_kafka PRIVATE FLB_TEST_KAFKA_ZSTD)
+  target_include_directories(flb-rt-out_kafka PRIVATE
+    ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_RDKAFKA}/src)
+endif()
+
 function(flb_runtime_lock_tests resource_name)
   foreach(test_name ${ARGN})
     if (TEST ${test_name})
