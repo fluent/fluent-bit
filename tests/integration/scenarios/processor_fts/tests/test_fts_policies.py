@@ -344,7 +344,7 @@ class PolicyRunner:
             logs.append({"timeUnixNano": "2147483648123456789",
                          "observedTimeUnixNano": "2147483648234567890",
                          "severityNumber": 9, "severityText": "INFO", "flags": 1 if i == 0 else 2,
-                         
+
                          "eventName": "application.event",
                          "droppedAttributesCount": 1 if i == 0 else 2,
                          "traceId": "0102030405060708090a0b0c0d0e0f10", "spanId": "0102030405060708",
