@@ -24,7 +24,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_output_plugin.h>
 
-#include <libpq-fe.h>
+#include "pgsql_libpq.h"
 
 #define FLB_PGSQL_HOST "127.0.0.1"
 #define FLB_PGSQL_PORT 5432
@@ -50,6 +50,8 @@ struct flb_pgsql_conn {
 };
 
 struct flb_pgsql_config {
+
+    struct flb_pgsql_libpq pq;
 
     /* database */
     char *db_hostname;

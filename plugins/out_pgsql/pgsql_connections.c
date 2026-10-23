@@ -26,21 +26,12 @@ void pgsql_destroy_connections(struct flb_pgsql_config *ctx)
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_pgsql_conn *conn;
-    PGresult *res = NULL;
 
+    /* PQfinish also releases pending results owned by the connection. */
     mk_list_foreach_safe(head, tmp, &ctx->conn_queue) {
         conn = mk_list_entry(head, struct flb_pgsql_conn, _head);
-        if (PQstatus(conn->conn) == CONNECTION_OK) {
-            while(PQconsumeInput(conn->conn) == 0) {
-                res = PQgetResult(conn->conn);
-                if (PQresultStatus(res) != PGRES_COMMAND_OK) {
-                    flb_plg_warn(ctx->ins, "%s",
-                                 PQerrorMessage(conn->conn));
-                }
-                PQclear(res);
-            }
-        }
-        PQfinish(conn->conn);
+        ctx->pq.PQfinish(conn->conn);
+        mk_list_del(&conn->_head);
         flb_free(conn);
     }
 }
@@ -55,7 +46,7 @@ void *pgsql_create_connection(struct flb_pgsql_config *ctx)
         return NULL;
     }
 
-    conn->conn = PQsetdbLogin(ctx->db_hostname,
+    conn->conn = ctx->pq.PQsetdbLogin(ctx->db_hostname,
                               ctx->db_port,
                               ctx->conn_options,
                               NULL,
@@ -63,11 +54,11 @@ void *pgsql_create_connection(struct flb_pgsql_config *ctx)
                               ctx->db_user,
                               ctx->db_passwd);
 
-    if (PQstatus(conn->conn) != CONNECTION_OK) {
+    if (ctx->pq.PQstatus(conn->conn) != CONNECTION_OK) {
         flb_plg_error(ctx->ins,
                       "failed connecting to host=%s with error: %s",
-                      ctx->db_hostname, PQerrorMessage(conn->conn));
-        PQfinish(conn->conn);
+                      ctx->db_hostname, ctx->pq.PQerrorMessage(conn->conn));
+        ctx->pq.PQfinish(conn->conn);
         flb_free(conn);
         return NULL;
     }
@@ -75,9 +66,9 @@ void *pgsql_create_connection(struct flb_pgsql_config *ctx)
     flb_plg_info(ctx->ins, "switching postgresql connection "
                  "to non-blocking mode");
 
-    if (PQsetnonblocking(conn->conn, 1) != 0) {
+    if (ctx->pq.PQsetnonblocking(conn->conn, 1) != 0) {
         flb_plg_error(ctx->ins, "non-blocking mode not set");
-        PQfinish(conn->conn);
+        ctx->pq.PQfinish(conn->conn);
         flb_free(conn);
         return NULL;
     }
@@ -98,7 +89,6 @@ int pgsql_start_connections(struct flb_pgsql_config *ctx)
 
         conn = (struct flb_pgsql_conn *)pgsql_create_connection(ctx);
         if (conn == NULL) {
-            pgsql_conf_destroy(ctx);
             return -1;
         }
 
@@ -124,7 +114,6 @@ int pgsql_new_connection(struct flb_pgsql_config *ctx)
 
     conn = (struct flb_pgsql_conn *)pgsql_create_connection(ctx);
     if (conn == NULL) {
-        pgsql_conf_destroy(ctx);
         return -1;
     }
 
@@ -143,15 +132,15 @@ int pgsql_next_connection(struct flb_pgsql_config *ctx)
     struct mk_list *head;
     int ret_conn = 1;
 
-    if (PQconsumeInput(ctx->conn_current->conn) == 1) {
-        if (PQisBusy(ctx->conn_current->conn) == 0) {
-            res = PQgetResult(ctx->conn_current->conn);
-            PQclear(res);
+    if (ctx->pq.PQconsumeInput(ctx->conn_current->conn) == 1) {
+        if (ctx->pq.PQisBusy(ctx->conn_current->conn) == 0) {
+            res = ctx->pq.PQgetResult(ctx->conn_current->conn);
+            ctx->pq.PQclear(res);
         }
     }
     else {
         flb_plg_error(ctx->ins, "%s",
-                      PQerrorMessage(ctx->conn_current->conn));
+                      ctx->pq.PQerrorMessage(ctx->conn_current->conn));
     }
 
     mk_list_foreach(head, &ctx->conn_queue) {
@@ -161,22 +150,22 @@ int pgsql_next_connection(struct flb_pgsql_config *ctx)
             break;
         }
 
-        res = PQgetResult(tmp->conn);
+        res = ctx->pq.PQgetResult(tmp->conn);
 
         if (res == NULL) {
             flb_plg_debug(ctx->ins, "Connection number %d",
                           tmp->number);
             ctx->conn_current = tmp;
-            PQclear(res);
+            ctx->pq.PQclear(res);
             return 0;
         }
 
-        if (PQresultStatus(res) == PGRES_FATAL_ERROR) {
+        if (ctx->pq.PQresultStatus(res) == PGRES_FATAL_ERROR) {
             flb_plg_info(ctx->ins, "%s",
-                         PQerrorMessage(tmp->conn));
+                         ctx->pq.PQerrorMessage(tmp->conn));
         }
 
-        PQclear(res);
+        ctx->pq.PQclear(res);
     }
 
     if (pgsql_new_connection(ctx) == -1) {
