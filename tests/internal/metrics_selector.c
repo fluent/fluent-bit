@@ -10,6 +10,8 @@
 static int fail_merge;
 
 #ifdef FLB_TEST_CMT_CAT_WRAP
+extern struct flb_processor_plugin flb_test_metrics_selector_plugin;
+
 int __real_cmt_cat(struct cmt *destination, struct cmt *source);
 
 int __wrap_cmt_cat(struct cmt *destination, struct cmt *source)
@@ -30,6 +32,7 @@ static void run_selector(int by_label, int incompatible, int no_match)
     struct flb_processor *processor;
     struct flb_processor_unit *unit;
     struct flb_processor_instance *instance;
+    struct flb_processor_plugin *plugin;
     struct cmt *input;
     struct cmt *output;
     struct cmt_counter *first;
@@ -63,8 +66,14 @@ static void run_selector(int by_label, int incompatible, int no_match)
 
     /* Call the plugin directly so the engine cannot hide a stale output. */
     instance = unit->ctx;
+    plugin = instance->p;
+#ifdef FLB_TEST_CMT_CAT_WRAP
+    if (fail_merge) {
+        plugin = &flb_test_metrics_selector_plugin;
+    }
+#endif
     output = input;
-    ret = instance->p->cb_process_metrics(instance, input, &output, "test", 4);
+    ret = plugin->cb_process_metrics(instance, input, &output, "test", 4);
     if (incompatible || fail_merge) {
         TEST_CHECK(ret == FLB_PROCESSOR_FAILURE);
         TEST_CHECK(output == NULL);

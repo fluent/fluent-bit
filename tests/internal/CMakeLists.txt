@@ -373,10 +373,12 @@ endif()
 
 if(FLB_METRICS AND FLB_PROCESSOR_METRICS_SELECTOR AND
    CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
-  # Compile the plugin here so wrapping also works when core tests link the shared library.
+  # A private plugin copy lets fault injection wrap calls when core tests link the shared library.
   target_sources(flb-it-metrics_selector PRIVATE
     ${PROJECT_SOURCE_DIR}/plugins/processor_metrics_selector/selector.c)
-  target_compile_definitions(flb-it-metrics_selector PRIVATE FLB_TEST_CMT_CAT_WRAP)
+  target_compile_definitions(flb-it-metrics_selector PRIVATE
+    FLB_TEST_CMT_CAT_WRAP
+    processor_metrics_selector_plugin=flb_test_metrics_selector_plugin)
   target_link_options(flb-it-metrics_selector PRIVATE "-Wl,--wrap=cmt_cat")
 endif()
 
