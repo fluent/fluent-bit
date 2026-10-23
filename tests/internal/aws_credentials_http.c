@@ -5,6 +5,8 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_aws_util.h>
+#include <fluent-bit/flb_output.h>
 
 #include <monkey/mk_core.h>
 #include <string.h>
@@ -865,6 +867,55 @@ static void test_http_validator_greengrass_invalid_path_prefix()
     flb_free(config);
 }
 
+/*
+ * upstream_set() turns TLS off while it configures the plain-HTTP
+ * credentials upstream. It must give the output instance back its own
+ * 'tls' setting instead of forcing it on.
+ */
+static void test_http_provider_upstream_set_keeps_use_tls()
+{
+    struct flb_aws_provider *http_provider;
+    struct flb_output_instance *ins;
+    struct flb_config *cfg;
+
+    setenv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "/iam_credentials/pod1", 1);
+
+    cfg = flb_config_init();
+    if (!TEST_CHECK(cfg != NULL)) {
+        unsetenv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI");
+        return;
+    }
+
+    http_provider = flb_http_provider_create(cfg, flb_aws_client_generator());
+    if (!TEST_CHECK(http_provider != NULL)) {
+        flb_config_exit(cfg);
+        unsetenv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI");
+        return;
+    }
+
+    ins = flb_output_new(cfg, "null", NULL, FLB_FALSE);
+    if (!TEST_CHECK(ins != NULL)) {
+        flb_aws_provider_destroy(http_provider);
+        flb_config_exit(cfg);
+        unsetenv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI");
+        return;
+    }
+
+    ins->use_tls = FLB_FALSE;
+    http_provider->provider_vtable->upstream_set(http_provider, ins);
+    TEST_CHECK(ins->use_tls == FLB_FALSE);
+
+    ins->use_tls = FLB_TRUE;
+    http_provider->provider_vtable->upstream_set(http_provider, ins);
+    TEST_CHECK(ins->use_tls == FLB_TRUE);
+
+    /* the provider upstream is linked to the instance, destroy it first */
+    flb_aws_provider_destroy(http_provider);
+    flb_output_instance_destroy(ins);
+    flb_config_exit(cfg);
+    unsetenv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI");
+}
+
 TEST_LIST = {
     { "test_http_provider", test_http_provider},
     { "test_http_provider_error_case", test_http_provider_error_case},
@@ -880,5 +931,7 @@ TEST_LIST = {
     { "test_http_validator_greengrass_invalid_host", test_http_validator_greengrass_invalid_host},
     { "test_http_validator_greengrass_invalid_path", test_http_validator_greengrass_invalid_path},
     { "test_http_validator_greengrass_invalid_path_prefix", test_http_validator_greengrass_invalid_path_prefix},
+    { "test_http_provider_upstream_set_keeps_use_tls",
+      test_http_provider_upstream_set_keeps_use_tls},
     { 0 }
 };
