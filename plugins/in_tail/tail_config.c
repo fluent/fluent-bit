@@ -305,6 +305,7 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
 
     mk_list_init(&ctx->files_static);
     mk_list_init(&ctx->files_event);
+    mk_list_init(&ctx->files_retry);
     mk_list_init(&ctx->files_rotated);
 
     /* hash table for files lookups */
