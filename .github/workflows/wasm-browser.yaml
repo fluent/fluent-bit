@@ -3,17 +3,12 @@ name: Browser WebAssembly
 on:
   workflow_dispatch:
   pull_request:
-    paths:
-      - '.emscripten-version'
-      - '.github/workflows/wasm-browser.yaml'
-      - 'CMakeLists.txt'
-      - 'cmake/**'
-      - 'include/**'
-      - 'src/**'
-      - 'lib/**'
-      - 'plugins/**'
-      - 'sdk/browser/**'
-      - 'tests/wasm/**'
+  push:
+    branches: ['**']
+
+concurrency:
+  group: wasm-browser-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -58,6 +53,50 @@ jobs:
           cmake --build build-wasm -j8
           ctest --test-dir build-wasm --output-on-failure
           node --test tests/wasm/sdk_unit_test.mjs tests/wasm/sdk_worker_unit_test.mjs
+      - name: Package experimental browser SDK
+        if: matrix.sanitizer == 'none'
+        shell: bash
+        env:
+          FLB_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          FLB_BUILD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          flb_package="fluent-bit-browser-experimental"
+          mkdir -p "dist/$flb_package"
+          cp -a build-wasm/sdk/browser/. "dist/$flb_package/"
+          test -s "dist/$flb_package/fluent-bit-runtime.wasm"
+          test -s "dist/$flb_package/fluent-bit-runtime.js"
+          python3 - <<'PYTHON'
+          import json
+          import os
+          from pathlib import Path
+          metadata = {
+              "experimental": True,
+              "source_commit": os.environ["FLB_SOURCE_SHA"],
+              "build_commit": os.environ["FLB_BUILD_SHA"],
+              "emscripten": Path(".emscripten-version").read_text().strip(),
+              "sanitizer": "none",
+              "validation": "Build, CTest and SDK unit tests passed; browser job status is separate",
+              "requirements": "HTTPS and cross-origin isolation (COOP/COEP)"
+          }
+          Path("dist/fluent-bit-browser-experimental/build-info.json").write_text(
+              json.dumps(metadata, indent=2) + "\n")
+          PYTHON
+          (cd "dist/$flb_package" && sha256sum -- *.js *.wasm *.d.ts package.json \
+            README.md LICENSE build-info.json > SHA256SUMS)
+          tar -czf "dist/$flb_package.tar.gz" -C dist "$flb_package"
+          (cd dist && sha256sum "$flb_package.tar.gz" > "$flb_package.tar.gz.sha256")
+      - name: Upload experimental browser SDK
+        if: matrix.sanitizer == 'none'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fluent-bit-browser-experimental-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            dist/fluent-bit-browser-experimental.tar.gz
+            dist/fluent-bit-browser-experimental.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
       - name: Test browser lifecycle and startup failures
         shell: bash
         run: |
