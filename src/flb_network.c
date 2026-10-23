@@ -71,14 +71,12 @@ struct flb_dns_lookup_context {
     struct mk_event              response_event;                  /* c-ares socket event */
     int                          ares_socket_registered;
     struct ares_socket_functions ares_socket_functions;
-    int                         *udp_timeout_detected;
     int                          ares_socket_created;
-    int                          ares_socket_type;
     void                        *ares_channel;
     int                         *result_code;
     struct mk_event_loop        *event_loop;
     struct flb_coro             *coroutine;
-    struct flb_sched_timer      *udp_timer;
+    struct flb_sched_timer      *dns_timer;
     int                          finished;
     int                          dropped;
     struct flb_net_dns          *dns_ctx;
@@ -694,11 +692,11 @@ static void flb_net_dns_lookup_context_drop(struct flb_dns_lookup_context *looku
         mk_list_del(&lookup_context->_head);
         mk_list_add(&lookup_context->_head, &lookup_context->dns_ctx->lookups_drop);
 
-        if (lookup_context->udp_timer != NULL &&
-            lookup_context->udp_timer->active) {
-            flb_sched_timer_invalidate(lookup_context->udp_timer);
+        if (lookup_context->dns_timer != NULL &&
+            lookup_context->dns_timer->active) {
+            flb_sched_timer_invalidate(lookup_context->dns_timer);
 
-            lookup_context->udp_timer = NULL;
+            lookup_context->dns_timer = NULL;
         }
     }
 }
@@ -943,13 +941,12 @@ static void flb_net_getaddrinfo_timeout_handler(struct flb_config *config, void 
         return;
     }
 
-    *(lookup_context->udp_timeout_detected) = FLB_TRUE;
     lookup_context->finished = FLB_TRUE;
-    lookup_context->udp_timer = NULL;
+    lookup_context->dns_timer = NULL;
 
-    /* We deliverately set udp_timer because we don't want flb_net_dns_lookup_context_drop
-     * to call flb_sched_timer_invalidate on the timer which was already disabled and
-     * is about to be destroyed after this this callback returns.
+    /* Clear dns_timer so flb_net_dns_lookup_context_drop does not invalidate
+     * the timer which was already disabled and will be destroyed after this
+     * callback returns.
      */
 
     ares_cancel(lookup_context->ares_channel);
@@ -996,7 +993,6 @@ static ares_socket_t flb_dns_ares_socket(int af, int type, int protocol, void *u
         return -1;
     }
 
-    lookup_context->ares_socket_type       = type;
     lookup_context->ares_socket_created    = FLB_TRUE;
 
     lookup_context->response_event.mask    = MK_EVENT_EMPTY;
@@ -1121,7 +1117,7 @@ static struct flb_dns_lookup_context *flb_net_dns_lookup_context_create(
     lookup_context->ares_socket_functions.asendv = flb_dns_ares_send;
     lookup_context->ares_socket_created = 0;
     lookup_context->event_loop = evl;
-    lookup_context->udp_timer = NULL;
+    lookup_context->dns_timer = NULL;
     lookup_context->coroutine = coroutine;
     lookup_context->finished = 0;
     lookup_context->dropped = 0;
@@ -1141,7 +1137,6 @@ static struct flb_dns_lookup_context *flb_net_dns_lookup_context_create(
 int flb_net_getaddrinfo(const char *node, const char *service, struct addrinfo *hints,
                         struct addrinfo **res, char *dns_mode_textual, int timeout)
 {
-    int                            udp_timeout_detected;
     struct flb_dns_lookup_context *lookup_context;
     int                            errno_backup;
     int                            result_code;
@@ -1179,7 +1174,6 @@ int flb_net_getaddrinfo(const char *node, const char *service, struct addrinfo *
         return result;
     }
 
-    lookup_context->udp_timeout_detected = &udp_timeout_detected;
     lookup_context->result_code = &result_code;
     lookup_context->result = &result_data;
 
@@ -1190,7 +1184,6 @@ int flb_net_getaddrinfo(const char *node, const char *service, struct addrinfo *
      */
     result_code = ARES_ESERVFAIL;
     result_data = NULL;
-    udp_timeout_detected = 0;
 
     /* The timeout we get is expressed in seconds so we need to convert it to
      * milliseconds
@@ -1216,36 +1209,34 @@ int flb_net_getaddrinfo(const char *node, const char *service, struct addrinfo *
 
     if (!lookup_context->finished) {
         if (lookup_context->ares_socket_created) {
-            if (lookup_context->ares_socket_type == SOCK_DGRAM) {
-                /* If the socket type created by c-ares is UDP then we need to create our
-                 * own timeout mechanism before yielding and cancel it if things go as
-                 * expected.
+            /* Bound both UDP and TCP lookups, including a TCP connection to a
+             * DNS server that never completes. Cancellation schedules cleanup
+             * and resumes the waiting coroutine.
+             */
+            sched = flb_sched_ctx_get();
+            assert(sched != NULL);
+
+            result = flb_sched_timer_cb_create(sched, FLB_SCHED_TIMER_CB_ONESHOT,
+                                               timeout,
+                                               flb_net_getaddrinfo_timeout_handler,
+                                               lookup_context,
+                                               &lookup_context->dns_timer);
+            if (result == -1) {
+                /* Timer creation failed, it happen because of file descriptor or memory
+                 * exhaustion (ulimits usually)
                  */
 
-                sched = flb_sched_ctx_get();
-                assert(sched != NULL);
+                /* Cancellation invokes the callback synchronously. Preserve the
+                 * allocation error instead of replacing it with ARES_ECANCELLED.
+                 */
+                lookup_context->finished = FLB_TRUE;
+                result_code = ARES_ENOMEM;
 
-                result = flb_sched_timer_cb_create(sched, FLB_SCHED_TIMER_CB_ONESHOT,
-                                                   timeout,
-                                                   flb_net_getaddrinfo_timeout_handler,
-                                                   lookup_context,
-                                                   &lookup_context->udp_timer);
-                if (result == -1) {
-                    /* Timer creation failed, it happen because of file descriptor or memory
-                     * exhaustion (ulimits usually)
-                     */
+                ares_cancel(lookup_context->ares_channel);
 
-                    result_code = ARES_ENOMEM;
+                lookup_context->coroutine = NULL;
 
-                    ares_cancel(lookup_context->ares_channel);
-
-                    lookup_context->coroutine = NULL;
-
-                    flb_net_dns_lookup_context_drop(lookup_context);
-                }
-                else {
-                    flb_coro_yield(coroutine, FLB_FALSE);
-                }
+                flb_net_dns_lookup_context_drop(lookup_context);
             }
             else {
                 flb_coro_yield(coroutine, FLB_FALSE);
