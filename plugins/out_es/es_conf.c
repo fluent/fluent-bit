@@ -163,6 +163,8 @@ static int flb_es_node_ctx_aws_init(struct flb_es_node_ctx *node_ctx,
         flb_errno();
         return -1;
     }
+    flb_tls_set_verify_hostname(node_ctx->aws_tls,
+                                ins->tls_verify_hostname || node->tls_verify_hostname);
 
     provider = flb_standard_chain_provider_create(config,
                                                   node_ctx->aws_tls,
@@ -205,6 +207,8 @@ static int flb_es_node_ctx_aws_init(struct flb_es_node_ctx *node_ctx,
             flb_errno();
             return -1;
         }
+        flb_tls_set_verify_hostname(node_ctx->aws_sts_tls,
+                                    ins->tls_verify_hostname || node->tls_verify_hostname);
 
         provider = flb_sts_provider_create(config,
                                            node_ctx->aws_sts_tls,
@@ -759,6 +763,7 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
                 flb_es_conf_destroy(ctx);
                 return NULL;
             }
+            flb_tls_set_verify_hostname(ctx->aws_tls, ins->tls_verify_hostname);
 
             tmp = flb_output_get_property("aws_region", ins);
             if (!tmp) {
@@ -820,6 +825,7 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
                     flb_es_conf_destroy(ctx);
                     return NULL;
                 }
+                flb_tls_set_verify_hostname(ctx->aws_sts_tls, ins->tls_verify_hostname);
 
                 ctx->aws_provider = flb_sts_provider_create(config,
                                                             ctx->aws_sts_tls,

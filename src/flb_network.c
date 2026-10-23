@@ -1216,7 +1216,7 @@ int flb_net_getaddrinfo(const char *node, const char *service, struct addrinfo *
 
     if (!lookup_context->finished) {
         if (lookup_context->ares_socket_created) {
-            if (lookup_context->ares_socket_type == SOCK_DGRAM) {
+            if (lookup_context->ares_socket_type == SOCK_DGRAM && timeout > 0) {
                 /* If the socket type created by c-ares is UDP then we need to create our
                  * own timeout mechanism before yielding and cancel it if things go as
                  * expected.

@@ -2284,6 +2284,7 @@ int flb_kube_pod_association_init(struct flb_kube *ctx, struct flb_config *confi
         flb_plg_error(ctx->ins, "[kube_meta] could not create TLS config for pod association host");
         return -1;
     }
+    flb_tls_set_verify_hostname(ctx->aws_pod_association_tls, ctx->tls_verify_hostname);
     ctx->aws_pod_association_upstream = flb_upstream_create(config,
                                                         ctx->aws_pod_association_host,
                                                         ctx->aws_pod_association_port,
