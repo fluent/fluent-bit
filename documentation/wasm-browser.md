@@ -306,18 +306,22 @@ whose `level` is `info`, and displays JSON lines beside the editor.
 4. Press **Stop**, or wait for the duration to expire. Then edit and start again.
    **Reset example** restores the supplied configuration.
 
-Config edits do not require recompilation. YAML is sent directly to a fresh
-browser runtime, written to its temporary `/demo.yaml`, and loaded by the C
-configuration parser. It is not uploaded to the server or saved across page
-reloads. Each run gets an ephemeral filesystem, even if YAML requests filesystem
-storage; only the dedicated storage test checkpoints IndexedDB. This editor does
-not upload additional parser/include/data files.
+Config edits do not require recompilation. The demo passes YAML to
+`demoClient.start()`, which writes `/config/.fluent-bit-sdk.yaml` in the runtime's
+virtual filesystem and loads it through the C configuration parser. Configuration
+is not uploaded to the server or persisted across page reloads. The demo uses
+nonpersistent SDK storage; its virtual filesystem remains available while the
+runtime is retained. This editor does not upload additional parser/include/data
+files; embedding applications can supply assets through the SDK's `writeFile()`.
 
 The maximum configuration size is 64 KiB of UTF-8 and the duration is 1–300
-whole seconds. Stop signals an atomic flag; engine shutdown and worker joins
-stay on the C worker. The demo overrides `service.grace` to one second, then
-destroys the engine and its frame. A shutdown watchdog reports failure if that
-does not complete within 15 seconds; startup has a 45-second watchdog.
+whole seconds. **Stop** and automatic stop call `demoClient.stop()`, which stops
+the engine with a one-second grace period and preserves the initialized runtime
+and workers for the next Start. **Release runtime** calls `demoClient.destroy()`
+and releases the runtime and workers; the next Start creates a fresh instance.
+Startup has a 45-second overall deadline. SDK initialization and operations,
+including Stop, default to 45 seconds; destroy defaults to 15 seconds. See the
+[SDK lifecycle and deadlines](../sdk/browser/README.md) for timeout semantics.
 Config changes apply on the next Start, not to an already running pipeline.
 Malformed YAML and unavailable plugins appear as failures in the output, and
 the editor remains available for correction and retry.
@@ -369,9 +373,9 @@ favor of the browser's value. Never embed production secrets in a public demo pa
 Per-record `body_key`/`headers_key` now follow the unchanged HTTP plugin path.
 OAuth2 token acquisition, proxies, read-idle
 timeouts and output workers are unsupported. Keep `workers: 0` (the browser
-default); explicit response timeouts are bounded to 1–120 seconds. An unset or
-zero client timeout selects a 30-second default; a smaller positive `net.io_timeout`
-also limits the request. Separate connect/read-idle deadlines are not emulated.
+default); explicit response timeouts above 120 seconds are capped to 120;
+negative timeouts are rejected. An unset or zero client timeout selects a
+30-second default; a smaller positive `net.io_timeout` also limits the request. Separate connect/read-idle deadlines are not emulated.
 
 The bridge bounds requests to 8 MiB, response bodies to 64 KiB, headers to 128 pairs /
 64 KiB, and outstanding requests to 32. The existing client's response-buffer
@@ -658,7 +662,8 @@ passes direct Valgrind execution with zero errors and no remaining allocations.
 The separate YAML and filter acceptance buttons also use ephemeral virtual
 filesystems. The collapsed acceptance-test YAML fixture is read-only and embedded
 in `flb-wasm-yaml`: rebuild that target after editing its fixture on disk.
-There is no JavaScript record-ingestion API yet. Expected malformed
+The separate SDK provides JSON log ingestion through `push()`; these fixed
+acceptance buttons exercise their embedded fixtures. Expected malformed
 YAML errors appear before the valid YAML test; the final status determines
 whether the test passed. Missing binaries produce an actionable error.
 
@@ -1039,17 +1044,20 @@ VALGRIND=1 VALGRIND_STRICT=1 tests/integration/.venv/bin/python -m pytest \
 ## Next milestones
 
 1. Resolve sanitizer/fiber lifecycle support.
-2. Expose an asynchronous JavaScript API for configure, push, output delivery
-   and stop/destroy, with bounded queues and explicit buffer ownership.
+2. Harden the implemented asynchronous SDK for configure, JSON log ingestion,
+   stop/destroy, bounded queues and explicit buffer ownership. Input acceptance
+   is not an output delivery acknowledgement; delivery observability remains open.
 3. Validate emitters, multiline, processors, retries, other signals, failure
    cleanup and longer-running workloads.
 4. Validate additional HTTP-based outputs against the shared Fetch backend;
    both client APIs and HTTP/Loki/OTLP outputs are now available.
-5. Extend IndexedDB durability/backlog validation, cross-browser support, packaging and CI.
+5. Extend IndexedDB durability/backlog and cross-browser validation. Experimental
+   artifact packaging and CI are implemented; production release gates remain.
 
 The pthread ABI requires SharedArrayBuffer and cross-origin isolation.
 There is no single-thread fallback. Browser suspension, memory limits and
-cancellation still need lifecycle design before an embedding API is published.
+cancellation still need further validation. The SDK remains private, experimental
+and unpublished; the CI artifacts are not a production release.
 
 ## Platform references
 
