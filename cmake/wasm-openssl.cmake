@@ -8,8 +8,8 @@ file(MAKE_DIRECTORY "${FLB_WASM_CRYPTO_PREFIX}/include")
 
 ExternalProject_Add(flb-wasm-openssl
   EXCLUDE_FROM_ALL TRUE
-  URL https://github.com/openssl/openssl/releases/download/openssl-3.5.8/openssl-3.5.8.tar.gz
-  URL_HASH SHA256=a8f84a39918ec6415ce765d9b429d313ba97b8143169c172e734b9514464f5b2
+  URL https://github.com/openssl/openssl/releases/download/openssl-3.5.9/openssl-3.5.9.tar.gz
+  URL_HASH SHA256=603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a
   PREFIX "${CMAKE_BINARY_DIR}/wasm-openssl"
   CONFIGURE_COMMAND ${CMAKE_COMMAND} -E env
     "CC=${CMAKE_C_COMPILER}" "AR=${CMAKE_AR}" "RANLIB=${CMAKE_RANLIB}"
