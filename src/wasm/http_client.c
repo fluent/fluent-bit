@@ -187,8 +187,11 @@ static int browser_execute(struct flb_http_client *c, size_t *bytes, const char 
     if (c->request_net_setup.io_timeout > 0 && c->request_net_setup.io_timeout < timeout) {
         timeout = c->request_net_setup.io_timeout;
     }
-    if (timeout < 1 || timeout > 120) {
+    if (timeout < 1) {
         return -1;
+    }
+    if (timeout > 120) {
+        timeout = 120;
     }
     if (u->browser_url) {
         url = flb_sds_create(u->browser_url);
