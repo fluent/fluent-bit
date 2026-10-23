@@ -78,6 +78,12 @@
 #define FLB_OCI_MATCH_PREFIX "oci_match_"
 #define FLB_OCI_MATCH_PREFIX_SIZE sizeof(FLB_OCI_MATCH_PREFIX)-1
 
+#define FLB_OCI_LOG_TIMEZONE_KEY "oci_la_timezone"
+#define FLB_OCI_LOG_TIMEZONE_KEY_SIZE sizeof(FLB_OCI_LOG_TIMEZONE_KEY) - 1
+
+#define FLB_OCI_LOG_TIMEZONE "timezone"
+#define FLB_OCI_LOG_TIMEZONE_SIZE sizeof(FLB_OCI_LOG_TIMEZONE) - 1
+
 #ifdef FLB_HAVE_REGEX
 #define FLB_OCI_MATCH_REGEX_PREFIX "oci_match_regex_"
 #define FLB_OCI_MATCH_REGEX_PREFIX_SIZE sizeof(FLB_OCI_MATCH_REGEX_PREFIX)-1
@@ -97,7 +103,7 @@
 #define FLB_OCI_PARAM_INCLUDE_COLLECT_TIME "include_collect_time"
 #define FLB_OCI_PARAM_INCLUDE_COLLECT_TIME_SIZE sizeof(FLB_OCI_PARAM_INCLUDE_COLLECT_TIME)-1
 
-#define FLB_OCI_MATCH_ID_MAX 1000 // TO avoid too large memory allocation
+#define FLB_OCI_MATCH_ID_MAX 1000       // TO avoid too large memory allocation
 
 #define FLB_OCI_DEFAULT_COLLECT_TIME       "oci_collect_time"
 #define FLB_OCI_DEFAULT_COLLECT_TIME_SIZE sizeof(FLB_OCI_DEFAULT_COLLECT_TIME)-1
@@ -150,13 +156,53 @@
 #define FLB_OCI_ERROR_CODE_TOO_MANY_REQUESTS               "TooManyRequests"
 #define FLB_OCI_ERROR_CODE_INTERNAL_SERVER_ERROR           "InternalServerError"
 
+/* for imds request*/
+#define ORACLE_IMDS_HOST "169.254.169.254"
+#define ORACLE_IMDS_BASE_URL "/opc/v2"
+#define ORACLE_IMDS_REGION_PATH "/instance/region"
+#define ORACLE_IMDS_LEAF_CERT_PATH "/identity/cert.pem"
+#define ORACLE_IMDS_LEAF_KEY_PATH "/identity/key.pem"
+#define ORACLE_IMDS_INTERMEDIATE_CERT_PATH "/identity/intermediate.pem"
+#define ORACLE_AUTH_HEADER "Authorization: Bearer Oracle"
+#define ORACLE_IMDS_TOKEN_PATH "/opc/v2/instancePrincipal/token"
+
+
+#define COUNT_OF_REGION (sizeof(region_mappings) / sizeof(region_mappings[0]) - 1)
+
+/* for chunking */
+#define MAX_PAYLOAD_SIZE_BYTES (3800000)        // 3.8 mb
+
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_hash_table.h>
+#include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_upstream.h>
+#include <fluent-bit/flb_upstream_conn.h>
+#include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_hash_table.h>
+#include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_crypto.h>
+#include <fluent-bit/flb_base64.h>
+#include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_sds.h>
 #include <monkey/mk_core/mk_list.h>
+#include <fluent-bit/flb_jsmn.h>
+#include <openssl/evp.h>
+#include <openssl/pem.h>
+#include <openssl/bio.h>
+#include <openssl/buffer.h>
+#include <openssl/opensslv.h>
+#include <openssl/err.h>
+#include <openssl/x509v3.h>
+#include <openssl/x509.h>
+#include <openssl/rsa.h>
+#include <msgpack.h>
+#include <string.h>
 
-struct metadata_obj {
+struct metadata_obj
+{
     flb_sds_t key;
     flb_sds_t val;
     struct mk_list _head;
@@ -165,23 +211,65 @@ struct metadata_obj {
 
 struct flb_oci_error_response
 {
-  flb_sds_t code;
-  flb_sds_t message;
+    flb_sds_t code;
+    flb_sds_t message;
 };
 
-struct flb_oci_logan {
+struct flb_oracle_imds
+{
+    flb_sds_t region;
+    flb_sds_t leaf_cert;
+    flb_sds_t leaf_key;
+    flb_sds_t intermediate_cert;
+    flb_sds_t tenancy_ocid;
+    flb_sds_t fingerprint;
+    flb_sds_t session_pubkey;
+    flb_sds_t session_privkey;
+    struct flb_upstream *upstream;
+    struct flb_output_instance *ins;
+};
+
+struct oci_security_token
+{
+    flb_sds_t token;
+    time_t expires_at;
+    flb_sds_t session_privkey;
+};
+
+typedef struct
+{
+    const char *region;
+    const char *realm;
+} region_realm_mapping_t;
+
+typedef struct
+{
+    const char *short_name;
+    const char *long_name;
+} region_mapping_t;
+
+typedef struct
+{
+    const char *realm_code;
+    const char *domain_suffix;
+} realm_mapping_t;
+
+struct flb_oci_logan
+{
     flb_sds_t namespace;
     flb_sds_t config_file_location;
     flb_sds_t profile_name;
     int oci_config_in_record;
     flb_sds_t uri;
 
+    char *domain_suffix;
     struct flb_upstream *u;
     flb_sds_t proxy;
     char *proxy_host;
     int proxy_port;
 
     // oci_la_* configs
+
     flb_sds_t oci_la_entity_id;
 
     flb_sds_t oci_la_entity_type;
@@ -194,22 +282,37 @@ struct flb_oci_logan {
 
     flb_sds_t oci_la_log_set_id;
 
+    flb_sds_t oci_la_timezone;
+
     struct mk_list *oci_la_global_metadata;
     struct mk_list global_metadata_fields;
     struct mk_list *oci_la_metadata;
     struct mk_list log_event_metadata_fields;
 
-  // config_file
+    // config_file
     flb_sds_t user;
     flb_sds_t region;
     flb_sds_t tenancy;
     flb_sds_t key_fingerprint;
     flb_sds_t key_file;
     /* For OCI signing */
-    flb_sds_t key_id; // tenancy/user/key_fingerprint
+    flb_sds_t key_id;           // tenancy/user/key_fingerprint
     flb_sds_t private_key;
-
     struct flb_output_instance *ins;
 
+    // instance prinicipal auth
+    struct flb_oracle_imds imds;
+    EVP_PKEY *session_key_pair;
+    struct oci_security_token security_token;
+    char *auth_type;
+
+    // dump payload
+    char *payload_files_location;
+    bool dump_payload_file;
 };
+
+int is_valid_timezone(const char *log_timezone);
+const char *get_domain_suffix_for_realm(const char *realm);
+const char *determine_realm_from_region(const char *region);
+const char *long_region_name(char *short_region_name);
 #endif
