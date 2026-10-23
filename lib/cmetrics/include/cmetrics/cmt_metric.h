@@ -75,6 +75,9 @@ struct cmt_metric {
     int hash_indexed;
     struct cmt_map *map;
     struct cfl_list _hash_head;
+
+    /* Owned OTLP datapoint metadata; independent of string label identity. */
+    struct cfl_kvlist *otlp_metadata;
 };
 
 struct cmt_exp_histogram_snapshot {
@@ -135,6 +138,18 @@ void cmt_metric_hist_set(struct cmt_metric *metric, uint64_t timestamp,
                          int bucket_id, double val);
 
 uint64_t cmt_metric_hist_get_value(struct cmt_metric *metric, int bucket_id);
+
+/* Convert cumulative native buckets without unsigned underflow. */
+static inline uint64_t cmt_metric_hist_get_bucket_count(struct cmt_metric *metric, int bucket_id)
+{
+    uint64_t current;
+    uint64_t previous;
+
+    current = cmt_metric_hist_get_value(metric, bucket_id);
+    previous = bucket_id == 0 ? 0 : cmt_metric_hist_get_value(metric, bucket_id - 1);
+    return current >= previous ? current - previous : 0;
+}
+
 
 double cmt_metric_hist_get_sum_value(struct cmt_metric *metric);
 

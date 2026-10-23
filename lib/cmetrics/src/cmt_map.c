@@ -46,6 +46,8 @@ static void metric_release_storage(struct cmt_metric *metric)
     free(metric->exp_hist_positive_buckets);
     free(metric->exp_hist_negative_buckets);
     free(metric->sum_quantiles);
+    cfl_kvlist_destroy(metric->otlp_metadata);
+    metric->otlp_metadata = NULL;
 
     metric->hist_buckets = NULL;
     metric->exp_hist_positive_buckets = NULL;
@@ -236,6 +238,8 @@ static struct cmt_metric *metric_prepare_storage(struct cmt_map *map,
 static struct cmt_metric *metric_hash_lookup(struct cmt_map *map, uint64_t hash,
                                              int labels_count, char **labels_val)
 {
+    int indexed_prefix = CMT_TRUE;
+    struct cmt_metric *match = NULL;
     struct cfl_list *head;
     struct cmt_metric *metric;
 
@@ -260,18 +264,27 @@ static struct cmt_metric *metric_hash_lookup(struct cmt_map *map, uint64_t hash,
         }
     }
 
-    /* Decoders can populate the public metric list directly. Search only
-     * entries that have not yet been indexed, then index a successful match. */
-    cfl_list_foreach(head, &map->metrics) {
+    /* Decoders append directly to the public metric list. Index only the
+     * suffix after the known indexed prefix, including nonmatching entries,
+     * so misses do not repeatedly walk every previously indexed metric. */
+    head = map->last_metric != NULL ? map->last_metric->_head.next : map->metrics.next;
+    while (head != &map->metrics) {
         metric = cfl_list_entry(head, struct cmt_metric, _head);
-        if (!metric->hash_indexed && metric->hash == hash &&
+        head = head->next;
+        metric_index_add(map, metric);
+        if (!metric->hash_indexed) {
+            indexed_prefix = CMT_FALSE;
+        }
+        if (indexed_prefix) {
+            map->last_metric = metric;
+        }
+        if (match == NULL && metric->hash == hash &&
             metric_labels_match(metric, labels_count, labels_val)) {
-            metric_index_add(map, metric);
-            return metric;
+            match = metric;
         }
     }
 
-    return NULL;
+    return match;
 }
 
 static struct cmt_metric *map_metric_create(struct cmt_map *map, uint64_t hash,
@@ -451,7 +464,12 @@ static struct cmt_metric *map_metric_get_unlocked(struct cmt_opts *opts,
     }
     cfl_list_add(&metric->_head, &map->metrics);
     metric_index_add(map, metric);
-    map->last_metric = metric;
+    /* Do not skip an unindexed entry if allocating the index failed. */
+    if (metric->hash_indexed &&
+        (metric->_head.prev == &map->metrics ||
+         (map->last_metric != NULL && metric->_head.prev == &map->last_metric->_head))) {
+        map->last_metric = metric;
+    }
     return metric_prepare_storage(map, metric, write_op);
 }
 
@@ -506,16 +524,13 @@ void cmt_map_destroy(struct cmt_map *map)
     }
 
     /* histogram and quantile allocation for static metric */
-    if (map->metric_static_set) {
-        metric = &map->metric;
-
-        metric_release_storage(metric);
-    }
+    metric_release_storage(&map->metric);
 
     if (map->unit != NULL) {
         cfl_sds_destroy(map->unit);
     }
 
+    cfl_kvlist_destroy(map->otlp_metadata);
     free(map->metric_buckets);
 
     free(map);
