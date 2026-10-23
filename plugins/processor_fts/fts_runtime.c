@@ -472,4 +472,3 @@ void fts_report_policy_error(struct flb_processor_instance *ins)
 
     cmt_counter_inc(processor->cmt_errors, cfl_time_now(), 5, labels);
 }
-
