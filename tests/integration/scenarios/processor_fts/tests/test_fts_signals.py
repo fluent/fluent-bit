@@ -363,21 +363,28 @@ def test_metric_types_round_trip(signal_runner, kind, transport):
 @pytest.mark.parametrize("kind", ["gauge", "sum", "histogram", "exponentialHistogram", "summary"])
 # OTLP JSON input merges repeated series by labels before FTS runs, like 5.1.
 @pytest.mark.parametrize("transport", ["protobuf"])
-def test_typed_series_keep_independent_metadata(signal_runner, kind, transport):
+@pytest.mark.parametrize("distinct_windows", [False, True],
+                         ids=["ambiguous-native-points", "distinct-windows"])
+def test_typed_series_keep_independent_metadata(signal_runner, kind, transport, distinct_windows):
     if signal_runner.signal != "metrics":
         pytest.skip("metric datapoint semantics")
     points = [copy.deepcopy(metric(kind, "noop")[kind]["dataPoints"][0]) for _ in range(2)]
     points[0]["attributes"].append({"key": "typed", "value": {"intValue": "1"}})
     points[1]["attributes"].append(attr("typed", "1"))
+    if distinct_windows:
+        points[1]["timeUnixNano"] = str(int(points[0]["timeUnixNano"]) + 1)
     if kind != "summary":
         points[0]["flags"], points[1]["flags"] = 7, 3
     _, rows = signal_runner.run("noop", kind, transport, points)
     target = next(item for _, _, item in rows if item["name"] == "noop")
     exported = target[kind]["dataPoints"]
     assert len(exported) == 2
-    assert [attributes(point["attributes"])["typed"] for point in exported] == [1, "1"]
+    # cmetrics 2.3.1 binds sidecars to native identities. Identical native
+    # points cannot safely retain metadata that differs only in attribute type.
+    expected_types = [1, "1"] if distinct_windows else ["1", "1"]
+    assert [attributes(point["attributes"])["typed"] for point in exported] == expected_types
     if kind != "summary":
-        assert [point["flags"] for point in exported] == [7, 3]
+        assert [point.get("flags", 0) for point in exported] == ([7, 3] if distinct_windows else [0, 0])
     assert not any(entry["key"] in {"resource_index", "scope_index", "scope_flat_index"}
                    for entry in target.get("metadata", []))
 
