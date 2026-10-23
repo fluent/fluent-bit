@@ -228,6 +228,10 @@ if(FLB_METRICS AND FLB_PROCESSOR_METRICS_SELECTOR)
   list(APPEND UNIT_TESTS_FILES metrics_selector.c)
 endif()
 
+if(FLB_METRICS AND FLB_PROCESSOR_LABELS)
+  list(APPEND UNIT_TESTS_FILES processor_labels.c)
+endif()
+
 set(UNIT_TESTS_DATA
   data/fips/disabled.cnf
   data/tls/certificate.pem
