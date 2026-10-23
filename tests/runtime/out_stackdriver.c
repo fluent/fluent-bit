@@ -6841,9 +6841,48 @@ static void flb_test_auth_upstream_workers(void)
     }
 }
 
+static void stackdriver_start_with_buffer_size(char *buffer_size)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "global",
+                   "google_service_credentials", SERVICE_CREDENTIALS,
+                   "buffer_size", buffer_size,
+                   NULL);
+
+    /* init must fail instead of falling back to some other limit */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret != 0);
+    flb_destroy(ctx);
+}
+
+void flb_test_buffer_size_invalid()
+{
+    stackdriver_start_with_buffer_size("512zz");
+}
+
+void flb_test_buffer_size_too_small()
+{
+    stackdriver_start_with_buffer_size("1k");
+}
+
 /* Test list */
 TEST_LIST = {
     {"auth_upstream_workers", flb_test_auth_upstream_workers},
+    {"buffer_size_invalid", flb_test_buffer_size_invalid},
+    {"buffer_size_too_small", flb_test_buffer_size_too_small},
     {"severity_multi_entries", flb_test_multi_entries_severity },
     {"resource_global", flb_test_resource_global },
     {"resource_global_custom_prefix", flb_test_resource_global_custom_prefix },
