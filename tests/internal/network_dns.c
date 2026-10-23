@@ -15,6 +15,7 @@
 struct dns_timeout_context {
     char *mode;
     int result;
+    int timeout;
     int done;
     int resumptions;
     struct flb_upstream *upstream;
@@ -39,7 +40,7 @@ static void dns_timeout_coro(void)
     }
     else {
         context->result = flb_net_getaddrinfo("fluent-bit-timeout-test.invalid.", "9200",
-                                            &hints, &result, context->mode, 1);
+                                            &hints, &result, context->mode, context->timeout);
     }
     context->done = FLB_TRUE;
     TEST_CHECK(result == NULL);
@@ -50,7 +51,7 @@ static void dns_timeout_coro(void)
     }
 }
 
-static void test_dns_timeout(char *mode, int upstream_first)
+static void test_dns_timeout(char *mode, int upstream_first, int timeout)
 {
     size_t stack_size;
     time_t limit;
@@ -89,6 +90,7 @@ static void test_dns_timeout(char *mode, int upstream_first)
     flb_sched_ctx_set(sched);
 
     context.mode = mode;
+    context.timeout = timeout;
     if (upstream_first) {
         context.upstream = flb_upstream_create(test_env_config,
                                               "fluent-bit-timeout-test.invalid.",
@@ -119,9 +121,16 @@ static void test_dns_timeout(char *mode, int upstream_first)
             deadline = timer;
         }
     }
-    TEST_ASSERT(deadline != NULL);
-    timeout_callback = deadline->cb;
-    timeout_data = deadline->data;
+    timeout_callback = NULL;
+    timeout_data = NULL;
+    if (timeout > 0) {
+        TEST_ASSERT(deadline != NULL);
+        timeout_callback = deadline->cb;
+        timeout_data = deadline->data;
+    }
+    else {
+        TEST_CHECK(deadline == NULL);
+    }
 
     if (upstream_first) {
         connection = mk_list_entry_first(&context.upstream->queue.busy_queue,
@@ -135,27 +144,36 @@ static void test_dns_timeout(char *mode, int upstream_first)
         TEST_CHECK(mk_list_size(&context.upstream->queue.destroy_queue) == 1);
     }
 
-    /* Dispatch only scheduler events. Pumping the loop also lets timer-based
-     * backends deliver their notifications. Bound the test if the timer fails.
+    /* With a deadline, withhold DNS events to simulate an unresponsive server.
+     * Without one, let the configured resolver complete the .invalid lookup so
+     * the coroutine and lookup context can be cleaned up normally.
      */
     limit = time(NULL) + 5;
     while (!context.done && time(NULL) < limit) {
         mk_event_wait_2(evl, 100);
         mk_event_foreach(event, evl) {
-            if (event->type & FLB_ENGINE_EV_SCHED) {
+            if (timeout <= 0 && event->type == FLB_ENGINE_EV_CUSTOM) {
+                event->handler(event);
+            }
+            else if (event->type & FLB_ENGINE_EV_SCHED) {
                 flb_sched_event_handler(test_env_config, event);
             }
         }
-        if (mk_list_is_empty(&dns.lookups_drop) != 0) {
+        if (timeout_callback != NULL && mk_list_is_empty(&dns.lookups_drop) != 0) {
             /* A late cancellation must be harmless before deferred cleanup. */
             timeout_callback(test_env_config, timeout_data);
         }
         flb_net_dns_lookup_context_cleanup(&dns);
         flb_time_msleep(10);
     }
-    TEST_CHECK(context.done == FLB_TRUE);
+    TEST_ASSERT(context.done == FLB_TRUE);
     if (!upstream_first) {
-        TEST_CHECK(context.result == ARES_ETIMEOUT);
+        if (timeout > 0) {
+            TEST_CHECK(context.result == ARES_ETIMEOUT);
+        }
+        else {
+            TEST_CHECK(context.result != ARES_ETIMEOUT);
+        }
     }
     else {
         flb_upstream_conn_pending_destroy(context.upstream);
@@ -182,20 +200,26 @@ static void test_dns_timeout(char *mode, int upstream_first)
 
 static void test_tcp_dns_timeout(void)
 {
-    test_dns_timeout("TCP", FLB_FALSE);
+    test_dns_timeout("TCP", FLB_FALSE, 1);
 }
 
 static void test_udp_dns_timeout(void)
 {
-    test_dns_timeout("UDP", FLB_FALSE);
+    test_dns_timeout("UDP", FLB_FALSE, 1);
 }
 
 static void test_upstream_timeout_before_dns(void)
 {
-    test_dns_timeout("TCP", FLB_TRUE);
+    test_dns_timeout("TCP", FLB_TRUE, 1);
+}
+
+static void test_tcp_dns_timeout_disabled(void)
+{
+    test_dns_timeout("TCP", FLB_FALSE, 0);
 }
 
 TEST_LIST = {
+    { "tcp_dns_timeout_disabled", test_tcp_dns_timeout_disabled},
     { "upstream_timeout_before_dns", test_upstream_timeout_before_dns},
     { "tcp_dns_timeout", test_tcp_dns_timeout},
     { "udp_dns_timeout", test_udp_dns_timeout},
