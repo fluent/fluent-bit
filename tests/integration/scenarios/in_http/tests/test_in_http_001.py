@@ -873,3 +873,105 @@ class Service:
 
     def stop(self):
         self.service.stop()
+
+
+@pytest.mark.parametrize("size,status", [(8191, 201), (8192, 201), (8193, 413)])
+def test_in_http_inflation_size_boundary(size, status):
+    import gzip
+    import random
+    import string
+
+    # Moderate compression keeps the wire body below the 8192-byte request limit.
+    rng = random.Random(42)
+    payload = json.dumps({"message": "".join(rng.choices(string.ascii_letters, k=size - 15))}).encode()
+    assert len(payload) == size
+    service = Service("in_http_inflation.yaml")
+    service.start()
+    try:
+        connection = create_connection("127.0.0.1", service.flb_listener_port)
+        connection.request("POST", "/", gzip.compress(payload),
+                           {"Content-Type": "application/json", "Content-Encoding": "gzip"})
+        response = connection.getresponse()
+        response.read()
+        assert response.status == status
+        # A rejected request must not poison a keep-alive connection.
+        post_json(connection, "still alive")
+        connection.close()
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("size,status", [(4000, 201), (8192, 201), (8193, 413)])
+@pytest.mark.parametrize("oauth", [False, True])
+def test_in_http_inflation_high_compression_and_auth(size, status, oauth):
+    import gzip
+
+    service = Service("in_http_oauth2.yaml" if oauth else "in_http_inflation.yaml")
+    service.start()
+    try:
+        connection = create_connection("127.0.0.1", service.flb_listener_port)
+        body = json.dumps({"message": "x" * (size - 15)}).encode()
+        assert len(body) == size
+        payload = gzip.compress(body)
+        assert len(body) > len(payload) * 8
+        if oauth:
+            status = 401
+        connection.request("POST", "/", payload,
+                           {"Content-Type": "application/json", "Content-Encoding": "gzip"})
+        response = connection.getresponse()
+        response.read()
+        assert response.status == status
+        connection.close()
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("encoding,body,status", [
+    ("gzip", b"invalid gzip", 400),
+    ("snappy", b"\x80\x80\x80\x80\x01", 413),
+    # A valid zstd RLE frame declaring a 64K output, with only one data byte.
+    ("zstd", b"\x28\xb5\x2f\xfd\xa0\x00\x00\x01\x00\x03\x00\x08x", 413),
+])
+@pytest.mark.parametrize("http_mode", ["http1.1", "http2-prior-knowledge"])
+@pytest.mark.parametrize("oauth", [False, True])
+def test_in_http_inflation_rejection(encoding, body, status, http_mode, oauth):
+    service = Service("in_http_oauth2.yaml" if oauth else "in_http_inflation.yaml")
+    if oauth:
+        status = 401
+    service.start()
+    try:
+        if http_mode == "http1.1":
+            result = run_curl_request(
+                f"http://localhost:{service.flb_listener_port}/", body,
+                headers=["Content-Type: application/json", f"Content-Encoding: {encoding}"],
+                http_mode=http_mode,
+            )
+            assert result["status_code"] == status
+        else:
+            import h2.config
+            import h2.connection
+            import h2.events
+
+            client = h2.connection.H2Connection(
+                config=h2.config.H2Configuration(client_side=True, header_encoding="ascii")
+            )
+            with socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=5) as conn:
+                client.initiate_connection()
+                client.send_headers(1, [
+                    (":method", "POST"), (":scheme", "http"),
+                    (":authority", "localhost"), (":path", "/"),
+                    ("content-type", "application/json"), ("content-encoding", encoding),
+                ])
+                client.send_data(1, body, end_stream=True)
+                conn.sendall(client.data_to_send())
+                response_status = None
+                while response_status is None:
+                    data = conn.recv(65535)
+                    assert data, "HTTP/2 connection closed before the response"
+                    for event in client.receive_data(data):
+                        if isinstance(event, h2.events.ResponseReceived):
+                            response_status = int(dict(event.headers)[":status"])
+                    conn.sendall(client.data_to_send())
+                assert response_status == status
+    finally:
+        service.stop()

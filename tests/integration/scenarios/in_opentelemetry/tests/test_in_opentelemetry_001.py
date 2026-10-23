@@ -1639,7 +1639,8 @@ def test_in_opentelemetry_stdout_otlp_json_pretty_traces():
 
 
 @pytest.mark.parametrize("case", PROTOCOL_CASES, ids=[case["id"] for case in PROTOCOL_CASES])
-def test_in_opentelemetry_oauth2_requires_bearer_token(case):
+@pytest.mark.parametrize("compressed", [False, True])
+def test_in_opentelemetry_oauth2_requires_bearer_token(case, compressed):
     service = Service(
         IN_OPENTELEMETRY_OAUTH2_PROTOCOL_CONFIGS[case["config_key"]],
         use_auth_server=True,
@@ -1648,10 +1649,15 @@ def test_in_opentelemetry_oauth2_requires_bearer_token(case):
 
     scheme = "https" if case["use_tls"] else "http"
     payload = service.build_otel_payload("test_logs_001.in.json", "logs")
+    headers = ["Content-Type: application/x-protobuf"]
+    if compressed:
+        # Invalid compressed data would return 400 if inflation preceded authentication.
+        payload = b"invalid gzip"
+        headers.append("Content-Encoding: gzip")
     result = run_curl_request(
         f"{scheme}://localhost:{service.flb_listener_port}/v1/logs",
         payload,
-        headers=["Content-Type: application/x-protobuf"],
+        headers=headers,
         http_mode=case["http_mode"],
         ca_cert_path=service.tls_crt_file if case["use_tls"] else None,
     )
