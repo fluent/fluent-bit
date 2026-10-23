@@ -119,16 +119,35 @@ int flb_input_chunk_write_at(void *data, off_t offset,
 int flb_input_chunk_append_obj(struct flb_input_instance *in,
                                const char *tag, int tag_len,
                                msgpack_object data);
+/*
+ * Skip input-level metrics (records/bytes total) on this append. Used for
+ * internal route copies so conditional routing does not inflate the totals
+ * by the route count.
+ */
+#define FLB_INPUT_CHUNK_SKIP_INPUT_METRICS   (1 << 1)
+
 int flb_input_chunk_append_raw(struct flb_input_instance *in,
                                int event_type,
                                size_t records,
                                const char *tag, size_t tag_len,
                                const void *buf, size_t buf_size);
+int flb_input_chunk_append_raw_flags(struct flb_input_instance *in,
+                                     int event_type,
+                                     int flags,
+                                     size_t records,
+                                     const char *tag, size_t tag_len,
+                                     const void *buf, size_t buf_size);
 int flb_input_chunk_append_raw_local(struct flb_input_instance *in,
                                      int event_type,
                                      size_t records,
                                      const char *tag, size_t tag_len,
                                      const void *buf, size_t buf_size);
+int flb_input_chunk_append_raw_local_flags(struct flb_input_instance *in,
+                                           int event_type,
+                                           int flags,
+                                           size_t records,
+                                           const char *tag, size_t tag_len,
+                                           const void *buf, size_t buf_size);
 int flb_input_chunk_ring_buffer_enqueue(struct flb_input_instance *in,
                                         int event_type,
                                         size_t records,
