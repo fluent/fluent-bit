@@ -224,6 +224,10 @@ if(FLB_LUAJIT AND FLB_YYJSON AND FLB_PROCESSOR_FTS)
   list(APPEND UNIT_TESTS_FILES fts.c)
 endif()
 
+if(FLB_METRICS AND FLB_PROCESSOR_METRICS_SELECTOR)
+  list(APPEND UNIT_TESTS_FILES metrics_selector.c)
+endif()
+
 set(UNIT_TESTS_DATA
   data/fips/disabled.cnf
   data/tls/certificate.pem
@@ -361,6 +365,15 @@ if(FLB_METRICS AND FLB_PROCESSOR_CUMULATIVE_TO_DELTA)
     ${CUMULATIVE_TO_DELTA_CORE_SOURCE})
   target_include_directories(flb-it-cumulative_to_delta PRIVATE
     ${CUMULATIVE_TO_DELTA_PLUGIN_DIR})
+endif()
+
+if(FLB_METRICS AND FLB_PROCESSOR_METRICS_SELECTOR AND
+   CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+  # Compile the plugin here so wrapping also works when core tests link the shared library.
+  target_sources(flb-it-metrics_selector PRIVATE
+    ${PROJECT_SOURCE_DIR}/plugins/processor_metrics_selector/selector.c)
+  target_compile_definitions(flb-it-metrics_selector PRIVATE FLB_TEST_CMT_CAT_WRAP)
+  target_link_options(flb-it-metrics_selector PRIVATE "-Wl,--wrap=cmt_cat")
 endif()
 
 if(FLB_AVRO_ENCODER OR FLB_PROTOBUF_ENCODER)
