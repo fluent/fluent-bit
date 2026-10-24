@@ -2562,7 +2562,8 @@ static int check_purge_deleted_file(struct flb_tail_config *ctx,
     }
 
     if (st.st_nlink == 0) {
-        if (flb_tail_file_has_pending(file, &st) == FLB_TRUE) {
+        flb_tail_file_refresh_pending(file, &st);
+        if (flb_tail_file_has_pending(file) == FLB_TRUE) {
             tail_signal_pending(ctx);
             return FLB_FALSE;
         }
@@ -2636,12 +2637,18 @@ int flb_tail_file_purge(struct flb_input_instance *ins,
                               "inode=%"PRIu64" purge rotated file %s " \
                               "(offset=%"PRId64" / size = %"PRIu64")",
                               file->inode, file->name, file->offset, (uint64_t)st.st_size);
-                if (file->pending_bytes > 0) {
+                int64_t unread_bytes = 0;
+
+                if (file->offset < st.st_size) {
+                    unread_bytes = st.st_size - file->offset;
+                }
+
+                if (unread_bytes > 0) {
                     flb_plg_warn(ctx->ins,
                                  "inode=%"PRIu64" purged rotated file %s "
                                  "with %"PRId64" unread bytes%s, consider "
                                  "increasing rotate_wait",
-                                 file->inode, file->name, file->pending_bytes,
+                                 file->inode, file->name, unread_bytes,
                                  flb_input_buf_paused(ins) ? " while data ingestion is paused" : "");
                 }
             }

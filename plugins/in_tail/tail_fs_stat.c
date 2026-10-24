@@ -120,7 +120,8 @@ static int tail_fs_check(struct flb_input_instance *ins,
 
         /* Check if the file has been deleted */
         if (st.st_nlink == 0) {
-            if (flb_tail_file_has_pending(file, &st) == FLB_TRUE) {
+            flb_tail_file_refresh_pending(file, &st);
+            if (flb_tail_file_has_pending(file) == FLB_TRUE) {
                 tail_signal_pending(ctx);
                 continue;
             }

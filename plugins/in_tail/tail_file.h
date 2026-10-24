@@ -134,7 +134,7 @@ int flb_tail_pack_line_map(struct flb_time *time, char **data,
                            size_t processed_bytes);
 int flb_tail_file_pack_line(struct flb_time *time, char *data, size_t data_size,
                             struct flb_tail_file *file, size_t processed_bytes);
-static inline int flb_tail_file_has_pending(struct flb_tail_file *file, struct stat *st)
+static inline void flb_tail_file_refresh_pending(struct flb_tail_file *file, struct stat *st)
 {
     if (st != NULL) {
         if (file->offset < st->st_size) {
@@ -144,7 +144,10 @@ static inline int flb_tail_file_has_pending(struct flb_tail_file *file, struct s
             file->pending_bytes = 0;
         }
     }
+}
 
+static inline int flb_tail_file_has_pending(struct flb_tail_file *file)
+{
     if (file->pending_bytes > 0) {
         return FLB_TRUE;
     }

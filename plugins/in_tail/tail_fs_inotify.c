@@ -209,7 +209,8 @@ static int reconcile_file_state(struct flb_tail_config *ctx,
     }
 
     if (st.st_nlink == 0) {
-        if (flb_tail_file_has_pending(file, &st) == FLB_TRUE) {
+        flb_tail_file_refresh_pending(file, &st);
+        if (flb_tail_file_has_pending(file) == FLB_TRUE) {
             return 0;
         }
 
