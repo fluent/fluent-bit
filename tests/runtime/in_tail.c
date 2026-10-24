@@ -2384,6 +2384,7 @@ void flb_test_in_tail_purge_deleted_file_with_pending_bytes()
     struct flb_lib_out_cb cb_data;
     struct test_tail_ctx *ctx;
     struct flb_input_instance *ins;
+    struct flb_tail_config *tail_ctx;
     struct mk_list *head;
     char *file[] = {"/tmp/source_file_deleted_pending.log"};
     char *path = "/tmp/source_file_deleted_pending.log";
@@ -2424,7 +2425,6 @@ void flb_test_in_tail_purge_deleted_file_with_pending_bytes()
     head = ctx->flb->config->inputs.next;
     ins = mk_list_entry(head, struct flb_input_instance, _head);
 
-    /* Write msg1 and wait for it to be consumed so we know the file is opened */
     ret = write_msg(ctx, msg1, strlen(msg1));
     if (!TEST_CHECK(ret > 0)) {
         test_tail_ctx_destroy(ctx);
@@ -2471,7 +2471,243 @@ void flb_test_in_tail_purge_deleted_file_with_pending_bytes()
         TEST_MSG("output num error. expect=%d got=%d", expected_total, num);
     }
 
+    /* Wait for purge timer to fire now that file is fully drained */
+    flb_time_msleep(2000);
+    tail_ctx = ins->context;
+    if (!TEST_CHECK(mk_list_size(&tail_ctx->files_event) == 0)) {
+        TEST_MSG("drained deleted file was not purged from monitored list");
+    }
+
     test_tail_ctx_destroy(ctx);
+}
+
+void flb_test_in_tail_purge_deleted_file_stat()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+    struct flb_input_instance *ins;
+    struct flb_tail_config *tail_ctx;
+    struct mk_list *head;
+    char *file[] = {"/tmp/source_file_deleted_pending_stat.log"};
+    char *path = "/tmp/source_file_deleted_pending_stat.log";
+    char *msg1 = "LINE 1 BEFORE UNLINK";
+    char *msg2 = "LINE 2 BEFORE UNLINK WITH PENDING";
+    char *msg3 = "LINE 3 STILL UNREAD BEFORE PURGE";
+    const int expected_before_unlink = 1;
+    const int expected_total = 3;
+    int ret;
+    int num;
+    int unused;
+
+    clear_output_num();
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &unused;
+
+    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char *), FLB_TRUE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        return;
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "path",                               path,
+                        "inotify_watcher",                   "false",
+                        "rotate_wait",                       "1s",
+                        "refresh_interval",                  "1s",
+                        "read_newly_discovered_files_from_head", "true",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    if (!TEST_CHECK(ret == 0)) {
+        test_tail_ctx_destroy(ctx);
+        return;
+    }
+
+    head = ctx->flb->config->inputs.next;
+    ins = mk_list_entry(head, struct flb_input_instance, _head);
+
+    ret = write_msg(ctx, msg1, strlen(msg1));
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+        return;
+    }
+
+    wait_expected_num_with_timeout(5000, expected_before_unlink, &num);
+    if (!TEST_CHECK(num == expected_before_unlink)) {
+        TEST_MSG("msg1 not consumed in time. got=%d", num);
+        test_tail_ctx_destroy(ctx);
+        return;
+    }
+
+    ret = flb_input_pause(ins);
+    TEST_CHECK(ret == 0);
+
+    ret = write_msg(ctx, msg2, strlen(msg2));
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+        return;
+    }
+    ret = write_msg(ctx, msg3, strlen(msg3));
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+        return;
+    }
+
+    ret = unlink(path);
+    TEST_CHECK(ret == 0);
+
+    flb_time_msleep(2500);
+
+    ret = flb_input_resume(ins);
+    TEST_CHECK(ret == 0);
+
+    wait_expected_num_with_timeout(5000, expected_total, &num);
+    if (!TEST_CHECK(num == expected_total)) {
+        TEST_MSG("output num error. expect=%d got=%d", expected_total, num);
+    }
+
+    flb_time_msleep(2000);
+    tail_ctx = ins->context;
+    if (!TEST_CHECK(mk_list_size(&tail_ctx->files_event) == 0 &&
+                    mk_list_size(&tail_ctx->files_static) == 0)) {
+        TEST_MSG("drained deleted file was not purged from monitored list in stat mode");
+    }
+
+    test_tail_ctx_destroy(ctx);
+}
+
+void flb_test_in_tail_deleted_file_no_newline_drain()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+    struct flb_input_instance *ins;
+    struct flb_tail_config *tail_ctx;
+    struct mk_list *head;
+    char *file[] = {"/tmp/source_file_deleted_no_newline.log"};
+    char *path = "/tmp/source_file_deleted_no_newline.log";
+    char *msg1 = "LINE 1 WITH NEWLINE";
+    char *msg_partial = "PARTIAL LINE NO NEWLINE";
+    const int expected = 1;
+    int ret;
+    int num;
+    int unused;
+
+    clear_output_num();
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &unused;
+
+    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char *), FLB_TRUE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        return;
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "path",                               path,
+                        "rotate_wait",                       "1s",
+                        "refresh_interval",                  "1s",
+                        "read_newly_discovered_files_from_head", "true",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    if (!TEST_CHECK(ret == 0)) {
+        test_tail_ctx_destroy(ctx);
+        return;
+    }
+
+    head = ctx->flb->config->inputs.next;
+    ins = mk_list_entry(head, struct flb_input_instance, _head);
+
+    ret = write_msg(ctx, msg1, strlen(msg1));
+    TEST_CHECK(ret > 0);
+
+    wait_expected_num_with_timeout(5000, expected, &num);
+    TEST_CHECK(num == expected);
+
+    /* Write partial line without trailing newline */
+    ret = write(ctx->fds[0], msg_partial, strlen(msg_partial));
+    TEST_CHECK(ret > 0);
+
+    /* Unlink file */
+    ret = unlink(path);
+    TEST_CHECK(ret == 0);
+
+    /* Wait for purge timer: file should be purged despite buf_len > 0 and NOT hang */
+    flb_time_msleep(3000);
+
+    tail_ctx = ins->context;
+    if (!TEST_CHECK(mk_list_size(&tail_ctx->files_event) == 0)) {
+        TEST_MSG("deleted file with partial line at EOF hung and was not purged");
+    }
+
+    test_tail_ctx_destroy(ctx);
+}
+
+void flb_test_in_tail_stat_truncation()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+    char *file[] = {"/tmp/source_file_stat_truncation.log"};
+    char *path = "/tmp/source_file_stat_truncation.log";
+    char *msg1 = "FIRST LINE BEFORE TRUNCATION";
+    char *msg2 = "SECOND LINE AFTER TRUNCATION";
+    const int expected = 2;
+    int ret;
+    int num;
+    int unused;
+
+    clear_output_num();
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &unused;
+
+    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char *), FLB_TRUE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        return;
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "path",                               path,
+                        "inotify_watcher",                   "false",
+                        "refresh_interval",                  "1s",
+                        "read_newly_discovered_files_from_head", "true",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    if (!TEST_CHECK(ret == 0)) {
+        test_tail_ctx_destroy(ctx);
+        return;
+    }
+
+    ret = write_msg(ctx, msg1, strlen(msg1));
+    TEST_CHECK(ret > 0);
+
+    wait_expected_num_with_timeout(5000, 1, &num);
+    TEST_CHECK(num == 1);
+
+    /* Truncate the file to 0 */
+    ret = ftruncate(ctx->fds[0], 0);
+    TEST_CHECK(ret == 0);
+    lseek(ctx->fds[0], 0, SEEK_SET);
+
+    /* Write new message after truncation */
+    ret = write_msg(ctx, msg2, strlen(msg2));
+    TEST_CHECK(ret > 0);
+
+    /* Verify msg2 is read and processed after truncation in stat mode */
+    wait_expected_num_with_timeout(5000, expected, &num);
+    if (!TEST_CHECK(num == expected)) {
+        TEST_MSG("output num error after truncation. expect=%d got=%d", expected, num);
+    }
+
+    test_tail_ctx_destroy(ctx);
+    unlink(path);
 }
 #endif
 
@@ -3261,6 +3497,9 @@ TEST_LIST = {
     {"ignore_active_older_files_reread_on_update_default_read_from_head", flb_test_in_tail_ignore_active_older_files_reread_on_update_default_read_from_head},
 #ifndef FLB_SYSTEM_WINDOWS
     {"purge_deleted_file_with_pending_bytes", flb_test_in_tail_purge_deleted_file_with_pending_bytes},
+    {"purge_deleted_file_stat", flb_test_in_tail_purge_deleted_file_stat},
+    {"deleted_file_no_newline_drain", flb_test_in_tail_deleted_file_no_newline_drain},
+    {"stat_truncation", flb_test_in_tail_stat_truncation},
 #endif
 #ifdef FLB_HAVE_INOTIFY
     {"inotify_watcher_false", flb_test_inotify_watcher_false},
