@@ -84,6 +84,12 @@ struct cio_options {
 
     /* chunk handlings */
     int realloc_size_hint;
+
+    /*
+     * File-slot pool: number of reusable chunk file slots per stream
+     * (0 = disabled, stock behaviour).
+     */
+    int file_pool_size;
 };
 
 struct cio_ctx {

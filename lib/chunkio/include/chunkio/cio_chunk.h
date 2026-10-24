@@ -89,6 +89,8 @@ char *cio_version();
 size_t cio_chunk_counter_total_add(struct cio_ctx *ctx);
 size_t cio_chunk_counter_total_sub(struct cio_ctx *ctx);
 size_t cio_chunk_counter_total_up_add(struct cio_ctx *ctx);
+size_t cio_chunk_counter_total_up_get(struct cio_ctx *ctx);
+int cio_chunk_counter_total_up_try_inc(struct cio_ctx *ctx);
 size_t cio_chunk_counter_total_up_sub(struct cio_ctx *ctx);
 
 #endif

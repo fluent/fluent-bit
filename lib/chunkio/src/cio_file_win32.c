@@ -624,3 +624,42 @@ int cio_file_native_resize(struct cio_file *cf, size_t new_size)
 
     return CIO_OK;
 }
+
+/*
+ * Pool support: truncate a file to zero bytes (used by the file-slot pool to
+ * recycle a slot without unlinking it, keeping the kernel dentry/inode objects
+ * in place).
+ */
+int cio_file_native_truncate_by_path(const char *path)
+{
+    HANDLE h;
+    LARGE_INTEGER pos;
+
+    if (!path) {
+        return CIO_ERROR;
+    }
+
+    h = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                    NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h == INVALID_HANDLE_VALUE) {
+        if (GetLastError() == ERROR_FILE_NOT_FOUND) {
+            /* file never created (e.g. a 'down' chunk): nothing to do */
+            return CIO_OK;
+        }
+        cio_file_native_report_os_error();
+
+        return CIO_ERROR;
+    }
+
+    pos.QuadPart = 0;
+    if (!SetFilePointerEx(h, pos, NULL, FILE_BEGIN) || !SetEndOfFile(h)) {
+        cio_file_native_report_os_error();
+        CloseHandle(h);
+
+        return CIO_ERROR;
+    }
+
+    CloseHandle(h);
+
+    return CIO_OK;
+}
