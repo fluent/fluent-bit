@@ -1,4 +1,4 @@
-/* Fluent Bit: native log-policy regression tests, Apache-2.0. */
+/* Fluent Bit: log-policy regression tests, Apache-2.0. */
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_processor.h>
 #include <fluent-bit/flb_conditionals.h>
@@ -457,6 +457,7 @@ static void garbage_collector_is_private(void)
                0, "drop", 6, 0, 0, NULL, NULL);
 }
 
+#ifdef FLB_HAVE_LUAJIT
 static void trusted_policy_jit_compiles(void)
 {
     struct flb_config *config;
@@ -493,6 +494,28 @@ static void trusted_policy_jit_compiles(void)
     flb_processor_destroy(processor);
     flb_config_exit(config);
 }
+
+#else
+static void portable_runtime_rejects_jit(void)
+{
+    struct flb_config *config;
+    struct flb_processor *processor;
+    struct flb_processor_unit *unit;
+
+    config = flb_config_init();
+    TEST_ASSERT(config != NULL);
+    processor = flb_processor_create(config, "fts_no_jit_test", NULL, 0);
+    TEST_ASSERT(processor != NULL);
+    unit = flb_processor_unit_create(processor, FLB_PROCESSOR_LOGS, "fts");
+    TEST_ASSERT(unit != NULL);
+    TEST_CHECK(flb_processor_unit_set_property_str(unit, "jit", "true") == 0);
+    TEST_CHECK(flb_processor_unit_set_property_str(unit, "instruction_limit", "0") == 0);
+    TEST_CHECK(flb_processor_unit_set_property_str(unit, "code", "function process(log) end") == 0);
+    TEST_CHECK(flb_processor_init(processor) != 0);
+    flb_processor_destroy(processor);
+    flb_config_exit(config);
+}
+#endif
 
 static void native_histogram_buckets_are_preserved(void)
 {
@@ -871,7 +894,7 @@ static void memory_exhaustion_does_not_poison_later_callbacks(void)
     TEST_CHECK(fts_runtime_call(runtime, NULL, 1) == LUA_ERRMEM);
     lua_settop(l, 0);
     TEST_CHECK(fts_runtime_call(runtime, runtime, 1) == 0);
-    TEST_CHECK(lua_objlen(l, -1) == 300000);
+    TEST_CHECK(fts_lua_rawlen(l, -1) == 300000);
     lua_settop(l, 0);
     flb_processor_destroy(processor);
     flb_config_exit(config);
@@ -1482,7 +1505,11 @@ TEST_LIST = {
     {"schema_promotion_is_record_local", schema_promotion_is_record_local},
     {"reserved_timestamps_are_record_errors", reserved_timestamps_are_record_errors},
     {"small_record_batch_uses_wire_budget", small_record_batch_uses_wire_budget},
+#ifdef FLB_HAVE_LUAJIT
     {"trusted_policy_jit_compiles", trusted_policy_jit_compiles},
+#else
+    {"portable_runtime_rejects_jit", portable_runtime_rejects_jit},
+#endif
     {"native_histogram_buckets_are_preserved", native_histogram_buckets_are_preserved},
     {"native_metric_scalar_preservation", native_metric_scalar_preservation},
     {"kept_native_family_no_merge", kept_native_family_does_not_merge_into_outputs},
