@@ -2573,7 +2573,8 @@ static int check_purge_deleted_file(struct flb_tail_config *ctx,
          flb_tail_file_read_offset_is_valid(file) != FLB_TRUE)) {
         ret = flb_tail_file_reset_on_truncate(file, size_delta, "check_purge_deleted_file");
         if (ret == -1) {
-            return FLB_TRUE;
+            tail_signal_pending(ctx);
+            return FLB_FALSE;
         }
     }
 
@@ -2636,6 +2637,7 @@ int flb_tail_file_purge(struct flb_input_instance *ins,
     int ret;
     int count = 0;
     int64_t unread_bytes;
+    int64_t size_delta;
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_tail_file *file;
@@ -2650,6 +2652,22 @@ int flb_tail_file_purge(struct flb_input_instance *ins,
         if ((file->rotated + ctx->rotate_wait) <= now) {
             ret = fstat(file->fd, &st);
             if (ret == 0) {
+                size_delta = st.st_size - file->size;
+                if (size_delta != 0) {
+                    file->size = st.st_size;
+                }
+
+                /* Confirm a size/offset discrepancy through the raw read position. */
+                if (size_delta < 0 ||
+                    (st.st_size < file->offset &&
+                     flb_tail_file_read_offset_is_valid(file) != FLB_TRUE)) {
+                    ret = flb_tail_file_reset_on_truncate(file, size_delta, "flb_tail_file_purge");
+                    if (ret == -1) {
+                        tail_signal_pending(ctx);
+                        continue;
+                    }
+                }
+
                 if (st.st_nlink == 0) {
                     flb_tail_file_refresh_pending(file, &st);
                     if (flb_tail_file_has_pending(file) == FLB_TRUE) {
