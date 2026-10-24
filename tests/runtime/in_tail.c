@@ -1,4 +1,4 @@
-﻿/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
 /*  Fluent Bit
  *  ==========
@@ -80,8 +80,9 @@ static int flb_test_utimensat(int dirfd, const char *path,
 #define utimensat flb_test_utimensat
 #endif
 
-#ifdef FLB_HAVE_INOTIFY
+#ifndef FLB_SYSTEM_WINDOWS
 #include "../../plugins/in_tail/tail_config.h"
+#include "../../plugins/in_tail/tail_file_internal.h"
 #endif
 
 #define NEW_LINE "\n"
@@ -2651,6 +2652,10 @@ void flb_test_in_tail_stat_truncation()
 {
     struct flb_lib_out_cb cb_data;
     struct test_tail_ctx *ctx;
+    struct flb_input_instance *ins;
+    struct flb_tail_config *tail_ctx;
+    struct flb_tail_file *f;
+    struct mk_list *head;
     char *file[] = {"/tmp/source_file_stat_truncation.log"};
     char *path = "/tmp/source_file_stat_truncation.log";
     char *msg1 = "FIRST LINE BEFORE TRUNCATION";
@@ -2659,6 +2664,7 @@ void flb_test_in_tail_stat_truncation()
     int ret;
     int num;
     int unused;
+    int i;
 
     clear_output_num();
 
@@ -2685,6 +2691,10 @@ void flb_test_in_tail_stat_truncation()
         return;
     }
 
+    head = ctx->flb->config->inputs.next;
+    ins = mk_list_entry(head, struct flb_input_instance, _head);
+    tail_ctx = ins->context;
+
     ret = write_msg(ctx, msg1, strlen(msg1));
     TEST_CHECK(ret > 0);
 
@@ -2695,6 +2705,21 @@ void flb_test_in_tail_stat_truncation()
     ret = ftruncate(ctx->fds[0], 0);
     TEST_CHECK(ret == 0);
     lseek(ctx->fds[0], 0, SEEK_SET);
+
+    /* Wait until stat mode has processed the zero-length file before rewriting */
+    f = NULL;
+    for (i = 0; i < 50; i++) {
+        flb_time_msleep(100);
+        if (mk_list_size(&tail_ctx->files_event) > 0) {
+            f = mk_list_entry_first(&tail_ctx->files_event, struct flb_tail_file, _head);
+            if (f->offset == 0) {
+                break;
+            }
+        }
+    }
+    if (!TEST_CHECK(f != NULL && f->offset == 0)) {
+        TEST_MSG("stat mode did not process zero-length truncation in time");
+    }
 
     /* Write new message after truncation */
     ret = write_msg(ctx, msg2, strlen(msg2));
