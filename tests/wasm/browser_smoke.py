@@ -80,7 +80,8 @@ def main():
     parser.add_argument("--build-dir", type=Path, default=DEFAULT_BUILD_DIR)
     parser.add_argument("--target", choices=("flb-wasm-dependencies", "co-wasm-test",
                                              "flb-wasm-pipeline", "flb-wasm-events", "flb-wasm-event-fiber",
-                                             "flb-wasm-storage", "flb-wasm-yaml", "flb-wasm-lua", "flb-wasm-http",
+                                             "flb-wasm-storage", "flb-wasm-yaml", "flb-wasm-lua", "flb-wasm-fts",
+                                             "flb-wasm-http",
                                              "flb-wasm-http-lifecycle", "flb-wasm-http-ng", "mk-test-wasm-events"),
                         default="flb-wasm-dependencies")
     parser.add_argument("--browser", default=shutil.which("chromium") or shutil.which("google-chrome"))
@@ -111,9 +112,9 @@ def main():
                     for phase in phases:
                         page.goto(f"http://127.0.0.1:{server.server_port}/?phase={phase}"
                                   if phase else f"http://127.0.0.1:{server.server_port}/" +
-                                  ("?arg=--no-exec" if args.target == "flb-wasm-lua" else ""))
+                                  ("?arg=--no-exec" if args.target in ("flb-wasm-lua", "flb-wasm-fts") else ""))
                         page.wait_for_function("document.body.dataset.result !== 'pending'",
-                                               timeout=45000)
+                                               timeout=180000 if args.target == "flb-wasm-fts" else 45000)
                         passed = passed and page.get_attribute("body", "data-result") == "passed"
                         print(page.locator("#output").inner_text())
                         if not passed:

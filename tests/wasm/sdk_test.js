@@ -27,6 +27,45 @@ pipeline:
       match: '*'
       format: json_lines
 `;
+    const checkFts = async fluent => {
+        await fluent.writeFile('/config/typed.lua', `local fb = require("fluentbit")
+            assert(os == nil and io == nil and debug == nil and warn == nil)
+            function process(log)
+                if log.body:get_string("message") == "fts drop" then return fb.DROP end
+                local view = log.body:get("nested")
+                collectgarbage("collect")
+                view:set("value", fb.int64(42))
+                log.body:set("exact", fb.uint64("18446744073709551615"):value())
+                log.body:set("fts", true)
+                return fb.KEEP
+            end`);
+        const ftsYaml = yaml.replace('      tag: app', `      tag: app
+      processors:
+        logs:
+          - name: fts
+            script: /config/typed.lua`);
+        await fluent.start({yaml: ftsYaml, graceSeconds: 1});
+        await fluent.push({input: 'app', records: [
+            {message: 'fts drop'}, {message: 'fts browser', nested: {value: 1}}]});
+        await waitFor(() => logs.some(line => {
+            try {
+                const record = JSON.parse(line);
+                return record.message === 'fts browser' && record.fts === true &&
+                    record.nested.value === 42 && record.exact === '18446744073709551615';
+            }
+            catch (_) { return false; }
+        }));
+        await fluent.stop();
+        check(!logs.some(line => {
+            try { return JSON.parse(line).message === 'fts drop'; }
+            catch (_) { return false; }
+        }), 'FTS drops records');
+        await rejected(() => fluent.start({yaml: ftsYaml.replace('- name: fts',
+            '- name: fts\n            jit: true\n            instruction_limit: 0')}), 'E_CONFIG');
+        check(logs.some(line => line.includes('JIT is unavailable in this Lua runtime')),
+              'FTS reports the unsupported JIT option');
+        console.log('Browser FTS processor passed: typed values, nested views, drop and JIT rejection');
+    };
     check(getBrowserSupport().supported, 'Browser preflight');
     const logs = [];
     const errors = [];
@@ -38,6 +77,10 @@ pipeline:
             progress.push(update);
             console.log(`SDK startup: ${update.stage} (${update.loadedBytes} bytes)`);
         }});
+    if (globalThis.ftsOnly) {
+        try { await checkFts(fluent); return {passed: true}; }
+        finally { await fluent.destroy(); }
+    }
     try {
         check(['loading-runtime', 'downloading-wasm', 'compiling-wasm',
                'initializing-workers', 'starting-command-thread'].every(stage =>
@@ -93,6 +136,7 @@ pipeline:
             catch (_) { return false; }
         }));
         await fluent.stop();
+        await checkFts(fluent);
         await fluent.start({yaml, graceSeconds: 1});
         await fluent.stop();
         await fluent.syncStorage();

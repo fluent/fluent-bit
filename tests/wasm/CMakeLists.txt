@@ -37,6 +37,19 @@ if(FLB_WASM_LUA)
     "-sASSERTIONS=2 -sEXIT_RUNTIME=1")
   add_test(NAME flb-wasm-lua COMMAND flb-wasm-lua --no-exec)
   set_tests_properties(flb-wasm-lua PROPERTIES TIMEOUT 30)
+
+  if(FLB_PROCESSOR_FTS)
+    add_executable(flb-wasm-fts "${PROJECT_SOURCE_DIR}/tests/internal/fts.c")
+    target_include_directories(flb-wasm-fts PRIVATE
+      "${CMAKE_CURRENT_BINARY_DIR}" "${PROJECT_SOURCE_DIR}/tests/internal")
+    target_compile_definitions(flb-wasm-fts PRIVATE FLB_TEST_INIT_NOP FLB_TEST_FINI_NOP)
+    target_link_libraries(flb-wasm-fts fluent-bit-static)
+    set_target_properties(flb-wasm-fts PROPERTIES LINK_FLAGS
+      "-sASSERTIONS=2 -sEXIT_RUNTIME=1 -sALLOW_MEMORY_GROWTH=1 -sSTACK_SIZE=262144")
+    add_test(NAME flb-wasm-fts COMMAND flb-wasm-fts --no-exec)
+    # The large-object regression is substantially slower with WASM ASan.
+    set_tests_properties(flb-wasm-fts PROPERTIES TIMEOUT 180)
+  endif()
 endif()
 
 add_test(NAME flb-wasm-build-profile

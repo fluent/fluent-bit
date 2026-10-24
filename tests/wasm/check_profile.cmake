@@ -31,12 +31,15 @@ function(check_profile name expected_error)
   message(STATUS "${name}: passed")
 endfunction()
 
-check_profile(defaults "")
+check_profile(defaults "" -DEXPECT_FTS=ON)
 check_profile(old_sdk "FLB_WASM_BROWSER requires Emscripten 6.0.9" -DEMSCRIPTEN_VERSION=5.0.7)
 check_profile(unvalidated_sdk "FLB_WASM_BROWSER requires Emscripten 6.0.9" -DEMSCRIPTEN_VERSION=6.0.10)
-check_profile(minimal "" -DFLB_MINIMAL=ON)
+check_profile(minimal "" -DFLB_MINIMAL=ON -DEXPECT_FTS=OFF)
 check_profile(disable_filter "" -DFLB_FILTER_GREP=OFF)
-check_profile(disable_lua "" -DFLB_WASM_LUA=OFF -DFLB_FILTER_LUA=OFF)
+check_profile(disable_lua "" -DFLB_WASM_LUA=OFF -DFLB_FILTER_LUA=OFF -DFLB_PROCESSOR_FTS=OFF -DEXPECT_FTS=OFF)
+check_profile(disable_fts "" -DFLB_PROCESSOR_FTS=OFF -DEXPECT_FTS=OFF)
+check_profile(reject_fts_without_backend "FLB_PROCESSOR_FTS is not supported by the browser build profile"
+  -DFLB_WASM_LUA=OFF -DFLB_PROCESSOR_FTS=ON)
 check_profile(reject_lua_without_backend "FLB_FILTER_LUA is not supported by the browser build profile"
   -DFLB_WASM_LUA=OFF -DFLB_FILTER_LUA=ON)
 check_profile(native_defaults "" -DPROFILE_TEST_MODE=native)
