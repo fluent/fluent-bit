@@ -347,7 +347,7 @@ REGISTER_IN_PLUGIN("in_random")
 # ==========
 REGISTER_PROCESSOR_PLUGIN("processor_content_modifier")
 REGISTER_PROCESSOR_PLUGIN("processor_cumulative_to_delta")
-if(FLB_LUAJIT AND FLB_YYJSON)
+if((FLB_LUAJIT OR FLB_WASM_LUA) AND FLB_YYJSON)
   REGISTER_PROCESSOR_PLUGIN("processor_fts")
 endif()
 REGISTER_PROCESSOR_PLUGIN("processor_labels")
