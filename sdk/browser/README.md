@@ -184,6 +184,14 @@ unsanitized browser assets, not a production release or an npm publication.
 Artifact availability does not imply the subsequent browser tests or the ASan
 job passed; check the workflow results before choosing a build.
 
+## Typed scripting processor
+
+The default browser artifact includes the `fts` processor using portable Lua 5.4.
+Supply a policy with `writeFile('/config/policy.lua', source)` and reference that
+path from the YAML processor's `script` property. `jit: true` is unavailable in
+browser builds. See the [FTS guide](https://github.com/fluent/fluent-bit/blob/master/plugins/processor_fts/README.md) for
+policies, typed values and resource limits.
+
 ## Release gates
 
 Before promoting this experimental API: run ASan lifecycle/network/storage and

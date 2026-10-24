@@ -7,6 +7,11 @@ attributes are exposed as properties instead of raw metadata.
 
 FTS supports logs, metrics, and traces. Its configuration name is `fts`.
 
+The experimental browser WASM profile includes FTS when `FLB_WASM_LUA=ON`
+(the default). It uses the portable Lua 5.4 interpreter; `jit: true` is rejected.
+Typed values, restricted policy libraries and instruction/memory limits remain
+available. Setting `FLB_WASM_LUA=OFF` disables both FTS and the Lua filter.
+
 | Signal  | Callback          | Called once per |
 | ------- | ----------------- | --------------- |
 | Logs    | `process(log)`    | log record      |
