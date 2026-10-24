@@ -37,8 +37,11 @@ void flb_test_file_dynamic_windows_unsafe_fallback(void);
 void flb_test_file_dynamic_path_traversal_fallback(void);
 void flb_test_file_dynamic_limit_fallback(void);
 
+void flb_test_file_tag_escape(void);
+
 /* Test list */
 TEST_LIST = {
+    {"tag_escape", flb_test_file_tag_escape},
     {"path",            flb_test_file_path},
     {"path_file",       flb_test_file_path_file},
     {"mkdir",           flb_test_file_mkdir},
@@ -1364,4 +1367,41 @@ void flb_test_file_mkdir(void)
     flb_sds_destroy(path);
     flb_sds_destroy(file);
     flb_test_rmdir(TEST_LOGPATH);
+}
+
+void flb_test_file_tag_escape(void)
+{
+    flb_ctx_t *ctx;
+    int input;
+    int output;
+    int mode;
+    FILE *fp;
+    char line[512];
+    char *record = "[1700000000, {\"name\":\"escaped\"}]";
+    char *path = "escaped.log";
+
+    for (mode = 0; mode < 2; mode++) {
+        remove(path);
+        ctx = flb_create();
+        flb_service_set(ctx, "Flush", "0.1", "Grace", "1", "Log_Level", "error", NULL);
+        input = flb_input(ctx, "lib", NULL);
+        flb_input_set(ctx, input, "tag", "app.\r\nforged\t %0A\x7f", NULL);
+        output = flb_output(ctx, "file", NULL);
+        flb_output_set(ctx, output, "match", "*", "format", "out_file",
+                       "file", mode ? "$name.log" : path, "fallback_file", "fallback.log", NULL);
+        TEST_CHECK(flb_start(ctx) == 0);
+        TEST_CHECK(flb_lib_push(ctx, input, record, strlen(record)) == strlen(record));
+        TEST_CHECK(wait_for_file(path, 1, TEST_TIMEOUT) == 0);
+        flb_stop(ctx);
+        flb_destroy(ctx);
+        fp = fopen(path, "r");
+        TEST_CHECK(fp != NULL);
+        if (fp) {
+            TEST_CHECK(fgets(line, sizeof(line), fp) != NULL);
+            TEST_CHECK(strstr(line, "app.%0D%0Aforged%09%20%250A%7F: [1700000000.") == line);
+            TEST_CHECK(fgets(line, sizeof(line), fp) == NULL);
+            fclose(fp);
+        }
+        remove(path);
+    }
 }
