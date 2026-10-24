@@ -2378,6 +2378,103 @@ void flb_test_in_tail_ignore_active_older_files_reread_on_update_default_read_fr
     test_tail_ctx_destroy(ctx);
 }
 
+#ifndef FLB_SYSTEM_WINDOWS
+void flb_test_in_tail_purge_deleted_file_with_pending_bytes()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+    struct flb_input_instance *ins;
+    struct mk_list *head;
+    char *file[] = {"/tmp/source_file_deleted_pending.log"};
+    char *path = "/tmp/source_file_deleted_pending.log";
+    char *msg1 = "LINE 1 BEFORE UNLINK";
+    char *msg2 = "LINE 2 BEFORE UNLINK WITH PENDING";
+    char *msg3 = "LINE 3 STILL UNREAD BEFORE PURGE";
+    const int expected_before_unlink = 1;
+    const int expected_total = 3;
+    int ret;
+    int num;
+    int unused;
+
+    clear_output_num();
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &unused;
+
+    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char *), FLB_TRUE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        return;
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "path",                               path,
+                        "rotate_wait",                       "1s",
+                        "refresh_interval",                  "1s",
+                        "read_newly_discovered_files_from_head", "true",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    if (!TEST_CHECK(ret == 0)) {
+        test_tail_ctx_destroy(ctx);
+        return;
+    }
+
+    head = ctx->flb->config->inputs.next;
+    ins = mk_list_entry(head, struct flb_input_instance, _head);
+
+    /* Write msg1 and wait for it to be consumed so we know the file is opened */
+    ret = write_msg(ctx, msg1, strlen(msg1));
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+        return;
+    }
+
+    wait_expected_num_with_timeout(5000, expected_before_unlink, &num);
+    if (!TEST_CHECK(num == expected_before_unlink)) {
+        TEST_MSG("msg1 not consumed in time. got=%d", num);
+        test_tail_ctx_destroy(ctx);
+        return;
+    }
+
+    /* Pause input ingestion to simulate heavy load / buffer pause while new data arrives */
+    ret = flb_input_pause(ins);
+    TEST_CHECK(ret == 0);
+
+    /* Append more messages into the open file while paused */
+    ret = write_msg(ctx, msg2, strlen(msg2));
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+        return;
+    }
+    ret = write_msg(ctx, msg3, strlen(msg3));
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+        return;
+    }
+
+    /* Unlink the file from filesystem (st_nlink == 0) while bytes are pending */
+    ret = unlink(path);
+    TEST_CHECK(ret == 0);
+
+    /* Wait long enough for purge timer (rotate_wait = 1s) to fire while paused */
+    flb_time_msleep(2500);
+
+    /* Resume input ingestion */
+    ret = flb_input_resume(ins);
+    TEST_CHECK(ret == 0);
+
+    /* Verify all pending data was preserved and read through the unlinked descriptor */
+    wait_expected_num_with_timeout(5000, expected_total, &num);
+    if (!TEST_CHECK(num == expected_total)) {
+        TEST_MSG("output num error. expect=%d got=%d", expected_total, num);
+    }
+
+    test_tail_ctx_destroy(ctx);
+}
+#endif
+
 void flb_test_inotify_watcher_false()
 {
     struct flb_lib_out_cb cb_data;
@@ -3162,6 +3259,9 @@ TEST_LIST = {
     {"ignore_active_older_files", flb_test_in_tail_ignore_active_older_files},
     {"ignore_active_older_files_reread_on_update", flb_test_in_tail_ignore_active_older_files_reread_on_update},
     {"ignore_active_older_files_reread_on_update_default_read_from_head", flb_test_in_tail_ignore_active_older_files_reread_on_update_default_read_from_head},
+#ifndef FLB_SYSTEM_WINDOWS
+    {"purge_deleted_file_with_pending_bytes", flb_test_in_tail_purge_deleted_file_with_pending_bytes},
+#endif
 #ifdef FLB_HAVE_INOTIFY
     {"inotify_watcher_false", flb_test_inotify_watcher_false},
     {"inotify_pause_collectors", flb_test_inotify_pause_collectors},
