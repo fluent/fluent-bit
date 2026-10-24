@@ -24,6 +24,19 @@
 #include <fluent-bit/flb_luajit.h>
 #include <cfl/cfl_variant.h>
 
+/* Typed views keep their parent in a userdata environment/uservalue table. */
+#if LUA_VERSION_NUM >= 502
+#define fts_lua_rawlen lua_rawlen
+#define fts_lua_getuservalue lua_getuservalue
+#define fts_lua_setuservalue lua_setuservalue
+#define fts_lua_register(l, methods) luaL_setfuncs(l, methods, 0)
+#else
+#define fts_lua_rawlen lua_objlen
+#define fts_lua_getuservalue lua_getfenv
+#define fts_lua_setuservalue lua_setfenv
+#define fts_lua_register(l, methods) luaL_register(l, NULL, methods)
+#endif
+
 #define FTS_MAX_DEPTH 64
 
 /* Each signal owns its representation, validation and commit semantics. */

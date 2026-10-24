@@ -17,14 +17,17 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_info.h>
+#ifdef FLB_HAVE_LUAJIT
 #include <luajit.h>
+#endif
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
 #include <limits.h>
 
-#ifdef FLB_HAVE_SANITIZE_ADDRESS
+#if defined(FLB_HAVE_SANITIZE_ADDRESS) && defined(FLB_HAVE_LUAJIT)
 #include <sanitizer/asan_interface.h>
 #endif
 
@@ -41,12 +44,12 @@
  */
 #define FTS_UNWOUND_STACK_SIZE (256 * 1024)
 
-#ifdef FLB_HAVE_SANITIZE_ADDRESS
+#if defined(FLB_HAVE_SANITIZE_ADDRESS) && defined(FLB_HAVE_LUAJIT)
 __attribute__((noinline))
 #endif
 void fts_sanitizer_forget_unwound_frames(void)
 {
-#ifdef FLB_HAVE_SANITIZE_ADDRESS
+#if defined(FLB_HAVE_SANITIZE_ADDRESS) && defined(FLB_HAVE_LUAJIT)
     char *top;
 
     top = (char *) __builtin_frame_address(0);
@@ -210,7 +213,11 @@ int fts_load_helpers(lua_State *l, const char *code, size_t size, const char *na
     }
 
     lua_rawgeti(l, LUA_REGISTRYINDEX, ctx->helpers_env_ref);
+#if LUA_VERSION_NUM >= 502
+    lua_setupvalue(l, -2, 1);
+#else
     lua_setfenv(l, -2);
+#endif
     if (lua_pcall(l, 0, 0, 0) != 0) {
         fts_sanitizer_forget_unwound_frames();
         return -1;
@@ -223,13 +230,19 @@ static int initialize_policy(lua_State *l)
     struct fts_runtime *ctx;
     const char *blocked[] = {"io", "os", "debug", "jit", "ffi", "package", "coroutine",
                             "module", "load", "loadfile", "loadstring", "dofile",
-                            "newproxy", "xpcall", "getfenv", "setfenv", "print", NULL};
+                            "newproxy", "xpcall", "getfenv", "setfenv", "print", "warn", NULL};
     int i;
     int ret;
     int environment;
 
     ctx = lua_touserdata(l, 1);
+#if LUA_VERSION_NUM >= 502
+    lua_pushglobaltable(l);
+    copy_table(l, -1);
+    lua_remove(l, -2);
+#else
     copy_table(l, LUA_GLOBALSINDEX);
+#endif
     environment = lua_gettop(l);
 
     /* tables used by validation must also be independent of policy globals */
@@ -338,9 +351,13 @@ int fts_runtime_initialize(struct fts_runtime *ctx, struct flb_config *config)
     }
     l = ctx->vm->state;
 
+#ifdef FLB_HAVE_LUAJIT
     ret = luaJIT_setmode(l, 0, LUAJIT_MODE_ENGINE | (ctx->jit ? LUAJIT_MODE_ON : LUAJIT_MODE_OFF));
+#else
+    ret = 0;
+#endif
     if (ctx->jit && !ret) {
-        lua_pushliteral(l, "JIT is unavailable in this LuaJIT build");
+        lua_pushliteral(l, "JIT is unavailable in this Lua runtime");
         return FLB_PROCESSOR_FAILURE;
     }
 
