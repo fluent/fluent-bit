@@ -155,7 +155,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--build-dir', type=Path, default=DEFAULT_BUILD_DIR)
     parser.add_argument('--browser', required=True)
-    parser.add_argument('--pthread-only', action='store_true')
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument('--pthread-only', action='store_true')
+    mode.add_argument('--fts-only', action='store_true')
     args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix='flb-sdk-tls-') as directory:
         cert, key = development_certificate(directory, ['localhost', '127.0.0.1'])
@@ -190,18 +192,20 @@ def main():
                             assert not errors, errors
                             print('Pthread bootstrap faults and worker cleanup passed', flush=True)
                             return
+                        page.evaluate('(value) => { globalThis.ftsOnly = value; }', args.fts_only)
                         result = page.evaluate(Path(__file__).with_suffix('.js').read_text())
                         assert result['passed'] and not errors, errors
-                        server.RequestHandlerClass = functools.partial(StorageFaultHandler, build_dir=args.build_dir)
-                        check_storage_failure(page)
-                        server.RequestHandlerClass = functools.partial(BrowserHandler, build_dir=args.build_dir)
-                        page.route('**/sdk/fluent-bit-runtime.wasm', lambda route: route.abort())
-                        failure = page.evaluate("""async () => {
-                            const {createFluentBit} = await import('/sdk/fluent-bit.js');
-                            try { await createFluentBit(); return null; }
-                            catch (error) { return error.code; }
-                        }""")
-                        assert failure in ('E_LOAD', 'E_RUNTIME', 'E_WORKER'), failure
+                        if not args.fts_only:
+                            server.RequestHandlerClass = functools.partial(StorageFaultHandler, build_dir=args.build_dir)
+                            check_storage_failure(page)
+                            server.RequestHandlerClass = functools.partial(BrowserHandler, build_dir=args.build_dir)
+                            page.route('**/sdk/fluent-bit-runtime.wasm', lambda route: route.abort())
+                            failure = page.evaluate("""async () => {
+                                const {createFluentBit} = await import('/sdk/fluent-bit.js');
+                                try { await createFluentBit(); return null; }
+                                catch (error) { return error.code; }
+                            }""")
+                            assert failure in ('E_LOAD', 'E_RUNTIME', 'E_WORKER'), failure
                         for _ in range(100):
                             if not workers:
                                 break
