@@ -1023,6 +1023,9 @@ static int fw_ingest_forward_mode_batch(struct fw_conn *conn,
 {
     int decode_result;
     int ingest_result;
+    int in_group;
+    int32_t record_type;
+    size_t group_offset;
     size_t batch_length;
     size_t byte_limit;
     const char *batch;
@@ -1040,29 +1043,66 @@ static int fw_ingest_forward_mode_batch(struct fw_conn *conn,
         return -1;
     }
 
+    /*
+     * Group markers are events too: count their bytes, so every batch is the
+     * exact contiguous run of its events, and split batches only between
+     * groups: when a group does not fit, the events before it are ingested
+     * and the group starts the next batch. A group larger than the limit is
+     * sent whole, like a single record larger than the limit.
+     */
+    flb_log_event_decoder_read_groups(&decoder, FLB_TRUE);
+
     batch = NULL;
     batch_length = 0;
     ingest_result = 0;
+    in_group = FLB_FALSE;
+    group_offset = 0;
 
     while ((decode_result = flb_log_event_decoder_next(&decoder, &event)) ==
            FLB_EVENT_DECODER_SUCCESS) {
+        if (flb_log_event_decoder_get_record_type(&event, &record_type) != 0) {
+            record_type = FLB_LOG_EVENT_NORMAL;
+        }
+
         if (batch_length > 0 &&
             (batch_length > byte_limit ||
              decoder.record_length > byte_limit - batch_length)) {
-            ingest_result = fw_ingest_forward_mode_chunk(
-                                conn, tag, tag_len, batch, batch_length);
-            if (ingest_result != 0) {
-                break;
+            if (in_group == FLB_FALSE && record_type != FLB_LOG_EVENT_GROUP_END) {
+                /* between groups: send the whole batch */
+                ingest_result = fw_ingest_forward_mode_chunk(
+                                    conn, tag, tag_len, batch, batch_length);
+                if (ingest_result != 0) {
+                    break;
+                }
+                batch_length = 0;
             }
-
-            batch_length = 0;
+            else if (in_group == FLB_TRUE && group_offset > 0) {
+                /* send the events before the open group, keep the group */
+                ingest_result = fw_ingest_forward_mode_chunk(
+                                    conn, tag, tag_len, batch, group_offset);
+                if (ingest_result != 0) {
+                    break;
+                }
+                batch += group_offset;
+                batch_length -= group_offset;
+                group_offset = 0;
+            }
         }
 
         if (batch_length == 0) {
             batch = decoder.record_base;
         }
 
+        if (record_type == FLB_LOG_EVENT_GROUP_START) {
+            in_group = FLB_TRUE;
+            group_offset = batch_length;
+        }
+
         batch_length += decoder.record_length;
+
+        if (record_type == FLB_LOG_EVENT_GROUP_END) {
+            in_group = FLB_FALSE;
+        }
     }
 
     if (ingest_result == 0) {
