@@ -69,7 +69,7 @@ static struct fts_value *check_value(lua_State *l, int index)
     lua_getallocf(l, (void **) &ctx);
 
     value = NULL;
-    if (lua_type(l, index) == LUA_TUSERDATA && lua_objlen(l, index) == sizeof(*value)) {
+    if (lua_type(l, index) == LUA_TUSERDATA && fts_lua_rawlen(l, index) == sizeof(*value)) {
         value = lua_touserdata(l, index);
     }
 
@@ -448,7 +448,7 @@ struct cfl_variant *fts_resolve_value(lua_State *l, int index, int depth)
         luaL_error(l, "typed value nesting exceeds limit");
     }
 
-    lua_getfenv(l, index);
+    fts_lua_getuservalue(l, index);
     lua_rawgeti(l, -1, 1);
     parent = fts_resolve_value(l, -1, depth + 1);
     lua_pop(l, 1);
@@ -538,7 +538,7 @@ static void push_view(lua_State *l, int parent, int key)
     lua_rawseti(l, -2, 1);
     lua_pushvalue(l, key);
     lua_rawseti(l, -2, 2);
-    lua_setfenv(l, -2);
+    fts_lua_setuservalue(l, -2);
 }
 
 static int value_gc(lua_State *l)
@@ -1013,7 +1013,7 @@ static void detach_root(lua_State *l, int index, int depth)
             luaL_error(l, "typed value nesting exceeds limit");
         }
 
-        lua_getfenv(l, index);
+        fts_lua_getuservalue(l, index);
         lua_rawgeti(l, -1, 1);
         detach_root(l, lua_gettop(l), depth + 1);
         lua_pop(l, 2);
@@ -1621,7 +1621,7 @@ static int redact(lua_State *l)
         root_value(l, 1)->depth_changed = FLB_TRUE;
     }
 
-    count = lua_objlen(l, 2);
+    count = fts_lua_rawlen(l, 2);
     lua_newtable(l);
     keys = lua_gettop(l);
 
@@ -2079,9 +2079,9 @@ int fts_register_values(lua_State *l)
     ctx->value_metatable = lua_topointer(l, -1);
     lua_pushvalue(l, -1);
     ctx->value_metatable_ref = luaL_ref(l, LUA_REGISTRYINDEX);
-    luaL_register(l, NULL, value_methods);
+    fts_lua_register(l, value_methods);
     lua_newtable(l);
-    luaL_register(l, NULL, value_methods + 1);
+    fts_lua_register(l, value_methods + 1);
     lua_setfield(l, -2, "__index");
     lua_pushliteral(l, "typed value");
     lua_setfield(l, -2, "__metatable");
