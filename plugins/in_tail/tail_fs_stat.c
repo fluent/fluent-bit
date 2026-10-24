@@ -118,23 +118,17 @@ static int tail_fs_check(struct flb_input_instance *ins,
             continue;
         }
 
-        size_delta = st.st_size - file->size;
-        if (size_delta != 0) {
-            file->size = st.st_size;
-        }
-
-        if (file->offset < st.st_size) {
-            file->pending_bytes = (st.st_size - file->offset);
-        }
-        else {
-            file->pending_bytes = 0;
-        }
-
-        /* Check if the file have been deleted */
+        /* Check if the file has been deleted */
         if (st.st_nlink == 0) {
-            if (file->pending_bytes > 0 || file->buf_len > 0) {
+            if (flb_tail_file_has_pending(file, &st) == FLB_TRUE) {
                 tail_signal_pending(ctx);
                 continue;
+            }
+
+            if (file->buf_len > 0) {
+                flb_plg_warn(ctx->ins,
+                             "inode=%"PRIu64" purged deleted file %s with %zu unparsed partial bytes at EOF",
+                             file->inode, file->name, file->buf_len);
             }
 
             flb_plg_debug(ctx->ins, "file has been deleted: %s", file->name);
@@ -148,6 +142,11 @@ static int tail_fs_check(struct flb_input_instance *ins,
             continue;
         }
 
+        size_delta = st.st_size - file->size;
+        if (size_delta != 0) {
+            file->size = st.st_size;
+        }
+
         /* Confirm a size/offset discrepancy through the raw read position. */
         if (size_delta < 0 ||
             (st.st_size < file->offset &&
@@ -159,8 +158,12 @@ static int tail_fs_check(struct flb_input_instance *ins,
             memcpy(&fst->st, &st, sizeof(struct stat));
         }
 
-        if (file->pending_bytes > 0) {
+        if (file->offset < st.st_size) {
+            file->pending_bytes = (st.st_size - file->offset);
             tail_signal_pending(ctx);
+        }
+        else {
+            file->pending_bytes = 0;
         }
 
 

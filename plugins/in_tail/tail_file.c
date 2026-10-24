@@ -2551,7 +2551,6 @@ static int check_purge_deleted_file(struct flb_tail_config *ctx,
                                     struct flb_tail_file *file, time_t ts)
 {
     int ret;
-    int has_pending = FLB_FALSE;
     int64_t mtime;
     struct stat st;
 
@@ -2562,29 +2561,16 @@ static int check_purge_deleted_file(struct flb_tail_config *ctx,
         return FLB_TRUE;
     }
 
-    if (st.st_size != file->size) {
-        file->size = st.st_size;
-    }
-
-    if (file->offset < st.st_size) {
-        file->pending_bytes = (st.st_size - file->offset);
-    }
-    else {
-        file->pending_bytes = 0;
-    }
-
     if (st.st_nlink == 0) {
-        if (file->pending_bytes > 0 || file->buf_len > 0) {
-            has_pending = FLB_TRUE;
-        }
-        else if (file->decompression_context != NULL &&
-                 file->decompression_context->input_buffer_length > 0) {
-            has_pending = FLB_TRUE;
-        }
-
-        if (has_pending) {
+        if (flb_tail_file_has_pending(file, &st) == FLB_TRUE) {
             tail_signal_pending(ctx);
             return FLB_FALSE;
+        }
+
+        if (file->buf_len > 0) {
+            flb_plg_warn(ctx->ins,
+                         "inode=%"PRIu64" purged deleted file %s with %zu unparsed partial bytes at EOF",
+                         file->inode, file->name, file->buf_len);
         }
 
         flb_plg_debug(ctx->ins, "purge: monitored file has been deleted: %s",
@@ -2651,21 +2637,12 @@ int flb_tail_file_purge(struct flb_input_instance *ins,
                               "(offset=%"PRId64" / size = %"PRIu64")",
                               file->inode, file->name, file->offset, (uint64_t)st.st_size);
                 if (file->pending_bytes > 0) {
-                    if (flb_input_buf_paused(ins)) {
-                        flb_plg_warn(ctx->ins,
-                                     "inode=%"PRIu64" purged rotated file %s "
-                                     "with %"PRId64" unread bytes while data "
-                                     "ingestion is paused, consider increasing "
-                                     "rotate_wait",
-                                     file->inode, file->name, file->pending_bytes);
-                    }
-                    else {
-                        flb_plg_warn(ctx->ins,
-                                     "inode=%"PRIu64" purged rotated file %s "
-                                     "with %"PRId64" unread bytes, consider "
-                                     "increasing rotate_wait",
-                                     file->inode, file->name, file->pending_bytes);
-                    }
+                    flb_plg_warn(ctx->ins,
+                                 "inode=%"PRIu64" purged rotated file %s "
+                                 "with %"PRId64" unread bytes%s, consider "
+                                 "increasing rotate_wait",
+                                 file->inode, file->name, file->pending_bytes,
+                                 flb_input_buf_paused(ins) ? " while data ingestion is paused" : "");
                 }
             }
             else {
