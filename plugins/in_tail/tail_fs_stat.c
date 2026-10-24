@@ -118,8 +118,25 @@ static int tail_fs_check(struct flb_input_instance *ins,
             continue;
         }
 
+        size_delta = st.st_size - file->size;
+        if (size_delta != 0) {
+            file->size = st.st_size;
+        }
+
+        if (file->offset < st.st_size) {
+            file->pending_bytes = (st.st_size - file->offset);
+        }
+        else {
+            file->pending_bytes = 0;
+        }
+
         /* Check if the file have been deleted */
         if (st.st_nlink == 0) {
+            if (file->pending_bytes > 0 || file->buf_len > 0) {
+                tail_signal_pending(ctx);
+                continue;
+            }
+
             flb_plg_debug(ctx->ins, "file has been deleted: %s", file->name);
 #ifdef FLB_HAVE_SQLDB
             if (ctx->db) {
@@ -129,11 +146,6 @@ static int tail_fs_check(struct flb_input_instance *ins,
 #endif
             flb_tail_file_remove(file);
             continue;
-        }
-
-        size_delta = st.st_size - file->size;
-        if (size_delta != 0) {
-            file->size = st.st_size;
         }
 
         /* Confirm a size/offset discrepancy through the raw read position. */
@@ -147,12 +159,8 @@ static int tail_fs_check(struct flb_input_instance *ins,
             memcpy(&fst->st, &st, sizeof(struct stat));
         }
 
-        if (file->offset < st.st_size) {
-            file->pending_bytes = (st.st_size - file->offset);
+        if (file->pending_bytes > 0) {
             tail_signal_pending(ctx);
-        }
-        else {
-            file->pending_bytes = 0;
         }
 
 
