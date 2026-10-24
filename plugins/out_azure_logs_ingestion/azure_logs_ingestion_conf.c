@@ -26,6 +26,68 @@
 #include "azure_logs_ingestion.h"
 #include "azure_logs_ingestion_conf.h"
 
+#ifdef FLB_HAVE_METRICS
+static const double payload_size_buckets[] = {
+    262144.0,
+    524288.0,
+    786432.0,
+    1048576.0,
+    1310720.0,
+    1572864.0,
+    1835008.0,
+    2097152.0
+};
+
+static int initialize_payload_size_metrics(struct flb_az_li *ctx)
+{
+    struct cmt_histogram_buckets *buckets;
+
+    buckets = cmt_histogram_buckets_create_size(
+                    (double *) payload_size_buckets,
+                    sizeof(payload_size_buckets) / sizeof(payload_size_buckets[0]));
+    if (!buckets) {
+        flb_plg_error(ctx->ins, "could not create uncompressed payload size buckets");
+        return -1;
+    }
+
+    ctx->cmt_uncompressed_payload_size = cmt_histogram_create(
+                    ctx->ins->cmt,
+                    "fluentbit",
+                    "azure_logs_ingestion",
+                    "uncompressed_payload_size_bytes",
+                    "Uncompressed request payload size in bytes.",
+                    buckets,
+                    1, (char *[]) {"name"});
+    if (!ctx->cmt_uncompressed_payload_size) {
+        flb_plg_error(ctx->ins, "could not create uncompressed payload size histogram");
+        return -1;
+    }
+
+    buckets = cmt_histogram_buckets_create_size(
+                    (double *) payload_size_buckets,
+                    sizeof(payload_size_buckets) / sizeof(payload_size_buckets[0]));
+    if (!buckets) {
+        flb_plg_error(ctx->ins, "could not create HTTP payload size buckets");
+        return -1;
+    }
+
+    ctx->cmt_http_payload_size = cmt_histogram_create(
+                    ctx->ins->cmt,
+                    "fluentbit",
+                    "azure_logs_ingestion",
+                    "http_payload_size_bytes",
+                    "HTTP request payload size in bytes.",
+                    buckets,
+                    1, (char *[]) {"name"});
+    if (!ctx->cmt_http_payload_size) {
+        flb_plg_error(ctx->ins, "could not create HTTP payload size histogram");
+        return -1;
+    }
+
+    return 0;
+}
+#endif
+
 static int validate_auth_url_override(struct flb_output_instance *ins,
                                       flb_sds_t auth_url_override)
 {
@@ -185,6 +247,14 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
     flb_sds_snprintf(&ctx->dce_u_url, flb_sds_alloc(ctx->dce_u_url),
                     FLB_AZ_LI_DCE_URL_TMPLT, ctx->dce_url, 
                     ctx->dcr_id, ctx->table_name);
+
+#ifdef FLB_HAVE_METRICS
+    ret = initialize_payload_size_metrics(ctx);
+    if (ret == -1) {
+        flb_az_li_ctx_destroy(ctx);
+        return NULL;
+    }
+#endif
 
     /* Initialize the auth mutex */
     pthread_mutex_init(&ctx->token_mutex, NULL);
