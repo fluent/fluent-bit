@@ -455,13 +455,12 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
             return NULL;
         }
 
-        ctx->oauth2_ctx = flb_oauth2_create_from_config(config, &ctx->oauth2_config);
+        ctx->oauth2_ctx = flb_oauth2_create_from_config(ins, &ctx->oauth2_config);
         if (!ctx->oauth2_ctx) {
             flb_plg_error(ctx->ins, "failed to initialize oauth2 context");
             flb_opentelemetry_context_destroy(ctx);
             return NULL;
         }
-        flb_tls_set_verify_hostname(ctx->oauth2_ctx->tls, ins->tls_verify_hostname);
     }
 
     ctx->logs_uri_sanitized = sanitize_uri(ctx->logs_uri);

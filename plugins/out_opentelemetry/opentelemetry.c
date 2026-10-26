@@ -205,7 +205,9 @@ int opentelemetry_legacy_post(struct opentelemetry_context *ctx,
     struct flb_slist_entry    *val;
     struct flb_config_map_val *mv;
     struct flb_http_client    *c;
+#if defined(FLB_HAVE_SIGNV4) && defined(FLB_HAVE_AWS)
     flb_sds_t                 signature = NULL;
+#endif
 
     compressed = FLB_FALSE;
 
