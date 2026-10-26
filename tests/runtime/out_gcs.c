@@ -1865,6 +1865,177 @@ void flb_test_gcs_total_file_size_zero_disables_size_trigger(void)
     flb_free(store_dir);
 }
 
+static int gcs_upload_call_count(void)
+{
+    char *count;
+
+    count = getenv("TEST_GCS_UploadObject_CALL_COUNT");
+    return count ? atoi(count) : 0;
+}
+
+/*
+ * Start an instance on store_dir, buffer one record per tag (nothing is due
+ * yet with upload_timeout 10m), then stop it.
+ */
+static void gcs_run_and_stop(const char *store_dir, int tags, const char *workers,
+                             const char *upload_on_shutdown, const char *timeout)
+{
+    int i;
+    int ret;
+    int in_ffd[4];
+    int out_ffd;
+    char tag[16];
+    flb_ctx_t *ctx;
+
+    ctx = flb_create();
+    flb_service_set(ctx, "Grace", "1", NULL);
+    for (i = 0; i < tags; i++) {
+        snprintf(tag, sizeof(tag), "test.%d", i);
+        in_ffd[i] = flb_input(ctx, (char *) "lib", NULL);
+        TEST_CHECK(in_ffd[i] >= 0);
+        flb_input_set(ctx, in_ffd[i], "tag", tag, NULL);
+    }
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "google_service_credentials", SERVICE_CREDENTIALS, NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+    flb_output_set(ctx, out_ffd, "upload_timeout", "10m", NULL);
+    flb_output_set(ctx, out_ffd, "workers", workers, NULL);
+    flb_output_set(ctx, out_ffd, "upload_on_shutdown", upload_on_shutdown, NULL);
+    if (timeout) {
+        flb_output_set(ctx, out_ffd, "upload_on_shutdown_timeout", timeout, NULL);
+    }
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    if (ret == 0) {
+        for (i = 0; i < tags; i++) {
+            flb_lib_push(ctx, in_ffd[i], (char *) JSON_TD, (int) sizeof(JSON_TD) - 1);
+        }
+        sleep(2);
+        flb_stop(ctx);
+    }
+    flb_destroy(ctx);
+}
+
+static void gcs_shutdown_test_cleanup(char *store_dir)
+{
+    unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+    unsetenv("TEST_GCS_UPLOAD_ERROR");
+    unsetenv("TEST_GCS_UPLOAD_DELAY_MS");
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+    unsetenv("TEST_GCS_LAST_URI");
+    unsetenv("TEST_GCS_LAST_BODY_GZIP");
+    unsetenv("TEST_GCS_LAST_BODY_PARQUET");
+    unsetenv("TEST_GCS_LAST_CONTENT_TYPE");
+    flb_free(store_dir);
+}
+
+void flb_test_gcs_shutdown_uploads_pending_when_enabled(void)
+{
+    int count;
+    char *store_dir;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-shutdown-upload-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+    setenv("FLB_GCS_PLUGIN_UNDER_TEST", "true", 1);
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+
+    gcs_run_and_stop(store_dir, 1, "1", "true", NULL);
+    count = gcs_upload_call_count();
+    TEST_CHECK_(count == 1,
+                "Expected the buffered file to be uploaded on shutdown, got %d", count);
+
+    /* the next start finds nothing left to recover */
+    gcs_run_and_stop(store_dir, 0, "1", "false", NULL);
+    count = gcs_upload_call_count();
+    TEST_CHECK_(count == 1, "Expected no backlog after the shutdown upload, got %d", count);
+
+    gcs_shutdown_test_cleanup(store_dir);
+}
+
+void flb_test_gcs_shutdown_upload_failure_keeps_file(void)
+{
+    int count;
+    char *store_dir;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-shutdown-fail-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+    setenv("FLB_GCS_PLUGIN_UNDER_TEST", "true", 1);
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+
+    setenv("TEST_GCS_UPLOAD_ERROR", "true", 1);
+    gcs_run_and_stop(store_dir, 1, "1", "true", NULL);
+    count = gcs_upload_call_count();
+    TEST_CHECK_(count == 1, "Expected one failed upload attempt on shutdown, got %d", count);
+
+    /* the file stayed in store_dir and the next start uploads it */
+    unsetenv("TEST_GCS_UPLOAD_ERROR");
+    gcs_run_and_stop(store_dir, 0, "1", "false", NULL);
+    count = gcs_upload_call_count();
+    TEST_CHECK_(count == 2, "Expected the kept file to be recovered and uploaded, got %d", count);
+
+    gcs_shutdown_test_cleanup(store_dir);
+}
+
+void flb_test_gcs_shutdown_upload_respects_timeout(void)
+{
+    int first;
+    int count;
+    char *store_dir;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-shutdown-timeout-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+    setenv("FLB_GCS_PLUGIN_UNDER_TEST", "true", 1);
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+
+    /* four files at 1.5s each cannot all fit in a 2s budget */
+    setenv("TEST_GCS_UPLOAD_DELAY_MS", "1500", 1);
+    gcs_run_and_stop(store_dir, 4, "1", "true", "2s");
+    first = gcs_upload_call_count();
+    TEST_CHECK_(first >= 1 && first < 4,
+                "Expected the budget to stop the shutdown uploads early, got %d", first);
+
+    unsetenv("TEST_GCS_UPLOAD_DELAY_MS");
+    gcs_run_and_stop(store_dir, 0, "1", "false", NULL);
+    count = gcs_upload_call_count();
+    TEST_CHECK_(count == 4, "Expected the remaining files to be recovered, got %d in total", count);
+
+    gcs_shutdown_test_cleanup(store_dir);
+}
+
+void flb_test_gcs_shutdown_upload_with_workers(void)
+{
+    int count;
+    char *store_dir;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-shutdown-workers-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+    setenv("FLB_GCS_PLUGIN_UNDER_TEST", "true", 1);
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+
+    gcs_run_and_stop(store_dir, 2, "2", "true", NULL);
+    count = gcs_upload_call_count();
+    TEST_CHECK_(count == 2, "Expected one shutdown upload per tag, got %d", count);
+
+    gcs_shutdown_test_cleanup(store_dir);
+}
+
 TEST_LIST = {
     {"jwt_signing", flb_test_gcs_jwt_signing},
     {"net_settings_applied_to_upstream", flb_test_gcs_net_settings_applied_to_upstream},
@@ -1906,6 +2077,10 @@ TEST_LIST = {
     {"rejects_invalid_metadata_response", flb_test_gcs_rejects_invalid_metadata_response},
     {"upload_error", flb_test_gcs_upload_error},
     {"shutdown_preserves_pending_upload", flb_test_gcs_shutdown_preserves_pending_upload},
+    {"shutdown_uploads_pending_when_enabled", flb_test_gcs_shutdown_uploads_pending_when_enabled},
+    {"shutdown_upload_failure_keeps_file", flb_test_gcs_shutdown_upload_failure_keeps_file},
+    {"shutdown_upload_respects_timeout", flb_test_gcs_shutdown_upload_respects_timeout},
+    {"shutdown_upload_with_workers", flb_test_gcs_shutdown_upload_with_workers},
     {"unify_tag_buffers_multiple_tags", flb_test_gcs_unify_tag_buffers_multiple_tags},
     {"unify_tag_disabled_by_default", flb_test_gcs_unify_tag_disabled_by_default},
     {NULL, NULL}
