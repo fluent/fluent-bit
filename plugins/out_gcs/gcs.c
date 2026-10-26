@@ -1967,11 +1967,10 @@ static int cb_gcs_init(struct flb_output_instance *ins, struct flb_config *confi
             flb_plg_info(ins, "using GCE/GKE metadata server authentication");
         }
 
-        ctx->o = flb_oauth2_create(config, FLB_GCS_AUTH_URL, FLB_GCS_TOKEN_REFRESH);
+        ctx->o = flb_oauth2_create(ins, FLB_GCS_AUTH_URL, FLB_GCS_TOKEN_REFRESH);
         if (!ctx->o) {
             goto error;
         }
-        flb_tls_set_verify_hostname(ctx->o->tls, ins->tls_verify_hostname);
     }
 
     ctx->u = flb_upstream_create(config, FLB_GCS_DEFAULT_HOST, FLB_GCS_DEFAULT_PORT,
