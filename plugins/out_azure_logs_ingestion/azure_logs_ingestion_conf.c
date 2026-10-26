@@ -190,14 +190,13 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
     pthread_mutex_init(&ctx->token_mutex, NULL);
 
     /* Create oauth2 context */
-    ctx->u_auth = flb_oauth2_create(config, ctx->auth_url,
+    ctx->u_auth = flb_oauth2_create(ins, ctx->auth_url,
                                     FLB_AZ_LI_TOKEN_TIMEOUT);
     if (!ctx->u_auth) {
         flb_plg_error(ins, "cannot create oauth2 context");
         flb_az_li_ctx_destroy(ctx);
         return NULL;
     }
-    flb_tls_set_verify_hostname(ctx->u_auth->tls, ins->tls_verify_hostname);
 
     /* Create upstream context for Log Ingsetion endpoint */
     ctx->u_dce = flb_upstream_create_url(config, ctx->dce_url,
