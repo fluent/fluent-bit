@@ -269,8 +269,10 @@ class Service:
 
 
 class IPv6Http2OtlpReceiver:
-    def __init__(self, port):
+    def __init__(self, port, oversized_headers=False, oversized_body=False):
         self.port = port
+        self.oversized_headers = oversized_headers
+        self.oversized_body = oversized_body
         self.server_socket = None
         self.thread = None
         self.requests = []
@@ -352,24 +354,35 @@ class IPv6Http2OtlpReceiver:
                 client_socket.sendall(pending)
 
     def _send_response(self, connection, stream_id):
-        body = b"{}"
+        body = b"x" * (32 * 1024) if self.oversized_body else b"{}"
 
-        connection.send_headers(
-            stream_id,
-            [
-                (":status", "200"),
-                ("content-type", "application/json"),
-                ("content-length", str(len(body))),
-            ],
-        )
-        connection.send_data(stream_id, body, end_stream=True)
+        headers = [
+            (":status", "200"),
+            ("content-type", "application/json"),
+            ("content-length", str(len(body))),
+        ]
+        if self.oversized_headers:
+            headers.extend((f"x-extra-{index}", "a" * 1024) for index in range(70))
+
+        connection.send_headers(stream_id, headers)
+        if self.oversized_body:
+            connection.send_data(stream_id, body[:16384])
+            connection.send_data(stream_id, body[16384:], end_stream=True)
+        else:
+            connection.send_data(stream_id, body, end_stream=True)
 
 
 class Http2IPv6Service:
-    def __init__(self):
-        self.config_file = _repo_relative("../config", "out_otel_http2_ipv6_logs.yaml")
+    def __init__(self, oversized_headers=False, oversized_body=False):
+        config_name = (
+            "out_otel_http2_ipv6_response_limit.yaml"
+            if oversized_body else "out_otel_http2_ipv6_logs.yaml"
+        )
+        self.config_file = _repo_relative("../config", config_name)
         self.receiver = None
         self.test_suite_http_port = None
+        self.oversized_headers = oversized_headers
+        self.oversized_body = oversized_body
         self.service = FluentBitTestService(
             self.config_file,
             pre_start=self._start_receiver,
@@ -378,7 +391,9 @@ class Http2IPv6Service:
 
     def _start_receiver(self, service):
         self.test_suite_http_port = service.test_suite_http_port
-        self.receiver = IPv6Http2OtlpReceiver(service.test_suite_http_port)
+        self.receiver = IPv6Http2OtlpReceiver(
+            service.test_suite_http_port, self.oversized_headers, self.oversized_body
+        )
         self.receiver.start()
 
     def _stop_receiver(self, service):
@@ -388,6 +403,7 @@ class Http2IPv6Service:
 
     def start(self):
         self.service.start()
+        self.flb = self.service.flb
 
     def stop(self):
         self.service.stop()
@@ -901,6 +917,43 @@ def test_out_opentelemetry_http2_ipv6_authority_header():
 
     assert request_seen["path"] == "/v1/logs"
     assert request_seen["headers"][":authority"] == f"[::1]:{service.test_suite_http_port}"
+
+
+def test_out_opentelemetry_http1_oversized_response_is_rejected():
+    service = Service("out_otel_http2_http1_response_limit.yaml", use_tls=True)
+    service.start()
+    try:
+        configure_otlp_response(body="x" * (128 * 1024))
+        service.wait_for_requests(1)
+        _wait_for_log_message(service, "HTTP response exceeded configured client limit")
+    finally:
+        service.stop()
+
+
+def test_out_opentelemetry_http2_oversized_headers_are_rejected():
+    if not ipv6_loopback_available():
+        pytest.skip("IPv6 loopback is not available")
+
+    service = Http2IPv6Service(oversized_headers=True)
+    try:
+        service.start()
+        service.wait_for_requests(1, timeout=30)
+        _wait_for_log_message(service, "HTTP response exceeded configured client limit")
+    finally:
+        service.stop()
+
+
+def test_out_opentelemetry_http2_oversized_body_is_rejected():
+    if not ipv6_loopback_available():
+        pytest.skip("IPv6 loopback is not available")
+
+    service = Http2IPv6Service(oversized_body=True)
+    try:
+        service.start()
+        service.wait_for_requests(1, timeout=30)
+        _wait_for_log_message(service, "HTTP response exceeded configured client limit")
+    finally:
+        service.stop()
 
 
 @pytest.mark.parametrize(
