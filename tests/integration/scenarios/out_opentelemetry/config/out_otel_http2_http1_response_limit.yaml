@@ -3,7 +3,7 @@ service:
   http_client.max_response_size: 16K
   http_client.max_header_size: 1K
   http_client.max_wire_size: 256K
-  http_client.max_header_count: 50
+  http_client.max_header_count: 12
   http_client.response_timeout: ${TEST_SUITE_HTTP_CLIENT_RESPONSE_TIMEOUT}
   log_level: info
   http_server: on

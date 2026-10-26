@@ -88,6 +88,7 @@ class Service:
         grpc_methods=None,
         use_oauth_server=False,
         response_timeout=10,
+        response_options=None,
     ):
         self.config_file = _repo_relative("../config", config_file)
         cert_dir = _repo_relative("../../in_splunk/certificate")
@@ -97,6 +98,7 @@ class Service:
         self.use_tls = use_tls
         self.grpc_methods = grpc_methods or {}
         self.use_oauth_server = use_oauth_server
+        self.response_options = response_options
         self.oauth_server_port = None
         self.service = FluentBitTestService(
             self.config_file,
@@ -142,6 +144,8 @@ class Service:
             tls_key_file=self.tls_key_file,
             use_grpc=self.receiver_mode == "grpc",
         )
+        if self.response_options is not None:
+            configure_otlp_response(**self.response_options)
 
         if self.receiver_mode == "grpc":
             self._wait_for_tcp_port(service.test_suite_http_port)
@@ -989,6 +993,31 @@ def test_out_opentelemetry_http1_oversized_response_is_rejected():
         configure_otlp_response(body="x" * (128 * 1024))
         service.wait_for_requests(1)
         _wait_for_log_message(service, "HTTP response exceeded configured client limit")
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize(
+    "extra_header_count,rejected",
+    [(5, False), (15, True)],
+    ids=["within_header_count", "over_header_count"],
+)
+def test_out_opentelemetry_http1_header_count_limit(extra_header_count, rejected):
+    service = Service(
+        "out_otel_http2_http1_response_limit.yaml",
+        use_tls=True,
+        response_options={
+            "body": "{}",
+            "headers": {f"X-Test-{index}": "x" for index in range(extra_header_count)},
+        },
+    )
+    service.start()
+    try:
+        service.wait_for_requests(1)
+        if rejected:
+            _wait_for_log_message(service, "HTTP response exceeded configured client limit")
+        else:
+            _wait_for_log_message(service, "HTTP status=200")
     finally:
         service.stop()
 
