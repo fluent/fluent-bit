@@ -2387,6 +2387,7 @@ int flb_http_client_ng_init(struct flb_http_client_ng *client,
     client->protocol_version = protocol_version;
     client->max_response_size = FLB_HTTP_CLIENT_NG_RESPONSE_SIZE_MAX;
     client->max_header_size = FLB_HTTP_CLIENT_NG_HEADER_SIZE_MAX;
+    client->max_wire_size = FLB_HTTP_CLIENT_NG_WIRE_SIZE_MAX;
     client->max_header_count = FLB_HTTP_CLIENT_NG_HEADER_COUNT_MAX;
     client->response_timeout = FLB_HTTP_CLIENT_NG_RESPONSE_TIMEOUT;
     client->upstream_ha = upstream_ha;
@@ -2711,6 +2712,12 @@ void flb_http_client_session_destroy(struct flb_http_client_session *session)
                         session->connection->fd,
                         session->original_net_setup->io_timeout);
                 }
+                if (session->original_net_setup->io_timeout > 0) {
+                    flb_connection_reset_io_timeout(session->connection);
+                }
+                else {
+                    flb_connection_unset_io_timeout(session->connection);
+                }
             }
             flb_upstream_conn_release(session->connection);
         }
@@ -2784,6 +2791,66 @@ struct flb_http_request *flb_http_client_request_begin(struct flb_http_client_se
     return &stream->request;
 }
 
+#ifndef __EMSCRIPTEN__
+static int flb_http_client_session_arm_timeout(struct flb_http_client_session *session)
+{
+    struct flb_connection *connection;
+    time_t                 elapsed;
+    time_t                 now;
+    int                    timeout;
+
+    connection = session->connection;
+    now = time(NULL);
+
+    if (session->response_start == 0) {
+        session->response_start = now;
+        session->original_net_setup = connection->net;
+        if (session->original_net_setup == NULL) {
+            return -1;
+        }
+
+        session->request_net_setup = *session->original_net_setup;
+        connection->net = &session->request_net_setup;
+    }
+
+    elapsed = now - session->response_start;
+    if (elapsed >= session->parent->response_timeout) {
+        flb_upstream_conn_recycle(connection, FLB_FALSE);
+        return -1;
+    }
+
+    if (elapsed < 0) {
+        elapsed = 0;
+    }
+
+    timeout = session->parent->response_timeout - (int) elapsed;
+    if (session->original_net_setup->io_timeout > 0 &&
+        session->original_net_setup->io_timeout < timeout) {
+        timeout = session->original_net_setup->io_timeout;
+    }
+
+    session->request_net_setup.io_timeout = timeout;
+    if (connection->fd > 0) {
+        flb_net_socket_set_rcvtimeout(connection->fd, timeout);
+    }
+
+    /* Async reads and writes use this timestamp while their coroutine yields. */
+    flb_connection_reset_io_timeout(connection);
+
+    return 0;
+}
+
+static int flb_http_client_session_deadline_reached(struct flb_http_client_session *session)
+{
+    if (time(NULL) - session->response_start >= session->parent->response_timeout) {
+        flb_upstream_conn_recycle(session->connection, FLB_FALSE);
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+#endif
+
 struct flb_http_response *flb_http_client_request_execute_step(
                             struct flb_http_request *request)
 {
@@ -2802,35 +2869,6 @@ struct flb_http_response *flb_http_client_request_execute_step(
      */
     if (session->connection == NULL) {
         return response;
-    }
-
-    if (session->response_start == 0) {
-        session->response_start = time(NULL);
-        session->original_net_setup = session->connection->net;
-        if (session->original_net_setup != NULL) {
-            session->request_net_setup = *session->original_net_setup;
-            session->connection->net = &session->request_net_setup;
-        }
-    }
-
-    result = session->parent->response_timeout -
-             (int) (time(NULL) - session->response_start);
-    if (result <= 0) {
-        flb_upstream_conn_recycle(session->connection, FLB_FALSE);
-        request->stream->status = HTTP_STREAM_STATUS_ERROR;
-        return NULL;
-    }
-
-    if (session->original_net_setup != NULL) {
-        if (session->original_net_setup->io_timeout > 0 &&
-            session->original_net_setup->io_timeout < result) {
-            result = session->original_net_setup->io_timeout;
-        }
-
-        session->request_net_setup.io_timeout = result;
-        if (session->connection->fd > 0) {
-            flb_net_socket_set_rcvtimeout(session->connection->fd, result);
-        }
     }
 
     if (session->outgoing_data != NULL &&
@@ -2912,11 +2950,19 @@ static int flb_http_client_session_read(struct flb_http_client_session *session)
 {
     ssize_t result;
 
+    if (flb_http_client_session_arm_timeout(session) != 0) {
+        return -1;
+    }
+
     result = flb_io_net_read(session->connection,
                              (void *) session->parent->temporary_buffer,
                              cfl_sds_avail(session->parent->temporary_buffer));
 
     if (result <= 0) {
+        return -1;
+    }
+
+    if (flb_http_client_session_deadline_reached(session)) {
         return -1;
     }
 
@@ -2970,12 +3016,20 @@ static int flb_http_client_session_write(struct flb_http_client_session *session
     data_length = cfl_sds_len(session->outgoing_data);
 
     if (data_length > 0) {
+        if (flb_http_client_session_arm_timeout(session) != 0) {
+            return -2;
+        }
+
         result = flb_io_net_write(session->connection,
                                   (void *) session->outgoing_data,
                                   data_length,
                                   &data_sent);
 
         if (result == -1) {
+            return -2;
+        }
+
+        if (flb_http_client_session_deadline_reached(session)) {
             return -2;
         }
 
@@ -3004,18 +3058,10 @@ int flb_http_client_session_ingest(struct flb_http_client_session *session,
 #ifndef __EMSCRIPTEN__
     struct cfl_list        *iterator;
     struct flb_http_stream *stream;
-    size_t                  max_wire_size;
 
-    max_wire_size = session->parent->max_response_size;
-    if (session->parent->max_header_size <= SIZE_MAX - max_wire_size) {
-        max_wire_size += session->parent->max_header_size;
-    }
-    else {
-        max_wire_size = SIZE_MAX;
-    }
-
-    if (session->received_bytes > max_wire_size ||
-        length > max_wire_size - session->received_bytes) {
+    /* This independent budget includes chunk and HTTP/2 frame overhead. */
+    if (session->received_bytes > session->parent->max_wire_size ||
+        length > session->parent->max_wire_size - session->received_bytes) {
         session->response_limit_exceeded = FLB_TRUE;
         cfl_list_foreach(iterator, &session->streams) {
             stream = cfl_list_entry(iterator, struct flb_http_stream, _head);
