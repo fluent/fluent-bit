@@ -754,6 +754,7 @@ struct opentelemetry_context *flb_opentelemetry_context_create(struct flb_output
     if (ret == 0) {
         ctx->http_client.max_response_size = config->http_client_max_response_size;
         ctx->http_client.max_header_size = config->http_client_max_header_size;
+        ctx->http_client.max_wire_size = config->http_client_max_wire_size;
         ctx->http_client.max_header_count = config->http_client_max_header_count;
         ctx->http_client.response_timeout = config->http_client_response_timeout;
     }
