@@ -39,6 +39,7 @@
 #include <fluent-bit/stream_processor/flb_sp.h>
 #include <fluent-bit/flb_ring_buffer.h>
 #include <chunkio/chunkio.h>
+#include <mpack/mpack.h>
 #include <monkey/mk_core.h>
 #include <string.h>
 #include <stdint.h>
@@ -2828,6 +2829,197 @@ int flb_input_chunk_destroy(struct flb_input_chunk *ic, int del)
 }
 
 /* Return or create an available chunk to write data */
+/*
+ * Group markers are events whose timestamp is -1 (start) or -2 (end), stored
+ * as an EventTime with 0xffffffff or 0xfffffffe seconds, or as a negative
+ * number. Every event header is a two entries array, so a marker can only
+ * follow the bytes 0x92 0x92. Buffers without such a candidate, nearly all
+ * buffers of inputs that do not create groups, skip the event scan.
+ */
+static int log_buffer_may_have_groups(const char *buf, size_t size)
+{
+    size_t left;
+    const unsigned char *p;
+    const unsigned char *end;
+
+    p = (const unsigned char *) buf;
+    end = p + size;
+
+    while (p + 2 < end) {
+        p = memchr(p, 0x92, end - p - 2);
+        if (p == NULL) {
+            return FLB_FALSE;
+        }
+
+        if (p[1] != 0x92) {
+            p++;
+            continue;
+        }
+
+        left = end - (p + 2);
+        switch (p[2]) {
+        case 0xd7:
+            /* EventTime: fixext 8, type 0, seconds 0xfffffffe or 0xffffffff */
+            if (left >= 6 && p[3] == 0x00 && p[4] == 0xff && p[5] == 0xff &&
+                p[6] == 0xff && (p[7] == 0xff || p[7] == 0xfe)) {
+                return FLB_TRUE;
+            }
+            break;
+        case 0xd0: case 0xd1: case 0xd2: case 0xd3: case 0xca: case 0xcb:
+            /* signed integers and floats */
+            return FLB_TRUE;
+        default:
+            if (p[2] >= 0xe0) {
+                /* negative fixint */
+                return FLB_TRUE;
+            }
+            break;
+        }
+        p++;
+    }
+
+    return FLB_FALSE;
+}
+
+/* 1 for a group start, 2 for a group end, 0 for a record, -1 on error */
+static int log_event_group_marker(mpack_reader_t *reader)
+{
+    int header;
+    int marker = 0;
+    char ext[8];
+    double value;
+    uint32_t seconds;
+    mpack_tag_t tag;
+
+    tag = mpack_read_tag(reader);
+    if (mpack_tag_type(&tag) != mpack_type_array || mpack_tag_array_count(&tag) != 2) {
+        return -1;
+    }
+
+    tag = mpack_read_tag(reader);
+    header = mpack_tag_type(&tag) == mpack_type_array;
+    if (header) {
+        if (mpack_tag_array_count(&tag) != 2) {
+            return -1;
+        }
+        tag = mpack_read_tag(reader);
+    }
+
+    if (mpack_tag_type(&tag) == mpack_type_ext) {
+        if (mpack_tag_ext_exttype(&tag) == 0 && mpack_tag_ext_length(&tag) == 8) {
+            mpack_read_bytes(reader, ext, sizeof(ext));
+            seconds = ((uint32_t) (unsigned char) ext[0] << 24) |
+                      ((uint32_t) (unsigned char) ext[1] << 16) |
+                      ((uint32_t) (unsigned char) ext[2] << 8) |
+                      (uint32_t) (unsigned char) ext[3];
+            if (seconds == UINT32_MAX) {
+                marker = 1;
+            }
+            else if (seconds == UINT32_MAX - 1) {
+                marker = 2;
+            }
+        }
+        else {
+            mpack_skip_bytes(reader, mpack_tag_ext_length(&tag));
+        }
+        mpack_done_ext(reader);
+    }
+    else if (mpack_tag_type(&tag) == mpack_type_int) {
+        if (mpack_tag_int_value(&tag) == FLB_LOG_EVENT_GROUP_START) {
+            marker = 1;
+        }
+        else if (mpack_tag_int_value(&tag) == FLB_LOG_EVENT_GROUP_END) {
+            marker = 2;
+        }
+    }
+    else if (mpack_tag_type(&tag) == mpack_type_float ||
+             mpack_tag_type(&tag) == mpack_type_double) {
+        value = mpack_tag_type(&tag) == mpack_type_float ?
+                mpack_tag_float_value(&tag) : mpack_tag_double_value(&tag);
+        if ((int) value == FLB_LOG_EVENT_GROUP_START) {
+            marker = 1;
+        }
+        else if ((int) value == FLB_LOG_EVENT_GROUP_END) {
+            marker = 2;
+        }
+    }
+
+    if (header) {
+        mpack_discard(reader);
+        mpack_done_array(reader);
+    }
+    mpack_discard(reader);
+    mpack_done_array(reader);
+
+    if (mpack_reader_error(reader) != mpack_ok) {
+        return -1;
+    }
+
+    return marker;
+}
+
+/*
+ * Whether a log chunk still ends inside a group after appending 'buf': the
+ * last group marker of the buffer decides, a buffer without markers keeps
+ * the previous state. Unreadable buffers keep it as well.
+ */
+static int log_buffer_group_open(const char *buf, size_t size, int open)
+{
+    int marker;
+    int state;
+    mpack_reader_t reader;
+
+    if (buf == NULL || size == 0 || !log_buffer_may_have_groups(buf, size)) {
+        return open;
+    }
+
+    state = open;
+    mpack_reader_init_data(&reader, buf, size);
+    while (mpack_reader_remaining(&reader, NULL) > 0) {
+        marker = log_event_group_marker(&reader);
+        if (marker == -1) {
+            state = open;
+            break;
+        }
+        else if (marker == 1) {
+            state = FLB_TRUE;
+        }
+        else if (marker == 2) {
+            state = FLB_FALSE;
+        }
+    }
+    mpack_reader_destroy(&reader);
+
+    return state;
+}
+
+/*
+ * A log chunk ending inside a group waits for the group end, so the group is
+ * not split across chunks. The wait is bounded, and ends on shutdown.
+ */
+int flb_input_chunk_holds_open_group(struct flb_input_chunk *ic)
+{
+    struct flb_config *config;
+
+    if (ic == NULL || ic->group_open == FLB_FALSE) {
+        return FLB_FALSE;
+    }
+
+    config = ic->in->config;
+    if (config->is_shutting_down == FLB_TRUE ||
+        config->is_ingestion_active == FLB_FALSE) {
+        return FLB_FALSE;
+    }
+
+    if (flb_time_now() - ic->group_open_time >= FLB_INPUT_CHUNK_GROUP_HOLD_SEC) {
+        flb_debug("[input chunk] flushing a chunk whose last group did not end "
+                  "within %.0f seconds", FLB_INPUT_CHUNK_GROUP_HOLD_SEC);
+        return FLB_FALSE;
+    }
+
+    return FLB_TRUE;
+}
+
 static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
                                                int event_type,
                                                const char *tag, int tag_len,
@@ -3268,6 +3460,7 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
 #endif
     int set_down = FLB_FALSE;
     int min;
+    int open;
     int new_chunk = FLB_FALSE;
     uint64_t ts;
     char *name;
@@ -3468,6 +3661,16 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
         ret = 0;
     }
 
+    /* track whether the chunk now ends inside a group */
+    if (ret == 0 && event_type == FLB_INPUT_LOGS && final_data_size > 0) {
+        open = log_buffer_group_open(final_data_buffer, final_data_size,
+                                     ic->group_open);
+        if (open == FLB_TRUE && ic->group_open == FLB_FALSE) {
+            ic->group_open_time = flb_time_now();
+        }
+        ic->group_open = open;
+    }
+
     if (filtered_data_buffer != NULL &&
         filtered_data_buffer != buf) {
         flb_free(filtered_data_buffer);
@@ -3509,8 +3712,12 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
         real_diff = 0;
     }
 
-    /* Lock buffers where size > 2MB */
-    if (content_size > FLB_INPUT_CHUNK_FS_MAX_SIZE) {
+    /*
+     * Lock buffers where size > 2MB. A chunk that ends inside a group stays
+     * open for the rest of the group, up to a hard limit.
+     */
+    if (content_size > FLB_INPUT_CHUNK_GROUP_MAX_SIZE ||
+        (content_size > FLB_INPUT_CHUNK_FS_MAX_SIZE && ic->group_open == FLB_FALSE)) {
         cio_chunk_lock(ic->chunk);
     }
 
