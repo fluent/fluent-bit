@@ -257,6 +257,7 @@ struct flb_input_instance {
      * as the tags will be composed used the file name being watched.
      */
     int flags;
+    int initialized;                     /* successful instance initialization */
 
     int id;                              /* instance id                  */
 #ifdef FLB_HAVE_CHUNK_TRACE
