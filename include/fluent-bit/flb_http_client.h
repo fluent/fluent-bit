@@ -46,6 +46,7 @@
 /* Maximum response bytes received by a client-ng session. */
 #define FLB_HTTP_CLIENT_NG_RESPONSE_SIZE_MAX (4 * 1024 * 1024)
 #define FLB_HTTP_CLIENT_NG_HEADER_SIZE_MAX   65536
+#define FLB_HTTP_CLIENT_NG_WIRE_SIZE_MAX     (64 * 1024 * 1024)
 #define FLB_HTTP_CLIENT_NG_HEADER_COUNT_MAX  100
 #define FLB_HTTP_CLIENT_NG_RESPONSE_TIMEOUT   30
 #define FLB_HTTP_DATA_CHUNK     32768
@@ -284,6 +285,7 @@ struct flb_http_client_ng {
     int                     protocol_version;
     size_t                  max_response_size;
     size_t                  max_header_size;
+    size_t                  max_wire_size;
     size_t                  max_header_count;
     int                     response_timeout;
     cfl_sds_t               temporary_buffer;
