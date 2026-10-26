@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_uri.h>
 #include <fluent-bit/flb_oauth2.h>
 #include <fluent-bit/flb_upstream.h>
+#include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_jsmn.h>
 #include <fluent-bit/flb_base64.h>
@@ -358,7 +359,7 @@ void flb_oauth2_config_destroy(struct flb_oauth2_config *cfg)
 }
 
 static int oauth2_setup_upstream(struct flb_oauth2 *ctx,
-                                 struct flb_config *config,
+                                 struct flb_output_instance *ins,
                                  const char *auth_url)
 {
     int ret;
@@ -421,11 +422,17 @@ static int oauth2_setup_upstream(struct flb_oauth2 *ctx,
         goto error;
     }
 
+    ret = flb_tls_set_verify_hostname(ctx->tls, ins->tls_verify_hostname);
+    if (ret != 0) {
+        flb_error("[oauth2] error setting TLS hostname verification");
+        goto error;
+    }
+
     if (strcmp(prot, "https") == 0) {
-        ctx->u = flb_upstream_create_url(config, auth_url, FLB_IO_TLS, ctx->tls);
+        ctx->u = flb_upstream_create_url(ins->config, auth_url, FLB_IO_TLS, ctx->tls);
     }
     else {
-        ctx->u = flb_upstream_create_url(config, auth_url, FLB_IO_TCP, NULL);
+        ctx->u = flb_upstream_create_url(ins->config, auth_url, FLB_IO_TCP, NULL);
     }
 
     if (!ctx->u) {
@@ -1178,7 +1185,7 @@ static int oauth2_token_needs_refresh(struct flb_oauth2 *ctx, int force_refresh)
     return FLB_FALSE;
 }
 
-struct flb_oauth2 *flb_oauth2_create(struct flb_config *config,
+struct flb_oauth2 *flb_oauth2_create(struct flb_output_instance *ins,
                                      const char *auth_url, int expire_sec)
 {
     struct flb_oauth2_config cfg;
@@ -1191,14 +1198,14 @@ struct flb_oauth2 *flb_oauth2_create(struct flb_config *config,
     cfg.token_url = flb_sds_create(auth_url);
     cfg.refresh_skew = FLB_OAUTH2_DEFAULT_SKEW_SECS;
 
-    ctx = flb_oauth2_create_from_config(config, &cfg);
+    ctx = flb_oauth2_create_from_config(ins, &cfg);
 
     flb_oauth2_config_destroy(&cfg);
 
     return ctx;
 }
 
-struct flb_oauth2 *flb_oauth2_create_from_config(struct flb_config *config,
+struct flb_oauth2 *flb_oauth2_create_from_config(struct flb_output_instance *ins,
                                 const struct flb_oauth2_config *cfg)
 {
     int ret;
@@ -1260,7 +1267,7 @@ struct flb_oauth2 *flb_oauth2_create_from_config(struct flb_config *config,
         return NULL;
     }
 
-    ret = oauth2_setup_upstream(ctx, config, ctx->auth_url);
+    ret = oauth2_setup_upstream(ctx, ins, ctx->auth_url);
     if (ret != 0) {
         flb_oauth2_destroy(ctx);
         return NULL;
