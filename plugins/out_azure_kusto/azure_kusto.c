@@ -1003,7 +1003,7 @@ static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_confi
 
     /* Create oauth2 context */
     ctx->o =
-        flb_oauth2_create(ctx->config, ctx->oauth_url, FLB_AZURE_KUSTO_TOKEN_REFRESH);
+        flb_oauth2_create(ins, ctx->oauth_url, FLB_AZURE_KUSTO_TOKEN_REFRESH);
     if (!ctx->o) {
         flb_plg_error(ctx->ins, "cannot create oauth2 context");
         if (ctx->buffering_enabled == FLB_TRUE) {
@@ -1016,7 +1016,6 @@ static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_confi
         flb_azure_kusto_conf_destroy(ctx);
         return -1;
     }
-    flb_tls_set_verify_hostname(ctx->o->tls, ins->tls_verify_hostname);
     flb_output_upstream_set(ctx->u, ins);
 
     flb_plg_debug(ctx->ins, "azure kusto init completed");
