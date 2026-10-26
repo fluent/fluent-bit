@@ -97,9 +97,11 @@ static int flb_http1_client_session_process_headers(struct flb_http_client_sessi
 {
     char   *header_block_begining;
     size_t  header_block_length;
+    size_t  header_count;
     size_t  status_line_length;
     char   *header_block_end;
     char   *status_line;
+    char   *cursor;
     int     result;
 
     status_line = session->incoming_data;
@@ -158,6 +160,24 @@ static int flb_http1_client_session_process_headers(struct flb_http_client_sessi
 
         if ((size_t) (header_block_end - status_line) + 4 >
             session->parent->max_header_size) {
+            session->response_limit_exceeded = FLB_TRUE;
+            response->stream->status = HTTP_STREAM_STATUS_ERROR;
+            return -1;
+        }
+
+        header_count = 0;
+        if (header_block_end > header_block_begining) {
+            header_count = 1;
+            for (cursor = header_block_begining;
+                 cursor + 1 < header_block_end;
+                 cursor++) {
+                if (cursor[0] == '\r' && cursor[1] == '\n') {
+                    header_count++;
+                }
+            }
+        }
+
+        if (header_count > session->parent->max_header_count) {
             session->response_limit_exceeded = FLB_TRUE;
             response->stream->status = HTTP_STREAM_STATUS_ERROR;
             return -1;
