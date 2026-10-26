@@ -1884,6 +1884,9 @@ static void check_raw_chain_equivalence(const char *action, const char *json,
     int root_type;
     int raw_result;
     int expected_ret;
+    int input_records;
+    int actual_records;
+    int expected_records;
     char *data;
     char *saved;
     char *actual_json;
@@ -1945,12 +1948,17 @@ static void check_raw_chain_equivalence(const char *action, const char *json,
 
     actual = NULL;
     expected = NULL;
-    TEST_CHECK(flb_processor_run(proc, 0, FLB_PROCESSOR_LOGS, "test", 4,
-                                data, bytes, &actual, &actual_size) == 0);
+    input_records = flb_mp_count_log_records(data, bytes);
+    TEST_CHECK(flb_processor_run_with_count(proc, 0, FLB_PROCESSOR_LOGS, "test", 4,
+                                           data, bytes, &actual, &actual_size,
+                                           input_records, &actual_records) == 0);
     ins->p = &fallback;
-    TEST_CHECK(flb_processor_run(proc, 0, FLB_PROCESSOR_LOGS, "test", 4,
-                                data, bytes, &expected, &expected_size) == 0);
+    TEST_CHECK(flb_processor_run_with_count(proc, 0, FLB_PROCESSOR_LOGS, "test", 4,
+                                           data, bytes, &expected, &expected_size,
+                                           input_records, &expected_records) == 0);
     ins->p = original;
+    TEST_CHECK(actual_records == flb_mp_count_log_records(actual, actual_size));
+    TEST_CHECK(actual_records == expected_records);
     TEST_CHECK(memcmp(data, saved, bytes) == 0);
 
     TEST_CHECK(flb_log_event_decoder_init(&actual_decoder, actual, actual_size) == 0);
