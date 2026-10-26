@@ -4,6 +4,8 @@ service:
   http_server: on
   http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
   http_client.max_response_size: 16K
+  http_client.max_header_size: 1K
+  http_client.max_wire_size: 256K
 
 pipeline:
   inputs:
