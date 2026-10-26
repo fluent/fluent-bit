@@ -62,6 +62,10 @@ struct flb_service_config service_configs[] = {
      FLB_CONF_TYPE_SIZE,
      offsetof(struct flb_config, http_client_max_header_size)},
 
+    {FLB_CONF_STR_HTTP_CLIENT_MAX_WIRE_SIZE,
+     FLB_CONF_TYPE_SIZE,
+     offsetof(struct flb_config, http_client_max_wire_size)},
+
     {FLB_CONF_STR_HTTP_CLIENT_MAX_HEADER_COUNT,
      FLB_CONF_TYPE_INT,
      offsetof(struct flb_config, http_client_max_header_count)},
@@ -339,6 +343,7 @@ struct flb_config *flb_config_init()
     config->flush        = FLB_CONFIG_FLUSH_SECS;
     config->http_client_max_response_size = 4 * 1024 * 1024;
     config->http_client_max_header_size = 65536;
+    config->http_client_max_wire_size = 64 * 1024 * 1024;
     config->http_client_max_header_count = 100;
     config->http_client_response_timeout = 30;
     config->flush_adaptive = FLB_FALSE;

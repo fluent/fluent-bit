@@ -101,6 +101,7 @@ struct flb_config {
 
     size_t http_client_max_response_size;
     size_t http_client_max_header_size;
+    size_t http_client_max_wire_size;
     int http_client_max_header_count;
     int http_client_response_timeout;
 
@@ -430,6 +431,7 @@ enum conf_type {
 #define FLB_CONF_STR_FLUSH        "Flush"
 #define FLB_CONF_STR_HTTP_CLIENT_MAX_RESPONSE_SIZE "http_client.max_response_size"
 #define FLB_CONF_STR_HTTP_CLIENT_MAX_HEADER_SIZE   "http_client.max_header_size"
+#define FLB_CONF_STR_HTTP_CLIENT_MAX_WIRE_SIZE     "http_client.max_wire_size"
 #define FLB_CONF_STR_HTTP_CLIENT_MAX_HEADER_COUNT  "http_client.max_header_count"
 #define FLB_CONF_STR_HTTP_CLIENT_RESPONSE_TIMEOUT  "http_client.response_timeout"
 #define FLB_CONF_STR_FLUSH_ADAPTIVE "flush.adaptive"
