@@ -375,6 +375,8 @@ static void processor_grouped_filter_counters()
 static void processor_private_inputs_use_main_loop()
 {
     int ret;
+    int collector_count;
+    void *context;
     struct flb_config *config;
     struct flb_input_instance *ins;
     struct mk_event_loop *thread_evl;
@@ -420,6 +422,14 @@ static void processor_private_inputs_use_main_loop()
 
     ret = flb_input_instance_init(ins, config);
     TEST_CHECK(ret == 0);
+
+    /* Initializing a private input again must not replace its owned state. */
+    context = ins->context;
+    collector_count = mk_list_size(&ins->collectors);
+    ret = flb_input_instance_init(ins, config);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(ins->context == context);
+    TEST_CHECK(mk_list_size(&ins->collectors) == collector_count);
 
     mk_list_foreach(head, &ins->collectors) {
         coll = mk_list_entry(head, struct flb_input_collector, _head);
