@@ -493,12 +493,11 @@ static int cb_chronicle_init(struct flb_output_instance *ins,
     }
 
     /* Create oauth2 context */
-    ctx->o = flb_oauth2_create(ctx->config, FLB_CHRONICLE_AUTH_URL, 3000);
+    ctx->o = flb_oauth2_create(ins, FLB_CHRONICLE_AUTH_URL, 3000);
     if (!ctx->o) {
         flb_plg_error(ctx->ins, "cannot create oauth2 context");
         goto error;
     }
-    flb_tls_set_verify_hostname(ctx->o->tls, ins->tls_verify_hostname);
     flb_output_upstream_set(ctx->u, ins);
 
     if (ins->test_mode == FLB_FALSE) {
