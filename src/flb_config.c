@@ -54,6 +54,22 @@ const char *FLB_CONF_ENV_LOGLEVEL = "FLB_LOG_LEVEL";
 int flb_regex_init();
 
 struct flb_service_config service_configs[] = {
+    {FLB_CONF_STR_HTTP_CLIENT_MAX_RESPONSE_SIZE,
+     FLB_CONF_TYPE_SIZE,
+     offsetof(struct flb_config, http_client_max_response_size)},
+
+    {FLB_CONF_STR_HTTP_CLIENT_MAX_HEADER_SIZE,
+     FLB_CONF_TYPE_SIZE,
+     offsetof(struct flb_config, http_client_max_header_size)},
+
+    {FLB_CONF_STR_HTTP_CLIENT_MAX_HEADER_COUNT,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, http_client_max_header_count)},
+
+    {FLB_CONF_STR_HTTP_CLIENT_RESPONSE_TIMEOUT,
+     FLB_CONF_TYPE_INT,
+     offsetof(struct flb_config, http_client_response_timeout)},
+
     {FLB_CONF_STR_FLUSH,
      FLB_CONF_TYPE_DOUBLE,
      offsetof(struct flb_config, flush)},
@@ -321,6 +337,10 @@ struct flb_config *flb_config_init()
 
     /* Flush */
     config->flush        = FLB_CONFIG_FLUSH_SECS;
+    config->http_client_max_response_size = 4 * 1024 * 1024;
+    config->http_client_max_header_size = 65536;
+    config->http_client_max_header_count = 100;
+    config->http_client_response_timeout = 30;
     config->flush_adaptive = FLB_FALSE;
     config->flush_adaptive_min_interval = 0.5;
     config->flush_adaptive_max_interval = 2.0;
@@ -858,6 +878,10 @@ int flb_config_set_property(struct flb_config *config,
     int i=0;
     int ret = -1;
     int *i_val;
+    size_t *size_val;
+    int64_t parsed_size;
+    long parsed_int;
+    char *endptr;
     double *d_val;
     char **s_val;
     size_t len = strnlen(k, 256);
@@ -912,8 +936,36 @@ int flb_config_set_property(struct flb_config *config,
                 switch(service_configs[i].type) {
                 case FLB_CONF_TYPE_INT:
                     i_val  = (int*)((char*)config + service_configs[i].offset);
-                    *i_val = atoi(tmp);
+                    if (strncasecmp(key, "http_client.", 12) == 0) {
+                        errno = 0;
+                        parsed_int = strtol(tmp, &endptr, 10);
+                        if (errno != 0 || endptr == tmp || *endptr != '\0' ||
+                            parsed_int <= 0 || parsed_int > INT_MAX) {
+                            ret = -1;
+                        }
+                        else {
+                            *i_val = (int) parsed_int;
+                        }
+                    }
+                    else {
+                        *i_val = atoi(tmp);
+                    }
                     flb_sds_destroy(tmp);
+                    tmp = NULL;
+                    break;
+                case FLB_CONF_TYPE_SIZE:
+                    parsed_size = flb_utils_size_to_bytes(tmp);
+                    if (parsed_size <= 0 || parsed_size > UINT32_MAX ||
+                        (strcmp(key, FLB_CONF_STR_HTTP_CLIENT_MAX_HEADER_SIZE) == 0 &&
+                         parsed_size < 32)) {
+                        ret = -1;
+                    }
+                    else {
+                        size_val = (size_t *) ((char *) config + service_configs[i].offset);
+                        *size_val = (size_t) parsed_size;
+                    }
+                    flb_sds_destroy(tmp);
+                    tmp = NULL;
                     break;
                 case FLB_CONF_TYPE_DOUBLE:
                     d_val  = (double*)((char*)config + service_configs[i].offset);
