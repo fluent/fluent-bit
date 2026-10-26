@@ -56,6 +56,112 @@ def service_for(tmp_path, config, name="config.yaml"):
     return FluentBitTestService(str(path))
 
 
+@pytest.mark.parametrize("placement", ["filter", "processor"])
+def test_rule_precedence_and_accessors(tmp_path, placement):
+    messages = [
+        {"id": 0, "meta": {"level": "error", "destination": "blue"}},
+        {"id": 1, "meta": {"level": "info"}},
+        {"id": 2},
+        {"id": 3, "meta": {"level": 7}},
+    ]
+    rewrite = {"name": "rewrite_tag", "rule": [
+        "$meta['level'] ^(error)$ routed.$1.$meta['destination'].$TAG[1] false",
+        "$meta['level'] ^error$ wrong true",
+    ]}
+    service = service_for(tmp_path, config_for(tmp_path, messages, rewrite, placement))
+    try:
+        service.start()
+        service.wait_for_condition(lambda: len(records(service)) >= 4, timeout=30)
+    finally:
+        service.stop()
+    assert Counter((r["id"], r["route"]) for r in records(service)) == Counter({
+        (0, "routed.error.blue.app"): 1, (1, "source.app"): 1,
+        (2, "source.app"): 1, (3, "source.app"): 1,
+    })
+
+
+@pytest.mark.parametrize("placement", ["filter", "processor"])
+def test_invalid_first_expansion_does_not_try_later_rules(tmp_path, placement):
+    messages = [{"id": 0, "kind": "emit"},
+                {"id": 1, "kind": "emit", "destination": "routed"}]
+    rewrite = {"name": "rewrite_tag", "rule": [
+        "$kind ^emit$ $destination false", "$kind ^emit$ wrong false",
+    ]}
+    service = service_for(tmp_path, config_for(tmp_path, messages, rewrite, placement))
+    try:
+        service.start()
+        service.wait_for_condition(lambda: len(records(service)) >= 2, timeout=30)
+    finally:
+        service.stop()
+    assert Counter((r["id"], r["route"]) for r in records(service)) == Counter({
+        (0, "source.app"): 1, (1, "routed"): 1,
+    })
+
+
+@pytest.mark.parametrize("placement", ["filter", "processor"])
+def test_explicit_emitter_name_is_preserved(tmp_path, placement):
+    rewrite = {"name": "rewrite_tag", "emitter_name": "custom_emitter",
+               "rule": "$kind ^emit$ routed false"}
+    config = config_for(tmp_path, [{"id": 0, "kind": "emit"}], rewrite, placement)
+    service = service_for(tmp_path, config)
+    try:
+        service.start()
+        service.wait_for_condition(lambda: len(records(service)) == 1, timeout=30)
+        response = requests.get(
+            f"http://127.0.0.1:{service.flb.http_monitoring_port}/api/v1/metrics", timeout=5,
+        )
+        response.raise_for_status()
+        assert "custom_emitter" in response.json()["input"]
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("placement", ["filter", "processor"])
+@pytest.mark.parametrize("failure", ["duplicate-name", "invalid-regex", "invalid-storage", "missing-storage-path"])
+def test_invalid_configuration_is_rejected_cleanly(tmp_path, placement, failure):
+    rewrite = {"name": "rewrite_tag", "emitter_name": "shared_emitter",
+               "rule": "$kind ^emit$ routed false"}
+    if failure == "invalid-regex":
+        rewrite["rule"] = "$kind [ routed false"
+    elif failure == "invalid-storage":
+        rewrite["emitter_storage.type"] = "unsupported"
+    config = config_for(tmp_path, [{"id": 0, "kind": "emit"}], rewrite, placement)
+    if failure == "missing-storage-path":
+        rewrite["emitter_storage.type"] = "filesystem"
+        config["service"].pop("storage.path")
+    if failure == "duplicate-name":
+        if placement == "filter":
+            config["pipeline"]["filters"].insert(1, copy.deepcopy(rewrite))
+        else:
+            config["pipeline"]["inputs"].append(copy.deepcopy(config["pipeline"]["inputs"][0]))
+    service = service_for(tmp_path, config)
+    with pytest.raises(FluentBitStartupError, match="exited early"):
+        service.start()
+    log = Path(service.flb.log_file).read_text()
+    if failure == "duplicate-name":
+        assert "emitter_name 'shared_emitter' already exists" in log
+    elif failure == "invalid-storage":
+        assert "invalid 'emitter_storage.type'" in log
+    elif failure == "invalid-regex":
+        assert "could not compile regex" in log
+    elif failure == "missing-storage-path":
+        assert "but no filesystem path was defined" in log
+
+
+@pytest.mark.parametrize("placement", ["filter", "processor"])
+def test_no_rules_preserves_existing_passthrough_behavior(tmp_path, placement):
+    config = config_for(tmp_path, [{"id": 0}, {"id": 1}], {"name": "rewrite_tag"}, placement)
+    service = service_for(tmp_path, config)
+    try:
+        service.start()
+        service.wait_for_condition(lambda: len(records(service)) == 2, timeout=30)
+    finally:
+        service.stop()
+    assert Counter((r["id"], r["route"]) for r in records(service)) == Counter({
+        (0, "source.app"): 1, (1, "source.app"): 1,
+    })
+
+
 @pytest.fixture
 def retry_sink():
     state = SimpleNamespace(allow=threading.Event(), attempted=threading.Event(),
@@ -163,3 +269,51 @@ def test_filesystem_emitter_backlog_replays_with_live_records(tmp_path, retry_si
     finally:
         second.stop()
     assert Counter(retry_sink.received) == Counter(range(5))
+
+
+@pytest.mark.parametrize("threaded", [False, True])
+def test_multiple_rewrite_processor_stages_have_unique_emitters(tmp_path, threaded):
+    config = config_for(tmp_path, [{"id": 0, "kind": "emit"}], {
+        "name": "rewrite_tag", "rule": "$kind ^emit$ middle false",
+    }, "processor")
+    input_config = config["pipeline"]["inputs"][0]
+    input_config["threaded"] = threaded
+    input_config["processors"]["logs"].append({
+        "name": "rewrite_tag", "rule": "$kind ^emit$ routed false",
+    })
+    service = service_for(tmp_path, config)
+    try:
+        service.start()
+        service.wait_for_condition(lambda: len(records(service)) == 1, timeout=30)
+        response = requests.get(
+            f"http://127.0.0.1:{service.flb.http_monitoring_port}/api/v1/metrics", timeout=5,
+        )
+        response.raise_for_status()
+        emitter_names = [name for name in response.json()["input"] if name.startswith("emitter_for_")]
+        assert len(emitter_names) == 2
+        assert len(set(emitter_names)) == 2
+    finally:
+        service.stop()
+    assert [(r["id"], r["route"]) for r in records(service)] == [(0, "routed")]
+
+
+@pytest.mark.parametrize("placement", ["filter", "processor"])
+def test_existing_default_emitter_metric_name_is_preserved(tmp_path, placement):
+    config = config_for(tmp_path, [{"id": 0, "kind": "emit"}], {
+        "name": "rewrite_tag", "rule": "$kind ^emit$ routed false",
+    }, placement)
+    # No other global filters consume an instance ID before this processor.
+    if placement == "processor":
+        config["pipeline"].pop("filters")
+    service = service_for(tmp_path, config)
+    try:
+        service.start()
+        service.wait_for_condition(lambda: len(records(service)) == 1, timeout=30)
+        response = requests.get(
+            f"http://127.0.0.1:{service.flb.http_monitoring_port}/api/v1/metrics", timeout=5,
+        )
+        response.raise_for_status()
+        emitter_names = [name for name in response.json()["input"] if name.startswith("emitter_for_")]
+        assert emitter_names == ["emitter_for_rewrite_tag.0"]
+    finally:
+        service.stop()
