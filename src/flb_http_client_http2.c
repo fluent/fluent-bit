@@ -209,6 +209,7 @@ static int http2_header_callback(nghttp2_session *inner_session,
 {
     char                     temporary_buffer[16];
     struct flb_http_stream  *stream;
+    struct flb_http_client_ng *client;
     int                      result;
 
     stream = nghttp2_session_get_stream_user_data(inner_session,
@@ -217,6 +218,21 @@ static int http2_header_callback(nghttp2_session *inner_session,
     if (stream == NULL) {
         return 0;
     }
+
+    client = ((struct flb_http_client_session *) stream->parent)->parent;
+
+    if (stream->incoming_header_count >= client->max_header_count ||
+        name_length > client->max_header_size - 32 ||
+        value_length > client->max_header_size - 32 - name_length ||
+        stream->incoming_header_size >
+            client->max_header_size - 32 - name_length - value_length) {
+        ((struct flb_http_client_session *) stream->parent)->response_limit_exceeded = FLB_TRUE;
+        stream->status = HTTP_STREAM_STATUS_ERROR;
+        return NGHTTP2_ERR_CALLBACK_FAILURE;
+    }
+
+    stream->incoming_header_count++;
+    stream->incoming_header_size += name_length + value_length + 32;
 
     if (flb_http_server_strncasecmp(
                 name, name_length, ":status", 0) == 0) {
@@ -364,6 +380,16 @@ static int http2_data_chunk_recv_callback(nghttp2_session *inner_session,
         return -1;
     }
 
+    parent_session = (struct flb_http_client_session *) stream->parent;
+    if (len > parent_session->parent->max_response_size ||
+        (stream->response.body != NULL &&
+         cfl_sds_len(stream->response.body) >
+         parent_session->parent->max_response_size - len)) {
+        parent_session->response_limit_exceeded = FLB_TRUE;
+        stream->status = HTTP_STREAM_STATUS_ERROR;
+        return NGHTTP2_ERR_CALLBACK_FAILURE;
+    }
+
     if (stream->response.body == NULL) {
         stream->response.body = cfl_sds_create_size(len);
 
@@ -473,7 +499,7 @@ static ssize_t http2_data_source_read_callback(nghttp2_session *session,
 
 int flb_http2_client_session_init(struct flb_http2_client_session *session)
 {
-    nghttp2_settings_entry     session_settings[3];
+    nghttp2_settings_entry     session_settings[4];
     nghttp2_session_callbacks *callbacks;
     int                        result;
 
@@ -514,11 +540,14 @@ int flb_http2_client_session_init(struct flb_http2_client_session *session)
     session_settings[2].settings_id = NGHTTP2_SETTINGS_ENABLE_PUSH;
     session_settings[2].value = 0;
 
+    session_settings[3].settings_id = NGHTTP2_SETTINGS_MAX_HEADER_LIST_SIZE;
+    session_settings[3].value = session->parent->parent->max_header_size;
+
 
     result = nghttp2_submit_settings(session->inner_session,
                                      NGHTTP2_FLAG_NONE,
                                      session_settings,
-                                     3);
+                                     4);
 
     if (result != 0) {
         return -3;
