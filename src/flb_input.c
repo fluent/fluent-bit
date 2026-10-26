@@ -1580,6 +1580,11 @@ int flb_input_instance_init(struct flb_input_instance *ins,
     struct flb_input_plugin *p = ins->p;
     int tls_session_mode;
 
+    /* Private inputs can be initialized while another input initializes. */
+    if (ins->initialized == FLB_TRUE) {
+        return 0;
+    }
+
     if (ins->log_level == -1 && config->log != NULL) {
         ins->log_level = config->log->level;
     }
@@ -2053,6 +2058,7 @@ int flb_input_instance_init(struct flb_input_instance *ins,
         }
     }
 
+    ins->initialized = FLB_TRUE;
     return 0;
 }
 
