@@ -283,7 +283,7 @@ int flb_wasm_http_read_response(struct flb_http_client *c, int id)
 }
 
 /* Native plugins may link these paths even when OAuth2 is disabled. */
-struct flb_oauth2 *flb_oauth2_create_from_config(struct flb_config *config,
+struct flb_oauth2 *flb_oauth2_create_from_config(struct flb_output_instance *ins,
                                                const struct flb_oauth2_config *cfg)
 {
     flb_error("[oauth2] browser token acquisition is not implemented");
