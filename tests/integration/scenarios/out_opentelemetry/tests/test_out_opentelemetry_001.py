@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import socket
+import ssl
 import threading
 import time
 from collections import Counter
@@ -86,6 +87,7 @@ class Service:
         use_tls=False,
         grpc_methods=None,
         use_oauth_server=False,
+        response_timeout=10,
     ):
         self.config_file = _repo_relative("../config", config_file)
         cert_dir = _repo_relative("../../in_splunk/certificate")
@@ -103,6 +105,7 @@ class Service:
             extra_env={
                 "CERTIFICATE_TEST": self.tls_crt_file,
                 "PRIVATE_KEY_TEST": self.tls_key_file,
+                "TEST_SUITE_HTTP_CLIENT_RESPONSE_TIMEOUT": response_timeout,
             },
             pre_start=self._start_receiver,
             post_stop=self._stop_receiver,
@@ -269,10 +272,12 @@ class Service:
 
 
 class IPv6Http2OtlpReceiver:
-    def __init__(self, port, oversized_headers=False, oversized_body=False):
+    def __init__(self, port, oversized_headers=False, oversized_body=False,
+                 fragmented_body=False):
         self.port = port
         self.oversized_headers = oversized_headers
         self.oversized_body = oversized_body
+        self.fragmented_body = fragmented_body
         self.server_socket = None
         self.thread = None
         self.requests = []
@@ -354,13 +359,19 @@ class IPv6Http2OtlpReceiver:
                 client_socket.sendall(pending)
 
     def _send_response(self, connection, stream_id):
-        body = b"x" * (32 * 1024) if self.oversized_body else b"{}"
+        if self.oversized_body:
+            body = b"x" * (32 * 1024)
+        elif self.fragmented_body:
+            body = b"x" * 8192
+        else:
+            body = b"{}"
 
         headers = [
             (":status", "200"),
             ("content-type", "application/json"),
-            ("content-length", str(len(body))),
         ]
+        if not self.fragmented_body:
+            headers.append(("content-length", str(len(body))))
         if self.oversized_headers:
             headers.extend((f"x-extra-{index}", "a" * 1024) for index in range(70))
 
@@ -368,21 +379,27 @@ class IPv6Http2OtlpReceiver:
         if self.oversized_body:
             connection.send_data(stream_id, body[:16384])
             connection.send_data(stream_id, body[16384:], end_stream=True)
+        elif self.fragmented_body:
+            for offset in range(len(body)):
+                connection.send_data(stream_id, body[offset:offset + 1],
+                                     end_stream=offset + 1 == len(body))
         else:
             connection.send_data(stream_id, body, end_stream=True)
 
 
 class Http2IPv6Service:
-    def __init__(self, oversized_headers=False, oversized_body=False):
+    def __init__(self, oversized_headers=False, oversized_body=False,
+                 fragmented_body=False):
         config_name = (
             "out_otel_http2_ipv6_response_limit.yaml"
-            if oversized_body else "out_otel_http2_ipv6_logs.yaml"
+            if oversized_body or fragmented_body else "out_otel_http2_ipv6_logs.yaml"
         )
         self.config_file = _repo_relative("../config", config_name)
         self.receiver = None
         self.test_suite_http_port = None
         self.oversized_headers = oversized_headers
         self.oversized_body = oversized_body
+        self.fragmented_body = fragmented_body
         self.service = FluentBitTestService(
             self.config_file,
             pre_start=self._start_receiver,
@@ -392,7 +409,8 @@ class Http2IPv6Service:
     def _start_receiver(self, service):
         self.test_suite_http_port = service.test_suite_http_port
         self.receiver = IPv6Http2OtlpReceiver(
-            service.test_suite_http_port, self.oversized_headers, self.oversized_body
+            service.test_suite_http_port, self.oversized_headers,
+            self.oversized_body, self.fragmented_body
         )
         self.receiver.start()
 
@@ -417,6 +435,51 @@ class Http2IPv6Service:
             interval=0.5,
             description=f"{minimum_count} IPv6 HTTP/2 OTLP requests",
         )
+
+
+class StalledTlsReceiver:
+    def __init__(self, port, cert_file, key_file):
+        self.port = port
+        self.context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        self.context.load_cert_chain(cert_file, key_file)
+        self.context.set_alpn_protocols(["http/1.1"])
+        self.accepted = threading.Event()
+        self.stop_event = threading.Event()
+        self.thread = None
+        self.server_socket = None
+
+    def start(self):
+        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.server_socket.bind(("127.0.0.1", self.port))
+        self.server_socket.listen(1)
+        self.server_socket.settimeout(0.5)
+        self.thread = threading.Thread(target=self._serve, daemon=True)
+        self.thread.start()
+
+    def _serve(self):
+        while not self.stop_event.is_set():
+            try:
+                client_socket, _ = self.server_socket.accept()
+            except socket.timeout:
+                continue
+            except OSError:
+                return
+
+            with client_socket:
+                client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
+                client_socket.settimeout(5)
+                with self.context.wrap_socket(client_socket, server_side=True):
+                    self.accepted.set()
+                    self.stop_event.wait(15)
+            return
+
+    def stop(self):
+        self.stop_event.set()
+        if self.server_socket is not None:
+            self.server_socket.close()
+        if self.thread is not None:
+            self.thread.join(timeout=5)
 
 
 def ipv6_loopback_available():
@@ -930,6 +993,78 @@ def test_out_opentelemetry_http1_oversized_response_is_rejected():
         service.stop()
 
 
+def test_out_opentelemetry_http1_chunk_framing_does_not_count_as_body():
+    service = Service("out_otel_http2_http1_response_limit.yaml", use_tls=True)
+    service.start()
+    try:
+        configure_otlp_response(body=(b"x" for _ in range(8192)))
+        service.wait_for_requests(1)
+        _wait_for_log_message(service, "HTTP status=200")
+    finally:
+        service.stop()
+
+    with open(service.flb.log_file, encoding="utf-8") as log_file:
+        assert "HTTP response exceeded configured client limit" not in log_file.read()
+
+
+def test_out_opentelemetry_http1_response_deadline():
+    service = Service("out_otel_http2_http1_response_limit.yaml", use_tls=True,
+                      response_timeout=1)
+    service.start()
+    try:
+        configure_otlp_response(delay_seconds=3)
+        service.wait_for_requests(1)
+        _wait_for_log_message(service, "timed out after 1 seconds (IO timeout)", timeout=8)
+    finally:
+        service.stop()
+
+
+def test_out_opentelemetry_stalled_first_write_hits_deadline():
+    cert_dir = _repo_relative("../../in_splunk/certificate")
+    cert_file = os.path.join(cert_dir, "certificate.pem")
+    key_file = os.path.join(cert_dir, "private_key.pem")
+    receiver = None
+
+    def start_receiver(harness):
+        nonlocal receiver
+        receiver = StalledTlsReceiver(harness.test_suite_http_port, cert_file, key_file)
+        receiver.start()
+
+    def stop_receiver(harness):
+        if receiver is not None:
+            receiver.stop()
+
+    service = FluentBitTestService(
+        _repo_relative("../config", "out_otel_http2_http1_stalled_write.yaml"),
+        extra_env={"CERTIFICATE_TEST": cert_file},
+        pre_start=start_receiver,
+        post_stop=stop_receiver,
+    )
+    service.start()
+    try:
+        payload = ExportLogsServiceRequest()
+        record = payload.resource_logs.add().scope_logs.add().log_records.add()
+        record.body.string_value = "x" * (16 * 1024 * 1024)
+        response = requests.post(
+            f"http://127.0.0.1:{service.flb_listener_port}/v1/logs",
+            data=payload.SerializeToString(),
+            headers={"Content-Type": "application/x-protobuf"},
+            timeout=15,
+        )
+        response.raise_for_status()
+        assert receiver.accepted.wait(timeout=10)
+
+        def request_timed_out():
+            with open(service.flb.log_file, encoding="utf-8") as log_file:
+                return "timed out after 2 seconds (IO timeout)" in log_file.read()
+
+        service.wait_for_condition(
+            request_timed_out, timeout=8, description="stalled HTTP request timeout"
+        )
+    finally:
+        service.stop()
+
+
 def test_out_opentelemetry_http2_oversized_headers_are_rejected():
     if not ipv6_loopback_available():
         pytest.skip("IPv6 loopback is not available")
@@ -954,6 +1089,22 @@ def test_out_opentelemetry_http2_oversized_body_is_rejected():
         _wait_for_log_message(service, "HTTP response exceeded configured client limit")
     finally:
         service.stop()
+
+
+def test_out_opentelemetry_http2_frame_overhead_does_not_count_as_body():
+    if not ipv6_loopback_available():
+        pytest.skip("IPv6 loopback is not available")
+
+    service = Http2IPv6Service(fragmented_body=True)
+    try:
+        service.start()
+        service.wait_for_requests(1, timeout=30)
+        _wait_for_log_message(service, "HTTP status=200")
+    finally:
+        service.stop()
+
+    with open(service.flb.log_file, encoding="utf-8") as log_file:
+        assert "HTTP response exceeded configured client limit" not in log_file.read()
 
 
 @pytest.mark.parametrize(
