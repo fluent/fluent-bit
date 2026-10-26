@@ -82,6 +82,13 @@ def cpu_seconds(pid):
     return (int(fields[11]) + int(fields[12])) / os.sysconf("SC_CLK_TCK")
 
 
+def peak_rss_kib(pid):
+    for line in Path(f"/proc/{pid}/status").read_text().splitlines():
+        if line.startswith("VmHWM:"):
+            return int(line.split()[1])
+    raise RuntimeError("Process peak RSS is unavailable")
+
+
 def send_http(port, payload, batches, path="/bench", content_type="application/json"):
     connection = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
     try:
@@ -215,6 +222,7 @@ pipeline:
                         "elapsed_s": elapsed, "cpu_s": cpu_used,
                         "records_per_second": records / elapsed,
                         "cpu_s_per_million": cpu_used * 1e6 / records,
+                        "peak_rss_kib": peak_rss_kib(process.pid),
                         "payload_sha256": hashlib.sha256(payload).hexdigest(),
                         "output_records": records}
             finally:
@@ -233,6 +241,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--records", type=int, default=1000000)
     parser.add_argument("--runs", type=int, default=5)
+    parser.add_argument("--cpu", type=int, help="CPU for Fluent Bit (default: first allowed CPU)")
     parser.add_argument("--input", choices=("http", "forward", "otlp-json", "otlp-protobuf"), default="http")
     parser.add_argument("--fields", type=int, nargs="+", default=[12, 128])
     parser.add_argument("--modifiers", type=int, default=1)
@@ -245,7 +254,10 @@ def main():
         parser.error("modifiers must be nonnegative; mixed requires at least one modifier")
     if any(fields < 1 or fields > 128 for fields in args.fields):
         parser.error("fields must be between 1 and 128 (16M maximum batch size)")
-    cpu = min(os.sched_getaffinity(0))
+    allowed_cpus = os.sched_getaffinity(0)
+    cpu = min(allowed_cpus) if args.cpu is None else args.cpu
+    if cpu not in allowed_cpus:
+        parser.error("cpu must be in the current process affinity mask")
     binaries = {"baseline": args.baseline.resolve(), "candidate": args.candidate.resolve()}
     hashes = {name: hashlib.sha256(binary.read_bytes()).hexdigest()
               for name, binary in binaries.items()}
