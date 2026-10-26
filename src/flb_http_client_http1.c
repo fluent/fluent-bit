@@ -132,6 +132,11 @@ static int flb_http1_client_session_process_headers(struct flb_http_client_sessi
         header_block_begining = strstr(status_line, "\r\n");
 
         if (header_block_begining == NULL) {
+            if (cfl_sds_len(status_line) > session->parent->max_header_size) {
+                session->response_limit_exceeded = FLB_TRUE;
+                response->stream->status = HTTP_STREAM_STATUS_ERROR;
+                return -1;
+            }
             return 0;
         }
 
@@ -143,7 +148,19 @@ static int flb_http1_client_session_process_headers(struct flb_http_client_sessi
         header_block_end = strstr(header_block_begining, "\r\n\r\n");
 
         if (header_block_end == NULL) {
+            if (cfl_sds_len(status_line) > session->parent->max_header_size) {
+                session->response_limit_exceeded = FLB_TRUE;
+                response->stream->status = HTTP_STREAM_STATUS_ERROR;
+                return -1;
+            }
             return 0;
+        }
+
+        if ((size_t) (header_block_end - status_line) + 4 >
+            session->parent->max_header_size) {
+            session->response_limit_exceeded = FLB_TRUE;
+            response->stream->status = HTTP_STREAM_STATUS_ERROR;
+            return -1;
         }
 
         header_block_length = (size_t) ((uintptr_t) header_block_end -
@@ -194,6 +211,7 @@ static int flb_http1_client_session_process_data(struct flb_http_client_session 
     size_t                         chunk_length;
     size_t                         required_size;
 
+    result = 0;
     body = session->incoming_data;
 
     body_streaming_flag = (session->parent->flags &
@@ -215,6 +233,15 @@ static int flb_http1_client_session_process_data(struct flb_http_client_session 
 
     if (chunked_transfer == FLB_FALSE) {
         if (response->content_length > 0) {
+            if (body_length > session->parent->max_response_size ||
+                (response->body != NULL &&
+                 cfl_sds_len(response->body) >
+                 session->parent->max_response_size - body_length)) {
+                session->response_limit_exceeded = FLB_TRUE;
+                response->stream->status = HTTP_STREAM_STATUS_ERROR;
+                return -1;
+            }
+
             if ((response->body_read_offset + body_length) <
                 response->content_length) {
                 if (body_streaming_flag == FLB_FALSE) {
@@ -266,6 +293,12 @@ static int flb_http1_client_session_process_data(struct flb_http_client_session 
             chunk_length_length = (size_t) ((uintptr_t) chunk_length_end -
                                             (uintptr_t) chunk_header);
 
+            if (chunk_length > session->parent->max_response_size) {
+                session->response_limit_exceeded = FLB_TRUE;
+                response->stream->status = HTTP_STREAM_STATUS_ERROR;
+                return -1;
+            }
+
             required_size = chunk_length_length + 2 + chunk_length + 2;
 
             if (body_remainder < required_size) {
@@ -275,6 +308,14 @@ static int flb_http1_client_session_process_data(struct flb_http_client_session 
             chunk_data = chunk_header + chunk_length_length + 2;
 
             if (chunk_length > 0) {
+                if (response->body != NULL &&
+                    cfl_sds_len(response->body) >
+                    session->parent->max_response_size - chunk_length) {
+                    session->response_limit_exceeded = FLB_TRUE;
+                    response->stream->status = HTTP_STREAM_STATUS_ERROR;
+                    return -1;
+                }
+
                 result = flb_http_response_append_to_body(
                             response,
                             (unsigned char *) chunk_data,
@@ -295,6 +336,11 @@ static int flb_http1_client_session_process_data(struct flb_http_client_session 
             response->body_read_offset += required_size;
             body_remainder -= required_size;
         }
+    }
+
+    if (result != 0) {
+        response->stream->status = HTTP_STREAM_STATUS_ERROR;
+        return -1;
     }
 
     return 0;
