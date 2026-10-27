@@ -127,6 +127,7 @@ char *flb_tail_file_name(struct flb_tail_file *file);
 int flb_tail_file_is_rotated(struct flb_tail_config *ctx,
                              struct flb_tail_file *file);
 int flb_tail_file_rotated(struct flb_tail_file *file);
+int flb_tail_file_discover_rotated_replacements(struct flb_tail_config *ctx);
 int flb_tail_file_purge(struct flb_input_instance *ins,
                         struct flb_config *config, void *context);
 int flb_tail_pack_line_map(struct flb_time *time, char **data,
