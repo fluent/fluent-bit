@@ -177,6 +177,10 @@ onig_error_code_to_format(OnigPosition code)
   case ONIGERR_GROUP_NUMBER_OVER_FOR_CAPTURE_HISTORY:
     p = "group number is too big for capture history"; break;
 #endif
+  case ONIGERR_TOO_MANY_RANGE_REPEAT:
+    p = "too many range repeat"; break;
+  case ONIGERR_TOO_MANY_NULL_CHECK:
+    p = "too many null check"; break;
   case ONIGERR_INVALID_CHAR_PROPERTY_NAME:
     p = "invalid character property name {%n}"; break;
   case ONIGERR_TOO_MANY_CAPTURE_GROUPS:
