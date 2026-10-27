@@ -569,3 +569,37 @@ int cio_file_native_resize(struct cio_file *cf, size_t new_size)
 
     return result;
 }
+
+/*
+ * Pool support: truncate a file to zero bytes (used by the file-slot pool to
+ * recycle a slot without unlinking it, keeping the kernel dentry/inode objects
+ * in place).
+ */
+int cio_file_native_truncate_by_path(const char *path)
+{
+    int fd;
+
+    if (!path) {
+        return CIO_ERROR;
+    }
+
+    /*
+     * O_TRUNC is enough: the content was already delivered, so at worst a
+     * lost truncate after a crash means the chunk is re-read and re-sent
+     * (at-least-once), which is cheaper than an fsync per recycled chunk.
+     */
+    fd = open(path, O_WRONLY | O_TRUNC);
+    if (fd == -1) {
+        if (errno == ENOENT) {
+            /* file never created (e.g. a 'down' chunk): nothing to do */
+            return CIO_OK;
+        }
+        cio_file_native_report_os_error();
+
+        return CIO_ERROR;
+    }
+
+    close(fd);
+
+    return CIO_OK;
+}

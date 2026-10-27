@@ -30,6 +30,19 @@ struct cio_stream {
     struct mk_list chunks_up;   /* list of chunks who are 'up'   */
     struct mk_list chunks_down; /* list of chunks who are 'down' */
     void *parent;               /* ref to parent ctx */
+
+    /*
+     * File-slot pool: when enabled (storage.file_pool_size option), chunkio
+     * reuses a bounded set of chunk file names per stream. Chunks are
+     * truncated on delete instead of unlinked, so kernel dentry/inode
+     * objects are reused and the slab footprint stays bounded instead of
+     * growing per chunk.
+     */
+    int pool_size;              /* number of slots (0 = disabled) */
+    unsigned char *pool_busy;   /* busy bitmap, one bit per slot */
+    int pool_warned;            /* fallback warning already logged */
+    int scanning;               /* set while cio_load() scans existing files */
+    void *pool_lock;            /* opaque lock protecting pool_busy */
 };
 
 struct cio_stream *cio_stream_create(struct cio_ctx *ctx, const char *name,
@@ -39,5 +52,14 @@ int cio_stream_delete(struct cio_stream *st);
 void cio_stream_destroy(struct cio_stream *st);
 void cio_stream_destroy_all(struct cio_ctx *ctx);
 size_t cio_stream_size_chunks_up(struct cio_stream *st);
+
+/* file-slot pool API (used by the filesystem backend) */
+int cio_stream_pool_acquire(struct cio_stream *st);
+void cio_stream_pool_release(struct cio_stream *st, int slot);
+void cio_stream_pool_mark_busy(struct cio_stream *st, int slot);
+int cio_stream_pool_slot_from_name(const char *name);
+void cio_stream_pool_slot_name(int slot, char *buf, size_t len);
+int cio_stream_pool_slot_valid(struct cio_stream *st, int slot);
+int cio_stream_pool_exhausted_warned(struct cio_stream *st);
 
 #endif

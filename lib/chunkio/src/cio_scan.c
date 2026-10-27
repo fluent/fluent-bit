@@ -21,11 +21,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 
 #include <chunkio/chunkio_compat.h>
 #include <chunkio/chunkio.h>
 #include <chunkio/cio_stream.h>
 #include <chunkio/cio_file.h>
+#include <chunkio/cio_file_native.h>
 #include <chunkio/cio_memfs.h>
 #include <chunkio/cio_chunk.h>
 #include <chunkio/cio_error.h>
@@ -45,6 +47,7 @@ static int cio_scan_stream_files(struct cio_ctx *ctx, struct cio_stream *st,
     int err;
     int ext_off;
     int ext_len = 0;
+    int slot;
     char *path;
     DIR *dir;
     struct dirent *ent;
@@ -102,8 +105,39 @@ static int cio_scan_stream_files(struct cio_ctx *ctx, struct cio_stream *st,
 
         ctx->last_chunk_error = 0;
 
-        /* register every directory as a stream */
+        /*
+         * File-slot pool: an empty slot file is a free slot, not a chunk.
+         * Leave it in place so new chunks reuse it; if the slot number is
+         * outside the current pool size (left over from a larger pool) it is
+         * not reusable, so unlink it instead of leaving an orphan behind.
+         */
+        slot = cio_stream_pool_slot_from_name(ent->d_name);
+        if (slot >= 0) {
+            struct stat sb;
+            char *spath;
+
+            spath = cio_file_native_compose_path(ctx->options.root_path,
+                                                 st->name, ent->d_name);
+            if (spath) {
+                if (stat(spath, &sb) == 0 && sb.st_size == 0) {
+                    if (cio_stream_pool_slot_valid(st, slot) == CIO_FALSE) {
+                        cio_file_native_delete_by_path(spath);
+                    }
+                    free(spath);
+                    continue;
+                }
+                free(spath);
+            }
+        }
+
+        /*
+         * Mark the stream as scanning while the existing file is opened: the
+         * filesystem backend must recover non-slot (legacy or fallback) names
+         * in place instead of redirecting them to a fresh slot.
+         */
+        st->scanning = CIO_TRUE;
         cio_chunk_open(ctx, st, ent->d_name, ctx->options.flags, 0, &err);
+        st->scanning = CIO_FALSE;
 
         if (ctx->options.flags & CIO_DELETE_IRRECOVERABLE) {
             if (err == CIO_CORRUPTED) {
