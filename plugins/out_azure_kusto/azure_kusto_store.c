@@ -143,10 +143,11 @@ struct azure_kusto_file *azure_kusto_store_file_get(struct flb_azure_kusto *ctx,
     mk_list_foreach_safe(head, tmp, &ctx->stream_active->files) {
         fsf = mk_list_entry(head, struct flb_fstore_file, _head);
 
-        /* skip and warn on partially initialized chunks */
+        /* Delete and skip partially initialized chunks without plugin state. */
         if (fsf->data == NULL) {
             flb_plg_warn(ctx->ins, "BAD: found flb_fstore_file with NULL data reference, tag=%s, file=%s, will try to delete", tag, fsf->name);
             flb_fstore_file_delete(ctx->fs, fsf);
+            continue;
         }
 
         if (fsf->meta_size != tag_len) {
@@ -521,6 +522,8 @@ int azure_kusto_store_exit(struct flb_azure_kusto *ctx)
             fsf = mk_list_entry(f_head, struct flb_fstore_file, _head);
             if (fsf->data != NULL) {
                 azure_kusto_file = fsf->data;
+                /* Avoid leaving fstore with a pointer to freed plugin state. */
+                fsf->data = NULL;
                 flb_free(azure_kusto_file);
             }
         }
@@ -528,6 +531,10 @@ int azure_kusto_store_exit(struct flb_azure_kusto *ctx)
 
     if (ctx->fs) {
         flb_fstore_destroy(ctx->fs);
+        /* Clear stale fstore handles after destroy. */
+        ctx->fs = NULL;
+        ctx->stream_active = NULL;
+        ctx->stream_upload = NULL;
     }
     return 0;
 }
@@ -640,9 +647,12 @@ int azure_kusto_store_file_inactive(struct flb_azure_kusto *ctx, struct azure_ku
     struct flb_fstore_file *fsf;
 
     fsf = azure_kusto_file->fsf;
+    /* Avoid leaving fstore with a pointer to freed plugin state. */
+    fsf->data = NULL;
 
-    flb_free(azure_kusto_file);
     ret = flb_fstore_file_inactive(ctx->fs, fsf);
+    /* Free plugin state after fstore no longer references it. */
+    flb_free(azure_kusto_file);
 
     return ret;
 }
@@ -664,6 +674,8 @@ int azure_kusto_store_file_cleanup(struct flb_azure_kusto *ctx, struct azure_kus
     struct flb_fstore_file *fsf;
 
     fsf = azure_kusto_file->fsf;
+    /* Avoid leaving fstore with a pointer to freed plugin state. */
+    fsf->data = NULL;
 
     /* permanent deletion */
     flb_fstore_file_delete(ctx->fs, fsf);
@@ -691,7 +703,16 @@ int azure_kusto_store_file_delete(struct flb_azure_kusto *ctx, struct azure_kust
     struct flb_fstore_file *fsf;
 
     fsf = azure_kusto_file->fsf;
-    ctx->current_buffer_size -= azure_kusto_file->size;
+    /* Avoid leaving fstore with a pointer to freed plugin state. */
+    fsf->data = NULL;
+
+    if (ctx->current_buffer_size >= azure_kusto_file->size) {
+        ctx->current_buffer_size -= azure_kusto_file->size;
+    }
+    else {
+        /* Clamp repeated cleanup paths instead of underflowing the counter. */
+        ctx->current_buffer_size = 0;
+    }
 
     /* permanent deletion */
     flb_fstore_file_delete(ctx->fs, fsf);

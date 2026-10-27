@@ -554,8 +554,10 @@ static int ingest_all_chunks(struct flb_azure_kusto *ctx, struct flb_config *con
                 flb_free(final_payload);
             }
 
-            /* data was sent successfully- delete the local buffer */
-            azure_kusto_store_file_cleanup(ctx, chunk);
+            /* Early-delete mode already removed ownership after enqueue. */
+            if (ctx->buffer_file_delete_early != FLB_TRUE) {
+                azure_kusto_store_file_cleanup(ctx, chunk);
+            }
         }
     }
 
@@ -608,6 +610,17 @@ static void cb_azure_kusto_ingest(struct flb_config *config, void *data)
     int backoff_time;
     int max_backoff_time = 64; /* Maximum backoff time in seconds */
 
+    /* Skip this timer run rather than race with flush or exit mutating fstore lists. */
+    if (pthread_mutex_trylock(&ctx->buffer_mutex) != 0) {
+        return;
+    }
+
+    /* Late callbacks must not traverse fstore after exit has detached it. */
+    if (ctx->shutting_down == FLB_TRUE || !ctx->fs || !ctx->stream_active) {
+        pthread_mutex_unlock(&ctx->buffer_mutex);
+        return;
+    }
+
     /* Initialize random seed for staggered refresh intervals */
     srand(time(NULL));
 
@@ -619,6 +632,10 @@ static void cb_azure_kusto_ingest(struct flb_config *config, void *data)
     mk_list_foreach_safe(head, tmp, &ctx->stream_active->files) {
         fsf = mk_list_entry(head, struct flb_fstore_file, _head);
         file = fsf->data;
+        if (file == NULL) {
+            /* Skip entries whose plugin state was already detached. */
+            continue;
+        }
         flb_plg_debug(ctx->ins, "scheduler_kusto_ingest :: Iterating files inside upload timer callback (cb_azure_kusto_ingest).. %s", file->fsf->name);
 
         /* Check if the file has timed out */
@@ -782,6 +799,7 @@ static void cb_azure_kusto_ingest(struct flb_config *config, void *data)
     }
     /* Log the end of the upload timer callback */
     flb_plg_debug(ctx->ins, "Exited upload timer callback (cb_azure_kusto_ingest)..");
+    pthread_mutex_unlock(&ctx->buffer_mutex);
 }
 
 
@@ -925,6 +943,11 @@ static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_confi
         return -1;
     }
 
+    /* Track buffered fstore lifetime across flush, timer, and exit paths. */
+    ctx->upload_timer = NULL;
+    ctx->shutting_down = FLB_FALSE;
+    pthread_mutex_init(&ctx->buffer_mutex, NULL);
+
     if (ctx->buffering_enabled == FLB_TRUE) {
         ctx->ins = ins;
         ctx->retry_time = 0;
@@ -934,6 +957,7 @@ static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_confi
         if (ret == -1) {
             flb_plg_error(ctx->ins, "Failed to initialize kusto storage: %s",
                           ctx->store_dir);
+            pthread_mutex_destroy(&ctx->buffer_mutex);
             flb_azure_kusto_conf_destroy(ctx);
             return -1;
         }
@@ -943,18 +967,21 @@ static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_confi
         if (ctx->file_size <= 0) {
             flb_plg_error(ctx->ins, "Failed to parse upload_file_size");
             azure_kusto_store_exit(ctx);
+            pthread_mutex_destroy(&ctx->buffer_mutex);
             flb_azure_kusto_conf_destroy(ctx);
             return -1;
         }
         if (ctx->file_size < 1000000) {
             flb_plg_error(ctx->ins, "upload_file_size must be at least 1MB");
             azure_kusto_store_exit(ctx);
+            pthread_mutex_destroy(&ctx->buffer_mutex);
             flb_azure_kusto_conf_destroy(ctx);
             return -1;
         }
         if (ctx->file_size > MAX_FILE_SIZE) {
             flb_plg_error(ctx->ins, "Max total_file_size must be lower than %ld bytes", MAX_FILE_SIZE);
             azure_kusto_store_exit(ctx);
+            pthread_mutex_destroy(&ctx->buffer_mutex);
             flb_azure_kusto_conf_destroy(ctx);
             return -1;
         }
@@ -990,6 +1017,7 @@ static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_confi
         pthread_mutex_destroy(&ctx->resources_mutex);
         pthread_mutex_destroy(&ctx->token_mutex);
         pthread_mutex_destroy(&ctx->blob_mutex);
+        pthread_mutex_destroy(&ctx->buffer_mutex);
         flb_azure_kusto_conf_destroy(ctx);
         return -1;
     }    
@@ -1013,6 +1041,7 @@ static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_confi
         pthread_mutex_destroy(&ctx->resources_mutex);
         pthread_mutex_destroy(&ctx->token_mutex);
         pthread_mutex_destroy(&ctx->blob_mutex);
+        pthread_mutex_destroy(&ctx->buffer_mutex);
         flb_azure_kusto_conf_destroy(ctx);
         return -1;
     }
@@ -1247,12 +1276,18 @@ static int buffer_chunk(void *out_context, struct azure_kusto_file *upload_file,
  *
  * @param out_context Pointer to the output context, specifically the Azure Kusto context.
  * @param config Pointer to the Fluent Bit configuration structure.
+ * @return FLB_OK on success, FLB_RETRY when backlog drain or timer setup must retry.
  */
-static void flush_init(void *out_context, struct flb_config *config)
+static int flush_init(void *out_context, struct flb_config *config)
 {
     int ret;
     struct flb_azure_kusto *ctx = out_context;
     struct flb_sched *sched;
+
+    if (ctx->shutting_down == FLB_TRUE) {
+        /* Do not create timers or drain backlog after exit has started. */
+        return FLB_RETRY;
+    }
 
     flb_plg_debug(ctx->ins,
                   "inside flush_init with old_buffers as %d",
@@ -1272,7 +1307,7 @@ static void flush_init(void *out_context, struct flb_config *config)
                           "Failed to send locally buffered data left over "
                           "from previous executions; will retry. Buffer=%s",
                           ctx->fs->root_path);
-            FLB_OUTPUT_RETURN(FLB_RETRY);
+            return FLB_RETRY;
         }
     }
     else {
@@ -1295,13 +1330,18 @@ static void flush_init(void *out_context, struct flb_config *config)
         sched = flb_sched_ctx_get();
 
         ret = flb_sched_timer_cb_create(sched, FLB_SCHED_TIMER_CB_PERM,
-                                        ctx->timer_ms, cb_azure_kusto_ingest, ctx, NULL);
+                                        ctx->timer_ms, cb_azure_kusto_ingest,
+                                        ctx, &ctx->upload_timer);
         if (ret == -1) {
+            ctx->upload_timer = NULL;
+            ctx->timer_created = FLB_FALSE;
             flb_plg_error(ctx->ins, "Failed to create upload timer");
-            FLB_OUTPUT_RETURN(FLB_RETRY);
+            return FLB_RETRY;
         }
         ctx->timer_created = FLB_TRUE;
     }
+
+    return FLB_OK;
 }
 
 /**
@@ -1331,6 +1371,8 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
     int total_file_size_check = FLB_FALSE;
     flb_sds_t tag_name = NULL;
     size_t tag_name_len;
+    /* Track ownership so cleanup and error paths release the buffer mutex once. */
+    int buffer_locked = FLB_FALSE;
 
     (void)i_ins;
     (void)config;
@@ -1352,8 +1394,19 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
             tag_name = event_chunk->tag;
         }
         tag_name_len = flb_sds_len(tag_name);
+
+        /* Serialize buffer file lookup/update with timer and shutdown cleanup. */
+        if (pthread_mutex_lock(&ctx->buffer_mutex) != 0) {
+            ret = FLB_RETRY;
+            goto error;
+        }
+        buffer_locked = FLB_TRUE;
+
         /* Initialize the flush process */
-        flush_init(ctx,config);
+        ret = flush_init(ctx, config);
+        if (ret != FLB_OK) {
+            goto error;
+        }
 
         /* Reformat msgpack to JSON payload */
         ret = azure_kusto_format(ctx, tag_name, tag_name_len, event_chunk->data,
@@ -1416,6 +1469,7 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
 
             if (ret == 0){
                 if (ctx->buffering_enabled == FLB_TRUE && ctx->buffer_file_delete_early == FLB_TRUE){
+                    /* Successful early-delete enqueue released upload_file. */
                     flb_plg_debug(ctx->ins, "buffer file already deleted after blob creation");
                     ret = FLB_OK;
                     goto cleanup;
@@ -1532,6 +1586,9 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
     if (tag_name) {
         flb_sds_destroy(tag_name);
     }
+    if (buffer_locked == FLB_TRUE) {
+        pthread_mutex_unlock(&ctx->buffer_mutex);
+    }
     FLB_OUTPUT_RETURN(ret);
 
     error:
@@ -1544,6 +1601,9 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
     }
     if (tag_name) {
         flb_sds_destroy(tag_name);
+    }
+    if (buffer_locked == FLB_TRUE) {
+        pthread_mutex_unlock(&ctx->buffer_mutex);
     }
     FLB_OUTPUT_RETURN(ret);
 }
@@ -1581,7 +1641,7 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
 static int cb_azure_kusto_exit(void *data, struct flb_config *config)
 {
     struct flb_azure_kusto *ctx = data;
-    int ret = -1;
+    int ret = 0;
 
     if (!ctx) {
         return -1;
@@ -1589,14 +1649,28 @@ static int cb_azure_kusto_exit(void *data, struct flb_config *config)
 
 
     if (ctx->buffering_enabled == FLB_TRUE){
+        /* Stop timer callbacks before tearing down the fstore they traverse. */
+        if (pthread_mutex_lock(&ctx->buffer_mutex) != 0) {
+            return -1;
+        }
+        ctx->shutting_down = FLB_TRUE;
+
+        if (ctx->upload_timer != NULL) {
+            flb_sched_timer_invalidate(ctx->upload_timer);
+            ctx->upload_timer = NULL;
+            ctx->timer_created = FLB_FALSE;
+        }
+
         if (azure_kusto_store_has_data(ctx) == FLB_TRUE) {
             flb_plg_info(ctx->ins, "Sending all locally buffered data to Kusto");
             ret = ingest_all_chunks(ctx, config);
             if (ret < 0) {
+                /* Propagate final-drain failures to plugin exit. */
                 flb_plg_error(ctx->ins, "Could not send all chunks on exit");
             }
         }
         azure_kusto_store_exit(ctx);
+        pthread_mutex_unlock(&ctx->buffer_mutex);
     }
 
     if (ctx->u) {
@@ -1607,10 +1681,11 @@ static int cb_azure_kusto_exit(void *data, struct flb_config *config)
     pthread_mutex_destroy(&ctx->resources_mutex);
     pthread_mutex_destroy(&ctx->token_mutex);
     pthread_mutex_destroy(&ctx->blob_mutex);
+    pthread_mutex_destroy(&ctx->buffer_mutex);
 
     flb_azure_kusto_conf_destroy(ctx);
 
-    return 0;
+    return ret;
 }
 
 static struct flb_config_map config_map[] = {
