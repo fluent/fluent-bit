@@ -334,6 +334,8 @@ struct flb_config {
 
 #ifdef FLB_HAVE_CHUNK_TRACE
     int enable_chunk_trace;
+    /* Comma separated host:port[/uri] destinations allowed for the trace http output */
+    char *chunk_trace_http_allowed_endpoints;
 #endif /* FLB_HAVE_CHUNK_TRACE */
 
     int fips_mode;
@@ -454,6 +456,7 @@ enum conf_type {
 
 #ifdef FLB_HAVE_CHUNK_TRACE
 #define FLB_CONF_STR_ENABLE_CHUNK_TRACE      "Enable_Chunk_Trace"
+#define FLB_CONF_STR_CHUNK_TRACE_HTTP_ALLOWED_ENDPOINTS "Chunk_Trace_HTTP_Allowed_Endpoints"
 #endif /* FLB_HAVE_CHUNK_TRACE */
 
 #define FLB_CONF_STR_HOT_RELOAD        "Hot_Reload"
