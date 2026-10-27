@@ -21,19 +21,17 @@
 #include <fluent-bit/multiline/flb_ml.h>
 #include <fluent-bit/multiline/flb_ml_parser.h>
 
-#define FLB_ML_CRI_REGEX                                                \
-  "^(?<time>.+?) (?<stream>stdout|stderr) (?<_p>F|P) (?<log>.*)$"
 #define FLB_ML_CRI_TIME                         \
   "%Y-%m-%dT%H:%M:%S.%L%z"
 
-/* Creates a parser for Docker */
+/* Creates a parser for CRI */
 static struct flb_parser *cri_parser_create(struct flb_config *config)
 {
     struct flb_parser *p;
 
     p = flb_parser_create("_ml_cri",               /* parser name */
-                          "regex",                 /* backend type */
-                          FLB_ML_CRI_REGEX,        /* regex */
+                          "cri",                   /* backend type */
+                          NULL,                    /* regex */
                           FLB_FALSE,               /* skip_empty */
                           FLB_ML_CRI_TIME,         /* time format */
                           "time",                  /* time key */
@@ -49,13 +47,12 @@ static struct flb_parser *cri_parser_create(struct flb_config *config)
     return p;
 }
 
-/* Our first multiline mode: 'docker' */
 struct flb_ml_parser *flb_ml_parser_cri(struct flb_config *config)
 {
     struct flb_parser *parser;
     struct flb_ml_parser *mlp;
 
-    /* Create a Docker parser */
+    /* Create a CRI parser */
     parser = cri_parser_create(config);
     if (!parser) {
         return NULL;
