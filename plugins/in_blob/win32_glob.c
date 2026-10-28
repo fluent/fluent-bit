@@ -112,6 +112,7 @@ static void globfree(glob_t *context)
         flb_free(context->gl_pathv);
         context->gl_pathv = NULL;
     }
+    context->gl_pathc = 0;
 
     flb_file_glob_clean(&context->inner_context);
 }
@@ -127,7 +128,7 @@ static int glob(const char *path,
 
     (void) unused;
 
-    result = flb_file_glob_start(context, path, flags);
+    result = flb_file_glob_start(&context->inner_context, path, flags);
 
     if (result == FLB_FILE_GLOB_ERROR_SUCCESS) {
         entries = cfl_list_size(&context->inner_context.inner_context->results);
@@ -150,6 +151,7 @@ static int glob(const char *path,
                 return result;
             }
         }
+        context->gl_pathc = entries;
     }
 
     return result;
@@ -157,7 +159,7 @@ static int glob(const char *path,
 
 static int is_directory(char *path, struct stat *fs_entry_metadata)
 {
-    return (fs_entry_metadata->st_mode & S_IFDIR != 0);
+    return (fs_entry_metadata->st_mode & S_IFMT) == S_IFDIR;
 }
 
 static void reset_errno()
