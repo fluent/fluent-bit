@@ -33,6 +33,7 @@
 #include <sys/select.h>
 #endif
 #include <fcntl.h>
+#include <limits.h>
 #include "flb_tests_runtime.h"
 
 #define DPATH            FLB_TESTS_DATA_PATH "/data/common"
@@ -1398,6 +1399,8 @@ static void check_stream_framing(const char *payload, size_t size, int invalid_l
     }
     ret = flb_input_set(ctx->flb, ctx->i_ffd,
                        "mode", "tcp", "parser", "stream_passthrough",
+                       "buffer_chunk_size", invalid_length ? "256" : "8",
+                       "buffer_max_size", "256",
                        "format", invalid_length ? "octet_counting" : "newline", NULL);
     TEST_CHECK(ret == 0);
     ret = flb_start(ctx->flb);
@@ -1478,7 +1481,70 @@ void flb_test_syslog_tcp_octet_counting_leading_zero(void)
     check_stream_framing(payload, sizeof(payload) - 1, FLB_TRUE);
 }
 
+void flb_test_syslog_buffer_limits(void)
+{
+    flb_ctx_t *ctx;
+    int input;
+    int ret;
+    size_t i;
+    char limit[32];
+    char above_limit[32];
+    struct {
+        char *chunk;
+        char *maximum;
+        int valid;
+    } cases[] = {
+        {"0", "0", FLB_FALSE},
+        {"1", "0", FLB_FALSE},
+        {"-1", "0", FLB_FALSE},
+        {above_limit, "0", FLB_FALSE},
+        {"3000000000", "0", FLB_FALSE},
+        {"4294967296", "0", FLB_FALSE},
+        {"4294967304", "0", FLB_FALSE},
+        {"-4294967288", "0", FLB_FALSE},
+        {"8", above_limit, FLB_FALSE},
+        {"8", "4294967296", FLB_FALSE},
+        {"8", "4294967304", FLB_FALSE},
+        {"8", "-4294967296", FLB_FALSE},
+        {"8", "-1", FLB_FALSE},
+        {"2147483648", "4294967296", FLB_FALSE},
+        {"2", "0", FLB_TRUE},
+        {"1k", "2k", FLB_TRUE},
+        {"8", limit, FLB_TRUE},
+        {limit, "0", FLB_TRUE}
+    };
+
+    snprintf(limit, sizeof(limit), "%i", INT_MAX);
+    snprintf(above_limit, sizeof(above_limit), "%zu", (size_t) INT_MAX + 1);
+
+    for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        ctx = flb_create();
+        if (!TEST_CHECK(ctx != NULL)) {
+            return;
+        }
+        flb_service_set(ctx, "Log_Level", "error", "Grace", "1",
+                        "Parsers_File", DPATH "/parsers.conf", NULL);
+        input = flb_input(ctx, "syslog", NULL);
+        TEST_CHECK(input >= 0);
+        ret = flb_input_set(ctx, input, "mode", "tcp", "listen", "127.0.0.1",
+                            "port", "0", "parser", PARSER_NAME_RFC5424,
+                            "buffer_chunk_size", cases[i].chunk,
+                            "buffer_max_size", cases[i].maximum, NULL);
+        TEST_CHECK(ret == 0);
+
+        /* TCP allocates its buffer only on accept: test large limits cheaply. */
+        ret = flb_start(ctx);
+        TEST_CHECK(cases[i].valid ? ret == 0 : ret != 0);
+        TEST_MSG("chunk=%s maximum=%s start=%i", cases[i].chunk, cases[i].maximum, ret);
+        if (ret == 0) {
+            flb_stop(ctx);
+        }
+        flb_destroy(ctx);
+    }
+}
+
 TEST_LIST = {
+    {"syslog_buffer_limits", flb_test_syslog_buffer_limits},
     {"syslog_tcp_octet_counting_leading_zero", flb_test_syslog_tcp_octet_counting_leading_zero},
     {"syslog_tcp_empty_lines", flb_test_syslog_tcp_empty_lines},
     {"syslog_tcp_empty_nul_frames", flb_test_syslog_tcp_empty_nul_frames},
