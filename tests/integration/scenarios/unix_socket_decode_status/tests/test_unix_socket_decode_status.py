@@ -12,6 +12,9 @@ import time
 import pytest
 
 
+pytestmark = pytest.mark.skipif(
+    not hasattr(socket, "AF_UNIX"), reason="Python does not support Unix-domain sockets on this platform"
+)
 
 def wait_for(predicate, timeout=30):
     deadline = time.monotonic() + timeout

@@ -146,6 +146,7 @@ def test_hot_reload_watch_yaml_config_change():
         service.stop()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="SIGHUP reload requires POSIX; Windows uses HTTP reload")
 def test_hot_reload_sighup_yaml_config_change():
     service = Service("fluent-bit-manual-before.yaml", "fluent-bit-manual-after.yaml")
 

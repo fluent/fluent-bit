@@ -22,6 +22,8 @@ def wait_for(predicate):
 
 @contextlib.contextmanager
 def daemon(tmp_path, mode, framing):
+    if mode == "unix_tcp" and not hasattr(socket, "AF_UNIX"):
+        pytest.skip("Python requires Unix-domain socket support")
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         port = listener.getsockname()[1]
@@ -52,7 +54,8 @@ def daemon(tmp_path, mode, framing):
             wait_for(ready)
             yield address, log
         finally:
-            if process.poll() is None:
+            stopped_by_test = process.poll() is None
+            if stopped_by_test:
                 process.send_signal(signal.SIGTERM)
             try:
                 process.wait(timeout=30)
@@ -60,7 +63,8 @@ def daemon(tmp_path, mode, framing):
                 process.kill()
                 process.wait()
                 pytest.fail("Fluent Bit did not shut down cleanly")
-            assert process.returncode == 0, log.read_text() + (memlog.read_text() if memory else "")
+            expected_code = 1 if os.name == "nt" and stopped_by_test else 0
+            assert process.returncode == expected_code, log.read_text() + (memlog.read_text() if memory else "")
             if memory:
                 assert "ERROR SUMMARY: 0 errors" in memlog.read_text(), memlog.read_text()
 

@@ -11,6 +11,13 @@ from server.kafka_server import data_storage
 from server.schema_registry_server import data_storage as registry_data
 from test_out_kafka_001 import Service, _wait_for_log_text
 from utils.fluent_bit_manager import FluentBitStartupError
+from utils.fluent_bit_manager import fluent_bit_output_supports_config_property
+
+
+@pytest.fixture(autouse=True, scope="module")
+def require_protobuf_encoder():
+    if not fluent_bit_output_supports_config_property("kafka", "protobuf_message"):
+        pytest.skip("Kafka Protobuf Schema Registry requires FLB_PROTOBUF_ENCODER=On")
 
 
 DETAILS = '''syntax = "proto3"; package registry;

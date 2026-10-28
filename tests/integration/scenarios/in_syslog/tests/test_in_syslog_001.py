@@ -105,7 +105,7 @@ def test_in_syslog_tcp_tls():
         with socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=5) as raw_sock:
             with context.wrap_socket(raw_sock, server_hostname="localhost") as tls_sock:
                 tls_sock.sendall(TCP_RFC5424_MESSAGE)
-                tls_sock.shutdown(socket.SHUT_WR)
+                tls_sock.unwrap().close()
 
         payloads = service.read_forwarded_payloads()
     finally:
@@ -129,6 +129,7 @@ def test_in_syslog_udp_plaintext():
     _assert_message(payloads)
 
 
+@pytest.mark.skipif(not hasattr(socket, "AF_UNIX"), reason="Python requires Unix-domain socket support")
 def test_in_syslog_uds_stream_plaintext():
     service = Service("in_syslog_uds_stream_plaintext.yaml")
     service.start()
@@ -154,6 +155,7 @@ def test_in_syslog_uds_stream_plaintext():
 
 
 @pytest.mark.skipif(sys.platform == "darwin", reason="unix datagram syslog runtime-shell test is skipped on Darwin")
+@pytest.mark.skipif(not hasattr(socket, "AF_UNIX"), reason="Python requires Unix-domain socket support")
 def test_in_syslog_uds_dgram_plaintext():
     service = Service("in_syslog_uds_dgram_plaintext.yaml")
     service.start()

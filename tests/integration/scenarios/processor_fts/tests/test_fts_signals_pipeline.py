@@ -23,6 +23,8 @@ def test_signal_route_isolation_retry_and_backlog(tmp_path, signal, filesystem, 
     blocked = {"value": replay}
 
     class Collector(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
         def do_POST(self):
             data = self.rfile.read(int(self.headers["Content-Length"]))
             attempts.append(data)

@@ -150,9 +150,10 @@ def test_send_signal_raises_when_process_is_missing():
     manager = FluentBitManager("/tmp/fluent-bit.yaml")
 
     with pytest.raises(RuntimeError, match="not running"):
-        manager.send_signal(signal.SIGHUP)
+        manager.send_signal(signal.SIGTERM)
 
 
+@pytest.mark.skipif(not hasattr(signal, "SIGHUP"), reason="SIGHUP requires POSIX")
 def test_send_sighup_forwards_signal_to_process():
     manager = FluentBitManager("/tmp/fluent-bit.yaml")
     manager.process = Mock()
@@ -163,7 +164,11 @@ def test_send_sighup_forwards_signal_to_process():
 
 
 @pytest.mark.parametrize("configured,expected", [(None, 10), (30, 30), (240, 240)])
-def test_stop_uses_configured_shutdown_timeout(monkeypatch, configured, expected):
+@pytest.mark.parametrize("system", ["Linux", "Windows"])
+def test_stop_uses_configured_shutdown_timeout(monkeypatch, configured, expected, system):
+    monkeypatch.setattr(manager_module.platform, "system", lambda: system)
+    windows_shutdown = Mock()
+    monkeypatch.setattr(manager_module, "_send_windows_shutdown", windows_shutdown)
     monkeypatch.delenv("VALGRIND", raising=False)
     monkeypatch.delenv("LEAKS", raising=False)
     manager = FluentBitManager("/tmp/fluent-bit.yaml", shutdown_timeout=configured)
@@ -173,7 +178,12 @@ def test_stop_uses_configured_shutdown_timeout(monkeypatch, configured, expected
 
     manager.stop()
 
-    process.send_signal.assert_called_once_with(signal.SIGTERM)
+    if system == "Windows":
+        windows_shutdown.assert_called_once_with(process.pid)
+        process.send_signal.assert_not_called()
+    else:
+        process.send_signal.assert_called_once_with(signal.SIGTERM)
+        windows_shutdown.assert_not_called()
     process.wait.assert_called_once_with(timeout=expected)
 
 
@@ -195,12 +205,46 @@ def test_trigger_http_reload_posts_to_reload_endpoint(monkeypatch):
     assert manager.trigger_http_reload() == {"reload": "done"}
 
 
+@pytest.mark.parametrize("helper_error", [
+    manager_module.subprocess.CalledProcessError(1, ["shutdown-helper"]),
+    manager_module.subprocess.TimeoutExpired(["shutdown-helper"], 5),
+])
+@pytest.mark.parametrize("wait_times_out", [False, True])
+def test_windows_shutdown_helper_failure_still_cleans_up(monkeypatch, helper_error, wait_times_out):
+    monkeypatch.setattr(manager_module.platform, "system", lambda: "Windows")
+    monkeypatch.delenv("VALGRIND", raising=False)
+    monkeypatch.delenv("LEAKS", raising=False)
+    monkeypatch.setattr(manager_module, "_send_windows_shutdown", Mock(side_effect=helper_error))
+    manager = FluentBitManager("/tmp/fluent-bit.yaml", shutdown_timeout=1)
+    process = Mock()
+    process.poll.return_value = None
+    if wait_times_out:
+        process.wait.side_effect = [manager_module.subprocess.TimeoutExpired("fluent-bit", 1), 0]
+    else:
+        process.wait.return_value = 0
+    output = Mock()
+    manager.process = process
+    manager.target_pid = 123
+    manager.output_handle = output
+
+    manager.stop()
+
+    assert process.wait.call_args_list[0].kwargs == {"timeout": 1}
+    assert process.kill.call_count == int(wait_times_out)
+    output.close.assert_called_once()
+    assert manager.process is None
+    assert manager.target_pid is None
+    assert manager.output_handle is None
+
+
 def test_start_uses_unique_valgrind_log_path(monkeypatch, tmp_path):
+    monkeypatch.setattr(manager_module.platform, "system", lambda: "Linux")
     config_path = tmp_path / "fluent-bit.yaml"
     config_path.write_text("service:\n  flush: 1\n", encoding="utf-8")
     popen_calls = []
 
     monkeypatch.setenv("VALGRIND", "1")
+    monkeypatch.setattr(manager_module.shutil, "which", lambda binary: binary)
     monkeypatch.setattr(manager_module.os.path, "exists", lambda path: True)
     monkeypatch.setattr(manager_module.os.path, "isfile", lambda path: True)
     monkeypatch.setattr(manager_module.os, "access", lambda path, mode: True)
@@ -227,7 +271,7 @@ def test_start_uses_unique_valgrind_log_path(monkeypatch, tmp_path):
     monkeypatch.setattr(FluentBitManager, "create_results_directory", fake_create_results_directory)
     monkeypatch.setattr(FluentBitManager, "get_version_info", lambda self: ("vtest", "commit"))
 
-    def fake_popen(command, stdout=None, stderr=None):
+    def fake_popen(command, stdout=None, stderr=None, **kwargs):
         popen_calls.append(command)
         return popen_result
 
@@ -247,6 +291,45 @@ def test_start_uses_unique_valgrind_log_path(monkeypatch, tmp_path):
         "-c", str(config_path),
         "-l", str(tmp_path / "run-1" / "fluent_bit.log")
     ]]
+
+
+@pytest.mark.parametrize("system", ["Windows", "Linux", "Darwin"])
+def test_console_options_isolate_windows_reload(monkeypatch, system):
+    monkeypatch.setattr(manager_module.platform, "system", lambda: system)
+    startup_info = Mock(dwFlags=0)
+    monkeypatch.setattr(manager_module.subprocess, "STARTUPINFO", lambda: startup_info, raising=False)
+    monkeypatch.setattr(manager_module.subprocess, "STARTF_USESHOWWINDOW", 1, raising=False)
+    monkeypatch.setattr(manager_module.subprocess, "SW_HIDE", 0, raising=False)
+    monkeypatch.setattr(manager_module.subprocess, "CREATE_NEW_CONSOLE", 16, raising=False)
+
+    options = manager_module._console_options()
+
+    if system == "Windows":
+        assert options == {"creationflags": 16, "startupinfo": startup_info}
+        assert startup_info.dwFlags == 1
+        assert startup_info.wShowWindow == 0
+    else:
+        assert options == {}
+
+
+@pytest.mark.parametrize("system,log_message,skipped", [
+    ("Windows", "shared listener ports are not supported on this platform", True),
+    ("Windows", "could not bind address", False),
+    ("Linux", "shared listener ports are not supported on this platform", False),
+])
+def test_startup_skips_only_unsupported_windows_listeners(monkeypatch, tmp_path,
+                                                        system, log_message, skipped):
+    monkeypatch.setattr(manager_module.platform, "system", lambda: system)
+    manager = FluentBitManager(str(tmp_path / "config.yaml"))
+    manager.http_monitoring_port = "2020"
+    manager.log_file = str(tmp_path / "fluent-bit.log")
+    (tmp_path / "fluent-bit.log").write_text(log_message, encoding="utf-8")
+    manager.process = Mock(returncode=1)
+    manager.process.poll.return_value = 1
+
+    expected = pytest.skip.Exception if skipped else manager_module.FluentBitStartupError
+    with pytest.raises(expected):
+        manager.wait_for_fluent_bit()
 
 
 @pytest.mark.parametrize("error", [requests.ConnectionError, requests.ReadTimeout])

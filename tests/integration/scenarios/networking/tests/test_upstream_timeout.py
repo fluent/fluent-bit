@@ -13,6 +13,7 @@ from utils.test_service import FluentBitTestService
 class SilentPeer(socketserver.BaseRequestHandler):
     def handle(self):
         # Accept TCP but never answer the TLS handshake.
+        self.server.accepted.set()
         self.server.release.wait(30)
 
 
@@ -25,6 +26,7 @@ class SilentServer(socketserver.ThreadingTCPServer):
 def test_timeout_logs_configured_host_and_port(tmp_path, log_error):
     server = SilentServer(("127.0.0.1", 0), SilentPeer)
     server.release = threading.Event()
+    server.accepted = threading.Event()
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     port = server.server_address[1]
@@ -40,12 +42,16 @@ def test_timeout_logs_configured_host_and_port(tmp_path, log_error):
             "inputs": [{"name": "dummy", "samples": 1, "tag": "timeout"}],
             "outputs": [{
                 "name": "http",
+                "log_level": "debug",
                 "match": "*",
                 "host": "localhost",
                 "port": port,
                 "tls": "on",
                 "tls.verify": "off",
                 "net.dns.resolver": "LEGACY",
+                # Keep localhost in the diagnostic, but connect to the IPv4
+                # listener without spending the timeout on IPv6 fallback.
+                "net.dns.prefer_ipv4": "on",
                 "net.connect_timeout": 2,
                 "net.connect_timeout_log_error": "on" if log_error else "off",
                 "retry_limit": "no_retries",
@@ -63,6 +69,7 @@ def test_timeout_logs_configured_host_and_port(tmp_path, log_error):
             return logs if "is not retried (no retry config)" in logs else None
 
         logs = service.wait_for_condition(completed, timeout=30, description="timed-out flush")
+        assert server.accepted.is_set(), "The silent IPv4 peer was never reached"
         timeout_lines = [line for line in logs.splitlines()
                          if "[upstream]" in line and "timed out" in line]
         assert timeout_lines, logs
