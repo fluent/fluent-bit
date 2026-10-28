@@ -86,6 +86,10 @@ else()
     processor_invalid.sh
     )
 
+  if(FLB_OUT_AZURE_BLOB)
+    list(APPEND UNIT_TESTS_SH dry_run_azure_blob.sh)
+  endif()
+
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(riscv64)")
       message(STATUS
