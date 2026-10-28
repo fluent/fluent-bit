@@ -29,6 +29,51 @@
 #include "opentelemetry_logs.h"
 #include "opentelemetry_utils.h"
 
+/*
+ * Encode JSON logs through the single-pass CFL decoder. The generic JSON to
+ * msgpack path parses the payload into msgpack first and then walks that
+ * msgpack again to build the records, it is only used for the rare payloads
+ * CFL cannot hold.
+ */
+static int opentelemetry_logs_json_encode_direct(struct flb_opentelemetry *ctx,
+                                                 struct flb_log_event_encoder *encoder,
+                                                 const char *payload, size_t size,
+                                                 struct flb_opentelemetry_logs_decode_options *options,
+                                                 size_t *record_count,
+                                                 int *error_status)
+{
+    int ret;
+    struct flb_mp_chunk_cobj *chunk;
+    struct flb_opentelemetry_logs_json_cfl *result;
+
+    result = NULL;
+    ret = flb_opentelemetry_logs_json_to_cfl(payload, size, options, &result, error_status);
+    if (ret == FLB_OTEL_LOGS_JSON_CFL_UNSUPPORTED) {
+        return flb_opentelemetry_logs_json_to_msgpack(encoder, payload, size,
+                                                      ctx->logs_body_key, error_status);
+    }
+    if (ret != 0) {
+        flb_opentelemetry_logs_json_cfl_destroy(result);
+        return -1;
+    }
+
+    chunk = flb_opentelemetry_logs_json_cfl_take_chunk(result);
+    if (chunk == NULL) {
+        flb_opentelemetry_logs_json_cfl_destroy(result);
+        return -1;
+    }
+
+    /* the records borrow strings from the JSON document owned by 'result' */
+    chunk->log_encoder = encoder;
+    ret = flb_mp_chunk_cobj_encode_append(chunk);
+    *record_count = flb_mp_chunk_cobj_count_log_records(chunk);
+    chunk->log_encoder = NULL;
+
+    flb_mp_chunk_cobj_destroy(chunk);
+    flb_opentelemetry_logs_json_cfl_destroy(result);
+
+    return ret;
+}
 
 /*
  * Main function used from opentelemetry_prot.c to process logs either in JSON or Protobuf format.
@@ -63,6 +108,7 @@ int opentelemetry_process_logs_with_budget(struct flb_opentelemetry *ctx,
     struct flb_mp_chunk_cobj *chunk;
     struct flb_opentelemetry_logs_decode_options decode_options;
     struct flb_opentelemetry_logs_protobuf_cfl *cfl_result;
+    struct flb_opentelemetry_logs_json_cfl *json_cfl_result;
     int worker_thread;
 
     buf = (char *) data;
@@ -70,6 +116,7 @@ int opentelemetry_process_logs_with_budget(struct flb_opentelemetry *ctx,
     payload_size = size;
     record_count = 0;
     cfl_result = NULL;
+    json_cfl_result = NULL;
     worker_thread = opentelemetry_uses_worker_ingress_queue(ctx);
     decode_options.metadata_key = ctx->logs_metadata_key;
     decode_options.body_key = ctx->logs_body_key;
@@ -94,21 +141,40 @@ int opentelemetry_process_logs_with_budget(struct flb_opentelemetry *ctx,
     }
 
     /*
-     * Protobuf records go straight to the input processors as CFL records when
-     * they can take them. Worker threads enqueue the serialized processor
+     * JSON and protobuf records go straight to input processors as CFL records
+     * when they can take them. Workers enqueue the serialized processor
      * output as already processed, so the engine does not run the chain twice.
+     * A JSON payload CFL cannot hold takes the msgpack path below.
      */
-    if (is_proto == FLB_TRUE &&
-        flb_input_log_chunk_supported(ctx->ins, worker_thread) == FLB_TRUE) {
-        ret = flb_opentelemetry_logs_protobuf_to_cfl(
-                  payload, payload_size, &decode_options, &cfl_result);
+    if (flb_input_log_chunk_supported(ctx->ins, worker_thread) == FLB_TRUE) {
+        if (is_proto == FLB_TRUE) {
+            ret = flb_opentelemetry_logs_protobuf_to_cfl(
+                      payload, payload_size, &decode_options, &cfl_result);
+            if (ret == 0) {
+                *remaining -= flb_opentelemetry_logs_protobuf_cfl_get_encoded_size(cfl_result);
+                chunk = flb_opentelemetry_logs_protobuf_cfl_take_chunk(cfl_result);
+            }
+        }
+        else {
+            ret = flb_opentelemetry_logs_json_to_cfl(
+                      (const char *) payload, payload_size, &decode_options,
+                      &json_cfl_result, &error_status);
+            if (ret == FLB_OTEL_LOGS_JSON_CFL_UNSUPPORTED) {
+                goto msgpack_path;
+            }
+            if (ret == 0) {
+                *remaining -= flb_opentelemetry_logs_json_cfl_get_encoded_size(json_cfl_result);
+                chunk = flb_opentelemetry_logs_json_cfl_take_chunk(json_cfl_result);
+            }
+        }
         if (ret != 0) {
-            flb_plg_error(ctx->ins, "failed to process logs from protobuf payload");
+            flb_plg_error(ctx->ins, "failed to process logs from %s payload (%i) %s",
+                          is_proto == FLB_TRUE ? "protobuf" : "JSON", error_status,
+                          flb_opentelemetry_error_to_string(error_status));
+            flb_opentelemetry_logs_protobuf_cfl_destroy(cfl_result);
+            flb_opentelemetry_logs_json_cfl_destroy(json_cfl_result);
             return -1;
         }
-
-        *remaining -= flb_opentelemetry_logs_protobuf_cfl_get_encoded_size(cfl_result);
-        chunk = flb_opentelemetry_logs_protobuf_cfl_take_chunk(cfl_result);
 
         /* like the Collector, a request without log records is accepted */
         if (cfl_list_is_empty(&chunk->records)) {
@@ -120,6 +186,7 @@ int opentelemetry_process_logs_with_budget(struct flb_opentelemetry *ctx,
                                              chunk, worker_thread);
         }
         flb_opentelemetry_logs_protobuf_cfl_destroy(cfl_result);
+        flb_opentelemetry_logs_json_cfl_destroy(json_cfl_result);
         if (ret != 0) {
             flb_plg_error(ctx->ins, "failed to append logs to the input buffer");
             return -1;
@@ -128,6 +195,7 @@ int opentelemetry_process_logs_with_budget(struct flb_opentelemetry *ctx,
         return 0;
     }
 
+msgpack_path:
     encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2);
     if (encoder == NULL) {
         return -1;
@@ -142,17 +210,15 @@ int opentelemetry_process_logs_with_budget(struct flb_opentelemetry *ctx,
         }
     }
     else {
-        ret = flb_opentelemetry_logs_json_to_msgpack(encoder,
-                                                     (const char *) payload, payload_size,
-                                                     ctx->logs_body_key,
-                                                     &error_status);
+        ret = opentelemetry_logs_json_encode_direct(ctx, encoder,
+                                                    (const char *) payload, payload_size,
+                                                    &decode_options, &record_count,
+                                                    &error_status);
         if (ret != 0) {
-            /* we are printing the error for now, let's see what is the user's preference later */
             flb_plg_error(ctx->ins, "failed to process logs from JSON payload (%i) %s",
                           error_status,
                           flb_opentelemetry_error_to_string(error_status));
         }
-
     }
 
     if (ret >= 0 && encoder->output_length == 0) {
