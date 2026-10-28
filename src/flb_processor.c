@@ -2535,10 +2535,11 @@ int flb_processor_run_with_count(struct flb_processor *proc,
 
 /*
  * A logs chunk built directly as CFL records can enter the pipeline when the
- * first unit is a native processor and every native unit processes logs. A
- * worker thread additionally requires every unit to be a worker-safe native
- * processor. The whole chain is checked before any unit runs so fallback can
- * never execute an already-processed prefix a second time.
+ * every unit is a native processor that processes logs. A worker thread also
+ * requires every unit to be worker-safe. The whole chain is checked before
+ * any unit runs so fallback can never execute an already-processed prefix a
+ * second time. Filters are excluded even in non-worker callers because mixed
+ * native/filter chains cross a serialization boundary between units.
  */
 int flb_processor_logs_chunk_supported(struct flb_processor *proc,
                                        int worker_thread)
@@ -2554,10 +2555,7 @@ int flb_processor_logs_chunk_supported(struct flb_processor *proc,
     mk_list_foreach(head, &proc->logs) {
         pu = mk_list_entry(head, struct flb_processor_unit, _head);
         if (pu->unit_type == FLB_PROCESSOR_UNIT_FILTER) {
-            if (head == proc->logs.next || worker_thread == FLB_TRUE) {
-                return FLB_FALSE;
-            }
-            continue;
+            return FLB_FALSE;
         }
 
         p_ins = pu->ctx;
