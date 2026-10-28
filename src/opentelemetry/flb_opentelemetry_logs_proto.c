@@ -99,6 +99,14 @@ static void protobuf_logs_free(
     Opentelemetry__Proto__Collector__Logs__V1__ExportLogsServiceRequest *logs,
     ProtobufCAllocator *allocator)
 {
+    /*
+     * Every allocation of an arena backed request is released with the arena,
+     * walking the message tree here would only call the no-op free callback.
+     */
+    if (allocator != NULL && allocator->free == protobuf_arena_free) {
+        return;
+    }
+
     opentelemetry__proto__collector__logs__v1__export_logs_service_request__free_unpacked(
         logs, allocator);
 }
@@ -826,6 +834,7 @@ int flb_opentelemetry_logs_protobuf_to_msgpack(
 struct otel_cfl_builder {
     const struct flb_opentelemetry_logs_decode_options *options;
     struct flb_mp_chunk_cobj *chunk;
+    struct cfl_arena *arena;
     size_t size;
     size_t limit;
 };
@@ -933,7 +942,7 @@ static struct cfl_variant *otel_cfl_string(struct otel_cfl_builder *builder,
         return NULL;
     }
 
-    return cfl_variant_create_from_string_s(str, len, CFL_TRUE);
+    return cfl_variant_create_from_string_s_in(builder->arena, str, len, CFL_TRUE);
 }
 
 static struct cfl_variant *otel_cfl_bytes(struct otel_cfl_builder *builder,
@@ -945,7 +954,8 @@ static struct cfl_variant *otel_cfl_bytes(struct otel_cfl_builder *builder,
         return NULL;
     }
 
-    return cfl_variant_create_from_bytes((char *) bytes.data, bytes.len, CFL_TRUE);
+    return cfl_variant_create_from_bytes_in(builder->arena,
+                                             (char *) bytes.data, bytes.len, CFL_TRUE);
 }
 
 static struct cfl_variant *otel_cfl_uint(struct otel_cfl_builder *builder, uint64_t val)
@@ -954,7 +964,7 @@ static struct cfl_variant *otel_cfl_uint(struct otel_cfl_builder *builder, uint6
         return NULL;
     }
 
-    return cfl_variant_create_from_uint64(val);
+    return cfl_variant_create_from_uint64_in(builder->arena, val);
 }
 
 /* msgpack keeps non-negative integers as unsigned values */
@@ -968,7 +978,7 @@ static struct cfl_variant *otel_cfl_int(struct otel_cfl_builder *builder, int64_
         return NULL;
     }
 
-    return cfl_variant_create_from_int64(val);
+    return cfl_variant_create_from_int64_in(builder->arena, val);
 }
 
 /* Insert a value, the value is released when it cannot be inserted */
@@ -1002,7 +1012,7 @@ static int otel_cfl_insert_kvlist(struct otel_cfl_builder *builder,
         return -1;
     }
 
-    variant = cfl_variant_create_from_kvlist(value);
+    variant = cfl_variant_create_from_kvlist_in(builder->arena, value);
     if (variant == NULL) {
         cfl_kvlist_destroy(value);
         return -1;
@@ -1018,7 +1028,7 @@ static struct cfl_kvlist *otel_cfl_kvlist_create(struct otel_cfl_builder *builde
         return NULL;
     }
 
-    return cfl_kvlist_create();
+    return cfl_kvlist_create_in(builder->arena);
 }
 
 /* A map the msgpack path packs with a compact header */
@@ -1029,7 +1039,7 @@ static struct cfl_kvlist *otel_cfl_kvlist_create_compact(struct otel_cfl_builder
         return NULL;
     }
 
-    return cfl_kvlist_create();
+    return cfl_kvlist_create_in(builder->arena);
 }
 
 static struct cfl_variant *otel_cfl_any_value(struct otel_cfl_builder *builder,
@@ -1072,7 +1082,7 @@ static struct cfl_variant *otel_cfl_array(struct otel_cfl_builder *builder,
         return NULL;
     }
 
-    entries = cfl_array_create(array->n_values);
+    entries = cfl_array_create_in(builder->arena, array->n_values);
     if (entries == NULL) {
         return NULL;
     }
@@ -1088,7 +1098,7 @@ static struct cfl_variant *otel_cfl_array(struct otel_cfl_builder *builder,
         }
     }
 
-    variant = cfl_variant_create_from_array(entries);
+    variant = cfl_variant_create_from_array_in(builder->arena, entries);
     if (variant == NULL) {
         cfl_array_destroy(entries);
     }
@@ -1106,7 +1116,7 @@ static struct cfl_variant *otel_cfl_any_value(struct otel_cfl_builder *builder,
         if (otel_cfl_account(builder, 1) != 0) {
             return NULL;
         }
-        return cfl_variant_create_from_null();
+        return cfl_variant_create_from_null_in(builder->arena);
     }
 
     switch (value->value_case) {
@@ -1117,7 +1127,7 @@ static struct cfl_variant *otel_cfl_any_value(struct otel_cfl_builder *builder,
         if (otel_cfl_account(builder, 1) != 0) {
             return NULL;
         }
-        return cfl_variant_create_from_bool(value->bool_value);
+        return cfl_variant_create_from_bool_in(builder->arena, value->bool_value);
 
     case OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_INT_VALUE:
         return otel_cfl_int(builder, value->int_value);
@@ -1126,7 +1136,7 @@ static struct cfl_variant *otel_cfl_any_value(struct otel_cfl_builder *builder,
         if (otel_cfl_account(builder, 9) != 0) {
             return NULL;
         }
-        return cfl_variant_create_from_double(value->double_value);
+        return cfl_variant_create_from_double_in(builder->arena, value->double_value);
 
     case OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_ARRAY_VALUE:
         return otel_cfl_array(builder, value->array_value);
@@ -1138,7 +1148,7 @@ static struct cfl_variant *otel_cfl_any_value(struct otel_cfl_builder *builder,
             return NULL;
         }
 
-        variant = cfl_variant_create_from_kvlist(kvlist);
+        variant = cfl_variant_create_from_kvlist_in(builder->arena, kvlist);
         if (variant == NULL) {
             cfl_kvlist_destroy(kvlist);
         }
@@ -1153,7 +1163,7 @@ static struct cfl_variant *otel_cfl_any_value(struct otel_cfl_builder *builder,
         if (otel_cfl_account(builder, 1) != 0) {
             return NULL;
         }
-        return cfl_variant_create_from_null();
+        return cfl_variant_create_from_null_in(builder->arena);
 
     default:
         flb_error("[otel]: invalid value type in pack_any_value");
@@ -1162,7 +1172,8 @@ static struct cfl_variant *otel_cfl_any_value(struct otel_cfl_builder *builder,
 }
 
 /* Wrap a kvlist as a record object, the kvlist is released on failure */
-static struct cfl_object *otel_cfl_object(struct cfl_kvlist *kvlist)
+static struct cfl_object *otel_cfl_object(struct otel_cfl_builder *builder,
+                                          struct cfl_kvlist *kvlist)
 {
     struct cfl_object *object;
 
@@ -1176,7 +1187,7 @@ static struct cfl_object *otel_cfl_object(struct cfl_kvlist *kvlist)
         return NULL;
     }
 
-    object->variant = cfl_variant_create_from_kvlist(kvlist);
+    object->variant = cfl_variant_create_from_kvlist_in(builder->arena, kvlist);
     if (object->variant == NULL) {
         cfl_kvlist_destroy(kvlist);
         cfl_object_destroy(object);
@@ -1475,9 +1486,10 @@ static int otel_cfl_scope_logs(struct otel_cfl_builder *builder,
         return -1;
     }
 
-    group->cobj_metadata = otel_cfl_object(
+    group->cobj_metadata = otel_cfl_object(builder,
                                otel_cfl_group_metadata(builder, resource_index, scope_index));
-    group->cobj_record = otel_cfl_object(otel_cfl_group_body(builder, resource_log, scope_log));
+    group->cobj_record = otel_cfl_object(builder,
+                                         otel_cfl_group_body(builder, resource_log, scope_log));
     if (group->cobj_metadata == NULL || group->cobj_record == NULL) {
         return -1;
     }
@@ -1510,13 +1522,15 @@ static int otel_cfl_scope_logs(struct otel_cfl_builder *builder,
             return -1;
         }
 
-        record->cobj_metadata = otel_cfl_object(otel_cfl_v1_metadata(builder, log_record));
+        record->cobj_metadata = otel_cfl_object(builder,
+                                                otel_cfl_v1_metadata(builder, log_record));
         if (record->cobj_metadata == NULL) {
             flb_error("[opentelemetry] failed to convert log record");
             return -1;
         }
 
-        record->cobj_record = otel_cfl_object(otel_cfl_body(builder, log_record->body));
+        record->cobj_record = otel_cfl_object(builder,
+                                              otel_cfl_body(builder, log_record->body));
         if (record->cobj_record == NULL) {
             flb_error("[opentelemetry] failed to convert log record body");
             return -1;
@@ -1533,8 +1547,8 @@ static int otel_cfl_scope_logs(struct otel_cfl_builder *builder,
         return -1;
     }
 
-    record->cobj_metadata = otel_cfl_object(otel_cfl_kvlist_create(builder));
-    record->cobj_record = otel_cfl_object(otel_cfl_kvlist_create(builder));
+    record->cobj_metadata = otel_cfl_object(builder, otel_cfl_kvlist_create(builder));
+    record->cobj_record = otel_cfl_object(builder, otel_cfl_kvlist_create(builder));
     if (record->cobj_metadata == NULL || record->cobj_record == NULL) {
         return -1;
     }
@@ -1585,6 +1599,7 @@ int flb_opentelemetry_logs_protobuf_to_cfl(
     }
 
     builder.options = options;
+    builder.arena = NULL;
     builder.size = 0;
     builder.limit = options->output_limit;
     builder.chunk = NULL;
@@ -1600,6 +1615,13 @@ int flb_opentelemetry_logs_protobuf_to_cfl(
         ret = -1;
         goto end;
     }
+    /*
+     * The CFL tree is consumed and encoded synchronously before the decoded
+     * protobuf request is released, so both representations can safely share
+     * the request arena. This avoids one heap allocation per CFL container and
+     * scalar while preserving the normal allocator fallback for small payloads.
+     */
+    builder.arena = result->protobuf_arena;
 
     if (result->input_logs->n_resource_logs > 0 &&
         result->input_logs->resource_logs == NULL) {
