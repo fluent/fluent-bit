@@ -129,6 +129,8 @@ def plus_endpoint(tmp_path, request):
     lock = threading.Lock()
 
     class Handler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
         def do_GET(self):
             with lock:
                 if self.path == "/status/":

@@ -51,6 +51,10 @@ from server.http_server import http_server_run
 from server.otlp_server import configure_otlp_response, otlp_server_run, data_storage
 
 logger = logging.getLogger(__name__)
+requires_shared_listener = pytest.mark.skipif(
+    os.name == "nt", reason="HTTP shared listener ports are unavailable on Windows"
+)
+HTTP_WORKER_COUNTS = [1, pytest.param(4, marks=requires_shared_listener)]
 MOCK_VALID_JWT = (
     "eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3QiLCJ0eXAiOiJKV1QifQ."
     "eyJleHAiOjE4OTM0NTYwMDAsImlzcyI6Imlzc3VlciIsImF1ZCI6ImF1ZGllbmNlIiwiYXpwIjoiY2xpZW50MSJ9."
@@ -512,9 +516,7 @@ pipeline:
     return Service(str(config))
 
 
-@pytest.mark.parametrize("workers", [1, pytest.param(
-    2, marks=pytest.mark.skipif(os.name == "nt",
-                               reason="HTTP shared listener ports are unavailable on Windows"))])
+@pytest.mark.parametrize("workers", [1, pytest.param(2, marks=requires_shared_listener)])
 @pytest.mark.parametrize("encoding", ["json", "protobuf"])
 @pytest.mark.parametrize("attributes,scopes,records,resources,accepted", [
     (1, 32, 1, 1, True),
@@ -932,6 +934,7 @@ def test_in_opentelemetry_large_protobuf_logs():
     assert received_record_count == expected_record_count
 
 
+@requires_shared_listener
 def test_in_opentelemetry_batched_protobuf_logs_with_workers():
     service = Service(IN_OPENTELEMETRY_WORKER_PROTOCOL_CONFIGS["http1_cleartext"])
     source = ExportLogsServiceRequest()
@@ -1908,6 +1911,7 @@ def test_in_opentelemetry_http2_invalid_endpoint_returns_404():
     {"id": "http1_tls", "config_key": "http1_tls", "http_mode": "http1.1", "use_tls": True},
     {"id": "http2_tls_alpn", "config_key": "http2_tls", "http_mode": "http2", "use_tls": True},
 ], ids=lambda case: case["id"])
+@requires_shared_listener
 def test_in_opentelemetry_http_workers_mixed_signal_matrix(case):
     request_plan = [
         ("logs", "test_logs_001.in.json", "/v1/logs"),
@@ -1994,6 +1998,8 @@ def test_in_opentelemetry_http_workers_mixed_signal_matrix(case):
     ],
 )
 def test_in_opentelemetry_pause_resume(config_file, signal_type, json_input, endpoint):
+    if os.name == "nt" and config_file == "otlp_pause_resume_workers.yaml":
+        pytest.skip("HTTP shared listener ports are unavailable on Windows")
     service = Service(config_file)
 
     try:
@@ -2032,6 +2038,8 @@ def test_in_opentelemetry_pause_resume(config_file, signal_type, json_input, end
     ids=["single_listener", "workers_4"],
 )
 def test_in_opentelemetry_shutdown_while_paused(config_file):
+    if os.name == "nt" and config_file == "otlp_pause_resume_workers.yaml":
+        pytest.skip("HTTP shared listener ports are unavailable on Windows")
     service = Service(config_file)
 
     try:
@@ -2055,6 +2063,7 @@ def test_in_opentelemetry_shutdown_while_paused(config_file):
         service.stop()
 
 
+@requires_shared_listener
 def test_in_opentelemetry_http_workers_export_ingress_queue_metrics():
     service = Service(IN_OPENTELEMETRY_WORKER_PROTOCOL_CONFIGS["http1_cleartext"])
     service.start()
@@ -2102,6 +2111,7 @@ def test_in_opentelemetry_http_workers_export_ingress_queue_metrics():
     ) == 0
 
 
+@requires_shared_listener
 def test_in_opentelemetry_http_workers_respect_tiny_ingress_queue_limits():
     service = Service(IN_OPENTELEMETRY_TINY_INGRESS_QUEUE_CONFIG)
     service.start()
@@ -2152,6 +2162,7 @@ def test_in_opentelemetry_http_workers_respect_tiny_ingress_queue_limits():
     ) == 0
 
 
+@requires_shared_listener
 @pytest.mark.parametrize(
     "config_file",
     [
@@ -2233,6 +2244,7 @@ def test_in_opentelemetry_http_workers_respect_ingress_queue_byte_limit(config_f
     ) == 0
 
 
+@requires_shared_listener
 def test_in_opentelemetry_http_workers_account_metrics_payload_bytes():
     service = Service(IN_OPENTELEMETRY_TINY_INGRESS_QUEUE_BYTE_LIMIT_CONFIG)
     small_payload = service.build_otel_payload("test_metrics_001.in.json", "metrics")
@@ -2535,7 +2547,7 @@ def received_grpc_log_records():
     "gzip", "zstd", "zstd-unknown", "zstd-unknown-large-window",
     "snappy", "snappy-framed", "snappy-mixed",
 ])
-@pytest.mark.parametrize("workers", [1, 4])
+@pytest.mark.parametrize("workers", HTTP_WORKER_COUNTS)
 def test_in_opentelemetry_grpc_bounded_codecs(encoding, workers):
     service = Service("otlp_grpc_bounded.yaml")
     service.service.extra_env["OTLP_TEST_HTTP_WORKERS"] = workers
@@ -2547,6 +2559,12 @@ def test_in_opentelemetry_grpc_bounded_codecs(encoding, workers):
                                 ([4096, 1024], 8)]:
             frames = [(grpc_limit_payload(service, size), True) for size in sizes]
             assert send_grpc_limit_frames(service, frames, encoding=encoding) == expected
+        # Wait for delivery before stopping: Windows terminates the process
+        # without the final flush performed by a POSIX SIGTERM shutdown.
+        service.service.wait_for_condition(
+            lambda: len(received_grpc_log_records()) >= 16, timeout=30,
+            description="all records from accepted gRPC requests",
+        )
     finally:
         service.stop()
     # Every fixture has four records. Only the three accepted requests may ingest.
@@ -2558,9 +2576,10 @@ def test_in_opentelemetry_grpc_bounded_codecs(encoding, workers):
     "snappy", "snappy-framed", "snappy-mixed",
 ])
 @pytest.mark.parametrize("first_compressed", [False, True])
-def test_in_opentelemetry_grpc_rejected_request_is_not_ingested(encoding, first_compressed):
+@pytest.mark.parametrize("workers", HTTP_WORKER_COUNTS)
+def test_in_opentelemetry_grpc_rejected_request_is_not_ingested(encoding, first_compressed, workers):
     service = Service("otlp_grpc_bounded.yaml")
-    service.service.extra_env["OTLP_TEST_HTTP_WORKERS"] = 4
+    service.service.extra_env["OTLP_TEST_HTTP_WORKERS"] = workers
     try:
         service.start()
         first = grpc_limit_payload(service, 1024)
@@ -2578,9 +2597,24 @@ def test_in_opentelemetry_grpc_rejected_request_is_not_ingested(encoding, first_
         assert send_grpc_limit_frames(
             service, [(first, True)], encoding=encoding, suffix=b"\x01\x00\x00\x00\x01\xff"
         ) == 13
+        # An accepted marker ensures output has flushed before shutdown. This
+        # keeps an abrupt Windows stop from hiding partially ingested requests.
+        marker = ExportLogsServiceRequest()
+        scope = marker.resource_logs.add().scope_logs.add()
+        scope.log_records.add().body.string_value = "gRPC rejection verification marker"
+        assert send_grpc_limit_frames(
+            service, [(marker.SerializeToString(), False)], encoding=encoding
+        ) == 0
+        service.service.wait_for_condition(
+            lambda: any(record.body.string_value == "gRPC rejection verification marker"
+                        for record in received_grpc_log_records()),
+            timeout=30, description="accepted marker after rejected gRPC requests",
+        )
     finally:
         service.stop()
-    assert received_grpc_log_records() == []
+    records = received_grpc_log_records()
+    assert len(records) == 1
+    assert records[0].body.string_value == "gRPC rejection verification marker"
 
 
 @pytest.mark.parametrize("encoding,payload", [
@@ -2615,8 +2649,10 @@ def test_in_opentelemetry_grpc_rejects_advertised_size_before_decode(encoding, p
     "gzip", "zstd", "zstd-unknown", "zstd-unknown-large-window",
     "snappy", "snappy-framed", "snappy-mixed",
 ])
-def test_in_opentelemetry_grpc_preserves_groups_across_chunks(encoding):
+@pytest.mark.parametrize("workers", HTTP_WORKER_COUNTS)
+def test_in_opentelemetry_grpc_preserves_groups_across_chunks(encoding, workers):
     service = Service("otlp_grpc_grouped.yaml")
+    service.service.extra_env["OTLP_TEST_HTTP_WORKERS"] = workers
     frames = []
     expected = []
     for frame_index in range(2):

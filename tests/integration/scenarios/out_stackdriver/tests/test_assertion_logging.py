@@ -10,12 +10,15 @@ import pytest
 import yaml
 
 from utils.fluent_bit_manager import FluentBitStartupError
+from utils.fluent_bit_manager import fluent_bit_output_supports_config_property
 from utils.test_service import FluentBitTestService
 
 
 @pytest.mark.parametrize("plugin", ["stackdriver", "bigquery", "chronicle"])
 @pytest.mark.parametrize("log_level", ["debug", "trace"])
 def test_assertion_not_logged(tmp_path, monkeypatch, plugin, log_level):
+    if not fluent_bit_output_supports_config_property(plugin, "google_service_credentials"):
+        pytest.skip(f"This Fluent Bit build does not include the {plugin} output")
     # Reuse a public test key, never an operator's service-account credentials.
     key = Path(__file__).resolve().parents[2] / "in_splunk/certificate/private_key.pem"
     credentials = tmp_path / "credentials.json"

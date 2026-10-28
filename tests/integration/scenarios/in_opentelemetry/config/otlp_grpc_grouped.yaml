@@ -9,7 +9,7 @@ pipeline:
     - name: opentelemetry
       port: ${FLUENT_BIT_TEST_LISTENER_PORT}
       http_server.buffer_max_size: 4M
-      http_server.workers: 4
+      http_server.workers: ${OTLP_TEST_HTTP_WORKERS}
 
   outputs:
     - name: opentelemetry

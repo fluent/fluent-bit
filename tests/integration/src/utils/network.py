@@ -15,20 +15,52 @@
 #  limitations under the License.
 
 import socket
+import os
+import threading
 import time
 
+
+_allocated_ports = set()
+_allocation_lock = threading.Lock()
+
+
+def _configure_probe(sock):
+    if os.name == "nt":
+        # SO_REUSEADDR can bind an occupied port on Windows.
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+    else:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+
 def find_available_port(starting_port=0):
-    # Reuse would let this probe bind an active reusable client port even though
-    # a new listener cannot claim that port exclusively.
+    with _allocation_lock:
+        return _find_available_port(starting_port)
+
+
+def _find_available_port(starting_port):
     if starting_port in (None, 0):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.bind(("127.0.0.1", 0))
-            return sock.getsockname()[1]
+        for _ in range(1000):
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                # Allocation probes must reject active reusable client ports.
+                if os.name == "nt":
+                    _configure_probe(sock)
+                sock.bind(("0.0.0.0", 0))
+                port = sock.getsockname()[1]
+                if os.name != "nt" or port not in _allocated_ports:
+                    _allocated_ports.add(port)
+                    return port
+        raise RuntimeError("Could not allocate an unused test port")
 
     for port in range(starting_port, 65535):
+        if os.name == "nt" and port in _allocated_ports:
+            continue
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             try:
-                sock.bind(("127.0.0.1", port))
+                # Allocation probes must reject active reusable client ports.
+                if os.name == "nt":
+                    _configure_probe(sock)
+                sock.bind(("0.0.0.0", port))
+                _allocated_ports.add(port)
                 return port
             except OSError:
                 continue
@@ -41,7 +73,7 @@ def wait_for_port_to_be_free(port, *, host="127.0.0.1", timeout=5, interval=0.1)
     while time.time() < deadline:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             try:
-                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                _configure_probe(sock)
                 sock.bind((host, port))
                 return True
             except OSError:

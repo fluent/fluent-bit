@@ -30,11 +30,9 @@ VALGRIND = bool(os.environ.get("VALGRIND"))
 VALGRIND_STRICT = bool(os.environ.get("VALGRIND_STRICT"))
 
 CRASH_SIGNALS = {
-    signal.SIGSEGV,
-    signal.SIGABRT,
-    signal.SIGILL,
-    signal.SIGFPE,
-    signal.SIGBUS,
+    getattr(signal, name)
+    for name in ("SIGSEGV", "SIGABRT", "SIGILL", "SIGFPE", "SIGBUS")
+    if hasattr(signal, name)
 }
 
 # Configs that must be rejected cleanly (non-zero exit, no crash).
