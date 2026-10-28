@@ -52,6 +52,7 @@ struct flb_input_ingress_event {
             void   *buf;
             size_t  size;
             size_t  records;
+            int     processed;
         } log;
         struct ctrace *traces;
         struct cprof  *profiles;
@@ -378,7 +379,16 @@ static int flb_input_ingress_collector(struct flb_input_instance *ins,
             mk_list_entry_init(&event->_head);
 
             if (event->type == FLB_INPUT_INGRESS_LOG) {
-                if (event->data.log.records > 0) {
+                if (event->data.log.processed == FLB_TRUE) {
+                    result = flb_input_log_append_processed_routed(
+                                ins,
+                                event->data.log.records,
+                                event->tag,
+                                event->tag != NULL ? flb_sds_len(event->tag) : 0,
+                                event->data.log.buf,
+                                event->data.log.size);
+                }
+                else if (event->data.log.records > 0) {
                     result = flb_input_log_append_records(
                                 ins,
                                 event->data.log.records,
@@ -571,13 +581,14 @@ int flb_input_ingress_queue_log_take(struct flb_input_instance *ins,
                                                     allocation_size);
 }
 
-int flb_input_ingress_queue_log_take_records(struct flb_input_instance *ins,
-                                             size_t records,
-                                             const char *tag,
-                                             size_t tag_len,
-                                             void *buf,
-                                             size_t buf_size,
-                                             size_t allocation_size)
+static int flb_input_ingress_queue_log_take_internal(struct flb_input_instance *ins,
+                                                     size_t records,
+                                                     int processed,
+                                                     const char *tag,
+                                                     size_t tag_len,
+                                                     void *buf,
+                                                     size_t buf_size,
+                                                     size_t allocation_size)
 {
     struct flb_input_ingress_event *event;
 
@@ -597,12 +608,40 @@ int flb_input_ingress_queue_log_take_records(struct flb_input_instance *ins,
     event->data.log.buf = buf;
     event->data.log.size = buf_size;
     event->data.log.records = records;
+    event->data.log.processed = processed;
     if (allocation_size < buf_size) {
         allocation_size = buf_size;
     }
     event->size = allocation_size;
 
     return flb_input_ingress_enqueue(ins, event);
+}
+
+int flb_input_ingress_queue_log_take_records(struct flb_input_instance *ins,
+                                             size_t records,
+                                             const char *tag,
+                                             size_t tag_len,
+                                             void *buf,
+                                             size_t buf_size,
+                                             size_t allocation_size)
+{
+    return flb_input_ingress_queue_log_take_internal(ins, records, FLB_FALSE,
+                                                     tag, tag_len, buf, buf_size,
+                                                     allocation_size);
+}
+
+int flb_input_ingress_queue_log_processed_take_records(
+                                             struct flb_input_instance *ins,
+                                             size_t records,
+                                             const char *tag,
+                                             size_t tag_len,
+                                             void *buf,
+                                             size_t buf_size,
+                                             size_t allocation_size)
+{
+    return flb_input_ingress_queue_log_take_internal(ins, records, FLB_TRUE,
+                                                     tag, tag_len, buf, buf_size,
+                                                     allocation_size);
 }
 
 int flb_input_ingress_queue_metrics(struct flb_input_instance *ins,
