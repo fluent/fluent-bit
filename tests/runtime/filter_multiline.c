@@ -2,8 +2,13 @@
 
 #include <fluent-bit.h>
 #include <fluent-bit/flb_engine.h>
+#include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_time.h>
+#ifdef FLB_HAVE_METRICS
+#include <cmetrics/cmt_counter.h>
+#include <cmetrics/cmt_gauge.h>
+#endif
 #include "flb_tests_runtime.h"
 
 struct filter_test {
@@ -973,6 +978,178 @@ static void flb_test_ml_buffered_two_streams()
     filter_test_destroy(ctx);
 }
 
+#ifdef FLB_HAVE_METRICS
+static struct flb_filter_instance *get_filter_instance(flb_ctx_t *ctx,
+                                                       const char *plugin)
+{
+    struct mk_list *head;
+    struct flb_filter_instance *ins;
+
+    mk_list_foreach(head, &ctx->config->filters) {
+        ins = mk_list_entry(head, struct flb_filter_instance, _head);
+        if (ins->p && strcmp(ins->p->name, plugin) == 0) {
+            return ins;
+        }
+    }
+    return NULL;
+}
+
+/* read the filter's own cmetrics (label "name" = instance name) */
+static int get_ml_metrics(flb_ctx_t *ctx, double *evicted, double *active)
+{
+    int found = 0;
+    char *labels[1];
+    struct cfl_list *head;
+    struct cmt_counter *counter;
+    struct cmt_gauge *gauge;
+    struct flb_filter_instance *ins;
+
+    ins = get_filter_instance(ctx, "multiline");
+    if (!ins || !ins->cmt) {
+        return -1;
+    }
+    labels[0] = (char *) flb_filter_name(ins);
+
+    cfl_list_foreach(head, &ins->cmt->counters) {
+        counter = cfl_list_entry(head, struct cmt_counter, _head);
+        if (strcmp(counter->opts.name, "multiline_streams_evicted_total") == 0) {
+            if (cmt_counter_get_val(counter, 1, labels, evicted) == 0) {
+                found++;
+            }
+        }
+    }
+    cfl_list_foreach(head, &ins->cmt->gauges) {
+        gauge = cfl_list_entry(head, struct cmt_gauge, _head);
+        if (strcmp(gauge->opts.name, "multiline_streams_active") == 0) {
+            if (cmt_gauge_get_val(gauge, 1, labels, active) == 0) {
+                found++;
+            }
+        }
+    }
+    return (found == 2) ? 0 : -1;
+}
+#endif
+
+/*
+ * stream_idle_timeout: a stream that stays idle is evicted and transparently
+ * re-created when its tag shows up again; no record is lost in the process.
+ * The eviction itself is verified through the filter metrics.
+ */
+static void flb_test_ml_buffered_stream_idle_eviction()
+{
+#ifdef FLB_HAVE_METRICS
+    double evicted = 0;
+    double active = 0;
+#endif
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+    int i_ffd_2;
+    int ret;
+    int i;
+    int bytes;
+    int len;
+    int num;
+    char line_buf[2048] = {0};
+
+    char *expected_strs[] = {"Exception in thread main java.lang.IllegalStateException: ..null property\\n     at com.example.myproject.Author.getBookIds(xx.java:38)\\n     at com.example.myproject.Bootstrap.main(Bootstrap.java:14)",
+                             "single line on another stream that is long enough to pass the min line filter",
+                             "Exception in thread main java.lang.RuntimeException: after eviction\\n    at com.myproject.module.MyProject.badMethod(MyProject.java:22)\\n    at com.myproject.module.MyProject.main(MyProject.java:6)"};
+    struct str_list expected = {
+                                .size = sizeof(expected_strs)/sizeof(char*),
+                                .lists = &expected_strs[0],
+                                .ignore_min_line_num = 64,
+    };
+
+    char *trace_1[] = {"Exception in thread main java.lang.IllegalStateException: ..null property",
+                       "     at com.example.myproject.Author.getBookIds(xx.java:38)",
+                       "     at com.example.myproject.Bootstrap.main(Bootstrap.java:14)"};
+    char *trace_2[] = {"Exception in thread main java.lang.RuntimeException: after eviction",
+                       "    at com.myproject.module.MyProject.badMethod(MyProject.java:22)",
+                       "    at com.myproject.module.MyProject.main(MyProject.java:6)"};
+
+    cb_data.cb = cb_check_str_list;
+    cb_data.data = (void *)&expected;
+
+    clear_output_num();
+
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* second input: records on it trigger the eviction sweep */
+    i_ffd_2 = flb_input(ctx->flb, (char *) "lib", NULL);
+    TEST_CHECK(i_ffd_2 >= 0);
+    flb_input_set(ctx->flb, i_ffd_2, "tag", "test2", NULL);
+
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         "multiline.key_content", "log",
+                         "multiline.parser", "java",
+                         "buffer", "on",
+                         "flush_ms", "500",
+                         "stream_idle_timeout", "1",
+                         "debug_flush", "on",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* 1. first trace on 'test': creates the stream */
+    for (i = 0; i < sizeof(trace_1)/sizeof(char*); i++) {
+        sprintf(&line_buf[0], "[%d, {\"log\":\"%s\"}]", i, trace_1[i]);
+        len = strlen(line_buf);
+        bytes = flb_lib_push(ctx->flb, ctx->i_ffd, &line_buf[0], len);
+        TEST_CHECK(bytes == len);
+    }
+
+    /* let the trace flush and the 'test' stream go idle past the timeout */
+    sleep(3);
+
+    /* 2. a record on 'test2' runs the sweep, which evicts the 'test' stream */
+    sprintf(&line_buf[0], "[0, {\"log\":\"single line on another stream that is long enough to pass the min line filter\"}]");
+    len = strlen(line_buf);
+    bytes = flb_lib_push(ctx->flb, i_ffd_2, &line_buf[0], len);
+    TEST_CHECK(bytes == len);
+
+    /* let 'test2' go idle past the timeout as well (same margin as step 1) */
+    sleep(3);
+
+    /*
+     * 3. second trace on 'test': the stream must be re-created transparently.
+     *    Its first batch also runs the sweep, which now evicts 'test2'.
+     */
+    for (i = 0; i < sizeof(trace_2)/sizeof(char*); i++) {
+        sprintf(&line_buf[0], "[%d, {\"log\":\"%s\"}]", i, trace_2[i]);
+        len = strlen(line_buf);
+        bytes = flb_lib_push(ctx->flb, ctx->i_ffd, &line_buf[0], len);
+        TEST_CHECK(bytes == len);
+    }
+    sleep(3);
+
+    num = get_output_num();
+    if (!TEST_CHECK(num == 3))  {
+        TEST_MSG("output error. got %d expect 3", num);
+    }
+
+#ifdef FLB_HAVE_METRICS
+    /*
+     * 'test' was evicted in step 2 and 'test2' in step 3; the re-created
+     * 'test' stream is the only one left.
+     */
+    ret = get_ml_metrics(ctx->flb, &evicted, &active);
+    TEST_CHECK(ret == 0);
+    if (!TEST_CHECK(evicted == 2)) {
+        TEST_MSG("expected 2 evicted streams, got %f", evicted);
+    }
+    if (!TEST_CHECK(active == 1)) {
+        TEST_MSG("expected 1 active stream, got %f", active);
+    }
+#endif
+
+    filter_test_destroy(ctx);
+}
+
 static void flb_test_ml_buffered_16_streams()
 {
     struct flb_lib_out_cb cb_data;
@@ -1288,6 +1465,7 @@ static void flb_test_ml_buffered_16_streams_pausing()
 TEST_LIST = {
     {"ml_buffered_two_streams" , flb_test_ml_buffered_two_streams},
     {"ml_buffered_16_streams" , flb_test_ml_buffered_16_streams},
+    {"ml_buffered_stream_idle_eviction" , flb_test_ml_buffered_stream_idle_eviction},
 
     {"multiline_buffered_one_record"                      , flb_test_multiline_buffered_one_output_record },
     {"multiline_buffered_two_record"                      , flb_test_multiline_buffered_two_output_record },
