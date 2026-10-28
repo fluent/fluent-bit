@@ -27,11 +27,12 @@ class Service:
 
     def metrics(self, expected=None):
         url = f"http://127.0.0.1:{self.flb.http_monitoring_port}/api/v2/metrics/prometheus"
+        markers = [expected] if isinstance(expected, str) else (expected or [])
         return self.service.wait_for_condition(
             lambda: response.text
             if (
                 (response := requests.get(url, timeout=2)).status_code == 200
-                and (expected is None or expected in response.text)
+                and all(marker in response.text for marker in markers)
             )
             else None,
             timeout=10,
@@ -206,7 +207,7 @@ def test_input_tag_records_counter_accumulates():
 def test_input_tag_records_tracks_multiple_tags():
     metrics = _run_with_metrics(
         "tag_records_multi_tag.yaml",
-        expected='tag="tag.records.beta"',
+        expected=['tag="tag.records.alpha"', 'tag="tag.records.beta"'],
     )
 
     alpha = _metric_value(
@@ -239,7 +240,7 @@ def test_input_tag_records_can_be_enabled_per_input_only():
     # in must export tag record metrics; the other input must export nothing.
     metrics = _run_with_metrics(
         "tag_records_input_enable.yaml",
-        expected='name="tag_records_enabled_input"',
+        expected='fluentbit_input_logs_tag_records_total{name="tag_records_enabled_input"',
     )
 
     enabled = _metric_value(
@@ -265,7 +266,7 @@ def test_input_tag_records_nested_block_disables_input():
     # Service is enabled; the nested block disables one input only.
     metrics = _run_with_metrics(
         "tag_records_input_nested_disable.yaml",
-        expected='name="tag_records_nested_control"',
+        expected='fluentbit_input_logs_tag_records_total{name="tag_records_nested_control"',
     )
 
     control = _metric_value(
@@ -291,7 +292,7 @@ def test_input_tag_records_nested_block_enables_input():
     # nested block inside an input aborted startup.
     metrics = _run_with_metrics(
         "tag_records_input_nested_enable.yaml",
-        expected='name="tag_records_nested_enabled"',
+        expected='fluentbit_input_logs_tag_records_total{name="tag_records_nested_enabled"',
     )
 
     enabled = _metric_value(

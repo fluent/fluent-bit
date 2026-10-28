@@ -142,6 +142,9 @@ def test_grouped_fallback_envelopes_and_accounting(tmp_path, location, mixed):
                 f"http://127.0.0.1:{service.flb.http_monitoring_port}/api/v2/metrics/prometheus",
                 timeout=10,
             )
+            if response.status_code == 404:
+                # The monitoring snapshot is published asynchronously.
+                return None
             response.raise_for_status()
             values = processor_metrics(response.text, location, owner="opentelemetry.0")
             for stage, (before, after) in enumerate(counts):

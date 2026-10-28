@@ -51,7 +51,8 @@ def daemon(tmp_path, plugin):
             wait_for(ready)
             yield port, process, log
         finally:
-            if process.poll() is None:
+            stopped_by_test = process.poll() is None
+            if stopped_by_test:
                 process.send_signal(signal.SIGTERM)
             try:
                 process.wait(timeout=30)
@@ -59,7 +60,8 @@ def daemon(tmp_path, plugin):
                 process.kill()
                 process.wait()
                 pytest.fail("Fluent Bit did not shut down cleanly")
-            assert process.returncode == 0, log.read_text() + (memlog.read_text() if memory else "")
+            expected_code = 1 if os.name == "nt" and stopped_by_test else 0
+            assert process.returncode == expected_code, log.read_text() + (memlog.read_text() if memory else "")
             if memory:
                 assert "ERROR SUMMARY: 0 errors" in memlog.read_text(), memlog.read_text()
 

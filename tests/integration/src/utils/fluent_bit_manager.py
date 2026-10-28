@@ -28,6 +28,7 @@ import tempfile
 import time
 
 import requests
+import pytest
 
 from utils.network import find_available_port, wait_for_port_to_be_free
 from utils.leaks import assert_leaks_clean
@@ -51,6 +52,21 @@ _WINDOWS_ATTACH_CONSOLE_FAILED = 3
 
 class FluentBitStartupError(RuntimeError):
     pass
+
+
+def _console_options():
+    if platform.system() != "Windows":
+        return {}
+
+    # Reload broadcasts CTRL_BREAK_EVENT to its console. Give each instance a
+    # hidden console so a reload cannot interrupt pytest or sibling instances.
+    startup_info = subprocess.STARTUPINFO()
+    startup_info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    startup_info.wShowWindow = subprocess.SW_HIDE
+    return {
+        "creationflags": subprocess.CREATE_NEW_CONSOLE,
+        "startupinfo": startup_info,
+    }
 
 
 def _default_binary_path():
@@ -140,12 +156,20 @@ def fluent_bit_binary_supports_config_property(property_name, binary_path=None):
 
 
 def fluent_bit_input_supports_config_property(plugin_name, property_name, binary_path=None):
+    return _plugin_supports_config_property("-i", plugin_name, property_name, binary_path)
+
+
+def fluent_bit_output_supports_config_property(plugin_name, property_name, binary_path=None):
+    return _plugin_supports_config_property("-o", plugin_name, property_name, binary_path)
+
+
+def _plugin_supports_config_property(plugin_type, plugin_name, property_name, binary_path=None):
     resolved_path = _resolve_binary_path(binary_path)
     property_marker = property_name.lower()
 
     try:
         result = subprocess.run(
-            [resolved_path, "-i", plugin_name, "-h"],
+            [resolved_path, plugin_type, plugin_name, "-h"],
             capture_output=True,
             text=True,
             check=False,
@@ -222,8 +246,12 @@ class FluentBitManager:
         command = [
             self.binary_absolute_path,
             "-c", self.config_path,
-            "-l", self.log_file
         ]
+        # Windows CRT append handles do not protect against another handle's
+        # writes. Capture stderr and stdout through the same inherited handle
+        # instead of letting -l open a second writer to the capture file.
+        if platform.system() != "Windows":
+            command += ["-l", self.log_file]
 
         if valgrind_enabled():
             command = [
@@ -240,20 +268,11 @@ class FluentBitManager:
 
         output_path = self.leaks_log_file if leaks_enabled() else self.log_file
         self.output_handle = open(output_path, "a", encoding="utf-8")
-        process_options = {}
-        if os.name == "nt":
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            startupinfo.wShowWindow = subprocess.SW_HIDE
-            process_options = {
-                "creationflags": subprocess.CREATE_NEW_CONSOLE,
-                "startupinfo": startupinfo,
-            }
         self.process = subprocess.Popen(
             command,
             stdout=self.output_handle,
             stderr=subprocess.STDOUT,
-            **process_options,
+            **_console_options(),
         )
 
         if leaks_enabled():
@@ -278,7 +297,7 @@ class FluentBitManager:
         return_code = self.process.poll()
         supervisor_running = self.process.poll() is None
         if supervisor_running or (leaks_enabled() and self.target_pid):
-            if os.name == "nt":
+            if platform.system() == "Windows":
                 try:
                     self._send_windows_shutdown(pid)
                 except subprocess.TimeoutExpired:
@@ -311,7 +330,8 @@ class FluentBitManager:
         if shutdown_error is not None:
             raise shutdown_error
 
-        if self.http_monitoring_port:
+        # Exclusive Windows probes can fail during TIME_WAIT after process exit.
+        if self.http_monitoring_port and platform.system() != "Windows":
             timeout = 10 if memory_check_enabled() else 5
             wait_for_port_to_be_free(int(self.http_monitoring_port), timeout=timeout)
 
@@ -479,6 +499,13 @@ finally:
         start_time = time.time()
         while time.time() - start_time < timeout:
             if self.process and self.process.poll() is not None:
+                if platform.system() == "Windows":
+                    try:
+                        log_text = Path(self.log_file).read_text(encoding="utf-8", errors="replace")
+                    except OSError:
+                        log_text = ""
+                    if "shared listener ports are not supported on this platform" in log_text:
+                        pytest.skip("Shared listener ports are unavailable on Windows")
                 raise FluentBitStartupError(
                     f"Fluent Bit exited early with code {self.process.returncode}. "
                     f"See log file {self.log_file}"
