@@ -29,16 +29,21 @@
 #define FLB_MULTILINE_METRIC_TRUNCATED       201
 #define FLB_MULTILINE_MODE_PARTIAL_MESSAGE   "partial_message"
 #define FLB_MULTILINE_MODE_PARSER            "parser"
+#define FLB_MULTILINE_STREAM_EVICT_MAX       256
 
 /*
- * input instance + tag is the unique identifier
- * for a multiline stream
- * TODO: implement clean up of streams that haven't been used recently
+ * input instance + tag is the unique identifier for a multiline stream.
+ *
+ * Streams are created on demand and evicted after they have not received
+ * records for 'stream_idle_timeout' (default 5 minutes, see
+ * evict_idle_streams() in ml.c). Without eviction every distinct tag ever
+ * seen keeps its parser buffers allocated until shutdown.
  */
 struct ml_stream {
     flb_sds_t tag;
     flb_sds_t input_name;
     uint64_t stream_id;
+    uint64_t last_used;       /* cfl_time_now() of the last record appended */
 
     struct mk_list _head;
 };
@@ -58,6 +63,10 @@ struct ml_ctx {
     struct flb_ml *m;
     struct mk_list *multiline_parsers;
     int flush_ms;
+
+    /* idle stream eviction (buffered 'parser' mode only) */
+    int stream_idle_timeout;          /* seconds, 0 disables eviction */
+    uint64_t last_evict_check;        /* cfl_time_now() of the last sweep */
 
     int timer_created;
 
@@ -86,6 +95,8 @@ struct ml_ctx {
 #ifdef FLB_HAVE_METRICS
     struct cmt_counter *cmt_emitted;
     struct cmt_counter *cmt_truncated;
+    struct cmt_counter *cmt_streams_evicted;
+    struct cmt_gauge *cmt_streams_active;
 #endif
 };
 
