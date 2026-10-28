@@ -3,7 +3,7 @@ import http.client, json, os, logging, time, subprocess
 import pytest
 
 from server.otlp_server import data_storage
-from utils.http_matrix import PROTOCOL_CASES, run_curl_request
+from utils.http_matrix import PROTOCOL_CASES, curl_for_http_mode, run_curl_request
 from utils.input_pause_resume import (
     assert_pause_resume_cycles,
     assert_shutdown_while_paused,
@@ -359,7 +359,7 @@ def test_in_elasticsearch_bulk_small_status_buffer_does_not_crash(case):
 
     trigger_payload = '{"index":{}}\n{}\n{"index":{}}\n{}\n'
     curl_command = [
-        "curl",
+        curl_for_http_mode(case["http_mode"]),
         "--silent",
         "--show-error",
         "--output",

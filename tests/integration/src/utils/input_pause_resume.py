@@ -6,7 +6,7 @@ import time
 
 import requests
 
-from utils.http_matrix import run_curl_request
+from utils.http_matrix import curl_for_http_mode, run_curl_request
 
 
 INGESTION_PAUSED_RE = re.compile(
@@ -338,7 +338,7 @@ def run_curl_without_check(
     ca_cert_path=None,
 ):
     command = [
-        "curl",
+        curl_for_http_mode(http_mode),
         "--silent",
         "--show-error",
         "--output",

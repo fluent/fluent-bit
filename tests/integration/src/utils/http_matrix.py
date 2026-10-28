@@ -1,6 +1,9 @@
 import os
+import shutil
 import subprocess
 import tempfile
+
+import pytest
 
 
 PROTOCOL_CASES = [
@@ -56,15 +59,25 @@ PROTOCOL_CASES = [
 ]
 
 
-def curl_supports_http2():
+def curl_supports_http2(curl_path=None):
     result = subprocess.run(
-        ["curl", "--version"],
+        [curl_path or shutil.which("curl") or "curl", "--version"],
         capture_output=True,
         text=True,
         check=True,
     )
-    first_line = result.stdout.splitlines()[0] if result.stdout else ""
-    return "HTTP2" in result.stdout or "HTTP2" in first_line
+    return any(
+        "HTTP2" in line.split()[1:]
+        for line in result.stdout.splitlines()
+        if line.startswith("Features:")
+    )
+
+
+def curl_for_http_mode(http_mode):
+    curl_path = shutil.which("curl") or "curl"
+    if http_mode in ("http2", "http2-prior-knowledge") and not curl_supports_http2(curl_path):
+        pytest.skip(f"Selected curl lacks HTTP2 support: {curl_path} ({http_mode})")
+    return curl_path
 
 
 def run_curl_request(
@@ -80,7 +93,7 @@ def run_curl_request(
     extra_args=None,
 ):
     command = [
-        "curl",
+        curl_for_http_mode(http_mode),
         "--silent",
         "--show-error",
         "--output",
