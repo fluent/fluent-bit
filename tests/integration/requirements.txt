@@ -9,7 +9,7 @@ Deprecated==1.2.14
 Flask==3.0.3
 google==3.0.0
 googleapis-common-protos==1.63.2
-grpcio==1.64.1
+grpcio==1.85.0
 h2==4.1.0
 idna==3.7
 importlib_metadata==7.1.0
