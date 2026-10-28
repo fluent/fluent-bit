@@ -253,6 +253,7 @@ static int run_action_convert(struct content_modifier_ctx *ctx,
     struct cfl_kvpair *kvpair;
     struct cfl_variant *v;
     struct cfl_variant *converted;
+    struct cfl_variant *arena_converted;
 
     /* if the kv pair already exists, remove it from the list */
     kvpair = cfl_object_kvpair_get(obj, key);
@@ -267,10 +268,50 @@ static int run_action_convert(struct content_modifier_ctx *ctx,
         return -1;
     }
 
+    kvlist = obj->variant->data.as_kvlist;
+    if (kvlist->arena != NULL) {
+        arena_converted = NULL;
+
+        if (converted->type == CFL_VARIANT_STRING) {
+            arena_converted = cfl_variant_create_from_string_s_in(
+                                  kvlist->arena, converted->data.as_string,
+                                  cfl_variant_size_get(converted), CFL_FALSE);
+        }
+        else if (converted->type == CFL_VARIANT_BYTES) {
+            arena_converted = cfl_variant_create_from_bytes_in(
+                                  kvlist->arena, converted->data.as_bytes,
+                                  cfl_variant_size_get(converted), CFL_FALSE);
+        }
+        else if (converted->type == CFL_VARIANT_BOOL) {
+            arena_converted = cfl_variant_create_from_bool_in(
+                                  kvlist->arena, converted->data.as_bool);
+        }
+        else if (converted->type == CFL_VARIANT_INT) {
+            arena_converted = cfl_variant_create_from_int64_in(
+                                  kvlist->arena, converted->data.as_int64);
+        }
+        else if (converted->type == CFL_VARIANT_UINT) {
+            arena_converted = cfl_variant_create_from_uint64_in(
+                                  kvlist->arena, converted->data.as_uint64);
+        }
+        else if (converted->type == CFL_VARIANT_DOUBLE) {
+            arena_converted = cfl_variant_create_from_double_in(
+                                  kvlist->arena, converted->data.as_double);
+        }
+        else if (converted->type == CFL_VARIANT_NULL) {
+            arena_converted = cfl_variant_create_from_null_in(kvlist->arena);
+        }
+
+        cfl_variant_destroy(converted);
+        if (arena_converted == NULL) {
+            return -1;
+        }
+        converted = arena_converted;
+    }
+
     /* remove the old kvpair */
     cfl_kvpair_destroy(kvpair);
 
-    kvlist = obj->variant->data.as_kvlist;
     ret = cfl_kvlist_insert_s(kvlist, key, cfl_sds_len(key), converted);
     if (ret != 0) {
         cfl_variant_destroy(converted);
@@ -326,7 +367,7 @@ static struct cfl_variant *otel_get_log_attributes(struct flb_mp_chunk_record *r
         }
     }
     else {
-        kvlist_tmp = cfl_kvlist_create();
+        kvlist_tmp = cfl_kvlist_create_like(kvlist);
         if (!kvlist_tmp) {
             return NULL;
         }
