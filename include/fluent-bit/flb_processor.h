@@ -65,8 +65,15 @@
  * FLB_PROCESSOR_FLAG_LOG_WINDOWS: the logs callback only depends on each
  * record and its group, so the processor chain can run it over large buffers
  * in group aligned windows.
+ *
+ * FLB_PROCESSOR_FLAG_LOGS_WORKER_SAFE: the logs callback is safe to invoke
+ * from an input protocol worker. It must not depend on the caller's event
+ * loop, scheduler, coroutine or thread-local state, emit records through
+ * thread-bound APIs, or require ordering between independently received
+ * batches.
  */
 #define FLB_PROCESSOR_FLAG_LOG_WINDOWS 1
+#define FLB_PROCESSOR_FLAG_LOGS_WORKER_SAFE (1 << 1)
 
 
 /* The current values mean the processor stack will
@@ -89,6 +96,7 @@ struct flb_log_event_decoder;
 struct flb_log_event_encoder;
 struct flb_processor_instance;
 struct flb_condition;
+struct flb_mp_chunk_cobj;
 
 struct flb_processor_unit {
     int event_type;
@@ -275,6 +283,16 @@ int flb_processor_run_with_count(struct flb_processor *proc, size_t starting_sta
                                  const char *tag, size_t tag_len, void *data, size_t data_size,
                                  void **out_buf, size_t *out_size,
                                  int input_records, int *output_records);
+
+/* Run the logs processors over a chunk of CFL records, consuming the chunk */
+int flb_processor_logs_chunk_supported(struct flb_processor *proc,
+                                       int worker_thread);
+int flb_processor_run_logs_chunk(struct flb_processor *proc,
+                                 const char *tag, size_t tag_len,
+                                 struct flb_mp_chunk_cobj *chunk,
+                                 int worker_thread,
+                                 void **out_buf, size_t *out_size,
+                                 int *output_records);
 
 struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
                                                      int event_type,
