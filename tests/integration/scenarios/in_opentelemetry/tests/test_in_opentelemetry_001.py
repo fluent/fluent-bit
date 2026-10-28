@@ -2737,6 +2737,10 @@ DIRECT_CFL_PROCESSOR_CHAINS = {
         {"name": "content_modifier", "context": "attributes",
          "action": "hash", "key": "marker"},
     ],
+    "rename": [
+        {"name": "content_modifier", "context": "body",
+         "action": "rename", "key": "marker", "value": "renamed_marker"},
+    ],
     "hash_then_sql": [
         {"name": "content_modifier", "context": "attributes",
          "action": "hash", "key": "marker"},
@@ -2864,6 +2868,9 @@ def direct_cfl_service(tmp_path, direct, processors, *, body_key=None, workers=1
     if threaded:
         options.append("threaded: true")
     option_lines = "\n".join(f"      {option}" for option in options)
+    processor_lines = ""
+    if processors is not None:
+        processor_lines = f"      processors: {json.dumps({'logs': processors})}\n"
     route_lines = ""
     output_match = "      match: '*'"
     if conditional_routes:
@@ -2891,8 +2898,7 @@ pipeline:
       port: ${{FLUENT_BIT_TEST_LISTENER_PORT}}
       http2: on
 {option_lines}
-      processors: {json.dumps({"logs": processors})}
-{route_lines}  outputs:
+{processor_lines}{route_lines}  outputs:
     - name: opentelemetry
       alias: direct_cfl_output
 {output_match}
@@ -2977,12 +2983,151 @@ def test_in_opentelemetry_logs_direct_cfl_parity(tmp_path, chain, transport):
     assert direct_records == msgpack_records
 
 
-def test_in_opentelemetry_logs_direct_cfl_body_key(tmp_path):
+@pytest.mark.parametrize("chain", sorted(DIRECT_CFL_PROCESSOR_CHAINS))
+def test_in_opentelemetry_logs_direct_cfl_json_parity(tmp_path, chain):
+    processors = DIRECT_CFL_PROCESSOR_CHAINS[chain]
+    msgpack_records = run_direct_cfl_case(
+        tmp_path, False, processors, "http", encoding="json")
+    direct_records = run_direct_cfl_case(
+        tmp_path, True, processors, "http", encoding="json")
+
+    assert len(msgpack_records) > 1
+    assert direct_records == msgpack_records
+
+
+@pytest.mark.parametrize("workers", [1, pytest.param(
+    4, marks=pytest.mark.skipif(os.name == "nt",
+                                reason="HTTP shared listener ports are unavailable on Windows"))])
+def test_in_opentelemetry_logs_direct_cfl_json_without_processors(tmp_path, workers):
+    # Without processors JSON uses the single-pass CFL decoder and is encoded
+    # once, the records must match the msgpack reference.
+    msgpack_records = run_direct_cfl_case(
+        tmp_path, False, None, "http", encoding="json", workers=workers)
+    direct_records = run_direct_cfl_case(
+        tmp_path, True, None, "http", encoding="json", workers=workers)
+
+    assert len(msgpack_records) > 1
+    assert direct_records == msgpack_records
+
+
+@pytest.mark.parametrize("processors", [None, "content_modifier"])
+def test_in_opentelemetry_logs_direct_cfl_json_edge_parity(tmp_path, processors):
+    if processors is not None:
+        processors = DIRECT_CFL_PROCESSOR_CHAINS[processors]
+    payload = {
+        "resourceLogs": [{
+            "resource": {"attributes": [
+                {"key": "missing"},
+                {"key": "unset", "value": {}},
+                {"key": "nested", "value": {
+                    "customValue": {"child": [1, True, None]}
+                }},
+            ]},
+            "scopeLogs": [{"logRecords": [
+                {"timeUnixNano": "1789516800123456789",
+                 "body": {"arrayValue": {"values": [
+                    {}, {"stringValue": "value"}
+                ]}}},
+                {"timeUnixNano": "1789516800123456790", "body": {}},
+            ]}],
+        }]
+    }
+    results = []
+
+    for direct in [False, True]:
+        service = direct_cfl_service(tmp_path, direct, processors)
+        try:
+            service.start()
+            before = len(data_storage["logs"])
+            response = service.send_raw_request(
+                "/v1/logs", json.dumps(payload).encode("utf-8"),
+                content_type="application/json")
+            assert response.status_code == 201
+
+            def received_records():
+                records = flatten_received_logs(data_storage["logs"][before:])
+                return records if len(records) == 2 else None
+
+            received = service.service.wait_for_condition(
+                received_records,
+                timeout=20, interval=0.1, description="direct CFL JSON edge records")
+            results.append(received)
+        finally:
+            service.stop()
+
+    assert results[1] == results[0]
+
+
+@pytest.mark.parametrize("encoding", ["protobuf", "json"])
+def test_in_opentelemetry_logs_direct_cfl_empty_request(tmp_path, encoding):
+    # A request without log records is valid and accepted on every path.
+    if encoding == "json":
+        payload = b'{"resourceLogs":[{"scopeLogs":[{"logRecords":[]}]}]}'
+        content_type = "application/json"
+    else:
+        request = ExportLogsServiceRequest()
+        request.resource_logs.add().scope_logs.add()
+        payload = request.SerializeToString()
+        content_type = "application/x-protobuf"
+
+    for direct in [False, True]:
+        service = direct_cfl_service(tmp_path, direct,
+                                     DIRECT_CFL_PROCESSOR_CHAINS["content_modifier"])
+        try:
+            service.start()
+            response = service.send_raw_request("/v1/logs", payload,
+                                                content_type=content_type)
+            assert response.status_code == 201
+        finally:
+            service.stop()
+
+
+@pytest.mark.parametrize("processors", [None, "content_modifier"])
+def test_in_opentelemetry_logs_direct_cfl_json_unsupported_key(tmp_path, processors):
+    # CFL maps only hold string keys. A wrapped attribute key is unwrapped,
+    # a numeric one makes the request take the msgpack path.
+    if processors is not None:
+        processors = DIRECT_CFL_PROCESSOR_CHAINS[processors]
+    payload = {"resourceLogs": [{"scopeLogs": [{"logRecords": [
+        {"timeUnixNano": "1789516800000000000", "body": {"stringValue": "wrapped"},
+         "attributes": [{"key": {"stringValue": "name"}, "value": {"intValue": "1"}}]},
+        {"timeUnixNano": "1789516800000000001", "body": {"stringValue": "numeric"},
+         "attributes": [{"key": 5, "value": {"boolValue": True}}]},
+    ]}]}]}
+    sentinel = build_direct_cfl_sentinel_payload().SerializeToString()
+    results = []
+
+    for direct in [False, True]:
+        service = direct_cfl_service(tmp_path, direct, processors)
+        try:
+            service.start()
+            before = len(data_storage["logs"])
+            response = service.send_raw_request(
+                "/v1/logs", json.dumps(payload).encode("utf-8"),
+                content_type="application/json")
+            assert response.status_code == 201
+            response = service.send_raw_request("/v1/logs", sentinel)
+            assert response.status_code == 201
+
+            def received():
+                records = flatten_received_logs(data_storage["logs"][before:])
+                return records if any(is_sentinel(record) for record in records) else None
+
+            results.append(service.service.wait_for_condition(
+                received, timeout=20, interval=0.1, description="sentinel after key test"))
+        finally:
+            service.stop()
+
+    assert results[1] == results[0]
+
+
+@pytest.mark.parametrize("encoding", ["protobuf", "json"])
+def test_in_opentelemetry_logs_direct_cfl_body_key(tmp_path, encoding):
     processors = DIRECT_CFL_PROCESSOR_CHAINS["content_modifier"]
     msgpack_records = run_direct_cfl_case(tmp_path, False, processors, "http",
-                                          body_key="message")
+                                          body_key="message", encoding=encoding)
     direct_records = run_direct_cfl_case(tmp_path, True, processors, "http",
-                                         body_key="message")
+                                         body_key="message", encoding=encoding)
 
     assert len(msgpack_records) > 1
     assert direct_records == msgpack_records
@@ -3098,14 +3243,18 @@ def test_in_opentelemetry_logs_direct_cfl_workers_fallback(tmp_path, chain):
 
 
 @pytest.mark.skipif(os.name == "nt", reason="HTTP shared listener ports are unavailable on Windows")
+@pytest.mark.parametrize("encoding", ["protobuf", "json"])
 @pytest.mark.parametrize("chain", ["content_modifier", "sql_drop", "hash_then_sql",
                                     "conditional_safe"])
-def test_in_opentelemetry_logs_direct_cfl_threaded_worker_safe_chain(tmp_path, chain):
+def test_in_opentelemetry_logs_direct_cfl_threaded_worker_safe_chain(tmp_path, chain,
+                                                                    encoding):
     processors = DIRECT_CFL_PROCESSOR_CHAINS[chain]
     msgpack_records = run_direct_cfl_case(
-        tmp_path, False, processors, "http", workers=4, threaded=True)
+        tmp_path, False, processors, "http", workers=4, threaded=True,
+        encoding=encoding)
     direct_records = run_direct_cfl_case(
-        tmp_path, True, processors, "http", workers=4, threaded=True)
+        tmp_path, True, processors, "http", workers=4, threaded=True,
+        encoding=encoding)
 
     assert len(msgpack_records) > 1
     assert direct_records == msgpack_records
@@ -3161,10 +3310,22 @@ def test_in_opentelemetry_logs_direct_cfl_generated_limit(tmp_path, attributes, 
         service.stop()
 
 
+@pytest.mark.parametrize("encoding", ["protobuf", "json"])
 @pytest.mark.parametrize("limit", [512, 1024, 2048, 4096, 8192, 16384])
-def test_in_opentelemetry_logs_direct_cfl_limit_parity(tmp_path, limit):
+def test_in_opentelemetry_logs_direct_cfl_limit_parity(tmp_path, limit, encoding):
     processors = DIRECT_CFL_PROCESSOR_CHAINS["content_modifier"]
-    payload = build_direct_cfl_logs_payload().SerializeToString()
+    request = build_direct_cfl_logs_payload()
+    if encoding == "json":
+        for resource_logs in request.resource_logs:
+            for scope_logs in resource_logs.scope_logs:
+                for record in scope_logs.log_records:
+                    record.trace_id = b""
+                    record.span_id = b""
+        payload = json_format.MessageToJson(request).encode("utf-8")
+        content_type = "application/json"
+    else:
+        payload = request.SerializeToString()
+        content_type = "application/x-protobuf"
     statuses = []
 
     for direct in [False, True]:
@@ -3172,7 +3333,8 @@ def test_in_opentelemetry_logs_direct_cfl_limit_parity(tmp_path, limit):
                                      logs_max_size=str(limit))
         try:
             service.start()
-            response = service.send_raw_request("/v1/logs", payload)
+            response = service.send_raw_request(
+                "/v1/logs", payload, content_type=content_type)
             statuses.append(response.status_code)
         finally:
             service.stop()
