@@ -1526,6 +1526,44 @@ static int input_log_append_processed_internal(struct flb_input_instance *ins,
     return ret;
 }
 
+/* Store a log buffer that already went through the input processors */
+static int input_log_append_output(struct flb_input_instance *ins, size_t records,
+                                   const char *tag, size_t tag_len,
+                                   const void *buf, size_t buf_size)
+{
+    if (flb_input_is_threaded(ins) == FLB_TRUE &&
+        input_has_conditional_routes(ins) == FLB_TRUE) {
+        return flb_input_chunk_ring_buffer_enqueue_log_routing(ins,
+                                                               FLB_INPUT_LOGS,
+                                                               records,
+                                                               tag, tag_len,
+                                                               buf, buf_size);
+    }
+
+    return input_log_append_processed_internal(ins, records,
+                                               tag, tag_len,
+                                               buf, buf_size,
+                                               FLB_FALSE);
+}
+
+/* Tag used by processors when the input does not provide one */
+static void input_log_processor_tag(struct flb_input_instance *ins,
+                                    const char **tag, size_t *tag_len)
+{
+    if (*tag) {
+        return;
+    }
+
+    if (ins->tag && ins->tag_len > 0) {
+        *tag = ins->tag;
+        *tag_len = ins->tag_len;
+    }
+    else {
+        *tag = ins->name;
+        *tag_len = strlen(ins->name);
+    }
+}
+
 /*
  * 'exact_records' tells whether 'records' is the exact number of log records in
  * the buffer. Caller-provided hints (for example, lines read by an input) are
@@ -1546,16 +1584,7 @@ static int input_log_append(struct flb_input_instance *ins,
 
     processor_is_active = flb_processor_is_active(ins->processor);
     if (processor_is_active) {
-        if (!tag) {
-            if (ins->tag && ins->tag_len > 0) {
-                tag = ins->tag;
-                tag_len = ins->tag_len;
-            }
-            else {
-                tag = ins->name;
-                tag_len = strlen(ins->name);
-            }
-        }
+        input_log_processor_tag(ins, &tag, &tag_len);
 
         if (exact_records && records <= INT_MAX) {
             known_records = (int) records;
@@ -1589,20 +1618,7 @@ static int input_log_append(struct flb_input_instance *ins,
         }
     }
 
-    if (flb_input_is_threaded(ins) == FLB_TRUE &&
-        input_has_conditional_routes(ins) == FLB_TRUE) {
-        ret = flb_input_chunk_ring_buffer_enqueue_log_routing(ins,
-                                                              FLB_INPUT_LOGS,
-                                                              records,
-                                                              tag, tag_len,
-                                                              out_buf, out_size);
-    }
-    else {
-        ret = input_log_append_processed_internal(ins, records,
-                                                  tag, tag_len,
-                                                  out_buf, out_size,
-                                                  FLB_FALSE);
-    }
+    ret = input_log_append_output(ins, records, tag, tag_len, out_buf, out_size);
 
     if (processor_is_active && buf != out_buf) {
         flb_free(out_buf);
@@ -1641,6 +1657,25 @@ int flb_input_log_append_processed(struct flb_input_instance *ins,
                                                FLB_TRUE);
 }
 
+/*
+ * Store an already processed buffer from a thread that might not own input
+ * chunks. Unlike flb_input_log_append_processed(), this entry point performs
+ * the normal threaded-input handoff instead of forcing a local append.
+ */
+int flb_input_log_append_processed_routed(struct flb_input_instance *ins,
+                                          size_t records,
+                                          const char *tag,
+                                          size_t tag_len,
+                                          const void *buf,
+                                          size_t buf_size)
+{
+    if (records == 0) {
+        records = flb_mp_count_log_records(buf, buf_size);
+    }
+
+    return input_log_append_output(ins, records, tag, tag_len, buf, buf_size);
+}
+
 /* Take a msgpack serialized record and enqueue it as a chunk */
 int flb_input_log_append_skip_processor_stages(struct flb_input_instance *ins,
                                                size_t processor_starting_stage,
@@ -1668,5 +1703,57 @@ int flb_input_log_append_records(struct flb_input_instance *ins,
     int ret;
 
     ret = input_log_append(ins, 0, records, FLB_FALSE, tag, tag_len, buf, buf_size);
+    return ret;
+}
+
+/* TRUE when the input processors can take log records built as a CFL chunk */
+int flb_input_log_chunk_supported(struct flb_input_instance *ins,
+                                  int worker_thread)
+{
+    return flb_processor_logs_chunk_supported(ins->processor, worker_thread);
+}
+
+/*
+ * Run the input processors over a chunk of CFL records and enqueue the
+ * result, skipping the msgpack round trip the processors would otherwise do.
+ * The chunk is always consumed, callers check flb_input_log_chunk_supported()
+ * first.
+ */
+int flb_input_log_append_chunk(struct flb_input_instance *ins,
+                               const char *tag, size_t tag_len,
+                               struct flb_mp_chunk_cobj *chunk,
+                               int worker_thread)
+{
+    int ret;
+    int records = -1;
+    void *out_buf = NULL;
+    size_t out_size = 0;
+
+    input_log_processor_tag(ins, &tag, &tag_len);
+
+    ret = flb_processor_run_logs_chunk(ins->processor, tag, tag_len, chunk,
+                                       worker_thread,
+                                       &out_buf, &out_size, &records);
+    if (ret == -1) {
+        return -1;
+    }
+
+    if (out_size == 0) {
+        flb_free(out_buf);
+        return 0;
+    }
+
+    if (records < 0) {
+        records = flb_mp_count_log_records(out_buf, out_size);
+    }
+
+    if (ins->ingress_queue_enabled == FLB_TRUE) {
+        return flb_input_ingress_queue_log_processed_take_records(
+                   ins, records, tag, tag_len, out_buf, out_size, out_size);
+    }
+
+    ret = input_log_append_output(ins, records, tag, tag_len, out_buf, out_size);
+    flb_free(out_buf);
+
     return ret;
 }
