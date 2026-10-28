@@ -24,6 +24,7 @@ RUN sed -i -e "s/^mirrorlist=http:\/\/mirrorlist.centos.org/#mirrorlist=http:\/\
     wget unzip systemd-devel wget flex bison \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libcurl-devel pkgconf-pkg-config \
     postgresql-libs postgresql-devel postgresql-server postgresql libyaml-devel \
+    librabbitmq-devel \
     tar gzip && \
     yum install -y epel-release && \
     yum install -y cmake3 && \
@@ -45,6 +46,8 @@ ARG FLB_PREFER_SYSTEM_LIB_ZSTD=Off
 ENV FLB_PREFER_SYSTEM_LIB_ZSTD=$FLB_PREFER_SYSTEM_LIB_ZSTD
 ARG FLB_RIPSER=Off
 ENV FLB_RIPSER=$FLB_RIPSER
+ARG FLB_IN_AMQP=On
+ENV FLB_IN_AMQP=$FLB_IN_AMQP
 
 # centos/7.arm64v8 base image
 FROM arm64v8/centos:7 AS centos-7.arm64v8-base
@@ -63,6 +66,7 @@ RUN sed -i -e "s/^mirrorlist=http:\/\/mirrorlist.centos.org/#mirrorlist=http:\/\
     wget unzip systemd-devel wget flex bison \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libcurl-devel pkgconf-pkg-config \
     postgresql-libs postgresql-devel postgresql-server postgresql libyaml-devel \
+    librabbitmq-devel \
     tar gzip && \
     yum install -y epel-release && \
     yum install -y cmake3 && \
@@ -85,6 +89,8 @@ ARG FLB_PREFER_SYSTEM_LIB_ZSTD=Off
 ENV FLB_PREFER_SYSTEM_LIB_ZSTD=$FLB_PREFER_SYSTEM_LIB_ZSTD
 ARG FLB_RIPSER=Off
 ENV FLB_RIPSER=$FLB_RIPSER
+ARG FLB_IN_AMQP=On
+ENV FLB_IN_AMQP=$FLB_IN_AMQP
 
 # Need larger page size
 ARG FLB_JEMALLOC_OPTIONS="--with-lg-page=16 --with-lg-quantum=3"
@@ -111,6 +117,7 @@ RUN yum -y update && \
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libcurl-devel pkgconf-pkg-config \
     libyaml-devel zlib-devel \
+    librabbitmq-devel \
     tar gzip && \
     yum clean all && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -130,6 +137,8 @@ ARG FLB_PREFER_SYSTEM_LIB_ZSTD=Off
 ENV FLB_PREFER_SYSTEM_LIB_ZSTD=$FLB_PREFER_SYSTEM_LIB_ZSTD
 ARG FLB_RIPSER=On
 ENV FLB_RIPSER=$FLB_RIPSER
+ARG FLB_IN_AMQP=On
+ENV FLB_IN_AMQP=$FLB_IN_AMQP
 
 # centos/8.arm64v8 base image
 FROM arm64v8/centos:8 AS centos-8.arm64v8-base
@@ -154,6 +163,7 @@ RUN yum -y update && \
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libcurl-devel pkgconf-pkg-config \
     libyaml-devel zlib-devel \
+    librabbitmq-devel \
     tar gzip && \
     yum clean all && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -173,6 +183,8 @@ ARG FLB_PREFER_SYSTEM_LIB_ZSTD=Off
 ENV FLB_PREFER_SYSTEM_LIB_ZSTD=$FLB_PREFER_SYSTEM_LIB_ZSTD
 ARG FLB_RIPSER=On
 ENV FLB_RIPSER=$FLB_RIPSER
+ARG FLB_IN_AMQP=On
+ENV FLB_IN_AMQP=$FLB_IN_AMQP
 
 # Need larger page size
 ARG FLB_JEMALLOC_OPTIONS="--with-lg-page=16 --with-lg-quantum=3"
@@ -192,6 +204,7 @@ RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libcurl-devel pkgconf-pkg-config \
     libyaml-devel zlib-devel \
+    librabbitmq-devel \
     tar gzip && \
     dnf clean all && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -207,6 +220,8 @@ ARG FLB_KAFKA=On
 ENV FLB_KAFKA=$FLB_KAFKA
 ARG FLB_PREFER_SYSTEM_LIB_ZSTD=Off
 ENV FLB_PREFER_SYSTEM_LIB_ZSTD=$FLB_PREFER_SYSTEM_LIB_ZSTD
+ARG FLB_IN_AMQP=Off
+ENV FLB_IN_AMQP=$FLB_IN_AMQP
 
 # hadolint ignore=DL3029
 FROM --platform=arm64 quay.io/centos/centos:stream9 AS centos-9.arm64v8-base
@@ -225,6 +240,7 @@ RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libcurl-devel pkgconf-pkg-config \
     libyaml-devel zlib-devel \
+    librabbitmq-devel \
     tar gzip && \
     dnf clean all && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -244,6 +260,8 @@ ARG FLB_PREFER_SYSTEM_LIB_ZSTD=Off
 ENV FLB_PREFER_SYSTEM_LIB_ZSTD=$FLB_PREFER_SYSTEM_LIB_ZSTD
 ARG FLB_RIPSER=On
 ENV FLB_RIPSER=$FLB_RIPSER
+ARG FLB_IN_AMQP=Off
+ENV FLB_IN_AMQP=$FLB_IN_AMQP
 
 # Need larger page size
 ARG FLB_JEMALLOC_OPTIONS="--with-lg-page=16 --with-lg-quantum=3"
@@ -263,6 +281,7 @@ RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libcurl-devel pkgconf-pkg-config \
     libyaml-devel zlib-devel libzstd-devel \
+    librabbitmq-devel \
     tar gzip && \
     dnf clean all && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -279,6 +298,8 @@ ENV FLB_KAFKA=$FLB_KAFKA
 # Use system installed libzstd library.
 ARG FLB_PREFER_SYSTEM_LIB_ZSTD=On
 ENV FLB_PREFER_SYSTEM_LIB_ZSTD=$FLB_PREFER_SYSTEM_LIB_ZSTD
+ARG FLB_IN_AMQP=On
+ENV FLB_IN_AMQP=$FLB_IN_AMQP
 
 # hadolint ignore=DL3029
 FROM --platform=arm64 quay.io/centos/centos:stream10 AS centos-10.arm64v8-base
@@ -297,6 +318,7 @@ RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-
     postgresql-libs postgresql-devel postgresql-server postgresql \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libcurl-devel pkgconf-pkg-config \
     libyaml-devel zlib-devel libzstd-devel \
+    librabbitmq-devel \
     tar gzip && \
     dnf clean all && \
     mkdir -p "${CMAKE_HOME}" && \
@@ -317,6 +339,8 @@ ARG FLB_PREFER_SYSTEM_LIB_ZSTD=On
 ENV FLB_PREFER_SYSTEM_LIB_ZSTD=$FLB_PREFER_SYSTEM_LIB_ZSTD
 ARG FLB_RIPSER=On
 ENV FLB_RIPSER=$FLB_RIPSER
+ARG FLB_IN_AMQP=On
+ENV FLB_IN_AMQP=$FLB_IN_AMQP
 
 # Need larger page size
 ARG FLB_JEMALLOC_OPTIONS="--with-lg-page=16 --with-lg-quantum=3"
@@ -364,6 +388,7 @@ RUN cmake -DCMAKE_INSTALL_PREFIX="$CMAKE_INSTALL_PREFIX" \
     -DFLB_UNICODE_ENCODER="${FLB_UNICODE_ENCODER}" \
     -DFLB_PREFER_SYSTEM_LIB_ZSTD="${FLB_PREFER_SYSTEM_LIB_ZSTD}" \
     -DFLB_RIPSER="${FLB_RIPSER}" \
+    -DFLB_IN_AMQP="${FLB_IN_AMQP}" \
     ../
 
 VOLUME [ "/output" ]
