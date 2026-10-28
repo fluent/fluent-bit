@@ -128,6 +128,7 @@ endif()
 set(src
   ${src}
   opentelemetry/flb_opentelemetry_logs.c
+  opentelemetry/flb_opentelemetry_logs_json.c
   opentelemetry/flb_opentelemetry_logs_proto.c
   opentelemetry/flb_opentelemetry_metrics.c
   opentelemetry/flb_opentelemetry_protobuf.c
