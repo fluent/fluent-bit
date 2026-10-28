@@ -1401,8 +1401,10 @@ static int cb_azure_blob_init(struct flb_output_instance *ins,
         /* Initialize local storage */
         int ret = azure_blob_store_init(ctx);
         if (ret == -1) {
-            flb_plg_error(ctx->ins, "Failed to initialize kusto storage: %s",
-                          ctx->store_dir);
+            flb_plg_error(ctx->ins, "could not initialize buffer storage: %s",
+                          ctx->buffer_dir);
+            flb_azure_blob_conf_destroy(ctx);
+            flb_output_set_context(ins, NULL);
             return -1;
         }
 
@@ -2124,7 +2126,7 @@ static int ingest_all_chunks(struct flb_azure_blob *ctx, struct flb_config *conf
             flb_sds_destroy(payload);
 
             /* data was sent successfully- delete the local buffer */
-            azure_blob_store_file_cleanup(ctx, chunk);
+            azure_blob_store_file_delete(ctx, chunk);
         }
     }
 
