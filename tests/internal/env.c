@@ -566,7 +566,64 @@ void test_expand_default_hyphen_from_os()
 }
 
 
+#ifdef FLB_SYSTEM_WINDOWS
+void test_file_env_var_drive_uri(void)
+{
+    struct flb_env *env;
+    const char *test_file = "flb_test_drive_uri.txt";
+    const char *value;
+    char path[4096];
+    char uri[4104];
+    size_t index;
+    int fd;
+    int ret;
+
+    if (!TEST_CHECK(_fullpath(path, test_file, sizeof(path)) != NULL)) {
+        return;
+    }
+    for (index = 0; path[index] != '\0'; index++) {
+        if (path[index] == '\\') {
+            path[index] = '/';
+        }
+    }
+    snprintf(uri, sizeof(uri), "file:///%s", path);
+    fd = open(test_file, O_CREAT | O_WRONLY | O_TRUNC, 0644);
+    if (!TEST_CHECK(fd >= 0)) {
+        return;
+    }
+    TEST_CHECK(write(fd, "first", 5) == 5);
+    close(fd);
+    env = flb_env_create();
+    if (!TEST_CHECK(env != NULL)) {
+        unlink(test_file);
+        return;
+    }
+    ret = flb_env_set_extended(env, "DRIVE_URI_SECRET", NULL, uri, 1);
+    if (TEST_CHECK(ret >= 0)) {
+        value = flb_env_get(env, "DRIVE_URI_SECRET");
+        if (TEST_CHECK(value != NULL)) {
+            TEST_CHECK(strcmp(value, "first") == 0);
+        }
+        fd = open(test_file, O_WRONLY | O_TRUNC, 0644);
+        if (TEST_CHECK(fd >= 0)) {
+            TEST_CHECK(write(fd, "second", 6) == 6);
+            close(fd);
+            sleep(2);
+            value = flb_env_get(env, "DRIVE_URI_SECRET");
+            if (TEST_CHECK(value != NULL)) {
+                TEST_CHECK(strcmp(value, "second") == 0);
+            }
+        }
+    }
+    flb_env_destroy(env);
+    unlink(test_file);
+}
+#endif
+
 TEST_LIST = {
+#ifdef FLB_SYSTEM_WINDOWS
+    { "file_env_var_drive_uri"       , test_file_env_var_drive_uri},
+#endif
     { "translate_long_env"           , test_translate_long_env},
     { "file_env_var_basic"           , test_file_env_var_basic},
     { "file_env_var_refresh"         , test_file_env_var_refresh},
