@@ -1,5 +1,5 @@
 #include "flb_tests_internal.h"
-#include "../../plugins/in_opentelemetry/opentelemetry_protobuf.h"
+#include <fluent-bit/flb_opentelemetry.h>
 
 static void test_protobuf_depth(void)
 {
@@ -26,11 +26,11 @@ static void test_protobuf_depth(void)
 
     /* 99, 100 and 101 schema messages, including scalar AnyValue leaves. */
     size = opentelemetry__proto__common__v1__any_value__pack(&values[1], buffer);
-    TEST_CHECK(opentelemetry_protobuf_validate(values[1].base.descriptor, buffer, size) == 0);
+    TEST_CHECK(flb_opentelemetry_protobuf_validate(values[1].base.descriptor, buffer, size) == 0);
     size = opentelemetry__proto__common__v1__array_value__pack(&arrays[0], buffer);
-    TEST_CHECK(opentelemetry_protobuf_validate(arrays[0].base.descriptor, buffer, size) == 0);
+    TEST_CHECK(flb_opentelemetry_protobuf_validate(arrays[0].base.descriptor, buffer, size) == 0);
     size = opentelemetry__proto__common__v1__any_value__pack(&values[0], buffer);
-    TEST_CHECK(opentelemetry_protobuf_validate(values[0].base.descriptor, buffer, size) != 0);
+    TEST_CHECK(flb_opentelemetry_protobuf_validate(values[0].base.descriptor, buffer, size) != 0);
 }
 
 static void test_protobuf_wire_boundaries(void)
@@ -45,14 +45,18 @@ static void test_protobuf_wire_boundaries(void)
     unsigned char fixed[] = {0x21, 0, 0, 0, 0, 0, 0, 0, 0};
 
     descriptor = &opentelemetry__proto__common__v1__any_value__descriptor;
-    TEST_CHECK(opentelemetry_protobuf_validate(descriptor, NULL, 0) == 0);
-    TEST_CHECK(opentelemetry_protobuf_validate(descriptor, truncated, sizeof(truncated)) != 0);
-    TEST_CHECK(opentelemetry_protobuf_validate(descriptor, overflow, sizeof(overflow)) != 0);
-    TEST_CHECK(opentelemetry_protobuf_validate(descriptor, opaque, sizeof(opaque)) == 0);
-    TEST_CHECK(opentelemetry_protobuf_validate(descriptor, unknown, sizeof(unknown)) == 0);
-    TEST_CHECK(opentelemetry_protobuf_validate(descriptor, zero_tag, sizeof(zero_tag)) != 0);
-    TEST_CHECK(opentelemetry_protobuf_validate(descriptor, fixed, sizeof(fixed)) == 0);
-    TEST_CHECK(opentelemetry_protobuf_validate(descriptor, fixed, sizeof(fixed) - 1) != 0);
+    TEST_CHECK(flb_opentelemetry_protobuf_validate(descriptor, NULL, 0) == 0);
+    TEST_CHECK(flb_opentelemetry_protobuf_validate(descriptor, truncated,
+                                                   sizeof(truncated)) != 0);
+    TEST_CHECK(flb_opentelemetry_protobuf_validate(descriptor, overflow,
+                                                   sizeof(overflow)) != 0);
+    TEST_CHECK(flb_opentelemetry_protobuf_validate(descriptor, opaque, sizeof(opaque)) == 0);
+    TEST_CHECK(flb_opentelemetry_protobuf_validate(descriptor, unknown, sizeof(unknown)) == 0);
+    TEST_CHECK(flb_opentelemetry_protobuf_validate(descriptor, zero_tag,
+                                                   sizeof(zero_tag)) != 0);
+    TEST_CHECK(flb_opentelemetry_protobuf_validate(descriptor, fixed, sizeof(fixed)) == 0);
+    TEST_CHECK(flb_opentelemetry_protobuf_validate(descriptor, fixed,
+                                                   sizeof(fixed) - 1) != 0);
 }
 
 TEST_LIST = {
