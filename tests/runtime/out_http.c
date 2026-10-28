@@ -19,12 +19,17 @@
  */
 
 #include <fluent-bit.h>
+#include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_time.h>
+#include <cmetrics/cmt_counter.h>
 #include <float.h>
 #include <math.h>
 #include <msgpack.h>
 #include "flb_tests_runtime.h"
+
+#define TLS_CERTIFICATE_FILENAME FLB_TESTS_DATA_PATH "/data/tls/certificate.pem"
+#define TLS_PRIVATE_KEY_FILENAME FLB_TESTS_DATA_PATH "/data/tls/private_key.pem"
 
 struct test_ctx {
     flb_ctx_t *flb;    /* Fluent Bit library context */
@@ -1145,6 +1150,123 @@ void flb_test_in_http()
     test_ctx_destroy(ctx);
 }
 
+/* records out_http has completed flushing (a stuck flush never counts) */
+static double get_http_proc_records(flb_ctx_t *flb)
+{
+    double value;
+    char *labels[1];
+    struct mk_list *head;
+    struct flb_output_instance *ins;
+
+    mk_list_foreach(head, &flb->config->outputs) {
+        ins = mk_list_entry(head, struct flb_output_instance, _head);
+        if (strcmp(ins->p->name, "http") != 0) {
+            continue;
+        }
+
+        labels[0] = (char *) flb_output_name(ins);
+        if (cmt_counter_get_val(ins->cmt_proc_records, 1, labels, &value) == 0) {
+            return value;
+        }
+    }
+
+    return 0;
+}
+
+/*
+ * out_http must keep completing flushes over TLS when it reuses a keepalive
+ * connection: each flush after the first one goes out on the connection the
+ * previous flush returned to the pool, and must be resumed when the response
+ * arrives.
+ */
+void flb_test_in_http_tls_keepalive()
+{
+    struct test_ctx *ctx;
+    int ret;
+    int num;
+    int i;
+    double completed;
+    int i_ffd;
+    int o_ffd;
+    int trys;
+    struct flb_lib_out_cb cb;
+    char *buf = "[1, {\"msg\":\"hello world\"}]";
+    size_t size = strlen(buf);
+    const char *port;
+
+    port = getenv("FLB_TEST_HTTP_PORT");
+    if (!port) {
+        port = "8888";
+    }
+
+    cb.cb   = callback_test;
+    cb.data = NULL;
+    clear_output_num();
+
+    ctx = test_ctx_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd, "tag", "lib", NULL);
+    TEST_CHECK(ret == 0);
+
+    i_ffd = flb_input(ctx->flb, (char *) "http", NULL);
+    TEST_CHECK(i_ffd >= 0);
+    ret = flb_input_set(ctx->flb, i_ffd,
+                        "port", port,
+                        "tag", "http",
+                        "host", "127.0.0.1",
+                        "tls", "on",
+                        "tls.verify", "off",
+                        "tls.crt_file", TLS_CERTIFICATE_FILENAME,
+                        "tls.key_file", TLS_PRIVATE_KEY_FILENAME,
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    o_ffd = flb_output(ctx->flb, (char *) "lib", &cb);
+    TEST_CHECK(o_ffd >= 0);
+    ret = flb_output_set(ctx->flb, o_ffd, "match", "http", NULL);
+    TEST_CHECK(ret == 0);
+
+    /* net.keepalive is on by default */
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "lib",
+                         "host", "127.0.0.1",
+                         "port", port,
+                         "tls", "on",
+                         "tls.verify", "off",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* one record per flush, waiting for each so the next one reuses the connection */
+    for (i = 1; i <= 3; i++) {
+        ret = flb_lib_push(ctx->flb, ctx->i_ffd, (char *) buf, size);
+        TEST_CHECK(ret >= 0);
+
+        for (trys = 0, num = 0, completed = 0; trys < 20; trys++) {
+            num = get_output_num();
+            completed = get_http_proc_records(ctx->flb);
+            if (num >= i && completed >= i) {
+                break;
+            }
+            flb_time_msleep(250);
+        }
+
+        if (!TEST_CHECK(num >= i && completed >= i)) {
+            TEST_MSG("flush %d: received=%d completed=%.0f", i, num, completed);
+            /* the engine cannot shut down while a flush is stuck */
+            return;
+        }
+    }
+
+    test_ctx_destroy(ctx);
+}
+
 /* Test list */
 TEST_LIST = {
     {"format_msgpack" , flb_test_format_msgpack},
@@ -1162,5 +1284,6 @@ TEST_LIST = {
     {"json_date_format_iso8601" , flb_test_json_date_format_iso8601},
     {"json_date_format_java_sql_timestamp" , flb_test_json_date_format_java_sql_timestamp},
     {"in_http", flb_test_in_http},
+    {"in_http_tls_keepalive", flb_test_in_http_tls_keepalive},
     {NULL, NULL}
 };

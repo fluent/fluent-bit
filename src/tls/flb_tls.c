@@ -157,15 +157,24 @@ static inline int io_tls_event_switch(struct flb_tls_session *session,
 {
     struct mk_event_loop *event_loop;
     struct mk_event      *event;
+    int                   event_type;
     int                   ret;
 
     event = &session->connection->event;
     event_loop = session->connection->evl;
 
+    /* upstream coroutines are only resumed on FLB_ENGINE_EV_THREAD events */
+    if (session->connection->type == FLB_DOWNSTREAM_CONNECTION) {
+        event_type = event->type;
+    }
+    else {
+        event_type = FLB_ENGINE_EV_THREAD;
+    }
+
     if ((event->mask & (MK_EVENT_READ | MK_EVENT_WRITE)) != mask) {
         ret = mk_event_add(event_loop,
                            event->fd,
-                           event->type,
+                           event_type,
                            mask, event);
 
         event->priority = FLB_ENGINE_PRIORITY_CONNECT;
