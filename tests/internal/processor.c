@@ -693,6 +693,7 @@ static void processor_metrics_failure_clears_output(void)
 #define WINDOW_PLAIN_RECORDS   2000
 #define WINDOW_TOTAL_RECORDS   (WINDOW_GROUPS * WINDOW_GROUP_RECORDS + \
                                 2 * WINDOW_PLAIN_RECORDS)
+#define WINDOW_CORRUPT_RECORDS 3000
 
 static int window_calls;
 static int window_max_records;
@@ -789,6 +790,54 @@ static int create_window_records(char **out_buf, size_t *out_size)
     *out_size = encoder->output_length;
     flb_log_event_encoder_destroy(encoder);
 
+    return 0;
+}
+
+static int create_plain_window_records(char **out_buf, size_t *out_size)
+{
+    int i;
+    int ret = 0;
+    struct flb_log_event_encoder *encoder;
+
+    encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+    if (encoder == NULL) {
+        return -1;
+    }
+
+    for (i = 0; ret == 0 && i < WINDOW_CORRUPT_RECORDS; i++) {
+        ret = append_window_record(encoder, i);
+    }
+    if (ret != 0) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+
+    *out_buf = flb_malloc(encoder->output_length + 1);
+    if (*out_buf == NULL) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+
+    memcpy(*out_buf, encoder->output_buffer, encoder->output_length);
+    (*out_buf)[encoder->output_length] = (char) 0xc1;
+    *out_size = encoder->output_length + 1;
+    flb_log_event_encoder_destroy(encoder);
+
+    return 0;
+}
+
+static int append_corrupt_tail(char **buf, size_t *size)
+{
+    char *tmp;
+
+    tmp = flb_realloc(*buf, *size + 1);
+    if (tmp == NULL) {
+        return -1;
+    }
+
+    tmp[*size] = (char) 0xc1;
+    *buf = tmp;
+    *size += 1;
     return 0;
 }
 
@@ -1105,6 +1154,105 @@ static void processor_log_windows_drop_all(void)
     flb_free(input);
     cmt_destroy(owner.cmt);
     window_config_destroy(config);
+}
+
+static void check_marked_output(void *output, size_t output_size, int expected)
+{
+    int count = 0;
+    int type;
+    struct flb_log_event event;
+    struct flb_log_event_decoder decoder;
+
+    TEST_ASSERT(flb_log_event_decoder_init(&decoder, output, output_size) ==
+                FLB_EVENT_DECODER_SUCCESS);
+
+    while (flb_log_event_decoder_next(&decoder, &event) == FLB_EVENT_DECODER_SUCCESS) {
+        TEST_ASSERT(flb_log_event_decoder_get_record_type(&event, &type) == 0);
+        if (type != FLB_LOG_EVENT_NORMAL) {
+            continue;
+        }
+        TEST_CHECK(event.body->type == MSGPACK_OBJECT_MAP);
+        TEST_CHECK(event.body->via.map.size == 3);
+        count++;
+    }
+
+    TEST_CHECK(count == expected);
+    flb_log_event_decoder_destroy(&decoder);
+}
+
+static void run_processor_corrupt_tail(int windowed)
+{
+    int ret;
+    int records = -1;
+    int expected;
+    char *input;
+    size_t input_size;
+    void *output = NULL;
+    size_t output_size = 0;
+    double errors;
+    char stage_label[32];
+    struct flb_config *config;
+    struct flb_processor *proc;
+    struct flb_processor_unit *pu;
+    struct flb_input_instance owner;
+
+    config = window_config_create();
+    TEST_ASSERT(config != NULL);
+    memset(&owner, 0, sizeof(owner));
+    snprintf(owner.name, sizeof(owner.name), "%s", "window_input.0");
+    owner.cmt = cmt_create();
+    TEST_ASSERT(owner.cmt != NULL);
+
+    if (windowed) {
+        TEST_ASSERT(create_plain_window_records(&input, &input_size) == 0);
+        expected = WINDOW_CORRUPT_RECORDS;
+        proc = window_processor_create(config, &owner, "test_window_mark", NULL);
+    }
+    else {
+        TEST_ASSERT(create_msgpack_records(&input, &input_size) == 0);
+        TEST_ASSERT(append_corrupt_tail(&input, &input_size) == 0);
+        expected = 1;
+        proc = window_processor_create(config, &owner, "test_single_mark", NULL);
+    }
+    TEST_ASSERT(proc != NULL);
+
+    window_calls = 0;
+    ret = flb_processor_run_with_count(proc, 0, FLB_PROCESSOR_LOGS, "test", 4,
+                                       input, input_size, &output, &output_size,
+                                       -1, &records);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(records == expected);
+    TEST_CHECK(output != NULL && output != input);
+    TEST_CHECK(flb_mp_count_log_records(output, output_size) == expected);
+    if (windowed) {
+        TEST_CHECK(window_calls > 1);
+    }
+    else {
+        TEST_CHECK(window_calls == 1);
+    }
+    check_marked_output(output, output_size, expected);
+
+    pu = mk_list_entry(proc->logs.next, struct flb_processor_unit, _head);
+    snprintf(stage_label, sizeof(stage_label), "%zu", pu->stage);
+    TEST_CHECK(get_counter_value_5(proc->cmt_errors, "input", "window_input.0",
+                                   (char *) pu->name, stage_label, "logs", &errors) == 0);
+    TEST_CHECK(errors == 1.0);
+
+    flb_free(output);
+    flb_free(input);
+    flb_processor_destroy(proc);
+    cmt_destroy(owner.cmt);
+    window_config_destroy(config);
+}
+
+static void processor_corrupt_tail_preserves_prefix(void)
+{
+    run_processor_corrupt_tail(FLB_FALSE);
+}
+
+static void processor_window_corrupt_tail_preserves_prefix(void)
+{
+    run_processor_corrupt_tail(FLB_TRUE);
 }
 
 static void processor_log_windows_need_every_unit(void)
@@ -1562,6 +1710,9 @@ TEST_LIST = {
     { "processor_metrics_counters", processor_metrics_counters },
     { "processor_log_windows_match_single_chunk", processor_log_windows_match_single_chunk },
     { "processor_log_windows_drop_all", processor_log_windows_drop_all },
+    { "processor_corrupt_tail_preserves_prefix", processor_corrupt_tail_preserves_prefix },
+    { "processor_window_corrupt_tail_preserves_prefix",
+      processor_window_corrupt_tail_preserves_prefix },
     { "processor_log_windows_need_every_unit", processor_log_windows_need_every_unit },
     { "processor_chunk_codec_is_per_run", processor_chunk_codec_is_per_run },
     { "processor_group_boundaries_follow_the_input", processor_group_boundaries_follow_the_input },
