@@ -413,29 +413,33 @@ static void test_ctx_destroy(struct test_ctx *ctx)
     flb_free(ctx);
 }
 
-static int send_raw_http_request_ex(const char *request,
-                                    char *response,
-                                    size_t response_size,
-                                    int wait_for_close)
+#define RAW_HTTP_NO_WAIT      0
+#define RAW_HTTP_EXPECT_CLOSE 1
+#define RAW_HTTP_EXPECT_OPEN  2
+
+static int send_raw_http_bytes(const char *request,
+                               size_t request_length,
+                               char *response,
+                               size_t response_size,
+                               int wait_mode)
 {
     struct sockaddr_in address;
     struct timeval timeout;
     fd_set read_fds;
     flb_sockfd_t fd;
-    size_t request_length;
     size_t request_offset;
     int ret;
     int written;
     int received;
     int response_length;
     char drain[256];
+    int into_response;
 
     if (response_size < 2) {
         return -1;
     }
 
     response[0] = '\0';
-    request_length = strlen(request);
     fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd == FLB_INVALID_SOCKET) {
         return -1;
@@ -493,24 +497,74 @@ static int send_raw_http_request_ex(const char *request,
         }
     }
 
-    if (wait_for_close && response_length > 0) {
-        /* the server must close the connection after the response */
+    if (wait_mode != RAW_HTTP_NO_WAIT && response_length > 0) {
+        /*
+         * Keep reading the whole response. With RAW_HTTP_EXPECT_CLOSE the
+         * server must close the connection, but only after it has sent the
+         * complete response header block. With RAW_HTTP_EXPECT_OPEN the
+         * connection must still be open once the response has arrived.
+         */
         while (1) {
-            FD_ZERO(&read_fds);
-            FD_SET(fd, &read_fds);
-            timeout.tv_sec = 2;
-            timeout.tv_usec = 0;
+            if (wait_mode == RAW_HTTP_EXPECT_OPEN &&
+                strstr(response, "\r\n\r\n") != NULL) {
+                FD_ZERO(&read_fds);
+                FD_SET(fd, &read_fds);
+                timeout.tv_sec = 1;
+                timeout.tv_usec = 0;
 
-            ret = select((int) (fd + 1), &read_fds, NULL, NULL, &timeout);
-            if (ret <= 0) {
-                flb_socket_close(fd);
-                return -1;
+                ret = select((int) (fd + 1), &read_fds, NULL, NULL, &timeout);
+                if (ret == 0) {
+                    /* no EOF: the connection was kept alive */
+                    break;
+                }
+                if (ret < 0) {
+                    flb_socket_close(fd);
+                    return -1;
+                }
+            }
+            else {
+                FD_ZERO(&read_fds);
+                FD_SET(fd, &read_fds);
+                timeout.tv_sec = 2;
+                timeout.tv_usec = 0;
+
+                ret = select((int) (fd + 1), &read_fds, NULL, NULL, &timeout);
+                if (ret <= 0) {
+                    flb_socket_close(fd);
+                    return -1;
+                }
             }
 
-            received = recv(fd, drain, sizeof(drain), 0);
+            into_response = response_length < (int) response_size - 1;
+            if (into_response) {
+                received = recv(fd,
+                                response + response_length,
+                                (int) response_size - 1 - response_length,
+                                0);
+            }
+            else {
+                received = recv(fd, drain, sizeof(drain), 0);
+            }
+
             if (received <= 0) {
+                if (wait_mode == RAW_HTTP_EXPECT_OPEN) {
+                    /* the server closed a connection it should keep open */
+                    flb_socket_close(fd);
+                    return -1;
+                }
                 break;
             }
+
+            if (into_response) {
+                response_length += received;
+                response[response_length] = '\0';
+            }
+        }
+
+        if (strstr(response, "\r\n\r\n") == NULL) {
+            /* truncated response: the header block never completed */
+            flb_socket_close(fd);
+            return -1;
         }
     }
 
@@ -524,12 +578,21 @@ static int send_raw_http_request_ex(const char *request,
     return response_length;
 }
 
+static int send_raw_http_request_ex(const char *request,
+                                    char *response,
+                                    size_t response_size,
+                                    int wait_mode)
+{
+    return send_raw_http_bytes(request, strlen(request), response,
+                               response_size, wait_mode);
+}
+
 static int send_raw_http_request(const char *request,
                                  char *response,
                                  size_t response_size)
 {
     return send_raw_http_request_ex(request, response, response_size,
-                                    FLB_FALSE);
+                                    RAW_HTTP_NO_WAIT);
 }
 
 static int send_empty_header_request(void)
@@ -614,12 +677,48 @@ static int send_chunked_with_content_length_request(void)
         "{\"test\":\"msg\"}\r\n"
         "0\r\n"
         "\r\n";
-    char response[256];
+    char response[1024];
     int response_length;
 
     /* RFC 9112 6.3: the connection must be closed after the response */
     response_length = send_raw_http_request_ex(request, response,
-                                               sizeof(response), FLB_TRUE);
+                                               sizeof(response),
+                                               RAW_HTTP_EXPECT_CLOSE);
+    if (response_length <= 0) {
+        return -1;
+    }
+
+    return strstr(response, "HTTP/1.1 201") != NULL ? 0 : -1;
+}
+
+/*
+ * Send a gzip compressed chunked request without Content-Length. AUTO_INFLATE
+ * sets Content-Length on the inflated request, which must not be mistaken
+ * for a request that carried both framing headers: the connection has to
+ * stay open.
+ */
+static int send_chunked_gzip_keepalive_request(void)
+{
+    static const char request[] =
+        "POST / HTTP/1.1\r\n"
+        "Host: 127.0.0.1\r\n"
+        "Content-Type: application/json\r\n"
+        "Content-Encoding: gzip\r\n"
+        "Transfer-Encoding: chunked\r\n"
+        "\r\n"
+        "22\r\n"
+        "\x1f\x8b\x08\x00\x00\x00\x00\x00\x02\xff\xab\x56\x2a\x49\x2d\x2e"
+        "\x51\xb2\x52\xca\x2d\x4e\x57\xaa\x05\x00\xe2\x32\xa2\x30\x0e\x00"
+        "\x00\x00"
+        "\r\n"
+        "0\r\n"
+        "\r\n";
+    char response[1024];
+    int response_length;
+
+    response_length = send_raw_http_bytes(request, sizeof(request) - 1,
+                                          response, sizeof(response),
+                                          RAW_HTTP_EXPECT_OPEN);
     if (response_length <= 0) {
         return -1;
     }
@@ -1408,6 +1507,55 @@ static void test_http_chunked_with_content_length(char *http2_cfg)
     test_ctx_destroy(ctx);
 }
 
+/*
+ * gzip + chunked without Content-Length on the next gen http server: the
+ * Content-Length set by AUTO_INFLATE must not close the connection.
+ */
+void flb_test_http_chunked_gzip_keepalive_ng(void)
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    int ret;
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = "\"test\":\"msg\"";
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "http2", "true",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    if (!TEST_CHECK(send_chunked_gzip_keepalive_request() == 0)) {
+        TEST_MSG("gzip chunked request was not answered or its connection was closed");
+    }
+
+    /* waiting to flush */
+    flb_time_msleep(1500);
+
+    if (!TEST_CHECK(get_output_num() > 0)) {
+        TEST_MSG("gzip chunked request did not reach the callback");
+    }
+
+    test_ctx_destroy(ctx);
+}
+
 /* Transfer-Encoding: chunked plus Content-Length, next gen http server */
 void flb_test_http_chunked_with_content_length_ng(void)
 {
@@ -1437,5 +1585,6 @@ TEST_LIST = {
     {"add_remote_addr_array", flb_test_http_remote_addr_array},
     {"chunked_with_content_length_ng", flb_test_http_chunked_with_content_length_ng},
     {"chunked_with_content_length", flb_test_http_chunked_with_content_length},
+    {"chunked_gzip_keepalive_ng", flb_test_http_chunked_gzip_keepalive_ng},
     {NULL, NULL}
 };
