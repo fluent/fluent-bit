@@ -63,28 +63,17 @@ static int sp_config_file(struct flb_config *config, struct flb_sp *sp,
     flb_sds_t exec;
     char *cfg = NULL;
     char tmp[PATH_MAX + 1];
-    struct stat st;
     struct mk_list *head;
     struct flb_sp_task *task;
     struct flb_cf *cf;
     struct flb_cf_section *section;
 
 #ifndef FLB_HAVE_STATIC_CONF
-    ret = stat(file, &st);
-    if (ret == -1 && errno == ENOENT) {
-        /* Try to resolve the real path (if exists) */
-        if (file[0] == '/') {
-            flb_error("[sp] cannot open configuration file: %s", file);
-            return -1;
-        }
-
-        if (config->conf_path) {
-            snprintf(tmp, PATH_MAX, "%s%s", config->conf_path, file);
-            cfg = tmp;
-        }
-    }
-    else {
-        cfg = (char *) file;
+    cfg = (char *) flb_utils_resolve_config_path(file, config->conf_path,
+                                                 tmp, sizeof(tmp));
+    if (!cfg) {
+        flb_error("[sp] configuration file path is too long: %s", file);
+        return -1;
     }
 
     cf = flb_cf_create_from_file(NULL, cfg);
