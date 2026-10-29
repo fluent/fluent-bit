@@ -107,6 +107,24 @@ static void flb_downstream_conn_event_coro(void)
     flb_downstream_conn_event_loop(connection, coro);
 }
 
+/* Complete the setup of a socket that was accepted outside this coroutine */
+static int downstream_conn_adopted_setup(struct flb_connection *connection,
+                                         struct flb_coro *coro)
+{
+#ifdef FLB_HAVE_TLS
+    if (flb_stream_is_secure(connection->stream) &&
+        connection->stream->tls_context != NULL) {
+        return flb_tls_session_create(connection->stream->tls_context,
+                                      connection, coro);
+    }
+#else
+    (void) connection;
+    (void) coro;
+#endif
+
+    return 0;
+}
+
 static void flb_downstream_conn_accept_event_coro(void)
 {
     int result;
@@ -117,7 +135,13 @@ static void flb_downstream_conn_accept_event_coro(void)
     connection = coro->data;
 
     flb_connection_reset_connection_timeout(connection);
-    result = flb_io_net_accept(connection, coro);
+    if (connection->fd == FLB_INVALID_SOCKET) {
+        result = flb_io_net_accept(connection, coro);
+    }
+    else {
+        /* the socket was accepted by another worker and handed over */
+        result = downstream_conn_adopted_setup(connection, coro);
+    }
     flb_connection_unset_connection_timeout(connection);
 
     if (result == 0 &&
@@ -721,8 +745,14 @@ int flb_downstream_conn_release_all(struct flb_downstream *stream)
     return 0;
 }
 
-int flb_downstream_conn_event_accept(
+/*
+ * Start the accept coroutine of a connection. With an invalid 'fd' the
+ * coroutine accepts from the listener, otherwise it adopts 'fd'. An adopted
+ * socket is owned by the connection once this function is entered.
+ */
+static int downstream_conn_event_start(
         struct flb_downstream *stream,
+        flb_sockfd_t fd,
         flb_connection_accept_callback accept_callback,
         void *accept_callback_data,
         flb_connection_event_callback event_callback,
@@ -739,10 +769,18 @@ int flb_downstream_conn_event_accept(
         (mask & (MK_EVENT_READ | MK_EVENT_WRITE)) == 0 ||
         (stream->base.transport != FLB_TRANSPORT_TCP &&
          stream->base.transport != FLB_TRANSPORT_UNIX_STREAM)) {
+        if (fd != FLB_INVALID_SOCKET) {
+            flb_socket_close(fd);
+        }
         return -1;
     }
 
     if (stream->paused == FLB_TRUE) {
+        if (fd != FLB_INVALID_SOCKET) {
+            flb_socket_close(fd);
+            return 0;
+        }
+
         connection_fd = flb_net_accept(stream->server_fd);
         if (connection_fd >= 0) {
             flb_socket_close(connection_fd);
@@ -755,20 +793,29 @@ int flb_downstream_conn_event_accept(
 
     config = stream->base.config;
     if (config == NULL || flb_downstream_is_async(stream) == FLB_FALSE) {
+        if (fd != FLB_INVALID_SOCKET) {
+            flb_socket_close(fd);
+        }
         return -1;
     }
 
-    connection = flb_connection_create(FLB_INVALID_SOCKET,
+    connection = flb_connection_create(fd,
                                        FLB_DOWNSTREAM_CONNECTION,
                                        stream,
                                        flb_engine_evl_get(),
                                        NULL);
     if (connection == NULL) {
+        if (fd != FLB_INVALID_SOCKET) {
+            flb_socket_close(fd);
+        }
         return -1;
     }
 
     coro = flb_coro_create(connection);
     if (coro == NULL) {
+        if (fd != FLB_INVALID_SOCKET) {
+            flb_socket_close(fd);
+        }
         flb_connection_destroy(connection);
         return -1;
     }
@@ -779,6 +826,9 @@ int flb_downstream_conn_event_accept(
                              &stack_size);
     if (coro->callee == NULL) {
         flb_coro_destroy(coro);
+        if (fd != FLB_INVALID_SOCKET) {
+            flb_socket_close(fd);
+        }
         flb_connection_destroy(connection);
         return -1;
     }
@@ -811,6 +861,35 @@ int flb_downstream_conn_event_accept(
     }
 
     return ret;
+}
+
+int flb_downstream_conn_event_accept(
+        struct flb_downstream *stream,
+        flb_connection_accept_callback accept_callback,
+        void *accept_callback_data,
+        flb_connection_event_callback event_callback,
+        int mask)
+{
+    return downstream_conn_event_start(stream, FLB_INVALID_SOCKET,
+                                       accept_callback, accept_callback_data,
+                                       event_callback, mask);
+}
+
+int flb_downstream_conn_event_adopt(
+        struct flb_downstream *stream,
+        flb_sockfd_t fd,
+        flb_connection_accept_callback accept_callback,
+        void *accept_callback_data,
+        flb_connection_event_callback event_callback,
+        int mask)
+{
+    if (fd == FLB_INVALID_SOCKET) {
+        return -1;
+    }
+
+    return downstream_conn_event_start(stream, fd,
+                                       accept_callback, accept_callback_data,
+                                       event_callback, mask);
 }
 
 int flb_downstream_conn_event_register(struct flb_connection *connection,
