@@ -346,6 +346,16 @@ static int flb_http_server_should_connection_be_closed(
     }
 
     /*
+     * RFC 9112 section 6.3: a request that carries both Transfer-Encoding
+     * and Content-Length is processed as chunked, but the connection must
+     * be closed after responding to avoid request smuggling.
+     */
+    if (flb_http_request_get_header(request, "transfer-encoding") != NULL &&
+        flb_http_request_get_header(request, "content-length") != NULL) {
+        return FLB_TRUE;
+    }
+
+    /*
       * user config overrides any protocol defaults, this is set
       * with the option 'net.keepalive: off`. This override is only
       * effective less than HTTP/2.
