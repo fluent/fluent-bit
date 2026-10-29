@@ -589,6 +589,8 @@ static int send_invalid_header_request(void)
 static int send_malformed_request_expect_400(const char *request)
 {
     char response[256];
+    char *header_end;
+    char *connection;
     int response_length;
 
     /* the server must answer and then close the connection */
@@ -604,8 +606,10 @@ static int send_malformed_request_expect_400(const char *request)
         return -1;
     }
 
-    if (strstr(response, "\r\nConnection: close\r\n") == NULL ||
-        strstr(response, "\r\n\r\n") == NULL) {
+    /* Connection: close must be part of the header section */
+    header_end = strstr(response, "\r\n\r\n");
+    connection = strstr(response, "\r\nConnection: close\r\n");
+    if (header_end == NULL || connection == NULL || connection >= header_end) {
         TEST_MSG("expected Connection: close and a complete header section "
                  "for malformed request, got: %s",
                  response);
@@ -727,6 +731,12 @@ void flb_test_http_malformed_request_400(void)
     /* Unsupported protocol version */
     TEST_CHECK(send_malformed_request_expect_400(
                    "GET / HTTP/9.9\r\n"
+                   "Host: 127.0.0.1\r\n"
+                   "\r\n") == 0);
+
+    /* Missing protocol version */
+    TEST_CHECK(send_malformed_request_expect_400(
+                   "GET /\r\n"
                    "Host: 127.0.0.1\r\n"
                    "\r\n") == 0);
 
