@@ -18,6 +18,7 @@
  */
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_utils.h>
 #ifdef FLB_HAVE_LUAJIT
 #include <luajit.h>
 #endif
@@ -179,6 +180,8 @@ void fts_runtime_destroy(struct fts_runtime *ctx)
     flb_free(ctx->undo);
     ctx->undo = NULL;
     ctx->undo_size = 0;
+    flb_free(ctx->resolved_script);
+    ctx->resolved_script = NULL;
 
     if (ctx->vm) {
         flb_luajit_destroy(ctx->vm);
@@ -333,7 +336,8 @@ static int initialize_policy(lua_State *l)
             ret = flb_luajit_load_buffer(ctx->vm, ctx->code, strlen(ctx->code), "fts_policy");
         }
         else {
-            ret = flb_luajit_load_script(ctx->vm, ctx->script);
+            ret = flb_luajit_load_script(ctx->vm,
+                                       ctx->resolved_script ? ctx->resolved_script : ctx->script);
         }
 
         if (ret != 0) {
@@ -368,6 +372,22 @@ int fts_runtime_initialize(struct fts_runtime *ctx, struct flb_config *config)
 {
     lua_State *l;
     int ret;
+    char path[PATH_MAX + 1];
+    const char *resolved;
+
+    if (ctx->script) {
+        resolved = flb_utils_resolve_config_path(ctx->script, config->conf_path,
+                                                 path, sizeof(path));
+        if (!resolved) {
+            return FLB_PROCESSOR_FAILURE;
+        }
+        if (resolved != ctx->script) {
+            ctx->resolved_script = flb_strdup(resolved);
+            if (!ctx->resolved_script) {
+                return FLB_PROCESSOR_FAILURE;
+            }
+        }
+    }
 
     ctx->env = config->env;
     ctx->json_event_ref = LUA_NOREF;
