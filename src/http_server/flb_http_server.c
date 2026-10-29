@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_pthread.h>
 #include <fluent-bit/flb_downstream_worker.h>
+#include <fluent-bit/flb_pipe.h>
 #include <string.h>
 
 #include <fluent-bit/http_server/flb_http_server.h>
@@ -39,6 +40,32 @@
 struct flb_http_server_worker_context {
     struct flb_http_server server;
     struct flb_net_setup net_setup;
+};
+
+/*
+ * Connection balancing between managed workers. Every worker accepts from
+ * its own SO_REUSEPORT listener and the kernel spreads connections over
+ * those listeners by hash, so a few long-lived connections can pile up on one
+ * worker while the others stay idle. The accepting worker therefore hands
+ * each new socket to the worker that owns the fewest connections.
+ */
+struct flb_http_server_handoff {
+    struct mk_event         event;          /* must be the first member */
+    pthread_mutex_t         lock;
+    uint64_t                ready;
+    flb_pipefd_t            channel[2];
+    flb_sockfd_t           *queue;
+    size_t                  queue_length;
+    size_t                  queue_size;
+    uint64_t                connections;    /* sessions owned by the worker */
+    uint64_t                pending;        /* sockets waiting in the queue */
+    struct flb_http_server *server;
+};
+
+struct flb_http_server_balancer {
+    int                             workers;
+    uint64_t                        next;
+    struct flb_http_server_handoff *slots;
 };
 
 static void flb_http_server_runtime_stop(struct flb_http_server *session);
@@ -113,6 +140,23 @@ static void flb_http_server_reap_stale_sessions(struct flb_http_server *server)
                                  _head);
 
         flb_http_server_session_destroy(session);
+    }
+}
+
+static void flb_http_server_counter_add(uint64_t *counter, int64_t delta)
+{
+    uint64_t value;
+
+    while (FLB_TRUE) {
+        value = cfl_atomic_load(counter);
+
+        if (delta < 0 && value < (uint64_t) -delta) {
+            return;
+        }
+
+        if (cfl_atomic_compare_exchange(counter, value, value + delta)) {
+            return;
+        }
     }
 }
 
@@ -204,6 +248,8 @@ static int flb_http_server_apply_options(struct flb_http_server *session,
     session->cb_worker_init = options->cb_worker_init;
     session->cb_worker_exit = options->cb_worker_exit;
     session->runtime = NULL;
+    session->balancer = NULL;
+    session->handoff = NULL;
 
     cfl_list_init(&session->clients);
     cfl_list_init(&session->detached_clients);
@@ -566,6 +612,11 @@ static int flb_http_server_client_connection_initialize(
     session->connection = connection;
     session->connection_slot_reserved = FLB_TRUE;
 
+    if (server->handoff != NULL) {
+        flb_http_server_counter_add(&server->handoff->connections, 1);
+        session->balanced_connection = FLB_TRUE;
+    }
+
     if (session->version <= HTTP_PROTOCOL_VERSION_11) {
         session->http1.stream.user_data = server->user_data;
     }
@@ -586,6 +637,172 @@ static int flb_http_server_client_connection_initialize(
     if (session->version == HTTP_PROTOCOL_VERSION_AUTODETECT ||
         session->version <= HTTP_PROTOCOL_VERSION_11) {
         connection->io_timeout_log_error = FLB_FALSE;
+    }
+
+    return 0;
+}
+
+static int flb_http_server_connection_adopt(struct flb_http_server *server,
+                                            flb_sockfd_t fd)
+{
+    return flb_downstream_conn_event_adopt(server->downstream, fd,
+                                           flb_http_server_client_connection_initialize,
+                                           server,
+                                           flb_http_server_client_activity_event_handler,
+                                           MK_EVENT_READ);
+}
+
+/* Worker owning the fewest connections, rotating the start to break ties */
+static struct flb_http_server_handoff *flb_http_server_balancer_pick(
+    struct flb_http_server_balancer *balancer)
+{
+    int i;
+    int index;
+    int start;
+    uint64_t load;
+    uint64_t best_load;
+    struct flb_http_server_handoff *slot;
+    struct flb_http_server_handoff *best;
+
+    best = NULL;
+    best_load = 0;
+    start = (int) (cfl_atomic_load(&balancer->next) % balancer->workers);
+    flb_http_server_counter_add(&balancer->next, 1);
+
+    for (i = 0; i < balancer->workers; i++) {
+        index = (start + i) % balancer->workers;
+        slot = &balancer->slots[index];
+
+        if (cfl_atomic_load(&slot->ready) == FLB_FALSE) {
+            continue;
+        }
+
+        load = cfl_atomic_load(&slot->connections) + cfl_atomic_load(&slot->pending);
+        if (best == NULL || load < best_load) {
+            best = slot;
+            best_load = load;
+        }
+    }
+
+    return best;
+}
+
+/* Queue a socket for another worker, the socket is not consumed on failure */
+static int flb_http_server_handoff_push(struct flb_http_server_handoff *slot,
+                                        flb_sockfd_t fd)
+{
+    char signal;
+    size_t size;
+    flb_sockfd_t *queue;
+
+    pthread_mutex_lock(&slot->lock);
+
+    if (slot->ready == FLB_FALSE) {
+        pthread_mutex_unlock(&slot->lock);
+        return -1;
+    }
+
+    if (slot->queue_length == slot->queue_size) {
+        size = slot->queue_size == 0 ? 16 : slot->queue_size * 2;
+        queue = flb_realloc(slot->queue, size * sizeof(flb_sockfd_t));
+        if (queue == NULL) {
+            flb_errno();
+            pthread_mutex_unlock(&slot->lock);
+            return -1;
+        }
+        slot->queue = queue;
+        slot->queue_size = size;
+    }
+
+    /* one notification per empty to non-empty transition */
+    if (slot->queue_length == 0) {
+        signal = 1;
+        if (flb_pipe_w(slot->channel[1], &signal, sizeof(signal)) != sizeof(signal)) {
+            pthread_mutex_unlock(&slot->lock);
+            return -1;
+        }
+    }
+
+    slot->queue[slot->queue_length++] = fd;
+    flb_http_server_counter_add(&slot->pending, 1);
+
+    pthread_mutex_unlock(&slot->lock);
+
+    return 0;
+}
+
+/* Runs on the worker owning 'slot' when sockets were queued for it */
+static int flb_http_server_handoff_event_handler(void *data)
+{
+    char signal;
+    size_t i;
+    size_t length;
+    flb_sockfd_t *queue;
+    struct flb_http_server_handoff *slot;
+
+    slot = (struct flb_http_server_handoff *) data;
+
+    if (flb_pipe_r(slot->channel[0], &signal, sizeof(signal)) != sizeof(signal)) {
+        return -1;
+    }
+
+    pthread_mutex_lock(&slot->lock);
+    queue = slot->queue;
+    length = slot->queue_length;
+    slot->queue = NULL;
+    slot->queue_length = 0;
+    slot->queue_size = 0;
+    flb_http_server_counter_add(&slot->pending, -((int64_t) length));
+    pthread_mutex_unlock(&slot->lock);
+
+    for (i = 0; i < length; i++) {
+        /* the session reserves the slot again while it is set up */
+        flb_http_server_connection_slot_release(slot->server);
+        flb_http_server_connection_adopt(slot->server, queue[i]);
+    }
+
+    if (queue != NULL) {
+        flb_free(queue);
+    }
+
+    return 0;
+}
+
+/* Accept from this worker listener and give each socket to the least loaded worker */
+static int flb_http_server_balanced_accept(struct flb_http_server *server)
+{
+    int accepted;
+    flb_sockfd_t fd;
+    struct flb_http_server_handoff *target;
+
+    for (accepted = 0; accepted < FLB_HTTP_SERVER_ACCEPT_BATCH_SIZE; accepted++) {
+        fd = flb_net_accept(server->downstream->server_fd);
+        if (fd == FLB_INVALID_SOCKET) {
+            break;
+        }
+
+        if (server->downstream->paused == FLB_TRUE) {
+            flb_socket_close(fd);
+            continue;
+        }
+
+        target = flb_http_server_balancer_pick(server->balancer);
+
+        /*
+         * A connection limit slot is held while the socket waits for the
+         * other worker, so connections are still admitted in accept order.
+         * When no slot is free the socket stays here and the session setup
+         * rejects it as usual.
+         */
+        if (target != NULL && target != server->handoff &&
+            flb_http_server_connection_slot_reserve(server)) {
+            if (flb_http_server_handoff_push(target, fd) == 0) {
+                continue;
+            }
+            flb_http_server_connection_slot_release(server);
+        }
+
+        flb_http_server_connection_adopt(server, fd);
     }
 
     return 0;
@@ -626,6 +843,10 @@ static int flb_http_server_client_connection_event_handler(void *data)
         return result;
     }
 
+    if (server->balancer != NULL && server->handoff != NULL) {
+        return flb_http_server_balanced_accept(server);
+    }
+
     accepted_connections = 0;
 
     do {
@@ -662,6 +883,129 @@ static void flb_http_server_worker_maintenance(struct flb_downstream_worker *wor
     }
 
     flb_http_server_reap_stale_sessions(&context->server);
+}
+
+static void flb_http_server_balancer_destroy(struct flb_http_server_balancer *balancer)
+{
+    int i;
+
+    if (balancer == NULL) {
+        return;
+    }
+
+    for (i = 0; i < balancer->workers; i++) {
+        pthread_mutex_destroy(&balancer->slots[i].lock);
+    }
+
+    flb_free(balancer->slots);
+    flb_free(balancer);
+}
+
+static struct flb_http_server_balancer *flb_http_server_balancer_create(int workers)
+{
+    int i;
+    struct flb_http_server_balancer *balancer;
+
+    balancer = flb_calloc(1, sizeof(struct flb_http_server_balancer));
+    if (balancer == NULL) {
+        flb_errno();
+        return NULL;
+    }
+
+    balancer->slots = flb_calloc(workers, sizeof(struct flb_http_server_handoff));
+    if (balancer->slots == NULL) {
+        flb_errno();
+        flb_free(balancer);
+        return NULL;
+    }
+
+    for (i = 0; i < workers; i++) {
+        if (pthread_mutex_init(&balancer->slots[i].lock, NULL) != 0) {
+            balancer->workers = i;
+            flb_http_server_balancer_destroy(balancer);
+            return NULL;
+        }
+        balancer->slots[i].channel[0] = -1;
+        balancer->slots[i].channel[1] = -1;
+    }
+    balancer->workers = workers;
+
+    return balancer;
+}
+
+/* Register the handoff channel of a worker, runs on the worker thread */
+static int flb_http_server_handoff_attach(struct flb_http_server *server,
+                                          struct flb_http_server_balancer *balancer,
+                                          int worker_id)
+{
+    int result;
+    struct flb_http_server_handoff *slot;
+
+    if (worker_id < 0 || worker_id >= balancer->workers) {
+        return -1;
+    }
+
+    slot = &balancer->slots[worker_id];
+
+    result = flb_pipe_create(slot->channel);
+    if (result != 0) {
+        return -1;
+    }
+
+    MK_EVENT_NEW(&slot->event);
+    slot->event.type = FLB_ENGINE_EV_CUSTOM;
+    slot->event.handler = flb_http_server_handoff_event_handler;
+
+    result = mk_event_add(server->event_loop, slot->channel[0],
+                          FLB_ENGINE_EV_CUSTOM, MK_EVENT_READ, &slot->event);
+    if (result == -1) {
+        flb_pipe_destroy(slot->channel);
+        slot->channel[0] = -1;
+        slot->channel[1] = -1;
+        return -1;
+    }
+
+    slot->server = server;
+    server->balancer = balancer;
+    server->handoff = slot;
+
+    pthread_mutex_lock(&slot->lock);
+    cfl_atomic_store(&slot->ready, FLB_TRUE);
+    pthread_mutex_unlock(&slot->lock);
+
+    return 0;
+}
+
+/* Stop receiving sockets and close the ones still queued, runs on the worker thread */
+static void flb_http_server_handoff_detach(struct flb_http_server *server)
+{
+    size_t i;
+    struct flb_http_server_handoff *slot;
+
+    slot = server->handoff;
+    if (slot == NULL) {
+        return;
+    }
+
+    pthread_mutex_lock(&slot->lock);
+    cfl_atomic_store(&slot->ready, FLB_FALSE);
+    for (i = 0; i < slot->queue_length; i++) {
+        flb_http_server_connection_slot_release(server);
+        flb_socket_close(slot->queue[i]);
+    }
+    if (slot->queue != NULL) {
+        flb_free(slot->queue);
+    }
+    slot->queue = NULL;
+    slot->queue_length = 0;
+    slot->queue_size = 0;
+    cfl_atomic_store(&slot->pending, 0);
+    pthread_mutex_unlock(&slot->lock);
+
+    mk_event_del(server->event_loop, &slot->event);
+    flb_pipe_destroy(slot->channel);
+    slot->channel[0] = -1;
+    slot->channel[1] = -1;
 }
 
 static int flb_http_server_worker_initialize(struct flb_downstream_worker *worker,
@@ -718,6 +1062,15 @@ static int flb_http_server_worker_initialize(struct flb_downstream_worker *worke
     context->server.worker_id = flb_downstream_worker_id_get(worker);
     context->server.workers = parent->workers;
 
+    if (parent->balancer != NULL) {
+        result = flb_http_server_handoff_attach(&context->server, parent->balancer,
+                                                context->server.worker_id);
+        if (result != 0) {
+            flb_http_server_destroy(&context->server);
+            return result;
+        }
+    }
+
     return 0;
 }
 
@@ -746,6 +1099,7 @@ static int flb_http_server_worker_init(struct flb_downstream_worker *worker,
     ret = flb_downstream_worker_listener_fd_set(
               worker, context->server.downstream->server_fd);
     if (ret != 0) {
+        flb_http_server_handoff_detach(&context->server);
         flb_http_server_destroy(&context->server);
         flb_free(context);
         return ret;
@@ -765,6 +1119,7 @@ static void flb_http_server_worker_exit(struct flb_downstream_worker *worker,
 
     context = worker_context;
 
+    flb_http_server_handoff_detach(&context->server);
     flb_http_server_destroy(&context->server);
     flb_free(context);
 }
@@ -787,6 +1142,13 @@ static int flb_http_server_runtime_start(struct flb_http_server *session)
         session->tls_alpn_configured = FLB_TRUE;
     }
 
+    if (session->workers > 1) {
+        session->balancer = flb_http_server_balancer_create(session->workers);
+        if (session->balancer == NULL) {
+            return -1;
+        }
+    }
+
     memset(&options, 0, sizeof(struct flb_downstream_worker_options));
     options.workers = session->workers;
     options.parent = session;
@@ -796,6 +1158,8 @@ static int flb_http_server_runtime_start(struct flb_http_server *session)
 
     result = flb_downstream_worker_runtime_start(&session->runtime, &options);
     if (result != 0) {
+        flb_http_server_balancer_destroy(session->balancer);
+        session->balancer = NULL;
         return -1;
     }
 
@@ -808,6 +1172,9 @@ static void flb_http_server_runtime_stop(struct flb_http_server *session)
 {
     flb_downstream_worker_runtime_stop(session->runtime);
     session->runtime = NULL;
+
+    flb_http_server_balancer_destroy(session->balancer);
+    session->balancer = NULL;
 }
 
 /* HTTP SERVER */
@@ -1356,6 +1723,11 @@ void flb_http_server_session_destroy(struct flb_http_server_session *session)
         if (session->connection_slot_reserved) {
             flb_http_server_connection_slot_release(session->parent);
             session->connection_slot_reserved = FLB_FALSE;
+        }
+
+        if (session->balanced_connection && session->parent->handoff != NULL) {
+            flb_http_server_counter_add(&session->parent->handoff->connections, -1);
+            session->balanced_connection = FLB_FALSE;
         }
 
         if (session->incoming_data != NULL) {
