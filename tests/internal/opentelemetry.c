@@ -27,6 +27,7 @@
 
 // #include "../../plugins/in_opentelemetry/opentelemetry.h"
 #include <fluent-bit/flb_opentelemetry.h>
+#include <fluent-bit/flb_mp_chunk.h>
 #include <ctraces/ctraces.h>
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_counter.h>
@@ -609,6 +610,8 @@ void test_json_payload_get_wrapped_value()
 #define OTEL_TEST_CASES_PATH      FLB_TESTS_DATA_PATH "/data/opentelemetry/logs.json"
 #define OTEL_TRACES_TEST_CASES_PATH FLB_TESTS_DATA_PATH "/data/opentelemetry/traces.json"
 #define OTEL_METRICS_TEST_CASES_PATH FLB_TESTS_DATA_PATH "/data/opentelemetry/metrics.json"
+#define OTEL_JSON_PARITY_PATH FLB_TESTS_DATA_PATH "/data/opentelemetry/logs_parity.jsonl"
+#define OTEL_PROTOBUF_PARITY_PATH FLB_TESTS_DATA_PATH "/data/opentelemetry/logs_parity.pb"
 
 static flb_sds_t test_normalize_json(const char *input)
 {
@@ -1718,6 +1721,463 @@ void test_opentelemetry_cases()
     flb_free(tmp_buf);
     flb_free(cases_json);
 }
+
+/*
+ * The input encodes OTLP JSON logs through the single-pass CFL decoder. Every
+ * shared case must produce the same records, or the same error, as the
+ * generic JSON to msgpack conversion.
+ */
+static int json_cfl_encode(struct flb_log_event_encoder *encoder,
+                           const char *json, size_t len, size_t limit, int *error_status)
+{
+    int ret;
+    struct flb_mp_chunk_cobj *chunk;
+    struct flb_opentelemetry_logs_json_cfl *result;
+    struct flb_opentelemetry_logs_decode_options options;
+
+    result = NULL;
+    options.metadata_key = "otlp";
+    options.body_key = NULL;
+    options.output_limit = limit;
+    encoder->output_limit = limit;
+
+    ret = flb_opentelemetry_logs_json_to_cfl(json, len, &options, &result, error_status);
+    if (ret != 0) {
+        flb_opentelemetry_logs_json_cfl_destroy(result);
+        return ret == FLB_OTEL_LOGS_JSON_CFL_UNSUPPORTED ? ret : -1;
+    }
+
+    chunk = flb_opentelemetry_logs_json_cfl_take_chunk(result);
+    if (chunk == NULL) {
+        flb_opentelemetry_logs_json_cfl_destroy(result);
+        return -1;
+    }
+
+    chunk->log_encoder = encoder;
+    ret = flb_mp_chunk_cobj_encode_append(chunk);
+    chunk->log_encoder = NULL;
+
+    flb_mp_chunk_cobj_destroy(chunk);
+    flb_opentelemetry_logs_json_cfl_destroy(result);
+
+    return ret;
+}
+
+/*
+ * Compare two encoded buffers event by event. Records without a timestamp
+ * get the current time on each path, any recent time is accepted for them.
+ */
+static int log_events_equal(char *buffer, size_t size, char *other, size_t other_size)
+{
+    int ret;
+    int other_ret;
+    time_t now;
+    struct flb_log_event event;
+    struct flb_log_event other_event;
+    struct flb_log_event_decoder decoder;
+    struct flb_log_event_decoder other_decoder;
+
+    now = time(NULL);
+    flb_log_event_decoder_init(&decoder, buffer, size);
+    flb_log_event_decoder_init(&other_decoder, other, other_size);
+    flb_log_event_decoder_read_groups(&decoder, FLB_TRUE);
+    flb_log_event_decoder_read_groups(&other_decoder, FLB_TRUE);
+
+    while (1) {
+        ret = flb_log_event_decoder_next(&decoder, &event);
+        other_ret = flb_log_event_decoder_next(&other_decoder, &other_event);
+        if (ret != FLB_EVENT_DECODER_SUCCESS || other_ret != FLB_EVENT_DECODER_SUCCESS) {
+            break;
+        }
+        if (flb_time_equal(&event.timestamp, &other_event.timestamp) == FLB_FALSE &&
+            (event.timestamp.tm.tv_sec < now - 3600 ||
+             other_event.timestamp.tm.tv_sec < now - 3600)) {
+            break;
+        }
+        if (msgpack_object_equal(*event.metadata, *other_event.metadata) == false ||
+            msgpack_object_equal(*event.body, *other_event.body) == false) {
+            break;
+        }
+    }
+
+    flb_log_event_decoder_destroy(&decoder);
+    flb_log_event_decoder_destroy(&other_decoder);
+
+    return ret == FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA &&
+           other_ret == FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA;
+}
+
+/*
+ * Decode one payload through both paths and compare the outcome. A payload
+ * the CFL decoder reports as unsupported is decoded by the msgpack path in
+ * the input, so it is equal by construction.
+ */
+static void json_cfl_check_parity(const char *name, const char *json, size_t limit)
+{
+    int ret;
+    int cfl_ret;
+    int error_status;
+    int cfl_error_status;
+    struct flb_log_event_encoder enc;
+    struct flb_log_event_encoder cfl_enc;
+
+    flb_log_event_encoder_init(&enc, FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2);
+    flb_log_event_encoder_init(&cfl_enc, FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2);
+    enc.output_limit = limit;
+
+    error_status = 0;
+    cfl_error_status = 0;
+    ret = flb_opentelemetry_logs_json_to_msgpack(&enc, json, strlen(json), NULL,
+                                                 &error_status);
+    cfl_ret = json_cfl_encode(&cfl_enc, json, strlen(json), limit, &cfl_error_status);
+
+    if (cfl_ret != FLB_OTEL_LOGS_JSON_CFL_UNSUPPORTED) {
+        TEST_CHECK_((ret == 0) == (cfl_ret == 0), "%s (limit %zu): result %i vs %i",
+                    name, limit, ret, cfl_ret);
+        if (ret == 0 && cfl_ret == 0) {
+            TEST_CHECK_(log_events_equal(enc.output_buffer, enc.output_length,
+                                         cfl_enc.output_buffer, cfl_enc.output_length),
+                        "%s (limit %zu): records differ", name, limit);
+        }
+        else if (limit == SIZE_MAX) {
+            TEST_CHECK_(error_status == cfl_error_status, "%s: error %i vs %i",
+                        name, error_status, cfl_error_status);
+        }
+    }
+
+    flb_log_event_encoder_destroy(&enc);
+    flb_log_event_encoder_destroy(&cfl_enc);
+}
+
+/* Payloads that exercise the leniency of the established conversion */
+void test_opentelemetry_json_cfl_parity_values()
+{
+    size_t i;
+    char json[2048];
+    static const char *bodies[] = {
+        "{\"stringValue\":\"text\"}",
+        "{\"stringValue\":null}",
+        "{\"str\":\"prefix of stringValue\"}",
+        "{\"\":\"empty wrapper key\"}",
+        "{\"intValue\":\"123\"}",
+        "{\"intValue\":\"-42abc\"}",
+        "{\"intValue\":\"not a number\"}",
+        "{\"intValue\":7}",
+        "{\"intValue\":-7}",
+        "{\"intValue\":1.5}",
+        "{\"doubleValue\":\"1.5\"}",
+        "{\"doubleValue\":2.25}",
+        "{\"doubleValue\":3}",
+        "{\"boolValue\":\"true\"}",
+        "{\"bytesValue\":\"aGVsbG8=\"}",
+        "{\"bytesValue\":\"aGVsbG8\"}",
+        "{\"bytesValue\":\"a\"}",
+        "{\"arrayValue\":{}}",
+        "{\"arrayValue\":{\"values\":[{\"intValue\":\"1\"},null,[1,2]]}}",
+        "{\"arrayValue\":{\"other\":[]}}",
+        "{\"arrayValue\":[1,{\"stringValue\":\"x\"}]}",
+        "{\"kvlistValue\":{}}",
+        "{\"kvlistValue\":{\"values\":[]}}",
+        "{\"kvlistValue\":{\"a\":1,\"b\":2}}",
+        "{\"kvlistValue\":{\"values\":[{\"key\":\"k\"}]}}",
+        "{\"kvlistValue\":{\"values\":[{\"key\":\"k\",\"value\":{}}]}}",
+        "{\"kvlistValue\":{\"values\":[{\"key\":\"k\",\"value\":\"plain\"}]}}",
+        "{\"kvlistValue\":{\"values\":[{\"key\":{\"stringValue\":\"w\"},"
+            "\"value\":{\"intValue\":\"1\"}}]}}",
+        "{\"kvlistValue\":{\"values\":[{\"key\":null,\"value\":{\"boolValue\":true}}]}}",
+        "{\"kvlistValue\":{\"values\":[{\"key\":5,\"value\":{\"boolValue\":true}}]}}",
+        "{\"kvlistValue\":{\"values\":[{\"value\":{\"boolValue\":true}}]}}",
+        "{\"kvlistValue\":{\"values\":[\"not a map\"]}}",
+        "{\"kvlistValue\":[]}",
+        "{}",
+        "{\"plain\":{\"nested\":[1,null,true]},\"other\":\"x\"}",
+        "{\"custom\":{\"child\":[1,true,null]}}",
+        "{\"unknownValue\":1}",
+        "{\"stringValue\":\"a\",\"extra\":1}",
+    };
+    static const char *records[] = {
+        "{\"timeUnixNano\":\"\"}",
+        "{\"timeUnixNano\":\"12345678901234567890123456789012345\"}",
+        "{\"timeUnixNano\":1722904465173450100}",
+        "{\"timeUnixNano\":-1}",
+        "{\"timeUnixNano\":1.5}",
+        "{\"timeUnixNano\":\"12a\"}",
+        "{\"observedTimeUnixNano\":\"77\"}",
+        "{\"timeUnixNano\":\"1\",\"observedTimeUnixNano\":5}",
+        "{\"timeUnixNano\":\"1\",\"observedTimeUnixNano\":\"x\"}",
+        "{\"timeUnixNano\":\"1\",\"observedTimeUnixNano\":\"18446744073709551615\"}",
+        "{\"timeUnixNano\":\"1\",\"severityNumber\":{\"a\":[1,null]}}",
+        "{\"timeUnixNano\":\"1\",\"severityNumber\":null,\"severityText\":5}",
+        "{\"timeUnixNano\":\"1\",\"flags\":\"257\"}",
+        "{\"timeUnixNano\":\"1\",\"traceFlags\":3}",
+        "{\"timeUnixNano\":\"1\",\"flags\":-3}",
+        "{\"timeUnixNano\":\"1\",\"flags\":\"3x\"}",
+        "{\"timeUnixNano\":\"1\",\"droppedAttributesCount\":-2}",
+        "{\"timeUnixNano\":\"1\",\"droppedAttributesCount\":\"2\"}",
+        "{\"timeUnixNano\":\"1\",\"traceId\":\"\",\"spanId\":\"\"}",
+        "{\"timeUnixNano\":\"1\",\"traceId\":5}",
+        "{\"timeUnixNano\":\"1\",\"attributes\":{}}",
+        "{\"timeUnixNano\":\"1\",\"attributes\":[{\"key\":\"a\",\"value\":{\"x\":1}}]}",
+        "{\"timeUnixNano\":\"1\",\"eventName\":\"e\",\"body\":\"s\"}",
+        "{\"TIMEUNIXNANO\":\"9\",\"BODY\":{\"STRINGVALUE\":\"upper\"}}",
+    };
+    static const char *groups[] = {
+        "{\"resource\":{\"attributes\":[],\"droppedAttributesCount\":{\"x\":null}},"
+            "\"schemaUrl\":5,\"scopeLogs\":[{\"schemaUrl\":\"s\",%s}]}",
+        "{\"resource\":5,\"scopeLogs\":[{\"scope\":5,%s}]}",
+        "{\"scopeLogs\":[{\"scope\":{\"name\":5,\"version\":\"v\","
+            "\"droppedAttributesCount\":null,\"attributes\":[]},%s}]}",
+        "{\"scopeLogs\":[{\"scope\":{\"attributes\":{}},%s}]}",
+        "{\"scopeLogs\":[{\"scope\":{\"attributes\":[\"x\"]},%s}]}",
+        "{\"resource\":{\"attributes\":[1]},\"scopeLogs\":[{%s}]}",
+        "{\"scopeLogs\":[{\"logRecords\":[]},{\"scope\":{}},{%s}]}",
+    };
+    char inner[1024];
+
+    for (i = 0; i < sizeof(bodies) / sizeof(bodies[0]); i++) {
+        snprintf(json, sizeof(json),
+                 "{\"resourceLogs\":[{\"scopeLogs\":[{\"logRecords\":["
+                 "{\"timeUnixNano\":\"1\",\"body\":%s,"
+                 "\"attributes\":[{\"key\":\"a\",\"value\":%s}]}]}]}]}",
+                 bodies[i], bodies[i]);
+        json_cfl_check_parity(bodies[i], json, SIZE_MAX);
+    }
+    for (i = 0; i < sizeof(records) / sizeof(records[0]); i++) {
+        snprintf(json, sizeof(json),
+                 "{\"resourceLogs\":[{\"scopeLogs\":[{\"logRecords\":[%s]}]}]}",
+                 records[i]);
+        json_cfl_check_parity(records[i], json, SIZE_MAX);
+    }
+    for (i = 0; i < sizeof(groups) / sizeof(groups[0]); i++) {
+        snprintf(inner, sizeof(inner), groups[i],
+                 "\"logRecords\":[{\"timeUnixNano\":\"1\",\"body\":{\"stringValue\":\"g\"}}]");
+        snprintf(json, sizeof(json), "{\"resourceLogs\":[%s]}", inner);
+        json_cfl_check_parity(groups[i], json, SIZE_MAX);
+    }
+}
+
+/* Generated requests, see data/opentelemetry/logs_parity_corpus.py */
+void test_opentelemetry_json_cfl_parity_corpus()
+{
+    int ret;
+    int count;
+    char name[32];
+    char *corpus;
+    char *line;
+    char *end;
+    size_t size;
+    size_t limit;
+    struct flb_log_event_encoder enc;
+
+    corpus = mk_file_to_buffer(OTEL_JSON_PARITY_PATH);
+    TEST_CHECK(corpus != NULL);
+    if (corpus == NULL) {
+        return;
+    }
+
+    count = 0;
+    for (line = corpus; *line != '\0'; line = end + 1) {
+        end = strchr(line, '\n');
+        if (end == NULL) {
+            break;
+        }
+        *end = '\0';
+        snprintf(name, sizeof(name), "request %d", ++count);
+        json_cfl_check_parity(name, line, SIZE_MAX);
+
+        flb_log_event_encoder_init(&enc, FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2);
+        ret = flb_opentelemetry_logs_json_to_msgpack(&enc, line, strlen(line), NULL, NULL);
+        size = enc.output_length;
+        flb_log_event_encoder_destroy(&enc);
+        if (ret == 0) {
+            for (limit = size > 16 ? size - 16 : 0; limit <= size + 16; limit++) {
+                json_cfl_check_parity(name, line, limit);
+            }
+        }
+    }
+    flb_free(corpus);
+    TEST_CHECK(count > 0);
+}
+
+/*
+ * The protobuf CFL decoder must produce the records of the msgpack decoder
+ * and enforce logs_max_size at the same size. The input encodes CFL records
+ * after processing, the limit only applies to the decoder estimate.
+ */
+static void protobuf_cfl_check_parity(const char *name, const char *payload, size_t length,
+                                      size_t limit)
+{
+    int ret;
+    int cfl_ret;
+    size_t record_count;
+    struct flb_mp_chunk_cobj *chunk;
+    struct flb_opentelemetry_logs_protobuf_cfl *result;
+    struct flb_opentelemetry_logs_decode_options options;
+    struct flb_log_event_encoder enc;
+    struct flb_log_event_encoder cfl_enc;
+
+    options.metadata_key = "otlp";
+    options.body_key = NULL;
+    options.output_limit = limit;
+
+    flb_log_event_encoder_init(&enc, FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2);
+    flb_log_event_encoder_init(&cfl_enc, FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2);
+    enc.output_limit = limit;
+
+    ret = flb_opentelemetry_logs_protobuf_to_msgpack(&enc, payload, length, &options,
+                                                     &record_count);
+
+    result = NULL;
+    cfl_ret = flb_opentelemetry_logs_protobuf_to_cfl(payload, length, &options, &result);
+    if (cfl_ret == 0) {
+        chunk = flb_opentelemetry_logs_protobuf_cfl_take_chunk(result);
+        chunk->log_encoder = &cfl_enc;
+        cfl_ret = flb_mp_chunk_cobj_encode_append(chunk);
+        chunk->log_encoder = NULL;
+        flb_mp_chunk_cobj_destroy(chunk);
+    }
+    flb_opentelemetry_logs_protobuf_cfl_destroy(result);
+
+    TEST_CHECK_((ret == 0) == (cfl_ret == 0), "%s (limit %zu): result %i vs %i",
+                name, limit, ret, cfl_ret);
+    if (ret == 0 && cfl_ret == 0) {
+        TEST_CHECK_(log_events_equal(enc.output_buffer, enc.output_length,
+                                     cfl_enc.output_buffer, cfl_enc.output_length),
+                    "%s (limit %zu): records differ", name, limit);
+    }
+
+    flb_log_event_encoder_destroy(&enc);
+    flb_log_event_encoder_destroy(&cfl_enc);
+}
+
+void test_opentelemetry_protobuf_cfl_parity_corpus()
+{
+    int ret;
+    int count;
+    char name[32];
+    char *payload;
+    size_t size;
+    size_t limit;
+    size_t record_count;
+    uint32_t length;
+    FILE *file;
+    struct flb_log_event_encoder enc;
+    struct flb_opentelemetry_logs_decode_options options;
+
+    file = fopen(OTEL_PROTOBUF_PARITY_PATH, "rb");
+    TEST_CHECK(file != NULL);
+    if (file == NULL) {
+        return;
+    }
+
+    options.metadata_key = "otlp";
+    options.body_key = NULL;
+    options.output_limit = SIZE_MAX;
+    count = 0;
+
+    /* each request is prefixed by its little-endian 32-bit length */
+    while (fread(&length, sizeof(length), 1, file) == 1) {
+        payload = flb_malloc(length + 1);
+        TEST_CHECK(payload != NULL);
+        if (payload == NULL || fread(payload, 1, length, file) != length) {
+            flb_free(payload);
+            break;
+        }
+        snprintf(name, sizeof(name), "request %d", ++count);
+        protobuf_cfl_check_parity(name, payload, length, SIZE_MAX);
+
+        flb_log_event_encoder_init(&enc, FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2);
+        ret = flb_opentelemetry_logs_protobuf_to_msgpack(&enc, payload, length, &options,
+                                                         &record_count);
+        size = enc.output_length;
+        flb_log_event_encoder_destroy(&enc);
+        if (ret == 0) {
+            for (limit = size > 16 ? size - 16 : 0; limit <= size + 16; limit++) {
+                protobuf_cfl_check_parity(name, payload, length, limit);
+            }
+        }
+        flb_free(payload);
+    }
+    fclose(file);
+    TEST_CHECK(count > 0);
+}
+
+void test_opentelemetry_cases_json_cfl_parity()
+{
+    int ret;
+    int type;
+    char case_name[128];
+    char *cases_json;
+    char *tmp_buf;
+    char *input_json;
+    size_t tmp_size;
+    size_t size;
+    size_t limit;
+    size_t i;
+    size_t input_index;
+    msgpack_unpacked result;
+    msgpack_object *root;
+    msgpack_object *case_obj;
+    struct flb_log_event_encoder enc;
+
+    cases_json = mk_file_to_buffer(OTEL_TEST_CASES_PATH);
+    TEST_CHECK(cases_json != NULL);
+    if (cases_json == NULL) {
+        return;
+    }
+
+    ret = flb_pack_json(cases_json, strlen(cases_json), &tmp_buf, &tmp_size, &type, NULL);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        flb_free(cases_json);
+        return;
+    }
+
+    msgpack_unpacked_init(&result);
+    ret = msgpack_unpack_next(&result, tmp_buf, tmp_size, NULL);
+    TEST_CHECK(ret == MSGPACK_UNPACK_SUCCESS);
+    root = &result.data;
+
+    for (i = 0; i < root->via.map.size; i++) {
+        case_obj = &root->via.map.ptr[i].val;
+
+        ret = flb_otel_utils_find_map_entry_by_key(&case_obj->via.map, "input", 0, FLB_TRUE);
+        TEST_CHECK(ret >= 0);
+        if (ret < 0) {
+            continue;
+        }
+        input_index = ret;
+        input_json = flb_msgpack_to_json_str(1024, &case_obj->via.map.ptr[input_index].val,
+                                             FLB_TRUE);
+        TEST_CHECK(input_json != NULL);
+        if (input_json == NULL) {
+            continue;
+        }
+
+        snprintf(case_name, sizeof(case_name), "%.*s",
+                 (int) root->via.map.ptr[i].key.via.str.size,
+                 root->via.map.ptr[i].key.via.str.ptr);
+        json_cfl_check_parity(case_name, input_json, SIZE_MAX);
+
+        /* the logs_max_size boundary must be the same on both paths */
+        flb_log_event_encoder_init(&enc, FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2);
+        ret = flb_opentelemetry_logs_json_to_msgpack(&enc, input_json, strlen(input_json),
+                                                     NULL, NULL);
+        size = enc.output_length;
+        flb_log_event_encoder_destroy(&enc);
+        if (ret == 0) {
+            for (limit = size > 64 ? size - 64 : 0; limit <= size + 64; limit++) {
+                json_cfl_check_parity(case_name, input_json, limit);
+            }
+        }
+        flb_free(input_json);
+    }
+
+    msgpack_unpacked_destroy(&result);
+    flb_free(tmp_buf);
+    flb_free(cases_json);
+}
+
 
 void test_opentelemetry_traces_cases()
 {
@@ -4063,6 +4523,11 @@ TEST_LIST = {
     { "find_map_entry_by_key", test_find_map_entry_by_key },
     { "json_payload_get_wrapped_value", test_json_payload_get_wrapped_value },
     { "opentelemetry_cases", test_opentelemetry_cases },
+    { "opentelemetry_cases_json_cfl_parity", test_opentelemetry_cases_json_cfl_parity },
+    { "opentelemetry_json_cfl_parity_values", test_opentelemetry_json_cfl_parity_values },
+    { "opentelemetry_json_cfl_parity_corpus", test_opentelemetry_json_cfl_parity_corpus },
+    { "opentelemetry_protobuf_cfl_parity_corpus",
+      test_opentelemetry_protobuf_cfl_parity_corpus },
     { "opentelemetry_logs_otlp_json_roundtrip",
       test_opentelemetry_logs_otlp_json_roundtrip },
     { "opentelemetry_logs_otlp_json_preserves_appended_resources",
