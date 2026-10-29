@@ -20,6 +20,7 @@ import logging
 import time
 import base64
 import gzip
+import http.client
 from concurrent.futures import ThreadPoolExecutor
 import grpc
 import requests
@@ -3131,6 +3132,56 @@ def test_in_opentelemetry_logs_direct_cfl_body_key(tmp_path, encoding):
 
     assert len(msgpack_records) > 1
     assert direct_records == msgpack_records
+
+
+@pytest.mark.skipif(os.name == "nt", reason="HTTP shared listener ports are unavailable on Windows")
+@pytest.mark.parametrize("encoding", ["protobuf", "json"])
+def test_in_opentelemetry_http_workers_balance_keepalive_connections(tmp_path, encoding):
+    # Every accepted socket may be handed to another worker. Many concurrent
+    # keep-alive connections must all be served and every record delivered.
+    connections = 24
+    requests_per_connection = 10
+    service = direct_cfl_service(tmp_path, True, DIRECT_CFL_PROCESSOR_CHAINS["hash_once"],
+                                 workers=4, threaded=True)
+    service.start()
+    try:
+        before = len(data_storage["logs"])
+        payload = build_direct_cfl_sentinel_payload("keep")
+        if encoding == "json":
+            body = json_format.MessageToJson(payload).encode("utf-8")
+            content_type = "application/json"
+        else:
+            body = payload.SerializeToString()
+            content_type = "application/x-protobuf"
+
+        def client():
+            connection = http.client.HTTPConnection("127.0.0.1", service.flb_listener_port,
+                                                    timeout=10)
+            try:
+                for _ in range(requests_per_connection):
+                    connection.request("POST", "/v1/logs", body,
+                                       {"Content-Type": content_type})
+                    response = connection.getresponse()
+                    response.read()
+                    assert response.status == 201
+            finally:
+                connection.close()
+
+        with ThreadPoolExecutor(max_workers=connections) as pool:
+            for future in [pool.submit(client) for _ in range(connections)]:
+                future.result()
+
+        expected = connections * requests_per_connection
+
+        def delivered():
+            records = flatten_received_logs(data_storage["logs"][before:])
+            return records if len(records) >= expected else None
+
+        records = service.service.wait_for_condition(delivered, timeout=30, interval=0.2,
+                                                     description="balanced connections")
+        assert len(records) == expected
+    finally:
+        service.stop()
 
 
 @pytest.mark.skipif(os.name == "nt", reason="HTTP shared listener ports are unavailable on Windows")
