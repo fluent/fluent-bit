@@ -9,6 +9,8 @@
 #include <fluent-bit/flb_socket.h>
 #include <fluent-bit/http_server/flb_http_server.h>
 #include <fluent-bit/http_server/flb_http_server_config_map.h>
+#include <fluent-bit/http_server/flb_hs.h>
+#include <msgpack.h>
 
 #include <string.h>
 #include <cfl/cfl_atomic.h>
@@ -905,6 +907,72 @@ void test_http_server_session_destroy_is_reentrant_safe()
     flb_free(session);
 }
 
+static void prepare_hs_pack_metrics_payload(msgpack_sbuffer *sbuf, int value)
+{
+    msgpack_packer pck;
+
+    msgpack_sbuffer_init(sbuf);
+    msgpack_packer_init(&pck, sbuf, msgpack_sbuffer_write);
+    msgpack_pack_map(&pck, 1);
+    msgpack_pack_str(&pck, 5);
+    msgpack_pack_str_body(&pck, "value", 5);
+    msgpack_pack_int(&pck, value);
+}
+
+void test_http_server_hs_buf_push_during_read_keeps_payload()
+{
+    int ret;
+    struct flb_config *config;
+    struct flb_hs *hs;
+    msgpack_sbuffer sbuf;
+
+    config = flb_config_init();
+    if (!TEST_CHECK(config != NULL)) {
+        return;
+    }
+
+    hs = flb_hs_create(TEST_HTTP_SERVER_HOST, "2020", config);
+    if (!TEST_CHECK(hs != NULL)) {
+        flb_config_exit(config);
+        return;
+    }
+
+    prepare_hs_pack_metrics_payload(&sbuf, 1);
+    ret = flb_hs_push_pipeline_metrics(hs, sbuf.data, sbuf.size);
+    msgpack_sbuffer_destroy(&sbuf);
+    TEST_CHECK(ret == 0);
+
+    /* a request is reading the payload while the next push arrives */
+    ret = flb_hs_buf_acquire(&hs->metrics, FLB_TRUE, FLB_TRUE);
+    TEST_CHECK(ret == 0);
+
+    prepare_hs_pack_metrics_payload(&sbuf, 2);
+    flb_hs_push_pipeline_metrics(hs, sbuf.data, sbuf.size);
+    msgpack_sbuffer_destroy(&sbuf);
+
+    flb_hs_buf_release(&hs->metrics, NULL);
+
+    /* the previous payload must still be served after the reader is done */
+    ret = flb_hs_buf_acquire(&hs->metrics, FLB_TRUE, FLB_TRUE);
+    TEST_CHECK(ret == 0);
+    if (ret == 0) {
+        TEST_CHECK(hs->metrics.data != NULL &&
+                   strstr(hs->metrics.data, "\"value\":1") != NULL);
+        flb_hs_buf_release(&hs->metrics, NULL);
+    }
+
+    /* with no readers left the next push replaces it */
+    prepare_hs_pack_metrics_payload(&sbuf, 3);
+    ret = flb_hs_push_pipeline_metrics(hs, sbuf.data, sbuf.size);
+    msgpack_sbuffer_destroy(&sbuf);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(hs->metrics.data != NULL &&
+               strstr(hs->metrics.data, "\"value\":3") != NULL);
+
+    flb_hs_destroy(hs);
+    flb_config_exit(config);
+}
+
 TEST_LIST = {
     { "http_server_accept_reaps_stale_sessions_with_limit",
       test_http_server_accept_reaps_stale_sessions_with_limit },
@@ -935,5 +1003,7 @@ TEST_LIST = {
       test_http_server_session_destroy_clears_drop_pending },
     { "http_server_session_destroy_is_reentrant_safe",
       test_http_server_session_destroy_is_reentrant_safe },
+    { "http_server_hs_buf_push_during_read_keeps_payload",
+      test_http_server_hs_buf_push_during_read_keeps_payload },
     { 0 }
 };
