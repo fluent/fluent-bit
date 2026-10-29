@@ -667,11 +667,27 @@ static int process_pack_ng(struct flb_http *ctx, flb_sds_t tag, char *buf,
         }
         else if (result.data.type == MSGPACK_OBJECT_ARRAY) {
             obj = &result.data;
+
+            /*
+             * Every element of the array must be a map. Validate them all
+             * before emitting anything so a payload like [1, 2] or
+             * [{"a": 1}, 2] is rejected as a whole instead of being
+             * accepted and producing records with a non-map body.
+             */
+            for (i = 0; i < obj->via.array.size; i++) {
+                if (obj->via.array.ptr[i].type != MSGPACK_OBJECT_MAP) {
+                    flb_plg_error(ctx->ins,
+                                  "skip array with invalid record type: %i "
+                                  "(index %i)",
+                                  obj->via.array.ptr[i].type, i);
+                    goto invalid_record;
+                }
+            }
+
             for (i = 0; i < obj->via.array.size; i++)
             {
                 record = obj->via.array.ptr[i];
-                if (record.type == MSGPACK_OBJECT_MAP &&
-                    remote_addr != NULL && flb_sds_len(remote_addr) > 0) {
+                if (remote_addr != NULL && flb_sds_len(remote_addr) > 0) {
                     if (!appended_initialized) {
                         /* doing this only once, since it can be cleared and reused */
                         msgpack_sbuffer_init(&appended_sbuf);
@@ -763,6 +779,8 @@ ingress_busy:
 
 log_event_error:
     flb_plg_error(ctx->ins, "Error encoding record : %d", ret);
+
+invalid_record:
     msgpack_unpacked_destroy(&result);
     if (appended_initialized) {
         msgpack_unpacked_destroy(&appended_result);
