@@ -604,8 +604,10 @@ static int send_malformed_request_expect_400(const char *request)
         return -1;
     }
 
-    if (strstr(response, "\r\nConnection: close\r\n") == NULL) {
-        TEST_MSG("expected Connection: close for malformed request, got: %s",
+    if (strstr(response, "\r\nConnection: close\r\n") == NULL ||
+        strstr(response, "\r\n\r\n") == NULL) {
+        TEST_MSG("expected Connection: close and a complete header section "
+                 "for malformed request, got: %s",
                  response);
         return -1;
     }
