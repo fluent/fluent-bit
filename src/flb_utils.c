@@ -25,6 +25,7 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <errno.h>
 #include <msgpack.h>
 
 #include <monkey/mk_core.h>
@@ -65,6 +66,37 @@ extern struct flb_aws_error_reporter *error_reporter;
  * E0 since U+E0CE = U+<FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR><HEX_FRAGMENT>
  */
 #define FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR 0xE0
+
+/* Prefer a file beside the main configuration over a same-named file in CWD. */
+const char *flb_utils_resolve_config_path(const char *path, const char *conf_path,
+                                          char *buf, size_t size)
+{
+    int ret;
+    size_t len;
+    struct stat st;
+
+    if (!path || !conf_path || path[0] == '/') {
+        return path;
+    }
+#ifdef _WIN32
+    if (path[0] == '\\' || (path[0] && path[1] == ':')) {
+        return path;
+    }
+#endif
+
+    len = strlen(conf_path);
+    ret = snprintf(buf, size, "%s%s%s", conf_path,
+                   len > 0 && conf_path[len - 1] == '/' ? "" : "/", path);
+    if (ret < 0 || (size_t) ret >= size) {
+        return NULL;
+    }
+
+    if (stat(buf, &st) == 0 || errno != ENOENT) {
+        return buf;
+    }
+
+    return path;
+}
 
 void flb_utils_error(int err)
 {
