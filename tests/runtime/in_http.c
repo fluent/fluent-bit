@@ -565,6 +565,35 @@ static int send_invalid_header_request(void)
     return strstr(response, "HTTP/1.1 4") != NULL ? 0 : -1;
 }
 
+/*
+ * Send a chunked request that also carries a Content-Length header. RFC 9112
+ * section 6.3 says Transfer-Encoding: chunked takes precedence, so the body
+ * must be decoded as chunked instead of waiting for Content-Length bytes.
+ */
+static int send_chunked_with_content_length_request(void)
+{
+    const char *request =
+        "POST / HTTP/1.1\r\n"
+        "Host: 127.0.0.1\r\n"
+        "Content-Type: application/json\r\n"
+        "Transfer-Encoding: chunked\r\n"
+        "Content-Length: 100\r\n"
+        "\r\n"
+        "e\r\n"
+        "{\"test\":\"msg\"}\r\n"
+        "0\r\n"
+        "\r\n";
+    char response[256];
+    int response_length;
+
+    response_length = send_raw_http_request(request, response, sizeof(response));
+    if (response_length <= 0) {
+        return -1;
+    }
+
+    return strstr(response, "HTTP/1.1 201") != NULL ? 0 : -1;
+}
+
 void flb_test_http(void)
 {
     struct flb_lib_out_cb cb_data;
@@ -1301,6 +1330,63 @@ void flb_test_http_remote_addr_array(void)
     test_http_add_remote_addr("[{\"test\":\"msg\"}]", "1.2.3.4, 5.6.7.8", "1.2.3.4", "false");
 }
 
+static void test_http_chunked_with_content_length(char *http2_cfg)
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    int ret;
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = "\"test\":\"msg\"";
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "http2", http2_cfg,
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    if (!TEST_CHECK(send_chunked_with_content_length_request() == 0)) {
+        TEST_MSG("chunked request with Content-Length was not answered with 201");
+    }
+
+    /* waiting to flush */
+    flb_time_msleep(1500);
+
+    if (!TEST_CHECK(get_output_num() > 0)) {
+        TEST_MSG("chunked request with Content-Length did not reach the callback");
+    }
+
+    test_ctx_destroy(ctx);
+}
+
+/* Transfer-Encoding: chunked plus Content-Length, next gen http server */
+void flb_test_http_chunked_with_content_length_ng(void)
+{
+    test_http_chunked_with_content_length("true");
+}
+
+/* Transfer-Encoding: chunked plus Content-Length, legacy http server (monkey) */
+void flb_test_http_chunked_with_content_length(void)
+{
+    test_http_chunked_with_content_length("false");
+}
+
 TEST_LIST = {
     {"http", flb_test_http},
     {"successful_response_code_200", flb_test_http_successful_response_code_200},
@@ -1316,5 +1402,7 @@ TEST_LIST = {
     {"add_remote_addr_array_ng", flb_test_http_remote_addr_array_ng},
     {"add_remote_addr_map", flb_test_http_remote_addr_map},
     {"add_remote_addr_array", flb_test_http_remote_addr_array},
+    {"chunked_with_content_length_ng", flb_test_http_chunked_with_content_length_ng},
+    {"chunked_with_content_length", flb_test_http_chunked_with_content_length},
     {NULL, NULL}
 };
