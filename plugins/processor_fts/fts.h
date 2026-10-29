@@ -89,6 +89,7 @@ struct fts_value {
 struct fts_runtime {
     struct flb_luajit *vm;
     char *script;
+    char *resolved_script;
     char *code;
     char *call;
     char *error_mode;
