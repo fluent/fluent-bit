@@ -313,8 +313,26 @@ static int flb_http_server_session_write(struct flb_http_server_session *session
     return 0;
 }
 
-static int flb_http_server_should_connection_be_closed(
+/*
+ * RFC 9112 section 6.3: a request that carries both Transfer-Encoding and
+ * Content-Length is processed as chunked, but the connection must be closed
+ * after responding to avoid request smuggling. This must be evaluated on the
+ * headers as received, before AUTO_INFLATE rewrites Content-Length.
+ */
+static int flb_http_server_request_has_conflicting_framing(
     struct flb_http_request *request)
+{
+    if (flb_http_request_get_header(request, "transfer-encoding") != NULL &&
+        flb_http_request_get_header(request, "content-length") != NULL) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
+static int flb_http_server_should_connection_be_closed(
+    struct flb_http_request *request,
+    int conflicting_framing)
 {
     char                            *connection_header_value;
     struct flb_http_server_session  *parent_session;
@@ -345,13 +363,7 @@ static int flb_http_server_should_connection_be_closed(
         return FLB_FALSE;
     }
 
-    /*
-     * RFC 9112 section 6.3: a request that carries both Transfer-Encoding
-     * and Content-Length is processed as chunked, but the connection must
-     * be closed after responding to avoid request smuggling.
-     */
-    if (flb_http_request_get_header(request, "transfer-encoding") != NULL &&
-        flb_http_request_get_header(request, "content-length") != NULL) {
+    if (conflicting_framing) {
         return FLB_TRUE;
     }
 
@@ -425,6 +437,7 @@ static int flb_http_server_session_is_idle(struct flb_http_server_session *sessi
 static int flb_http_server_client_activity_event_handler(void *data)
 {
     int                             close_connection;
+    int                             conflicting_framing;
     struct cfl_list                *backup_iterator;
     struct flb_connection          *connection;
     struct cfl_list                *iterator;
@@ -491,6 +504,9 @@ static int flb_http_server_client_activity_event_handler(void *data)
             request->content_length = cfl_sds_len(request->body);
         }
 
+        conflicting_framing =
+            flb_http_server_request_has_conflicting_framing(request);
+
         if ((server->flags & FLB_HTTP_SERVER_FLAG_AUTO_INFLATE) != 0) {
             result = flb_http_request_uncompress_body(request);
 
@@ -515,7 +531,8 @@ static int flb_http_server_client_activity_event_handler(void *data)
             /* Report */
         }
 
-        close_connection = flb_http_server_should_connection_be_closed(request);
+        close_connection = flb_http_server_should_connection_be_closed(
+                               request, conflicting_framing);
 
         if (session->version == HTTP_PROTOCOL_VERSION_20) {
             /* nghttp2 might still need the response (deferred DATA) */
