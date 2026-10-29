@@ -413,9 +413,16 @@ static void test_ctx_destroy(struct test_ctx *ctx)
     flb_free(ctx);
 }
 
-static int send_raw_http_request(const char *request,
-                                 char *response,
-                                 size_t response_size)
+/*
+ * Send a raw request and read the reply. When wait_for_close is zero the
+ * read stops at the first CRLF; otherwise it keeps reading until the peer
+ * closes the connection and fails if that does not happen before the
+ * timeout.
+ */
+static int send_raw_http_request_ex(const char *request,
+                                    char *response,
+                                    size_t response_size,
+                                    int wait_for_close)
 {
     struct sockaddr_in address;
     struct timeval timeout;
@@ -427,6 +434,7 @@ static int send_raw_http_request(const char *request,
     int written;
     int received;
     int response_length;
+    int peer_closed = FLB_FALSE;
 
     if (response_size < 2) {
         return -1;
@@ -481,12 +489,13 @@ static int send_raw_http_request(const char *request,
                         (int) response_size - 1 - response_length,
                         0);
         if (received <= 0) {
+            peer_closed = FLB_TRUE;
             break;
         }
 
         response_length += received;
         response[response_length] = '\0';
-        if (strstr(response, "\r\n") != NULL) {
+        if (!wait_for_close && strstr(response, "\r\n") != NULL) {
             break;
         }
     }
@@ -494,11 +503,23 @@ static int send_raw_http_request(const char *request,
     flb_socket_close(fd);
     response[response_length] = '\0';
 
+    if (wait_for_close && !peer_closed) {
+        return -1;
+    }
+
     if (response_length > 0 && strstr(response, "\r\n") == NULL) {
         return -1;
     }
 
     return response_length;
+}
+
+static int send_raw_http_request(const char *request,
+                                 char *response,
+                                 size_t response_size)
+{
+    return send_raw_http_request_ex(request, response, response_size,
+                                    FLB_FALSE);
 }
 
 static int send_empty_header_request(void)
@@ -570,14 +591,22 @@ static int send_malformed_request_expect_400(const char *request)
     char response[256];
     int response_length;
 
-    response_length = send_raw_http_request(request, response, sizeof(response));
+    /* the server must answer and then close the connection */
+    response_length = send_raw_http_request_ex(request, response,
+                                               sizeof(response), FLB_TRUE);
     if (response_length <= 0) {
-        TEST_MSG("no response for malformed request: %s", request);
+        TEST_MSG("no response or no close for malformed request: %s", request);
         return -1;
     }
 
-    if (strstr(response, "HTTP/1.1 400") == NULL) {
+    if (strncmp(response, "HTTP/1.1 400", 12) != 0) {
         TEST_MSG("expected 400 for malformed request, got: %s", response);
+        return -1;
+    }
+
+    if (strstr(response, "\r\nConnection: close\r\n") == NULL) {
+        TEST_MSG("expected Connection: close for malformed request, got: %s",
+                 response);
         return -1;
     }
 
