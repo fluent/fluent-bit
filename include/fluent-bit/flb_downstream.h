@@ -98,6 +98,18 @@ int flb_downstream_conn_event_accept(
         void *accept_callback_data,
         flb_connection_event_callback event_callback,
         int mask);
+
+/*
+ * Same as flb_downstream_conn_event_accept() for a socket that was already
+ * accepted, for example by another worker. The socket is always consumed.
+ */
+int flb_downstream_conn_event_adopt(
+        struct flb_downstream *stream,
+        flb_sockfd_t fd,
+        flb_connection_accept_callback accept_callback,
+        void *accept_callback_data,
+        flb_connection_event_callback event_callback,
+        int mask);
 int flb_downstream_conn_event_register(struct flb_connection *connection,
                                        int (*callback)(void *data),
                                        int mask);
