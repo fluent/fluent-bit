@@ -413,9 +413,10 @@ static void test_ctx_destroy(struct test_ctx *ctx)
     flb_free(ctx);
 }
 
-static int send_raw_http_request(const char *request,
-                                 char *response,
-                                 size_t response_size)
+static int send_raw_http_request_ex(const char *request,
+                                    char *response,
+                                    size_t response_size,
+                                    int wait_for_close)
 {
     struct sockaddr_in address;
     struct timeval timeout;
@@ -427,6 +428,7 @@ static int send_raw_http_request(const char *request,
     int written;
     int received;
     int response_length;
+    char drain[256];
 
     if (response_size < 2) {
         return -1;
@@ -491,6 +493,27 @@ static int send_raw_http_request(const char *request,
         }
     }
 
+    if (wait_for_close && response_length > 0) {
+        /* the server must close the connection after the response */
+        while (1) {
+            FD_ZERO(&read_fds);
+            FD_SET(fd, &read_fds);
+            timeout.tv_sec = 2;
+            timeout.tv_usec = 0;
+
+            ret = select((int) (fd + 1), &read_fds, NULL, NULL, &timeout);
+            if (ret <= 0) {
+                flb_socket_close(fd);
+                return -1;
+            }
+
+            received = recv(fd, drain, sizeof(drain), 0);
+            if (received <= 0) {
+                break;
+            }
+        }
+    }
+
     flb_socket_close(fd);
     response[response_length] = '\0';
 
@@ -499,6 +522,14 @@ static int send_raw_http_request(const char *request,
     }
 
     return response_length;
+}
+
+static int send_raw_http_request(const char *request,
+                                 char *response,
+                                 size_t response_size)
+{
+    return send_raw_http_request_ex(request, response, response_size,
+                                    FLB_FALSE);
 }
 
 static int send_empty_header_request(void)
@@ -586,7 +617,9 @@ static int send_chunked_with_content_length_request(void)
     char response[256];
     int response_length;
 
-    response_length = send_raw_http_request(request, response, sizeof(response));
+    /* RFC 9112 6.3: the connection must be closed after the response */
+    response_length = send_raw_http_request_ex(request, response,
+                                               sizeof(response), FLB_TRUE);
     if (response_length <= 0) {
         return -1;
     }
