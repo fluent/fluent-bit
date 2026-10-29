@@ -565,6 +565,25 @@ static int send_invalid_header_request(void)
     return strstr(response, "HTTP/1.1 4") != NULL ? 0 : -1;
 }
 
+static int send_malformed_request_expect_400(const char *request)
+{
+    char response[256];
+    int response_length;
+
+    response_length = send_raw_http_request(request, response, sizeof(response));
+    if (response_length <= 0) {
+        TEST_MSG("no response for malformed request: %s", request);
+        return -1;
+    }
+
+    if (strstr(response, "HTTP/1.1 400") == NULL) {
+        TEST_MSG("expected 400 for malformed request, got: %s", response);
+        return -1;
+    }
+
+    return 0;
+}
+
 void flb_test_http(void)
 {
     struct flb_lib_out_cb cb_data;
@@ -645,6 +664,75 @@ void flb_test_http(void)
     flb_upstream_conn_release(ctx->httpc->u_conn);
     test_ctx_destroy(ctx);
 }
+void flb_test_http_malformed_request_400(void)
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    char request[4096];
+    size_t offset;
+    int ret;
+    int i;
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = "\"test\":\"msg\"";
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Unsupported protocol version */
+    TEST_CHECK(send_malformed_request_expect_400(
+                   "GET / HTTP/9.9\r\n"
+                   "Host: 127.0.0.1\r\n"
+                   "\r\n") == 0);
+
+    /* Bare LF line endings */
+    TEST_CHECK(send_malformed_request_expect_400(
+                   "GET / HTTP/1.1\n"
+                   "Host: 127.0.0.1\n"
+                   "\n") == 0);
+
+    /* Header line without a colon */
+    TEST_CHECK(send_malformed_request_expect_400(
+                   "GET / HTTP/1.1\r\n"
+                   "Host: 127.0.0.1\r\n"
+                   "BadHeader\r\n"
+                   "\r\n") == 0);
+
+    /* More unknown headers than the parser can track */
+    offset = (size_t) snprintf(request, sizeof(request),
+                               "POST / HTTP/1.1\r\n"
+                               "Host: 127.0.0.1\r\n"
+                               "Content-Type: application/json\r\n");
+    for (i = 0; i <= 50; i++) {
+        offset += (size_t) snprintf(request + offset, sizeof(request) - offset,
+                                    "X-H%d: v\r\n", i);
+    }
+    snprintf(request + offset, sizeof(request) - offset,
+             "Content-Length: 14\r\n"
+             "\r\n"
+             "{\"test\":\"msg\"}");
+    TEST_CHECK(send_malformed_request_expect_400(request) == 0);
+
+    flb_time_msleep(1500);
+    TEST_CHECK(get_output_num() == 0);
+
+    test_ctx_destroy(ctx);
+}
+
 void flb_test_http_successful_response_code(char *response_code)
 {
     struct flb_lib_out_cb cb_data;
@@ -1303,6 +1391,7 @@ void flb_test_http_remote_addr_array(void)
 
 TEST_LIST = {
     {"http", flb_test_http},
+    {"malformed_request_400", flb_test_http_malformed_request_400},
     {"successful_response_code_200", flb_test_http_successful_response_code_200},
     {"successful_response_code_204", flb_test_http_successful_response_code_204},
     {"failure_response_code_400_bad_json", flb_test_http_failure_400_bad_json},
