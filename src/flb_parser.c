@@ -1689,25 +1689,22 @@ int flb_parser_load_multiline_parser_definitions(const char *cfg, struct flb_cf 
 int flb_parser_conf_file_stat(const char *file, struct flb_config *config)
 {
     int ret;
+    char tmp[PATH_MAX + 1];
+    const char *cfg;
     struct stat st;
 
-    ret = stat(file, &st);
-    if (ret == -1 && errno == ENOENT) {
-        /* Try to resolve the real path (if exists) */
-        if (file[0] == '/') {
-            flb_utils_error(FLB_ERR_CFG_PARSER_FILE);
-            return -1;
-        }
-
-        if (config->conf_path) {
-            /* Handle as special case here. */
-            return -2;
-        }
-
+    cfg = flb_utils_resolve_config_path(file, config->conf_path, tmp, sizeof(tmp));
+    if (!cfg) {
         return -1;
     }
 
-    return 0;
+    ret = stat(cfg, &st);
+    if (ret == -1) {
+        flb_utils_error(FLB_ERR_CFG_PARSER_FILE);
+        return -1;
+    }
+
+    return cfg == file ? 0 : -2;
 }
 
 /* Load parsers from a configuration file */
@@ -1724,7 +1721,7 @@ int flb_parser_conf_file(const char *file, struct flb_config *config)
         return -1;
     }
     else if (ret == -2) {
-        snprintf(tmp, PATH_MAX, "%s%s", config->conf_path, file);
+        snprintf(tmp, sizeof(tmp), "%s%s", config->conf_path, file);
         cfg = tmp;
     }
     else {
