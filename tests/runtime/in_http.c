@@ -952,6 +952,11 @@ void flb_test_http_failure_400_mixed_array(void)
     test_http_failure_400_invalid_array("[{\"test\":\"msg\"},2]");
 }
 
+void flb_test_http_failure_400_map_then_invalid_array(void)
+{
+    test_http_failure_400_invalid_array("{\"test\":\"msg\"}\n[1]");
+}
+
 void flb_test_http_failure_400_bad_disk_write(void)
 {
     struct flb_lib_out_cb cb_data;
@@ -1399,5 +1404,6 @@ TEST_LIST = {
     {"add_remote_addr_array", flb_test_http_remote_addr_array},
     {"failure_response_code_400_array_of_scalars", flb_test_http_failure_400_array_of_scalars},
     {"failure_response_code_400_mixed_array", flb_test_http_failure_400_mixed_array},
+    {"failure_response_code_400_map_then_invalid_array", flb_test_http_failure_400_map_then_invalid_array},
     {NULL, NULL}
 };
