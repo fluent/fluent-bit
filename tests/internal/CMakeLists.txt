@@ -20,6 +20,7 @@ set(UNIT_TESTS_FILES
   network_dns.c
   unit_sizes.c
   hashtable.c
+  callback.c
   http_client.c
   utils.c
   gzip.c
