@@ -2572,7 +2572,9 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "configuration_endpoint_url", NULL,
      0, FLB_TRUE, offsetof(struct flb_azure_blob, configuration_endpoint_url),
-     "Configuration endpoint URL"
+     "Configuration endpoint URL. With tls.verify enabled, tls.ca_file must "
+     "trust both the Blob and configuration endpoints when tls.ca_path is unset. "
+     "If tls.ca_path is set, it takes precedence over tls.ca_file."
     },
 
     {

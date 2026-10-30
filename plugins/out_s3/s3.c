@@ -2942,14 +2942,22 @@ static int blob_initialize_authorization_endpoint_upstream(struct flb_s3 *contex
     }
 
     tls_context = flb_tls_create(FLB_TLS_CLIENT_MODE,
-                                 FLB_FALSE,
-                                 FLB_FALSE,
+                                 context->ins->tls_verify,
+                                 context->ins->tls_debug,
                                  host,
-                                 NULL,
-                                 NULL,
-                                 NULL,
-                                 NULL,
-                                 NULL);
+                                 context->ins->tls_ca_path,
+                                 context->ins->tls_ca_file,
+                                 context->ins->tls_crt_file,
+                                 context->ins->tls_key_file,
+                                 context->ins->tls_key_passwd);
+
+    if (tls_context != NULL && context->ins->tls_verify == FLB_TRUE) {
+        ret = flb_tls_set_verify_hostname(tls_context, FLB_TRUE);
+        if (ret != 0) {
+            flb_tls_destroy(tls_context);
+            tls_context = NULL;
+        }
+    }
 
     flb_free(host);
     flb_free(uri);
@@ -5378,7 +5386,9 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "authorization_endpoint_url", NULL,
      0, FLB_TRUE, offsetof(struct flb_s3, authorization_endpoint_url),
-     "Authorization endpoint URL"
+     "Authorization endpoint URL. With tls.verify enabled, tls.ca_file must "
+     "trust both the S3 and authorization endpoints when tls.ca_path is unset. "
+     "If tls.ca_path is set, it takes precedence over tls.ca_file."
     },
 
     {
