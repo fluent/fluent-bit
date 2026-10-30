@@ -99,6 +99,12 @@ struct flb_config {
     int flush_adaptive_direction;
     double flush_adaptive_current_interval;
 
+    size_t http_client_max_response_size;
+    size_t http_client_max_header_size;
+    size_t http_client_max_wire_size;
+    int http_client_max_header_count;
+    int http_client_response_timeout;
+
     /*
      * Maximum grace time on shutdown. If set to -1, the engine will
      * shutdown when all remaining tasks are flushed
@@ -415,6 +421,7 @@ struct flb_service_config {
 
 enum conf_type {
     FLB_CONF_TYPE_INT,
+    FLB_CONF_TYPE_SIZE,
     FLB_CONF_TYPE_DOUBLE,
     FLB_CONF_TYPE_BOOL,
     FLB_CONF_TYPE_STR,
@@ -422,6 +429,11 @@ enum conf_type {
 };
 
 #define FLB_CONF_STR_FLUSH        "Flush"
+#define FLB_CONF_STR_HTTP_CLIENT_MAX_RESPONSE_SIZE "http_client.max_response_size"
+#define FLB_CONF_STR_HTTP_CLIENT_MAX_HEADER_SIZE   "http_client.max_header_size"
+#define FLB_CONF_STR_HTTP_CLIENT_MAX_WIRE_SIZE     "http_client.max_wire_size"
+#define FLB_CONF_STR_HTTP_CLIENT_MAX_HEADER_COUNT  "http_client.max_header_count"
+#define FLB_CONF_STR_HTTP_CLIENT_RESPONSE_TIMEOUT  "http_client.response_timeout"
 #define FLB_CONF_STR_FLUSH_ADAPTIVE "flush.adaptive"
 #define FLB_CONF_STR_FLUSH_ADAPTIVE_MIN "flush.adaptive.min_interval"
 #define FLB_CONF_STR_FLUSH_ADAPTIVE_MAX "flush.adaptive.max_interval"
