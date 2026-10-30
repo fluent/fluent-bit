@@ -988,6 +988,7 @@ void flb_test_input_chunk_prefers_deletable_files_on_limit(void)
     size_t shared_chunk_size;
     size_t solo_chunk_size;
     size_t total_limit;
+    struct flb_input_chunk incoming = {0};
 
     snprintf(temp_path, sizeof(temp_path) - 1,
              "/input-chunk-prefer-deletable-files-%i/",
@@ -1104,6 +1105,19 @@ void flb_test_input_chunk_prefers_deletable_files_on_limit(void)
      */
     TEST_CHECK(chunk_file_count == 2);
     TEST_CHECK(mk_list_size(&i_ins->chunks) == 2);
+
+    /* Evicting a task-free chunk must clear a now-obsolete memory pause. */
+    ic = mk_list_entry_last(&i_ins->chunks, struct flb_input_chunk, _head);
+    incoming = *ic;
+    i_ins->mem_buf_limit = flb_input_chunk_set_limits(i_ins);
+    i_ins->mem_buf_status = FLB_INPUT_PAUSED;
+    cfg->is_running = FLB_TRUE;
+    cfg->is_ingestion_active = FLB_TRUE;
+    TEST_CHECK(flb_input_chunk_find_space_new_data(&incoming, solo_chunk_size) == 0);
+    TEST_CHECK(mk_list_size(&i_ins->chunks) == 1);
+    TEST_CHECK(i_ins->mem_buf_status == FLB_INPUT_RUNNING);
+    TEST_CHECK(i_ins->mem_chunks_size == flb_input_chunk_total_size(i_ins));
+    TEST_CHECK(i_ins->mem_chunks_size < i_ins->mem_buf_limit);
 
     mk_list_foreach_safe(head, tmp, &i_ins->tasks) {
         task = mk_list_entry(head, struct flb_task, _head);
