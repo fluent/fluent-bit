@@ -15,6 +15,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/aws/flb_aws_compress.h>
 #include <inttypes.h>
+#include "schema.h"
 
 /*
  * compression_type_to_garrow - map a generic FLB_AWS_COMPRESS_* codec to the
@@ -241,7 +242,7 @@ static GArrowResizableBuffer* table_to_parquet_buffer(GArrowTable *table,
         n_rows = garrow_table_get_n_rows(table);
 
         success = gparquet_arrow_file_writer_write_table(writer, table,
-                                                         n_rows, &error);
+                                                         n_rows > 0 ? n_rows : 1, &error);
         if (!success) {
             flb_error("[aws][compress] Failed to write table to parquet "
                       "buffer: %s", error->message);
@@ -267,10 +268,11 @@ static GArrowResizableBuffer* table_to_parquet_buffer(GArrowTable *table,
 }
 #endif
 
-int flb_aws_compression_compress_columnar(int columnar_format,
+static int compress_columnar(int columnar_format,
                                           void *json, size_t size,
                                           void **out_buf, size_t *out_size,
-                                          int compression_type)
+                                          int compression_type,
+                                          struct flb_arrow_schema *schema)
 {
         GArrowTable *table;
         GArrowResizableBuffer *buffer;
@@ -287,9 +289,14 @@ int flb_aws_compression_compress_columnar(int columnar_format,
                 return -1;
         }
 
-        table = parse_json((uint8_t *) json, size);
+        if (schema != NULL) {
+            table = flb_arrow_schema_table(schema, json, size);
+        }
+        else {
+            table = parse_json((uint8_t *) json, size);
+        }
         if (table == NULL) {
-            flb_error("[aws][compress] Failed to parse JSON into Arrow Table");
+            flb_error("[aws][compress] Failed to build Arrow Table");
             return -1;
         }
 
@@ -356,6 +363,28 @@ int flb_aws_compression_compress_columnar(int columnar_format,
         g_object_unref(buffer);
         g_bytes_unref(bytes);
         return 0;
+}
+
+int flb_aws_compression_compress_columnar(int columnar_format,
+                                         void *json, size_t size,
+                                         void **out_buf, size_t *out_size,
+                                         int compression_type)
+{
+    return compress_columnar(columnar_format, json, size, out_buf, out_size,
+                             compression_type, NULL);
+}
+
+int flb_aws_compression_compress_columnar_msgpack(int columnar_format,
+                                                const void *data, size_t size,
+                                                void **out_buf, size_t *out_size,
+                                                int compression_type,
+                                                struct flb_arrow_schema *schema)
+{
+    if (schema == NULL) {
+        return -1;
+    }
+    return compress_columnar(columnar_format, (void *) data, size, out_buf, out_size,
+                             compression_type, schema);
 }
 
 int out_s3_compress_columnar(int columnar_format, void *json, size_t size,

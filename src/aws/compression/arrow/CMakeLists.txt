@@ -1,5 +1,6 @@
 set(src
-    compress.c)
+    compress.c
+    schema.c)
 
 add_library(flb-aws-arrow STATIC ${src})
 
