@@ -191,10 +191,27 @@ static int read_glob(struct flb_cf *cf, struct local_ctx *ctx, const char *path,
     char *star, *p0, *p1;
     char pattern[MAX_PATH];
     char buf[MAX_PATH];
+    char full_path[MAX_PATH];
     int ret;
     struct stat st;
     HANDLE h;
     WIN32_FIND_DATA data;
+
+    if (ctx->root_path && path[0] != '/' && path[0] != '\\' &&
+        !(path[0] != '\0' && path[1] == ':')) {
+        ret = snprintf(buf, sizeof(buf), "%s\\%s", ctx->root_path, path);
+        if (ret < 0 || ret >= sizeof(buf)) {
+            return -1;
+        }
+        path = buf;
+    }
+
+    /* Resolve relative includes against the config directory and normalize
+     * forward slashes before splitting the Windows wildcard components. */
+    if (_fullpath(full_path, path, sizeof(full_path)) == NULL) {
+        return -1;
+    }
+    path = full_path;
 
     if (strlen(path) > MAX_PATH - 1) {
         return -1;
@@ -351,7 +368,11 @@ static int is_file_included(struct local_ctx *ctx, const char *path)
 
     mk_list_foreach(head, &ctx->includes) {
         file = mk_list_entry(head, struct local_file, _head);
+#ifdef _WIN32
+        if (strcasecmp(file->path, path) == 0) {
+#else
         if (strcmp(file->path, path) == 0) {
+#endif
             return FLB_TRUE;
         }
     }
@@ -416,14 +437,15 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
     int key_len;
     char *val = NULL;
     int val_len;
-    char *buf;
+    char *buf = NULL;
     char *fgets_ptr;
     size_t bufsize = FLB_DEFAULT_CF_BUF_SIZE;
     char tmp[PATH_MAX];
+    char *full_path = NULL;
     flb_sds_t section = NULL;
     flb_sds_t indent = NULL;
     struct stat st;
-    struct local_file *file;
+    struct local_file *file = NULL;
     struct flb_cf_meta *meta;
     struct flb_cf_section *current_section = NULL;
     struct flb_cf_group *current_group = NULL;
@@ -473,21 +495,45 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
     }
 #endif
 
-    /* Check this file have not been included before */
+#if defined(_WIN32) && !defined(FLB_HAVE_STATIC_CONF)
+    full_path = realpath(cfg_file, NULL);
+    if (full_path == NULL) {
+        return -1;
+    }
+    cfg_file = full_path;
+#endif
+
+    /* Check both active and previously parsed files. */
     ret = is_file_included(ctx, cfg_file);
     if (ret) {
         flb_error("[config] file already included %s", cfg_file);
+        flb_free(full_path);
         return -1;
     }
-    ctx->level++;
 
 #ifndef FLB_HAVE_STATIC_CONF
     /* Open configuration file */
     if ((f = fopen(cfg_file, "rb")) == NULL) {
         flb_warn("[config] I cannot open %s file", cfg_file);
+        flb_free(full_path);
         return -1;
     }
 #endif
+
+    ctx->level++;
+    file = flb_malloc(sizeof(struct local_file));
+    if (!file) {
+        flb_errno();
+        goto error;
+    }
+    file->path = flb_sds_create(cfg_file);
+    if (!file->path) {
+        flb_free(file);
+        file = NULL;
+        goto error;
+    }
+    /* Register before parsing so recursive includes cannot re-enter this file. */
+    mk_list_add(&file->_head, &ctx->includes);
 
     /* Allocate temporal buffer to read file content */
     buf = flb_malloc(bufsize);
@@ -744,20 +790,20 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
     }
     flb_free(buf);
 
-    /* Append this file to the list */
-    file = flb_malloc(sizeof(struct local_file));
-    if (!file) {
-        flb_errno();
-        ctx->level--;
-        goto error;
-    }
-    file->path = flb_sds_create(cfg_file);
-    mk_list_add(&file->_head, &ctx->includes);
+    /* Keep successful files registered to reject later duplicates. */
+    flb_free(full_path);
     ctx->level--;
 
     return 0;
 
 error:
+    flb_free(full_path);
+    if (file) {
+        mk_list_del(&file->_head);
+        flb_sds_destroy(file->path);
+        flb_free(file);
+    }
+    ctx->level--;
     if (f) {
         fclose(f);
     }

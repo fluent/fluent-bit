@@ -35,6 +35,8 @@ def test_down_chunk_placement(tmp_path, limit, routes):
     lock = threading.Lock()
 
     class Sink(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
         def do_POST(self):
             records = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             route = int(self.path[1:])

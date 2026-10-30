@@ -6,6 +6,13 @@ import struct
 import pytest
 
 from utils.test_service import FluentBitTestService
+from utils.fluent_bit_manager import fluent_bit_input_supports_config_property
+
+
+@pytest.fixture(autouse=True, scope="module")
+def require_collectd_input():
+    if not fluent_bit_input_supports_config_property("collectd", "typesdb"):
+        pytest.skip("This Fluent Bit build does not include the collectd input")
 
 
 def part(kind, payload):

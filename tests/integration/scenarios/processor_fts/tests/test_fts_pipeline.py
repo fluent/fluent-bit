@@ -153,6 +153,8 @@ def test_output_policy_isolated_across_routes_and_retries(tmp_path, filesystem, 
     blocked = {"value": replay}
 
     class Collector(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
         def do_POST(self):
             message = ExportLogsServiceRequest.FromString(self.rfile.read(int(self.headers["Content-Length"])))
             attempts.append(message)

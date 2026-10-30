@@ -485,7 +485,11 @@ static int is_file_included(struct local_ctx *ctx, const char *path)
     mk_list_foreach(head, &ctx->includes) {
         entry = mk_list_entry(head, struct flb_slist_entry, _head);
 
+#ifdef _WIN32
+        if (strcasecmp(entry->str, path) == 0) {
+#else
         if (strcmp(entry->str, path) == 0) {
+#endif
             return FLB_TRUE;
         }
     }
@@ -574,10 +578,27 @@ static int read_glob(struct flb_cf *conf, struct local_ctx *ctx,
     char *star, *p0, *p1;
     char pattern[MAX_PATH];
     char buf[MAX_PATH];
+    char full_path[MAX_PATH];
     int ret;
     struct stat st;
     HANDLE hnd;
     WIN32_FIND_DATA data;
+
+    if (state->file->path && path[0] != '/' && path[0] != '\\' &&
+        !(path[0] != '\0' && path[1] == ':')) {
+        ret = snprintf(buf, sizeof(buf), "%s\\%s", state->file->path, path);
+        if (ret < 0 || ret >= sizeof(buf)) {
+            return -1;
+        }
+        path = buf;
+    }
+
+    /* Resolve relative includes against the config directory and normalize
+     * forward slashes before splitting the Windows wildcard components. */
+    if (_fullpath(full_path, path, sizeof(full_path)) == NULL) {
+        return -1;
+    }
+    path = full_path;
 
     if (strlen(path) > MAX_PATH - 1) {
         return -1;
@@ -3131,6 +3152,9 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
     yaml_event_t event;
     FILE *fh;
     struct file_state fstate;
+#ifdef _WIN32
+    char *full_path;
+#endif
 
     path_is_absolute = cfg_file[0] == '/';
 #ifdef _WIN32
@@ -3179,6 +3203,21 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
             return -1;
         }
     }
+
+#ifdef _WIN32
+    /* Use the same absolute identity for direct and wildcard includes. */
+    full_path = realpath(include_dir, NULL);
+    if (full_path == NULL) {
+        flb_sds_destroy(include_dir);
+        return -1;
+    }
+    flb_sds_destroy(include_dir);
+    include_dir = flb_sds_create(full_path);
+    flb_free(full_path);
+    if (include_dir == NULL) {
+        return -1;
+    }
+#endif
 
     include_file = flb_sds_create(include_dir);
 

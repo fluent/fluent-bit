@@ -581,6 +581,14 @@ def _send_tls_payload(port, payload, cafile):
     with socket.create_connection(("127.0.0.1", port), timeout=20) as raw_sock:
         with context.wrap_socket(raw_sock, server_hostname="localhost") as tls_sock:
             tls_sock.sendall(payload)
+            # Complete TLS shutdown before closing the socket. In particular,
+            # Windows can reset a connection with unread TLS session tickets.
+            try:
+                tls_sock.unwrap().close()
+            except (ConnectionResetError, ssl.SSLEOFError):
+                # Pause tests deliberately make the server drop this connection;
+                # callers still verify ingestion or the expected pause state.
+                pass
 
 
 def _create_tls_memory_bio_client(port, cafile):
@@ -1442,6 +1450,7 @@ def test_in_forward_forced_input_tag_overrides_incoming_tag():
     assert records[0]["message"] == "forced-tag"
 
 
+@pytest.mark.skipif(not hasattr(socket, "AF_UNIX"), reason="Python requires Unix-domain socket support")
 def test_in_forward_unix_socket_message_mode():
     service = Service("in_forward_unix.yaml", use_unix_socket=True)
     service.start()
@@ -1462,6 +1471,7 @@ def test_in_forward_unix_socket_message_mode():
     assert records[0]["message"] == "unix-socket"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Unix socket permissions require POSIX")
 def test_in_forward_unix_socket_permissions():
     service = Service("in_forward_unix_perm.yaml", use_unix_socket=True)
     service.start()
@@ -1619,6 +1629,7 @@ def test_in_forward_downstream_coro_eof_and_error_keep_listener_responsive(
     assert records[0]["message"] == "after-io-errors"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Checks POSIX errno diagnostics; Windows uses Winsock errors")
 def test_in_forward_tls_syscall_error_preserves_errno():
     service = Service("in_forward_tls.yaml")
     service.start()
@@ -1865,12 +1876,9 @@ def test_in_forward_tls_idle_connection_timeout_churn(monkeypatch):
                     pass
 
         # The listener must still accept a fresh connection and ingest data
-        context = ssl.create_default_context(cafile=cafile)
-        context.check_hostname = False
-        context.verify_mode = ssl.CERT_NONE
-        raw = socket.create_connection(("127.0.0.1", port), timeout=5)
-        with context.wrap_socket(raw, server_hostname="localhost") as tls:
-            tls.sendall(_message_mode_payload(TEST_TAG, {"message": "after-churn"}))
+        _send_tls_payload(
+            port, _message_mode_payload(TEST_TAG, {"message": "after-churn"}), cafile
+        )
 
         records = service.wait_for_record_count(1, timeout=15)
     finally:
@@ -2142,7 +2150,8 @@ def test_out_forward_metrics_signal_e2e_with_forward_receiver():
     assert record_payload["metrics"][0]["values"][0]["value_int64"] == 42
 
 
-def test_in_forward_ingests_all_metrics_contexts_from_single_payload():
+@pytest.mark.parametrize("input_workers", [1, 2])
+def test_in_forward_ingests_all_metrics_contexts_from_single_payload(input_workers):
     expected_names = {"forward_metric_a", "forward_metric_b"}
     timeout = 30 if memory_check_enabled() else 10
     metrics_payload = b"".join(_forward_metric_contexts(expected_names))
@@ -2155,35 +2164,34 @@ def test_in_forward_ingests_all_metrics_contexts_from_single_payload():
     )
     payload = _pack_obj(["test", metrics_payload, {"fluent_signal": 1}])
 
-    for input_workers in (1, 2):
-        receiver = FluentBitTestService(
-            receiver_config,
-            extra_env={"FORWARD_INPUT_WORKERS": input_workers},
-        )
-        receiver.start()
-        try:
-            with socket.create_connection(
-                ("127.0.0.1", receiver.flb_listener_port), timeout=5
-            ) as sock:
-                sock.sendall(payload)
+    receiver = FluentBitTestService(
+        receiver_config,
+        extra_env={"FORWARD_INPUT_WORKERS": input_workers},
+    )
+    receiver.start()
+    try:
+        with socket.create_connection(
+            ("127.0.0.1", receiver.flb_listener_port), timeout=5
+        ) as sock:
+            sock.sendall(payload)
 
-            output = receiver.wait_for_condition(
-                lambda: read_file(receiver.flb.log_file)
-                if all(
-                    metric_name in read_file(receiver.flb.log_file)
-                    for metric_name in expected_names
-                )
-                else None,
-                timeout=timeout,
-                interval=0.2,
-                description=(
-                    f"both forwarded cmetrics contexts with {input_workers} workers"
-                ),
+        output = receiver.wait_for_condition(
+            lambda: read_file(receiver.flb.log_file)
+            if all(
+                metric_name in read_file(receiver.flb.log_file)
+                for metric_name in expected_names
             )
-        finally:
-            receiver.stop()
+            else None,
+            timeout=timeout,
+            interval=0.2,
+            description=(
+                f"both forwarded cmetrics contexts with {input_workers} workers"
+            ),
+        )
+    finally:
+        receiver.stop()
 
-        assert all(metric_name in output for metric_name in expected_names)
+    assert all(metric_name in output for metric_name in expected_names)
 
 
 def test_in_forward_metrics_payload_append_is_atomic():
