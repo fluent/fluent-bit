@@ -18,6 +18,7 @@
  */
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_pack.h>
@@ -28,6 +29,7 @@
 void pgsql_conf_destroy(struct flb_pgsql_config *ctx)
 {
     pgsql_destroy_connections(ctx);
+    pgsql_libpq_close(ctx);
 
     flb_free(ctx->db_hostname);
 
@@ -48,6 +50,8 @@ static int cb_pgsql_init(struct flb_output_instance *ins,
 {
 
     struct flb_pgsql_config *ctx;
+    struct mk_list *head;
+    struct flb_kv *kv;
     size_t str_len;
     PGresult *res;
     char *query = NULL;
@@ -65,6 +69,20 @@ static int cb_pgsql_init(struct flb_output_instance *ins,
     }
 
     ctx->ins = ins;
+    mk_list_init(&ctx->conn_queue);
+
+    /* Preserve explicit empty values, which property lookup normalizes to NULL. */
+    mk_list_foreach(head, &ins->properties) {
+        kv = mk_list_entry(head, struct flb_kv, _head);
+        if (strcasecmp(kv->key, "libpq_path") == 0) {
+            tmp = kv->val ? kv->val : "";
+            break;
+        }
+    }
+    if (pgsql_libpq_open(ctx, tmp) != 0) {
+        pgsql_conf_destroy(ctx);
+        return -1;
+    }
 
     /* Database host */
     ctx->db_hostname = flb_strdup(ins->host.name);
@@ -173,26 +191,26 @@ static int cb_pgsql_init(struct flb_output_instance *ins,
 
     ret = pgsql_start_connections(ctx);
     if (ret) {
+        pgsql_conf_destroy(ctx);
         return -1;
     }
 
     flb_plg_info(ctx->ins, "host=%s port=%s dbname=%s OK",
               ctx->db_hostname, ctx->db_port, ctx->db_name);
-    flb_output_set_context(ins, ctx);
 
-    temp = PQescapeIdentifier(ctx->conn_current->conn, ctx->db_table,
+    temp = ctx->pq.PQescapeIdentifier(ctx->conn_current->conn, ctx->db_table,
                               flb_sds_len(ctx->db_table));
 
     if (temp == NULL) {
         flb_plg_error(ctx->ins, "failed to parse table name: %s",
-                      PQerrorMessage(ctx->conn_current->conn));
+                      ctx->pq.PQerrorMessage(ctx->conn_current->conn));
         pgsql_conf_destroy(ctx);
         return -1;
     }
 
     flb_sds_destroy(ctx->db_table);
     ctx->db_table = flb_sds_create(temp);
-    PQfreemem(temp);
+    ctx->pq.PQfreemem(temp);
 
     if (!ctx->db_table) {
         flb_errno();
@@ -219,18 +237,20 @@ static int cb_pgsql_init(struct flb_output_instance *ins,
              "(tag varchar, time timestamp, data jsonb);",
              ctx->db_table);
     flb_plg_trace(ctx->ins, "%s", query);
-    res = PQexec(ctx->conn_current->conn, query);
+    res = ctx->pq.PQexec(ctx->conn_current->conn, query);
 
     flb_free(query);
 
-    if (PQresultStatus(res) != PGRES_COMMAND_OK) {
+    if (ctx->pq.PQresultStatus(res) != PGRES_COMMAND_OK) {
         flb_plg_error(ctx->ins, "%s",
-                      PQerrorMessage(ctx->conn_current->conn));
+                      ctx->pq.PQerrorMessage(ctx->conn_current->conn));
+        ctx->pq.PQclear(res);
         pgsql_conf_destroy(ctx);
         return -1;
     }
 
-    PQclear(res);
+    ctx->pq.PQclear(res);
+    flb_output_set_context(ins, ctx);
 
     return 0;
 }
@@ -262,8 +282,8 @@ static void cb_pgsql_flush(struct flb_event_chunk *event_chunk,
      * parameters previously used. This might be useful for error recovery
      * if a working connection is lost.
      */
-    if (PQstatus(ctx->conn_current->conn) != CONNECTION_OK) {
-        PQreset(ctx->conn_current->conn);
+    if (ctx->pq.PQstatus(ctx->conn_current->conn) != CONNECTION_OK) {
+        ctx->pq.PQreset(ctx->conn_current->conn);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
@@ -280,36 +300,36 @@ static void cb_pgsql_flush(struct flb_event_chunk *event_chunk,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    tmp = PQescapeLiteral(ctx->conn_current->conn, json, flb_sds_len(json));
+    tmp = ctx->pq.PQescapeLiteral(ctx->conn_current->conn, json, flb_sds_len(json));
     flb_sds_destroy(json);
     if (!tmp) {
         flb_errno();
-        PQfreemem(tmp);
+        ctx->pq.PQfreemem(tmp);
         flb_plg_error(ctx->ins, "Can't escape json string");
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
     json = flb_sds_create(tmp);
-    PQfreemem(tmp);
+    ctx->pq.PQfreemem(tmp);
     if (!json) {
         flb_errno();
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    tmp = PQescapeLiteral(ctx->conn_current->conn,
+    tmp = ctx->pq.PQescapeLiteral(ctx->conn_current->conn,
                           event_chunk->tag,
                           flb_sds_len(event_chunk->tag));
     if (!tmp) {
         flb_errno();
         flb_sds_destroy(json);
-        PQfreemem(tmp);
+        ctx->pq.PQfreemem(tmp);
         flb_plg_error(ctx->ins, "Can't escape tag string: %s",
                       event_chunk->tag);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
     tag_escaped = flb_sds_create(tmp);
-    PQfreemem(tmp);
+    ctx->pq.PQfreemem(tmp);
     if (!tag_escaped) {
         flb_errno();
         flb_sds_destroy(json);
@@ -336,32 +356,32 @@ static void cb_pgsql_flush(struct flb_event_chunk *event_chunk,
     flb_plg_trace(ctx->ins, "query: %s", query);
 
     if (ctx->async) {
-        send_res = PQsendQuery(ctx->conn_current->conn, query);
+        send_res = ctx->pq.PQsendQuery(ctx->conn_current->conn, query);
         flb_free(query);
         flb_sds_destroy(json);
         flb_sds_destroy(tag_escaped);
 
         if (send_res == 0) {
             flb_plg_error(ctx->ins, "%s",
-                          PQerrorMessage(ctx->conn_current->conn));
+                          ctx->pq.PQerrorMessage(ctx->conn_current->conn));
             FLB_OUTPUT_RETURN(FLB_RETRY);
         }
 
-        PQflush(ctx->conn_current->conn);
+        ctx->pq.PQflush(ctx->conn_current->conn);
     }
     else {
-        res = PQexec(ctx->conn_current->conn, query);
+        res = ctx->pq.PQexec(ctx->conn_current->conn, query);
         flb_free(query);
         flb_sds_destroy(json);
         flb_sds_destroy(tag_escaped);
 
-        if (PQresultStatus(res) != PGRES_COMMAND_OK) {
+        if (ctx->pq.PQresultStatus(res) != PGRES_COMMAND_OK) {
             flb_plg_error(ctx->ins, "%s",
-                          PQerrorMessage(ctx->conn_current->conn));
-            PQclear(res);
+                          ctx->pq.PQerrorMessage(ctx->conn_current->conn));
+            ctx->pq.PQclear(res);
             FLB_OUTPUT_RETURN(FLB_RETRY);
         }
-        PQclear(res);
+        ctx->pq.PQclear(res);
     }
 
     FLB_OUTPUT_RETURN(FLB_OK);
