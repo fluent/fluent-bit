@@ -205,12 +205,18 @@ void async_fn_http(struct flb_aws_provider *provider) {
 void upstream_set_fn_http(struct flb_aws_provider *provider,
                           struct flb_output_instance *ins) {
     struct flb_aws_provider_http *implementation = provider->implementation;
+    int use_tls;
 
     flb_debug("[aws_credentials] upstream_set called on the http provider");
-    /* Make sure TLS is set to false before setting upstream, then reset it */
+    /*
+     * The credentials endpoint is plain HTTP, so TLS is turned off while
+     * the upstream is set. Restore the output's own setting afterwards:
+     * forcing it to true would override a user's 'tls off'.
+     */
+    use_tls = ins->use_tls;
     ins->use_tls = FLB_FALSE;
     flb_output_upstream_set(implementation->client->upstream, ins);
-    ins->use_tls = FLB_TRUE;
+    ins->use_tls = use_tls;
 }
 
 void destroy_fn_http(struct flb_aws_provider *provider) {
