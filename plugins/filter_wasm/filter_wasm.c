@@ -318,6 +318,8 @@ static int cb_wasm_pre_run(struct flb_filter_instance *f_ins,
 {
     struct flb_filter_wasm *ctx = NULL;
     int ret = -1;
+    char path[PATH_MAX + 1];
+    const char *resolved;
 
     /* Allocate space for the configuration */
     ctx = flb_calloc(1, sizeof(struct flb_filter_wasm));
@@ -332,7 +334,9 @@ static int cb_wasm_pre_run(struct flb_filter_instance *f_ins,
     }
 
     /* Check accessibility for the wasm path */
-    ret = access(ctx->wasm_path, R_OK);
+    resolved = flb_utils_resolve_config_path(ctx->wasm_path, config->conf_path,
+                                             path, sizeof(path));
+    ret = resolved ? access(resolved, R_OK) : -1;
     if (ret != 0) {
         flb_plg_error(f_ins, "cannot access wasm program at %s", ctx->wasm_path);
         goto pre_run_error;
@@ -356,6 +360,8 @@ static int cb_wasm_init(struct flb_filter_instance *f_ins,
     struct flb_wasm_config *wasm_conf = NULL;
     int ret = -1;
     const char *tmp;
+    const char *resolved;
+    char path[PATH_MAX + 1];
     int event_format;
 
     /* Allocate space for the configuration */
@@ -407,7 +413,12 @@ static int cb_wasm_init(struct flb_filter_instance *f_ins,
     flb_filter_set_context(f_ins, ctx);
 
     /* Instantiate the WASM module once and store it in the context */
-    ctx->wasm = flb_wasm_instantiate(config, ctx->wasm_path,
+    resolved = flb_utils_resolve_config_path(ctx->wasm_path, config->conf_path,
+                                             path, sizeof(path));
+    if (!resolved) {
+        goto init_error;
+    }
+    ctx->wasm = flb_wasm_instantiate(config, resolved,
                                      ctx->accessible_dir_list,
                                      ctx->wasm_conf);
 

@@ -272,6 +272,31 @@ def test_script_file_and_default_callback(tmp_path):
         service.stop()
 
 
+def test_script_prefers_config_directory(tmp_path, monkeypatch):
+    working_dir = tmp_path / "working"
+    working_dir.mkdir()
+    (tmp_path / "policy.lua").write_text(
+        'function process(log) log.body:set("message", "config") end')
+    (working_dir / "policy.lua").write_text(
+        'function process(log) log.body:set("message", "working") end')
+    service = make_service(tmp_path, "unused")
+    config = tmp_path / "typed.yaml"
+    document = yaml.safe_load(config.read_text())
+    processor = document["pipeline"]["inputs"][0]["processors"]["logs"][0]
+    processor.pop("call")
+    processor.pop("code")
+    processor["script"] = "policy.lua"
+    config.write_text(yaml.safe_dump(document))
+
+    monkeypatch.chdir(working_dir)
+    try:
+        service.start()
+        output = service.wait_for_condition(lambda: records(service), timeout=30)
+        assert all(log["message"] == "config" for log in output)
+    finally:
+        service.stop()
+
+
 @pytest.mark.parametrize("signal", ["profiles"])
 def test_unsupported_signals_fail_startup(tmp_path, signal):
     service = make_service(tmp_path, "function process_log(log) end")

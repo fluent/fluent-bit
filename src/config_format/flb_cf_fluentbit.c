@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_compat.h>
+#include <fluent-bit/flb_utils.h>
 
 #include <monkey/mk_core.h>
 
@@ -438,26 +439,20 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
         return -1;
     }
 
-    /* Check if the path exists (relative cases for included files) */
 #ifndef FLB_HAVE_STATIC_CONF
     if (ctx->level >= 0) {
+        /* Keep the main file as supplied; resolve only included files. */
+        if (ctx->level > 0) {
+            cfg_file = (char *) flb_utils_resolve_config_path(cfg_file, ctx->root_path,
+                                                             tmp, sizeof(tmp));
+            if (!cfg_file) {
+                return -1;
+            }
+        }
         ret = stat(cfg_file, &st);
-        if (ret == -1 && errno == ENOENT) {
-            /* Try to resolve the real path (if exists) */
-            if (cfg_file[0] == '/') {
-                return -1;
-            }
-
-            if (ctx->root_path) {
-                snprintf(tmp, PATH_MAX, "%s/%s", ctx->root_path, cfg_file);
-                cfg_file = tmp;
-            }
-            /* stat again */
-            ret = stat(cfg_file, &st);
-            if (ret < 0) {
-                flb_errno();
-                return -1;
-            }
+        if (ret < 0) {
+            flb_errno();
+            return -1;
         }
 #ifndef _WIN32
         /* check if readed file */
