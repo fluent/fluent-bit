@@ -2283,6 +2283,74 @@ def test_expect_warn_validates_each_otlp_log_record_in_batch():
         assert log_text.count(f"key '{field_name}' not found") == 1
 
 
+def test_expect_warn_reports_all_missing_keys_on_single_record():
+    service = Service("expect_batch.yaml")
+    payload = {
+        "resourceLogs": [
+            {
+                "resource": {
+                    "attributes": [
+                        {
+                            "key": "service.name",
+                            "value": {"stringValue": "my-service"},
+                        }
+                    ]
+                },
+                "scopeLogs": [
+                    {
+                        "scope": {},
+                        "logRecords": [
+                            {
+                                "timeUnixNano": "1784797967000450100",
+                                "body": {
+                                    "kvlistValue": {
+                                        "values": [
+                                            {
+                                                "key": "field1",
+                                                "value": {"stringValue": "1"},
+                                            }
+                                        ]
+                                    }
+                                },
+                            }
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+
+    service.start()
+
+    try:
+        response = requests.post(
+            f"http://127.0.0.1:{service.flb_listener_port}/v1/logs",
+            json=payload,
+            timeout=5,
+        )
+        assert response.status_code == 201
+
+        log_text = service.service.wait_for_condition(
+            lambda: (
+                content
+                if content.count("expect check failed") >= 1
+                and content.count("key 'field2' not found") >= 1
+                and content.count("key 'field3' not found") >= 1
+                and content.count("key 'field4' not found") >= 1
+                else None
+            ) if (content := read_fluent_bit_log(service)) else None,
+            timeout=10,
+            interval=0.25,
+            description="all missing expect keys reported for one record",
+        )
+    finally:
+        service.stop()
+
+    assert log_text.count("expect check failed") == 1
+    for field_name in ("field2", "field3", "field4"):
+        assert log_text.count(f"key '{field_name}' not found") == 1
+
+
 def test_expect_result_key_preserves_otlp_log_groups():
     service = Service("expect_group_result_key.yaml")
     payload = read_json_file(
