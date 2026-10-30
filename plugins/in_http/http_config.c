@@ -37,6 +37,7 @@ struct flb_http *http_config_create(struct flb_input_instance *ins)
     ctx->ins = ins;
 
     ctx->oauth2_cfg.jwks_refresh_interval = 300;
+    ctx->oauth2_cfg.jwks_buffer_max_size = 1000000;
 
     /* Load the config map */
     ret = flb_input_config_map_set(ins, (void *) ctx);
