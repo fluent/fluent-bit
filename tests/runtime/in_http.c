@@ -419,10 +419,10 @@ static void test_ctx_destroy(struct test_ctx *ctx)
  * closes the connection and fails if that does not happen before the
  * timeout.
  */
-static int send_raw_http_request_ex(const char *request,
-                                    char *response,
-                                    size_t response_size,
-                                    int wait_for_close)
+static int send_raw_http_request_with_wait(const char *request,
+                                           char *response,
+                                           size_t response_size,
+                                           int wait_for_close)
 {
     struct sockaddr_in address;
     struct timeval timeout;
@@ -518,8 +518,8 @@ static int send_raw_http_request(const char *request,
                                  char *response,
                                  size_t response_size)
 {
-    return send_raw_http_request_ex(request, response, response_size,
-                                    FLB_FALSE);
+    return send_raw_http_request_with_wait(request, response, response_size,
+                                           FLB_FALSE);
 }
 
 static int send_empty_header_request(void)
@@ -594,8 +594,9 @@ static int send_malformed_request_expect_400(const char *request)
     int response_length;
 
     /* the server must answer and then close the connection */
-    response_length = send_raw_http_request_ex(request, response,
-                                               sizeof(response), FLB_TRUE);
+    response_length = send_raw_http_request_with_wait(request, response,
+                                                      sizeof(response),
+                                                      FLB_TRUE);
     if (response_length <= 0) {
         TEST_MSG("no response or no close for malformed request: %s", request);
         return -1;
