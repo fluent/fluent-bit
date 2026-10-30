@@ -235,8 +235,16 @@ def system_kind(name):
     return "fluent-bit"
 
 
-def fluent_config(input_port, metrics_port, modified, flush_seconds):
+def fluent_config(input_port, metrics_port, modified, flush_seconds, storage_dir):
     processor = ""
+    service_storage = ""
+    input_storage = ""
+    if storage_dir:
+        service_storage = f"""  storage.path: {storage_dir}
+  storage.sync: normal
+  storage.checksum: off
+"""
+        input_storage = "      storage.type: filesystem\n"
     if modified:
         processor = """      processors:
         logs:
@@ -253,7 +261,7 @@ def fluent_config(input_port, metrics_port, modified, flush_seconds):
   http_server: on
   http_listen: 127.0.0.1
   http_port: {metrics_port}
-pipeline:
+{service_storage}pipeline:
   inputs:
     - name: opentelemetry
       tag: benchmark
@@ -263,14 +271,25 @@ pipeline:
       tls: off
       threaded: true
       http_server.workers: 4
-{processor}  outputs:
+{input_storage}{processor}  outputs:
     - name: null
       match: '*'
 """
 
 
-def collector_config(input_port, metrics_port, modified, flush_seconds):
+def collector_config(input_port, metrics_port, modified, flush_seconds, storage_dir):
     processor_definition = ""
+    extension_definition = ""
+    queue_storage = ""
+    service_extensions = ""
+    if storage_dir:
+        extension_definition = f"""extensions:
+  file_storage:
+    directory: {storage_dir}
+
+"""
+        queue_storage = "      storage: file_storage\n"
+        service_extensions = "  extensions: [file_storage]\n"
     pipeline_processor = ""
     if modified:
         processor_definition = """processors:
@@ -289,21 +308,21 @@ def collector_config(input_port, metrics_port, modified, flush_seconds):
       http:
         endpoint: 127.0.0.1:{input_port}
 
-{processor_definition}exporters:
+{extension_definition}{processor_definition}exporters:
   null/fluent_bit:
     sending_queue:
       enabled: true
       num_consumers: 1
       queue_size: 1000000
       sizer: items
-      batch:
+{queue_storage}      batch:
         enabled: true
         flush_timeout: {flush_seconds}s
         min_size: 8192
         sizer: items
 
 service:
-  telemetry:
+{service_extensions}  telemetry:
     logs:
       level: error
     metrics:
@@ -443,13 +462,19 @@ def run_once(system, binary, encoding, pipeline, repetition, args, payload, pool
     kind = system_kind(system)
     is_fluent_bit = kind != "collector"
     metrics_function = fluent_metrics if is_fluent_bit else collector_metrics
-    if is_fluent_bit:
-        config_text = fluent_config(input_port, metrics_port, modified, args.flush_seconds)
-    else:
-        config_text = collector_config(input_port, metrics_port, modified, args.flush_seconds)
     content_type = "application/json" if encoding == "json" else "application/x-protobuf"
     quiet_busy = wait_quiet(args.server_cpu_set | args.generator_cpu_set)
-    with tempfile.TemporaryDirectory(prefix="otel-compare-") as directory:
+    with tempfile.TemporaryDirectory(prefix="otel-compare-", dir=args.work_dir) as directory:
+        storage_dir = ""
+        if args.storage == "filesystem":
+            storage_dir = str(Path(directory) / "storage")
+            os.mkdir(storage_dir)
+        if is_fluent_bit:
+            config_text = fluent_config(input_port, metrics_port, modified,
+                                        args.flush_seconds, storage_dir)
+        else:
+            config_text = collector_config(input_port, metrics_port, modified,
+                                           args.flush_seconds, storage_dir)
         config_path = Path(directory) / "config.yaml"
         log_path = Path(directory) / "server.log"
         config_path.write_text(config_text)
@@ -490,7 +515,9 @@ def run_once(system, binary, encoding, pipeline, repetition, args, payload, pool
                 completed_delta = final_metrics["completed"] - warmup_records
                 if accepted_delta != records or completed_delta != records:
                     raise RuntimeError(f"accounting mismatch: {final_metrics}")
-                if final_metrics["dropped"] or final_metrics["errors"]:
+                # A full Collector queue refuses requests, the clients resend them
+                # like Fluent Bit 429/503 answers; the accounting above proves no loss
+                if is_fluent_bit and (final_metrics["dropped"] or final_metrics["errors"]):
                     raise RuntimeError(f"loss/refusal counters are nonzero: {final_metrics}")
 
                 latencies = [latency for result in client_results for latency in result[0]]
@@ -651,6 +678,12 @@ def main():
     parser.add_argument("--window-high", type=float, default=0.90)
     parser.add_argument("--pipelines", default=",".join(PIPELINES))
     parser.add_argument("--encodings", default=",".join(ENCODINGS))
+    parser.add_argument("--storage", choices=("memory", "filesystem"), default="memory",
+                        help="buffer records in memory, or in filesystem chunks (Fluent Bit) "
+                             "and a persistent sending queue (Collector file_storage)")
+    parser.add_argument("--work-dir", type=Path, default=None,
+                        help="directory for configurations and filesystem storage "
+                             "(default: the system temporary directory)")
     args = parser.parse_args()
     divisor = args.batch_records * args.clients
     if args.records % divisor or args.warmup_records % divisor:
