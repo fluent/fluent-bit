@@ -187,7 +187,11 @@ int opentelemetry_process_logs_with_budget(struct flb_opentelemetry *ctx,
         }
         flb_opentelemetry_logs_protobuf_cfl_destroy(cfl_result);
         flb_opentelemetry_logs_json_cfl_destroy(json_cfl_result);
-        if (ret != 0) {
+        if (ret == FLB_INPUT_INGRESS_BUSY) {
+            /* the client retries once the ingress queue has room */
+            return FLB_INPUT_INGRESS_BUSY;
+        }
+        else if (ret != 0) {
             flb_plg_error(ctx->ins, "failed to append logs to the input buffer");
             return -1;
         }
