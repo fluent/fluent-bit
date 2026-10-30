@@ -74,6 +74,8 @@ IN_OPENTELEMETRY_WORKER_PROTOCOL_CONFIGS = {
 IN_OPENTELEMETRY_TINY_INGRESS_QUEUE_CONFIG = "otlp_http1_cleartext_workers_tiny_ingress_queue.yaml"
 IN_OPENTELEMETRY_TINY_INGRESS_QUEUE_BYTE_LIMIT_CONFIG = \
     "otlp_http1_cleartext_workers_tiny_ingress_queue_byte_limit.yaml"
+IN_OPENTELEMETRY_TINY_INGRESS_QUEUE_BYTE_LIMIT_PROCESSORS_CONFIG = \
+    "otlp_http1_cleartext_workers_tiny_ingress_queue_byte_limit_processors.yaml"
 
 IN_OPENTELEMETRY_OAUTH2_PROTOCOL_CONFIGS = {
     "http1_cleartext": "otlp_http1_cleartext_oauth2.yaml",
@@ -2147,8 +2149,16 @@ def test_in_opentelemetry_http_workers_respect_tiny_ingress_queue_limits():
     ) == 0
 
 
-def test_in_opentelemetry_http_workers_respect_ingress_queue_byte_limit():
-    service = Service(IN_OPENTELEMETRY_TINY_INGRESS_QUEUE_BYTE_LIMIT_CONFIG)
+@pytest.mark.parametrize(
+    "config_file",
+    [
+        IN_OPENTELEMETRY_TINY_INGRESS_QUEUE_BYTE_LIMIT_CONFIG,
+        IN_OPENTELEMETRY_TINY_INGRESS_QUEUE_BYTE_LIMIT_PROCESSORS_CONFIG,
+    ],
+    ids=["no_processors", "worker_processors"],
+)
+def test_in_opentelemetry_http_workers_respect_ingress_queue_byte_limit(config_file):
+    service = Service(config_file)
     small_payload = service.build_otel_payload("test_logs_001.in.json", "logs")
 
     small_request = ExportLogsServiceRequest()
@@ -2159,6 +2169,7 @@ def test_in_opentelemetry_http_workers_respect_ingress_queue_byte_limit():
     large_request.resource_logs.extend(small_request.resource_logs)
 
     large_payload = large_request.SerializeToString()
+    large_json_payload = json_format.MessageToJson(large_request).encode()
 
     assert len(small_payload) < len(large_payload)
 
@@ -2173,6 +2184,12 @@ def test_in_opentelemetry_http_workers_respect_ingress_queue_byte_limit():
     service.wait_for_signal_count("logs", logs_before + 1, timeout=10)
 
     failure_response = service.send_raw_request("/v1/logs", large_payload)
+    assert failure_response.status_code == 503
+    assert "deferred ingress queue is full" in failure_response.text
+
+    failure_response = service.send_raw_request(
+        "/v1/logs", large_json_payload, content_type="application/json"
+    )
     assert failure_response.status_code == 503
     assert "deferred ingress queue is full" in failure_response.text
 
