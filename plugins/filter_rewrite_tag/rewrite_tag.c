@@ -34,6 +34,8 @@
 
 #include "rewrite_tag.h"
 
+static void destroy_rules(struct flb_rewrite_tag *ctx);
+
 /* Create an emitter input instance */
 static int emitter_create(struct flb_rewrite_tag *ctx)
 {
@@ -216,7 +218,18 @@ static int cb_rewrite_tag_init(struct flb_filter_instance *ins,
     flb_sds_t tmp;
     flb_sds_t emitter_name = NULL;
     struct flb_rewrite_tag *ctx;
+    struct flb_processor_unit *processor_unit;
+    struct flb_processor *processor;
     (void) data;
+
+    if (ins->parent_processor != NULL) {
+        processor_unit = ins->parent_processor;
+        processor = processor_unit->parent;
+        if (processor->source_plugin_type != FLB_PLUGIN_INPUT) {
+            flb_plg_error(ins, "rewrite_tag only supports input processors");
+            return -1;
+        }
+    }
 
     /* Create context */
     ctx = flb_calloc(1, sizeof(struct flb_rewrite_tag));
@@ -250,8 +263,15 @@ static int cb_rewrite_tag_init(struct flb_filter_instance *ins,
             return -1;
         }
 
-        tmp = flb_sds_printf(&emitter_name, "emitter_for_%s",
-                             flb_filter_name(ins));
+        tmp = flb_sds_printf(&emitter_name, "emitter_for_%s", flb_filter_name(ins));
+        if (tmp != NULL && ins->parent_processor != NULL &&
+            flb_input_name_exists(tmp, config) == FLB_TRUE) {
+            /* Preserve existing metric names unless a processor name collides. */
+            flb_sds_len_set(emitter_name, 0);
+            tmp = flb_sds_printf(&emitter_name, "emitter_for_%s_%s_%zu",
+                                 ((struct flb_input_instance *) processor->data)->name,
+                                 flb_filter_name(ins), processor_unit->stage);
+        }
         if (!tmp) {
             flb_error("[filter rewrite_tag] cannot compose emitter_name");
             flb_sds_destroy(emitter_name);
@@ -292,13 +312,13 @@ static int cb_rewrite_tag_init(struct flb_filter_instance *ins,
     /* Process the configuration */
     ret = process_config(ctx);
     if (ret == -1) {
-        return -1;
+        goto error;
     }
 
     /* Create the emitter context */
     ret = emitter_create(ctx);
     if (ret == -1) {
-        return -1;
+        goto error;
     }
 
     /* Register a metric to count the number of emitted records */
@@ -314,6 +334,12 @@ static int cb_rewrite_tag_init(struct flb_filter_instance *ins,
 #endif
 
     return 0;
+
+error:
+    destroy_rules(ctx);
+    flb_filter_set_context(ins, NULL);
+    flb_free(ctx);
+    return -1;
 }
 
 static int ingest_inline(struct flb_rewrite_tag *ctx,
@@ -396,7 +422,9 @@ static int process_record(const char *tag, int tag_len, msgpack_object map,
     flb_regex_results_release(&result);
 
     /* Validate new outgoing tag */
-    if (!out_tag) {
+    if (out_tag == NULL || flb_sds_len(out_tag) == 0) {
+        flb_sds_destroy(out_tag);
+        *keep = FLB_TRUE;
         return FLB_FALSE;
     }
 

@@ -59,6 +59,7 @@ struct flb_emitter {
     struct mk_list i_ins_list;          /* instance list of linked/sending inputs */
     int cycle_reported;                 /* self-emission cycle already logged ? */
     int propagating;                    /* pause/resume propagation in progress */
+    int ingesting;                      /* currently publishing a pending chunk */
     int owner_flush_enabled;             /* owner supports lossless shutdown flush */
     int shutdown_flush_done;            /* owner shutdown hook already invoked */
     int shutdown_flush_active;          /* owner shutdown hook is emitting */
@@ -66,8 +67,7 @@ struct flb_emitter {
 
 static inline int shutdown_flush_enabled(struct flb_emitter *ctx)
 {
-    if (ctx->ins->config->is_shutting_down == FLB_TRUE &&
-        ctx->owner_flush_enabled == FLB_TRUE) {
+    if (ctx->ins->config->is_shutting_down == FLB_TRUE) {
         return FLB_TRUE;
     }
 
@@ -163,10 +163,12 @@ int static do_in_emitter_add_record(struct em_chunk *ec,
     }
 
     /* Associate this backlog chunk to this instance into the engine */
+    ctx->ingesting = FLB_TRUE;
     ret = flb_input_log_append(in,
                                ec->tag, flb_sds_len(ec->tag),
                                ec->mp_sbuf.data,
                                ec->mp_sbuf.size);
+    ctx->ingesting = FLB_FALSE;
     if (ret == -1) {
         flb_plg_error(ctx->ins, "error registering chunk with tag: %s", ec->tag);
         /* Release the echunk */
@@ -206,7 +208,7 @@ int in_emitter_add_record(const char *tag, int tag_len,
      * same instance until the stack is exhausted, and the emission itself is an
      * endless tag rewrite cycle.
      */
-    if (i_ins == ctx->ins) {
+    if (i_ins == ctx->ins || ctx->ingesting == FLB_TRUE) {
         if (ctx->cycle_reported == FLB_FALSE) {
             ctx->cycle_reported = FLB_TRUE;
             flb_plg_error(ctx->ins,
@@ -233,7 +235,7 @@ int in_emitter_add_record(const char *tag, int tag_len,
         i_ref = flb_malloc(sizeof(struct input_ref));
         if (!i_ref) {
             flb_errno();
-            return FLB_FILTER_NOTOUCH;
+            return -1;
         }
         i_ref->i_ins = i_ins;
         mk_list_add(&i_ref->_head, &ctx->i_ins_list);
@@ -325,6 +327,10 @@ int in_emitter_add_record(const char *tag, int tag_len,
     }
 
     ctx->pending_bytes += buf_size;
+    /* A downstream emitter may already have received its shutdown pause. */
+    if (shutdown_flush_enabled(ctx) == FLB_TRUE && ctx->shutdown_flush_done == FLB_TRUE) {
+        return do_in_emitter_add_record(ec, in);
+    }
     return 0;
 }
 
@@ -428,9 +434,10 @@ static int cb_emitter_init(struct flb_input_instance *in,
     mk_list_init(&ctx->i_ins_list);
 
     callbacks = (struct flb_emitter_callbacks *) in->data;
+    /* Pending records must be published before ingestion stops at shutdown. */
+    in->flags |= FLB_INPUT_SHUTDOWN_FLUSH;
     if (callbacks != NULL && callbacks->pause != NULL) {
         ctx->owner_flush_enabled = FLB_TRUE;
-        in->flags |= FLB_INPUT_SHUTDOWN_FLUSH;
     }
 
 
@@ -507,24 +514,21 @@ static void cb_emitter_pause(void *data, struct flb_config *config)
     ctx->propagating = FLB_TRUE;
 
     if (shutdown_flush_enabled(ctx) == FLB_TRUE &&
-        ctx->shutdown_flush_done == FLB_FALSE &&
-        ctx->ins->data != NULL) {
+        ctx->shutdown_flush_done == FLB_FALSE) {
         callbacks = (struct flb_emitter_callbacks *) ctx->ins->data;
         ctx->shutdown_flush_done = FLB_TRUE;
 
-        if (callbacks->pause != NULL) {
-            /* Publish any records already waiting in a threaded emitter. */
-            if (ctx->msgs != NULL) {
-                in_emitter_ingest_ring_buffer(ctx->ins, config, ctx);
-            }
+        /* Publish queued records even when this emitter has no owner hook. */
+        if (ctx->msgs != NULL) {
+            in_emitter_ingest_ring_buffer(ctx->ins, config, ctx);
+        }
 
+        if (callbacks != NULL && callbacks->pause != NULL) {
             ctx->shutdown_flush_active = FLB_TRUE;
             callbacks->pause(callbacks->data, config);
             ctx->shutdown_flush_active = FLB_FALSE;
-
-            /* Convert owner-emitted records into input chunks before pausing. */
-            cb_queue_chunks(ctx->ins, config, ctx);
         }
+        cb_queue_chunks(ctx->ins, config, ctx);
     }
 
     /* Pause all known senders */
