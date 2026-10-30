@@ -737,6 +737,7 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
             flb_bigquery_conf_destroy(ctx);
             return -1;
         }
+        flb_tls_set_verify_hostname(ctx->aws_tls, ins->tls_verify_hostname);
 
         ctx->aws_provider = flb_standard_chain_provider_create(config,
                                                                ctx->aws_tls,
@@ -776,6 +777,7 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
             flb_bigquery_conf_destroy(ctx);
             return -1;
         }
+        flb_tls_set_verify_hostname(ctx->aws_sts_tls, ins->tls_verify_hostname);
 
         ctx->aws_sts_upstream = flb_upstream_create(config,
                                                     ctx->aws_sts_endpoint,
@@ -807,6 +809,7 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
             flb_bigquery_conf_destroy(ctx);
             return -1;
         }
+        flb_tls_set_verify_hostname(ctx->google_sts_tls, ins->tls_verify_hostname);
 
         ctx->google_sts_upstream = flb_upstream_create_url(config,
                                                            FLB_BIGQUERY_GOOGLE_STS_URL,
@@ -835,6 +838,7 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
             flb_bigquery_conf_destroy(ctx);
             return -1;
         }
+        flb_tls_set_verify_hostname(ctx->google_iam_tls, ins->tls_verify_hostname);
 
         ctx->google_iam_upstream = flb_upstream_create_url(config,
                                                            FLB_BIGQUERY_GOOGLE_IAM_URL,
@@ -854,7 +858,7 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
     }
 
     /* Create oauth2 context */
-    ctx->o = flb_oauth2_create(ctx->config, FLB_BIGQUERY_AUTH_URL, 3000);
+    ctx->o = flb_oauth2_create(ins, FLB_BIGQUERY_AUTH_URL, 3000);
     if (!ctx->o) {
         flb_plg_error(ctx->ins, "cannot create oauth2 context");
         return -1;
