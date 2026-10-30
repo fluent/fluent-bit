@@ -413,9 +413,16 @@ static void test_ctx_destroy(struct test_ctx *ctx)
     flb_free(ctx);
 }
 
-static int send_raw_http_request(const char *request,
-                                 char *response,
-                                 size_t response_size)
+/*
+ * Send a raw request and read the reply. When wait_for_close is zero the
+ * read stops at the first CRLF; otherwise it keeps reading until the peer
+ * closes the connection and fails if that does not happen before the
+ * timeout.
+ */
+static int send_raw_http_request_with_wait(const char *request,
+                                           char *response,
+                                           size_t response_size,
+                                           int wait_for_close)
 {
     struct sockaddr_in address;
     struct timeval timeout;
@@ -427,6 +434,7 @@ static int send_raw_http_request(const char *request,
     int written;
     int received;
     int response_length;
+    int peer_closed = FLB_FALSE;
 
     if (response_size < 2) {
         return -1;
@@ -481,12 +489,13 @@ static int send_raw_http_request(const char *request,
                         (int) response_size - 1 - response_length,
                         0);
         if (received <= 0) {
+            peer_closed = FLB_TRUE;
             break;
         }
 
         response_length += received;
         response[response_length] = '\0';
-        if (strstr(response, "\r\n") != NULL) {
+        if (!wait_for_close && strstr(response, "\r\n") != NULL) {
             break;
         }
     }
@@ -494,11 +503,23 @@ static int send_raw_http_request(const char *request,
     flb_socket_close(fd);
     response[response_length] = '\0';
 
+    if (wait_for_close && !peer_closed) {
+        return -1;
+    }
+
     if (response_length > 0 && strstr(response, "\r\n") == NULL) {
         return -1;
     }
 
     return response_length;
+}
+
+static int send_raw_http_request(const char *request,
+                                 char *response,
+                                 size_t response_size)
+{
+    return send_raw_http_request_with_wait(request, response, response_size,
+                                           FLB_FALSE);
 }
 
 static int send_empty_header_request(void)
@@ -563,6 +584,40 @@ static int send_invalid_header_request(void)
     }
 
     return strstr(response, "HTTP/1.1 4") != NULL ? 0 : -1;
+}
+
+static int send_malformed_request_expect_400(const char *request)
+{
+    char response[256];
+    char *header_end;
+    char *connection;
+    int response_length;
+
+    /* the server must answer and then close the connection */
+    response_length = send_raw_http_request_with_wait(request, response,
+                                                      sizeof(response),
+                                                      FLB_TRUE);
+    if (response_length <= 0) {
+        TEST_MSG("no response or no close for malformed request: %s", request);
+        return -1;
+    }
+
+    if (strncmp(response, "HTTP/1.1 400", 12) != 0) {
+        TEST_MSG("expected 400 for malformed request, got: %s", response);
+        return -1;
+    }
+
+    /* Connection: close must be part of the header section */
+    header_end = strstr(response, "\r\n\r\n");
+    connection = strstr(response, "\r\nConnection: close\r\n");
+    if (header_end == NULL || connection == NULL || connection >= header_end) {
+        TEST_MSG("expected Connection: close and a complete header section "
+                 "for malformed request, got: %s",
+                 response);
+        return -1;
+    }
+
+    return 0;
 }
 
 void flb_test_http(void)
@@ -645,6 +700,81 @@ void flb_test_http(void)
     flb_upstream_conn_release(ctx->httpc->u_conn);
     test_ctx_destroy(ctx);
 }
+void flb_test_http_malformed_request_400(void)
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    char request[4096];
+    size_t offset;
+    int ret;
+    int i;
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = "\"test\":\"msg\"";
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Unsupported protocol version */
+    TEST_CHECK(send_malformed_request_expect_400(
+                   "GET / HTTP/9.9\r\n"
+                   "Host: 127.0.0.1\r\n"
+                   "\r\n") == 0);
+
+    /* Missing protocol version */
+    TEST_CHECK(send_malformed_request_expect_400(
+                   "GET /\r\n"
+                   "Host: 127.0.0.1\r\n"
+                   "\r\n") == 0);
+
+    /* Bare LF line endings */
+    TEST_CHECK(send_malformed_request_expect_400(
+                   "GET / HTTP/1.1\n"
+                   "Host: 127.0.0.1\n"
+                   "\n") == 0);
+
+    /* Header line without a colon */
+    TEST_CHECK(send_malformed_request_expect_400(
+                   "GET / HTTP/1.1\r\n"
+                   "Host: 127.0.0.1\r\n"
+                   "BadHeader\r\n"
+                   "\r\n") == 0);
+
+    /* More unknown headers than the parser can track */
+    offset = (size_t) snprintf(request, sizeof(request),
+                               "POST / HTTP/1.1\r\n"
+                               "Host: 127.0.0.1\r\n"
+                               "Content-Type: application/json\r\n");
+    for (i = 0; i <= 50; i++) {
+        offset += (size_t) snprintf(request + offset, sizeof(request) - offset,
+                                    "X-H%d: v\r\n", i);
+    }
+    snprintf(request + offset, sizeof(request) - offset,
+             "Content-Length: 14\r\n"
+             "\r\n"
+             "{\"test\":\"msg\"}");
+    TEST_CHECK(send_malformed_request_expect_400(request) == 0);
+
+    flb_time_msleep(1500);
+    TEST_CHECK(get_output_num() == 0);
+
+    test_ctx_destroy(ctx);
+}
+
 void flb_test_http_successful_response_code(char *response_code)
 {
     struct flb_lib_out_cb cb_data;
@@ -1303,6 +1433,7 @@ void flb_test_http_remote_addr_array(void)
 
 TEST_LIST = {
     {"http", flb_test_http},
+    {"malformed_request_400", flb_test_http_malformed_request_400},
     {"successful_response_code_200", flb_test_http_successful_response_code_200},
     {"successful_response_code_204", flb_test_http_successful_response_code_204},
     {"failure_response_code_400_bad_json", flb_test_http_failure_400_bad_json},

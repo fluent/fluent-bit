@@ -567,10 +567,13 @@ int flb_http1_server_session_ingest(struct flb_http1_server_session *session,
          */
     }
     else if (result == MK_HTTP_PARSER_ERROR) {
-        /* The caller closes the session when a parser error is returned. */
+        /*
+         * The caller answers with 400 Bad Request and closes the session
+         * when a malformed request is reported.
+         */
         session->stream.status = HTTP_STREAM_STATUS_ERROR;
 
-        return HTTP_SERVER_PROVIDER_ERROR;
+        return HTTP_SERVER_BAD_REQUEST;
     }
 
     dummy_mk_http_request_init(&session->inner_session, &session->inner_request);
