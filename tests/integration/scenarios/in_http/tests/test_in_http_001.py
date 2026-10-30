@@ -10,7 +10,7 @@ import time
 import pytest
 import requests
 
-from server.http_server import data_storage, http_server_run
+from server.http_server import MOCK_JWKS_BODY, app, data_storage, http_server_run
 from utils.http_matrix import PROTOCOL_CASES, run_curl_request
 from utils.oauth2 import duplicate_header_token, duplicate_jwks_body, track_jwks_requests
 from utils.input_pause_resume import (
@@ -752,6 +752,99 @@ def test_in_http_oauth2_accepts_valid_jwt():
     assert result["status_code"] == 201
     assert len(forwarded_payloads) == 1
     assert forwarded_payloads[0][0]["message"] == "Este es un mensaje de prueba"
+
+
+@pytest.mark.parametrize(
+    "config_file, certificate_size, expected_status",
+    [
+        ("in_http_oauth2.yaml", 6000, 201),
+        ("in_http_oauth2_jwks_8k.yaml", 6000, 201),
+        ("in_http_oauth2_jwks_8k.yaml", 12000, 401),
+    ],
+)
+def test_in_http_oauth2_jwks_response_limit(monkeypatch, config_file, certificate_size,
+                                           expected_status):
+    jwks_body = {"keys": [{**MOCK_JWKS_BODY["keys"][0], "x5c": ["A" * certificate_size]}]}
+    jwks_requests = track_jwks_requests(monkeypatch, json.dumps(jwks_body))
+    service = Service(config_file)
+    service.start()
+    try:
+        result = run_curl_request(
+            f"http://localhost:{service.flb_listener_port}/",
+            create_payload("sample_data.json"),
+            headers=["Content-Type: application/json", f"Authorization: Bearer {MOCK_VALID_JWT}"],
+            http_mode="http1.1",
+        )
+        assert result["status_code"] == expected_status
+        assert jwks_requests
+        if expected_status == 201:
+            assert len(service.read_forwarded_payloads()) == 1
+        else:
+            assert data_storage["payloads"] == []
+    finally:
+        service.stop()
+
+    if expected_status == 401:
+        assert "JWKS HTTP response exceeded oauth2.jwks_buffer_max_size=8000 bytes" in (
+            read_fluent_bit_log(service.service)
+        )
+
+
+@pytest.mark.parametrize("response_size, expected_status", [(7999, 201), (8000, 201), (8001, 401)])
+def test_in_http_oauth2_jwks_response_limit_boundary(monkeypatch, response_size, expected_status):
+    jwks_body = [""]
+    jwks_requests = []
+
+    def jwks():
+        jwks_requests.append(True)
+        return jwks_body[0], 200, {"Content-Type": "application/json"}
+
+    def get_raw_jwks(port):
+        response = bytearray()
+        with socket.create_connection(("127.0.0.1", port), timeout=3) as conn:
+            conn.sendall(b"GET /jwks HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+            while True:
+                part = conn.recv(16384)
+                if not part:
+                    break
+                response.extend(part)
+        return bytes(response)
+
+    monkeypatch.setitem(app.view_functions, "jwks", jwks)
+    service = Service("in_http_oauth2_jwks_8k.yaml")
+    service.start()
+    try:
+        key = {**MOCK_JWKS_BODY["keys"][0], "x5c": [""]}
+        jwks_body[0] = json.dumps({"keys": [key]})
+        raw_response = get_raw_jwks(service.test_suite_http_port)
+        padding = response_size - len(raw_response)
+        key["x5c"][0] = "A" * padding
+        jwks_body[0] = json.dumps({"keys": [key]})
+        raw_response = get_raw_jwks(service.test_suite_http_port)
+        padding += response_size - len(raw_response)
+        key["x5c"][0] = "A" * padding
+        jwks_body[0] = json.dumps({"keys": [key]})
+        assert len(get_raw_jwks(service.test_suite_http_port)) == response_size
+
+        result = run_curl_request(
+            f"http://localhost:{service.flb_listener_port}/",
+            create_payload("sample_data.json"),
+            headers=["Content-Type: application/json", f"Authorization: Bearer {MOCK_VALID_JWT}"],
+            http_mode="http1.1",
+        )
+        assert result["status_code"] == expected_status
+        assert len(jwks_requests) >= 4
+        if expected_status == 201:
+            assert len(service.read_forwarded_payloads()) == 1
+        else:
+            assert data_storage["payloads"] == []
+    finally:
+        service.stop()
+
+    if expected_status == 401:
+        assert "JWKS HTTP response exceeded oauth2.jwks_buffer_max_size=8000 bytes" in (
+            read_fluent_bit_log(service.service)
+        )
 
 
 @pytest.mark.parametrize("field", ["kid", "alg"])
