@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 class Service:
-    def __init__(self, config_file):
+    def __init__(self, config_file, extra_env=None):
         self.config_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "../config", config_file))
         cert_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../in_splunk/certificate"))
         self.tls_crt_file = os.path.join(cert_dir, "certificate.pem")
@@ -28,6 +28,7 @@ class Service:
             extra_env={
                 "CERTIFICATE_TEST": self.tls_crt_file,
                 "PRIVATE_KEY_TEST": self.tls_key_file,
+                **(extra_env or {}),
             },
             pre_start=self._start_receiver,
             post_stop=self._stop_receiver,
@@ -154,3 +155,45 @@ def test_out_azure_logs_ingestion_legacy_oauth2_and_payload_format():
     assert payload[0]["source"] == "dummy"
     assert payload[0]["level"] == "info"
     assert isinstance(payload[0]["@timestamp"], (int, float))
+
+
+def test_out_azure_logs_ingestion_splits_payloads_over_1mib():
+    # 500 records of about 3 KB serialize to about 1.5 MiB, above the 1 MiB
+    # limit of the Logs Ingestion API, so the chunk must go out in several
+    # requests that are each under the limit.
+    message = "x" * 3000
+    service = Service(
+        "out_azure_logs_ingestion_large_chunk.yaml",
+        extra_env={"LARGE_MESSAGE": message},
+    )
+    service.start()
+    configure_http_response(status_code=200, body={"status": "received"})
+    configure_oauth_token_response(
+        status_code=200,
+        body={"access_token": "oauth-access-token", "token_type": "Bearer", "expires_in": 300},
+    )
+
+    data_path = "/dataCollectionRules/dcr-suite/streams/Custom-suite_CL"
+
+    def data_requests():
+        return [request for request in data_storage["requests"] if request["path"] == data_path]
+
+    def all_records_received():
+        requests_seen = data_requests()
+        if sum(len(request["json"]) for request in requests_seen) >= 500:
+            return requests_seen
+        return None
+
+    requests_seen = service.service.wait_for_condition(
+        all_records_received,
+        timeout=20,
+        interval=0.5,
+        description="500 records split over several requests",
+    )
+    service.stop()
+
+    assert len(requests_seen) >= 2
+    for request in requests_seen:
+        assert len(request["raw_data"].encode("utf-8")) <= 1024 * 1024
+        assert all(record["message"] == message for record in request["json"])
+    assert sum(len(request["json"]) for request in requests_seen) == 500
