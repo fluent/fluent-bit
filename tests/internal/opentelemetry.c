@@ -2060,6 +2060,7 @@ void test_opentelemetry_protobuf_cfl_parity_corpus()
     size_t limit;
     size_t record_count;
     uint32_t length;
+    unsigned char prefix[4];
     FILE *file;
     struct flb_log_event_encoder enc;
     struct flb_opentelemetry_logs_decode_options options;
@@ -2076,7 +2077,9 @@ void test_opentelemetry_protobuf_cfl_parity_corpus()
     count = 0;
 
     /* each request is prefixed by its little-endian 32-bit length */
-    while (fread(&length, sizeof(length), 1, file) == 1) {
+    while (fread(prefix, sizeof(prefix), 1, file) == 1) {
+        length = (uint32_t) prefix[0] | ((uint32_t) prefix[1] << 8) |
+                 ((uint32_t) prefix[2] << 16) | ((uint32_t) prefix[3] << 24);
         payload = flb_malloc(length + 1);
         TEST_CHECK(payload != NULL);
         if (payload == NULL || fread(payload, 1, length, file) != length) {
