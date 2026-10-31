@@ -28,7 +28,7 @@ def exported_records(log_file):
 
 @pytest.mark.parametrize("reverse", [False, True])
 @pytest.mark.parametrize("mode", ["split", "same", "keep", "unmatched"])
-@pytest.mark.parametrize("placement", ["filter", "processor"])
+@pytest.mark.parametrize("placement", ["filter", "processor", "batched"])
 @pytest.mark.parametrize("profile", ["memory", "filesystem", "threaded-filesystem"])
 def test_rewrite_tag_preserves_group_context(tmp_path, reverse, mode, placement, profile):
     messages = [
@@ -97,6 +97,8 @@ def test_rewrite_tag_preserves_group_context(tmp_path, reverse, mode, placement,
     if placement != "filter":
         rewrite = config["pipeline"].pop("filters")[0]
         rewrite.pop("match")
+        if placement == "batched":
+            rewrite["batch_size"] = 256
         for input_config in config["pipeline"]["inputs"]:
             input_config.setdefault("processors", {}).setdefault("logs", []).append(
                 copy.deepcopy(rewrite)
