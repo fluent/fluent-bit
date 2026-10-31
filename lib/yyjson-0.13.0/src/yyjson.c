@@ -4700,7 +4700,9 @@ read_double:
  *============================================================================*/
 
 /** Read unicode escape sequence. */
-static_inline bool read_uni_esc(u8 **src_ptr, u8 **dst_ptr, const char **msg) {
+static_inline bool read_uni_esc(u8 **src_ptr, u8 **dst_ptr,
+                                const char **msg, yyjson_read_flag flg,
+                                bool *unierr) {
 #define return_err(_end, _msg) *msg = _msg; *src_ptr = _end; return false
 
     u8 *src = *src_ptr;
@@ -4710,6 +4712,22 @@ static_inline bool read_uni_esc(u8 **src_ptr, u8 **dst_ptr, const char **msg) {
 
     src += 2; /* skip `\u` */
     if (unlikely(!hex_load_4(src, &hi))) {
+        if (has_rflag(flg, YYJSON_READ_REPLACE_INVALID_UNICODE, 1)) {
+            usize cnt = 0, i;
+            u8 ch;
+            while (cnt < 4 && char_is_hex(src[cnt])) cnt++;
+            ch = src[cnt];
+            dst[0] = '\\';
+            dst[1] = 'u';
+            for (i = 0; i < cnt; i++) dst[2 + i] = src[i];
+            dst += 2 + cnt;
+            src += cnt;
+            if (ch && ch != '"' && ch != '\'') src++;
+            *src_ptr = src;
+            *dst_ptr = dst;
+            if (unierr) *unierr = true;
+            return true;
+        }
         return_err(src - 2, "invalid escaped sequence in string");
     }
     src += 4; /* skip hex */
@@ -4725,18 +4743,89 @@ static_inline bool read_uni_esc(u8 **src_ptr, u8 **dst_ptr, const char **msg) {
         } else {
             *dst++ = (u8)hi;
         }
-    } else {
+    } else if ((hi & 0xFC00) == 0xD800) {
         /* a non-BMP character, represented as a surrogate pair */
-        if (unlikely((hi & 0xFC00) != 0xD800)) {
-            return_err(src - 6, "invalid high surrogate in string");
-        }
         if (unlikely(!byte_match_2(src, "\\u"))) {
+            if (has_rflag(flg, YYJSON_READ_REPLACE_INVALID_UNICODE, 1)) {
+                *dst++ = 0xEF; *dst++ = 0xBF; *dst++ = 0xBD;
+                *src_ptr = src;
+                *dst_ptr = dst;
+                if (unierr) *unierr = true;
+                return true;
+            }
+            if (has_allow(INVALID_SURROGATE)) {
+                if (hi >= 0x800) {
+                    *dst++ = (u8)(0xE0 | (hi >> 12));
+                    *dst++ = (u8)(0x80 | ((hi >> 6) & 0x3F));
+                    *dst++ = (u8)(0x80 | (hi & 0x3F));
+                } else if (hi >= 0x80) {
+                    *dst++ = (u8)(0xC0 | (hi >> 6));
+                    *dst++ = (u8)(0x80 | (hi & 0x3F));
+                } else {
+                    *dst++ = (u8)hi;
+                }
+                *src_ptr = src;
+                *dst_ptr = dst;
+                if (unierr) *unierr = true;
+                return true;
+            }
             return_err(src - 6, "no low surrogate in string");
         }
         if (unlikely(!hex_load_4(src + 2, &lo))) {
+            if (has_rflag(flg, YYJSON_READ_REPLACE_INVALID_UNICODE, 1)) {
+                usize cnt = 0;
+                src += 2; /* skip \u */
+                while (cnt < 4 && char_is_hex(src[cnt])) cnt++;
+                src += cnt;
+                *dst++ = 0xEF; *dst++ = 0xBF; *dst++ = 0xBD;
+                *src_ptr = src;
+                *dst_ptr = dst;
+                if (unierr) *unierr = true;
+                return true;
+            }
+            if (has_allow(INVALID_SURROGATE)) {
+                if (hi >= 0x800) {
+                    *dst++ = (u8)(0xE0 | (hi >> 12));
+                    *dst++ = (u8)(0x80 | ((hi >> 6) & 0x3F));
+                    *dst++ = (u8)(0x80 | (hi & 0x3F));
+                } else if (hi >= 0x80) {
+                    *dst++ = (u8)(0xC0 | (hi >> 6));
+                    *dst++ = (u8)(0x80 | (hi & 0x3F));
+                } else {
+                    *dst++ = (u8)hi;
+                }
+                *src_ptr = src;
+                *dst_ptr = dst;
+                if (unierr) *unierr = true;
+                return true;
+            }
             return_err(src - 6, "invalid escape in string");
         }
         if (unlikely((lo & 0xFC00) != 0xDC00)) {
+            if (has_rflag(flg, YYJSON_READ_REPLACE_INVALID_UNICODE, 1)) {
+                src += 6;
+                *dst++ = 0xEF; *dst++ = 0xBF; *dst++ = 0xBD;
+                *src_ptr = src;
+                *dst_ptr = dst;
+                if (unierr) *unierr = true;
+                return true;
+            }
+            if (has_allow(INVALID_SURROGATE)) {
+                if (hi >= 0x800) {
+                    *dst++ = (u8)(0xE0 | (hi >> 12));
+                    *dst++ = (u8)(0x80 | ((hi >> 6) & 0x3F));
+                    *dst++ = (u8)(0x80 | (hi & 0x3F));
+                } else if (hi >= 0x80) {
+                    *dst++ = (u8)(0xC0 | (hi >> 6));
+                    *dst++ = (u8)(0x80 | (hi & 0x3F));
+                } else {
+                    *dst++ = (u8)hi;
+                }
+                *src_ptr = src;
+                *dst_ptr = dst;
+                if (unierr) *unierr = true;
+                return true;
+            }
             return_err(src - 6, "invalid low surrogate in string");
         }
         uni = ((((u32)hi - 0xD800) << 10) |
@@ -4746,6 +4835,28 @@ static_inline bool read_uni_esc(u8 **src_ptr, u8 **dst_ptr, const char **msg) {
         *dst++ = (u8)(0x80 | ((uni >> 6) & 0x3F));
         *dst++ = (u8)(0x80 | (uni & 0x3F));
         src += 6;
+    } else { /* low surrogate without preceding high surrogate */
+        if (has_rflag(flg, YYJSON_READ_REPLACE_INVALID_UNICODE, 1)) {
+            *dst++ = 0xEF; *dst++ = 0xBF; *dst++ = 0xBD;
+            *src_ptr = src;
+            *dst_ptr = dst;
+            if (unierr) *unierr = true;
+            return true;
+        }
+        if (!has_allow(INVALID_SURROGATE)) {
+            return_err(src - 6, "invalid low surrogate in string");
+        }
+        if (hi >= 0x800) {
+            *dst++ = (u8)(0xE0 | (hi >> 12));
+            *dst++ = (u8)(0x80 | ((hi >> 6) & 0x3F));
+            *dst++ = (u8)(0x80 | (hi & 0x3F));
+        } else if (hi >= 0x80) {
+            *dst++ = (u8)(0xC0 | (hi >> 6));
+            *dst++ = (u8)(0x80 | (hi & 0x3F));
+        } else {
+            *dst++ = (u8)hi;
+        }
+        if (unierr) *unierr = true;
     }
     *src_ptr = src;
     *dst_ptr = dst;
@@ -4786,6 +4897,7 @@ static_inline bool read_str_opt(u8 quo, u8 **ptr, u8 *eof, yyjson_read_flag flg,
     u8 **end = ptr;
     u8 *src = hdr, *dst = NULL, *pos;
     u32 uni, tmp;
+    bool unierr = false;
 
     /* Resume incremental parsing. */
     if (con && unlikely(con[0])) {
@@ -4848,7 +4960,8 @@ skip_ascii_end:
     gcc_store_barrier(*src);
     if (likely(*src == quo)) {
         val->tag = ((u64)(src - hdr) << YYJSON_TAG_BIT) | YYJSON_TYPE_STR |
-                        (quo == '"' ? YYJSON_SUBTYPE_NOESC : 0);
+                        (unierr ? YYJSON_SUBTYPE_UNIERR :
+                                   (quo == '"' ? YYJSON_SUBTYPE_NOESC : 0));
         val->uni.str = (const char *)hdr;
         *src = '\0';
         *end = src + 1;
@@ -4897,8 +5010,13 @@ skip_utf8:
         }
 #endif
         if (unlikely(pos == src)) {
-            if (has_allow(INVALID_UNICODE)) ++src;
-            else return_err(src, "invalid UTF-8 encoding in string");
+            if (!has_allow(INVALID_UNICODE) &&
+                !has_rflag(flg, YYJSON_READ_REPLACE_INVALID_UNICODE, 1))
+                return_err(src, "invalid UTF-8 encoding in string");
+            dst = src;
+            *dst++ = *src++;
+            unierr = true;
+            goto copy_utf8;
         }
         goto skip_ascii;
     }
@@ -4918,7 +5036,7 @@ copy_escape:
             case 't':  *dst++ = '\t'; src++; break;
             case 'u':
                 src--;
-                if (!read_uni_esc(&src, &dst, msg)) return_err(src, *msg);
+                if (!read_uni_esc(&src, &dst, msg, flg, &unierr)) return_err(src, *msg);
                 break;
             default: {
                 if (has_allow(EXT_ESCAPE)) {
@@ -4970,18 +5088,21 @@ copy_escape:
             }
         }
     } else if (likely(*src == quo)) {
-        val->tag = ((u64)(dst - hdr) << YYJSON_TAG_BIT) | YYJSON_TYPE_STR;
+        val->tag = ((u64)(dst - hdr) << YYJSON_TAG_BIT) | YYJSON_TYPE_STR |
+                   (unierr ? YYJSON_SUBTYPE_UNIERR : 0);
         val->uni.str = (const char *)hdr;
         *dst = '\0';
         *end = src + 1;
         if (con) con[0] = con[1] = NULL;
         return true;
     } else {
-        if (!has_allow(INVALID_UNICODE)) {
+        if (!has_allow(INVALID_UNICODE) &&
+            !has_rflag(flg, YYJSON_READ_REPLACE_INVALID_UNICODE, 1)) {
             return_err(src, "unexpected control character in string");
         }
         if (src >= eof) return_err(src, "unclosed string");
         *dst++ = *src++;
+        unierr = true;
     }
 
 copy_ascii:
@@ -5069,10 +5190,12 @@ copy_utf8:
         }
 #endif
         if (unlikely(pos == src)) {
-            if (!has_allow(INVALID_UNICODE)) {
+            if (!has_allow(INVALID_UNICODE) &&
+                !has_rflag(flg, YYJSON_READ_REPLACE_INVALID_UNICODE, 1))
                 return_err(src, MSG_ERR_UTF8);
-            }
-            goto copy_ascii_stop_1;
+            *dst++ = *src++;
+            unierr = true;
+            goto copy_utf8;
         }
         goto copy_ascii;
     }
@@ -5107,7 +5230,7 @@ static_noinline bool read_str_id(u8 **ptr, u8 *eof, yyjson_read_flag flg,
 
 #define return_suc(_str_end, _cur_end) do { \
     val->tag = ((u64)(_str_end - hdr) << YYJSON_TAG_BIT) | \
-                (u64)(YYJSON_TYPE_STR); \
+               (u64)(YYJSON_TYPE_STR | (unierr ? YYJSON_SUBTYPE_UNIERR : 0)); \
     val->uni.str = (const char *)hdr; \
     *pre = _str_end; *end = _cur_end; \
     return true; \
@@ -5117,6 +5240,7 @@ static_noinline bool read_str_id(u8 **ptr, u8 *eof, yyjson_read_flag flg,
     u8 **end = ptr;
     u8 *src = hdr, *dst = NULL;
     u32 uni, tmp;
+    bool unierr = false;
 
     /* add null-terminator for previous raw string */
     **pre = '\0';
@@ -5161,9 +5285,14 @@ skip_utf8:
             src += 4;
         } else {
 #if !YYJSON_DISABLE_UTF8_VALIDATION
-            if (!has_allow(INVALID_UNICODE)) return_err(src, MSG_ERR_UTF8);
+            if (!has_allow(INVALID_UNICODE) &&
+                !has_rflag(flg, YYJSON_READ_REPLACE_INVALID_UNICODE, 1))
+                return_err(src, MSG_ERR_UTF8);
 #endif
-            src += 1;
+            dst = src;
+            *dst++ = *src++;
+            unierr = true;
+            goto copy_utf8;
         }
     }
     if (char_is_id_ascii(*src)) goto skip_ascii;
@@ -5172,7 +5301,7 @@ skip_utf8:
     dst = src;
 copy_escape:
     if (byte_match_2(src, "\\u")) {
-        if (!read_uni_esc(&src, &dst, msg)) return_err(src, *msg);
+        if (!read_uni_esc(&src, &dst, msg, flg, &unierr)) return_err(src, *msg);
     } else {
         if (!char_is_id_next(*src)) return_suc(dst, src);
         return_err(src, "unexpected character in key");
@@ -5224,10 +5353,12 @@ copy_utf8:
             dst += 4; src += 4;
         } else {
 #if !YYJSON_DISABLE_UTF8_VALIDATION
-            if (!has_allow(INVALID_UNICODE)) return_err(src, MSG_ERR_UTF8);
+            if (!has_allow(INVALID_UNICODE) &&
+                !has_rflag(flg, YYJSON_READ_REPLACE_INVALID_UNICODE, 1))
+                return_err(src, MSG_ERR_UTF8);
 #endif
-            *dst = *src;
-            dst += 1; src += 1;
+            *dst++ = *src++;
+            unierr = true;
         }
     }
     if (char_is_id_ascii(*src)) goto copy_ascii;
@@ -6296,6 +6427,13 @@ yyjson_doc *yyjson_read_opts(char *dat, usize len,
     }
     memset(eof, 0, YYJSON_PADDING_SIZE);
 
+    /* Replacement tolerates malformed Unicode without growing the input.
+       Raw invalid bytes remain available to the caller. */
+    if (has_rflag(flg, YYJSON_READ_REPLACE_INVALID_UNICODE, 1)) {
+        flg |= YYJSON_READ_ALLOW_INVALID_UNICODE;
+        flg |= YYJSON_READ_ALLOW_INVALID_SURROGATE;
+    }
+
     if (has_allow(BOM)) {
         if (len >= 3 && is_utf8_bom(cur)) cur += 3;
     }
@@ -6595,6 +6733,8 @@ yyjson_incr_state *yyjson_incr_new(char *buf, size_t buf_len,
     flg &= ~YYJSON_READ_JSON5;
     flg &= ~YYJSON_READ_ALLOW_BOM;
     flg &= ~YYJSON_READ_ALLOW_INVALID_UNICODE;
+    flg &= ~YYJSON_READ_ALLOW_INVALID_SURROGATE;
+    flg &= ~YYJSON_READ_REPLACE_INVALID_UNICODE;
 
     if (unlikely(!buf)) return NULL;
     if (unlikely(buf_len >= USIZE_MAX - YYJSON_PADDING_SIZE)) return NULL;
@@ -9235,13 +9375,16 @@ static_inline u8 *write_root_single(yyjson_val *val,
             str_ptr = (const u8 *)unsafe_yyjson_get_str(val);
             check_str_len(str_len);
             incr_len(str_len * 6 + 2 + end_len);
-            if (likely(cpy) && unsafe_yyjson_get_subtype(val)) {
-                cur = write_str_noesc(cur, str_ptr, str_len);
-            } else {
-                cur = write_str(cur, esc, inv, str_ptr, str_len,
-                                enc_table, hex_table);
-                if (unlikely(!cur)) goto fail_str;
-            }
+            do {
+                yyjson_subtype st = unsafe_yyjson_get_subtype(val);
+                if (likely(cpy) && st == YYJSON_SUBTYPE_NOESC) {
+                    cur = write_str_noesc(cur, str_ptr, str_len);
+                } else {
+                    bool inv2 = inv || (st == YYJSON_SUBTYPE_UNIERR);
+                    cur = write_str(cur, esc, inv2, str_ptr, str_len, enc_table, hex_table);
+                    if (unlikely(!cur)) goto fail_str;
+                }
+            } while (0);
             break;
 
         case YYJSON_TYPE_NUM:
@@ -9385,13 +9528,16 @@ val_begin:
         str_ptr = (const u8 *)unsafe_yyjson_get_str(val);
         check_str_len(str_len);
         incr_len(str_len * 6 + 16);
-        if (likely(cpy) && unsafe_yyjson_get_subtype(val)) {
-            cur = write_str_noesc(cur, str_ptr, str_len);
-        } else {
-            cur = write_str(cur, esc, inv, str_ptr, str_len,
-                            enc_table, hex_table);
-            if (unlikely(!cur)) goto fail_str;
-        }
+        do {
+            yyjson_subtype st = unsafe_yyjson_get_subtype(val);
+            if (likely(cpy) && st == YYJSON_SUBTYPE_NOESC) {
+                cur = write_str_noesc(cur, str_ptr, str_len);
+            } else {
+                bool inv2 = inv || (st == YYJSON_SUBTYPE_UNIERR);
+                cur = write_str(cur, esc, inv2, str_ptr, str_len, enc_table, hex_table);
+                if (unlikely(!cur)) goto fail_str;
+            }
+        } while (0);
         *cur++ = is_key ? ':' : ',';
         goto val_end;
     }
@@ -9601,13 +9747,16 @@ val_begin:
             level > (USIZE_MAX - 16 - str_len * 6) / 4) goto fail_alloc;
         incr_len(str_len * 6 + 16 + (no_indent ? 0 : level * 4));
         cur = write_indent(cur, no_indent ? 0 : level, spaces);
-        if (likely(cpy) && unsafe_yyjson_get_subtype(val)) {
-            cur = write_str_noesc(cur, str_ptr, str_len);
-        } else {
-            cur = write_str(cur, esc, inv, str_ptr, str_len,
-                            enc_table, hex_table);
-            if (unlikely(!cur)) goto fail_str;
-        }
+        do {
+            yyjson_subtype st = unsafe_yyjson_get_subtype(val);
+            if (likely(cpy) && st == YYJSON_SUBTYPE_NOESC) {
+                cur = write_str_noesc(cur, str_ptr, str_len);
+            } else {
+                bool inv2 = inv || (st == YYJSON_SUBTYPE_UNIERR);
+                cur = write_str(cur, esc, inv2, str_ptr, str_len, enc_table, hex_table);
+                if (unlikely(!cur)) goto fail_str;
+            }
+        } while (0);
         *cur++ = is_key ? ':' : ',';
         *cur++ = is_key ? ' ' : '\n';
         goto val_end;
@@ -10031,13 +10180,16 @@ val_begin:
         str_ptr = (const u8 *)unsafe_yyjson_get_str(val);
         check_str_len(str_len);
         incr_len(str_len * 6 + 16);
-        if (likely(cpy) && unsafe_yyjson_get_subtype(val)) {
-            cur = write_str_noesc(cur, str_ptr, str_len);
-        } else {
-            cur = write_str(cur, esc, inv, str_ptr, str_len,
-                            enc_table, hex_table);
-            if (unlikely(!cur)) goto fail_str;
-        }
+        do {
+            yyjson_subtype st = unsafe_yyjson_get_subtype(val);
+            if (likely(cpy) && st == YYJSON_SUBTYPE_NOESC) {
+                cur = write_str_noesc(cur, str_ptr, str_len);
+            } else {
+                bool inv2 = inv || (st == YYJSON_SUBTYPE_UNIERR);
+                cur = write_str(cur, esc, inv2, str_ptr, str_len, enc_table, hex_table);
+                if (unlikely(!cur)) goto fail_str;
+            }
+        } while (0);
         *cur++ = is_key ? ':' : ',';
         goto val_end;
     }
@@ -10253,13 +10405,16 @@ val_begin:
             level > (USIZE_MAX - 16 - str_len * 6) / 4) goto fail_alloc;
         incr_len(str_len * 6 + 16 + (no_indent ? 0 : level * 4));
         cur = write_indent(cur, no_indent ? 0 : level, spaces);
-        if (likely(cpy) && unsafe_yyjson_get_subtype(val)) {
-            cur = write_str_noesc(cur, str_ptr, str_len);
-        } else {
-            cur = write_str(cur, esc, inv, str_ptr, str_len,
-                            enc_table, hex_table);
-            if (unlikely(!cur)) goto fail_str;
-        }
+        do {
+            yyjson_subtype st = unsafe_yyjson_get_subtype(val);
+            if (likely(cpy) && st == YYJSON_SUBTYPE_NOESC) {
+                cur = write_str_noesc(cur, str_ptr, str_len);
+            } else {
+                bool inv2 = inv || (st == YYJSON_SUBTYPE_UNIERR);
+                cur = write_str(cur, esc, inv2, str_ptr, str_len, enc_table, hex_table);
+                if (unlikely(!cur)) goto fail_str;
+            }
+        } while (0);
         *cur++ = is_key ? ':' : ',';
         *cur++ = is_key ? ' ' : '\n';
         goto val_end;
