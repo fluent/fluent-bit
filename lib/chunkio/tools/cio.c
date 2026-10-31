@@ -24,7 +24,7 @@
 #include <limits.h>
 #include <signal.h>
 #include <time.h>
-#ifndef _MSC_VER
+#ifndef _WIN32
 #include <pwd.h>
 #endif
 #ifdef __MACH__
@@ -35,7 +35,7 @@
 #include <monkey/mk_core/mk_getopt.h>
 #include <chunkio/chunkio_compat.h>
 
-#ifndef _MSC_VER
+#ifndef _WIN32
 #define ANSI_RESET    "\033[0m"
 #define ANSI_BOLD     "\033[1m"
 #define ANSI_CYAN     "\033[96m"
@@ -121,7 +121,7 @@ static void cio_signal_handler(int signal)
     write(STDERR_FILENO, s, sizeof(s) - 1);
     switch (signal) {
         cio_print_signal(SIGINT);
-#ifndef _MSC_VER
+#ifndef _WIN32
         cio_print_signal(SIGQUIT);
         cio_print_signal(SIGHUP);
 #endif
@@ -132,7 +132,7 @@ static void cio_signal_handler(int signal)
     /* Signal handlers */
     switch (signal) {
     case SIGINT:
-#ifndef _MSC_VER
+#ifndef _WIN32
     case SIGQUIT:
     case SIGHUP:
 #endif
@@ -173,7 +173,7 @@ void cio_bytes_to_human_readable_size(size_t bytes,
 static void cio_signal_init()
 {
     signal(SIGINT,  &cio_signal_handler);
-#ifndef _MSC_VER
+#ifndef _WIN32
     signal(SIGQUIT, &cio_signal_handler);
     signal(SIGHUP,  &cio_signal_handler);
 #endif
@@ -206,7 +206,7 @@ static int log_cb(struct cio_ctx *ctx, int level, const char *file, int line,
     return 0;
 }
 
-#ifndef _MSC_VER
+#ifndef _WIN32
 static int cio_default_root_path(char *path, int size)
 {
     int len;

@@ -1,0 +1,27 @@
+{
+  "fluent_bit_commit": "66910c10a4d7eafa810b84229cf2dcf7b0f26f97",
+  "chunkio_base_commit": "027c98336c20e7a1f1cd69001c19c8a7e11c78bb",
+  "chunkio_head_commit": "4a949ab4e47141f9cd6865835367521202cad7e0",
+  "compiler": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+  "kernel": "7.0.0-30-generic",
+  "architecture": "x86_64",
+  "cpu": "AMD Ryzen 9 7940HS",
+  "cpu_affinity": "2",
+  "filesystem": "ext4, /dev/nvme0n1p2, NVMe",
+  "page_size": 4096,
+  "fluent_bit_flags": "FLB_RELEASE=On, -O2 -g -DNDEBUG; FLB_IPO=Off",
+  "chunkio_flags": "-O3 -DNDEBUG for both versions; common CRC archive from Fluent Bit build",
+  "warmups_per_case_version": 1,
+  "measurements_per_case_version": 5,
+  "order": "Cases fixed; version order alternates by case and repetition",
+  "cache": "Warm input cache; no eviction; CPU boost enabled; host not isolated",
+  "source_record_bytes": 256,
+  "file_descriptor_soft_limit": 8192,
+  "excluded_runs": "Initial setup pilots, including a failed 1024-file-limit pilot, excluded; batch2-warmup excluded from medians",
+  "validation": "Exact tail/output counts; no dropped records/exhausted retries; HTTP recovery checks every ID and payload with no duplicates; down chunks required",
+  "binaries_sha256": {
+    "base": "f0b4a28f531944634172f180d7690efdb7bd897eadd92091ec507e8791c5d1c1",
+    "head": "4df4cb242afa17fcb1807173df399a19e61cc7015602528583ace79505a1a1c0"
+  },
+  "recorded_at_utc": "2026-09-08T01:55:18.278686+00:00"
+}

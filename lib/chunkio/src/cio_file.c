@@ -39,6 +39,7 @@
 #include <chunkio/cio_stream.h>
 #include <chunkio/cio_error.h>
 #include <chunkio/cio_utils.h>
+#include "cio_size.h"
 
 size_t scio_file_page_size = 0;
 
@@ -60,37 +61,59 @@ char cio_file_init_bytes[] =   {
 };
 
 #define ROUND_UP(N, S) ((((N) + (S) - 1) / (S)) * (S))
+#define CIO_FILE_CRC_FIELD_SIZE 4
 
+static uint32_t get_header_u32(char *map, int offset)
+{
+    uint8_t *buffer;
 
-/* Calculate content checksum in a variable */
-void cio_file_calculate_checksum(struct cio_file *cf, crc_t *out)
+    buffer = (uint8_t *) &map[offset];
+
+    return (((uint32_t) buffer[0]) << 24) |
+           (((uint32_t) buffer[1]) << 16) |
+           (((uint32_t) buffer[2]) <<  8) |
+           (((uint32_t) buffer[3]) <<  0);
+}
+
+static void set_header_u32(char *map, int offset, uint32_t value)
+{
+    uint8_t *buffer;
+
+    buffer = (uint8_t *) &map[offset];
+
+    buffer[0] = (uint8_t) ((value & 0xFF000000) >> 24);
+    buffer[1] = (uint8_t) ((value & 0x00FF0000) >> 16);
+    buffer[2] = (uint8_t) ((value & 0x0000FF00) >>  8);
+    buffer[3] = (uint8_t) ((value & 0x000000FF) >>  0);
+}
+
+static void calculate_checksum_len(struct cio_file *cf,
+                                   size_t content_length,
+                                   crc_t *out)
 {
     crc_t val;
     size_t len;
-    ssize_t content_length;
     unsigned char *in_data;
-
-    if (cf->fs_size == 0) {
-        cio_file_update_size(cf);
-    }
 
     /* Metadata length header + metadata length + content length */
     len  = 2;
     len += cio_file_st_get_meta_len(cf->map);
-
-    content_length = cio_file_st_get_content_len(cf->map,
-                                                 cf->fs_size,
-                                                 cf->page_size,
-                                                 cf->taint_flag);
-
-    if (content_length > 0) {
-        len += content_length;
-    }
+    len += content_length;
 
     in_data = (unsigned char *) cf->map + CIO_FILE_CONTENT_OFFSET;
 
     val = cio_crc32_update(cf->crc_cur, in_data, len);
     *out = val;
+}
+
+/* Calculate content checksum in a variable */
+void cio_file_calculate_checksum(struct cio_file *cf, crc_t *out)
+{
+    if (cf->fs_size == 0) {
+        cio_file_update_size(cf);
+    }
+
+    calculate_checksum_len(cf, cf->data_size, out);
 }
 
 /* Update crc32 checksum into the memory map */
@@ -108,19 +131,228 @@ static void update_checksum(struct cio_file *cf,
     }
 
     crc = cio_crc32_update(cf->crc_cur, data, len);
-    memcpy(cf->map + 2, &crc, sizeof(crc));
     cf->crc_cur = crc;
+}
+
+static uint32_t finalize_checksum_value(crc_t crc)
+{
+    return (uint32_t) cio_crc32_finalize(crc);
+}
+
+static void write_checksum(struct cio_file *cf, uint32_t crc)
+{
+    set_header_u32(cf->map, 2, crc);
+    memset(cf->map + CIO_FILE_LEGACY_CRC_PADDING_OFFSET, 0,
+           CIO_FILE_LEGACY_CRC_PADDING_SIZE);
 }
 
 /* Finalize CRC32 context and update the memory map */
 static void finalize_checksum(struct cio_file *cf)
 {
+    uint32_t crc;
+
+    crc = finalize_checksum_value(cf->crc_cur);
+
+    write_checksum(cf, crc);
+}
+
+static int shadow_header_exists(struct cio_file *cf)
+{
+    uint32_t content_length;
+    uint32_t crc;
+
+    content_length = get_header_u32(cf->map,
+                                    CIO_FILE_SHADOW_CONTENT_LENGTH_OFFSET);
+    crc = get_header_u32(cf->map, CIO_FILE_SHADOW_HASH_OFFSET);
+
+    if (content_length == 0 && crc == 0) {
+        return CIO_FALSE;
+    }
+
+    return CIO_TRUE;
+}
+
+static void write_shadow_header(struct cio_file *cf, uint32_t crc)
+{
+    set_header_u32(cf->map,
+                   CIO_FILE_SHADOW_CONTENT_LENGTH_OFFSET,
+                   (uint32_t) cf->data_size);
+
+    set_header_u32(cf->map, CIO_FILE_SHADOW_HASH_OFFSET, crc);
+}
+
+static int recover_unfinalized_checksum(struct cio_chunk *ch,
+                                        struct cio_file *cf,
+                                        unsigned char *hash,
+                                        crc_t crc)
+{
+    int ret;
+
+    /*
+     * Legacy chunks stored the in-progress (non finalized) crc by copying the
+     * raw crc_t with memcpy(map + 2, &crc, sizeof(crc)). crc_t is uint_fast32_t,
+     * which is 8 bytes on most LP64 targets, so the comparison must use the same
+     * native width: on big-endian 64-bit the significant bytes live at offset
+     * 6..9 with zeros at 2..5, and a fixed 4-byte compare would spuriously match
+     * the zero bytes. Comparing sizeof(crc) reproduces exactly what the legacy
+     * writer emitted on this architecture, on both little- and big-endian.
+     */
+    if (memcmp(hash, &crc, sizeof(crc)) != 0) {
+        return CIO_FALSE;
+    }
+
+    cf->crc_cur = crc;
+
+    if (!(cf->flags & CIO_OPEN_RW)) {
+        cio_log_info(ch->ctx,
+                     "[cio file] accepted unfinalized crc32 at %s/%s (read-only)",
+                     ch->name, cf->path);
+
+        return CIO_TRUE;
+    }
+
+    finalize_checksum(cf);
+    cf->synced = CIO_FALSE;
+
+    ret = cio_file_native_sync(cf, CIO_FULL_SYNC);
+    if (ret == CIO_OK) {
+        cf->synced = CIO_TRUE;
+        cio_log_info(ch->ctx, "[cio file] recovered unfinalized crc32 at %s/%s",
+                     ch->name, cf->path);
+    }
+    else {
+        cio_log_warn(ch->ctx,
+                     "[cio file] could not persist recovered crc32 at %s/%s",
+                     ch->name, cf->path);
+    }
+
+    return CIO_TRUE;
+}
+
+static int recover_shadow_header(struct cio_chunk *ch, struct cio_file *cf)
+{
+    int ret;
+    size_t metadata_length;
+    size_t content_length;
     crc_t crc;
+    uint32_t crc_check;
+    uint32_t stored_crc;
 
-    crc = cio_crc32_finalize(cf->crc_cur);
-    crc = htonl(crc);
+    if (shadow_header_exists(cf) == CIO_FALSE) {
+        return CIO_FALSE;
+    }
 
-    memcpy(cf->map + 2, &crc, sizeof(crc));
+    metadata_length = cio_file_st_get_meta_len(cf->map);
+    content_length = get_header_u32(cf->map,
+                                    CIO_FILE_SHADOW_CONTENT_LENGTH_OFFSET);
+
+    /* Validate by subtraction so a corrupt length cannot wrap on 32-bit. */
+    if (cf->fs_size < CIO_FILE_HEADER_MIN ||
+        metadata_length > cf->fs_size - CIO_FILE_HEADER_MIN ||
+        content_length > cf->fs_size - CIO_FILE_HEADER_MIN - metadata_length) {
+        return CIO_FALSE;
+    }
+
+    cf->crc_cur = cio_crc32_init();
+    calculate_checksum_len(cf, content_length, &crc);
+
+    crc_check = finalize_checksum_value(crc);
+    stored_crc = get_header_u32(cf->map, CIO_FILE_SHADOW_HASH_OFFSET);
+
+    if (stored_crc != crc_check) {
+        return CIO_FALSE;
+    }
+
+    cf->data_size = content_length;
+    cf->crc_cur = crc;
+
+    if (!(cf->flags & CIO_OPEN_RW)) {
+        cio_log_info(ch->ctx,
+                     "[cio file] accepted shadow crc32 at %s/%s (read-only)",
+                     ch->name, cf->path);
+
+        return CIO_TRUE;
+    }
+
+    cio_file_st_set_content_len(cf->map, (uint32_t) cf->data_size);
+    write_checksum(cf, crc_check);
+    cf->synced = CIO_FALSE;
+
+    ret = cio_file_native_sync(cf, CIO_FULL_SYNC);
+    if (ret == CIO_OK) {
+        cf->synced = CIO_TRUE;
+        cio_log_info(ch->ctx, "[cio file] recovered shadow crc32 at %s/%s",
+                     ch->name, cf->path);
+    }
+    else {
+        cio_log_warn(ch->ctx,
+                     "[cio file] could not persist shadow crc32 at %s/%s",
+                     ch->name, cf->path);
+    }
+
+    return CIO_TRUE;
+}
+
+/*
+ * Older 64-bit big-endian builds finalized the crc and stored it with
+ * memcpy(map + 2, &crc, sizeof(crc_t)). With an 8-byte crc_t the big-endian
+ * representation placed the four significant bytes at offset 6..9 and left the
+ * canonical primary slot (offset 2..5) zero -- the mirror image of the
+ * little-endian layout the current code reads. (Old 32-bit big-endian builds
+ * used a 4-byte crc_t and already wrote the canonical offset, so only LP64
+ * big-endian chunks need this fallback.)
+ *
+ * Detect that layout in an endianness-independent way: the canonical slot must
+ * be empty and the big-endian value at offset 6 must equal the finalized crc of
+ * the content. When matched, accept it and, if the chunk is writable, rewrite
+ * it into the canonical portable layout so future reads are O(1) and the file
+ * becomes architecture independent.
+ */
+static int recover_legacy_wide_checksum(struct cio_chunk *ch,
+                                        struct cio_file *cf,
+                                        crc_t crc, uint32_t crc_check)
+{
+    int ret;
+    uint32_t legacy_crc;
+
+    /* The canonical primary crc slot must be empty for this legacy layout */
+    if (get_header_u32(cf->map, 2) != 0) {
+        return CIO_FALSE;
+    }
+
+    legacy_crc = get_header_u32(cf->map, CIO_FILE_LEGACY_CRC_PADDING_OFFSET);
+    if (legacy_crc == 0 || legacy_crc != crc_check) {
+        return CIO_FALSE;
+    }
+
+    cf->crc_cur = crc;
+
+    if (!(cf->flags & CIO_OPEN_RW)) {
+        cio_log_info(ch->ctx,
+                     "[cio file] accepted legacy big-endian crc32 at %s/%s "
+                     "(read-only)", ch->name, cf->path);
+
+        return CIO_TRUE;
+    }
+
+    /* Migrate to the canonical layout: crc at offset 2, padding zeroed */
+    write_checksum(cf, crc_check);
+    cf->synced = CIO_FALSE;
+
+    ret = cio_file_native_sync(cf, CIO_FULL_SYNC);
+    if (ret == CIO_OK) {
+        cf->synced = CIO_TRUE;
+        cio_log_info(ch->ctx,
+                     "[cio file] migrated legacy big-endian crc32 at %s/%s",
+                     ch->name, cf->path);
+    }
+    else {
+        cio_log_warn(ch->ctx,
+                     "[cio file] could not persist migrated crc32 at %s/%s",
+                     ch->name, cf->path);
+    }
+
+    return CIO_TRUE;
 }
 
 /*
@@ -187,11 +419,13 @@ static size_t get_available_size(struct cio_file *cf, int *meta_len)
 static int cio_file_format_check(struct cio_chunk *ch,
                                  struct cio_file *cf, int flags)
 {
+    int ret;
     size_t metadata_length;
     ssize_t content_length;
     ssize_t logical_length;
     unsigned char *p;
-    crc_t crc_check;
+    uint32_t crc_check;
+    uint32_t stored_crc;
     crc_t crc;
 
     (void) flags;
@@ -256,6 +490,11 @@ static int cio_file_format_check(struct cio_chunk *ch,
                          content_length;
 
         if (logical_length > cf->fs_size) {
+            if ((ch->ctx->options.flags & CIO_CHECKSUM) &&
+                recover_shadow_header(ch, cf) == CIO_TRUE) {
+                return 0;
+            }
+
             cio_log_debug(ch->ctx, "[cio file] truncated file (%zd / %zd) %s",
                           cf->fs_size, logical_length, ch->name);
             cio_error_set(ch, CIO_ERR_BAD_FILE_SIZE);
@@ -270,21 +509,40 @@ static int cio_file_format_check(struct cio_chunk *ch,
 
             /* Get checksum stored in the mmap */
             p = (unsigned char *) cio_file_st_get_hash(cf->map);
+            stored_crc = get_header_u32(cf->map, 2);
 
             /* Calculate content checksum */
             cio_file_calculate_checksum(cf, &crc);
 
             /* Compare */
-            crc_check = cio_crc32_finalize(crc);
-            crc_check = htonl(crc_check);
+            crc_check = finalize_checksum_value(crc);
 
-            if (memcmp(p, &crc_check, sizeof(crc_check)) != 0) {
-                cio_log_info(ch->ctx, "[cio file] invalid crc32 at %s/%s",
-                              ch->name, cf->path);
-                cio_error_set(ch, CIO_ERR_BAD_CHECKSUM);
+            if (stored_crc != crc_check) {
+                ret = recover_unfinalized_checksum(ch, cf, p, crc);
+                if (ret == CIO_FALSE) {
+                    ret = recover_shadow_header(ch, cf);
+                    if (ret == CIO_FALSE) {
+                        ret = recover_legacy_wide_checksum(ch, cf, crc,
+                                                           crc_check);
+                    }
 
-                return -1;
+                    if (ret == CIO_FALSE) {
+                        cio_log_info(ch->ctx, "[cio file] invalid crc32 at %s/%s",
+                                      ch->name, cf->path);
+                        cio_error_set(ch, CIO_ERR_BAD_CHECKSUM);
+
+                        return -1;
+                    }
+
+                    return 0;
+                }
             }
+            /*
+             * A valid primary tuple is authoritative. Older writers leave the
+             * shadow padding untouched, and without a generation marker a
+             * different shadow length cannot establish which tuple is newer.
+             * Recovering it here could discard an append or undo a truncation.
+             */
 
             cf->crc_cur = crc;
         }
@@ -395,14 +653,24 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
 
         cf->synced = CIO_FALSE;
 
-        /* Adjust size to make room for headers */
+        /* The opening hint is capacity, independent of the observed file size. */
+        size = cf->initial_size;
         if (size < CIO_FILE_HEADER_MIN) {
-            size += CIO_FILE_HEADER_MIN;
+            size = CIO_FILE_HEADER_MIN;
         }
 
         /* For empty files, make room in the file system */
-        size = ROUND_UP(size, ctx->page_size);
+        if (cio_size_round(size, ctx->page_size, &size) != CIO_OK) {
+            return CIO_ERROR;
+        }
+
         ret = cio_file_resize(cf, size);
+
+        /* The hint is optional capacity; retain the minimum-size fallback. */
+        if (ret != CIO_OK && size > ctx->page_size) {
+            size = ctx->page_size;
+            ret = cio_file_resize(cf, size);
+        }
 
         if (ret != CIO_OK) {
             cio_log_error(ctx, "cannot adjust chunk size '%s' to %lu bytes",
@@ -420,8 +688,23 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
     requested_map_size = cf->alloc_size;
     ret = cio_file_native_map(cf, cf->alloc_size);
 
+    if (ret != CIO_OK && fs_size == 0 && size > ctx->page_size) {
+        size = ctx->page_size;
+        ret = cio_file_resize(cf, size);
+        if (ret == CIO_OK) {
+            ret = cio_file_native_map(cf, size);
+        }
+    }
+
     if (ret != CIO_OK) {
         cio_log_error(ctx, "cannot mmap/read chunk '%s'", cf->path);
+
+        /* A failed first mapping must leave an empty file retryable. */
+        if (fs_size == 0) {
+            cio_file_native_resize(cf, 0);
+        }
+
+        cf->alloc_size = 0;
 
         return CIO_ERROR;
     }
@@ -484,6 +767,8 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
     }
 
     cf->st_content = cio_file_st_get_content(cf->map);
+    cf->fs_size = fs_size == 0 ? size : fs_size;
+    cf->initial_size = 0;
     cio_log_debug(ctx, "%s:%s mapped OK", ch->st->name, ch->name);
 
     /* The mmap succeeded, adjust the counters */
@@ -645,8 +930,6 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
     int              ret;
     struct cio_file *cf;
 
-    (void) size;
-
     ret = cio_file_native_filename_check(ch->name);
     if (ret != CIO_OK) {
         cio_log_error(ctx, "[cio file] invalid file name");
@@ -671,6 +954,7 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
     cf->fd = -1;
     cf->flags = flags;
     cf->page_size = cio_getpagesize();
+    cf->initial_size = size;
 
     if (ctx->realloc_size_hint > 0) {
         cf->realloc_size = ctx->realloc_size_hint;
@@ -711,6 +995,7 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
          * ignore the error.
          */
 
+        *err = CIO_OK;
         return cf;
     }
 
@@ -852,6 +1137,7 @@ static int _cio_file_up(struct cio_chunk *ch, int enforced)
 
     ret = cio_file_update_size(cf);
     if (ret != CIO_OK) {
+        cio_file_native_close(cf);
         return CIO_ERROR;
     }
 
@@ -870,7 +1156,7 @@ static int _cio_file_up(struct cio_chunk *ch, int enforced)
      * 'ret' can still be CIO_CORRUPTED or CIO_RETRY on those cases we
      * close the file descriptor
      */
-    if (ret == CIO_CORRUPTED || ret == CIO_RETRY) {
+    if (ret != CIO_OK) {
         /*
          * we just remove resources: close the recently opened file
          * descriptor, we never delete the Chunk at this stage since
@@ -995,16 +1281,11 @@ int cio_file_write(struct cio_chunk *ch, const void *buf, size_t count)
 {
     int ret;
     int meta_len;
-    int pre_content;
     size_t av_size;
     size_t old_size;
     size_t new_size;
+    size_t required_size;
     struct cio_file *cf;
-
-    if (count == 0) {
-        /* do nothing */
-        return 0;
-    }
 
     if (!ch) {
         return -1;
@@ -1018,23 +1299,58 @@ int cio_file_write(struct cio_chunk *ch, const void *buf, size_t count)
         return -1;
     }
 
+    if (count == 0) {
+        if (cf->crc_reset) {
+            if (ch->ctx->options.flags & CIO_CHECKSUM) {
+                cf->crc_cur = cio_crc32_init();
+                cio_file_calculate_checksum(cf, &cf->crc_cur);
+            }
+
+            cf->crc_reset = CIO_FALSE;
+            cf->synced = CIO_FALSE;
+            cf->taint_flag = CIO_TRUE;
+
+            if (!(ch->ctx->options.flags & CIO_CHECKSUM)) {
+                cio_file_st_set_content_len(cf->map, cf->data_size);
+            }
+        }
+
+        return 0;
+    }
+
+    if (buf == NULL || !(cf->flags & CIO_OPEN_RW) ||
+        cf->data_size > UINT32_MAX ||
+        count > UINT32_MAX - cf->data_size) {
+        return CIO_ERROR;
+    }
+
     /* get available size */
     av_size = get_available_size(cf, &meta_len);
 
     /* validate there is enough space, otherwise resize */
     if (av_size < count) {
-        /* Set the pre-content size (chunk header + metadata) */
-        pre_content = (CIO_FILE_HEADER_MIN + meta_len);
-
-        new_size = cf->alloc_size + cf->realloc_size;
-        while (new_size < (pre_content + cf->data_size + count)) {
-            new_size += cf->realloc_size;
+        if (cio_chunk_get_projected_size(ch, count, &new_size) != CIO_OK) {
+            return CIO_ERROR;
         }
 
         old_size = cf->alloc_size;
-        new_size = ROUND_UP(new_size, ch->ctx->page_size);
-
         ret = cio_file_resize(cf, new_size);
+
+        /* Optional headroom must not prevent an otherwise affordable append. */
+        if (ret != CIO_OK &&
+            (ch->ctx->options.flags & CIO_FIXED_GROWTH) == 0 &&
+            cio_file_is_up(ch, cf) == CIO_TRUE && cf->fs_size == old_size) {
+
+            required_size = CIO_FILE_HEADER_MIN + meta_len;
+            required_size += cf->data_size + count;
+
+            if (cio_size_round(required_size, ch->ctx->page_size,
+                               &required_size) == CIO_OK &&
+                required_size < new_size) {
+                ret = cio_file_resize(cf, required_size);
+                new_size = required_size;
+            }
+        }
 
         if (ret != CIO_OK) {
             cio_log_error(ch->ctx,
@@ -1047,14 +1363,6 @@ int cio_file_write(struct cio_chunk *ch, const void *buf, size_t count)
                       old_size, new_size);
     }
 
-    /* If crc_reset was toggled we know that data_size was
-     * modified by cio_chunk_write_at which means we need
-     * to update the header before we recalculate the checksum
-     */
-    if (cf->crc_reset) {
-        cio_file_st_set_content_len(cf->map, cf->data_size);
-    }
-
     if (ch->ctx->options.flags & CIO_CHECKSUM) {
         update_checksum(cf, (unsigned char *) buf, count);
     }
@@ -1065,9 +1373,11 @@ int cio_file_write(struct cio_chunk *ch, const void *buf, size_t count)
     cf->data_size += count;
     cf->synced = CIO_FALSE;
 
-    cio_file_st_set_content_len(cf->map, cf->data_size);
-
     cf->taint_flag = CIO_TRUE;
+
+    if (!(ch->ctx->options.flags & CIO_CHECKSUM)) {
+        cio_file_st_set_content_len(cf->map, cf->data_size);
+    }
 
     return 0;
 }
@@ -1094,8 +1404,20 @@ int cio_file_write_metadata(struct cio_chunk *ch, char *buf, size_t size)
     /* Check if meta already have some space available to overwrite */
     meta_av = cio_file_st_get_meta_len(cf->map);
 
+    /*
+     * Equal lengths do not require moving content. Still update the checksum
+     * and dirty state: callers can modify the buffer returned by cio_meta_read()
+     * before writing it back, so equal bytes do not imply unchanged metadata.
+     */
+    if (meta_av == size) {
+        if (size > 0 && meta != buf) {
+            memcpy(meta, buf, size);
+        }
+        return adjust_layout(ch, cf, size);
+    }
+
     /* If there is some space available, just overwrite */
-    if (meta_av >= size) {
+    if (meta_av > size) {
         /* copy new metadata */
         memcpy(meta, buf, size);
 
@@ -1151,6 +1473,7 @@ int cio_file_sync(struct cio_chunk *ch)
     size_t desired_size;
     size_t file_size;
     size_t av_size;
+    uint32_t crc;
     struct cio_file *cf;
 
     if (ch == NULL) {
@@ -1210,7 +1533,10 @@ int cio_file_sync(struct cio_chunk *ch)
              * correlates with sub-page mapping.
              */
             desired_size = ROUND_UP(desired_size, ch->ctx->page_size);
+        }
 
+        /* Rounding can leave the file at its existing size. */
+        if (desired_size != file_size) {
             ret = cio_file_resize(cf, desired_size);
 
             if (ret != CIO_OK) {
@@ -1225,7 +1551,14 @@ int cio_file_sync(struct cio_chunk *ch)
 
     /* Finalize CRC32 checksum */
     if (ch->ctx->options.flags & CIO_CHECKSUM) {
-        finalize_checksum(cf);
+        crc = finalize_checksum_value(cf->crc_cur);
+        write_shadow_header(cf, crc);
+        cio_file_st_set_content_len(cf->map, (uint32_t) cf->data_size);
+        write_checksum(cf, crc);
+    }
+    else {
+        /* Persist the logical length after appends, truncation or rollback. */
+        cio_file_st_set_content_len(cf->map, cf->data_size);
     }
 
     /* Commit changes to disk */
@@ -1253,13 +1586,20 @@ int cio_file_resize(struct cio_file *cf, size_t new_size)
 {
     int    inner_result;
     size_t mapped_size;
+    size_t previous_size;
     int    mapped_flag;
     int    result;
 
     mapped_flag = cio_file_native_is_mapped(cf);
     mapped_size = cf->alloc_size;
+    previous_size = cf->fs_size;
 
-#ifdef _WIN32
+    if (new_size > PTRDIFF_MAX) {
+        return CIO_ERROR;
+    }
+
+    /* Emscripten unmap writes back the old mapping, so flush before resizing. */
+#if defined(_WIN32) || defined(__EMSCRIPTEN__)
     if (mapped_flag) {
         result = cio_file_native_unmap(cf);
 
@@ -1274,7 +1614,7 @@ int cio_file_resize(struct cio_file *cf, size_t new_size)
     if (result != CIO_OK) {
         cio_file_native_report_os_error();
 
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__EMSCRIPTEN__)
         if (mapped_flag) {
             inner_result = cio_file_native_map(cf, mapped_size);
         }
@@ -1284,13 +1624,20 @@ int cio_file_resize(struct cio_file *cf, size_t new_size)
     }
 
     if (mapped_flag) {
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__EMSCRIPTEN__)
         result = cio_file_native_map(cf, new_size);
 #else
         result = cio_file_native_remap(cf, new_size);
 #endif
 
         if (result != CIO_OK) {
+            /* No content was appended yet; undo the speculative reservation. */
+            inner_result = cio_file_native_resize(cf, previous_size);
+#if defined(_WIN32) || defined(__EMSCRIPTEN__)
+            if (inner_result == CIO_OK) {
+                inner_result = cio_file_native_map(cf, mapped_size);
+            }
+#endif
             return result;
         }
     }
@@ -1318,9 +1665,8 @@ void cio_file_scan_dump(struct cio_ctx *ctx, struct cio_stream *st)
     int ret;
     int meta_len;
     int set_down = CIO_FALSE;
-    char *p;
     crc_t crc;
-    crc_t crc_fs;
+    uint32_t crc_fs;
     char tmp[PATH_MAX];
     struct mk_list *head;
     struct cio_chunk *ch;
@@ -1341,10 +1687,7 @@ void cio_file_scan_dump(struct cio_ctx *ctx, struct cio_stream *st)
         snprintf(tmp, sizeof(tmp) -1, "%s/%s", st->name, ch->name);
         meta_len = cio_file_st_get_meta_len(cf->map);
 
-        p = cio_file_st_get_hash(cf->map);
-
-        memcpy(&crc_fs, p, sizeof(crc_fs));
-        crc_fs = ntohl(crc_fs);
+        crc_fs = get_header_u32(cf->map, 2);
 
         printf("        %-60s", tmp);
 
