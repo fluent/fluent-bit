@@ -766,7 +766,7 @@ struct flb_output_plugin out_cloudwatch_logs_plugin = {
     .cb_init      = cb_cloudwatch_init,
     .cb_flush     = cb_cloudwatch_flush,
     .cb_exit      = cb_cloudwatch_exit,
-    .flags        = 0,
+    .flags        = FLB_OUTPUT_NET | FLB_IO_TLS,
     .workers      = 1,
     .event_type   = FLB_OUTPUT_LOGS | FLB_OUTPUT_METRICS,
 

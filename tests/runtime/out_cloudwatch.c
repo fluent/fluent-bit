@@ -836,6 +836,74 @@ cleanup:
     flb_destroy(ctx);
 }
 
+/*
+ * The CloudWatch client must follow the instance 'tls' setting. The
+ * credential providers used to force use_tls on, so 'tls off' was ignored.
+ */
+static void check_client_tls(const char *tls, int expect_tls)
+{
+    flb_ctx_t *ctx;
+    struct flb_output_instance *ins;
+    struct flb_cloudwatch *cw;
+    int in_id;
+    int out_id;
+    int flags;
+    int ret;
+
+    setenv("FLB_CLOUDWATCH_PLUGIN_UNDER_TEST", "true", 1);
+    ctx = flb_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        return;
+    }
+
+    in_id = flb_input(ctx, "lib", NULL);
+    TEST_CHECK(in_id >= 0);
+    out_id = flb_output(ctx, "cloudwatch_logs", NULL);
+    TEST_CHECK(out_id >= 0);
+    ret = flb_output_set(ctx, out_id, "match", "*", "region", "us-east-1",
+                         "log_group_name", "tls-test",
+                         "log_stream_prefix", "prefix-", NULL);
+    TEST_CHECK(ret == 0);
+    if (tls != NULL) {
+        ret = flb_output_set(ctx, out_id, "tls", tls, NULL);
+        TEST_CHECK(ret == 0);
+    }
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        flb_destroy(ctx);
+        return;
+    }
+
+    ins = flb_output_get_instance(ctx->config, out_id);
+    cw = ins->context;
+    TEST_CHECK(ins->use_tls == expect_tls);
+    TEST_CHECK(cw->cw_client->flags == (expect_tls ? FLB_IO_TLS : FLB_IO_TCP));
+    flags = flb_stream_get_flags(&cw->cw_client->upstream->base);
+    TEST_CHECK(((flags & FLB_IO_TLS) != 0) == expect_tls);
+    TEST_MSG("tls=%s use_tls=%d client flags=%d upstream flags=%d",
+             tls ? tls : "(default)", ins->use_tls, cw->cw_client->flags, flags);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+void flb_test_cloudwatch_tls_default(void)
+{
+    check_client_tls(NULL, FLB_TRUE);
+}
+
+void flb_test_cloudwatch_tls_off(void)
+{
+    check_client_tls("off", FLB_FALSE);
+}
+
+void flb_test_cloudwatch_tls_on(void)
+{
+    check_client_tls("on", FLB_TRUE);
+}
+
 /* Test list */
 TEST_LIST = {
     {"stream_cache_no_workers", flb_test_cloudwatch_stream_cache_no_workers},
@@ -857,5 +925,8 @@ TEST_LIST = {
     {"event_size_at_limit", flb_test_cloudwatch_event_size_at_limit },
     {"event_size_over_limit", flb_test_cloudwatch_event_size_over_limit },
     {"event_truncation_with_backslash", flb_test_cloudwatch_event_truncation_with_backslash },
+    {"tls_default", flb_test_cloudwatch_tls_default },
+    {"tls_off", flb_test_cloudwatch_tls_off },
+    {"tls_on", flb_test_cloudwatch_tls_on },
     {NULL, NULL}
 };
