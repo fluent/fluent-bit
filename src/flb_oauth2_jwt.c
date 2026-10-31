@@ -43,6 +43,11 @@
 #include <time.h>
 #include <fluent-bit/flb_compat.h>
 
+#define OAUTH2_JWKS_BUFFER_DEFAULT_SIZE 1000000
+#define OAUTH2_JWKS_BUFFER_LIMIT_SIZE   16000000
+#define OAUTH2_JWKS_BUFFER_OVERHEAD     2
+#define OAUTH2_JWKS_TIMEOUT_DEFAULT     30
+#define OAUTH2_JWKS_TIMEOUT_LIMIT       300
 
 struct flb_oauth2_jwks_key {
     flb_sds_t kid;
@@ -995,6 +1000,7 @@ static int oauth2_jwks_fetch_keys(struct flb_oauth2_jwt_ctx *ctx)
     int ret_code = -1;
     int port;
     size_t b_sent;
+    size_t response_buffer_size;
     char *protocol = NULL;
     char *host = NULL;
     char *port_str = NULL;
@@ -1080,9 +1086,34 @@ static int oauth2_jwks_fetch_keys(struct flb_oauth2_jwt_ctx *ctx)
         goto cleanup;
     }
 
+    /* The HTTP client needs a terminator and one readable byte of headroom. */
+    response_buffer_size = ctx->cfg.jwks_buffer_max_size + OAUTH2_JWKS_BUFFER_OVERHEAD;
+    ret = flb_http_buffer_size(c, response_buffer_size);
+    if (ret != 0) {
+        flb_error("[oauth2_jwt] failed to set JWKS HTTP response buffer limit");
+        goto cleanup;
+    }
+
+    flb_http_set_response_timeout(c, ctx->cfg.jwks_response_timeout);
+
     ret = flb_http_do(c, &b_sent);
     if (ret != 0) {
-        flb_error("[oauth2_jwt] HTTP request failed");
+        if (c->resp.data_size == response_buffer_size &&
+            c->resp.data_len >= ctx->cfg.jwks_buffer_max_size) {
+            flb_error("[oauth2_jwt] JWKS HTTP response exceeded "
+                      "oauth2.jwks_buffer_max_size=%zu bytes (headers and body)",
+                      ctx->cfg.jwks_buffer_max_size);
+        }
+        else {
+            flb_error("[oauth2_jwt] HTTP request failed");
+        }
+        goto cleanup;
+    }
+
+    if (c->resp.data_len > ctx->cfg.jwks_buffer_max_size) {
+        flb_error("[oauth2_jwt] JWKS HTTP response exceeded "
+                  "oauth2.jwks_buffer_max_size=%zu bytes (headers and body)",
+                  ctx->cfg.jwks_buffer_max_size);
         goto cleanup;
     }
 
@@ -1278,6 +1309,23 @@ struct flb_oauth2_jwt_ctx *flb_oauth2_jwt_context_create(struct flb_config *conf
         /* Initialize with defaults when cfg is NULL */
         memset(&ctx->cfg, 0, sizeof(struct flb_oauth2_jwt_cfg));
         ctx->cfg.jwks_refresh_interval = 300; /* Default from config map */
+        ctx->cfg.jwks_buffer_max_size = OAUTH2_JWKS_BUFFER_DEFAULT_SIZE;
+        ctx->cfg.jwks_response_timeout = OAUTH2_JWKS_TIMEOUT_DEFAULT;
+    }
+
+    if (ctx->cfg.jwks_buffer_max_size < FLB_HTTP_DATA_SIZE_MAX ||
+        ctx->cfg.jwks_buffer_max_size > OAUTH2_JWKS_BUFFER_LIMIT_SIZE) {
+        flb_error("[oauth2_jwt] oauth2.jwks_buffer_max_size must be between "
+                  "4096 bytes and 16M");
+        flb_free(ctx);
+        return NULL;
+    }
+
+    if (ctx->cfg.jwks_response_timeout <= 0 ||
+        ctx->cfg.jwks_response_timeout > OAUTH2_JWKS_TIMEOUT_LIMIT) {
+        flb_error("[oauth2_jwt] oauth2.jwks_response_timeout must be between 1s and 300s");
+        flb_free(ctx);
+        return NULL;
     }
 
     if (oauth2_jwks_cache_init(&ctx->jwks_cache,
@@ -1539,6 +1587,16 @@ static struct flb_config_map oauth2_jwt_config_map[] = {
      FLB_CONFIG_MAP_INT, "oauth2.jwks_refresh_interval", "300",
      0, FLB_TRUE, offsetof(struct flb_oauth2_jwt_cfg, jwks_refresh_interval),
      "JWKS cache refresh interval in seconds for OAuth2 JWT validation"
+    },
+    {
+     FLB_CONFIG_MAP_SIZE, "oauth2.jwks_buffer_max_size", "1M",
+     0, FLB_TRUE, offsetof(struct flb_oauth2_jwt_cfg, jwks_buffer_max_size),
+     "Maximum JWKS HTTP response size, including headers and body (4096 bytes to 16M)"
+    },
+    {
+     FLB_CONFIG_MAP_TIME, "oauth2.jwks_response_timeout", "30s",
+     0, FLB_TRUE, offsetof(struct flb_oauth2_jwt_cfg, jwks_response_timeout),
+     "Maximum total time to receive a JWKS HTTP response (1s to 300s)"
     },
 
     /* EOF */
