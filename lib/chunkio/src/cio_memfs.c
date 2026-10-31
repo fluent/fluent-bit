@@ -26,6 +26,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <limits.h>
+#include "cio_size.h"
 
 struct cio_memfs *cio_memfs_open(struct cio_ctx *ctx, struct cio_stream *st,
                                  struct cio_chunk *ch, int flags,
@@ -38,6 +39,10 @@ struct cio_memfs *cio_memfs_open(struct cio_ctx *ctx, struct cio_stream *st,
     (void) ch;
     (void) st;
 
+    if (size > PTRDIFF_MAX) {
+        return NULL;
+    }
+
     mf = calloc(1, sizeof(struct cio_memfs));
     if (!mf) {
         cio_errno();
@@ -45,7 +50,7 @@ struct cio_memfs *cio_memfs_open(struct cio_ctx *ctx, struct cio_stream *st,
     }
     mf->crc_cur = cio_crc32_init();
 
-    mf->buf_data = malloc(size);
+    mf->buf_data = malloc(size == 0 ? 1 : size);
     if (!mf->buf_data) {
         cio_errno();
         free(mf->name);
@@ -88,17 +93,25 @@ int cio_memfs_write(struct cio_chunk *ch, const void *buf, size_t count)
         return 0;
     }
 
+    if (buf == NULL || mf->buf_len > PTRDIFF_MAX ||
+        count > PTRDIFF_MAX - mf->buf_len) {
+        return CIO_ERROR;
+    }
+
     /* Calculate available size */
     av_size = (mf->buf_size - mf->buf_len);
     if (av_size < count) {
-
-        /* Suggest initial new size */
-        new_size = mf->buf_size + mf->realloc_size;
-        while (new_size < (mf->buf_len + count)) {
-            new_size += mf->realloc_size;
+        if (cio_chunk_get_projected_size(ch, count, &new_size) != CIO_OK) {
+            return CIO_ERROR;
         }
 
         tmp = realloc(mf->buf_data, new_size);
+        if (!tmp && (ch->ctx->options.flags & CIO_FIXED_GROWTH) == 0 &&
+            new_size > mf->buf_len + count) {
+            new_size = mf->buf_len + count;
+            tmp = realloc(mf->buf_data, new_size);
+        }
+
         if (!tmp) {
             cio_errno();
             return -1;

@@ -53,6 +53,11 @@ int cio_meta_write(struct cio_chunk *ch, char *buf, size_t size)
 
     if (ch->st->type == CIO_STORE_MEM) {
         mf = (struct cio_memfs *) ch->backend;
+        if (mf->meta_data && mf->meta_len == size &&
+            (size == 0 || memcmp(mf->meta_data, buf, size) == 0)) {
+            return CIO_OK;
+        }
+
         if (mf->meta_data) {
             free(mf->meta_data);
         }
