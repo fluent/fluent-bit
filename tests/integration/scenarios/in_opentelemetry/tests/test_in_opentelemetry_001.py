@@ -3421,10 +3421,25 @@ def test_in_opentelemetry_logs_direct_cfl_limit_parity(tmp_path, limit, encoding
 )
 def test_in_opentelemetry_json_logs_replace_invalid_unicode(config_file):
     service = Service(config_file)
-    payload = (
-        b'{"resourceLogs":[{"scopeLogs":[{"logRecords":[{"body":'
-        b'{"stringValue":"bad \\uD800 surrogate"}}]}]}]}'
-    )
+    cases = [
+        (b"bad \\uD800 surrogate", "bad \ufffd surrogate"),
+        (b"\\uD800\\u0041", "\ufffd"),
+        (b"\\uA_CD", r"\uACD"),
+        (b"\\uD800\\uXXXX", "\ufffdXXXX"),
+        (b"\\uD83D\\uDE00", "\U0001f600"),
+        (b"\\u", r"\u"),
+    ]
+    records = [
+        b'{"body":{"stringValue":"' + value + b'"},"attributes":['
+        b'{"key":"\\uA_CD","value":{"stringValue":"key preserved"}}]}'
+        for value, _ in cases
+    ]
+    midpoint_below = "1000000000000000090253369016319"
+    zeros = 800 - len(midpoint_below)
+    number = midpoint_below + "9" * zeros + f".9e-{zeros}"
+    records.append(b'{"body":{"doubleValue":' + number.encode("ascii") + b"}}")
+    payload = (b'{"resourceLogs":[{"scopeLogs":[{"logRecords":['
+               + b",".join(records) + b"]}]}]}")
 
     service.start()
     try:
@@ -3434,5 +3449,18 @@ def test_in_opentelemetry_json_logs_replace_invalid_unicode(config_file):
         )
         assert response.status_code == 201
         service.wait_for_signal_count("logs", logs_before + 1, timeout=10)
+        actual = [record
+                  for request in data_storage["logs"][logs_before:]
+                  for resource in request.resource_logs
+                  for scope in resource.scope_logs
+                  for record in scope.log_records]
+        assert len(actual) == len(cases) + 1
+        assert [record.body.string_value for record in actual[:-1]] == [
+            expected for _, expected in cases
+        ]
+        assert actual[-1].body.double_value == 1e30
+        for record in actual[:-1]:
+            attributes = {attr.key: attr.value.string_value for attr in record.attributes}
+            assert attributes[r"\uACD"] == "key preserved"
     finally:
         service.stop()
