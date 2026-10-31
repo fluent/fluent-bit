@@ -217,9 +217,10 @@ int flb_opentelemetry_logs_json_to_msgpack(struct flb_log_event_encoder *encoder
                                            int *error_status);
 
 /*
- * Returned by flb_opentelemetry_logs_json_to_cfl() for a valid payload whose
- * records CFL cannot hold, such as a map key that is not a string. Use
- * flb_opentelemetry_logs_json_to_msgpack() for it.
+ * Returned by flb_opentelemetry_logs_json_to_cfl() for a payload it leaves to
+ * flb_opentelemetry_logs_json_to_msgpack(): records CFL cannot hold, such as a
+ * map key that is not a string, and payloads the JSON tree does not read,
+ * such as content after the request object or a build without yyjson.
  */
 #define FLB_OTEL_LOGS_JSON_CFL_UNSUPPORTED -2
 

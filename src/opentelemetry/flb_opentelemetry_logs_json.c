@@ -20,13 +20,13 @@
 #include <fluent-bit/flb_base64.h>
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_json_tree.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_mp_chunk.h>
 #include <fluent-bit/flb_opentelemetry.h>
 #include <fluent-bit/flb_time.h>
 
 #include <cfl/cfl_arena.h>
-#include <yyjson.h>
 
 #include <ctype.h>
 #include <errno.h>
@@ -57,10 +57,11 @@ struct json_cfl_builder {
 struct flb_opentelemetry_logs_json_cfl {
     struct flb_mp_chunk_cobj *chunk;
     struct cfl_arena *arena;
-    yyjson_doc *document;
+    struct flb_json_tree *document;
     size_t encoded_size;
     size_t record_count;
 };
+
 
 static void *json_arena_malloc(void *context, size_t size)
 {
@@ -318,37 +319,10 @@ static struct flb_mp_chunk_record *json_cfl_record_add(struct json_cfl_builder *
 /*
  * Keys are compared case-insensitively. The expected length is known at
  * compile time, so most keys are rejected by their length alone; callers
- * pass string literals through the json_key_equal() and json_obj_get()
- * macros.
+ * pass string literals through the json_obj_get() macro.
  */
-static int json_key_equal_n(yyjson_val *key, const char *expected, size_t expected_length)
-{
-    if (!yyjson_is_str(key) || yyjson_get_len(key) != expected_length) {
-        return FLB_FALSE;
-    }
-    return strncasecmp(yyjson_get_str(key), expected, expected_length) == 0;
-}
-
-static yyjson_val *json_obj_get_n(yyjson_val *object, const char *name, size_t name_length)
-{
-    size_t index;
-    size_t maximum;
-    yyjson_val *key;
-    yyjson_val *value;
-
-    if (!yyjson_is_obj(object)) {
-        return NULL;
-    }
-    yyjson_obj_foreach(object, index, maximum, key, value) {
-        if (json_key_equal_n(key, name, name_length)) {
-            return value;
-        }
-    }
-    return NULL;
-}
-
-#define json_key_equal(key, literal) json_key_equal_n(key, "" literal, sizeof(literal) - 1)
-#define json_obj_get(object, literal) json_obj_get_n(object, "" literal, sizeof(literal) - 1)
+#define json_obj_get(object, literal) \
+    flb_json_node_obj_get_case(object, "" literal, sizeof(literal) - 1)
 
 static int json_base64_decode(const char *source, size_t source_size,
                               unsigned char **output, size_t *output_size)
@@ -393,9 +367,9 @@ static int json_base64_decode(const char *source, size_t source_size,
 }
 
 static struct cfl_variant *json_plain_value(struct json_cfl_builder *builder,
-                                            yyjson_val *value);
+                                            struct flb_json_node *value);
 static struct cfl_variant *json_converted_value(struct json_cfl_builder *builder,
-                                                yyjson_val *value, size_t depth);
+                                                struct flb_json_node *value, size_t depth);
 
 /*
  * The conversion of OTLP JSON values below mirrors the established msgpack
@@ -418,66 +392,72 @@ static struct cfl_variant *json_converted_value(struct json_cfl_builder *builder
 #define JSON_WRAPPED_KVLIST 7
 
 /* like the established path, a wrapper key matches any prefix of the name */
-static int json_wrapper_key(yyjson_val *key, const char *name)
+static int json_wrapper_key(const char *key, size_t key_length, const char *name)
 {
-    return strncasecmp(yyjson_get_str(key), name, yyjson_get_len(key)) == 0;
+    return strncasecmp(key, name, key_length) == 0;
 }
 
-static int json_wrapped(yyjson_val *object, yyjson_val **out_value, int *out_type)
+static int json_wrapped(struct flb_json_node *object, struct flb_json_node **out_value,
+                        int *out_type)
 {
     int type;
-    yyjson_val *key;
-    yyjson_val *value;
-    yyjson_obj_iter iterator;
+    int value_type;
+    size_t key_length;
+    const char *key_name;
+    struct flb_json_node *key;
+    struct flb_json_node *value;
 
-    if (!yyjson_is_obj(object)) {
+    if (flb_json_node_type(object) != FLB_JSON_NODE_OBJ) {
         return -1;
     }
     type = -1;
     value = NULL;
-    if (yyjson_obj_size(object) == 1) {
-        yyjson_obj_iter_init(object, &iterator);
-        key = yyjson_obj_iter_next(&iterator);
-        value = yyjson_obj_iter_get_val(key);
+    value_type = FLB_JSON_NODE_NONE;
+    if (flb_json_node_obj_size(object) == 1) {
+        key = flb_json_node_first(object);
+        value = flb_json_node_key_value(key);
+        key_name = flb_json_node_get_strn(key, &key_length);
+        value_type = flb_json_node_type(value);
 
-        if (json_wrapper_key(key, "stringValue")) {
-            if (!yyjson_is_null(value) && !yyjson_is_str(value)) {
+        if (json_wrapper_key(key_name, key_length, "stringValue")) {
+            if (value_type != FLB_JSON_NODE_NULL && value_type != FLB_JSON_NODE_STR) {
                 return -2;
             }
             type = JSON_WRAPPED_STRING;
         }
-        else if (json_wrapper_key(key, "boolValue")) {
-            if (!yyjson_is_bool(value)) {
+        else if (json_wrapper_key(key_name, key_length, "boolValue")) {
+            if (value_type != FLB_JSON_NODE_BOOL) {
                 return -2;
             }
             type = JSON_WRAPPED_BOOL;
         }
-        else if (json_wrapper_key(key, "intValue")) {
-            if (!yyjson_is_int(value) && !yyjson_is_str(value)) {
+        else if (json_wrapper_key(key_name, key_length, "intValue")) {
+            if (value_type != FLB_JSON_NODE_UINT && value_type != FLB_JSON_NODE_SINT &&
+                value_type != FLB_JSON_NODE_STR) {
                 return -2;
             }
             type = JSON_WRAPPED_INT;
         }
-        else if (json_wrapper_key(key, "doubleValue")) {
-            if (!yyjson_is_real(value) && !yyjson_is_str(value)) {
+        else if (json_wrapper_key(key_name, key_length, "doubleValue")) {
+            if (value_type != FLB_JSON_NODE_REAL && value_type != FLB_JSON_NODE_STR) {
                 return -2;
             }
             type = JSON_WRAPPED_DOUBLE;
         }
-        else if (json_wrapper_key(key, "bytesValue")) {
-            if (!yyjson_is_str(value)) {
+        else if (json_wrapper_key(key_name, key_length, "bytesValue")) {
+            if (value_type != FLB_JSON_NODE_STR) {
                 return -2;
             }
             type = JSON_WRAPPED_BYTES;
         }
-        else if (json_wrapper_key(key, "arrayValue")) {
-            if (!yyjson_is_arr(value) && !yyjson_is_obj(value)) {
+        else if (json_wrapper_key(key_name, key_length, "arrayValue")) {
+            if (value_type != FLB_JSON_NODE_ARR && value_type != FLB_JSON_NODE_OBJ) {
                 return -2;
             }
             type = JSON_WRAPPED_ARRAY;
         }
-        else if (json_wrapper_key(key, "kvlistValue")) {
-            if (!yyjson_is_obj(value)) {
+        else if (json_wrapper_key(key_name, key_length, "kvlistValue")) {
+            if (value_type != FLB_JSON_NODE_OBJ) {
                 return -2;
             }
             type = JSON_WRAPPED_KVLIST;
@@ -489,19 +469,20 @@ static int json_wrapped(yyjson_val *object, yyjson_val **out_value, int *out_typ
     if (out_type != NULL) {
         *out_type = type;
     }
-    if (yyjson_is_obj(value) && yyjson_obj_size(value) == 1) {
-        yyjson_obj_iter_init(value, &iterator);
-        key = yyjson_obj_iter_next(&iterator);
-        if (yyjson_get_len(key) != 6 || strncasecmp(yyjson_get_str(key), "values", 6) != 0) {
+    if (value_type == FLB_JSON_NODE_OBJ && flb_json_node_obj_size(value) == 1) {
+        key = flb_json_node_first(value);
+        if (flb_json_node_get_len(key) != 6 ||
+            strncasecmp(flb_json_node_get_str(key), "values", 6) != 0) {
             return -3;
         }
-        value = yyjson_obj_iter_get_val(key);
+        value = flb_json_node_key_value(key);
     }
-    if (type == JSON_WRAPPED_ARRAY && !yyjson_is_arr(value) &&
-        (!yyjson_is_obj(value) || yyjson_obj_size(value) != 0)) {
+    if (type == JSON_WRAPPED_ARRAY && !flb_json_node_is_arr(value) &&
+        (!flb_json_node_is_obj(value) || flb_json_node_obj_size(value) != 0)) {
         return -2;
     }
-    else if (type == JSON_WRAPPED_KVLIST && !yyjson_is_arr(value) && !yyjson_is_obj(value)) {
+    else if (type == JSON_WRAPPED_KVLIST && !flb_json_node_is_arr(value) &&
+             !flb_json_node_is_obj(value)) {
         return -2;
     }
     if (out_value != NULL) {
@@ -511,11 +492,11 @@ static int json_wrapped(yyjson_val *object, yyjson_val **out_value, int *out_typ
 }
 
 static struct cfl_variant *json_converted_array(struct json_cfl_builder *builder,
-                                                yyjson_val *array, size_t depth)
+                                                struct flb_json_node *array, size_t depth)
 {
     size_t index;
     size_t maximum;
-    yyjson_val *entry;
+    struct flb_json_node *entry;
     struct cfl_array *result;
     struct cfl_variant *variant;
 
@@ -526,11 +507,11 @@ static struct cfl_variant *json_converted_array(struct json_cfl_builder *builder
     if (json_cfl_account(builder, OTEL_JSON_CFL_ARRAY_HEADER_SIZE) != 0) {
         return NULL;
     }
-    result = cfl_array_create_in(builder->arena, yyjson_arr_size(array));
+    result = cfl_array_create_in(builder->arena, flb_json_node_arr_size(array));
     if (result == NULL) {
         return NULL;
     }
-    yyjson_arr_foreach(array, index, maximum, entry) {
+    flb_json_node_arr_foreach(array, index, maximum, entry) {
         variant = json_converted_value(builder, entry, depth + 1);
         if (variant == NULL || cfl_array_append(result, variant) != 0) {
             if (variant != NULL) {
@@ -564,7 +545,7 @@ static struct cfl_variant *json_kvlist_variant(struct json_cfl_builder *builder,
 
 /* Insert a converted key, CFL only holds string keys */
 static int json_converted_insert(struct json_cfl_builder *builder, struct cfl_kvlist *kvlist,
-                                 yyjson_val *key, struct cfl_variant *value, size_t depth)
+                                 struct flb_json_node *key, struct cfl_variant *value, size_t depth)
 {
     int result;
     size_t size;
@@ -573,9 +554,9 @@ static int json_converted_insert(struct json_cfl_builder *builder, struct cfl_kv
     if (value == NULL) {
         return -1;
     }
-    if (yyjson_is_str(key)) {
-        return json_cfl_insert(builder, kvlist, yyjson_get_str(key), yyjson_get_len(key),
-                               value);
+    if (flb_json_node_is_str(key)) {
+        return json_cfl_insert(builder, kvlist, flb_json_node_get_str(key),
+                               flb_json_node_get_len(key), value);
     }
 
     /* the key is accounted once, by the insertion */
@@ -597,17 +578,17 @@ static int json_converted_insert(struct json_cfl_builder *builder, struct cfl_kv
 }
 
 static struct cfl_kvlist *json_converted_kvlist(struct json_cfl_builder *builder,
-                                                yyjson_val *array, size_t depth)
+                                                struct flb_json_node *array, size_t depth)
 {
     size_t index;
     size_t maximum;
-    yyjson_val *entry;
-    yyjson_val *key;
-    yyjson_val *value;
+    struct flb_json_node *entry;
+    struct flb_json_node *key;
+    struct flb_json_node *value;
     struct cfl_kvlist *result;
     struct cfl_variant *variant;
 
-    if (!yyjson_is_arr(array)) {
+    if (!flb_json_node_is_arr(array)) {
         return NULL;
     }
     if (depth > OTEL_JSON_CFL_MAX_DEPTH) {
@@ -618,9 +599,9 @@ static struct cfl_kvlist *json_converted_kvlist(struct json_cfl_builder *builder
     if (result == NULL) {
         return NULL;
     }
-    yyjson_arr_foreach(array, index, maximum, entry) {
+    flb_json_node_arr_foreach(array, index, maximum, entry) {
         key = json_obj_get(entry, "key");
-        if (!yyjson_is_obj(entry) || key == NULL) {
+        if (!flb_json_node_is_obj(entry) || key == NULL) {
             cfl_kvlist_destroy(result);
             return NULL;
         }
@@ -629,10 +610,10 @@ static struct cfl_kvlist *json_converted_kvlist(struct json_cfl_builder *builder
             /* an unset value is an empty string */
             variant = json_cfl_string(builder, "", 0);
         }
-        else if (yyjson_is_obj(value) && yyjson_obj_size(value) == 0) {
+        else if (flb_json_node_is_obj(value) && flb_json_node_obj_size(value) == 0) {
             variant = json_cfl_null(builder);
         }
-        else if (!yyjson_is_obj(value)) {
+        else if (!flb_json_node_is_obj(value)) {
             cfl_kvlist_destroy(result);
             return NULL;
         }
@@ -648,13 +629,13 @@ static struct cfl_kvlist *json_converted_kvlist(struct json_cfl_builder *builder
 }
 
 static struct cfl_variant *json_converted_map(struct json_cfl_builder *builder,
-                                              yyjson_val *object, size_t depth);
+                                              struct flb_json_node *object, size_t depth);
 
 /*
  * Returns 0 with the converted value, NULL on failure, or the json_wrapped()
  * status when the object is not a valid wrapper.
  */
-static int json_unwrapped_value(struct json_cfl_builder *builder, yyjson_val *object,
+static int json_unwrapped_value(struct json_cfl_builder *builder, struct flb_json_node *object,
                                 size_t depth, struct cfl_variant **out_variant)
 {
     int ret;
@@ -663,7 +644,7 @@ static int json_unwrapped_value(struct json_cfl_builder *builder, yyjson_val *ob
     size_t bytes_size;
     unsigned char *bytes;
     char buffer[33];
-    yyjson_val *value;
+    struct flb_json_node *value;
     struct cfl_array *array;
 
     ret = json_wrapped(object, &value, &type);
@@ -674,19 +655,19 @@ static int json_unwrapped_value(struct json_cfl_builder *builder, yyjson_val *ob
 
     switch (type) {
     case JSON_WRAPPED_INT:
-        if (yyjson_is_str(value)) {
-            length = yyjson_get_len(value);
+        if (flb_json_node_is_str(value)) {
+            length = flb_json_node_get_len(value);
             if (length > sizeof(buffer) - 1) {
                 length = sizeof(buffer) - 1;
             }
-            memcpy(buffer, yyjson_get_str(value), length);
+            memcpy(buffer, flb_json_node_get_str(value), length);
             buffer[length] = '\0';
             *out_variant = json_cfl_int(builder, strtoll(buffer, NULL, 10));
             return 0;
         }
         break;
     case JSON_WRAPPED_BYTES:
-        if (json_base64_decode(yyjson_get_str(value), yyjson_get_len(value),
+        if (json_base64_decode(flb_json_node_get_str(value), flb_json_node_get_len(value),
                                &bytes, &bytes_size) != 0) {
             return -2;
         }
@@ -698,7 +679,7 @@ static int json_unwrapped_value(struct json_cfl_builder *builder, yyjson_val *ob
         flb_free(bytes);
         return 0;
     case JSON_WRAPPED_ARRAY:
-        if (yyjson_is_arr(value)) {
+        if (flb_json_node_is_arr(value)) {
             *out_variant = json_converted_array(builder, value, depth + 1);
             return 0;
         }
@@ -714,7 +695,7 @@ static int json_unwrapped_value(struct json_cfl_builder *builder, yyjson_val *ob
         }
         return 0;
     case JSON_WRAPPED_KVLIST:
-        if (yyjson_is_arr(value)) {
+        if (flb_json_node_is_arr(value)) {
             *out_variant = json_kvlist_variant(builder,
                                                json_converted_kvlist(builder, value,
                                                                      depth + 1));
@@ -733,13 +714,13 @@ static int json_unwrapped_value(struct json_cfl_builder *builder, yyjson_val *ob
 }
 
 static struct cfl_variant *json_converted_map(struct json_cfl_builder *builder,
-                                              yyjson_val *object, size_t depth)
+                                              struct flb_json_node *object, size_t depth)
 {
     int ret;
     size_t index;
     size_t maximum;
-    yyjson_val *key;
-    yyjson_val *value;
+    struct flb_json_node *key;
+    struct flb_json_node *value;
     struct cfl_kvlist *kvlist;
     struct cfl_variant *variant;
 
@@ -760,7 +741,7 @@ static struct cfl_variant *json_converted_map(struct json_cfl_builder *builder,
     if (kvlist == NULL) {
         return NULL;
     }
-    yyjson_obj_foreach(object, index, maximum, key, value) {
+    flb_json_node_obj_foreach(object, index, maximum, key, value) {
         if (json_converted_insert(builder, kvlist, key,
                                   json_converted_value(builder, value, depth + 1),
                                   depth) != 0) {
@@ -772,29 +753,30 @@ static struct cfl_variant *json_converted_map(struct json_cfl_builder *builder,
 }
 
 static struct cfl_variant *json_converted_value(struct json_cfl_builder *builder,
-                                                yyjson_val *value, size_t depth)
+                                                struct flb_json_node *value, size_t depth)
 {
-    if (yyjson_is_obj(value)) {
+    switch (flb_json_node_type(value)) {
+    case FLB_JSON_NODE_OBJ:
         return json_converted_map(builder, value, depth + 1);
-    }
-    if (yyjson_is_arr(value)) {
+    case FLB_JSON_NODE_ARR:
         return json_converted_array(builder, value, depth + 1);
-    }
-    if (yyjson_is_null(value)) {
+    case FLB_JSON_NODE_NULL:
         /* the established path encodes JSON null as an empty string */
         return json_cfl_string(builder, "", 0);
+    default:
+        return json_plain_value(builder, value);
     }
-    return json_plain_value(builder, value);
 }
 
 /* Copy a JSON value as is, the way the established path copies msgpack objects */
 static struct cfl_variant *json_raw_value(struct json_cfl_builder *builder,
-                                          yyjson_val *value, size_t depth)
+                                          struct flb_json_node *value, size_t depth)
 {
+    int type;
     size_t index;
     size_t maximum;
-    yyjson_val *key;
-    yyjson_val *entry;
+    struct flb_json_node *key;
+    struct flb_json_node *entry;
     struct cfl_array *array;
     struct cfl_kvlist *kvlist;
     struct cfl_variant *variant;
@@ -802,17 +784,19 @@ static struct cfl_variant *json_raw_value(struct json_cfl_builder *builder,
     if (depth > OTEL_JSON_CFL_MAX_DEPTH) {
         return NULL;
     }
-    if (yyjson_is_obj(value)) {
+    type = flb_json_node_type(value);
+    if (type == FLB_JSON_NODE_OBJ) {
         if (json_cfl_account(builder,
-                             json_cfl_array_header_size(yyjson_obj_size(value))) != 0) {
+                             json_cfl_array_header_size(flb_json_node_obj_size(value))) != 0) {
             return NULL;
         }
         kvlist = cfl_kvlist_create_in(builder->arena);
         if (kvlist == NULL) {
             return NULL;
         }
-        yyjson_obj_foreach(value, index, maximum, key, entry) {
-            if (json_cfl_insert(builder, kvlist, yyjson_get_str(key), yyjson_get_len(key),
+        flb_json_node_obj_foreach(value, index, maximum, key, entry) {
+            if (json_cfl_insert(builder, kvlist, flb_json_node_get_str(key),
+                                flb_json_node_get_len(key),
                                 json_raw_value(builder, entry, depth + 1)) != 0) {
                 cfl_kvlist_destroy(kvlist);
                 return NULL;
@@ -824,16 +808,16 @@ static struct cfl_variant *json_raw_value(struct json_cfl_builder *builder,
         }
         return variant;
     }
-    if (yyjson_is_arr(value)) {
+    if (type == FLB_JSON_NODE_ARR) {
         if (json_cfl_account(builder,
-                             json_cfl_array_header_size(yyjson_arr_size(value))) != 0) {
+                             json_cfl_array_header_size(flb_json_node_arr_size(value))) != 0) {
             return NULL;
         }
-        array = cfl_array_create_in(builder->arena, yyjson_arr_size(value));
+        array = cfl_array_create_in(builder->arena, flb_json_node_arr_size(value));
         if (array == NULL) {
             return NULL;
         }
-        yyjson_arr_foreach(value, index, maximum, entry) {
+        flb_json_node_arr_foreach(value, index, maximum, entry) {
             variant = json_raw_value(builder, entry, depth + 1);
             if (variant == NULL || cfl_array_append(array, variant) != 0) {
                 if (variant != NULL) {
@@ -857,18 +841,18 @@ static struct cfl_variant *json_raw_value(struct json_cfl_builder *builder,
  * characters are considered, and they must all be digits. Values beyond
  * 64 bits saturate. Returns the number of digits, or -1.
  */
-static int json_parse_digits(yyjson_val *value, uint64_t *result)
+static int json_parse_digits(struct flb_json_node *value, uint64_t *result)
 {
     size_t index;
     size_t length;
     const char *string;
     char buffer[32];
 
-    if (!yyjson_is_str(value)) {
+    if (!flb_json_node_is_str(value)) {
         return -1;
     }
-    string = yyjson_get_str(value);
-    length = yyjson_get_len(value);
+    string = flb_json_node_get_str(value);
+    length = flb_json_node_get_len(value);
     if (length > sizeof(buffer) - 1) {
         length = sizeof(buffer) - 1;
     }
@@ -884,12 +868,12 @@ static int json_parse_digits(yyjson_val *value, uint64_t *result)
 }
 
 /* The timestamp of a log record, it must be an unsigned integer or digits */
-static int json_record_timestamp(yyjson_val *value, struct flb_time *tm)
+static int json_record_timestamp(struct flb_json_node *value, struct flb_time *tm)
 {
     uint64_t number;
 
-    if (yyjson_is_uint(value)) {
-        number = yyjson_get_uint(value);
+    if (flb_json_node_is_uint(value)) {
+        number = flb_json_node_get_uint(value);
     }
     else if (json_parse_digits(value, &number) < 0) {
         return -1;
@@ -898,21 +882,21 @@ static int json_record_timestamp(yyjson_val *value, struct flb_time *tm)
 }
 
 /* A non-empty identifier must have the exact hexadecimal length */
-static int json_identifier_valid(yyjson_val *value, size_t length)
+static int json_identifier_valid(struct flb_json_node *value, size_t length)
 {
     size_t index;
     const char *string;
 
-    if (!yyjson_is_str(value)) {
+    if (!flb_json_node_is_str(value)) {
         return FLB_FALSE;
     }
-    if (yyjson_get_len(value) == 0) {
+    if (flb_json_node_get_len(value) == 0) {
         return FLB_TRUE;
     }
-    if (yyjson_get_len(value) != length) {
+    if (flb_json_node_get_len(value) != length) {
         return FLB_FALSE;
     }
-    string = yyjson_get_str(value);
+    string = flb_json_node_get_str(value);
     for (index = 0; index < length; index++) {
         if (!isxdigit((unsigned char) string[index])) {
             return FLB_FALSE;
@@ -925,12 +909,12 @@ static int json_identifier_valid(yyjson_val *value, size_t length)
  * Reject a log record the established path rejects, with the same status and
  * in the same order, before any of it is built.
  */
-static int json_record_validate(struct json_cfl_builder *builder, yyjson_val *log_record,
+static int json_record_validate(struct json_cfl_builder *builder, struct flb_json_node *log_record,
                                 struct flb_time *tm)
 {
-    yyjson_val *value;
+    struct flb_json_node *value;
 
-    if (!yyjson_is_obj(log_record)) {
+    if (!flb_json_node_is_obj(log_record)) {
         return FLB_OTEL_LOGS_ERR_UNEXPECTED_LOGRECORDS_ENTRY_TYPE;
     }
     value = json_obj_get(log_record, "timeUnixNano");
@@ -949,7 +933,7 @@ static int json_record_validate(struct json_cfl_builder *builder, yyjson_val *lo
         return FLB_OTEL_LOGS_ERR_UNEXPECTED_TIMESTAMP_TYPE;
     }
     value = json_obj_get(log_record, "attributes");
-    if (value != NULL && !yyjson_is_arr(value)) {
+    if (value != NULL && !flb_json_node_is_arr(value)) {
         return FLB_OTEL_LOGS_ERR_UNEXPECTED_ATTRIBUTES_TYPE;
     }
     value = json_obj_get(log_record, "traceId");
@@ -961,43 +945,44 @@ static int json_record_validate(struct json_cfl_builder *builder, yyjson_val *lo
         return FLB_OTEL_LOGS_ERR_INVALID_SPAN_ID;
     }
     value = json_obj_get(log_record, "body");
-    if (value != NULL && !yyjson_is_obj(value)) {
+    if (value != NULL && !flb_json_node_is_obj(value)) {
         return FLB_OTEL_LOGS_ERR_UNEXPECTED_BODY_TYPE;
     }
     return 0;
 }
 
 static struct cfl_variant *json_plain_value(struct json_cfl_builder *builder,
-                                            yyjson_val *value)
+                                            struct flb_json_node *value)
 {
-    if (yyjson_is_str(value)) {
-        return json_cfl_string(builder, yyjson_get_str(value), yyjson_get_len(value));
-    }
-    if (yyjson_is_uint(value)) {
-        return json_cfl_uint(builder, yyjson_get_uint(value));
-    }
-    if (yyjson_is_sint(value)) {
-        return json_cfl_int(builder, yyjson_get_sint(value));
-    }
-    if (yyjson_is_real(value)) {
-        return json_cfl_double(builder, yyjson_get_real(value));
-    }
-    if (yyjson_is_bool(value)) {
-        return json_cfl_bool(builder, yyjson_get_bool(value));
-    }
-    if (yyjson_is_null(value)) {
+    size_t length;
+    const char *string;
+
+    switch (flb_json_node_type(value)) {
+    case FLB_JSON_NODE_STR:
+        string = flb_json_node_get_strn(value, &length);
+        return json_cfl_string(builder, string, length);
+    case FLB_JSON_NODE_UINT:
+        return json_cfl_uint(builder, flb_json_node_get_uint(value));
+    case FLB_JSON_NODE_SINT:
+        return json_cfl_int(builder, flb_json_node_get_sint(value));
+    case FLB_JSON_NODE_REAL:
+        return json_cfl_double(builder, flb_json_node_get_real(value));
+    case FLB_JSON_NODE_BOOL:
+        return json_cfl_bool(builder, flb_json_node_get_bool(value));
+    case FLB_JSON_NODE_NULL:
         return json_cfl_null(builder);
+    default:
+        return NULL;
     }
-    return NULL;
 }
 
 static struct cfl_kvlist *json_record_metadata(struct json_cfl_builder *builder,
-                                               yyjson_val *log_record)
+                                               struct flb_json_node *log_record)
 {
     int result;
     uint64_t number;
     unsigned char identifier[16];
-    yyjson_val *value;
+    struct flb_json_node *value;
     struct cfl_kvlist *metadata;
     struct cfl_kvlist *otlp;
 
@@ -1019,10 +1004,10 @@ static struct cfl_kvlist *json_record_metadata(struct json_cfl_builder *builder,
                                  json_raw_value(builder, value, 0));
     }
     value = json_obj_get(log_record, "severityText");
-    if (result == 0 && yyjson_is_str(value)) {
+    if (result == 0 && flb_json_node_is_str(value)) {
         result = json_cfl_insert(builder, otlp, "severity_text", 13,
-                                 json_cfl_string(builder, yyjson_get_str(value),
-                                                 yyjson_get_len(value)));
+                                 json_cfl_string(builder, flb_json_node_get_str(value),
+                                                 flb_json_node_get_len(value)));
     }
     value = json_obj_get(log_record, "attributes");
     if (result == 0 && value != NULL) {
@@ -1033,14 +1018,15 @@ static struct cfl_kvlist *json_record_metadata(struct json_cfl_builder *builder,
         }
     }
     value = json_obj_get(log_record, "droppedAttributesCount");
-    if (result == 0 && value != NULL && (yyjson_is_int(value) || yyjson_is_uint(value))) {
+    if (result == 0 && value != NULL &&
+        (flb_json_node_is_int(value) || flb_json_node_is_uint(value))) {
         result = json_cfl_insert(builder, otlp, "dropped_attributes_count", 24,
                                  json_plain_value(builder, value));
     }
     value = json_obj_get(log_record, "traceId");
-    if (result == 0 && yyjson_is_str(value) && yyjson_get_len(value) > 0) {
-        if (yyjson_get_len(value) != 32 ||
-            flb_otel_utils_hex_to_id(yyjson_get_str(value), 32, identifier, 16) != 0 ||
+    if (result == 0 && flb_json_node_is_str(value) && flb_json_node_get_len(value) > 0) {
+        if (flb_json_node_get_len(value) != 32 ||
+            flb_otel_utils_hex_to_id(flb_json_node_get_str(value), 32, identifier, 16) != 0 ||
             json_cfl_account_sized(builder, json_cfl_binary_header_size(16), 16) != 0) {
             goto error;
         }
@@ -1049,9 +1035,9 @@ static struct cfl_kvlist *json_record_metadata(struct json_cfl_builder *builder,
                                                      (char *) identifier, 16, CFL_FALSE));
     }
     value = json_obj_get(log_record, "spanId");
-    if (result == 0 && yyjson_is_str(value) && yyjson_get_len(value) > 0) {
-        if (yyjson_get_len(value) != 16 ||
-            flb_otel_utils_hex_to_id(yyjson_get_str(value), 16, identifier, 8) != 0 ||
+    if (result == 0 && flb_json_node_is_str(value) && flb_json_node_get_len(value) > 0) {
+        if (flb_json_node_get_len(value) != 16 ||
+            flb_otel_utils_hex_to_id(flb_json_node_get_str(value), 16, identifier, 8) != 0 ||
             json_cfl_account_sized(builder, json_cfl_binary_header_size(8), 8) != 0) {
             goto error;
         }
@@ -1063,18 +1049,18 @@ static struct cfl_kvlist *json_record_metadata(struct json_cfl_builder *builder,
     if (value == NULL) {
         value = json_obj_get(log_record, "traceFlags");
     }
-    if (result == 0 && (yyjson_is_uint(value) || json_parse_digits(value, &number) > 0)) {
-        if (yyjson_is_uint(value)) {
-            number = yyjson_get_uint(value);
+    if (result == 0 && (flb_json_node_is_uint(value) || json_parse_digits(value, &number) > 0)) {
+        if (flb_json_node_is_uint(value)) {
+            number = flb_json_node_get_uint(value);
         }
         result = json_cfl_insert(builder, otlp, "trace_flags", 11,
                                  json_cfl_uint(builder, number & 0xff));
     }
     value = json_obj_get(log_record, "eventName");
-    if (result == 0 && yyjson_is_str(value)) {
+    if (result == 0 && flb_json_node_is_str(value)) {
         result = json_cfl_insert(builder, otlp, "event_name", 10,
-                                 json_cfl_string(builder, yyjson_get_str(value),
-                                                 yyjson_get_len(value)));
+                                 json_cfl_string(builder, flb_json_node_get_str(value),
+                                                 flb_json_node_get_len(value)));
     }
     if (result == 0) {
         result = json_cfl_insert_kvlist(builder, metadata, "otlp", 4, otlp);
@@ -1091,11 +1077,11 @@ error:
 }
 
 static struct cfl_kvlist *json_record_body(struct json_cfl_builder *builder,
-                                           yyjson_val *log_record)
+                                           struct flb_json_node *log_record)
 {
     int type;
     const char *key;
-    yyjson_val *body;
+    struct flb_json_node *body;
     struct cfl_kvlist *result;
     struct cfl_variant *variant;
 
@@ -1160,14 +1146,14 @@ static struct cfl_kvlist *json_group_metadata(struct json_cfl_builder *builder,
 }
 
 static struct cfl_kvlist *json_group_body(struct json_cfl_builder *builder,
-                                          yyjson_val *resource_log,
-                                          yyjson_val *scope_log)
+                                          struct flb_json_node *resource_log,
+                                          struct flb_json_node *scope_log)
 {
     int result;
-    yyjson_val *resource;
-    yyjson_val *scope;
-    yyjson_val *schema_url;
-    yyjson_val *value;
+    struct flb_json_node *resource;
+    struct flb_json_node *scope;
+    struct flb_json_node *schema_url;
+    struct flb_json_node *value;
     struct cfl_kvlist *body;
     struct cfl_kvlist *resource_map;
     struct cfl_kvlist *scope_map;
@@ -1180,7 +1166,7 @@ static struct cfl_kvlist *json_group_body(struct json_cfl_builder *builder,
         goto error;
     }
     resource = json_obj_get(resource_log, "resource");
-    if (yyjson_is_obj(resource)) {
+    if (flb_json_node_is_obj(resource)) {
         value = json_obj_get(resource, "attributes");
         if (value != NULL) {
             result = json_cfl_insert_kvlist(builder, resource_map, "attributes", 10,
@@ -1196,21 +1182,21 @@ static struct cfl_kvlist *json_group_body(struct json_cfl_builder *builder,
         }
     }
     value = json_obj_get(resource_log, "schemaUrl");
-    if (result == 0 && yyjson_is_str(value)) {
+    if (result == 0 && flb_json_node_is_str(value)) {
         result = json_cfl_insert(builder, resource_map, "schema_url", 10,
-                                 json_cfl_string(builder, yyjson_get_str(value),
-                                                 yyjson_get_len(value)));
+                                 json_cfl_string(builder, flb_json_node_get_str(value),
+                                                 flb_json_node_get_len(value)));
     }
     if (result == 0) {
         result = json_cfl_insert_kvlist(builder, body, "resource", 8, resource_map);
         resource_map = NULL;
     }
     scope = json_obj_get(scope_log, "scope");
-    if (!yyjson_is_obj(scope)) {
+    if (!flb_json_node_is_obj(scope)) {
         scope = NULL;
     }
     schema_url = json_obj_get(scope_log, "schemaUrl");
-    if (!yyjson_is_str(schema_url)) {
+    if (!flb_json_node_is_str(schema_url)) {
         schema_url = NULL;
     }
 
@@ -1229,16 +1215,16 @@ static struct cfl_kvlist *json_group_body(struct json_cfl_builder *builder,
     }
     if (result == 0 && scope != NULL) {
         value = json_obj_get(scope, "name");
-        if (yyjson_is_str(value)) {
+        if (flb_json_node_is_str(value)) {
             result = json_cfl_insert(builder, scope_map, "name", 4,
-                                     json_cfl_string(builder, yyjson_get_str(value),
-                                                     yyjson_get_len(value)));
+                                     json_cfl_string(builder, flb_json_node_get_str(value),
+                                                     flb_json_node_get_len(value)));
         }
         value = json_obj_get(scope, "version");
-        if (result == 0 && yyjson_is_str(value)) {
+        if (result == 0 && flb_json_node_is_str(value)) {
             result = json_cfl_insert(builder, scope_map, "version", 7,
-                                     json_cfl_string(builder, yyjson_get_str(value),
-                                                     yyjson_get_len(value)));
+                                     json_cfl_string(builder, flb_json_node_get_str(value),
+                                                     flb_json_node_get_len(value)));
         }
         value = json_obj_get(scope, "droppedAttributesCount");
         if (result == 0 && value != NULL) {
@@ -1256,8 +1242,8 @@ static struct cfl_kvlist *json_group_body(struct json_cfl_builder *builder,
     }
     if (result == 0 && schema_url != NULL) {
         result = json_cfl_insert(builder, scope_map, "schema_url", 10,
-                                 json_cfl_string(builder, yyjson_get_str(schema_url),
-                                                 yyjson_get_len(schema_url)));
+                                 json_cfl_string(builder, flb_json_node_get_str(schema_url),
+                                                 flb_json_node_get_len(schema_url)));
     }
     if (result == 0) {
         result = json_cfl_insert_kvlist(builder, body, "scope", 5, scope_map);
@@ -1275,20 +1261,21 @@ error:
 }
 
 static int json_scope_logs(struct json_cfl_builder *builder,
-                           yyjson_val *resource_log, yyjson_val *scope_log,
+                           struct flb_json_node *resource_log, struct flb_json_node *scope_log,
                            size_t resource_index, size_t scope_index,
                            size_t *record_count)
 {
     size_t index;
     size_t maximum;
-    yyjson_val *records;
-    yyjson_val *log_record;
+    struct flb_json_node *records;
+    struct flb_json_node *log_record;
     struct flb_time tm;
     struct flb_mp_chunk_record *group;
     struct flb_mp_chunk_record *record;
 
     records = json_obj_get(scope_log, "logRecords");
-    if (records == NULL || (yyjson_is_arr(records) && yyjson_arr_size(records) == 0)) {
+    if (records == NULL ||
+        (flb_json_node_is_arr(records) && flb_json_node_arr_size(records) == 0)) {
         return 0;
     }
     flb_time_set(&tm, FLB_LOG_EVENT_GROUP_START, 0);
@@ -1303,7 +1290,7 @@ static int json_scope_logs(struct json_cfl_builder *builder,
     if (group->cobj_metadata == NULL || group->cobj_record == NULL) {
         return -1;
     }
-    if (!yyjson_is_arr(records)) {
+    if (!flb_json_node_is_arr(records)) {
         builder->error_status = FLB_OTEL_LOGS_ERR_UNEXPECTED_LOGRECORDS_TYPE;
         return -1;
     }
@@ -1312,7 +1299,7 @@ static int json_scope_logs(struct json_cfl_builder *builder,
     group->owns_group_metadata = FLB_TRUE;
     group->owns_group_attributes = FLB_TRUE;
 
-    yyjson_arr_foreach(records, index, maximum, log_record) {
+    flb_json_node_arr_foreach(records, index, maximum, log_record) {
         builder->error_status = json_record_validate(builder, log_record, &tm);
         if (builder->error_status != 0) {
             return -1;
@@ -1363,12 +1350,12 @@ int flb_opentelemetry_logs_json_to_cfl(
     size_t resource_maximum;
     size_t scope_index;
     size_t scope_maximum;
-    yyjson_val *root;
-    yyjson_val *resource_logs;
-    yyjson_val *resource_log;
-    yyjson_val *scope_logs;
-    yyjson_val *scope_log;
-    yyjson_val *resource;
+    struct flb_json_node *root;
+    struct flb_json_node *resource_logs;
+    struct flb_json_node *resource_log;
+    struct flb_json_node *scope_logs;
+    struct flb_json_node *scope_log;
+    struct flb_json_node *resource;
     struct json_cfl_builder builder;
     struct flb_opentelemetry_logs_json_cfl *output;
 
@@ -1389,13 +1376,24 @@ int flb_opentelemetry_logs_json_to_cfl(
         return -1;
     }
     output->arena = json_arena_create();
-    output->document = yyjson_read(body, length, 0);
-    if (output->arena == NULL || output->document == NULL) {
+    if (output->arena == NULL) {
         result = -1;
         goto error;
     }
-    root = yyjson_doc_get_root(output->document);
-    if (!yyjson_is_obj(root)) {
+
+    /*
+     * The tree replaces invalid Unicode like the established conversion does.
+     * Leave every payload it does not read, such as content after the request
+     * object or a build without a tree backend, to the established conversion
+     * so those requests are handled exactly as before.
+     */
+    output->document = flb_json_tree_read(body, length);
+    if (output->document == NULL) {
+        result = FLB_OTEL_LOGS_JSON_CFL_UNSUPPORTED;
+        goto error;
+    }
+    root = flb_json_tree_root(output->document);
+    if (!flb_json_node_is_obj(root)) {
         status = FLB_OTEL_LOGS_ERR_UNEXPECTED_ROOT_OBJECT_TYPE;
         result = -1;
         goto error;
@@ -1406,7 +1404,7 @@ int flb_opentelemetry_logs_json_to_cfl(
         result = -1;
         goto error;
     }
-    if (!yyjson_is_arr(resource_logs)) {
+    if (!flb_json_node_is_arr(resource_logs)) {
         status = FLB_OTEL_LOGS_ERR_UNEXPECTED_RESOURCELOGS_TYPE;
         result = -1;
         goto error;
@@ -1424,15 +1422,15 @@ int flb_opentelemetry_logs_json_to_cfl(
     output->chunk = builder.chunk;
 
     /* the checks and their order follow flb_opentelemetry_logs_json_to_msgpack() */
-    yyjson_arr_foreach(resource_logs, resource_index, resource_maximum, resource_log) {
-        if (!yyjson_is_obj(resource_log)) {
+    flb_json_node_arr_foreach(resource_logs, resource_index, resource_maximum, resource_log) {
+        if (!flb_json_node_is_obj(resource_log)) {
             status = FLB_OTEL_LOGS_ERR_UNEXPECTED_RESOURCELOGS_ENTRY_TYPE;
             result = -1;
             goto error;
         }
         resource = json_obj_get(resource_log, "resource");
-        if (yyjson_is_obj(resource) && json_obj_get(resource, "attributes") != NULL &&
-            !yyjson_is_arr(json_obj_get(resource, "attributes"))) {
+        if (flb_json_node_is_obj(resource) && json_obj_get(resource, "attributes") != NULL &&
+            !flb_json_node_is_arr(json_obj_get(resource, "attributes"))) {
             status = FLB_OTEL_LOGS_ERR_UNEXPECTED_ATTRIBUTES_TYPE;
             result = -1;
             goto error;
@@ -1443,13 +1441,13 @@ int flb_opentelemetry_logs_json_to_cfl(
             result = -1;
             goto error;
         }
-        if (!yyjson_is_arr(scope_logs)) {
+        if (!flb_json_node_is_arr(scope_logs)) {
             status = FLB_OTEL_LOGS_ERR_UNEXPECTED_SCOPELOGS_TYPE;
             result = -1;
             goto error;
         }
-        yyjson_arr_foreach(scope_logs, scope_index, scope_maximum, scope_log) {
-            if (!yyjson_is_obj(scope_log)) {
+        flb_json_node_arr_foreach(scope_logs, scope_index, scope_maximum, scope_log) {
+            if (!flb_json_node_is_obj(scope_log)) {
                 status = FLB_OTEL_LOGS_ERR_UNEXPECTED_SCOPELOGS_TYPE;
                 result = -1;
                 goto error;
@@ -1506,6 +1504,6 @@ void flb_opentelemetry_logs_json_cfl_destroy(
     }
     flb_mp_chunk_cobj_destroy(result->chunk);
     cfl_arena_destroy(result->arena);
-    yyjson_doc_free(result->document);
+    flb_json_tree_destroy(result->document);
     flb_free(result);
 }
