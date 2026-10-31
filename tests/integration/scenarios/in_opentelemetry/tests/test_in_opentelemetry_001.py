@@ -3408,3 +3408,31 @@ def test_in_opentelemetry_logs_direct_cfl_limit_parity(tmp_path, limit, encoding
             service.stop()
 
     assert statuses[1] == statuses[0]
+
+
+@pytest.mark.parametrize(
+    "config_file",
+    [
+        "otlp_http1_cleartext_workers.yaml",
+        "otlp_http1_cleartext.yaml",
+        IN_OPENTELEMETRY_TINY_INGRESS_QUEUE_BYTE_LIMIT_PROCESSORS_CONFIG,
+    ],
+    ids=["no_processors", "processors", "worker_processors"],
+)
+def test_in_opentelemetry_json_logs_replace_invalid_unicode(config_file):
+    service = Service(config_file)
+    payload = (
+        b'{"resourceLogs":[{"scopeLogs":[{"logRecords":[{"body":'
+        b'{"stringValue":"bad \\uD800 surrogate"}}]}]}]}'
+    )
+
+    service.start()
+    try:
+        logs_before = len(data_storage["logs"])
+        response = service.send_raw_request(
+            "/v1/logs", payload, content_type="application/json"
+        )
+        assert response.status_code == 201
+        service.wait_for_signal_count("logs", logs_before + 1, timeout=10)
+    finally:
+        service.stop()
