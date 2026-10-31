@@ -1,0 +1,299 @@
+{
+  "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+  "cpu_affinity": 2,
+  "page_size": 4096,
+  "repeats": 3,
+  "cpu": "AMD Ryzen 9 7940HS",
+  "filesystem": "ext4 on NVMe",
+  "compiler": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+  "baseline_revision": "ec8e4fa66024c607c8419756831ab282b9f26db9",
+  "integration_revision": "109b704477b48bce4370f7943ba05a745afcc3ba",
+  "harness_revision": "b6713a67255522bf76468916de164a6a2c9dd699",
+  "chunkio": "Same bundled v1.5.5 in both builds",
+  "flags": "-O2 -g -DNDEBUG; full plugin configuration; effective build without LTO",
+  "cache": "Warm input cache; no eviction; CPU boost enabled; host not isolated",
+  "samples": 32,
+  "warmups": 8,
+  "measured_samples": 24,
+  "order": "Case order fixed; base/head order alternates each repetition",
+  "validation": "All 32 runs match exact input/output record counts with zero drops or exhausted retries",
+  "binaries_sha256": {
+    "base": "a10b5b71996e91260b2082c214dc16369d0a6edbaa5d5ba529784856ea3a5469",
+    "head": "a00d7a116caa45374946895bdeb1858d80f6add06e251d04c9542bb65200d2e8"
+  },
+  "input_chunk_source_sha256": {
+    "base": "1527b7921056e7b3b5844ec79829fed6d8a982e478572d5f5125f6f949cf94dd",
+    "head": "22634eb2db9bd4a909bac77d70bb6c7a8b6f288d92cd2c7ce595f516bab008bf"
+  },
+  "source": "Baseline source hash from the clean original PR revision; candidate hash matches the recorded linked build metadata",
+  "results": {
+    "many_tags": {
+      "cpu_seconds": {
+        "base": {
+          "median": 0.356375,
+          "min": 0.350121,
+          "max": 0.359309
+        },
+        "head": {
+          "median": 0.321431,
+          "min": 0.31957,
+          "max": 0.327407
+        },
+        "change_percent": -9.805401613468955
+      },
+      "ingest_mib_per_second": {
+        "base": {
+          "median": 92.29793710300515,
+          "min": 90.79882270566092,
+          "max": 94.14563516944958
+        },
+        "head": {
+          "median": 108.07638762991907,
+          "min": 106.1462618995734,
+          "max": 108.62827166280984
+        },
+        "change_percent": 17.09512804094966
+      },
+      "peak_allocated_bytes": {
+        "base": {
+          "median": 262144000,
+          "min": 262144000,
+          "max": 262144000
+        },
+        "head": {
+          "median": 20480000,
+          "min": 20480000,
+          "max": 20480000
+        },
+        "change_percent": -92.1875
+      },
+      "remaps": {
+        "base": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "head": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "change_percent": null
+      },
+      "max_rss_kib": {
+        "base": {
+          "median": 86480,
+          "min": 85620,
+          "max": 86548
+        },
+        "head": {
+          "median": 80832,
+          "min": 80636,
+          "max": 80904
+        },
+        "change_percent": -6.530989824236821
+      }
+    },
+    "steady_fs": {
+      "cpu_seconds": {
+        "base": {
+          "median": 0.995531,
+          "min": 0.949443,
+          "max": 1.004192
+        },
+        "head": {
+          "median": 1.001763,
+          "min": 1.001079,
+          "max": 1.005788
+        },
+        "change_percent": 0.6259975831993003
+      },
+      "ingest_mib_per_second": {
+        "base": {
+          "median": 126.32334783698853,
+          "min": 125.53376613498503,
+          "max": 127.82950766568122
+        },
+        "head": {
+          "median": 126.28879352107518,
+          "min": 126.22362436832331,
+          "max": 126.67899301205355
+        },
+        "change_percent": -0.027353863323775762
+      },
+      "peak_allocated_bytes": {
+        "base": {
+          "median": 151150592,
+          "min": 150626304,
+          "max": 152526848
+        },
+        "head": {
+          "median": 147374080,
+          "min": 145371136,
+          "max": 147730432
+        },
+        "change_percent": -2.4985095658771828
+      },
+      "remaps": {
+        "base": {
+          "median": 1105,
+          "min": 1105,
+          "max": 1106
+        },
+        "head": {
+          "median": 1523,
+          "min": 1522,
+          "max": 1523
+        },
+        "change_percent": 37.828054298642535
+      },
+      "max_rss_kib": {
+        "base": {
+          "median": 157744,
+          "min": 157496,
+          "max": 159872
+        },
+        "head": {
+          "median": 160352,
+          "min": 158536,
+          "max": 161068
+        },
+        "change_percent": 1.653311694898063
+      }
+    },
+    "steady_crc": {
+      "cpu_seconds": {
+        "base": {
+          "median": 1.010778,
+          "min": 0.99692,
+          "max": 1.017592
+        },
+        "head": {
+          "median": 1.031701,
+          "min": 1.018557,
+          "max": 1.035208
+        },
+        "change_percent": 2.069989651535753
+      },
+      "ingest_mib_per_second": {
+        "base": {
+          "median": 123.94141910775619,
+          "min": 123.73261489497696,
+          "max": 124.50369412336296
+        },
+        "head": {
+          "median": 121.85627852700637,
+          "min": 121.72264299215085,
+          "max": 123.17767810164631
+        },
+        "change_percent": -1.6823597759010434
+      },
+      "peak_allocated_bytes": {
+        "base": {
+          "median": 153317376,
+          "min": 151937024,
+          "max": 153317376
+        },
+        "head": {
+          "median": 147374080,
+          "min": 146849792,
+          "max": 147529728
+        },
+        "change_percent": -3.8764660308300614
+      },
+      "remaps": {
+        "base": {
+          "median": 1105,
+          "min": 1105,
+          "max": 1106
+        },
+        "head": {
+          "median": 1523,
+          "min": 1522,
+          "max": 1527
+        },
+        "change_percent": 37.828054298642535
+      },
+      "max_rss_kib": {
+        "base": {
+          "median": 159872,
+          "min": 159148,
+          "max": 160380
+        },
+        "head": {
+          "median": 161148,
+          "min": 160556,
+          "max": 161956
+        },
+        "change_percent": 0.7981385108086547
+      }
+    },
+    "memory": {
+      "cpu_seconds": {
+        "base": {
+          "median": 0.924798,
+          "min": 0.922344,
+          "max": 0.966373
+        },
+        "head": {
+          "median": 0.937969,
+          "min": 0.925575,
+          "max": 0.974439
+        },
+        "change_percent": 1.4242029070132167
+      },
+      "ingest_mib_per_second": {
+        "base": {
+          "median": 131.09709310617424,
+          "min": 128.26121562077608,
+          "max": 131.3392798310545
+        },
+        "head": {
+          "median": 129.91447296210006,
+          "min": 128.1302944864541,
+          "max": 131.36199324112692
+        },
+        "change_percent": -0.9020948642365245
+      },
+      "peak_allocated_bytes": {
+        "base": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "head": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "change_percent": null
+      },
+      "remaps": {
+        "base": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "head": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "change_percent": null
+      },
+      "max_rss_kib": {
+        "base": {
+          "median": 159608,
+          "min": 156236,
+          "max": 161436
+        },
+        "head": {
+          "median": 159124,
+          "min": 157364,
+          "max": 161476
+        },
+        "change_percent": -0.3032429452157759
+      }
+    }
+  }
+}
