@@ -17,7 +17,10 @@
  *  limitations under the License.
  */
 
-#include "opentelemetry_protobuf.h"
+#include <fluent-bit/flb_opentelemetry.h>
+
+/* Includes the export request and intermediate protobuf message wrappers. */
+#define OTEL_PROTOBUF_MAX_DEPTH 100
 
 struct protobuf_frame {
     const ProtobufCMessageDescriptor *descriptor;
@@ -52,8 +55,8 @@ static int read_varint(struct protobuf_frame *frame, uint64_t *value)
  * Strings, bytes, packed scalars and unknown fields are opaque. The explicit
  * stack bounds our own stack usage as well as the subsequent unpack operation.
  */
-int opentelemetry_protobuf_validate(const ProtobufCMessageDescriptor *descriptor,
-                                    const void *data, size_t size)
+int flb_opentelemetry_protobuf_validate(const ProtobufCMessageDescriptor *descriptor,
+                                        const void *data, size_t size)
 {
     struct protobuf_frame frames[OTEL_PROTOBUF_MAX_DEPTH];
     struct protobuf_frame *frame;

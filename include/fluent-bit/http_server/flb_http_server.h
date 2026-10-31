@@ -103,6 +103,9 @@ struct flb_http_server_options {
     flb_http_server_worker_callback      cb_worker_exit;
 };
 
+struct flb_http_server_balancer;
+struct flb_http_server_handoff;
+
 struct flb_http_server {
     /* Internal */
     struct mk_event        listener_event;
@@ -138,6 +141,9 @@ struct flb_http_server {
     flb_http_server_worker_callback     cb_worker_init;
     flb_http_server_worker_callback     cb_worker_exit;
     struct flb_downstream_worker_runtime *runtime;
+    /* connection balancing between managed workers */
+    struct flb_http_server_balancer     *balancer;
+    struct flb_http_server_handoff      *handoff;
 };
 
 struct flb_http_server_session {
@@ -156,6 +162,7 @@ struct flb_http_server_session {
     int                             drop_pending;
     int                             destroying;
     int                             connection_slot_reserved;
+    int                             balanced_connection;
 
     struct flb_connection          *connection;
     struct flb_http_server         *parent;

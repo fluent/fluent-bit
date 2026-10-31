@@ -2008,7 +2008,11 @@ struct flb_mp_chunk_cobj *flb_mp_chunk_cobj_create(struct flb_log_event_encoder 
 {
     struct flb_mp_chunk_cobj *chunk_cobj;
 
-    if (!log_encoder || !log_decoder) {
+    /*
+     * Both codecs can be NULL for a chunk whose records are built directly as
+     * CFL objects, the codecs are bound later by the processor that runs it.
+     */
+    if ((log_encoder == NULL) != (log_decoder == NULL)) {
         return NULL;
     }
 
@@ -2061,7 +2065,7 @@ int flb_mp_chunk_cobj_encode_append(struct flb_mp_chunk_cobj *chunk_cobj)
     msgpack_sbuffer buffer;
     msgpack_packer packer;
 
-    if (!chunk_cobj) {
+    if (!chunk_cobj || !chunk_cobj->log_encoder) {
         return -1;
     }
 
@@ -2399,7 +2403,10 @@ int flb_mp_chunk_cobj_record_next(struct flb_mp_chunk_cobj *chunk_cobj,
          * populate the cobj list. Otherwise it means all the content is ready
          * as a chunk_cobj_record.
          */
-        bytes = chunk_cobj->log_decoder->length - chunk_cobj->log_decoder->offset;
+        bytes = 0;
+        if (chunk_cobj->log_decoder) {
+            bytes = chunk_cobj->log_decoder->length - chunk_cobj->log_decoder->offset;
+        }
 
         if (bytes > 0) {
             record = flb_mp_chunk_record_create(chunk_cobj);

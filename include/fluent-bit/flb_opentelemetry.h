@@ -25,6 +25,7 @@
 #include <cfl/cfl.h>
 #include <msgpack.h>
 #include <stdint.h>
+#include <fluent-otel-proto/fluent-otel.h>
 
 /* Error code values from flb_opentelemetry logs/traces helpers */
 #define FLB_OTEL_LOGS_ERR_GENERIC_ERROR                     -1
@@ -119,6 +120,17 @@ struct flb_opentelemetry_otlp_logs_options {
     int logs_body_key_attributes;
 };
 
+/* Options shared by OTLP/HTTP protobuf log decoders. */
+struct flb_opentelemetry_logs_decode_options {
+    const char *metadata_key;
+    const char *body_key;
+    size_t output_limit;
+};
+
+struct flb_mp_chunk_cobj;
+struct flb_opentelemetry_logs_protobuf_cfl;
+struct flb_opentelemetry_logs_json_cfl;
+
 /* Backward-compatible alias for older external callers. */
 #define flb_opentelemetry_otlp_json_options flb_opentelemetry_otlp_logs_options
 
@@ -203,6 +215,59 @@ int flb_opentelemetry_logs_json_to_msgpack(struct flb_log_event_encoder *encoder
                                            const char *body, size_t len,
                                            const char *logs_body_key,
                                            int *error_status);
+
+/*
+ * Returned by flb_opentelemetry_logs_json_to_cfl() for a valid payload whose
+ * records CFL cannot hold, such as a map key that is not a string. Use
+ * flb_opentelemetry_logs_json_to_msgpack() for it.
+ */
+#define FLB_OTEL_LOGS_JSON_CFL_UNSUPPORTED -2
+
+int flb_opentelemetry_logs_json_to_cfl(
+        const char *body, size_t len,
+        const struct flb_opentelemetry_logs_decode_options *options,
+        struct flb_opentelemetry_logs_json_cfl **result,
+        int *error_status);
+
+struct flb_mp_chunk_cobj *flb_opentelemetry_logs_json_cfl_take_chunk(
+        struct flb_opentelemetry_logs_json_cfl *result);
+
+size_t flb_opentelemetry_logs_json_cfl_get_encoded_size(
+        struct flb_opentelemetry_logs_json_cfl *result);
+
+void flb_opentelemetry_logs_json_cfl_destroy(
+        struct flb_opentelemetry_logs_json_cfl *result);
+
+int flb_opentelemetry_protobuf_validate(
+        const ProtobufCMessageDescriptor *descriptor,
+        const void *data, size_t size);
+
+int flb_opentelemetry_logs_protobuf_to_msgpack(
+        struct flb_log_event_encoder *encoder,
+        const void *payload, size_t payload_size,
+        const struct flb_opentelemetry_logs_decode_options *options,
+        size_t *record_count);
+
+int flb_opentelemetry_logs_protobuf_to_cfl(
+        const void *payload, size_t payload_size,
+        const struct flb_opentelemetry_logs_decode_options *options,
+        struct flb_opentelemetry_logs_protobuf_cfl **result);
+
+/*
+ * The returned result owns both the decoded protobuf arena and the CFL chunk.
+ * Values in the CFL chunk can borrow strings and byte arrays from that arena.
+ * After taking the chunk, the caller must consume or destroy it synchronously
+ * before destroying the result. Neither object can cross an asynchronous
+ * queue boundary; only the final owned MessagePack buffer may do so.
+ */
+struct flb_mp_chunk_cobj *flb_opentelemetry_logs_protobuf_cfl_take_chunk(
+        struct flb_opentelemetry_logs_protobuf_cfl *result);
+
+size_t flb_opentelemetry_logs_protobuf_cfl_get_encoded_size(
+        struct flb_opentelemetry_logs_protobuf_cfl *result);
+
+void flb_opentelemetry_logs_protobuf_cfl_destroy(
+        struct flb_opentelemetry_logs_protobuf_cfl *result);
 
 int flb_opentelemetry_metrics_json_to_cmt(struct cfl_list *context_list,
                                           const char *body, size_t len);

@@ -164,3 +164,16 @@ The test framework automatically detects whether a test case uses the legacy or 
 - Otherwise, it falls back to the legacy format
 
 This ensures all existing test cases continue to work without modification.
+## CFL Parity Corpora
+
+`logs_parity.jsonl` (one OTLP/JSON request per line) and `logs_parity.pb`
+(OTLP protobuf requests, each prefixed by its little-endian 32-bit length) are
+random, often invalid, logs requests. The tests decode every request with both
+the CFL and the msgpack decoders and expect the same records, the same
+rejections and the same `logs_max_size` boundary.
+
+Regenerate them with:
+
+```shell
+tests/integration/.venv/bin/python tests/internal/data/opentelemetry/logs_parity_corpus.py
+```
