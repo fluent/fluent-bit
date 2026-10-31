@@ -1849,6 +1849,55 @@ static void json_cfl_check_parity(const char *name, const char *json, size_t lim
     flb_log_event_encoder_destroy(&cfl_enc);
 }
 
+/*
+ * Invalid Unicode is replaced on both paths with the same records. Content
+ * after the request object is left to the established conversion, which
+ * accepts it with yyjson. Without yyjson every payload is left to it.
+ */
+void test_opentelemetry_json_cfl_lenient_payloads()
+{
+    int ret;
+    int error_status;
+    struct flb_log_event_encoder enc;
+    static const char *invalid_unicode =
+        "{\"resourceLogs\":[{\"scopeLogs\":[{\"logRecords\":[{\"body\":"
+        "{\"stringValue\":\"bad \\uD800 surrogate\"}}]}]}]}";
+    static const char *trailing =
+        "{\"resourceLogs\":[{\"scopeLogs\":[{\"logRecords\":[{\"body\":"
+        "{\"stringValue\":\"text\"}}]}]}]} trailing";
+
+    flb_log_event_encoder_init(&enc, FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2);
+    error_status = 0;
+    ret = json_cfl_encode(&enc, invalid_unicode, strlen(invalid_unicode), SIZE_MAX,
+                          &error_status);
+#ifdef FLB_HAVE_YYJSON
+    TEST_CHECK_(ret == 0 && enc.output_length > 0,
+                "invalid unicode: CFL result %i (%i)", ret, error_status);
+#else
+    TEST_CHECK_(ret == FLB_OTEL_LOGS_JSON_CFL_UNSUPPORTED,
+                "invalid unicode: CFL result %i", ret);
+#endif
+    flb_log_event_encoder_destroy(&enc);
+    json_cfl_check_parity("invalid unicode", invalid_unicode, SIZE_MAX);
+
+    flb_log_event_encoder_init(&enc, FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2);
+    error_status = 0;
+    ret = json_cfl_encode(&enc, trailing, strlen(trailing), SIZE_MAX, &error_status);
+    TEST_CHECK_(ret == FLB_OTEL_LOGS_JSON_CFL_UNSUPPORTED,
+                "trailing content: CFL result %i", ret);
+    flb_log_event_encoder_destroy(&enc);
+
+#ifdef FLB_HAVE_YYJSON
+    flb_log_event_encoder_init(&enc, FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2);
+    error_status = 0;
+    ret = flb_opentelemetry_logs_json_to_msgpack(&enc, trailing, strlen(trailing),
+                                                 NULL, &error_status);
+    TEST_CHECK_(ret == 0 && enc.output_length > 0,
+                "trailing content: msgpack result %i (%i)", ret, error_status);
+    flb_log_event_encoder_destroy(&enc);
+#endif
+}
+
 /* Payloads that exercise the leniency of the established conversion */
 void test_opentelemetry_json_cfl_parity_values()
 {
@@ -4528,6 +4577,8 @@ TEST_LIST = {
     { "opentelemetry_cases", test_opentelemetry_cases },
     { "opentelemetry_cases_json_cfl_parity", test_opentelemetry_cases_json_cfl_parity },
     { "opentelemetry_json_cfl_parity_values", test_opentelemetry_json_cfl_parity_values },
+    { "opentelemetry_json_cfl_lenient_payloads",
+      test_opentelemetry_json_cfl_lenient_payloads },
     { "opentelemetry_json_cfl_parity_corpus", test_opentelemetry_json_cfl_parity_corpus },
     { "opentelemetry_protobuf_cfl_parity_corpus",
       test_opentelemetry_protobuf_cfl_parity_corpus },
