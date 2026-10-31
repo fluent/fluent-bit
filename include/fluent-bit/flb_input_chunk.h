@@ -32,8 +32,8 @@ struct cio_chunk;
 #include <msgpack.h>
 
 /*
- * This variable defines a 'hint' size for new Chunks created, this
- * value is passed to Chunk I/O.
+ * Default allocation hint for memory chunks. Filesystem chunks use the
+ * pending append size, including their headers and metadata.
  */
 #define FLB_INPUT_CHUNK_SIZE           262144  /* 256KB (hint) */
 /*

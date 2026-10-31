@@ -268,27 +268,6 @@ struct flb_input_chunk_meta_view {
     uint16_t routing_data_length;
 };
 
-/*
- * Mirror the leading layout we need from chunkio's private cio_file backend.
- *
- * We intentionally avoid including <chunkio/cio_file.h> here because that
- * header pulls additional private includes that are not available through this
- * translation unit's normal include path in this build. We only need the
- * stable leading allocation fields to estimate alloc_size/realloc_size growth
- * for storage.total_limit_size decisions.
- */
-struct flb_input_chunk_cio_file_view {
-    int fd;
-    int flags;
-    int synced;
-    int allocate_strategy;
-    size_t fs_size;
-    size_t data_size;
-    size_t page_size;
-    size_t alloc_size;
-    size_t realloc_size;
-};
-
 static inline int input_chunk_has_magic_bytes(char *buf, int len)
 {
     unsigned char *p;
@@ -991,105 +970,21 @@ static size_t flb_input_chunk_get_projected_write_size(
                 struct flb_input_chunk *ic,
                 size_t append_size)
 {
-    size_t increment_size;
-    size_t increments;
-    size_t needed_size;
-    size_t page_size;
-    size_t meta_size;
-    size_t content_size;
-    size_t logical_size;
-    size_t alloc_size;
     size_t current_size;
-    size_t realloc_size;
     size_t projected_size;
-    size_t target_size;
     ssize_t real_size;
-    ssize_t meta_size_value;
-    ssize_t content_size_value;
-    struct cio_chunk *chunk;
-    struct flb_input_chunk_cio_file_view *chunk_file;
 
-    page_size = 4096;
-    chunk = (struct cio_chunk *) ic->chunk;
-    chunk_file = NULL;
-
-    if (chunk != NULL && chunk->ctx != NULL && chunk->ctx->page_size > 0) {
-        page_size = (size_t) chunk->ctx->page_size;
-    }
-
-    if (chunk != NULL && chunk->backend != NULL &&
-        chunk->st != NULL && chunk->st->type == CIO_STORE_FS) {
-        chunk_file = (struct flb_input_chunk_cio_file_view *) chunk->backend;
-    }
-
-    meta_size_value = cio_meta_size(ic->chunk);
-    content_size_value = flb_input_chunk_get_size(ic);
-
-    if (meta_size_value < 0 || content_size_value < 0) {
+    if (cio_chunk_get_projected_size(ic->chunk, append_size, &projected_size) != CIO_OK) {
         return SIZE_MAX;
-    }
-
-    meta_size = (size_t) meta_size_value;
-    content_size = (size_t) content_size_value;
-
-    if (meta_size > SIZE_MAX - FLB_INPUT_CHUNK_FILE_HEADER_SIZE ||
-        content_size > SIZE_MAX - meta_size - FLB_INPUT_CHUNK_FILE_HEADER_SIZE) {
-        return SIZE_MAX;
-    }
-
-    logical_size = content_size + meta_size + FLB_INPUT_CHUNK_FILE_HEADER_SIZE;
-    if (logical_size > SIZE_MAX - append_size) {
-        return SIZE_MAX;
-    }
-    target_size = logical_size + append_size;
-    projected_size = target_size;
-
-    alloc_size = 0;
-    realloc_size = page_size;
-
-    if (chunk_file != NULL) {
-        alloc_size = chunk_file->alloc_size;
-        if (chunk_file->realloc_size > 0) {
-            realloc_size = chunk_file->realloc_size;
-        }
-    }
-
-    if (alloc_size == 0) {
-        alloc_size = page_size;
-    }
-
-    if (target_size > alloc_size) {
-        projected_size = alloc_size;
-        needed_size = target_size - projected_size;
-
-        increments = needed_size / realloc_size;
-        if ((needed_size % realloc_size) != 0) {
-            increments++;
-        }
-
-        if (increments > (SIZE_MAX - projected_size) / realloc_size) {
-            return SIZE_MAX;
-        }
-
-        increment_size = increments * realloc_size;
-        projected_size += increment_size;
-
-        if (projected_size > SIZE_MAX - (page_size - 1)) {
-            return SIZE_MAX;
-        }
-
-        projected_size = ((projected_size + page_size - 1) / page_size) * page_size;
-    }
-    else {
-        projected_size = alloc_size;
     }
 
     current_size = 0;
     if (ic->fs_counted == FLB_TRUE) {
         real_size = flb_input_chunk_get_real_size(ic);
-        if (real_size > 0) {
-            current_size = (size_t) real_size;
+        if (real_size < 0) {
+            return SIZE_MAX;
         }
+        current_size = (size_t) real_size;
     }
 
     if (projected_size > current_size) {
@@ -2523,27 +2418,50 @@ void flb_input_chunk_destroy_direct_routes(struct flb_chunk_direct_route *routes
     flb_free(routes);
 }
 
-struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in, int event_type,
-                                               const char *tag, int tag_len)
+static struct flb_input_chunk *input_chunk_create(struct flb_input_instance *in, int event_type,
+                                                  const char *tag, int tag_len,
+                                                  size_t append_size)
 {
     int ret;
     int err;
     int set_down = FLB_FALSE;
     int has_routes;
     size_t mask_size;
+    size_t initial_size;
+    size_t metadata_size;
     char name[64];
     struct cio_chunk *chunk;
     struct flb_storage_input *storage;
     struct flb_input_chunk *ic;
 
     storage = in->storage;
+    initial_size = FLB_INPUT_CHUNK_SIZE;
+
+    if (storage->type == FLB_STORAGE_FS) {
+        if (tag_len < 0) {
+            return NULL;
+        }
+        metadata_size = FLB_INPUT_CHUNK_META_HEADER;
+        if (tag_len > FLB_INPUT_CHUNK_TAG_MAX) {
+            metadata_size += FLB_INPUT_CHUNK_TAG_MAX;
+        }
+        else {
+            metadata_size += (size_t) tag_len;
+        }
+        if (append_size > UINT32_MAX ||
+            append_size > PTRDIFF_MAX - FLB_INPUT_CHUNK_FILE_HEADER_SIZE - metadata_size) {
+            return NULL;
+        }
+        /* Filesystem capacity includes both headers; ChunkIO rounds to pages. */
+        initial_size = FLB_INPUT_CHUNK_FILE_HEADER_SIZE + metadata_size + append_size;
+    }
 
     /* chunk name */
     generate_chunk_name(in, name, sizeof(name) - 1);
 
     /* open/create target chunk file */
     chunk = cio_chunk_open(storage->cio, storage->stream, name,
-                           CIO_OPEN, FLB_INPUT_CHUNK_SIZE, &err);
+                           CIO_OPEN, initial_size, &err);
     if (!chunk) {
         flb_error("[input chunk] could not create chunk file: %s:%s",
                   storage->stream->name, name);
@@ -2638,6 +2556,12 @@ struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in, in
     }
 
     return ic;
+}
+
+struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in, int event_type,
+                                               const char *tag, int tag_len)
+{
+    return input_chunk_create(in, event_type, tag, tag_len, 0);
 }
 
 int flb_input_chunk_destroy_corrupted(struct flb_input_chunk *ic,
@@ -2835,9 +2759,8 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
 {
     int id = -1;
     int ret;
-    int new_chunk = FLB_FALSE;
     size_t out_size;
-    size_t placement_size;
+    size_t initial_size;
     struct flb_input_chunk *ic = NULL;
 
     if (tag_len > FLB_INPUT_CHUNK_TAG_MAX) {
@@ -2899,8 +2822,12 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
 
     /* No chunk was found, we need to create a new one */
     if (!ic) {
-        ic = flb_input_chunk_create(in, event_type, (char *) tag, tag_len);
-        new_chunk = FLB_TRUE;
+        initial_size = chunk_size;
+        if (event_type == FLB_INPUT_LOGS && mk_list_is_empty(&in->config->filters) != 0) {
+            /* Filters may shrink or drop the append; reserve only metadata for now. */
+            initial_size = 0;
+        }
+        ic = input_chunk_create(in, event_type, tag, tag_len, initial_size);
         if (!ic) {
             return NULL;
         }
@@ -2919,42 +2846,6 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
             }
             *set_down = FLB_TRUE;
         }
-    }
-
-    /*
-     * If buffering this block of data will exceed one of the limit among all output instances
-     * that the chunk will flush to, we need to modify the routes_mask of the oldest chunks
-     * (based in creation time) to get enough space for the incoming chunk.
-     */
-    placement_size = flb_input_chunk_get_projected_write_size(ic, chunk_size);
-    if (placement_size == SIZE_MAX) {
-        /* A failed projection must not evict already buffered records. */
-        flb_error("[input chunk] cannot calculate projected write size");
-        if (new_chunk == FLB_TRUE) {
-            flb_input_chunk_destroy(ic, FLB_TRUE);
-        }
-        else if (*set_down == FLB_TRUE) {
-            cio_chunk_down(ic->chunk);
-        }
-        return NULL;
-    }
-
-    if (!flb_routes_mask_is_empty(ic->routes_mask, ic->in->config->router)
-        && flb_input_chunk_place_new_chunk(ic, placement_size) == 0) {
-        /*
-         * If the chunk is not newly created, the chunk might already have logs inside.
-         * We cannot delete (reused) chunks here.
-         * If the routes_mask is cleared after trying to append new data, we destroy
-         * the chunk.
-         */
-        if (new_chunk ||
-            flb_routes_mask_is_empty(ic->routes_mask, ic->in->config->router) == FLB_TRUE) {
-            flb_input_chunk_destroy(ic, FLB_TRUE);
-        }
-        else if (*set_down == FLB_TRUE) {
-            cio_chunk_down(ic->chunk);
-        }
-        return NULL;
     }
 
     return ic;
@@ -3274,6 +3165,7 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
     size_t dropped_chunks;
     size_t dropped_bytes;
     size_t content_size;
+    size_t placement_size;
     ssize_t real_diff;
     ssize_t real_size;
     ssize_t pre_real_size;
@@ -3459,7 +3351,32 @@ static int input_chunk_append_raw(struct flb_input_instance *in,
         final_data_size = filtered_data_size;
     }
 
-    if (final_data_size > 0){
+    if (final_data_size > 0) {
+        /* Budget the final filtered append before evicting any buffered data. */
+        placement_size = flb_input_chunk_get_projected_write_size(ic, final_data_size);
+        if (placement_size == SIZE_MAX ||
+            (!flb_routes_mask_is_empty(ic->routes_mask, in->config->router) &&
+             flb_input_chunk_place_new_chunk(ic, placement_size) == 0)) {
+            if (placement_size == SIZE_MAX) {
+                flb_error("[input chunk] cannot calculate projected write size");
+            }
+            if (filtered_data_buffer != NULL && filtered_data_buffer != buf) {
+                flb_free(filtered_data_buffer);
+            }
+#ifdef FLB_HAVE_METRICS
+            ic->added_records = 0;
+            ic->total_records = total_records_start;
+#endif
+            if (new_chunk == FLB_TRUE ||
+                flb_routes_mask_is_empty(ic->routes_mask, in->config->router)) {
+                flb_input_chunk_destroy(ic, FLB_TRUE);
+            }
+            else if (set_down == FLB_TRUE) {
+                cio_chunk_down(ic->chunk);
+            }
+            return -1;
+        }
+
         ret = flb_input_chunk_write(ic,
                                     final_data_buffer,
                                     final_data_size);
