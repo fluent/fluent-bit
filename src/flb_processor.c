@@ -1885,6 +1885,7 @@ static int processor_run(struct flb_processor *proc, struct chunk_codec *codec,
                  * no more data exists to be processed.
                  */
                 if (tmp_size == 0) {
+                    flb_free(tmp_buf);
                     *out_buf = NULL;
                     *out_size = 0;
                     unit_out_items = 0;
