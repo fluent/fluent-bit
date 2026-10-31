@@ -163,7 +163,7 @@ def main():
                     rows.append(row)
                     print(json.dumps(row), flush=True)
     with args.output.open("w") as handle:
-        writer = csv.DictWriter(handle, fieldnames=rows[0].keys())
+        writer = csv.DictWriter(handle, fieldnames=rows[0].keys(), lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
     for tag_count in args.tags:
