@@ -15,6 +15,9 @@
 #  limitations under the License.
 
 import signal
+import subprocess
+import sys
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -150,9 +153,10 @@ def test_send_signal_raises_when_process_is_missing():
     manager = FluentBitManager("/tmp/fluent-bit.yaml")
 
     with pytest.raises(RuntimeError, match="not running"):
-        manager.send_signal(signal.SIGHUP)
+        manager.send_signal(signal.SIGTERM)
 
 
+@pytest.mark.skipif(not hasattr(signal, "SIGHUP"), reason="SIGHUP is unavailable on Windows")
 def test_send_sighup_forwards_signal_to_process():
     manager = FluentBitManager("/tmp/fluent-bit.yaml")
     manager.process = Mock()
@@ -170,10 +174,16 @@ def test_stop_uses_configured_shutdown_timeout(monkeypatch, configured, expected
     process = Mock()
     process.poll.return_value = None
     manager.process = process
+    windows_shutdown = Mock()
+    monkeypatch.setattr(manager, "_send_windows_shutdown", windows_shutdown)
 
     manager.stop()
 
-    process.send_signal.assert_called_once_with(signal.SIGTERM)
+    if manager_module.os.name == "nt":
+        windows_shutdown.assert_called_once_with(process.pid)
+        process.send_signal.assert_not_called()
+    else:
+        process.send_signal.assert_called_once_with(signal.SIGTERM)
     process.wait.assert_called_once_with(timeout=expected)
 
 
@@ -227,7 +237,7 @@ def test_start_uses_unique_valgrind_log_path(monkeypatch, tmp_path):
     monkeypatch.setattr(FluentBitManager, "create_results_directory", fake_create_results_directory)
     monkeypatch.setattr(FluentBitManager, "get_version_info", lambda self: ("vtest", "commit"))
 
-    def fake_popen(command, stdout=None, stderr=None):
+    def fake_popen(command, stdout=None, stderr=None, **kwargs):
         popen_calls.append(command)
         return popen_result
 
@@ -243,7 +253,7 @@ def test_start_uses_unique_valgrind_log_path(monkeypatch, tmp_path):
         f"--log-file={manager.valgrind_log_file}",
         "--leak-check=full",
         "--show-leak-kinds=all",
-        "/usr/bin/fluent-bit",
+        manager.binary_absolute_path,
         "-c", str(config_path),
         "-l", str(tmp_path / "run-1" / "fluent_bit.log")
     ]]
@@ -330,3 +340,120 @@ def test_wait_for_hot_reload_count_times_out(monkeypatch):
 
     with pytest.raises(TimeoutError, match="Timed out waiting for hot reload count 1"):
         manager.wait_for_hot_reload_count(1, timeout=0.25)
+
+
+@pytest.mark.parametrize("failed_api", [None, "AttachConsole", "SetConsoleCtrlHandler",
+                                       "GenerateConsoleCtrlEvent"])
+def test_windows_shutdown_helper_runs_with_optimization(monkeypatch, failed_api, capsys):
+    run = Mock()
+    monkeypatch.setattr(manager_module.subprocess, "run", run)
+    monkeypatch.setattr(manager_module.subprocess, "CREATE_NO_WINDOW", 0, raising=False)
+    FluentBitManager._send_windows_shutdown(1234)
+    assert run.call_args.kwargs["timeout"] == 5
+    helper = run.call_args.args[0][2]
+    kernel = Mock()
+    for name in ("AttachConsole", "SetConsoleCtrlHandler", "GenerateConsoleCtrlEvent"):
+        getattr(kernel, name).return_value = name != failed_api
+    get_last_error = Mock(return_value=5)
+    ctypes_stub = SimpleNamespace(
+        WinDLL=Mock(return_value=kernel), get_last_error=get_last_error,
+        WinError=lambda code: RuntimeError(f"Windows error {code}"),
+    )
+    monkeypatch.setitem(sys.modules, "ctypes", ctypes_stub)
+    monkeypatch.setattr(sys, "argv", ["-c", "1234"])
+    monkeypatch.setattr(manager_module.time, "sleep", Mock())
+
+    optimized_helper = compile(helper, "<shutdown-helper>", "exec", optimize=2)
+    if failed_api == "AttachConsole":
+        with pytest.raises(SystemExit) as error:
+            exec(optimized_helper, {})
+        assert error.value.code == manager_module._WINDOWS_ATTACH_CONSOLE_FAILED
+        assert "AttachConsole failed: 5" in capsys.readouterr().err
+    elif failed_api:
+        with pytest.raises(RuntimeError, match="Windows error 5"):
+            exec(optimized_helper, {})
+    else:
+        exec(optimized_helper, {})
+
+    kernel.AttachConsole.assert_called_once_with(1234)
+    if failed_api != "AttachConsole":
+        kernel.SetConsoleCtrlHandler.assert_called_once_with(None, True)
+    else:
+        kernel.SetConsoleCtrlHandler.assert_not_called()
+    if failed_api not in ("AttachConsole", "SetConsoleCtrlHandler"):
+        kernel.GenerateConsoleCtrlEvent.assert_called_once_with(0, 0)
+    else:
+        kernel.GenerateConsoleCtrlEvent.assert_not_called()
+    assert kernel.FreeConsole.call_count == (1 if failed_api == "AttachConsole" else 2)
+    assert get_last_error.call_count == (1 if failed_api else 0)
+
+
+@pytest.mark.skipif(manager_module.os.name != "nt", reason="Windows console shutdown")
+@pytest.mark.parametrize("error_code,exited,raises", [
+    (manager_module._WINDOWS_ATTACH_CONSOLE_FAILED, True, False),
+    (manager_module._WINDOWS_ATTACH_CONSOLE_FAILED, False, True),
+    (1, True, True),
+    (1, False, True),
+])
+def test_windows_shutdown_failure_cleans_up(monkeypatch, error_code, exited, raises):
+    monkeypatch.delenv("VALGRIND", raising=False)
+    monkeypatch.delenv("LEAKS", raising=False)
+    manager = FluentBitManager("/tmp/fluent-bit.yaml", shutdown_timeout=1)
+    process = Mock()
+    process.poll.side_effect = [None, None, 0 if exited else None]
+    if exited:
+        process.wait.return_value = 0
+    else:
+        process.wait.side_effect = subprocess.TimeoutExpired("fluent-bit", 1)
+    manager.process = process
+    manager.target_pid = 1234
+    handle = manager.output_handle = Mock()
+    helper_error = subprocess.CalledProcessError(error_code, "shutdown-helper")
+    monkeypatch.setattr(manager, "_send_windows_shutdown", Mock(side_effect=helper_error))
+    force_stop = Mock()
+    monkeypatch.setattr(manager, "_force_stop", force_stop)
+
+    if raises:
+        with pytest.raises(subprocess.CalledProcessError) as error:
+            manager.stop()
+        assert error.value is helper_error
+    else:
+        manager.stop()
+
+    assert manager.process is None
+    assert manager.target_pid is None
+    assert manager.output_handle is None
+    handle.close.assert_called_once()
+    assert force_stop.call_count == (0 if exited else 1)
+    if error_code == manager_module._WINDOWS_ATTACH_CONSOLE_FAILED:
+        assert process.poll.call_count == 3
+
+
+@pytest.mark.skipif(manager_module.os.name != "nt", reason="Windows console shutdown")
+@pytest.mark.parametrize("exited", [True, False])
+def test_windows_shutdown_helper_timeout_reaches_cleanup(monkeypatch, exited):
+    monkeypatch.delenv("VALGRIND", raising=False)
+    monkeypatch.delenv("LEAKS", raising=False)
+    manager = FluentBitManager("/tmp/fluent-bit.yaml", shutdown_timeout=1)
+    process = Mock()
+    process.poll.return_value = None
+    if exited:
+        process.wait.return_value = 0
+    else:
+        process.wait.side_effect = subprocess.TimeoutExpired("fluent-bit", 1)
+    manager.process = process
+    manager.target_pid = 1234
+    handle = manager.output_handle = Mock()
+    monkeypatch.setattr(manager, "_send_windows_shutdown",
+                        Mock(side_effect=subprocess.TimeoutExpired("shutdown-helper", 5)))
+    force_stop = Mock()
+    monkeypatch.setattr(manager, "_force_stop", force_stop)
+
+    manager.stop()
+
+    process.wait.assert_called_once_with(timeout=1)
+    assert force_stop.call_count == (0 if exited else 1)
+    assert manager.process is None
+    assert manager.target_pid is None
+    assert manager.output_handle is None
+    handle.close.assert_called_once()

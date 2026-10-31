@@ -23,6 +23,7 @@ import re
 import signal
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 
@@ -46,6 +47,7 @@ LEAKS_EXEC_SCRIPT = (
 logger = logging.getLogger(__name__)
 FLUENT_BIT_VERSION_PATTERN = re.compile(r"(?:Fluent Bit\s+)?v?(\d+)\.(\d+)\.(\d+)")
 _BINARY_VERSION_INFO_CACHE = {}
+_WINDOWS_ATTACH_CONSOLE_FAILED = 3
 
 class FluentBitStartupError(RuntimeError):
     pass
@@ -234,10 +236,20 @@ class FluentBitManager:
 
         output_path = self.leaks_log_file if leaks_enabled() else self.log_file
         self.output_handle = open(output_path, "a", encoding="utf-8")
+        process_options = {}
+        if os.name == "nt":
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+            process_options = {
+                "creationflags": subprocess.CREATE_NEW_CONSOLE,
+                "startupinfo": startupinfo,
+            }
         self.process = subprocess.Popen(
             command,
             stdout=self.output_handle,
             stderr=subprocess.STDOUT,
+            **process_options,
         )
 
         if leaks_enabled():
@@ -257,10 +269,21 @@ class FluentBitManager:
             return
 
         pid = self.target_pid or self.process.pid
+        shutdown_error = None
         return_code = self.process.poll()
         supervisor_running = self.process.poll() is None
         if supervisor_running or (leaks_enabled() and self.target_pid):
-            self.send_signal(signal.SIGTERM)
+            if os.name == "nt":
+                try:
+                    self._send_windows_shutdown(pid)
+                except subprocess.TimeoutExpired:
+                    logger.warning("Windows shutdown helper timed out; waiting for Fluent Bit")
+                except subprocess.CalledProcessError as error:
+                    if (error.returncode != _WINDOWS_ATTACH_CONSOLE_FAILED
+                            or self.process.poll() is None):
+                        shutdown_error = error
+            else:
+                self.send_signal(signal.SIGTERM)
 
         if supervisor_running:
             try:
@@ -280,6 +303,9 @@ class FluentBitManager:
             self.output_handle.close()
             self.output_handle = None
 
+        if shutdown_error is not None:
+            raise shutdown_error
+
         if self.http_monitoring_port:
             timeout = 10 if memory_check_enabled() else 5
             wait_for_port_to_be_free(int(self.http_monitoring_port), timeout=timeout)
@@ -291,6 +317,32 @@ class FluentBitManager:
             assert_leaks_clean(return_code, self.leaks_log_file)
 
         logger.info(f"Fluent Bit stopped (pid: {pid})")
+
+    @staticmethod
+    def _send_windows_shutdown(pid):
+        # Attach a helper to the child's isolated console and send Ctrl+C.
+        # CTRL_BREAK triggers Fluent Bit reload; SIGTERM forcibly kills it.
+        helper = f"""
+import ctypes
+import sys
+import time
+
+k = ctypes.WinDLL('kernel32', use_last_error=True)
+k.FreeConsole()
+if not k.AttachConsole(int(sys.argv[1])):
+    print('AttachConsole failed:', ctypes.get_last_error(), file=sys.stderr)
+    sys.exit({_WINDOWS_ATTACH_CONSOLE_FAILED})
+try:
+    if not k.SetConsoleCtrlHandler(None, True):
+        raise ctypes.WinError(ctypes.get_last_error())
+    if not k.GenerateConsoleCtrlEvent(0, 0):
+        raise ctypes.WinError(ctypes.get_last_error())
+    time.sleep(0.1)
+finally:
+    k.FreeConsole()
+"""
+        subprocess.run([sys.executable, "-c", helper, str(pid)], check=True,
+                       creationflags=subprocess.CREATE_NO_WINDOW, timeout=5)
 
     def send_signal(self, signal_number):
         if not self.process:
