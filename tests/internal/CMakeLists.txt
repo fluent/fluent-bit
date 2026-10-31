@@ -46,6 +46,7 @@ set(UNIT_TESTS_FILES
   ring_buffer.c
   regex.c
   scheduler.c
+  json.c
   parser_json.c
   parser_ltsv.c
   parser_regex.c
