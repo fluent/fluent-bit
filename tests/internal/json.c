@@ -145,22 +145,35 @@ static void test_tree_nested_iteration()
 
 static void test_tree_invalid_unicode()
 {
+    size_t index;
     struct flb_json_tree *tree;
     struct flb_json_node *root;
+    const char *inputs[] = {
+        "\"a\\uD800b\"",
+        "\"\\uD800\\u0041\"",
+        "\"\\uA_CD\"",
+        "\"\\uD800\\uXXXX\""
+    };
+    const char *expected[] = {
+        "a\xef\xbf\xbd" "b",
+        "\xef\xbf\xbd",
+        "\\uACD",
+        "\xef\xbf\xbd" "XXXX"
+    };
 
-    /* an unpaired surrogate is replaced with U+FFFD, like flb_pack_json() */
-    tree = tree_read("\"a\\uD800b\"");
-    TEST_CHECK(tree != NULL);
-    if (tree == NULL) {
-        return;
+    /* Preserve the pre-upgrade character handling used by flb_pack_json(). */
+    for (index = 0; index < sizeof(inputs) / sizeof(inputs[0]); index++) {
+        tree = tree_read(inputs[index]);
+        TEST_ASSERT(tree != NULL);
+
+        root = flb_json_tree_root(tree);
+        TEST_CHECK(flb_json_node_is_str(root));
+        TEST_CHECK(flb_json_node_get_len(root) == strlen(expected[index]));
+        TEST_CHECK(memcmp(flb_json_node_get_str(root), expected[index],
+                          strlen(expected[index])) == 0);
+
+        flb_json_tree_destroy(tree);
     }
-
-    root = flb_json_tree_root(tree);
-    TEST_CHECK(flb_json_node_is_str(root));
-    TEST_CHECK(flb_json_node_get_len(root) == 5);
-    TEST_CHECK(memcmp(flb_json_node_get_str(root), "a\xef\xbf\xbd" "b", 5) == 0);
-
-    flb_json_tree_destroy(tree);
 }
 
 static void test_tree_rejects()
