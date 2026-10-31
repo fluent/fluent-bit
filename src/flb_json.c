@@ -18,6 +18,7 @@
  */
 
 #include <fluent-bit/flb_json.h>
+#include <fluent-bit/flb_json_tree.h>
 
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_pack.h>
@@ -1877,3 +1878,39 @@ int flb_json_mut_obj_add_val(struct flb_json_mut_doc *document,
     return flb_json_mut_obj_add_val_len(document, object, key,
                                         strlen(key), value);
 }
+
+#ifdef FLB_HAVE_YYJSON
+struct flb_json_tree *flb_json_tree_read(const char *input, size_t length)
+{
+    yyjson_alc allocator;
+
+    if (input == NULL) {
+        return NULL;
+    }
+
+    flb_json_yyjson_init_alc(&allocator);
+
+    return (struct flb_json_tree *) yyjson_read_opts((char *) input, length,
+                                                     YYJSON_READ_ALLOW_INVALID_UNICODE |
+                                                     YYJSON_READ_REPLACE_INVALID_UNICODE,
+                                                     &allocator, NULL);
+}
+
+void flb_json_tree_destroy(struct flb_json_tree *tree)
+{
+    yyjson_doc_free((yyjson_doc *) tree);
+}
+#else
+struct flb_json_tree *flb_json_tree_read(const char *input, size_t length)
+{
+    (void) input;
+    (void) length;
+
+    return NULL;
+}
+
+void flb_json_tree_destroy(struct flb_json_tree *tree)
+{
+    (void) tree;
+}
+#endif
