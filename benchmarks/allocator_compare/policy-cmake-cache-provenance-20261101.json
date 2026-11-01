@@ -1,0 +1,42 @@
+{
+  "default54": {
+    "CMAKE_BUILD_TYPE": "Release",
+    "CMAKE_C_FLAGS": "",
+    "CMAKE_C_FLAGS_RELEASE": "-O3 -DNDEBUG",
+    "FLB_DEBUG": "Off",
+    "FLB_JEMALLOC": "On",
+    "FLB_PREFER_SYSTEM_LIB_JEMALLOC": "Off",
+    "FLB_RELEASE": "Off",
+    "FLB_SHARED_LIB": "Off",
+    "FLB_TESTS_INTERNAL": "On",
+    "FLB_TESTS_RUNTIME": "On",
+    "FLB_YYJSON": "On"
+  },
+  "old53": {
+    "CMAKE_BUILD_TYPE": "Release",
+    "CMAKE_C_FLAGS": "",
+    "CMAKE_C_FLAGS_RELEASE": "-O3 -DNDEBUG",
+    "FLB_DEBUG": "Off",
+    "FLB_JEMALLOC": "On",
+    "FLB_PREFER_SYSTEM_LIB_JEMALLOC": "Off",
+    "FLB_RELEASE": "Off",
+    "FLB_SHARED_LIB": "Off",
+    "FLB_TESTS_INTERNAL": "On",
+    "FLB_TESTS_RUNTIME": "On",
+    "FLB_YYJSON": "On"
+  },
+  "special54": {
+    "CMAKE_BUILD_TYPE": "Release",
+    "CMAKE_C_FLAGS": "",
+    "CMAKE_C_FLAGS_RELEASE": "-O3 -DNDEBUG",
+    "FLB_DEBUG": "Off",
+    "FLB_JEMALLOC": "On",
+    "FLB_JEMALLOC_OPTIONS": "--with-lg-quantum=3 --with-malloc-conf=disable_large_size_classes:false,lg_extent_max_active_fit:30",
+    "FLB_PREFER_SYSTEM_LIB_JEMALLOC": "Off",
+    "FLB_RELEASE": "Off",
+    "FLB_SHARED_LIB": "Off",
+    "FLB_TESTS_INTERNAL": "On",
+    "FLB_TESTS_RUNTIME": "On",
+    "FLB_YYJSON": "On"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "validation": {
+    "process_reports": 49,
+    "bad": []
+  },
+  "validation-fit": {
+    "process_reports": 49,
+    "bad": []
+  },
+  "special_rerun": {
+    "process_reports": 2,
+    "paths": [
+      "validation/rerun-valgrind-logs/fluent_bit_results_20261101_084939_okhr7p_a/valgrind.log",
+      "validation/rerun-valgrind-logs/fluent_bit_results_20261101_084941_6cym2wim/valgrind.log"
+    ],
+    "bad": []
+  }
+}
