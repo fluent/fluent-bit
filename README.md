@@ -44,6 +44,9 @@ To track upcoming milestones, visit the [project roadmap](https://github.com/flu
 - 📊 **Monitoring**: Expose internal metrics over HTTP/Prometheus
 - 🧩 **Extensibility**:
   - Write plugins in **C**, filters in **Lua**, and outputs in **Go**
+  - Write telemetry policies in Lua for logs, metrics, and traces with
+    [Fluent Typed Scripting (FTS)](plugins/processor_fts/README.md)
+    (`master` branch, not yet in a release)
 - 🔌 **Supports Logs, Metrics, and Traces** with unified processing and delivery
 
 ---
