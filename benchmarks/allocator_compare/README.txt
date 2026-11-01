@@ -104,3 +104,34 @@ protobuf filesystem saturation options above with three restarts per cell.
 The latter uses 10M records per run; the former uses 10M at 500k logs/s.
 All other warmup, idle, affinity, worker and payload settings are unchanged.
 Do not substitute the diagnostic relink for the normal 5.3.0 build here.
+
+Jemalloc 5.4 policy follow-up, 2026-11-01
+---------------------------------------
+Read policy-REPORT-20261101.txt for the updated release decision, complete
+medians/ranges, limitations and verification commands. It qualifies the
+rollback rationale with the substantial mixed-size advantage of 5.4.
+
+policy-results-20261101.csv contains all 102 new timed observations. The
+policy-summary/comparisons JSON files retain derived memory-time integrals,
+medians and ranges. policy-comparison-20261101.csv aligns the three normal
+builds and the narrower fit-only follow-up; empty cells were not tested.
+The new campaign measured 1.3788B records plus 32.64M warmup records.
+
+For reproduction, start with a fresh, unchanged copy of
+benchmarks/compare_fluent_bit_otelcol.py and apply
+policy-reproduce-20261101.patch instead of the older reproduce.patch. Use
+policy-commands-20261101.json for exact options, replacing binary, output,
+Python and driver paths for your checkout. Each --system-malloc-conf LABEL=CONF
+option applies only to that server, including clearing inherited MALLOC_CONF
+for untuned labels. The ordinary controls have no preload or runtime tuning.
+Apply policy-mixed-20261101.patch on top of that first patch only for the
+mixed-size groups. The two patches were applied sequentially in a scratch
+checkout and the resulting bytes matched the driver used for timing.
+
+The special binary uses the pinned 5.4 source with the configure argument:
+--with-lg-quantum=3 --with-malloc-conf=disable_large_size_classes:false,lg_extent_max_active_fit:30
+The fit-only follow-up uses stock 5.4 and MALLOC_CONF=lg_extent_max_active_fit:30.
+It ran after the initial matrix and reuses earlier baseline medians; it was
+not an interleaved paired confirmation. No ARM page-size tuning was tested.
+policy-build-commands, cmake-cache-provenance, binary-provenance and allocator-
+probes record the actual build flags, SHA-256 hashes and option checks.

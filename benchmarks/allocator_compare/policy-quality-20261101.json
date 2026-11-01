@@ -1,0 +1,13 @@
+{
+  "runs": 102,
+  "offered": 1378800000,
+  "accepted": 1378800000,
+  "completed": 1378800000,
+  "client_retries": 2169,
+  "dropped": 0,
+  "refused": 0,
+  "host_swap_in_pages": 26563,
+  "host_swap_out_pages": 293996,
+  "runs_with_swapout": 15,
+  "all_counts_match": true
+}

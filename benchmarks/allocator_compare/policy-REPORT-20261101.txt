@@ -1,0 +1,392 @@
+Fluent Bit: jemalloc 5.4 two-option comparison, 2026-11-01
+============================================================
+
+Status: complete
+Special policy: disable_large_size_classes:false,lg_extent_max_active_fit:30
+Three fresh processes per cell; medians below. RSS values are MiB.
+All normal Fluent Bit 5.2 builds share runtime source ad9867358257123c34b529860fe984e92a69844c.
+The 5.3.0 allocator is the version shipped in Fluent Bit 5.1 (not jemalloc 5.2).
+No Fluent Bit 5.1 binary was rerun in this experiment; this isolates allocator policy in 5.2.
+
+Memory and work: medians of independently measured runs
+group / encoding / allocator | n | busy RSS | peak RSS | idle RSS (10s) | CPU s/M | steady M logs/s | finish s | RSS GiB s
+filesystem-factorial / protobuf / both-runtime | 3 | 623.9 | 791.0 | 462.2 | 2.113 | 1.111 | 10.00 | 5.95
+filesystem-factorial / protobuf / classes-only | 3 | 1169.3 | 1459.4 | 998.5 | 2.178 | 1.122 | 10.00 | 10.92
+filesystem-factorial / protobuf / default54 | 3 | 1157.4 | 1370.3 | 967.8 | 2.181 | 1.126 | 10.00 | 10.53
+filesystem-factorial / protobuf / fit-only | 3 | 633.7 | 793.5 | 466.5 | 2.133 | 1.030 | 10.00 | 6.09
+filesystem-factorial / protobuf / old53 | 3 | 737.6 | 950.2 | 340.9 | 2.298 | 1.158 | 10.00 | 6.70
+filesystem-factorial / protobuf / special54 | 3 | 622.6 | 810.0 | 458.9 | 2.128 | 1.112 | 10.00 | 6.02
+filesystem-paced-100k / protobuf / default54 | 3 | 37.6 | 50.3 | 27.4 | 3.862 | 0.100 | 33.00 | 1.21
+filesystem-paced-100k / protobuf / old53 | 3 | 37.1 | 49.7 | 26.9 | 3.962 | 0.100 | 33.01 | 1.20
+filesystem-paced-100k / protobuf / special54 | 3 | 37.6 | 49.4 | 27.5 | 3.997 | 0.100 | 32.99 | 1.21
+followup-ingest-fit / protobuf / fit-only | 3 | 358.1 | 605.5 | 37.9 | 1.838 | 2.176 | 15.00 | 5.55
+followup-mixed-fit / protobuf / fit-only | 3 | 1516.7 | 3274.1 | 479.1 | 3.083 | 1.207 | 10.00 | 17.94
+followup-paced-fit / json / fit-only | 3 | 95.2 | 144.2 | 33.1 | 2.488 | 0.500 | 21.00 | 1.97
+followup-paced-fit / protobuf / fit-only | 3 | 92.9 | 147.4 | 27.7 | 2.143 | 0.500 | 21.00 | 2.02
+memory-ingest / json / default54 | 3 | 252.4 | 431.1 | 43.5 | 2.281 | 1.745 | 18.00 | 4.61
+memory-ingest / json / old53 | 3 | 251.4 | 441.4 | 39.7 | 2.232 | 1.790 | 18.00 | 4.48
+memory-ingest / json / special54 | 3 | 250.9 | 441.7 | 41.2 | 2.233 | 1.783 | 18.01 | 4.46
+memory-ingest / protobuf / default54 | 3 | 362.3 | 700.8 | 36.4 | 1.899 | 2.094 | 15.00 | 5.58
+memory-ingest / protobuf / old53 | 3 | 290.8 | 1013.9 | 41.8 | 1.928 | 2.049 | 15.99 | 5.14
+memory-ingest / protobuf / special54 | 3 | 315.1 | 784.1 | 36.1 | 1.902 | 2.111 | 16.00 | 4.71
+memory-modified / json / default54 | 3 | 219.6 | 420.7 | 40.9 | 2.361 | 1.667 | 7.01 | 1.62
+memory-modified / json / old53 | 3 | 210.0 | 423.9 | 40.1 | 2.338 | 1.681 | 7.00 | 1.55
+memory-modified / json / special54 | 3 | 217.1 | 416.9 | 41.5 | 2.407 | 1.627 | 7.00 | 1.55
+memory-modified / protobuf / default54 | 3 | 207.3 | 393.3 | 37.7 | 2.723 | 1.463 | 8.00 | 1.71
+memory-modified / protobuf / old53 | 3 | 204.9 | 390.0 | 37.2 | 2.715 | 1.456 | 8.00 | 1.67
+memory-modified / protobuf / special54 | 3 | 207.2 | 393.1 | 39.8 | 2.709 | 1.473 | 8.00 | 1.69
+memory-paced-500k / json / default54 | 3 | 94.0 | 148.4 | 33.0 | 2.477 | 0.500 | 21.00 | 1.97
+memory-paced-500k / json / old53 | 3 | 86.7 | 144.8 | 33.6 | 2.457 | 0.500 | 21.00 | 1.96
+memory-paced-500k / json / special54 | 3 | 87.9 | 145.4 | 35.2 | 2.445 | 0.500 | 21.00 | 1.99
+memory-paced-500k / protobuf / default54 | 3 | 116.3 | 149.5 | 27.7 | 2.134 | 0.499 | 20.99 | 2.32
+memory-paced-500k / protobuf / old53 | 3 | 82.7 | 142.8 | 28.0 | 2.199 | 0.500 | 21.00 | 1.90
+memory-paced-500k / protobuf / special54 | 3 | 82.0 | 142.3 | 28.2 | 2.144 | 0.500 | 21.00 | 1.87
+mixed-size-protobuf / protobuf / default54 | 3 | 2324.5 | 3881.9 | 617.7 | 3.239 | 1.044 | 10.00 | 22.55
+mixed-size-protobuf / protobuf / old53 | 3 | 5513.8 | 10989.1 | 564.4 | 3.592 | 0.314 | 12.00 | 71.87
+mixed-size-protobuf / protobuf / special54 | 3 | 6447.5 | 11696.7 | 520.2 | 3.520 | 0.430 | 12.00 | 73.24
+
+Run ranges (min-max): busy RSS / peak RSS / CPU s/M / finish s
+filesystem-factorial / protobuf / both-runtime: 621.9-630.8 / 786.4-810.9 / 2.104-2.119 / 10.00-10.01
+filesystem-factorial / protobuf / classes-only: 1169.0-1181.8 / 1407.1-1464.8 / 2.160-2.189 / 10.00-10.00
+filesystem-factorial / protobuf / default54: 1101.6-1187.4 / 1351.7-1446.7 / 2.179-2.198 / 10.00-10.00
+filesystem-factorial / protobuf / fit-only: 614.7-638.9 / 790.5-832.5 / 2.089-2.194 / 10.00-12.01
+filesystem-factorial / protobuf / old53: 714.2-748.8 / 946.1-955.5 / 2.285-2.318 / 9.99-10.00
+filesystem-factorial / protobuf / special54: 610.6-624.4 / 805.5-826.9 / 2.097-2.130 / 10.00-10.01
+filesystem-paced-100k / protobuf / default54: 37.5-37.9 / 50.0-51.3 / 3.734-4.581 / 33.00-33.00
+filesystem-paced-100k / protobuf / old53: 37.0-37.3 / 49.6-49.7 / 3.853-4.025 / 33.00-33.01
+filesystem-paced-100k / protobuf / special54: 37.4-37.6 / 48.9-49.5 / 3.859-4.656 / 32.99-33.00
+followup-ingest-fit / protobuf / fit-only: 355.8-363.6 / 567.5-1170.7 / 1.833-1.874 / 15.00-15.01
+followup-mixed-fit / protobuf / fit-only: 1386.4-1744.0 / 2581.5-3555.0 / 3.034-3.094 / 10.00-10.00
+followup-paced-fit / json / fit-only: 88.4-111.6 / 144.0-149.4 / 2.470-2.497 / 21.00-21.00
+followup-paced-fit / protobuf / fit-only: 89.4-109.1 / 145.0-147.7 / 2.139-2.188 / 21.00-22.00
+memory-ingest / json / default54: 250.5-300.2 / 423.3-455.0 / 2.232-2.301 / 17.99-18.01
+memory-ingest / json / old53: 247.6-253.2 / 436.7-451.8 / 2.222-2.245 / 17.99-18.00
+memory-ingest / json / special54: 247.2-253.7 / 438.3-442.6 / 2.230-2.245 / 18.00-18.01
+memory-ingest / protobuf / default54: 342.7-388.8 / 658.0-1161.9 / 1.865-1.901 / 15.00-16.00
+memory-ingest / protobuf / old53: 286.8-308.1 / 528.0-1193.2 / 1.915-1.944 / 15.99-17.00
+memory-ingest / protobuf / special54: 291.4-360.8 / 552.2-1455.9 / 1.887-1.911 / 15.00-16.01
+memory-modified / json / default54: 187.3-224.7 / 417.2-434.0 / 2.342-2.381 / 7.00-8.00
+memory-modified / json / old53: 208.8-217.9 / 420.2-435.0 / 2.315-2.344 / 7.00-7.01
+memory-modified / json / special54: 210.5-223.2 / 414.0-424.3 / 2.344-2.419 / 6.99-7.00
+memory-modified / protobuf / default54: 203.0-214.9 / 393.0-401.6 / 2.712-2.729 / 8.00-8.01
+memory-modified / protobuf / old53: 202.5-208.1 / 389.3-390.6 / 2.711-2.727 / 8.00-8.00
+memory-modified / protobuf / special54: 205.4-208.0 / 392.2-394.1 / 2.705-2.717 / 7.99-8.01
+memory-paced-500k / json / default54: 89.0-108.5 / 144.2-153.2 / 2.445-2.515 / 21.00-21.00
+memory-paced-500k / json / old53: 86.2-88.2 / 144.5-146.5 / 2.422-2.511 / 21.00-21.00
+memory-paced-500k / json / special54: 87.7-88.8 / 145.3-146.0 / 2.445-2.449 / 20.99-21.00
+memory-paced-500k / protobuf / default54: 88.6-116.4 / 148.5-149.6 / 2.113-2.166 / 20.99-21.00
+memory-paced-500k / protobuf / old53: 82.4-83.3 / 142.8-143.3 / 2.155-2.215 / 21.00-21.00
+memory-paced-500k / protobuf / special54: 81.9-83.1 / 142.1-143.2 / 2.133-2.167 / 21.00-21.00
+mixed-size-protobuf / protobuf / default54: 1682.1-2602.7 / 3545.2-3950.2 / 3.193-3.288 / 10.00-11.00
+mixed-size-protobuf / protobuf / old53: 5293.7-5815.4 / 10723.8-12614.3 / 3.542-4.040 / 11.00-15.00
+mixed-size-protobuf / protobuf / special54: 5505.0-6770.7 / 9686.1-12789.5 / 3.488-3.567 / 11.00-12.00
+
+Data reconciliation
+{
+  "runs": 102,
+  "offered": 1378800000,
+  "accepted": 1378800000,
+  "completed": 1378800000,
+  "client_retries": 2169,
+  "dropped": 0,
+  "refused": 0,
+  "host_swap_in_pages": 26563,
+  "host_swap_out_pages": 293996,
+  "runs_with_swapout": 15,
+  "all_counts_match": true
+}
+
+Experimental method and interpretation
+- Four HTTP workers, 16 clients, 100 records/request; 320k warmup per restart.
+- RSS sampled every 50ms; CPU includes delivery/drain and excludes the 10s idle period.
+- Busy RSS is the median of samples in the runner steady window; peak is sampled RSS.
+- RSS GiB seconds integrates RSS during measured completion, excluding post-drain idle.
+- Null output counters reconcile accepted/completed counts; no per-record ID uniqueness proof.
+- Completion and throughput use 1s counter polling. Small differences are not speed guarantees.
+- Saturation builds can have different queued work. Matched-rate cases are the cleaner comparison.
+- JSON/protobuf ingestion: 30M/run. Modified and 500k/s cases: 10M/run.
+- Filesystem saturation: 10M/run. Filesystem 100k/s: 3.2M/run. Mixed-size: 10M/run.
+- Mixed-size 100-record batches contain 70x64B,20x512B,9x4096B,1x65536B bodies.
+- Rotated build order and 3 restarts; server CPUs 0-3, generator CPUs 4-7,12-15.
+- Shared x86_64 Linux host, 4KiB pages, powersave/boost and preexisting swap.
+- Swap counters are host-wide; they cannot attribute swapping to a benchmark process.
+- Check summary.json for no-swapout sample counts and CPU medians.
+- No allocator sampler/Valgrind/LD_PRELOAD in headline timing. MALLOC_CONF cleared except factorial controls.
+- Special defaults are bundled-only configure settings; runtime environment overrides were verified.
+- No dirty-decay, arena-count, background-thread or page-size tuning was added.
+- These finite tests do not certify long-uptime fragmentation, ARM64, musl, or 64KiB kernels.
+
+Mechanism and limits
+The factorial control changes options on the same stock 5.4 binary, avoiding a relink confound.
+lg_extent_max_active_fit changes dirty-extent selection/splitting and a coalescing bound.
+Value 30 is therefore not an exact restoration of all 5.3 policies (whose fit default was also 6).
+disable_large_size_classes:false restores large-size-class rounding, potentially leaving realloc headroom.
+The tests do not trace realloc moves, so that mechanism remains plausible rather than directly measured.
+See bundled jemalloc doc/jemalloc.xml.in:1205,1696 and src/extent.c:454,1052; src/eset.c:281.
+Filesystem idle retention must be assessed separately from busy RSS; do not claim complete parity.
+
+Build commands
+cmake -S /tmp/flb-jemalloc54-special-20261101 -B /tmp/flb-jemalloc54-special-20261101/build -DCMAKE_BUILD_TYPE=Release -DFLB_RELEASE=Off -DFLB_DEBUG=Off -DFLB_JEMALLOC=On -DFLB_PREFER_SYSTEM_LIB_JEMALLOC=Off -DFLB_YYJSON=On -DFLB_SHARED_LIB=Off -DFLB_EXAMPLES=Off -DFLB_TESTS_RUNTIME=On -DFLB_TESTS_INTERNAL=On '-DFLB_JEMALLOC_OPTIONS=--with-lg-quantum=3 --with-malloc-conf=disable_large_size_classes:false,lg_extent_max_active_fit:30'
+cmake --build /tmp/flb-jemalloc54-special-20261101/build --target fluent-bit-bin -j8
+
+Release decision and tradeoffs
+Release decision: keep the conservative jemalloc 5.3.0 rollback proposal for 5.2.
+This preserves the allocator shipped in 5.1 and its memory budget on existing
+workloads. It is not a claim that 5.3.0 is the lowest-RSS or fastest policy in
+all workloads. Default 5.4 and fit-only 5.4 have substantial mixed-size wins.
+
+The supplied two-option policy helps the original filesystem case: median busy
+RSS falls from 1157.4 to 622.6 MiB, below 5.3.0's 737.6 MiB. It also recovers
+matched-rate JSON/protobuf memory. But it is not a universal replacement:
+- Saturated protobuf memory: 315.1 MiB vs 290.8 MiB for 5.3.0 (+8.4%).
+- Filesystem RSS after 10s idle: 458.9 vs 340.9 MiB for 5.3.0 (+34.6%).
+- Mixed-size stress: 6447.5 MiB busy / 11696.7 MiB peak vs default 5.4's
+  2324.5 / 3881.9 MiB. CPU cost 3.520 vs 3.239 s/M logs (+8.7%).
+
+The fit-only follow-up retains 5.4 large-allocation rounding and recovers most
+filesystem savings (633.7 MiB), while using 1516.7 MiB in mixed-size stress.
+That is promising for continued 5.4 work. It still uses 358.1 vs 290.8 MiB in
+saturated protobuf (+23.1%) and 92.9 vs 82.7 MiB in matched protobuf (+12.3%).
+It has not met the prior release's no material memory increase goal either.
+
+The mixed-size downside of rollback is material: 5.3.0 uses 5513.8 MiB busy,
+10989.1 MiB sampled peak and 71.87 RSS GiB seconds, versus default 5.4's
+2324.5 MiB, 3881.9 MiB and 22.55 GiB seconds. Completion medians are 12s and
+10s. This guard uses batches with 1% 64KiB bodies, 9% 4KiB, 20% 512B and
+70% 64B, repeated for 10M records; it is not a long-uptime production trace.
+Do not describe rollback as a memory improvement for every user.
+
+In the original filesystem case, fit-only already recovers most of the paired
+policy's gain; classes-only does not. The supplied assertion that neither
+setting can work alone does not hold for that Fluent Bit workload. This does
+not establish whether both options are necessary in other workloads.
+
+These results justify the rollback as a conservative release compatibility
+choice, while providing a reason to continue investigating 5.4 and selective
+buffer-allocation/reuse behavior. They do not establish a universal best
+allocator policy, a single culprit commit, or an in-place realloc mechanism.
+No additional arena/decay/background-thread/page-size changes were tested.
+
+
+Focused integration verification (sequentially after all benchmark timing)
+cwd: /tmp/flb-jemalloc54-special-20261101/tests/integration
+env: {"FLUENT_BIT_BINARY": "/tmp/flb-jemalloc54-special-20261101/build/bin/fluent-bit"}
+cleared environment: MALLOC_CONF, LD_PRELOAD
+/home/edsiper/c/fluent-bit/tests/integration/.venv/bin/python -m pytest -q -o log_cli=false -p no:cacheprovider scenarios/in_tcp/tests/test_in_tcp_001.py scenarios/storage/tests/test_storage_down_chunk.py scenarios/in_storage_backlog/tests/test_in_storage_backlog_001.py scenarios/in_tail/tests/test_in_tail_001.py::test_in_tail_parser_mode_structures_records scenarios/in_tail/tests/test_in_tail_001.py::test_in_tail_handles_copytruncate_with_stale_writer scenarios/in_tail/tests/test_in_tail_001.py::test_in_tail_restart_resumes_from_db_offset scenarios/in_forward/tests/test_in_forward_001.py::test_in_forward_workers_concurrent_message_mode_records scenarios/in_forward/tests/test_in_forward_001.py::test_in_forward_metrics_payload_append_is_atomic scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_opentelemetry_to_opentelemetry_basic_log scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_protobuf_log_body_int64 scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_large_protobuf_logs 'scenarios/storage/tests/test_chunk_allocation.py::test_append_sized_creation[256]' 'scenarios/storage/tests/test_chunk_allocation.py::test_append_sized_creation[16384]' 'scenarios/storage/tests/test_chunk_allocation.py::test_append_sized_creation[1048576]' scenarios/storage/tests/test_chunk_allocation.py::test_filter_expansion_respects_quota 'scenarios/storage/tests/test_chunk_allocation.py::test_filtered_payload_does_not_evict[drop]' 'scenarios/storage/tests/test_chunk_allocation.py::test_filtered_payload_does_not_evict[shrink]' scenarios/storage/tests/test_chunk_allocation.py::test_reused_chunk_budgets_adaptive_growth 'scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_http_workers_respect_ingress_queue_byte_limit[no_processors]' 'scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_http_workers_respect_ingress_queue_byte_limit[worker_processors]' 'scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_logs_worker_processing[False-protobuf]' 'scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_logs_worker_processing[False-json]' 'scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_logs_worker_processing[True-protobuf]' 'scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_logs_worker_processing[True-json]' 'scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_logs_worker_processing_fallback[hash_then_filter]' 'scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_logs_worker_processing_fallback[hash_then_unflagged]' 'scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_logs_worker_processing_fallback[unflagged_then_hash]' --junitxml=/home/edsiper/c/fluent-bit/benchmarks/results/5.2-jemalloc54-special-20261101/validation/integration-normal.xml
+exit=0, elapsed=198.81s
+cwd: /tmp/flb-jemalloc54-special-20261101/tests/integration
+env: {"FLUENT_BIT_BINARY": "/tmp/flb-jemalloc54-special-20261101/build/bin/fluent-bit", "VALGRIND": "1", "VALGRIND_STRICT": "1"}
+cleared environment: MALLOC_CONF, LD_PRELOAD
+/home/edsiper/c/fluent-bit/tests/integration/.venv/bin/python -m pytest -q -o log_cli=false -p no:cacheprovider scenarios/in_tcp/tests/test_in_tcp_001.py scenarios/storage/tests/test_storage_down_chunk.py scenarios/in_storage_backlog/tests/test_in_storage_backlog_001.py scenarios/in_tail/tests/test_in_tail_001.py::test_in_tail_parser_mode_structures_records scenarios/in_tail/tests/test_in_tail_001.py::test_in_tail_handles_copytruncate_with_stale_writer scenarios/in_tail/tests/test_in_tail_001.py::test_in_tail_restart_resumes_from_db_offset scenarios/in_forward/tests/test_in_forward_001.py::test_in_forward_workers_concurrent_message_mode_records scenarios/in_forward/tests/test_in_forward_001.py::test_in_forward_metrics_payload_append_is_atomic scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_opentelemetry_to_opentelemetry_basic_log scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_protobuf_log_body_int64 scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_large_protobuf_logs 'scenarios/storage/tests/test_chunk_allocation.py::test_append_sized_creation[256]' 'scenarios/storage/tests/test_chunk_allocation.py::test_append_sized_creation[16384]' 'scenarios/storage/tests/test_chunk_allocation.py::test_append_sized_creation[1048576]' scenarios/storage/tests/test_chunk_allocation.py::test_filter_expansion_respects_quota 'scenarios/storage/tests/test_chunk_allocation.py::test_filtered_payload_does_not_evict[drop]' 'scenarios/storage/tests/test_chunk_allocation.py::test_filtered_payload_does_not_evict[shrink]' scenarios/storage/tests/test_chunk_allocation.py::test_reused_chunk_budgets_adaptive_growth 'scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_http_workers_respect_ingress_queue_byte_limit[no_processors]' 'scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_http_workers_respect_ingress_queue_byte_limit[worker_processors]' 'scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_logs_worker_processing[False-protobuf]' 'scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_logs_worker_processing[False-json]' 'scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_logs_worker_processing[True-protobuf]' 'scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_logs_worker_processing[True-json]' 'scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_logs_worker_processing_fallback[hash_then_filter]' 'scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_logs_worker_processing_fallback[hash_then_unflagged]' 'scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_logs_worker_processing_fallback[unflagged_then_hash]' --junitxml=/home/edsiper/c/fluent-bit/benchmarks/results/5.2-jemalloc54-special-20261101/validation/integration-valgrind.xml
+exit=1, elapsed=220.07s
+
+Timed group durations
+[
+  {
+    "group": "memory-paced-500k",
+    "exit_code": 0,
+    "seconds": 648.9799432754517
+  },
+  {
+    "group": "memory-modified",
+    "exit_code": 0,
+    "seconds": 389.99904203414917
+  },
+  {
+    "group": "followup-mixed-fit",
+    "exit_code": 0,
+    "seconds": 71.4367983341217
+  },
+  {
+    "group": "filesystem-paced-100k",
+    "exit_code": 0,
+    "seconds": 450.0358407497406
+  },
+  {
+    "group": "memory-ingest",
+    "exit_code": 0,
+    "seconds": 555.9685716629028
+  },
+  {
+    "group": "followup-paced-fit",
+    "exit_code": 0,
+    "seconds": 216.95638751983643
+  },
+  {
+    "group": "mixed-size-protobuf",
+    "exit_code": 0,
+    "seconds": 230.0931088924408
+  },
+  {
+    "group": "followup-ingest-fit",
+    "exit_code": 0,
+    "seconds": 87.01584959030151
+  },
+  {
+    "group": "filesystem-factorial",
+    "exit_code": 0,
+    "seconds": 434.1959481239319
+  }
+]
+
+Artifacts
+summary.csv/json: per-cell medians and ranges; comparisons.json: percentage changes.
+*.raw.csv, *.timeseries.csv, *.log and *.command.json: all retained per-run evidence.
+allocator-probes.json: effective defaults and MALLOC_CONF override checks.
+binary-provenance.json: SHA-256 hashes and source identity.
+validation/verification.json: exact functional and strict Valgrind commands/results.
+Rollback PR #12701 receives this evidence after qualification; production rollback patch is unchanged.
+
+Additional fit-only verification
+[
+  {
+    "name": "normal",
+    "command": [
+      "/home/edsiper/c/fluent-bit/tests/integration/.venv/bin/python",
+      "-m",
+      "pytest",
+      "-q",
+      "-o",
+      "log_cli=false",
+      "-p",
+      "no:cacheprovider",
+      "scenarios/in_tcp/tests/test_in_tcp_001.py",
+      "scenarios/storage/tests/test_storage_down_chunk.py",
+      "scenarios/in_storage_backlog/tests/test_in_storage_backlog_001.py",
+      "scenarios/in_tail/tests/test_in_tail_001.py::test_in_tail_parser_mode_structures_records",
+      "scenarios/in_tail/tests/test_in_tail_001.py::test_in_tail_handles_copytruncate_with_stale_writer",
+      "scenarios/in_tail/tests/test_in_tail_001.py::test_in_tail_restart_resumes_from_db_offset",
+      "scenarios/in_forward/tests/test_in_forward_001.py::test_in_forward_workers_concurrent_message_mode_records",
+      "scenarios/in_forward/tests/test_in_forward_001.py::test_in_forward_metrics_payload_append_is_atomic",
+      "scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_opentelemetry_to_opentelemetry_basic_log",
+      "scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_protobuf_log_body_int64",
+      "scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_large_protobuf_logs",
+      "scenarios/storage/tests/test_chunk_allocation.py::test_append_sized_creation[256]",
+      "scenarios/storage/tests/test_chunk_allocation.py::test_append_sized_creation[16384]",
+      "scenarios/storage/tests/test_chunk_allocation.py::test_append_sized_creation[1048576]",
+      "scenarios/storage/tests/test_chunk_allocation.py::test_filter_expansion_respects_quota",
+      "scenarios/storage/tests/test_chunk_allocation.py::test_filtered_payload_does_not_evict[drop]",
+      "scenarios/storage/tests/test_chunk_allocation.py::test_filtered_payload_does_not_evict[shrink]",
+      "scenarios/storage/tests/test_chunk_allocation.py::test_reused_chunk_budgets_adaptive_growth",
+      "scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_http_workers_respect_ingress_queue_byte_limit[no_processors]",
+      "scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_http_workers_respect_ingress_queue_byte_limit[worker_processors]",
+      "scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_logs_worker_processing[False-protobuf]",
+      "scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_logs_worker_processing[False-json]",
+      "scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_logs_worker_processing[True-protobuf]",
+      "scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_logs_worker_processing[True-json]",
+      "scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_logs_worker_processing_fallback[hash_then_filter]",
+      "scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_logs_worker_processing_fallback[hash_then_unflagged]",
+      "scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_logs_worker_processing_fallback[unflagged_then_hash]",
+      "--junitxml=/home/edsiper/c/fluent-bit/benchmarks/results/5.2-jemalloc54-special-20261101/validation-fit/integration-normal.xml"
+    ],
+    "cwd": "/tmp/flb-jemalloc54-special-20261101/tests/integration",
+    "env_overrides": {
+      "FLUENT_BIT_BINARY": "/tmp/flb-jemalloc-rollback-20261031/build54/bin/fluent-bit",
+      "MALLOC_CONF": "lg_extent_max_active_fit:30"
+    },
+    "env_removed": [
+      "LD_PRELOAD"
+    ],
+    "exit_code": 0,
+    "seconds": 198.61101174354553
+  },
+  {
+    "name": "valgrind",
+    "command": [
+      "/home/edsiper/c/fluent-bit/tests/integration/.venv/bin/python",
+      "-m",
+      "pytest",
+      "-q",
+      "-o",
+      "log_cli=false",
+      "-p",
+      "no:cacheprovider",
+      "scenarios/in_tcp/tests/test_in_tcp_001.py",
+      "scenarios/storage/tests/test_storage_down_chunk.py",
+      "scenarios/in_storage_backlog/tests/test_in_storage_backlog_001.py",
+      "scenarios/in_tail/tests/test_in_tail_001.py::test_in_tail_parser_mode_structures_records",
+      "scenarios/in_tail/tests/test_in_tail_001.py::test_in_tail_handles_copytruncate_with_stale_writer",
+      "scenarios/in_tail/tests/test_in_tail_001.py::test_in_tail_restart_resumes_from_db_offset",
+      "scenarios/in_forward/tests/test_in_forward_001.py::test_in_forward_workers_concurrent_message_mode_records",
+      "scenarios/in_forward/tests/test_in_forward_001.py::test_in_forward_metrics_payload_append_is_atomic",
+      "scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_opentelemetry_to_opentelemetry_basic_log",
+      "scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_protobuf_log_body_int64",
+      "scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_large_protobuf_logs",
+      "scenarios/storage/tests/test_chunk_allocation.py::test_append_sized_creation[256]",
+      "scenarios/storage/tests/test_chunk_allocation.py::test_append_sized_creation[16384]",
+      "scenarios/storage/tests/test_chunk_allocation.py::test_append_sized_creation[1048576]",
+      "scenarios/storage/tests/test_chunk_allocation.py::test_filter_expansion_respects_quota",
+      "scenarios/storage/tests/test_chunk_allocation.py::test_filtered_payload_does_not_evict[drop]",
+      "scenarios/storage/tests/test_chunk_allocation.py::test_filtered_payload_does_not_evict[shrink]",
+      "scenarios/storage/tests/test_chunk_allocation.py::test_reused_chunk_budgets_adaptive_growth",
+      "scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_http_workers_respect_ingress_queue_byte_limit[no_processors]",
+      "scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_http_workers_respect_ingress_queue_byte_limit[worker_processors]",
+      "scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_logs_worker_processing[False-protobuf]",
+      "scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_logs_worker_processing[False-json]",
+      "scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_logs_worker_processing[True-protobuf]",
+      "scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_logs_worker_processing[True-json]",
+      "scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_logs_worker_processing_fallback[hash_then_filter]",
+      "scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_logs_worker_processing_fallback[hash_then_unflagged]",
+      "scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py::test_in_opentelemetry_logs_worker_processing_fallback[unflagged_then_hash]",
+      "--junitxml=/home/edsiper/c/fluent-bit/benchmarks/results/5.2-jemalloc54-special-20261101/validation-fit/integration-valgrind.xml"
+    ],
+    "cwd": "/tmp/flb-jemalloc54-special-20261101/tests/integration",
+    "env_overrides": {
+      "FLUENT_BIT_BINARY": "/tmp/flb-jemalloc-rollback-20261031/build54/bin/fluent-bit",
+      "MALLOC_CONF": "lg_extent_max_active_fit:30",
+      "VALGRIND": "1",
+      "VALGRIND_STRICT": "1"
+    },
+    "env_removed": [
+      "LD_PRELOAD"
+    ],
+    "exit_code": 0,
+    "seconds": 223.0641839504242
+  }
+]
+
+
+Unchanged strict Valgrind rerun of logging assertions
+{
+  "command": [
+    "/home/edsiper/c/fluent-bit/tests/integration/.venv/bin/python",
+    "-m",
+    "pytest",
+    "-q",
+    "-o",
+    "log_cli=false",
+    "-p",
+    "no:cacheprovider",
+    "scenarios/storage/tests/test_chunk_allocation.py::test_filter_expansion_respects_quota",
+    "scenarios/storage/tests/test_chunk_allocation.py::test_reused_chunk_budgets_adaptive_growth",
+    "--junitxml=/home/edsiper/c/fluent-bit/benchmarks/results/5.2-jemalloc54-special-20261101/validation/rerun-log-assertions.xml"
+  ],
+  "cwd": "/tmp/flb-jemalloc54-special-20261101/tests/integration",
+  "env_overrides": {
+    "FLUENT_BIT_BINARY": "/tmp/flb-jemalloc54-special-20261101/build/bin/fluent-bit",
+    "VALGRIND": "1",
+    "VALGRIND_STRICT": "1"
+  },
+  "exit_code": 0,
+  "seconds": 5.577182054519653
+}
+
+
+Qualification notes
+Special 5.4 pair: 40/40 normal integration cases passed. First strict Valgrind
+suite: 38 passed, two functional assertions failed because they read the log
+before the async eviction message was written. Both passed all preceding chunk
+state, eviction and size assertions. Both eviction messages were present in the
+completed logs. Both exact tests passed an unchanged strict Valgrind rerun.
+Original failed run, rerun, commands and JUnit reports are retained. No test or
+production source was modified and no additional suppression was added.
+
+Fit-only stock 5.4: 40/40 normal and 40/40 strict Valgrind cases passed.
+All 49 copied process reports for each full suite, plus two rerun process
+reports, have zero errors and zero definitely/indirectly/possibly lost bytes.
+Valgrind can replace allocator entry points, so this checks application memory
+safety and does not certify all jemalloc internal algorithms. Native benchmark
+runs execute the real allocator without a preload and reconciled all records.
+The unchanged production rollback patch retains its earlier functional,
+strict Valgrind, CTest and native jemalloc test evidence.
+
