@@ -42,5 +42,54 @@
     "MALLOC_CONF": null,
     "LD_PRELOAD": null
   },
-  "host_limits": "Shared Linux x86_64 glibc host, 4KiB pages, powersave governor with boost and existing swap. Host swap counters cannot attribute swapping to Fluent Bit."
+  "host_limits": "Shared Linux x86_64 glibc host, 4KiB pages, powersave governor with boost and existing swap. Host swap counters cannot attribute swapping to Fluent Bit.",
+  "normal_build_confirmation": {
+    "description": "Normal 5.2 builds with matching source and flags; each is built with its own allocator headers and archive. Added after the diagnostic relink and actual rollback build had different CPU behavior.",
+    "product_base": "ad9867358257123c34b529860fe984e92a69844c",
+    "rollback_product_commit": "d21303c24",
+    "runs": 12,
+    "quality": {
+      "runs": 12,
+      "offered": 120000000,
+      "accepted": 120000000,
+      "completed": 120000000,
+      "client_retries": 530,
+      "dropped": 0,
+      "refused": 0,
+      "host_swap_in_pages": 334,
+      "host_swap_out_pages": 0,
+      "runs_with_swapout": 0,
+      "all_counts_match": true
+    },
+    "cells": [
+      {
+        "group": "filesystem-protobuf",
+        "system": "normal53",
+        "repetitions": 3,
+        "rss_mib": 694.623046875,
+        "cpu_seconds_per_million": 2.2739999999999996
+      },
+      {
+        "group": "filesystem-protobuf",
+        "system": "normal54",
+        "repetitions": 3,
+        "rss_mib": 1202.849609375,
+        "cpu_seconds_per_million": 2.187
+      },
+      {
+        "group": "json-paced-500k",
+        "system": "normal53",
+        "repetitions": 3,
+        "rss_mib": 87.634765625,
+        "cpu_seconds_per_million": 2.441
+      },
+      {
+        "group": "json-paced-500k",
+        "system": "normal54",
+        "repetitions": 3,
+        "rss_mib": 100.42578125,
+        "cpu_seconds_per_million": 2.515
+      }
+    ]
+  }
 }
