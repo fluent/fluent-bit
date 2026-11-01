@@ -1,0 +1,46 @@
+{
+  "date": "2026-10-31",
+  "baseline_fluent_bit": "45abcd0724af355edcb1301ee9b408e16fc05176",
+  "current_fluent_bit": "ad9867358257123c34b529860fe984e92a69844c",
+  "allocator_control": "Identical 5.2 objects and libraries; only allocator archive references and executable output path change.",
+  "baseline_jemalloc": "5.3.0",
+  "baseline_source_identity": {
+    "archive_sha256": "2db82d1e7119df3e71b7640219b6dfe84789bc0537983c3b7ac4f7189aecfeaa",
+    "checked_source_header_template_files": 192,
+    "mismatches": [],
+    "baseline_files_absent_from_release": [],
+    "upstream_version": "5.3.0-0-g54eaed1d8b56b1aa528be3bdd1877e59c56fa90c"
+  },
+  "allocator_archive_sha256": "e1abcabb89768cb0d6d9638611017077dfd0cadbe67e7e5e76e75c3ffdc3df76",
+  "quality": {
+    "runs": 72,
+    "offered": 1018800000,
+    "accepted": 1018800000,
+    "completed": 1018800000,
+    "client_retries": 7504,
+    "dropped": 0,
+    "refused": 0,
+    "host_swap_in_pages": 6080,
+    "host_swap_out_pages": 22117,
+    "runs_with_swapout": 10,
+    "all_counts_match": true
+  },
+  "cpu_affinity": {
+    "server": "0-3",
+    "generator": "4-7,12-15"
+  },
+  "configure_options": {
+    "build_type": "Release",
+    "optimization": "O3",
+    "FLB_RELEASE": "Off",
+    "FLB_DEBUG": "Off",
+    "FLB_YYJSON": "On",
+    "FLB_JEMALLOC": "On",
+    "jemalloc": "--with-lg-quantum=3"
+  },
+  "runtime_overrides": {
+    "MALLOC_CONF": null,
+    "LD_PRELOAD": null
+  },
+  "host_limits": "Shared Linux x86_64 glibc host, 4KiB pages, powersave governor with boost and existing swap. Host swap counters cannot attribute swapping to Fluent Bit."
+}
