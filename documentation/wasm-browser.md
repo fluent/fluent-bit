@@ -597,6 +597,11 @@ preserves JSON nulls. Edit the script directly in the YAML `code: |` block.
 Traditional `pipeline.filters` Lua configuration is supported too, as are the
 three-argument and five-argument (metadata-aware) callbacks.
 
+The same interpreter runs the `fts` processor (Fluent Typed Scripting) for logs,
+metrics and traces; `jit: true` is rejected. See the
+[FTS guide](../plugins/processor_fts/README.md#native-and-browser-wasm-runtimes)
+for the differences from native builds.
+
 The browser uses **portable Lua 5.4.9, not LuaJIT**. `FLB_WASM_LUA=ON` is the
 browser default; native builds still use `FLB_LUAJIT` and the existing bundled
 LuaJIT. The build downloads Lua from lua.org with a pinned SHA-256 into the
