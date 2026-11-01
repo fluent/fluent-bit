@@ -1,0 +1,176 @@
+[
+  {
+    "resourceLogs": [
+      {
+        "resource": {
+          "attributes": [
+            {
+              "key": "service.name",
+              "value": {
+                "stringValue": "checkout"
+              }
+            },
+            {
+              "key": "deployment.environment.name",
+              "value": {
+                "stringValue": "production"
+              }
+            }
+          ]
+        },
+        "scopeLogs": [
+          {
+            "scope": {
+              "name": "checkout.http",
+              "version": "1.4.0"
+            },
+            "logRecords": [
+              {
+                "timeUnixNano": "1767225600000000000",
+                "observedTimeUnixNano": "1767225600000000000",
+                "severityNumber": 9,
+                "severityText": "info",
+                "attributes": [
+                  {
+                    "key": "http.route",
+                    "value": {
+                      "stringValue": "/login"
+                    }
+                  },
+                  {
+                    "key": "user.email_domain",
+                    "value": {
+                      "stringValue": "example.com"
+                    }
+                  },
+                  {
+                    "key": "policy.name",
+                    "value": {
+                      "stringValue": "logs-redaction"
+                    }
+                  }
+                ],
+                "body": {
+                  "kvlistValue": {
+                    "values": [
+                      {
+                        "key": "msg",
+                        "value": {
+                          "stringValue": "login succeeded for <email>"
+                        }
+                      },
+                      {
+                        "key": "level",
+                        "value": {
+                          "stringValue": "info"
+                        }
+                      },
+                      {
+                        "key": "user",
+                        "value": {
+                          "kvlistValue": {
+                            "values": [
+                              {
+                                "key": "name",
+                                "value": {
+                                  "stringValue": "ana"
+                                }
+                              },
+                              {
+                                "key": "password",
+                                "value": {
+                                  "stringValue": "[REDACTED]"
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "key": "headers",
+                        "value": {
+                          "kvlistValue": {
+                            "values": [
+                              {
+                                "key": "Authorization",
+                                "value": {
+                                  "stringValue": "[REDACTED]"
+                                }
+                              },
+                              {
+                                "key": "x-request-id",
+                                "value": {
+                                  "stringValue": "req-1"
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "timeUnixNano": "1767225602000000000",
+                "observedTimeUnixNano": "1767225602000000000",
+                "severityNumber": 17,
+                "severityText": "error",
+                "attributes": [
+                  {
+                    "key": "http.route",
+                    "value": {
+                      "stringValue": "/pay"
+                    }
+                  },
+                  {
+                    "key": "policy.name",
+                    "value": {
+                      "stringValue": "logs-redaction"
+                    }
+                  }
+                ],
+                "body": {
+                  "kvlistValue": {
+                    "values": [
+                      {
+                        "key": "msg",
+                        "value": {
+                          "stringValue": "payment failed token=[REDACTED]"
+                        }
+                      },
+                      {
+                        "key": "level",
+                        "value": {
+                          "stringValue": "error"
+                        }
+                      },
+                      {
+                        "key": "attempt",
+                        "value": {
+                          "intValue": "3"
+                        }
+                      },
+                      {
+                        "key": "card",
+                        "value": {
+                          "stringValue": "[REDACTED]"
+                        }
+                      },
+                      {
+                        "key": "db_password",
+                        "value": {
+                          "stringValue": "not-a-match"
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]
