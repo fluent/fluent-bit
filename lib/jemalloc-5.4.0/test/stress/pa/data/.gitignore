@@ -1,6 +1,0 @@
-# Ignore data files
-*.csv
-
-# But keep example files
-!example_*.csv
-!*.md
