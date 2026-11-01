@@ -375,6 +375,8 @@ static void processor_grouped_filter_counters()
 static void processor_private_inputs_use_main_loop()
 {
     int ret;
+    int collector_count;
+    void *context;
     struct flb_config *config;
     struct flb_input_instance *ins;
     struct mk_event_loop *thread_evl;
@@ -420,6 +422,14 @@ static void processor_private_inputs_use_main_loop()
 
     ret = flb_input_instance_init(ins, config);
     TEST_CHECK(ret == 0);
+
+    /* Initializing a private input again must not replace its owned state. */
+    context = ins->context;
+    collector_count = mk_list_size(&ins->collectors);
+    ret = flb_input_instance_init(ins, config);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(ins->context == context);
+    TEST_CHECK(mk_list_size(&ins->collectors) == collector_count);
 
     mk_list_foreach(head, &ins->collectors) {
         coll = mk_list_entry(head, struct flb_input_collector, _head);
@@ -1701,8 +1711,76 @@ static void processor_native_chain_counters(void)
     }
 }
 
+/* A filter may return an owned allocation even when it drops every record. */
+static int filter_empty_allocated_result(const void *data, size_t bytes,
+                                         const char *tag, int tag_len,
+                                         void **out_buf, size_t *out_bytes,
+                                         struct flb_filter_instance *filter,
+                                         struct flb_input_instance *input,
+                                         void *context, struct flb_config *config)
+{
+    (void) data;
+    (void) bytes;
+    (void) tag;
+    (void) tag_len;
+    (void) filter;
+    (void) input;
+    (void) context;
+    (void) config;
+
+    *out_buf = flb_malloc(65536);
+    *out_bytes = 0;
+    if (!TEST_CHECK(*out_buf != NULL)) {
+        return FLB_FILTER_NOTOUCH;
+    }
+    return FLB_FILTER_MODIFIED;
+}
+
+static void processor_filter_empty_allocated_result(void)
+{
+    int ret;
+    char *input;
+    size_t input_size;
+    void *output = NULL;
+    size_t output_size = 0;
+    struct flb_config *config;
+    struct flb_processor *processor;
+    struct flb_processor_unit *unit;
+    struct flb_filter_instance *filter;
+    struct flb_filter_plugin plugin;
+    struct flb_filter_plugin *original_plugin;
+
+    flb_init_env();
+    config = flb_config_init();
+    TEST_ASSERT(config != NULL);
+    processor = flb_processor_create(config, "empty_result", NULL, 0);
+    TEST_ASSERT(processor != NULL);
+    unit = flb_processor_unit_create(processor, FLB_PROCESSOR_LOGS, "stdout");
+    TEST_ASSERT(unit != NULL);
+    TEST_ASSERT(flb_processor_init(processor) == 0);
+    TEST_ASSERT(create_msgpack_records(&input, &input_size) == 0);
+
+    filter = unit->ctx;
+    original_plugin = filter->p;
+    plugin = *original_plugin;
+    plugin.cb_filter = filter_empty_allocated_result;
+    filter->p = &plugin;
+    ret = flb_processor_run(processor, 0, FLB_PROCESSOR_LOGS,
+                            "test", 4, input, input_size, &output, &output_size);
+    filter->p = original_plugin;
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(output == NULL);
+    TEST_CHECK(output_size == 0);
+
+    /* Valgrind must also verify that the callback's allocation was released. */
+    flb_free(input);
+    flb_processor_destroy(processor);
+    flb_config_exit(config);
+}
+
 TEST_LIST = {
     { "processor_native_chain_counters", processor_native_chain_counters },
+    { "processor_filter_empty_allocated_result", processor_filter_empty_allocated_result },
     {"processor_metrics_failure_clears_output", processor_metrics_failure_clears_output},
     { "processor_private_inputs_use_main_loop", processor_private_inputs_use_main_loop },
     { "processor", processor },
