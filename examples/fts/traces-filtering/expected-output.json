@@ -1,0 +1,115 @@
+[
+  {
+    "resourceSpans": [
+      {
+        "resource": {
+          "attributes": [
+            {
+              "key": "service.name",
+              "value": {
+                "stringValue": "checkout"
+              }
+            }
+          ]
+        },
+        "scopeSpans": [
+          {
+            "scope": {
+              "name": "checkout.http",
+              "version": "1.4.0"
+            },
+            "spans": [
+              {
+                "traceId": "5b8efff798038103d269b633813fc60c",
+                "spanId": "eee19b7ec3c1b174",
+                "name": "GET /checkout",
+                "kind": 2,
+                "startTimeUnixNano": "1767225600000000000",
+                "endTimeUnixNano": "1767225600250000000",
+                "attributes": [
+                  {
+                    "key": "http.route",
+                    "value": {
+                      "stringValue": "/checkout"
+                    }
+                  },
+                  {
+                    "key": "http.request.method",
+                    "value": {
+                      "stringValue": "GET"
+                    }
+                  },
+                  {
+                    "key": "http.response.status_code",
+                    "value": {
+                      "intValue": "200"
+                    }
+                  },
+                  {
+                    "key": "url.path",
+                    "value": {
+                      "stringValue": "/checkout"
+                    }
+                  }
+                ],
+                "events": [
+                  {
+                    "name": "request.headers",
+                    "timeUnixNano": "1767225600010000000",
+                    "attributes": [
+                      {
+                        "key": "authorization",
+                        "value": {
+                          "stringValue": "[REDACTED]"
+                        }
+                      },
+                      {
+                        "key": "user-agent",
+                        "value": {
+                          "stringValue": "curl/8.5"
+                        }
+                      }
+                    ]
+                  }
+                ],
+                "status": {
+                  "code": 0,
+                  "message": ""
+                }
+              },
+              {
+                "traceId": "5b8efff798038103d269b633813fc60c",
+                "spanId": "eee19b7ec3c1b176",
+                "name": "SELECT orders",
+                "parentSpanId": "eee19b7ec3c1b174",
+                "kind": 3,
+                "startTimeUnixNano": "1767225600030000000",
+                "endTimeUnixNano": "1767225600200000000",
+                "attributes": [
+                  {
+                    "key": "db.system",
+                    "value": {
+                      "stringValue": "postgresql"
+                    }
+                  },
+                  {
+                    "key": "db.operation.name",
+                    "value": {
+                      "stringValue": "SELECT"
+                    }
+                  }
+                ],
+                "status": {
+                  "code": 0,
+                  "message": ""
+                }
+              }
+            ],
+            "schemaUrl": ""
+          }
+        ],
+        "schemaUrl": ""
+      }
+    ]
+  }
+]
