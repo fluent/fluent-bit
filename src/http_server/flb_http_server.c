@@ -269,6 +269,9 @@ static int flb_http_server_session_read(struct flb_http_server_session *session)
     char *request_too_large = "HTTP/1.1 413 Request Entity Too Large\r\n"
                               "Content-Length: 0\r\n"
                               "Connection: close\r\n\r\n";
+    char *bad_request = "HTTP/1.1 400 Bad Request\r\n"
+                        "Content-Length: 0\r\n"
+                        "Connection: close\r\n\r\n";
 
     if (session->read_buffer == NULL) {
         if (session->parent != NULL &&
@@ -307,6 +310,13 @@ static int flb_http_server_session_read(struct flb_http_server_session *session)
         flb_io_net_write(session->connection,
                          (void *) request_too_large,
                          strlen(request_too_large),
+                         &sent);
+        return -1;
+    }
+    else if (result == HTTP_SERVER_BAD_REQUEST) {
+        flb_io_net_write(session->connection,
+                         (void *) bad_request,
+                         strlen(bad_request),
                          &sent);
         return -1;
     }
