@@ -388,27 +388,16 @@ int flb_plugin_load_config_file(const char *file, struct flb_config *config)
     char *cfg = NULL;
     struct mk_list *head;
     struct cfl_list *head_e;
-    struct stat st;
     struct flb_cf *cf;
     struct flb_cf_section *section;
     struct cfl_kvpair *entry;
 
 #ifndef FLB_HAVE_STATIC_CONF
-    ret = stat(file, &st);
-    if (ret == -1 && errno == ENOENT) {
-        /* Try to resolve the real path (if exists) */
-        if (file[0] == '/') {
-            flb_utils_error(FLB_ERR_CFG_PLUGIN_FILE);
-            return -1;
-        }
-
-        if (config->conf_path) {
-            snprintf(tmp, PATH_MAX, "%s%s", config->conf_path, file);
-            cfg = tmp;
-        }
-    }
-    else {
-        cfg = (char *) file;
+    cfg = (char *) flb_utils_resolve_config_path(file, config->conf_path,
+                                                 tmp, sizeof(tmp));
+    if (!cfg) {
+        flb_utils_error(FLB_ERR_CFG_PLUGIN_FILE);
+        return -1;
     }
 
     flb_debug("[plugin] opening configuration file %s", cfg);

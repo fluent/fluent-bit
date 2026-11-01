@@ -710,27 +710,12 @@ int flb_lib_config_file(struct flb_lib_ctx *ctx, const char *path)
     char *cfg = NULL;
     char *end;
     char *real_path;
-    struct stat st;
 
-    /* Check if file exists and resolve path */
-    ret = stat(path, &st);
-    if (ret == -1 && errno == ENOENT) {
-        /* Try to resolve the real path (if exists) */
-        if (path[0] == '/') {
-            fprintf(stderr, "Error: configuration file not found: %s\n", path);
-            return -1;
-        }
-
-        if (ctx->config->conf_path) {
-            snprintf(tmp, PATH_MAX, "%s%s", ctx->config->conf_path, path);
-            cfg = tmp;
-        }
-        else {
-            cfg = (char *) path;
-        }
-    }
-    else {
-        cfg = (char *) path;
+    cfg = (char *) flb_utils_resolve_config_path(path, ctx->config->conf_path,
+                                                 tmp, sizeof(tmp));
+    if (!cfg) {
+        fprintf(stderr, "Error: configuration file path is too long: %s\n", path);
+        return -1;
     }
 
     if (access(cfg, R_OK) != 0) {
