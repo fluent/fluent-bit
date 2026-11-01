@@ -45,6 +45,7 @@ response_config = {
     "status_codes": [],
     "body": {"status": "received"},
     "content_type": "application/json",
+    "headers": {},
     "delay_seconds": 0,
 }
 grpc_method_paths = {
@@ -69,6 +70,7 @@ def reset_otlp_server_state():
             "status_codes": [],
             "body": {"status": "received"},
             "content_type": "application/json",
+            "headers": {},
             "delay_seconds": 0,
         }
     )
@@ -88,6 +90,7 @@ def configure_otlp_response(
     status_codes=None,
     body=None,
     content_type=None,
+    headers=None,
     delay_seconds=None,
 ):
     if status_code is not None:
@@ -98,6 +101,8 @@ def configure_otlp_response(
         response_config["body"] = body
     if content_type is not None:
         response_config["content_type"] = content_type
+    if headers is not None:
+        response_config["headers"] = dict(headers)
     if delay_seconds is not None:
         response_config["delay_seconds"] = delay_seconds
 
@@ -128,6 +133,7 @@ def _build_response():
         body,
         status=status_code,
         content_type=response_config["content_type"],
+        headers=response_config["headers"],
     )
 
 

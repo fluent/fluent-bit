@@ -607,11 +607,19 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
 
     response = flb_http_client_request_execute(request);
     if (response == NULL) {
-        flb_plg_warn(ctx->ins, "error performing HTTP request, remote host=%s:%i connection error",
-                     ctx->host, ctx->port);
+        result = ((struct flb_http_client_session *)
+                  request->stream->parent)->response_limit_exceeded;
+        if (result) {
+            flb_plg_error(ctx->ins, "HTTP response exceeded configured client limit, "
+                          "remote host=%s:%i", ctx->host, ctx->port);
+        }
+        else {
+            flb_plg_warn(ctx->ins, "error performing HTTP request, "
+                         "remote host=%s:%i connection error", ctx->host, ctx->port);
+        }
         flb_http_client_request_destroy(request, FLB_TRUE);
 
-        return FLB_RETRY;
+        return result ? FLB_ERROR : FLB_RETRY;
     }
 
     if (ctx->oauth2_ctx != NULL && response->status == 401) {
