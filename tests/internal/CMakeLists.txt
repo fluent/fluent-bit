@@ -301,7 +301,12 @@ function(prepare_unit_tests TEST_PREFIX SOURCEFILES)
         target_link_libraries(${source_file_we} flb-sp)
       endif()
 
-      target_link_libraries(${source_file_we} ${FLB_TEST_LINK_LIBRARY} cfl-static)
+      if("${source_file_we}" STREQUAL "flb-it-network_dns")
+        # Keep upstream calls and DNS thread-local state in the test executable.
+        target_link_libraries(${source_file_we} fluent-bit-static cfl-static)
+      else()
+        target_link_libraries(${source_file_we} ${FLB_TEST_LINK_LIBRARY} cfl-static)
+      endif()
 
       if(FLB_AVRO_ENCODER)
         target_link_libraries(${source_file_we} avro-static jansson)
@@ -316,6 +321,13 @@ function(prepare_unit_tests TEST_PREFIX SOURCEFILES)
 endfunction(prepare_unit_tests)
 
 prepare_unit_tests(flb-it- "${UNIT_TESTS_FILES}")
+
+if(TARGET flb-it-network_dns)
+  # Use the real resolver implementation with a test-local c-ares initializer.
+  target_sources(flb-it-network_dns PRIVATE ${PROJECT_SOURCE_DIR}/src/flb_network.c)
+  target_compile_definitions(flb-it-network_dns PRIVATE
+    ares_init_options=flb_test_ares_init_options)
+endif()
 
 if(TARGET flb-it-engine_dispatch)
   target_include_directories(flb-it-engine_dispatch PRIVATE

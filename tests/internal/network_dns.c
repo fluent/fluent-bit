@@ -8,9 +8,104 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_upstream_conn.h>
+#include <fluent-bit/flb_socket.h>
+#ifdef ares_init_options
+#undef ares_init_options
+#endif
 #include <ares.h>
 
 #include "flb_tests_internal.h"
+
+static unsigned short dns_server_port;
+
+/* Only this test target redirects c-ares to a loopback DNS server. */
+int flb_test_ares_init_options(ares_channel *channel, struct ares_options *options,
+                              int optmask)
+{
+    int ret;
+    char server[64];
+
+    ret = ares_init_options(channel, options, optmask);
+    if (ret != ARES_SUCCESS) {
+        return ret;
+    }
+
+    snprintf(server, sizeof(server), "127.0.0.1:%u", dns_server_port);
+    ret = ares_set_servers_ports_csv(*channel, server);
+    if (ret != ARES_SUCCESS) {
+        ares_destroy(*channel);
+        *channel = NULL;
+    }
+    return ret;
+}
+
+struct dns_server {
+    flb_sockfd_t listener;
+    flb_sockfd_t client;
+    unsigned char packet[1024];
+    size_t received;
+    size_t sent;
+};
+
+static void dns_server_start(struct dns_server *server)
+{
+    struct sockaddr_in address;
+    socklen_t address_size;
+
+    memset(server, 0, sizeof(*server));
+    server->client = FLB_INVALID_SOCKET;
+    server->listener = socket(AF_INET, SOCK_STREAM, 0);
+    TEST_ASSERT(server->listener != FLB_INVALID_SOCKET);
+    memset(&address, 0, sizeof(address));
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    TEST_ASSERT(bind(server->listener, (struct sockaddr *) &address, sizeof(address)) == 0);
+    TEST_ASSERT(listen(server->listener, 1) == 0);
+    address_size = sizeof(address);
+    TEST_ASSERT(getsockname(server->listener, (struct sockaddr *) &address, &address_size) == 0);
+    dns_server_port = ntohs(address.sin_port);
+    TEST_ASSERT(flb_net_socket_nonblocking(server->listener) == 0);
+}
+
+static void dns_server_respond(struct dns_server *server)
+{
+    int ret;
+    size_t packet_size;
+
+    if (server->client == FLB_INVALID_SOCKET) {
+        server->client = accept(server->listener, NULL, NULL);
+        if (server->client == FLB_INVALID_SOCKET) {
+            return;
+        }
+        TEST_ASSERT(flb_net_socket_nonblocking(server->client) == 0);
+    }
+
+    if (server->sent == 0) {
+        ret = recv(server->client, (char *) server->packet + server->received,
+                   sizeof(server->packet) - server->received, 0);
+        if (ret <= 0) {
+            return;
+        }
+        server->received += ret;
+    }
+    if (server->received < 2) {
+        return;
+    }
+    packet_size = 2 + ((size_t) server->packet[0] << 8) + server->packet[1];
+    TEST_ASSERT(packet_size >= 14 && packet_size <= sizeof(server->packet));
+    if (server->received < packet_size) {
+        return;
+    }
+
+    /* Echo the framed question and EDNS data with an NXDOMAIN response. */
+    server->packet[4] = 0x81;
+    server->packet[5] = 0x83;
+    ret = send(server->client, (char *) server->packet + server->sent,
+               packet_size - server->sent, 0);
+    if (ret > 0) {
+        server->sent += ret;
+    }
+}
 
 struct dns_timeout_context {
     char *mode;
@@ -67,12 +162,14 @@ static void test_dns_timeout(char *mode, int upstream_first, int timeout)
     struct flb_sched_timer *deadline = NULL;
     struct mk_list *head;
     struct mk_event_loop *evl;
+    struct dns_server server;
 #ifdef FLB_SYSTEM_WINDOWS
     WSADATA wsa_data;
 
     TEST_ASSERT(WSAStartup(MAKEWORD(2, 2), &wsa_data) == 0);
 #endif
 
+    dns_server_start(&server);
     flb_coro_init();
     flb_coro_thread_init();
     flb_engine_evl_init();
@@ -145,11 +242,13 @@ static void test_dns_timeout(char *mode, int upstream_first, int timeout)
     }
 
     /* With a deadline, withhold DNS events to simulate an unresponsive server.
-     * Without one, let the configured resolver complete the .invalid lookup so
-     * the coroutine and lookup context can be cleaned up normally.
+     * Without one, answer locally so completion never depends on runner DNS.
      */
     limit = time(NULL) + 5;
     while (!context.done && time(NULL) < limit) {
+        if (timeout <= 0) {
+            dns_server_respond(&server);
+        }
         mk_event_wait_2(evl, 100);
         mk_event_foreach(event, evl) {
             if (timeout <= 0 && event->type == FLB_ENGINE_EV_CUSTOM) {
@@ -172,7 +271,7 @@ static void test_dns_timeout(char *mode, int upstream_first, int timeout)
             TEST_CHECK(context.result == ARES_ETIMEOUT);
         }
         else {
-            TEST_CHECK(context.result != ARES_ETIMEOUT);
+            TEST_CHECK(context.result == ARES_ENOTFOUND);
         }
     }
     else {
@@ -193,6 +292,10 @@ static void test_dns_timeout(char *mode, int upstream_first, int timeout)
     flb_net_dns_ctx_set(NULL);
     mk_event_loop_destroy(evl);
     ares_library_cleanup();
+    if (server.client != FLB_INVALID_SOCKET) {
+        flb_socket_close(server.client);
+    }
+    flb_socket_close(server.listener);
 #ifdef FLB_SYSTEM_WINDOWS
     WSACleanup();
 #endif
