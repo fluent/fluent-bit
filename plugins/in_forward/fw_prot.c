@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_random.h>
 #include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_crypto.h>
+#include <fluent-bit/flb_connection.h>
 
 #include <fluent-bit/flb_input_metric.h>
 #include <fluent-bit/flb_input_trace.h>
@@ -498,6 +499,25 @@ static int user_authentication(struct flb_input_instance *ins,
     return user_found;
 }
 
+/*
+ * Remote address for handshake error logs. Never pass NULL or an empty
+ * buffer to %s; use "unknown" when the peer cannot be named.
+ */
+static const char *fw_conn_remote_address(struct fw_conn *conn)
+{
+    const char *peer;
+
+    peer = NULL;
+    if (conn != NULL && conn->connection != NULL) {
+        peer = flb_connection_get_remote_address(conn->connection);
+    }
+    if (peer == NULL || peer[0] == '\0') {
+        peer = "unknown";
+    }
+
+    return peer;
+}
+
 static int check_ping(struct flb_input_instance *ins,
                       struct fw_conn *conn,
                       flb_sds_t *out_shared_key_salt)
@@ -655,7 +675,7 @@ static int check_ping(struct flb_input_instance *ins,
     }
 
     if (strncmp(serverside, shared_key_digest, 128) != 0) {
-        flb_plg_error(ins, "shared_key mismatch");
+        flb_plg_error(ins, "shared_key mismatch: %s", fw_conn_remote_address(conn));
         flb_free(serverside);
 
         goto error;
@@ -1448,7 +1468,7 @@ int fw_prot_secure_forward_handshake(struct flb_input_instance *ins,
     flb_plg_debug(ins, "protocol: checking PING");
     ping_ret = check_ping(ins, conn, &shared_key_salt);
     if (ping_ret == -1) {
-        flb_plg_error(ins, "handshake error checking PING");
+        flb_plg_error(ins, "handshake error checking PING: %s", fw_conn_remote_address(conn));
 
         goto error;
     }

@@ -1987,6 +1987,40 @@ def test_in_forward_secure_forward_auth_failure():
     assert "username/password mismatch" in pong[2]
 
 
+def test_in_forward_secure_forward_shared_key_mismatch_logs_peer():
+    service = Service("in_forward_secure.yaml")
+    service.start()
+
+    try:
+        with socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=5) as sock:
+            helo = _recv_msgpack_value(sock)
+            assert helo[0] == "HELO"
+
+            hostname = "client-node"
+            shared_key_salt = "client-salt-1234"
+            shared_key_digest = _sha512_hex(
+                shared_key_salt, hostname, helo[1]["nonce"], "wrong-shared-key"
+            )
+            password_digest = _sha512_hex(helo[1]["auth"], SECURE_USERNAME, SECURE_PASSWORD)
+            sock.sendall(_pack_obj([
+                "PING",
+                hostname,
+                shared_key_salt,
+                shared_key_digest,
+                SECURE_USERNAME,
+                password_digest,
+            ]))
+
+            log_text = service.wait_for_log_contains("handshake error checking PING:", timeout=10)
+            with pytest.raises(TimeoutError):
+                service.wait_for_record_count(1, timeout=2)
+    finally:
+        service.stop()
+
+    assert re.search(r"shared_key mismatch: tcp://", log_text)
+    assert re.search(r"handshake error checking PING: tcp://", log_text)
+
+
 def test_in_forward_e2e_forward_receiver_preserves_metadata_and_signal_options():
     service = ForwardReceiverService("in_forward_to_forward_receiver.yaml")
     service.start()
