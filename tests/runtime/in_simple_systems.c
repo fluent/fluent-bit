@@ -95,6 +95,7 @@ int callback_add_record(void* data, size_t size, void* cb_data)
         ctx->records[ctx->num_records].size = size;
         ctx->records[ctx->num_records].data = data;
         ctx->num_records++;
+        set_result(ctx->num_records);
     }
     return 0;
 }
@@ -306,7 +307,8 @@ void do_test_records_single(char *system, void (*records_cb)(struct callback_rec
     flb_destroy(ctx);
 }
 
-void do_test_records_wait_time(char *system, int wait_time, void (*records_cb)(struct callback_records *), ...)
+void do_test_records_wait_time(char *system, int wait_time, int minimum_records,
+                               void (*records_cb)(struct callback_records *), ...)
 {
     flb_ctx_t    *ctx    = NULL;
     int in_ffd;
@@ -354,6 +356,13 @@ void do_test_records_wait_time(char *system, int wait_time, void (*records_cb)(s
 
     /* Set wait_time plus 2 sec passed. It must have flushed */
     flb_time_msleep((wait_time + 2) * 1000);
+
+    /* Allow a delayed flush to finish while the engine can still deliver data.
+     * Read the count published atomically by the output callback.
+     */
+    for (i = 0; i < 50 && get_result() < minimum_records; i++) {
+        flb_time_msleep(100);
+    }
 
     flb_stop(ctx);
 
@@ -557,11 +566,6 @@ void flb_test_dummy_records_message_copies_100(struct callback_records *records)
 
 void flb_test_dummy_records_message_rate(struct callback_records *records)
 {
-    int trys;
-
-    for (trys = 0; trys < 20 && records->num_records < 20; trys++) {
-        flb_time_msleep(1000);
-    }
     TEST_CHECK(records->num_records >= 20);
 }
 
@@ -577,7 +581,7 @@ void flb_test_dummy_records_message_interval_nsec(struct callback_records *recor
 
 void flb_test_dummy_records_message_flush_on_startup(struct callback_records *records)
 {
-    TEST_CHECK(records->num_records >= 2);
+    TEST_CHECK(records->num_records == 1);
 }
 
 void flb_test_in_dummy_flush(void)
@@ -610,22 +614,26 @@ void flb_test_in_dummy_flush(void)
     do_test_records_single("dummy", flb_test_dummy_records_message_copies_100,
                     "copies", "100",
                     NULL);
-    do_test_records_wait_time("dummy", 1, flb_test_dummy_records_message_rate,
-                    "rate", "20",
-                    NULL);
-    do_test_records_wait_time("dummy", 2, flb_test_dummy_records_message_interval_sec,
+    do_test_records_wait_time("dummy", 2, 1, flb_test_dummy_records_message_interval_sec,
                     "interval_sec", "2",
                     "interval_nsec", "0",
                     NULL);
-    do_test_records_wait_time("dummy", 1, flb_test_dummy_records_message_interval_nsec,
+    do_test_records_wait_time("dummy", 1, 1, flb_test_dummy_records_message_interval_nsec,
                     "interval_sec", "0",
                     "interval_nsec", "700000000",
                     NULL);
-    do_test_records_wait_time("dummy", 5, flb_test_dummy_records_message_flush_on_startup,
-                    "interval_sec", "5",
+    /* The periodic collector must not satisfy the startup assertion. */
+    do_test_records_wait_time("dummy", 1, 1, flb_test_dummy_records_message_flush_on_startup,
+                    "interval_sec", "60",
                     "interval_nsec", "0",
                     "flush_on_startup", "true",
                     NULL);
+}
+
+void flb_test_in_dummy_rate(void)
+{
+    do_test_records_wait_time("dummy", 1, 20, flb_test_dummy_records_message_rate,
+                             "rate", "20", NULL);
 }
 
 void flb_test_in_dummy_thread_flush(void)
@@ -692,6 +700,7 @@ TEST_LIST = {
 #endif
 #ifdef in_dummy
     {"dummy_flush",   flb_test_in_dummy_flush},
+    {"dummy_rate",    flb_test_in_dummy_rate},
 #endif
 #ifdef in_mem
     {"mem_flush",     flb_test_in_mem_flush},
