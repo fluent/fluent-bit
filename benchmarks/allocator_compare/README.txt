@@ -31,11 +31,18 @@ Saturation can produce different in-flight volumes. The 500k/s memory and
 control was added after observing lower RSS but higher CPU with 5.3.0 in the
 initial filesystem saturation runs; the original observations are retained.
 
-The memory-first rollback is a tradeoff: relative to 5.4, 5.3.0 costs about
-22% more CPU in paced JSON ingest and 24% in filesystem saturation. Both
-5.2 variants remain below the 5.1 baseline's CPU/M in every tested cell.
-These measurements do not establish a universal allocator performance win,
-an unbounded leak, or one causally responsible upstream commit.
+normal-build-results-20261031.csv adds 12 runs comparing full normal 5.2
+builds, each with its own allocator headers and archive. These followed a
+material CPU difference between the diagnostic relink and the normal rollback
+build. The initial relink measured +22% CPU in paced JSON and +24% CPU in
+filesystem saturation. The normal-build repeats instead measured about -3%
+and +4%, respectively. Do not present the relink costs as confirmed CPU costs
+of the normal rollback build. Both modes and every observation are retained.
+The normal-build comparison is used for the PR's release CPU assessment.
+Both 5.2 variants remain below the 5.1 baseline's CPU/M in every tested cell.
+Small CPU differences on this host are not a universal allocator speed claim.
+These measurements do not establish an unbounded leak or one causally
+responsible upstream commit.
 
 Reproduction
 ------------
@@ -87,3 +94,13 @@ modified pipeline upserts log attribute bench.added="yes" with the native
 content_modifier processor. Null output validates counters, not every body.
 Small timing differences on this shared powersave/boost host remain noisy.
 Use a quiet, controlled host for stricter performance qualification.
+
+Normal-build controls
+---------------------
+Build the pinned 5.2 base normally with jemalloc 5.4.0 and the rollback
+product tree normally with 5.3.0, using identical flags. Use labels normal54
+and normal53 with the two normal binaries. Run the paced JSON memory and
+protobuf filesystem saturation options above with three restarts per cell.
+The latter uses 10M records per run; the former uses 10M at 500k logs/s.
+All other warmup, idle, affinity, worker and payload settings are unchanged.
+Do not substitute the diagnostic relink for the normal 5.3.0 build here.
