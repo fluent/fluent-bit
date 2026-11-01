@@ -280,7 +280,7 @@ static int pack_message(msgpack_packer *mp_pck, PEVENTLOGRECORD evt,
         }
 
         tmp = (wchar_t *) ((char *) evt + evt->StringOffset);
-        for (i = 0; i < evt->NumStrings; i++) {
+        for (i = 0; i < evt->NumStrings && i < PARAM_MAXNUM; i++) {
             args[i] = (DWORD_PTR) tmp;
             tmp += wcslen(tmp) + 1;
         }
