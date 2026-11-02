@@ -727,8 +727,8 @@ static int prepare_grpc_frames(struct flb_opentelemetry *context,
 {
     size_t offset = 0;
     size_t body_size = cfl_sds_len(request->body);
-    size_t remaining = flb_http_server_get_buffer_max_size(&context->http_server);
-    size_t message_limit = 16 * 1024 * 1024;
+    size_t remaining = context->request_max_size;
+    size_t message_limit = context->request_max_size;
     size_t limit;
     size_t size;
     size_t encoding_size;
@@ -1033,6 +1033,10 @@ next_grpc_message:
         grpc_request = FLB_FALSE;
         payload = request->body;
         payload_size = cfl_sds_len(request->body);
+        if (payload_size > context->request_max_size) {
+            send_response_ng(response, 413, "OTLP request size exceeds limit\n");
+            return -1;
+        }
         ret = validate_protobuf_request(context, request, &frames, FLB_FALSE);
         if (ret != 0) {
             send_response_ng(response,

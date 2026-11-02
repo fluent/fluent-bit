@@ -20,6 +20,7 @@
 
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_kv.h>
 
 #include "opentelemetry.h"
 #include "opentelemetry_prot.h"
@@ -107,6 +108,18 @@ static int in_opentelemetry_init(struct flb_input_instance *ins,
         if (ctx->oauth2_ctx != NULL) {
             http_server_options.authorization_callback = opentelemetry_prot_authorize_ng;
         }
+        if (flb_kv_get_key_value("http_server.buffer_max_size", &ins->http_server_properties) == NULL &&
+            flb_kv_get_key_value("buffer_max_size", &ins->http_server_properties) == NULL) {
+            http_server_options.buffer_max_size = FLB_OTEL_REQUEST_MAX_SIZE;
+        }
+        ctx->request_max_size = http_server_options.buffer_max_size;
+        if (ctx->request_max_size > SIZE_MAX - FLB_OTEL_HTTP_OVERHEAD_SIZE) {
+            flb_plg_error(ctx->ins, "HTTP buffer limit leaves no room for protocol overhead");
+            opentelemetry_config_destroy(ctx);
+            return -1;
+        }
+        /* The callback enforces payload bytes independently of protocol overhead. */
+        http_server_options.buffer_max_size += FLB_OTEL_HTTP_OVERHEAD_SIZE;
         if (http_server_options.workers > 1) {
             ret = flb_input_ingress_enable(ins);
         }
@@ -235,10 +248,10 @@ static struct flb_config_map config_map[] = {
     },
 
     {
-     FLB_CONFIG_MAP_SIZE, "protobuf_decode_max_size", "33554432",
+     FLB_CONFIG_MAP_SIZE, "protobuf_decode_max_size", "134217728",
      0, FLB_TRUE, offsetof(struct flb_opentelemetry, protobuf_decode_max_size),
      "Maximum estimated protobuf decode bytes per request across all signals and gRPC frames; "
-     "also caps cumulative logs arena allocations. Must be positive; default 32 MiB"
+     "also caps cumulative logs arena allocations. Must be positive; default 128 MiB"
     },
 
     {
