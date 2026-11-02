@@ -1,4 +1,5 @@
 find_package(Threads REQUIRED)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/FluentBitTest.cmake)
 
 include_directories(acutest/)
 
@@ -366,6 +367,11 @@ set(FLB_RT_SIMPLE_SYSTEMS_TESTS
   in_random.c
   )
 
+set(FLB_RT_CASE_TESTS
+  filter_kubernetes.c
+  out_stackdriver.c
+  )
+
 foreach(source_file ${CHECK_PROGRAMS})
   get_filename_component(o_source_file_we ${source_file} NAME_WE)
   set(source_file_we flb-rt-${o_source_file_we})
@@ -399,10 +405,15 @@ foreach(source_file ${CHECK_PROGRAMS})
       if(FLB_AVRO_ENCODER)
         target_link_libraries(${source_file_we} avro-static jansson)
       endif()
-    add_test(NAME ${source_file_we}
-            COMMAND ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${source_file_we}
-            WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY}/build)
-    set_tests_properties(${source_file_we} PROPERTIES LABELS "runtime")
+    list(FIND FLB_RT_CASE_TESTS ${source_file} case_test)
+    if(NOT case_test EQUAL -1 AND NOT CMAKE_CROSSCOMPILING)
+      flb_add_runtime_test_cases(${source_file_we})
+    else()
+      add_test(NAME ${source_file_we}
+              COMMAND ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${source_file_we}
+              WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY}/build)
+      set_tests_properties(${source_file_we} PROPERTIES LABELS "runtime")
+    endif()
     set_property(TARGET ${source_file_we} APPEND_STRING PROPERTY COMPILE_FLAGS "-D${o_source_file_we}")
   endif()
 endforeach()
