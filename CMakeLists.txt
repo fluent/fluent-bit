@@ -23,6 +23,12 @@ set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PAT
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Allow static libraries to compile without waiting for link-only dependencies.
+# CMake preserves explicit dependencies and generated-source ordering.
+if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.19" AND NOT DEFINED CMAKE_OPTIMIZE_DEPENDENCIES)
+  set(CMAKE_OPTIMIZE_DEPENDENCIES ON)
+endif()
+
 # Define macro to identify Windows system (without Cygwin)
 if(CMAKE_SYSTEM_NAME MATCHES "Windows")
   set(FLB_SYSTEM_WINDOWS On)
