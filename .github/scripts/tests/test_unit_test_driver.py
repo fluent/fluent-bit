@@ -1,7 +1,10 @@
 """Exercise CI scheduling controls and failure propagation without compiling Fluent Bit."""
+import ast
+import fnmatch
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -9,6 +12,43 @@ import unittest
 
 
 DRIVER = Path(__file__).resolve().parents[1] / "run-unit-tests.sh"
+ROOT = Path(__file__).resolve().parents[3]
+
+
+class UnitTestWorkflowFilters(unittest.TestCase):
+    def workflow_matches(self, workflow, path):
+        source = (ROOT / ".github/workflows" / workflow).read_text()
+        patterns = re.search(r"  pull_request:\n    paths:\n((?:      - .*\n)+)", source)
+        self.assertIsNotNone(patterns, "expected ordered pull_request path patterns")
+        included = False
+        for line in patterns.group(1).splitlines():
+            pattern = ast.literal_eval(line.strip()[2:])
+            excluded = pattern.startswith("!")
+            if fnmatch.fnmatchcase(path, pattern[1:] if excluded else pattern):
+                included = not excluded
+        return included
+
+    def test_ci_driver_and_workflow_changes_run_real_tests(self):
+        for path in (".github/scripts/run-unit-tests.sh",
+                     ".github/scripts/tests/test_unit_test_driver.py",
+                     ".github/workflows/unit-tests.yaml",
+                     ".github/workflows/skipped-unit-tests.yaml"):
+            with self.subTest(path=path):
+                self.assertTrue(self.workflow_matches("unit-tests.yaml", path))
+                self.assertFalse(self.workflow_matches("skipped-unit-tests.yaml", path))
+
+    def test_source_changes_still_run_real_tests(self):
+        for path in ("src/flb_lib.c", "tests/runtime/cmake/FluentBitTest.cmake"):
+            with self.subTest(path=path):
+                self.assertTrue(self.workflow_matches("unit-tests.yaml", path))
+                self.assertFalse(self.workflow_matches("skipped-unit-tests.yaml", path))
+
+    def test_unrelated_packaging_and_workflow_changes_remain_skipped(self):
+        for path in ("packaging/example.spec", "dockerfiles/example/Dockerfile",
+                     ".github/workflows/release.yaml", ".gitignore"):
+            with self.subTest(path=path):
+                self.assertFalse(self.workflow_matches("unit-tests.yaml", path))
+                self.assertTrue(self.workflow_matches("skipped-unit-tests.yaml", path))
 
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "uses GNU time resource output")
@@ -42,7 +82,7 @@ elif name == "cmake" and "--build" in sys.argv:
             (tools / name).symlink_to(mock)
         self.env = {
             **{k: v for k, v in os.environ.items()
-               if k not in ("FLB_BUILD_JOBS", "FLB_TEST_JOBS", "FLB_OPT", "LDFLAG")},
+               if k not in ("FLB_BUILD_JOBS", "FLB_TEST_JOBS", "FLB_TEST_SCOPE", "FLB_OPT", "LDFLAG")},
             "PATH": f"{tools}:{os.environ['PATH']}",
             "SOURCE_DIR": str(self.root),
             "CALL_LOG": str(self.root / "calls.jsonl"),
@@ -73,6 +113,18 @@ elif name == "cmake" and "--build" in sys.argv:
         self.assertIn(["cmake", "--build", ".", "--parallel", "2"], calls)
         self.assertEqual(next(c for c in calls if c[0] == "ctest")[2], "12")
 
+    def test_overrides_are_decimal(self):
+        result, calls = self.run_driver(FLB_BUILD_JOBS="08", FLB_TEST_JOBS="012")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(["cmake", "--build", ".", "--parallel", "8"], calls)
+        self.assertEqual(next(c for c in calls if c[0] == "ctest")[2], "12")
+
+    def test_default_parallelism_uses_decimal_build_override(self):
+        result, calls = self.run_driver(FLB_BUILD_JOBS="08")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(["cmake", "--build", ".", "--parallel", "8"], calls)
+        self.assertEqual(next(c for c in calls if c[0] == "ctest")[2], "24")
+
     def test_sanitizer_keeps_core_count_and_expands_stack(self):
         result, calls = self.run_driver(FLB_OPT="-DFLB_SANITIZE_THREAD=On")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -80,6 +132,31 @@ elif name == "cmake" and "--build" in sys.argv:
         self.assertIn("-DFLB_SANITIZE_THREAD=On", configure)
         self.assertIn("-DFLB_CORO_STACK_SIZE=4194304", configure)
         self.assertEqual(next(c for c in calls if c[0] == "ctest")[2], "4")
+        self.assertNotIn("-R", next(c for c in calls if c[0] == "ctest"))
+
+    def test_sanitizer_smoke_scope_is_explicit_and_builds_selected_targets(self):
+        result, calls = self.run_driver(FLB_OPT="-DFLB_SANITIZE_THREAD=On",
+                                        FLB_TEST_SCOPE="sanitizer-smoke")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        build = next(c for c in calls if c[:2] == ["cmake", "--build"])
+        self.assertEqual(build[-4:],
+                         ["--target", "flb-it-pack", "flb-it-config_map", "flb-it-plugin_alias"])
+        ctest = next(c for c in calls if c[0] == "ctest")
+        self.assertEqual(ctest[-2:], ["-R", "^flb-it-(pack|config_map|plugin_alias)$"])
+        runner = (self.root / "build/ci-results/runner.txt").read_text()
+        self.assertIn("test_scope=sanitizer-smoke", runner)
+
+    def test_full_scope_does_not_filter_tests(self):
+        result, calls = self.run_driver(FLB_TEST_SCOPE="full")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("--target", next(c for c in calls if c[:2] == ["cmake", "--build"]))
+        self.assertNotIn("-R", next(c for c in calls if c[0] == "ctest"))
+
+    def test_unknown_scope_is_rejected(self):
+        result, calls = self.run_driver(FLB_TEST_SCOPE="smok")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Unknown test scope", result.stderr)
+        self.assertFalse(any(c[0] == "cmake" for c in calls))
 
     def test_ctest_failure_is_preserved_and_coverage_is_not_run(self):
         result, calls = self.run_driver(TEST_EXIT_CODE="8", FLB_OPT="-DFLB_COVERAGE=On")
@@ -94,10 +171,12 @@ elif name == "cmake" and "--build" in sys.argv:
         self.assertFalse(any(c[0] == "ctest" for c in calls))
 
     def test_invalid_parallel_level_is_rejected(self):
-        result, calls = self.run_driver(FLB_TEST_JOBS="0")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("positive integers", result.stderr)
-        self.assertFalse(any(c[0] == "cmake" for c in calls))
+        for value in ("0", "00", "000", "-1", "1+1"):
+            with self.subTest(value=value):
+                result, calls = self.run_driver(FLB_TEST_JOBS=value)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("positive integers", result.stderr)
+                self.assertFalse(any(c[0] == "cmake" for c in calls))
 
     def test_build_override_is_validated_before_arithmetic(self):
         marker = self.root / "unexpected-command"

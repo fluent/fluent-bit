@@ -11,6 +11,10 @@ on:
       - '.gitignore'
       - 'appveyor.yml'
       - 'examples/**'
+      - '!.github/scripts/run-unit-tests.sh'
+      - '!.github/scripts/tests/test_unit_test_driver.py'
+      - '!.github/workflows/unit-tests.yaml'
+      - '!.github/workflows/skipped-unit-tests.yaml'
 
 permissions:
   contents: read
