@@ -1,13 +1,13 @@
 """Exercise CI scheduling controls and failure propagation without compiling Fluent Bit."""
-import ast
-import fnmatch
 import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
+import textwrap
 import unittest
 
 
@@ -15,18 +15,41 @@ DRIVER = Path(__file__).resolve().parents[1] / "run-unit-tests.sh"
 ROOT = Path(__file__).resolve().parents[3]
 
 
+@unittest.skipUnless(shutil.which("node"), "workflow selector requires Node.js")
 class UnitTestWorkflowFilters(unittest.TestCase):
-    def workflow_matches(self, workflow, path):
-        source = (ROOT / ".github/workflows" / workflow).read_text()
-        patterns = re.search(r"  pull_request:\n    paths:\n((?:      - .*\n)+)", source)
-        self.assertIsNotNone(patterns, "expected ordered pull_request path patterns")
-        included = False
-        for line in patterns.group(1).splitlines():
-            pattern = ast.literal_eval(line.strip()[2:])
-            excluded = pattern.startswith("!")
-            if fnmatch.fnmatchcase(path, pattern[1:] if excluded else pattern):
-                included = not excluded
-        return included
+    def workflow_matches(self, paths, event="pull_request"):
+        source = (ROOT / ".github/workflows/unit-tests.yaml").read_text()
+        selector = source.split("  select-unit-tests:\n", 1)[1].split("\n  run-ubuntu-unit-tests:", 1)[0]
+        script = re.search(r"          script: \|\n((?:            .*\n|\n)+)", selector)
+        self.assertIsNotNone(script)
+        # Execute the actual workflow JavaScript with read-only API stubs.
+        harness = '''
+const fixture = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+const outputs = {};
+let apiCalls = 0;
+const core = {setOutput: (name, value) => {outputs[name] = value;}};
+const context = {eventName: fixture.event, repo: {owner: 'fluent', repo: 'fluent-bit'},
+  payload: {pull_request: {number: 12707}}};
+const github = {rest: {pulls: {listFiles: () => {}}}, paginate: async () => {
+  apiCalls++;
+  return fixture.files;
+}};
+(async () => {
+  const select = async () => {
+''' + textwrap.dedent(script.group(1)) + '''
+  };
+  await select();
+  process.stdout.write(JSON.stringify({outputs, apiCalls}));
+})().catch(error => {console.error(error); process.exit(1);});
+'''
+        files = [{"filename": p} if isinstance(p, str) else p for p in paths]
+        result = subprocess.run(["node", "-e", harness],
+                                input=json.dumps({"event": event, "files": files}),
+                                capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        response = json.loads(result.stdout)
+        self.assertEqual(response["apiCalls"], 1 if event == "pull_request" else 0)
+        return response["outputs"]["run"]
 
     def test_ci_driver_and_workflow_changes_run_real_tests(self):
         for path in (".github/scripts/run-unit-tests.sh",
@@ -34,21 +57,45 @@ class UnitTestWorkflowFilters(unittest.TestCase):
                      ".github/workflows/unit-tests.yaml",
                      ".github/workflows/skipped-unit-tests.yaml"):
             with self.subTest(path=path):
-                self.assertTrue(self.workflow_matches("unit-tests.yaml", path))
-                self.assertFalse(self.workflow_matches("skipped-unit-tests.yaml", path))
+                self.assertTrue(self.workflow_matches([path]))
 
     def test_source_changes_still_run_real_tests(self):
         for path in ("src/flb_lib.c", "tests/runtime/cmake/FluentBitTest.cmake"):
             with self.subTest(path=path):
-                self.assertTrue(self.workflow_matches("unit-tests.yaml", path))
-                self.assertFalse(self.workflow_matches("skipped-unit-tests.yaml", path))
+                self.assertTrue(self.workflow_matches([path]))
 
     def test_unrelated_packaging_and_workflow_changes_remain_skipped(self):
         for path in ("packaging/example.spec", "dockerfiles/example/Dockerfile",
                      ".github/workflows/release.yaml", ".gitignore"):
             with self.subTest(path=path):
-                self.assertFalse(self.workflow_matches("unit-tests.yaml", path))
-                self.assertTrue(self.workflow_matches("skipped-unit-tests.yaml", path))
+                self.assertFalse(self.workflow_matches([path]))
+
+    def test_mixed_changes_run_tests(self):
+        self.assertTrue(self.workflow_matches([
+            ".github/scripts/run-unit-tests.sh", "packaging/example.spec"]))
+        self.assertFalse(self.workflow_matches([
+            "packaging/example.spec", ".github/workflows/release.yaml"]))
+
+    def test_renames_check_the_previous_path(self):
+        self.assertTrue(self.workflow_matches([{
+            "filename": "packaging/old-driver.sh",
+            "previous_filename": ".github/scripts/run-unit-tests.sh"}]))
+
+    def test_push_and_manual_runs_do_not_need_the_pr_api(self):
+        for event in ("push", "workflow_dispatch"):
+            with self.subTest(event=event):
+                self.assertTrue(self.workflow_matches([], event=event))
+
+    def test_empty_and_truncated_responses_run_tests(self):
+        self.assertTrue(self.workflow_matches([]))
+        self.assertTrue(self.workflow_matches(["packaging/example.spec"] * 3000))
+
+    def test_only_one_workflow_publishes_the_required_check(self):
+        self.assertFalse((ROOT / ".github/workflows/skipped-unit-tests.yaml").exists())
+        workflows = list((ROOT / ".github/workflows").glob("*.yaml"))
+        required = [p for p in workflows if re.search(r"^    name: Unit tests \(matrix\)$",
+                                                      p.read_text(), re.MULTILINE)]
+        self.assertEqual([p.name for p in required], ["unit-tests.yaml"])
 
 
 @unittest.skipUnless(sys.platform.startswith("linux"), "uses GNU time resource output")
