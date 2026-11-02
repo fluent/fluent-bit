@@ -57,16 +57,96 @@ struct worker_info {
 
 FLB_TLS_DEFINE(struct worker_info, s3_worker_info);
 
-#ifdef FLB_SYSTEM_WINDOWS
-static int setenv(const char *name, const char *value, int overwrite)
+struct s3_test_env_entry {
+    char *name;
+    char *value;
+    struct mk_list _head;
+};
+
+static pthread_mutex_t s3_test_env_mutex = PTHREAD_MUTEX_INITIALIZER;
+static struct mk_list s3_test_env = {&s3_test_env, &s3_test_env};
+
+/* Values remain immutable until reset, after all test workers have stopped. */
+char *flb_s3_test_env_get(const char *name)
 {
-    if (overwrite == 0 && getenv(name) != NULL) {
-        return 0;
+    struct mk_list *head;
+    struct s3_test_env_entry *entry;
+    char *value;
+
+    pthread_mutex_lock(&s3_test_env_mutex);
+    mk_list_foreach_r(head, &s3_test_env) {
+        entry = mk_list_entry(head, struct s3_test_env_entry, _head);
+        if (strcmp(entry->name, name) == 0) {
+            value = entry->value;
+            pthread_mutex_unlock(&s3_test_env_mutex);
+            return value;
+        }
+    }
+    pthread_mutex_unlock(&s3_test_env_mutex);
+    return getenv(name);
+}
+
+int flb_s3_test_env_set(const char *name, const char *value, int overwrite)
+{
+    struct s3_test_env_entry *entry;
+    struct s3_test_env_entry *previous;
+    struct mk_list *head;
+
+    entry = flb_calloc(1, sizeof(*entry));
+    if (entry == NULL) {
+        return -1;
+    }
+    entry->name = flb_strdup(name);
+    entry->value = value == NULL ? NULL : flb_strdup(value);
+    if (entry->name == NULL || (value != NULL && entry->value == NULL)) {
+        flb_free(entry->name);
+        flb_free(entry->value);
+        flb_free(entry);
+        return -1;
     }
 
-    return _putenv_s(name, value);
+    pthread_mutex_lock(&s3_test_env_mutex);
+    if (!overwrite) {
+        mk_list_foreach_r(head, &s3_test_env) {
+            previous = mk_list_entry(head, struct s3_test_env_entry, _head);
+            if (strcmp(previous->name, name) == 0) {
+                if (previous->value != NULL) {
+                    pthread_mutex_unlock(&s3_test_env_mutex);
+                    flb_free(entry->name);
+                    flb_free(entry->value);
+                    flb_free(entry);
+                    return 0;
+                }
+                break;
+            }
+        }
+    }
+    mk_list_add(&entry->_head, &s3_test_env);
+    pthread_mutex_unlock(&s3_test_env_mutex);
+    return 0;
 }
-#endif
+
+int flb_s3_test_env_unset(const char *name)
+{
+    return flb_s3_test_env_set(name, NULL, 1);
+}
+
+void flb_s3_test_env_reset(void)
+{
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct s3_test_env_entry *entry;
+
+    pthread_mutex_lock(&s3_test_env_mutex);
+    mk_list_foreach_safe(head, tmp, &s3_test_env) {
+        entry = mk_list_entry(head, struct s3_test_env_entry, _head);
+        mk_list_del(&entry->_head);
+        flb_free(entry->name);
+        flb_free(entry->value);
+        flb_free(entry);
+    }
+    pthread_mutex_unlock(&s3_test_env_mutex);
+}
 
 static int s3_timer_create(struct flb_s3 *ctx);
 
@@ -413,7 +493,7 @@ static char *mock_error_response(char *error_env_var)
     char *error = NULL;
     int len = 0;
 
-    err_val = getenv(error_env_var);
+    err_val = flb_s3_test_env_get(error_env_var);
     if (err_val != NULL && strlen(err_val) > 0) {
         error = flb_calloc(strlen(err_val) + 1, sizeof(char));
         if (error == NULL) {
@@ -432,7 +512,7 @@ static char *mock_error_response(char *error_env_var)
 
 int s3_plugin_under_test()
 {
-    if (getenv("FLB_S3_PLUGIN_UNDER_TEST") != NULL) {
+    if (flb_s3_test_env_get("FLB_S3_PLUGIN_UNDER_TEST") != NULL) {
         return FLB_TRUE;
     }
 
@@ -522,7 +602,7 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
 };
 
 /*
- * Track mock API call counts via env vars (e.g. TEST_PutObject_CALL_COUNT)
+ * Track mock API call counts in synchronized test state
  * so tests can assert the exact number of S3 API attempts.
  */
 static void mock_s3_call_increment_counter(char *api)
@@ -533,11 +613,11 @@ static void mock_s3_call_increment_counter(char *api)
     char buf[16];
 
     snprintf(env_var, sizeof(env_var), "TEST_%s_CALL_COUNT", api);
-    val = getenv(env_var);
+    val = flb_s3_test_env_get(env_var);
     count = val ? atoi(val) : 0;
     count++;
     snprintf(buf, sizeof(buf), "%d", count);
-    setenv(env_var, buf, 1);
+    flb_s3_test_env_set(env_var, buf, 1);
 }
 
 static void mock_s3_call_record_uri(char *api, char *uri)
@@ -546,18 +626,18 @@ static void mock_s3_call_record_uri(char *api, char *uri)
     char uri_env_var[64];
     char *count;
 
-    if (getenv("TEST_RECORD_S3_URIS") == NULL) {
+    if (flb_s3_test_env_get("TEST_RECORD_S3_URIS") == NULL) {
         return;
     }
 
     snprintf(count_env_var, sizeof(count_env_var), "TEST_%s_CALL_COUNT", api);
-    count = getenv(count_env_var);
+    count = flb_s3_test_env_get(count_env_var);
     if (count == NULL) {
         return;
     }
 
     snprintf(uri_env_var, sizeof(uri_env_var), "TEST_%s_URI_%s", api, count);
-    setenv(uri_env_var, uri, 1);
+    flb_s3_test_env_set(uri_env_var, uri, 1);
 }
 
 struct flb_http_client *mock_s3_call(char *error_env_var, char *api)
@@ -655,7 +735,7 @@ static struct flb_http_client *mock_s3_call_for_tag(char *error_env_var,
 {
     char *error_tag;
 
-    error_tag = getenv(error_tag_env_var);
+    error_tag = flb_s3_test_env_get(error_tag_env_var);
     if (error_tag != NULL &&
         (strlen(error_tag) != tag_len || memcmp(error_tag, tag, tag_len) != 0)) {
         return mock_s3_call("TEST_S3_OTHER_TAG_ERROR", api);
@@ -2100,7 +2180,7 @@ static int construct_request_buffer(struct flb_s3 *ctx, flb_sds_t new_data,
     int ret;
 
     if (s3_plugin_under_test() == FLB_TRUE &&
-        getenv("TEST_CONSTRUCT_REQUEST_BUFFER_ERROR") != NULL) {
+        flb_s3_test_env_get("TEST_CONSTRUCT_REQUEST_BUFFER_ERROR") != NULL) {
         return -1;
     }
 
