@@ -228,7 +228,7 @@ test('forced destruction after a startup response cannot revive the instance', a
     assert.equal(sdk.state, 'destroyed');
 });
 
-test('destroy lets an acknowledged owner finish closing its own event loop', async () => {
+test('destroy lets an acknowledged owner close before enforcing termination', async () => {
     const sdk = await createFluentBit(defaults);
     const priorReply = reply;
     reply = (worker, message) => {
@@ -240,13 +240,17 @@ test('destroy lets an acknowledged owner finish closing its own event loop', asy
     await sdk.destroy();
     assert.equal(instances[0].closed, true);
     assert.equal(instances[0].terminated, false);
+    await new Promise(resolve => setTimeout(resolve, 300));
+    assert.equal(instances[0].terminated, true);
     assert.equal(sdk.state, 'destroyed');
 });
 
-test('fatal closure acknowledgement avoids interrupting owner cleanup', async () => {
+test('fatal closure acknowledgement delays the termination fallback', async () => {
     reply = worker => worker.emit({type: 'fatal', code: 'E_LOAD',
         message: 'Injected download failure', closed: true});
     await assert.rejects(createFluentBit(defaults), {code: 'E_LOAD'});
     assert.equal(instances[0].closed, true);
     assert.equal(instances[0].terminated, false);
+    await new Promise(resolve => setTimeout(resolve, 300));
+    assert.equal(instances[0].terminated, true);
 });
