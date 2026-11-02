@@ -22,6 +22,9 @@
 #include <msgpack.h>
 
 #include <sys/stat.h>
+#include <sys/un.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 #include "unix_socket.h"
 #include "unix_socket_conn.h"
@@ -74,7 +77,7 @@ static int remove_existing_socket_file(char *socket_path)
     struct stat file_data;
     int         result;
 
-    result = stat(socket_path, &file_data);
+    result = lstat(socket_path, &file_data);
 
     if (result == -1) {
         if (errno == ENOENT) {
@@ -108,6 +111,13 @@ static int in_unix_socket_init(struct flb_input_instance *in,
     struct flb_in_unix_socket_config *ctx;
     int                               ret;
     struct flb_tls                   *tls;
+    char                              staging_dir[sizeof(((struct sockaddr_un *) 0)->sun_path)];
+    char                              staging_path[sizeof(((struct sockaddr_un *) 0)->sun_path)];
+    const char                       *separator;
+    size_t                            parent_length;
+    const char                       *bind_path;
+    int                               staging_fd;
+    struct stat                       staging_stat;
 
     (void) data;
 
@@ -156,15 +166,47 @@ static int in_unix_socket_init(struct flb_input_instance *in,
         tls = in->tls;
     }
 
+    /* A socket descriptor's mode is not the mode of its filesystem entry. */
+    bind_path = ctx->listen;
+    staging_fd = -1;
+    if (ctx->socket_permissions != NULL) {
+        separator = strrchr(ctx->listen, '/');
+        parent_length = separator == NULL ? 0 : separator - ctx->listen + 1;
+        if (snprintf(staging_dir, sizeof(staging_dir), "%.*s.fb-XXXXXX",
+                     (int) parent_length, ctx->listen) >= sizeof(staging_dir) ||
+            mkdtemp(staging_dir) == NULL) {
+            flb_errno();
+            unix_socket_config_destroy(ctx);
+            return -1;
+        }
+        staging_fd = open(staging_dir, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+        if (staging_fd < 0 || fstat(staging_fd, &staging_stat) != 0 ||
+            staging_stat.st_uid != geteuid() || (staging_stat.st_mode & 0777) != 0700 ||
+            snprintf(staging_path, sizeof(staging_path), "%s/s", staging_dir) >=
+            sizeof(staging_path)) {
+            if (staging_fd >= 0) {
+                close(staging_fd);
+            }
+            rmdir(staging_dir);
+            unix_socket_config_destroy(ctx);
+            return -1;
+        }
+        bind_path = staging_path;
+    }
+
     ctx->downstream = flb_downstream_create(mode,
                                             in->flags,
-                                            ctx->listen,
+                                            bind_path,
                                             0,
                                             tls,
                                             config,
                                             &in->net_setup);
 
     if (ctx->downstream == NULL) {
+        if (ctx->socket_permissions != NULL) {
+            close(staging_fd);
+            rmdir(staging_dir);
+        }
         flb_plg_error(ctx->ins,
                       "could not initialize downstream on unix://%s. Aborting",
                       ctx->listen);
@@ -177,7 +219,10 @@ static int in_unix_socket_init(struct flb_input_instance *in,
     flb_input_downstream_set(ctx->downstream, ctx->ins);
 
     if (ctx->socket_permissions != NULL) {
-        ret = chmod(ctx->listen, ctx->socket_acl);
+        ret = fchmodat(staging_fd, "s", ctx->socket_acl, 0);
+        if (ret == 0) {
+            ret = renameat(staging_fd, "s", AT_FDCWD, ctx->listen);
+        }
 
         if (ret != 0) {
             flb_errno();
@@ -185,10 +230,15 @@ static int in_unix_socket_init(struct flb_input_instance *in,
             flb_plg_error(ctx->ins, "cannot set permission on '%s' to %04o",
                           ctx->listen, ctx->socket_acl);
 
+            unlinkat(staging_fd, "s", 0);
+            close(staging_fd);
+            rmdir(staging_dir);
             unix_socket_config_destroy(ctx);
 
             return -1;
         }
+        close(staging_fd);
+        rmdir(staging_dir);
     }
 
     if (ctx->dgram_mode_flag) {

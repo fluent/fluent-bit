@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import socket
+import stat
 import ssl
 import struct
 import subprocess
@@ -1473,11 +1474,28 @@ def test_in_forward_unix_socket_permissions():
             interval=0.2,
             description="forward unix socket with permissions",
         )
-        mode = os.stat(service.socket_path).st_mode & 0o777
+        socket_stat = os.lstat(service.socket_path)
+        assert stat.S_ISSOCK(socket_stat.st_mode)
+        mode = socket_stat.st_mode & 0o777
     finally:
         service.stop()
 
     assert mode == 0o600
+
+
+def test_in_forward_unix_socket_rejects_symlink():
+    service = Service("in_forward_unix_perm.yaml", use_unix_socket=True)
+    with tempfile.TemporaryDirectory() as directory:
+        victim = os.path.join(directory, "victim")
+        with open(victim, "w", encoding="utf-8") as output:
+            output.write("secret")
+        os.chmod(victim, 0o600)
+        os.symlink(victim, service.socket_path)
+
+        with pytest.raises(FluentBitStartupError):
+            service.start()
+
+        assert os.stat(victim).st_mode & 0o777 == 0o600
 
 
 def test_in_forward_tls_message_mode():

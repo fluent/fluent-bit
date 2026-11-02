@@ -566,12 +566,13 @@ void flb_test_unix_perm()
 
 
     /* File permission */
-    ret = stat(unix_path, &sb);
+    ret = lstat(unix_path, &sb);
     if (!TEST_CHECK(ret == 0)) {
         TEST_MSG("stat failed. errno=%d", errno);
                 test_ctx_destroy(ctx);
         exit(EXIT_FAILURE);
     }
+    TEST_CHECK(S_ISSOCK(sb.st_mode));
 
 #ifndef _WIN32
     if (!TEST_CHECK((sb.st_mode & S_IRWXO) == 0)) {
@@ -587,6 +588,49 @@ void flb_test_unix_perm()
 
     flb_socket_close(fd);
     test_ctx_destroy(ctx);
+}
+
+void flb_test_unix_symlink_refused()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    struct stat sb;
+    int fd;
+    int ret;
+    const char *unix_path = "in_forward_symlink";
+    const char *victim_path = "in_forward_symlink_victim";
+
+    fd = open(victim_path, O_CREAT | O_WRONLY | O_TRUNC, 0600);
+    TEST_CHECK(fd >= 0);
+    if (fd < 0) {
+        return;
+    }
+    fchmod(fd, 0600);
+    close(fd);
+    unlink(unix_path);
+    ret = symlink(victim_path, unix_path);
+    TEST_CHECK(ret == 0);
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = "";
+    ctx = test_ctx_create(&cb_data);
+    TEST_CHECK(ctx != NULL);
+    if (ctx != NULL) {
+        ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                            "unix_path", unix_path, "unix_perm", "0666", NULL);
+        TEST_CHECK(ret == 0);
+        ret = flb_start(ctx->flb);
+        TEST_CHECK(ret != 0);
+        if (ret == 0) {
+            flb_stop(ctx->flb);
+        }
+        flb_destroy(ctx->flb);
+        flb_free(ctx);
+    }
+    ret = stat(victim_path, &sb);
+    TEST_CHECK(ret == 0 && (sb.st_mode & 0777) == 0600);
+    unlink(unix_path);
+    unlink(victim_path);
 }
 #endif /* FLB_HAVE_UNIX_SOCKET */
 
@@ -1320,6 +1364,7 @@ TEST_LIST = {
 #ifdef FLB_HAVE_UNIX_SOCKET
     {"unix_path", flb_test_unix_path},
     {"unix_perm", flb_test_unix_perm},
+    {"unix_symlink_refused", flb_test_unix_symlink_refused},
 #endif
     {"forward_gzip", flb_test_forward_gzip},
     {"forward_zstd", flb_test_forward_zstd},
