@@ -802,6 +802,21 @@ static void append_group_test_record(struct flb_log_event_encoder *encoder, int 
     TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
 }
 
+static int cb_append_group(struct flb_input_instance *input,
+                           struct flb_config *config, void *context)
+{
+    int ret;
+    struct flb_log_event_encoder *encoder = input->data;
+
+    (void) config;
+    (void) context;
+
+    ret = flb_input_chunk_append_raw(input, FLB_INPUT_LOGS, 3, "rewrite", 7,
+                                     encoder->output_buffer, encoder->output_length);
+    TEST_CHECK(ret == 0);
+    return ret;
+}
+
 static void check_group_rewrite(int reverse, int keep, int unmatched, int same_tag)
 {
     int ret;
@@ -816,6 +831,7 @@ static void check_group_rewrite(int reverse, int keep, int unmatched, int same_t
     struct flb_lib_out_cb callbacks[3];
     struct filter_test *ctx;
     struct flb_input_instance *input;
+    struct flb_input_plugin input_plugin;
     struct flb_log_event_encoder encoder;
 
     for (i = 0; i < 3; i++) {
@@ -840,15 +856,10 @@ static void check_group_rewrite(int reverse, int keep, int unmatched, int same_t
         TEST_CHECK(ret == 0);
     }
     clear_output_num();
-    ret = flb_start(ctx->flb);
-    if (!TEST_CHECK(ret == 0)) {
-        flb_destroy(ctx->flb);
-        flb_free(ctx);
-        return;
-    }
     ret = flb_log_event_encoder_init(&encoder, FLB_LOG_EVENT_FORMAT_DEFAULT);
     if (!TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS)) {
-        filter_test_destroy(ctx);
+        flb_destroy(ctx->flb);
+        flb_free(ctx);
         return;
     }
     ret = flb_log_event_encoder_group_init(&encoder);
@@ -874,14 +885,22 @@ static void check_group_rewrite(int reverse, int keep, int unmatched, int same_t
     append_group_test_record(&encoder, 2);
 
     input = flb_input_get_instance(ctx->flb->config, ctx->i_ffd);
-    if (TEST_CHECK(input != NULL)) {
-        ret = flb_input_chunk_append_raw(input, FLB_INPUT_LOGS, 3, "rewrite", 7,
-                                         encoder.output_buffer, encoder.output_length);
-        TEST_CHECK(ret == 0);
+    TEST_ASSERT(input != NULL);
+    /* Inject on the engine thread before its emitter collector can run. */
+    input_plugin = *input->p;
+    input_plugin.cb_pre_run = cb_append_group;
+    input->p = &input_plugin;
+    input->data = &encoder;
+    ret = flb_start(ctx->flb);
+    if (!TEST_CHECK(ret == 0)) {
+        flb_destroy(ctx->flb);
+        flb_free(ctx);
+        flb_log_event_encoder_destroy(&encoder);
+        return;
     }
-    flb_log_event_encoder_destroy(&encoder);
     wait_for_output_num(5000, keep ? 6 : 3, &got);
     filter_test_destroy(ctx);
+    flb_log_event_encoder_destroy(&encoder);
     TEST_CHECK(get_output_num() == (keep ? 6 : 3));
 
     for (id = 0; id < 3; id++) {
