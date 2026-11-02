@@ -369,7 +369,11 @@ set(FLB_RT_SIMPLE_SYSTEMS_TESTS
 
 set(FLB_RT_CASE_TESTS
   filter_kubernetes.c
+  filter_modify.c
+  out_opensearch.c
   out_stackdriver.c
+  out_syslog.c
+  processor_content_modifier.c
   )
 
 foreach(source_file ${CHECK_PROGRAMS})
