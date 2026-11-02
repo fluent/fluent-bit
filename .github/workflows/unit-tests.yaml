@@ -37,6 +37,19 @@ on:
       - 1.8
     types: [opened, reopened, synchronize]
   workflow_dispatch:
+    inputs:
+      build_jobs:
+        description: 'Build parallelism override (empty uses detected CPUs, capped at 8)'
+        type: string
+        default: ''
+      test_jobs:
+        description: 'CTest parallelism override for Linux and macOS benchmarking'
+        type: string
+        default: ''
+
+env:
+  FLB_BUILD_JOBS: ${{ inputs.build_jobs }}
+  FLB_TEST_JOBS: ${{ inputs.test_jobs }}
 
 jobs:
   run-ubuntu-unit-tests:
@@ -69,6 +82,11 @@ jobs:
             cc: clang
             cxx: clang++
         exclude:
+          # MemorySanitizer requires Clang; GCC does not implement it.
+          - flb_option: "-DFLB_SANITIZE_MEMORY=On"
+            compiler:
+              cc: gcc
+              cxx: g++
           - flb_option: "-DFLB_COVERAGE=On"
             compiler:
               cc: clang
@@ -118,12 +136,12 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: fluent/fluent-bit-ci
-          path: ci
-          # Last commit to master branch
-          ref: 17eb004a1b73b1c44986c20a9f4a33fc0961ca45
+      - name: Check unit-test driver
+        run: |
+          bash -n .github/scripts/run-unit-tests.sh
+          python3 -m unittest discover -s .github/scripts/tests -p test_unit_test_driver.py -v
+          python3 -m unittest discover -s tests/runtime/cmake -p test_acutest_discovery.py -v
+
       - name: Setup Apache Arrow libraries for parquet (-DFLB_ARROW=On Only)
         if: matrix.flb_option == '-DFLB_ARROW=On'
         run: |
@@ -136,23 +154,29 @@ jobs:
 
       - name: ${{ matrix.compiler.cc }} & ${{ matrix.compiler.cxx }} - ${{ matrix.flb_option }}
         run: |
-          if [[ "$FLB_OPT" =~ COVERAGE ||
-                "$FLB_OPT" =~ SANITIZE_ADDRESS ||
-                "$FLB_OPT" =~ SANITIZE_UNDEFINED ]]; then
-              # Coverage and sanitizer builds require larger coroutine stack.
-              export FLB_OPT="${FLB_OPT} -DFLB_CORO_STACK_SIZE=4194304"
-          fi
           echo "CC = $CC, CXX = $CXX, FLB_OPT = $FLB_OPT"
           sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 90
           sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-9 90
           sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-12 90
           sudo usermod -a -G systemd-journal $(id -un)
-          sudo -E su -p $(id -un) -c "PATH=$PATH ci/scripts/run-unit-tests.sh"
+          sudo -E su -p $(id -un) -c "PATH=$PATH bash .github/scripts/run-unit-tests.sh"
         env:
           CC: ${{ matrix.compiler.cc }}
           CXX: ${{ matrix.compiler.cxx }}
           FLB_OPT: ${{ matrix.flb_option }}
           CALYPTIA_FLEET_TOKEN: ${{ secrets.CALYPTIA_FLEET_TOKEN }}
+
+      - name: Upload unit-test timings and results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: unit-tests-linux-${{ strategy.job-index }}
+          path: |
+            build/ci-results/
+            build/Testing/Temporary/LastTest.log
+            build/Testing/Temporary/LastTestsFailed.log
+            build/Testing/Temporary/CTestCostData.txt
+          if-no-files-found: warn
 
   run-macos-unit-tests:
     # We chain this after Linux one as there are costs and restrictions associated
@@ -165,7 +189,6 @@ jobs:
       matrix:
         flb_option:
           - "-DFLB_JEMALLOC=Off"
-          - "-DFLB_SANITIZE_MEMORY=On"
           - "-DFLB_SANITIZE_THREAD=On"
         cmake_version:
           - "3.31.6"
@@ -178,23 +201,29 @@ jobs:
           cmake-version: "${{ matrix.cmake_version }}"
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: fluent/fluent-bit-ci
-          path: ci
-          # Last commit to master branch
-          ref: 17eb004a1b73b1c44986c20a9f4a33fc0961ca45
 
       - name: ${{ matrix.flb_option }}
         run: |
           echo "CC = $CC, CXX = $CXX, FLB_OPT = $FLB_OPT"
           brew update
           brew install bison flex openssl || true
-          ci/scripts/run-unit-tests.sh
+          bash .github/scripts/run-unit-tests.sh
         env:
           CC: gcc
           CXX: g++
           FLB_OPT: ${{ matrix.flb_option }}
+
+      - name: Upload unit-test timings and results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: unit-tests-macos-${{ strategy.job-index }}
+          path: |
+            build/ci-results/
+            build/Testing/Temporary/LastTest.log
+            build/Testing/Temporary/LastTestsFailed.log
+            build/Testing/Temporary/CTestCostData.txt
+          if-no-files-found: warn
 
   run-aarch64-unit-tests:
     runs-on: ${{(github.repository == 'fluent/fluent-bit') && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
