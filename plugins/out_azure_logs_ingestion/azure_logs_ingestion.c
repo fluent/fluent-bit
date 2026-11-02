@@ -242,72 +242,28 @@ token_cleanup:
     return token_return;
 }
 
-static void cb_azure_logs_ingestion_flush(struct flb_event_chunk *event_chunk,
-                           struct flb_output_flush *out_flush,
-                           struct flb_input_instance *i_ins,
-                           void *out_context,
-                           struct flb_config *config)
+/* Sends one payload to the data collection endpoint */
+static int az_li_send(struct flb_az_li *ctx, flb_sds_t token,
+                      void *payload, size_t payload_size, int is_compressed)
 {
     int ret;
     int flush_status;
     size_t b_sent;
-    size_t json_payload_size;
-    void* final_payload;
-    size_t final_payload_size;
-    flb_sds_t token;
     struct flb_connection *u_conn;
     struct flb_http_client *c = NULL;
-    int is_compressed = FLB_FALSE;
-    flb_sds_t json_payload = NULL;
-    struct flb_az_li *ctx = out_context;
-    (void) i_ins;
-    (void) config;
 
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u_dce);
     if (!u_conn) {
-        FLB_OUTPUT_RETURN(FLB_RETRY);
-    }
-
-    /* Convert binary logs into a JSON payload */
-    ret = az_li_format(event_chunk->data, event_chunk->size,
-                       &json_payload, &json_payload_size, ctx,
-                       config);
-    if (ret == -1) {
-        flb_upstream_conn_release(u_conn);
-        FLB_OUTPUT_RETURN(FLB_ERROR);
-    }
-
-    /* Get OAuth2 token */
-    token = get_az_li_token(ctx);
-    if (!token) {
-        flush_status = FLB_RETRY;
-        goto cleanup;
-    }
-
-    /* Map buffer */
-    final_payload = json_payload;
-    final_payload_size = json_payload_size;
-    if (ctx->compress_enabled == FLB_TRUE) {
-        ret = flb_gzip_compress((void *) json_payload, json_payload_size,
-                                &final_payload, &final_payload_size);
-        if (ret == -1) {
-            flb_plg_error(ctx->ins,
-                          "cannot gzip payload, disabling compression");
-        }
-        else {
-            is_compressed = FLB_TRUE;
-            flb_plg_debug(ctx->ins, "enabled payload gzip compression");
-            /* JSON buffer will be cleared at cleanup: */
-        }
+        return FLB_RETRY;
     }
 
     /* Compose HTTP Client request */
     c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->dce_u_url,
-                        final_payload, final_payload_size, NULL, 0, NULL, 0);
+                        payload, payload_size, NULL, 0, NULL, 0);
 
     if (!c) {
-        flb_plg_warn(ctx->ins, "retrying payload bytes=%lu", final_payload_size);
+        flb_plg_warn(ctx->ins, "retrying payload bytes=%lu", payload_size);
         flush_status = FLB_RETRY;
         goto cleanup;
     }
@@ -343,34 +299,149 @@ static void cb_azure_logs_ingestion_flush(struct flb_event_chunk *event_chunk,
             else {
                 flb_plg_warn(ctx->ins, "http_status=%i", c->resp.status);
             }
-            flb_plg_debug(ctx->ins, "retrying payload bytes=%lu", final_payload_size);
+            flb_plg_debug(ctx->ins, "retrying payload bytes=%lu", payload_size);
             flush_status = FLB_RETRY;
             goto cleanup;
         }
     }
 
 cleanup:
-    /* cleanup */
-    if (json_payload) {
-        flb_sds_destroy(json_payload);
-    }
-
-    /* release compressed payload */
-    if (is_compressed == FLB_TRUE) {
-        flb_free(final_payload);
-    }
-
     if (c) {
         flb_http_client_destroy(c);
     }
-    if (u_conn) {
-        flb_upstream_conn_release(u_conn);
+    flb_upstream_conn_release(u_conn);
+
+    return flush_status;
+}
+
+/*
+ * Formats records [first, last) of the chunk and sends them. The Logs
+ * Ingestion API rejects payloads above FLB_AZ_LI_MAX_PAYLOAD_SIZE, so a
+ * payload over the limit is split in two halves that are sent separately.
+ * A single record is sent as it is, whatever its size.
+ */
+static int az_li_flush_records(struct flb_az_li *ctx, struct flb_config *config,
+                               flb_sds_t token, const char *data,
+                               size_t *offsets, size_t first, size_t last)
+{
+    int ret;
+    size_t middle;
+    size_t json_payload_size;
+    size_t final_payload_size;
+    void *final_payload;
+    int is_compressed = FLB_FALSE;
+    flb_sds_t json_payload = NULL;
+
+    /* Convert binary logs into a JSON payload */
+    ret = az_li_format(data + offsets[first], offsets[last] - offsets[first],
+                       &json_payload, &json_payload_size, ctx, config);
+    if (ret == -1) {
+        return FLB_ERROR;
     }
 
-    /* destory token at last after HTTP call has finished */
-    if (token) {
-        flb_sds_destroy(token);
+    /* Map buffer */
+    final_payload = json_payload;
+    final_payload_size = json_payload_size;
+    if (ctx->compress_enabled == FLB_TRUE) {
+        ret = flb_gzip_compress((void *) json_payload, json_payload_size,
+                                &final_payload, &final_payload_size);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins,
+                          "cannot gzip payload, disabling compression");
+            final_payload = json_payload;
+            final_payload_size = json_payload_size;
+        }
+        else {
+            is_compressed = FLB_TRUE;
+            flb_plg_debug(ctx->ins, "enabled payload gzip compression");
+        }
     }
+
+    if (final_payload_size > FLB_AZ_LI_MAX_PAYLOAD_SIZE && last - first > 1) {
+        if (is_compressed == FLB_TRUE) {
+            flb_free(final_payload);
+        }
+        flb_sds_destroy(json_payload);
+
+        middle = first + (last - first) / 2;
+        flb_plg_debug(ctx->ins, "payload of %zu records is %zu bytes, splitting it",
+                      last - first, final_payload_size);
+
+        /* Stop at the first failure, the chunk is retried as a whole */
+        ret = az_li_flush_records(ctx, config, token, data, offsets, first, middle);
+        if (ret != FLB_OK) {
+            return ret;
+        }
+        return az_li_flush_records(ctx, config, token, data, offsets, middle, last);
+    }
+
+    ret = az_li_send(ctx, token, final_payload, final_payload_size, is_compressed);
+
+    if (is_compressed == FLB_TRUE) {
+        flb_free(final_payload);
+    }
+    flb_sds_destroy(json_payload);
+
+    return ret;
+}
+
+static void cb_azure_logs_ingestion_flush(struct flb_event_chunk *event_chunk,
+                           struct flb_output_flush *out_flush,
+                           struct flb_input_instance *i_ins,
+                           void *out_context,
+                           struct flb_config *config)
+{
+    int ret;
+    int flush_status;
+    size_t count = 0;
+    size_t records;
+    size_t *offsets;
+    flb_sds_t token;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
+    struct flb_az_li *ctx = out_context;
+    (void) i_ins;
+    (void) out_flush;
+
+    /* Record the end offset of every record so the chunk can be split */
+    records = flb_mp_count_log_records(event_chunk->data, event_chunk->size);
+    offsets = flb_calloc(records + 1, sizeof(size_t));
+    if (!offsets) {
+        flb_errno();
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+
+    ret = flb_log_event_decoder_init(&log_decoder, (char *) event_chunk->data,
+                                     event_chunk->size);
+    if (ret != FLB_EVENT_DECODER_SUCCESS) {
+        flb_free(offsets);
+        FLB_OUTPUT_RETURN(FLB_ERROR);
+    }
+    while (count < records &&
+           flb_log_event_decoder_next(&log_decoder, &log_event) ==
+           FLB_EVENT_DECODER_SUCCESS) {
+        offsets[++count] = log_decoder.offset;
+    }
+    flb_log_event_decoder_destroy(&log_decoder);
+
+    if (count == 0) {
+        flb_free(offsets);
+        FLB_OUTPUT_RETURN(FLB_OK);
+    }
+
+    /* Get OAuth2 token */
+    token = get_az_li_token(ctx);
+    if (!token) {
+        flb_free(offsets);
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
+
+    flush_status = az_li_flush_records(ctx, config, token, event_chunk->data,
+                                       offsets, 0, count);
+
+    flb_free(offsets);
+    /* destroy token at last after HTTP calls have finished */
+    flb_sds_destroy(token);
     FLB_OUTPUT_RETURN(flush_status);
 }
 
