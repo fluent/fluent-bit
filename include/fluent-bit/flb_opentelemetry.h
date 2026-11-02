@@ -239,6 +239,14 @@ size_t flb_opentelemetry_logs_json_cfl_get_encoded_size(
 void flb_opentelemetry_logs_json_cfl_destroy(
         struct flb_opentelemetry_logs_json_cfl *result);
 
+/* Preflight allocation estimate, shared across all messages in a request. */
+#define FLB_OTEL_PROTOBUF_DECODE_BUDGET (32 * 1024 * 1024)
+#define FLB_OTEL_PROTOBUF_LIMIT_EXCEEDED -2
+
+int flb_opentelemetry_protobuf_validate_with_budget(
+        const ProtobufCMessageDescriptor *descriptor,
+        const void *data, size_t size, size_t *remaining);
+
 int flb_opentelemetry_protobuf_validate(
         const ProtobufCMessageDescriptor *descriptor,
         const void *data, size_t size);
