@@ -18,8 +18,9 @@ self.addEventListener('error', event => report('error', event.message || 'Pthrea
 self.addEventListener('message', event => {
     if (event.data?.flbShutdown === 1) {
         event.stopImmediatePropagation();
-        self.postMessage({flbPthread: 1, stage: 'closed'});
+        // Set the closing flag before allowing the owner to finish teardown.
         self.close();
+        self.postMessage({flbPthread: 1, stage: 'closed'});
         return;
     }
     // CMD_LOAD in the pinned Emscripten 6.0.9 libpthread.js.
