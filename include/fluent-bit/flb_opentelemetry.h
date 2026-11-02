@@ -125,6 +125,8 @@ struct flb_opentelemetry_logs_decode_options {
     const char *metadata_key;
     const char *body_key;
     size_t output_limit;
+    /* Zero selects FLB_OTEL_PROTOBUF_DECODE_BUDGET. Ignored for JSON. */
+    size_t protobuf_decode_max_size;
 };
 
 struct flb_mp_chunk_cobj;
