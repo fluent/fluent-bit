@@ -1244,6 +1244,10 @@ else()
 endif ()
 
 # Configuration file YAML format support
+#
+# FLB_LIBYAML_LINK is the library linked by targets; the direct-discovery
+# fallback below replaces it with the full path of the library it found.
+set(FLB_LIBYAML_LINK yaml)
 if(FLB_CONFIG_YAML AND FLB_WASM_BROWSER)
   include(cmake/wasm-libyaml.cmake)
   set(FLB_HAVE_LIBYAML 1)
@@ -1274,13 +1278,70 @@ elseif(FLB_CONFIG_YAML)
       include_directories(${LIBYAML_INCLUDEDIR})
       link_directories(${LIBYAML_LIBRARY_DIRS})
     else ()
-      # Requires libyaml support
+      # pkg-config is not available or has no yaml-0.1.pc: look for the
+      # header and library directly, including common package manager
+      # prefixes that are not part of the default compiler search paths
+      # (e.g. Homebrew on Apple Silicon uses /opt/homebrew). On MSVC,
+      # libyaml must be given through FLB_LIBYAML_DIR.
+      set(FLB_LIBYAML_HINTS "")
+      if (APPLE)
+        find_program(FLB_BREW_EXECUTABLE brew)
+        if (FLB_BREW_EXECUTABLE)
+          execute_process(
+            COMMAND ${FLB_BREW_EXECUTABLE} --prefix libyaml
+            OUTPUT_VARIABLE FLB_BREW_LIBYAML_PREFIX
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET
+          )
+          if (FLB_BREW_LIBYAML_PREFIX)
+            list(APPEND FLB_LIBYAML_HINTS "${FLB_BREW_LIBYAML_PREFIX}")
+          endif ()
+        endif ()
+        list(APPEND FLB_LIBYAML_HINTS /opt/homebrew /usr/local /opt/local)
+      endif ()
+
+      if (NOT MSVC)
+        find_path(FLB_LIBYAML_INCLUDE_DIR
+          NAMES yaml.h
+          HINTS ${FLB_LIBYAML_HINTS}
+          PATH_SUFFIXES include
+        )
+        find_library(FLB_LIBYAML_LIBRARY
+          NAMES yaml
+          HINTS ${FLB_LIBYAML_HINTS}
+          PATH_SUFFIXES lib
+        )
+      endif ()
+
+      if (FLB_LIBYAML_INCLUDE_DIR AND FLB_LIBYAML_LIBRARY)
+        get_filename_component(LIBYAML_LIBRARY_DIRS
+          "${FLB_LIBYAML_LIBRARY}" DIRECTORY)
+        set(FLB_LIBYAML_LINK "${FLB_LIBYAML_LIBRARY}")
+        set(LIBYAML_INCLUDEDIR "${FLB_LIBYAML_INCLUDE_DIR}")
+        include_directories(${LIBYAML_INCLUDEDIR})
+        link_directories(${LIBYAML_LIBRARY_DIRS})
+        set(CMAKE_REQUIRED_INCLUDES_SAVE "${CMAKE_REQUIRED_INCLUDES}")
+        set(FLB_LIBYAML_RESTORE_INCLUDES ON)
+        list(APPEND CMAKE_REQUIRED_INCLUDES "${LIBYAML_INCLUDEDIR}")
+        message(STATUS "Found libyaml without pkg-config: "
+                       "${FLB_LIBYAML_LIBRARY}")
+      endif ()
+
+      # Requires libyaml support. Drop any cached result so a previous
+      # failed configure does not hide a libyaml installed afterwards.
+      unset(FLB_HAVE_LIBYAML CACHE)
       check_c_source_compiles("
       #include <yaml.h>
       int main() {
         yaml_parser_t parser;
         return 0;
       }" FLB_HAVE_LIBYAML)
+
+      if (FLB_LIBYAML_RESTORE_INCLUDES)
+        set(CMAKE_REQUIRED_INCLUDES "${CMAKE_REQUIRED_INCLUDES_SAVE}")
+        unset(CMAKE_REQUIRED_INCLUDES_SAVE)
+        unset(FLB_LIBYAML_RESTORE_INCLUDES)
+      endif ()
 
       if(NOT FLB_HAVE_LIBYAML)
         message(FATAL_ERROR
