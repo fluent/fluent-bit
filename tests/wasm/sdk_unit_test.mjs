@@ -6,13 +6,16 @@ import {createFluentBit, getBrowserSupport} from '../../sdk/browser/fluent-bit.j
 const instances = [];
 let reply;
 class FakeWorker {
-    constructor() { this.terminated = false; instances.push(this); }
+    constructor() { this.terminated = false; this.closed = false; instances.push(this); }
     postMessage(message) {
         queueMicrotask(() => {
             if (!this.terminated) { reply(this, message); }
         });
     }
-    emit(message) { this.onmessage?.({data: {abi: 1, ...message}}); }
+    emit(message) {
+        if (message.closed === true) { this.closed = true; }
+        this.onmessage?.({data: {abi: 1, ...message}});
+    }
     terminate() { this.terminated = true; }
 }
 const defaults = {workerUrl: 'https://sdk.test/sdk/fluent-bit-worker.js'};
@@ -29,7 +32,7 @@ beforeEach(() => {
         }
     };
 });
-afterEach(() => { for (const worker of instances) { assert.equal(worker.terminated, true); } });
+afterEach(() => { for (const worker of instances) { assert.equal(worker.terminated || worker.closed, true); } });
 
 test('preflight rejects missing isolation without creating a worker', async () => {
     globalThis.crossOriginIsolated = false;
@@ -223,4 +226,27 @@ test('forced destruction after a startup response cannot revive the instance', a
     };
     await assert.rejects(sdk.start({yaml: 'pipeline: {}'}), {code: 'E_STATE'});
     assert.equal(sdk.state, 'destroyed');
+});
+
+test('destroy lets an acknowledged owner finish closing its own event loop', async () => {
+    const sdk = await createFluentBit(defaults);
+    const priorReply = reply;
+    reply = (worker, message) => {
+        if (message.method === 'destroy') {
+            worker.emit({type: 'response', id: message.id, ok: true, closed: true});
+        }
+        else { priorReply(worker, message); }
+    };
+    await sdk.destroy();
+    assert.equal(instances[0].closed, true);
+    assert.equal(instances[0].terminated, false);
+    assert.equal(sdk.state, 'destroyed');
+});
+
+test('fatal closure acknowledgement avoids interrupting owner cleanup', async () => {
+    reply = worker => worker.emit({type: 'fatal', code: 'E_LOAD',
+        message: 'Injected download failure', closed: true});
+    await assert.rejects(createFluentBit(defaults), {code: 'E_LOAD'});
+    assert.equal(instances[0].closed, true);
+    assert.equal(instances[0].terminated, false);
 });
