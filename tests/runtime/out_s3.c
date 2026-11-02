@@ -4,6 +4,7 @@
 #include <cfl/cfl_atomic.h>
 #include "../../plugins/out_s3/s3.h"
 #include "../../plugins/out_s3/s3_store.h"
+#define TEST_FINI flb_s3_test_env_reset()
 #include "flb_tests_runtime.h"
 #include "../include/flb_tests_tmpdir.h"
 #include <errno.h>
@@ -152,7 +153,7 @@ static int get_s3_call_count(const char *api)
     char *value;
 
     snprintf(name, sizeof(name), "TEST_%s_CALL_COUNT", api);
-    value = getenv(name);
+    value = flb_s3_test_env_get(name);
 
     return value ? atoi(value) : 0;
 }
@@ -445,7 +446,7 @@ void flb_test_s3_multipart_success(void)
     }
 
     /* mocks calls- signals that we are in test mode */
-    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    flb_s3_test_env_set("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
 
     ctx = flb_create();
 
@@ -469,18 +470,18 @@ void flb_test_s3_multipart_success(void)
 
     wait_for_s3_call_count("CompleteMultipartUpload", 1);
 
-    call_count_str = getenv("TEST_CompleteMultipartUpload_CALL_COUNT");
+    call_count_str = flb_s3_test_env_get("TEST_CompleteMultipartUpload_CALL_COUNT");
     call_count = call_count_str ? atoi(call_count_str) : 0;
     TEST_CHECK_(call_count == 1,
                 "Expected 1 CompleteMultipartUpload call, got %d", call_count);
 
     flb_stop(ctx);
     flb_destroy(ctx);
-    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
-    unsetenv("TEST_CreateMultipartUpload_CALL_COUNT");
-    unsetenv("TEST_UploadPart_CALL_COUNT");
-    unsetenv("TEST_CompleteMultipartUpload_CALL_COUNT");
-    unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_s3_test_env_unset("FLB_S3_PLUGIN_UNDER_TEST");
+    flb_s3_test_env_unset("TEST_CreateMultipartUpload_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_UploadPart_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_CompleteMultipartUpload_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_PutObject_CALL_COUNT");
     flb_free(store_dir);
 }
 
@@ -494,7 +495,7 @@ void flb_test_s3_putobject_success(void)
     int call_count;
 
     /* mocks calls- signals that we are in test mode */
-    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    flb_s3_test_env_set("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
 
     ctx = flb_create();
 
@@ -520,15 +521,15 @@ void flb_test_s3_putobject_success(void)
 
     wait_for_s3_call_count("PutObject", 1);
 
-    call_count_str = getenv("TEST_PutObject_CALL_COUNT");
+    call_count_str = flb_s3_test_env_get("TEST_PutObject_CALL_COUNT");
     call_count = call_count_str ? atoi(call_count_str) : 0;
     TEST_CHECK_(call_count == 1,
                 "Expected 1 PutObject call, got %d", call_count);
 
     flb_stop(ctx);
     flb_destroy(ctx);
-    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
-    unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_s3_test_env_unset("FLB_S3_PLUGIN_UNDER_TEST");
+    flb_s3_test_env_unset("TEST_PutObject_CALL_COUNT");
 }
 
 void flb_test_s3_putobject_error(void)
@@ -548,8 +549,8 @@ void flb_test_s3_putobject_error(void)
     }
 
     /* mocks calls- signals that we are in test mode */
-    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
-    setenv("TEST_PUT_OBJECT_ERROR", ERROR_ACCESS_DENIED, 1);
+    flb_s3_test_env_set("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    flb_s3_test_env_set("TEST_PUT_OBJECT_ERROR", ERROR_ACCESS_DENIED, 1);
 
     ctx = flb_create();
 
@@ -576,16 +577,16 @@ void flb_test_s3_putobject_error(void)
 
     wait_for_s3_call_count("PutObject", 1);
 
-    call_count_str = getenv("TEST_PutObject_CALL_COUNT");
+    call_count_str = flb_s3_test_env_get("TEST_PutObject_CALL_COUNT");
     call_count = call_count_str ? atoi(call_count_str) : 0;
     TEST_CHECK_(call_count >= 1,
                 "Expected >= 1 PutObject calls, got %d", call_count);
 
     flb_stop(ctx);
     flb_destroy(ctx);
-    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
-    unsetenv("TEST_PUT_OBJECT_ERROR");
-    unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_s3_test_env_unset("FLB_S3_PLUGIN_UNDER_TEST");
+    flb_s3_test_env_unset("TEST_PUT_OBJECT_ERROR");
+    flb_s3_test_env_unset("TEST_PutObject_CALL_COUNT");
     flb_free(store_dir);
 
 }
@@ -608,8 +609,8 @@ void flb_test_s3_create_upload_error(void)
     }
 
     /* mocks calls- signals that we are in test mode */
-    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
-    setenv("TEST_CREATE_MULTIPART_UPLOAD_ERROR", ERROR_ACCESS_DENIED, 1);
+    flb_s3_test_env_set("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    flb_s3_test_env_set("TEST_CREATE_MULTIPART_UPLOAD_ERROR", ERROR_ACCESS_DENIED, 1);
 
     ctx = flb_create();
 
@@ -639,7 +640,7 @@ void flb_test_s3_create_upload_error(void)
     wait_for_s3_call_count("CreateMultipartUpload", 2);
     wait_for_file_count_at_most(s3_ctx->stream_active->path, 0);
 
-    call_count_str = getenv("TEST_CreateMultipartUpload_CALL_COUNT");
+    call_count_str = flb_s3_test_env_get("TEST_CreateMultipartUpload_CALL_COUNT");
     call_count = call_count_str ? atoi(call_count_str) : 0;
     TEST_CHECK_(call_count == 2,
                 "Expected CreateMultipartUpload to stop after two attempts, got %d",
@@ -647,19 +648,19 @@ void flb_test_s3_create_upload_error(void)
     TEST_CHECK_(count_files_recursive(s3_ctx->stream_active->path) == 0,
                 "Expected retry-exhausted chunk to be deleted");
 
-    call_count_str = getenv("TEST_UploadPart_CALL_COUNT");
+    call_count_str = flb_s3_test_env_get("TEST_UploadPart_CALL_COUNT");
     call_count = call_count_str ? atoi(call_count_str) : 0;
     TEST_CHECK_(call_count == 0,
                 "Expected 0 UploadPart calls, got %d", call_count);
 
     flb_stop(ctx);
     flb_destroy(ctx);
-    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
-    unsetenv("TEST_CREATE_MULTIPART_UPLOAD_ERROR");
-    unsetenv("TEST_CreateMultipartUpload_CALL_COUNT");
-    unsetenv("TEST_UploadPart_CALL_COUNT");
-    unsetenv("TEST_CompleteMultipartUpload_CALL_COUNT");
-    unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_s3_test_env_unset("FLB_S3_PLUGIN_UNDER_TEST");
+    flb_s3_test_env_unset("TEST_CREATE_MULTIPART_UPLOAD_ERROR");
+    flb_s3_test_env_unset("TEST_CreateMultipartUpload_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_UploadPart_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_CompleteMultipartUpload_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_PutObject_CALL_COUNT");
     flb_free(store_dir);
 }
 
@@ -680,8 +681,8 @@ void flb_test_s3_upload_part_error(void)
     }
 
     /* mocks calls- signals that we are in test mode */
-    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
-    setenv("TEST_UPLOAD_PART_ERROR", ERROR_ACCESS_DENIED, 1);
+    flb_s3_test_env_set("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    flb_s3_test_env_set("TEST_UPLOAD_PART_ERROR", ERROR_ACCESS_DENIED, 1);
 
     ctx = flb_create();
 
@@ -705,24 +706,24 @@ void flb_test_s3_upload_part_error(void)
 
     wait_for_s3_call_count("UploadPart", 1);
 
-    call_count_str = getenv("TEST_UploadPart_CALL_COUNT");
+    call_count_str = flb_s3_test_env_get("TEST_UploadPart_CALL_COUNT");
     call_count = call_count_str ? atoi(call_count_str) : 0;
     TEST_CHECK_(call_count >= 1,
                 "Expected >= 1 UploadPart calls, got %d", call_count);
 
-    call_count_str = getenv("TEST_CompleteMultipartUpload_CALL_COUNT");
+    call_count_str = flb_s3_test_env_get("TEST_CompleteMultipartUpload_CALL_COUNT");
     call_count = call_count_str ? atoi(call_count_str) : 0;
     TEST_CHECK_(call_count == 0,
                 "Expected 0 CompleteMultipartUpload calls, got %d", call_count);
 
     flb_stop(ctx);
     flb_destroy(ctx);
-    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
-    unsetenv("TEST_UPLOAD_PART_ERROR");
-    unsetenv("TEST_CreateMultipartUpload_CALL_COUNT");
-    unsetenv("TEST_UploadPart_CALL_COUNT");
-    unsetenv("TEST_CompleteMultipartUpload_CALL_COUNT");
-    unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_s3_test_env_unset("FLB_S3_PLUGIN_UNDER_TEST");
+    flb_s3_test_env_unset("TEST_UPLOAD_PART_ERROR");
+    flb_s3_test_env_unset("TEST_CreateMultipartUpload_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_UploadPart_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_CompleteMultipartUpload_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_PutObject_CALL_COUNT");
     flb_free(store_dir);
 }
 
@@ -744,8 +745,8 @@ void flb_test_s3_complete_upload_error(void)
     }
 
     /* mocks calls- signals that we are in test mode */
-    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
-    setenv("TEST_COMPLETE_MULTIPART_UPLOAD_ERROR", ERROR_ACCESS_DENIED, 1);
+    flb_s3_test_env_set("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    flb_s3_test_env_set("TEST_COMPLETE_MULTIPART_UPLOAD_ERROR", ERROR_ACCESS_DENIED, 1);
 
     ctx = flb_create();
 
@@ -772,7 +773,7 @@ void flb_test_s3_complete_upload_error(void)
 
     wait_for_s3_call_count("CompleteMultipartUpload", 2);
 
-    call_count_str = getenv("TEST_CompleteMultipartUpload_CALL_COUNT");
+    call_count_str = flb_s3_test_env_get("TEST_CompleteMultipartUpload_CALL_COUNT");
     call_count = call_count_str ? atoi(call_count_str) : 0;
     TEST_CHECK_(call_count >= 2,
                 "Expected >= 2 CompleteMultipartUpload calls (retried), got %d",
@@ -784,12 +785,12 @@ void flb_test_s3_complete_upload_error(void)
 
     flb_stop(ctx);
     flb_destroy(ctx);
-    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
-    unsetenv("TEST_COMPLETE_MULTIPART_UPLOAD_ERROR");
-    unsetenv("TEST_CreateMultipartUpload_CALL_COUNT");
-    unsetenv("TEST_UploadPart_CALL_COUNT");
-    unsetenv("TEST_CompleteMultipartUpload_CALL_COUNT");
-    unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_s3_test_env_unset("FLB_S3_PLUGIN_UNDER_TEST");
+    flb_s3_test_env_unset("TEST_COMPLETE_MULTIPART_UPLOAD_ERROR");
+    flb_s3_test_env_unset("TEST_CreateMultipartUpload_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_UploadPart_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_CompleteMultipartUpload_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_PutObject_CALL_COUNT");
     flb_free(store_dir);
 }
 
@@ -808,8 +809,8 @@ void flb_test_s3_ordered_retry_uses_backoff_deadline(void)
         return;
     }
 
-    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
-    setenv("TEST_UPLOAD_PART_ERROR", ERROR_ACCESS_DENIED, 1);
+    flb_s3_test_env_set("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    flb_s3_test_env_set("TEST_UPLOAD_PART_ERROR", ERROR_ACCESS_DENIED, 1);
 
     ctx = flb_create();
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -844,10 +845,10 @@ void flb_test_s3_ordered_retry_uses_backoff_deadline(void)
     if (ret != 0) {
         flb_stop(ctx);
         flb_destroy(ctx);
-        unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
-        unsetenv("TEST_UPLOAD_PART_ERROR");
-        unsetenv("TEST_CreateMultipartUpload_CALL_COUNT");
-        unsetenv("TEST_UploadPart_CALL_COUNT");
+        flb_s3_test_env_unset("FLB_S3_PLUGIN_UNDER_TEST");
+        flb_s3_test_env_unset("TEST_UPLOAD_PART_ERROR");
+        flb_s3_test_env_unset("TEST_CreateMultipartUpload_CALL_COUNT");
+        flb_s3_test_env_unset("TEST_UploadPart_CALL_COUNT");
         flb_free(store_dir);
         return;
     }
@@ -875,10 +876,10 @@ void flb_test_s3_ordered_retry_uses_backoff_deadline(void)
     flb_stop(ctx);
     flb_destroy(ctx);
 
-    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
-    unsetenv("TEST_UPLOAD_PART_ERROR");
-    unsetenv("TEST_CreateMultipartUpload_CALL_COUNT");
-    unsetenv("TEST_UploadPart_CALL_COUNT");
+    flb_s3_test_env_unset("FLB_S3_PLUGIN_UNDER_TEST");
+    flb_s3_test_env_unset("TEST_UPLOAD_PART_ERROR");
+    flb_s3_test_env_unset("TEST_CreateMultipartUpload_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_UploadPart_CALL_COUNT");
     flb_free(store_dir);
 }
 
@@ -899,9 +900,9 @@ void flb_test_s3_ordered_timer_isolates_tag_backoff(void)
         return;
     }
 
-    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
-    setenv("TEST_RECORD_S3_URIS", "true", 1);
-    setenv("TEST_PUT_OBJECT_ERROR_TAG", "oldest", 1);
+    flb_s3_test_env_set("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    flb_s3_test_env_set("TEST_RECORD_S3_URIS", "true", 1);
+    flb_s3_test_env_set("TEST_PUT_OBJECT_ERROR_TAG", "oldest", 1);
 
     ctx = flb_create();
     for (index = 0; index < 2; index++) {
@@ -935,7 +936,7 @@ void flb_test_s3_ordered_timer_isolates_tag_backoff(void)
 
     s3_ctx = get_s3_context(ctx);
     TEST_CHECK(s3_ctx != NULL);
-    setenv("TEST_PUT_OBJECT_ERROR", ERROR_ACCESS_DENIED, 1);
+    flb_s3_test_env_set("TEST_PUT_OBJECT_ERROR", ERROR_ACCESS_DENIED, 1);
     ret = prepare_s3_ordered_files(s3_ctx);
     TEST_CHECK_(ret == 0, "Expected both ordered chunks to be created");
     if (ret != 0) {
@@ -949,18 +950,18 @@ void flb_test_s3_ordered_timer_isolates_tag_backoff(void)
                 get_s3_call_count("PutObject"));
     TEST_CHECK_(s3_ctx->retry_time == 0,
                 "Expected the healthy upload to preserve the global retry reset behavior");
-    uri = getenv("TEST_PutObject_URI_1");
+    uri = flb_s3_test_env_get("TEST_PutObject_URI_1");
     TEST_CHECK_(uri != NULL && strcmp(uri, "/fluent/queue/oldest") == 0,
                 "Expected oldest timed-out chunk first, got %s",
                 uri ? uri : "(null)");
-    uri = getenv("TEST_PutObject_URI_2");
+    uri = flb_s3_test_env_get("TEST_PutObject_URI_2");
     TEST_CHECK_(uri != NULL && strcmp(uri, "/fluent/queue/later") == 0,
                 "Expected healthy tag during oldest tag's backoff, got %s",
                 uri ? uri : "(null)");
 
-    unsetenv("TEST_PUT_OBJECT_ERROR");
+    flb_s3_test_env_unset("TEST_PUT_OBJECT_ERROR");
     wait_for_s3_call_count("PutObject", 3);
-    uri = getenv("TEST_PutObject_URI_3");
+    uri = flb_s3_test_env_get("TEST_PutObject_URI_3");
     TEST_CHECK_(uri != NULL && strcmp(uri, "/fluent/queue/oldest") == 0,
                 "Expected failed tag to retry at its deadline, got %s",
                 uri ? uri : "(null)");
@@ -969,14 +970,14 @@ cleanup:
     flb_stop(ctx);
     flb_destroy(ctx);
 
-    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
-    unsetenv("TEST_PUT_OBJECT_ERROR");
-    unsetenv("TEST_PUT_OBJECT_ERROR_TAG");
-    unsetenv("TEST_RECORD_S3_URIS");
-    unsetenv("TEST_PutObject_CALL_COUNT");
-    unsetenv("TEST_PutObject_URI_1");
-    unsetenv("TEST_PutObject_URI_2");
-    unsetenv("TEST_PutObject_URI_3");
+    flb_s3_test_env_unset("FLB_S3_PLUGIN_UNDER_TEST");
+    flb_s3_test_env_unset("TEST_PUT_OBJECT_ERROR");
+    flb_s3_test_env_unset("TEST_PUT_OBJECT_ERROR_TAG");
+    flb_s3_test_env_unset("TEST_RECORD_S3_URIS");
+    flb_s3_test_env_unset("TEST_PutObject_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_PutObject_URI_1");
+    flb_s3_test_env_unset("TEST_PutObject_URI_2");
+    flb_s3_test_env_unset("TEST_PutObject_URI_3");
     flb_free(store_dir);
 }
 
@@ -995,7 +996,7 @@ void flb_test_s3_ordered_construct_error_exhausts_chunk(void)
         return;
     }
 
-    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    flb_s3_test_env_set("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
 
     ctx = flb_create();
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -1022,7 +1023,7 @@ void flb_test_s3_ordered_construct_error_exhausts_chunk(void)
     TEST_CHECK(ret >= 0);
     s3_ctx = get_s3_context(ctx);
     TEST_CHECK(s3_ctx != NULL);
-    setenv("TEST_CONSTRUCT_REQUEST_BUFFER_ERROR", "true", 1);
+    flb_s3_test_env_set("TEST_CONSTRUCT_REQUEST_BUFFER_ERROR", "true", 1);
     ret = wait_for_s3_file_create_time(s3_ctx, "construct-error", 15,
                                        time(NULL) - 61, NULL, 0);
     TEST_CHECK_(ret == 0, "Expected construct-error chunk to be created");
@@ -1044,12 +1045,12 @@ void flb_test_s3_ordered_construct_error_exhausts_chunk(void)
                 "Expected retry delay to reset after terminal cleanup");
 
 cleanup:
-    unsetenv("TEST_CONSTRUCT_REQUEST_BUFFER_ERROR");
+    flb_s3_test_env_unset("TEST_CONSTRUCT_REQUEST_BUFFER_ERROR");
     flb_stop(ctx);
     flb_destroy(ctx);
 
-    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
-    unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_s3_test_env_unset("FLB_S3_PLUGIN_UNDER_TEST");
+    flb_s3_test_env_unset("TEST_PutObject_CALL_COUNT");
     flb_free(store_dir);
 }
 
@@ -1070,8 +1071,8 @@ void flb_test_s3_ordered_backoff_does_not_starve_completion(void)
         return;
     }
 
-    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
-    setenv("TEST_COMPLETE_MULTIPART_UPLOAD_ERROR", ERROR_ACCESS_DENIED, 1);
+    flb_s3_test_env_set("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    flb_s3_test_env_set("TEST_COMPLETE_MULTIPART_UPLOAD_ERROR", ERROR_ACCESS_DENIED, 1);
 
     ctx = flb_create();
     for (index = 0; index < 2; index++) {
@@ -1123,7 +1124,7 @@ void flb_test_s3_ordered_backoff_does_not_starve_completion(void)
         goto cleanup;
     }
     s3_file->create_time = time(NULL) - 61;
-    setenv("TEST_CREATE_MULTIPART_UPLOAD_ERROR", ERROR_ACCESS_DENIED, 1);
+    flb_s3_test_env_set("TEST_CREATE_MULTIPART_UPLOAD_ERROR", ERROR_ACCESS_DENIED, 1);
     ret = flb_lib_push(ctx, input_fds[1], (char *) JSON_TD,
                        (int) sizeof(JSON_TD) - 1);
     TEST_CHECK(ret >= 0);
@@ -1134,16 +1135,16 @@ void flb_test_s3_ordered_backoff_does_not_starve_completion(void)
                 "Expected pending completion to run while queue head was backing off");
 
 cleanup:
-    unsetenv("TEST_CREATE_MULTIPART_UPLOAD_ERROR");
-    unsetenv("TEST_COMPLETE_MULTIPART_UPLOAD_ERROR");
+    flb_s3_test_env_unset("TEST_CREATE_MULTIPART_UPLOAD_ERROR");
+    flb_s3_test_env_unset("TEST_COMPLETE_MULTIPART_UPLOAD_ERROR");
     flb_stop(ctx);
     flb_destroy(ctx);
 
-    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
-    unsetenv("TEST_CreateMultipartUpload_CALL_COUNT");
-    unsetenv("TEST_UploadPart_CALL_COUNT");
-    unsetenv("TEST_CompleteMultipartUpload_CALL_COUNT");
-    unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_s3_test_env_unset("FLB_S3_PLUGIN_UNDER_TEST");
+    flb_s3_test_env_unset("TEST_CreateMultipartUpload_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_UploadPart_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_CompleteMultipartUpload_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_PutObject_CALL_COUNT");
     flb_free(store_dir);
 }
 
@@ -1164,8 +1165,8 @@ void flb_test_s3_ordered_shared_upload_retries_safely(void)
         return;
     }
 
-    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
-    setenv("TEST_UPLOAD_PART_ERROR", ERROR_ACCESS_DENIED, 1);
+    flb_s3_test_env_set("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    flb_s3_test_env_set("TEST_UPLOAD_PART_ERROR", ERROR_ACCESS_DENIED, 1);
 
     ctx = flb_create();
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -1247,12 +1248,12 @@ cleanup:
     flb_stop(ctx);
     flb_destroy(ctx);
 
-    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
-    unsetenv("TEST_UPLOAD_PART_ERROR");
-    unsetenv("TEST_CreateMultipartUpload_CALL_COUNT");
-    unsetenv("TEST_UploadPart_CALL_COUNT");
-    unsetenv("TEST_CompleteMultipartUpload_CALL_COUNT");
-    unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_s3_test_env_unset("FLB_S3_PLUGIN_UNDER_TEST");
+    flb_s3_test_env_unset("TEST_UPLOAD_PART_ERROR");
+    flb_s3_test_env_unset("TEST_CreateMultipartUpload_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_UploadPart_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_CompleteMultipartUpload_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_PutObject_CALL_COUNT");
     flb_free(store_dir);
 }
 
@@ -1266,7 +1267,7 @@ void flb_test_s3_compression_gzip(void)
     int call_count;
 
     /* mocks calls- signals that we are in test mode */
-    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    flb_s3_test_env_set("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
 
     ctx = flb_create();
 
@@ -1290,18 +1291,18 @@ void flb_test_s3_compression_gzip(void)
 
     wait_for_s3_call_count("CompleteMultipartUpload", 1);
 
-    call_count_str = getenv("TEST_CompleteMultipartUpload_CALL_COUNT");
+    call_count_str = flb_s3_test_env_get("TEST_CompleteMultipartUpload_CALL_COUNT");
     call_count = call_count_str ? atoi(call_count_str) : 0;
     TEST_CHECK_(call_count == 1,
                 "Expected 1 CompleteMultipartUpload call, got %d", call_count);
 
     flb_stop(ctx);
     flb_destroy(ctx);
-    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
-    unsetenv("TEST_CreateMultipartUpload_CALL_COUNT");
-    unsetenv("TEST_UploadPart_CALL_COUNT");
-    unsetenv("TEST_CompleteMultipartUpload_CALL_COUNT");
-    unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_s3_test_env_unset("FLB_S3_PLUGIN_UNDER_TEST");
+    flb_s3_test_env_unset("TEST_CreateMultipartUpload_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_UploadPart_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_CompleteMultipartUpload_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_PutObject_CALL_COUNT");
 }
 
 void flb_test_s3_compression_gzip_putobject(void)
@@ -1314,7 +1315,7 @@ void flb_test_s3_compression_gzip_putobject(void)
     int call_count;
 
     /* mocks calls- signals that we are in test mode */
-    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    flb_s3_test_env_set("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
 
     ctx = flb_create();
 
@@ -1340,15 +1341,15 @@ void flb_test_s3_compression_gzip_putobject(void)
 
     wait_for_s3_call_count("PutObject", 1);
 
-    call_count_str = getenv("TEST_PutObject_CALL_COUNT");
+    call_count_str = flb_s3_test_env_get("TEST_PutObject_CALL_COUNT");
     call_count = call_count_str ? atoi(call_count_str) : 0;
     TEST_CHECK_(call_count == 1,
                 "Expected 1 PutObject call, got %d", call_count);
 
     flb_stop(ctx);
     flb_destroy(ctx);
-    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
-    unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_s3_test_env_unset("FLB_S3_PLUGIN_UNDER_TEST");
+    flb_s3_test_env_unset("TEST_PutObject_CALL_COUNT");
 }
 
 void flb_test_s3_compression_zstd(void)
@@ -1361,7 +1362,7 @@ void flb_test_s3_compression_zstd(void)
     int call_count;
 
     /* mocks calls- signals that we are in test mode */
-    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    flb_s3_test_env_set("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
 
     ctx = flb_create();
 
@@ -1385,18 +1386,18 @@ void flb_test_s3_compression_zstd(void)
 
     wait_for_s3_call_count("CompleteMultipartUpload", 1);
 
-    call_count_str = getenv("TEST_CompleteMultipartUpload_CALL_COUNT");
+    call_count_str = flb_s3_test_env_get("TEST_CompleteMultipartUpload_CALL_COUNT");
     call_count = call_count_str ? atoi(call_count_str) : 0;
     TEST_CHECK_(call_count == 1,
                 "Expected 1 CompleteMultipartUpload call, got %d", call_count);
 
     flb_stop(ctx);
     flb_destroy(ctx);
-    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
-    unsetenv("TEST_CreateMultipartUpload_CALL_COUNT");
-    unsetenv("TEST_UploadPart_CALL_COUNT");
-    unsetenv("TEST_CompleteMultipartUpload_CALL_COUNT");
-    unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_s3_test_env_unset("FLB_S3_PLUGIN_UNDER_TEST");
+    flb_s3_test_env_unset("TEST_CreateMultipartUpload_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_UploadPart_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_CompleteMultipartUpload_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_PutObject_CALL_COUNT");
 }
 
 void flb_test_s3_compression_zstd_putobject(void)
@@ -1409,7 +1410,7 @@ void flb_test_s3_compression_zstd_putobject(void)
     int call_count;
 
     /* mocks calls- signals that we are in test mode */
-    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    flb_s3_test_env_set("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
 
     ctx = flb_create();
 
@@ -1435,15 +1436,15 @@ void flb_test_s3_compression_zstd_putobject(void)
 
     wait_for_s3_call_count("PutObject", 1);
 
-    call_count_str = getenv("TEST_PutObject_CALL_COUNT");
+    call_count_str = flb_s3_test_env_get("TEST_PutObject_CALL_COUNT");
     call_count = call_count_str ? atoi(call_count_str) : 0;
     TEST_CHECK_(call_count == 1,
                 "Expected 1 PutObject call, got %d", call_count);
 
     flb_stop(ctx);
     flb_destroy(ctx);
-    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
-    unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_s3_test_env_unset("FLB_S3_PLUGIN_UNDER_TEST");
+    flb_s3_test_env_unset("TEST_PutObject_CALL_COUNT");
 }
 
 void flb_test_s3_compression_snappy(void)
@@ -1456,7 +1457,7 @@ void flb_test_s3_compression_snappy(void)
     int call_count;
 
     /* mocks calls- signals that we are in test mode */
-    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    flb_s3_test_env_set("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
 
     ctx = flb_create();
 
@@ -1480,18 +1481,18 @@ void flb_test_s3_compression_snappy(void)
 
     wait_for_s3_call_count("CompleteMultipartUpload", 1);
 
-    call_count_str = getenv("TEST_CompleteMultipartUpload_CALL_COUNT");
+    call_count_str = flb_s3_test_env_get("TEST_CompleteMultipartUpload_CALL_COUNT");
     call_count = call_count_str ? atoi(call_count_str) : 0;
     TEST_CHECK_(call_count == 1,
                 "Expected 1 CompleteMultipartUpload call, got %d", call_count);
 
     flb_stop(ctx);
     flb_destroy(ctx);
-    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
-    unsetenv("TEST_CreateMultipartUpload_CALL_COUNT");
-    unsetenv("TEST_UploadPart_CALL_COUNT");
-    unsetenv("TEST_CompleteMultipartUpload_CALL_COUNT");
-    unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_s3_test_env_unset("FLB_S3_PLUGIN_UNDER_TEST");
+    flb_s3_test_env_unset("TEST_CreateMultipartUpload_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_UploadPart_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_CompleteMultipartUpload_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_PutObject_CALL_COUNT");
 }
 
 void flb_test_s3_compression_snappy_putobject(void)
@@ -1504,7 +1505,7 @@ void flb_test_s3_compression_snappy_putobject(void)
     int call_count;
 
     /* mocks calls- signals that we are in test mode */
-    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    flb_s3_test_env_set("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
 
     ctx = flb_create();
 
@@ -1530,15 +1531,15 @@ void flb_test_s3_compression_snappy_putobject(void)
 
     wait_for_s3_call_count("PutObject", 1);
 
-    call_count_str = getenv("TEST_PutObject_CALL_COUNT");
+    call_count_str = flb_s3_test_env_get("TEST_PutObject_CALL_COUNT");
     call_count = call_count_str ? atoi(call_count_str) : 0;
     TEST_CHECK_(call_count == 1,
                 "Expected 1 PutObject call, got %d", call_count);
 
     flb_stop(ctx);
     flb_destroy(ctx);
-    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
-    unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_s3_test_env_unset("FLB_S3_PLUGIN_UNDER_TEST");
+    flb_s3_test_env_unset("TEST_PutObject_CALL_COUNT");
 }
 
 void flb_test_s3_preserve_data_ordering(void)
@@ -1557,7 +1558,7 @@ void flb_test_s3_preserve_data_ordering(void)
         return;
     }
 
-    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    flb_s3_test_env_set("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
 
     ctx = flb_create();
 
@@ -1584,15 +1585,15 @@ void flb_test_s3_preserve_data_ordering(void)
 
     wait_for_s3_call_count("PutObject", 1);
 
-    call_count_str = getenv("TEST_PutObject_CALL_COUNT");
+    call_count_str = flb_s3_test_env_get("TEST_PutObject_CALL_COUNT");
     call_count = call_count_str ? atoi(call_count_str) : 0;
     TEST_CHECK_(call_count == 1,
                 "Expected 1 PutObject call, got %d", call_count);
 
     flb_stop(ctx);
     flb_destroy(ctx);
-    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
-    unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_s3_test_env_unset("FLB_S3_PLUGIN_UNDER_TEST");
+    flb_s3_test_env_unset("TEST_PutObject_CALL_COUNT");
     flb_free(store_dir);
 }
 
@@ -1617,8 +1618,8 @@ void flb_test_s3_putobject_retry_limit_semantics(void)
     }
 
     /* Use mocks without flush bypass so the plugin's internal retry runs */
-    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
-    setenv("TEST_PUT_OBJECT_ERROR", ERROR_ACCESS_DENIED, 1);
+    flb_s3_test_env_set("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    flb_s3_test_env_set("TEST_PUT_OBJECT_ERROR", ERROR_ACCESS_DENIED, 1);
 
     ctx = flb_create();
 
@@ -1641,7 +1642,7 @@ void flb_test_s3_putobject_retry_limit_semantics(void)
     TEST_CHECK(ret == 0);
 
     /* Reset counter after startup so we only count test-driven attempts */
-    unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_PutObject_CALL_COUNT");
 
     /* Wait until the initial attempt and one retry have run. */
     flb_lib_push(ctx, in_ffd, (char *) JSON_TD, (int) sizeof(JSON_TD) - 1);
@@ -1650,7 +1651,7 @@ void flb_test_s3_putobject_retry_limit_semantics(void)
     flb_stop(ctx);
     flb_destroy(ctx);
 
-    call_count_str = getenv("TEST_PutObject_CALL_COUNT");
+    call_count_str = flb_s3_test_env_get("TEST_PutObject_CALL_COUNT");
     call_count = call_count_str ? atoi(call_count_str) : 0;
 
     /* retry_limit=1: 1 initial attempt + 1 retry = 2 PutObject calls */
@@ -1658,9 +1659,9 @@ void flb_test_s3_putobject_retry_limit_semantics(void)
                 "Expected 2 PutObject calls (1 attempt + 1 retry), got %d",
                 call_count);
 
-    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
-    unsetenv("TEST_PUT_OBJECT_ERROR");
-    unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_s3_test_env_unset("FLB_S3_PLUGIN_UNDER_TEST");
+    flb_s3_test_env_unset("TEST_PUT_OBJECT_ERROR");
+    flb_s3_test_env_unset("TEST_PutObject_CALL_COUNT");
     flb_free(store_dir);
 }
 
@@ -1683,8 +1684,8 @@ void flb_test_s3_default_retry_limit(void)
         return;
     }
 
-    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
-    setenv("TEST_PUT_OBJECT_ERROR", ERROR_ACCESS_DENIED, 1);
+    flb_s3_test_env_set("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    flb_s3_test_env_set("TEST_PUT_OBJECT_ERROR", ERROR_ACCESS_DENIED, 1);
 
     ctx = flb_create();
 
@@ -1706,7 +1707,7 @@ void flb_test_s3_default_retry_limit(void)
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
 
-    unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_PutObject_CALL_COUNT");
 
     /* Wait for the initial attempt and all five default retries. */
     flb_lib_push(ctx, in_ffd, (char *) JSON_TD, (int) sizeof(JSON_TD) - 1);
@@ -1715,16 +1716,16 @@ void flb_test_s3_default_retry_limit(void)
     flb_stop(ctx);
     flb_destroy(ctx);
 
-    call_count_str = getenv("TEST_PutObject_CALL_COUNT");
+    call_count_str = flb_s3_test_env_get("TEST_PutObject_CALL_COUNT");
     call_count = call_count_str ? atoi(call_count_str) : 0;
 
     TEST_CHECK_(call_count == 6,
                 "Expected 6 PutObject calls (default retry_limit=5), got %d",
                 call_count);
 
-    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
-    unsetenv("TEST_PUT_OBJECT_ERROR");
-    unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_s3_test_env_unset("FLB_S3_PLUGIN_UNDER_TEST");
+    flb_s3_test_env_unset("TEST_PUT_OBJECT_ERROR");
+    flb_s3_test_env_unset("TEST_PutObject_CALL_COUNT");
     flb_free(store_dir);
 }
 
@@ -1747,8 +1748,8 @@ void flb_test_s3_default_retry_exhausted_action_quarantine(void)
     snprintf(quarantine_dir, sizeof(quarantine_dir),
              "%s/fluent/quarantine", store_dir);
 
-    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
-    setenv("TEST_PUT_OBJECT_ERROR", ERROR_ACCESS_DENIED, 1);
+    flb_s3_test_env_set("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    flb_s3_test_env_set("TEST_PUT_OBJECT_ERROR", ERROR_ACCESS_DENIED, 1);
 
     ctx = flb_create();
 
@@ -1771,7 +1772,7 @@ void flb_test_s3_default_retry_exhausted_action_quarantine(void)
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
 
-    unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_PutObject_CALL_COUNT");
     flb_lib_push(ctx, in_ffd, (char *) JSON_TD, (int) sizeof(JSON_TD) - 1);
     wait_for_s3_call_count("PutObject", 2);
     wait_for_file_count(quarantine_dir, 1);
@@ -1784,9 +1785,9 @@ void flb_test_s3_default_retry_exhausted_action_quarantine(void)
                 "Expected quarantined file(s), got %d",
                 file_count);
 
-    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
-    unsetenv("TEST_PUT_OBJECT_ERROR");
-    unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_s3_test_env_unset("FLB_S3_PLUGIN_UNDER_TEST");
+    flb_s3_test_env_unset("TEST_PUT_OBJECT_ERROR");
+    flb_s3_test_env_unset("TEST_PutObject_CALL_COUNT");
 
     flb_free(store_dir);
 }
@@ -1808,9 +1809,9 @@ void flb_test_s3_ordered_index_keeps_global_queue_order(void)
         return;
     }
 
-    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
-    setenv("TEST_RECORD_S3_URIS", "true", 1);
-    setenv("TEST_PUT_OBJECT_ERROR_TAG", "oldest", 1);
+    flb_s3_test_env_set("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    flb_s3_test_env_set("TEST_RECORD_S3_URIS", "true", 1);
+    flb_s3_test_env_set("TEST_PUT_OBJECT_ERROR_TAG", "oldest", 1);
 
     ctx = flb_create();
     for (index = 0; index < 2; index++) {
@@ -1844,7 +1845,7 @@ void flb_test_s3_ordered_index_keeps_global_queue_order(void)
 
     s3_ctx = get_s3_context(ctx);
     TEST_CHECK(s3_ctx != NULL);
-    setenv("TEST_PUT_OBJECT_ERROR", ERROR_ACCESS_DENIED, 1);
+    flb_s3_test_env_set("TEST_PUT_OBJECT_ERROR", ERROR_ACCESS_DENIED, 1);
     ret = prepare_s3_ordered_files(s3_ctx);
     TEST_CHECK_(ret == 0, "Expected both ordered chunks to be created");
     if (ret != 0) {
@@ -1856,18 +1857,18 @@ void flb_test_s3_ordered_index_keeps_global_queue_order(void)
     TEST_CHECK_(get_s3_call_count("PutObject") == 1,
                 "Expected $INDEX to preserve global stop-at-head ordering, got %d calls",
                 get_s3_call_count("PutObject"));
-    uri = getenv("TEST_PutObject_URI_1");
+    uri = flb_s3_test_env_get("TEST_PutObject_URI_1");
     TEST_CHECK_(uri != NULL && strcmp(uri, "/fluent/queue/oldest/0") == 0,
                 "Expected oldest indexed chunk first, got %s",
                 uri ? uri : "(null)");
 
-    unsetenv("TEST_PUT_OBJECT_ERROR");
+    flb_s3_test_env_unset("TEST_PUT_OBJECT_ERROR");
     wait_for_s3_call_count("PutObject", 3);
-    uri = getenv("TEST_PutObject_URI_2");
+    uri = flb_s3_test_env_get("TEST_PutObject_URI_2");
     TEST_CHECK_(uri != NULL && strcmp(uri, "/fluent/queue/oldest/0") == 0,
                 "Expected failed indexed chunk to retry before later tag, got %s",
                 uri ? uri : "(null)");
-    uri = getenv("TEST_PutObject_URI_3");
+    uri = flb_s3_test_env_get("TEST_PutObject_URI_3");
     TEST_CHECK_(uri != NULL && strcmp(uri, "/fluent/queue/later/1") == 0,
                 "Expected later indexed chunk after retry, got %s",
                 uri ? uri : "(null)");
@@ -1876,14 +1877,14 @@ cleanup:
     flb_stop(ctx);
     flb_destroy(ctx);
 
-    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
-    unsetenv("TEST_PUT_OBJECT_ERROR");
-    unsetenv("TEST_PUT_OBJECT_ERROR_TAG");
-    unsetenv("TEST_RECORD_S3_URIS");
-    unsetenv("TEST_PutObject_CALL_COUNT");
-    unsetenv("TEST_PutObject_URI_1");
-    unsetenv("TEST_PutObject_URI_2");
-    unsetenv("TEST_PutObject_URI_3");
+    flb_s3_test_env_unset("FLB_S3_PLUGIN_UNDER_TEST");
+    flb_s3_test_env_unset("TEST_PUT_OBJECT_ERROR");
+    flb_s3_test_env_unset("TEST_PUT_OBJECT_ERROR_TAG");
+    flb_s3_test_env_unset("TEST_RECORD_S3_URIS");
+    flb_s3_test_env_unset("TEST_PutObject_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_PutObject_URI_1");
+    flb_s3_test_env_unset("TEST_PutObject_URI_2");
+    flb_s3_test_env_unset("TEST_PutObject_URI_3");
     flb_free(store_dir);
 }
 
@@ -1906,7 +1907,7 @@ void flb_test_s3_empty_upload_queue_file_deleted(void)
         return;
     }
 
-    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    flb_s3_test_env_set("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
 
     ctx = flb_create();
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -1959,8 +1960,8 @@ void flb_test_s3_empty_upload_queue_file_deleted(void)
     flb_stop(ctx);
     flb_destroy(ctx);
 
-    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
-    unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_s3_test_env_unset("FLB_S3_PLUGIN_UNDER_TEST");
+    flb_s3_test_env_unset("TEST_PutObject_CALL_COUNT");
     flb_free(store_dir);
 }
 
@@ -1984,7 +1985,7 @@ void flb_test_s3_near_full_buffer_append_succeeds(void)
 
     memset(payload, 'a', sizeof(payload));
     memset(excess_payload, 'b', sizeof(excess_payload));
-    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    flb_s3_test_env_set("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
 
     ctx = flb_create();
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -2029,8 +2030,8 @@ void flb_test_s3_near_full_buffer_append_succeeds(void)
     flb_stop(ctx);
     flb_destroy(ctx);
 
-    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
-    unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_s3_test_env_unset("FLB_S3_PLUGIN_UNDER_TEST");
+    flb_s3_test_env_unset("TEST_PutObject_CALL_COUNT");
     flb_free(store_dir);
 }
 
@@ -2054,9 +2055,9 @@ void flb_test_s3_startup_index_order_after_failure(void)
         return;
     }
 
-    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
-    setenv("TEST_PUT_OBJECT_ERROR", ERROR_ACCESS_DENIED, 1);
-    setenv("TEST_RECORD_S3_URIS", "true", 1);
+    flb_s3_test_env_set("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    flb_s3_test_env_set("TEST_PUT_OBJECT_ERROR", ERROR_ACCESS_DENIED, 1);
+    flb_s3_test_env_set("TEST_RECORD_S3_URIS", "true", 1);
 
     ctx = flb_create();
     for (index = 0; index < 2; index++) {
@@ -2096,8 +2097,8 @@ void flb_test_s3_startup_index_order_after_failure(void)
     flb_destroy(ctx);
     flb_time_msleep(1100);
 
-    unsetenv("TEST_PutObject_CALL_COUNT");
-    unsetenv("TEST_PutObject_URI_1");
+    flb_s3_test_env_unset("TEST_PutObject_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_PutObject_URI_1");
 
     ctx = flb_create();
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -2125,7 +2126,7 @@ void flb_test_s3_startup_index_order_after_failure(void)
     TEST_CHECK_(call_count == 1,
                 "Expected $INDEX recovery to stop after one failure, got %d attempts",
                 call_count);
-    uri = getenv("TEST_PutObject_URI_1");
+    uri = flb_s3_test_env_get("TEST_PutObject_URI_1");
     TEST_CHECK_(uri != NULL &&
                 (strcmp(uri, "/fluent/recovery/index-test-0/0") == 0 ||
                  strcmp(uri, "/fluent/recovery/index-test-1/0") == 0),
@@ -2138,18 +2139,18 @@ void flb_test_s3_startup_index_order_after_failure(void)
                 "Expected failed request to roll index back to 0, got %" PRIu64,
                 s3_ctx->seq_index);
 
-    unsetenv("TEST_PUT_OBJECT_ERROR");
+    flb_s3_test_env_unset("TEST_PUT_OBJECT_ERROR");
     ret = flb_lib_push(ctx, in_ffd, (char *) JSON_TD, (int) sizeof(JSON_TD) - 1);
     TEST_CHECK(ret >= 0);
     wait_for_s3_call_count("PutObject", 3);
 
-    uri = getenv("TEST_PutObject_URI_2");
+    uri = flb_s3_test_env_get("TEST_PutObject_URI_2");
     TEST_CHECK_(uri != NULL &&
-                getenv("TEST_PutObject_URI_1") != NULL &&
-                strcmp(uri, getenv("TEST_PutObject_URI_1")) == 0,
+                flb_s3_test_env_get("TEST_PutObject_URI_1") != NULL &&
+                strcmp(uri, flb_s3_test_env_get("TEST_PutObject_URI_1")) == 0,
                 "Expected failed chunk retry to keep its tag and index, got %s",
                 uri ? uri : "(null)");
-    uri = getenv("TEST_PutObject_URI_3");
+    uri = flb_s3_test_env_get("TEST_PutObject_URI_3");
     TEST_CHECK_(uri != NULL &&
                 (strcmp(uri, "/fluent/recovery/index-test-0/1") == 0 ||
                  strcmp(uri, "/fluent/recovery/index-test-1/1") == 0),
@@ -2162,14 +2163,14 @@ void flb_test_s3_startup_index_order_after_failure(void)
     flb_stop(ctx);
     flb_destroy(ctx);
 
-    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
-    unsetenv("TEST_PUT_OBJECT_ERROR");
-    unsetenv("TEST_RECORD_S3_URIS");
-    unsetenv("TEST_PutObject_CALL_COUNT");
-    unsetenv("TEST_PutObject_URI_1");
-    unsetenv("TEST_PutObject_URI_2");
-    unsetenv("TEST_PutObject_URI_3");
-    unsetenv("TEST_PutObject_URI_4");
+    flb_s3_test_env_unset("FLB_S3_PLUGIN_UNDER_TEST");
+    flb_s3_test_env_unset("TEST_PUT_OBJECT_ERROR");
+    flb_s3_test_env_unset("TEST_RECORD_S3_URIS");
+    flb_s3_test_env_unset("TEST_PutObject_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_PutObject_URI_1");
+    flb_s3_test_env_unset("TEST_PutObject_URI_2");
+    flb_s3_test_env_unset("TEST_PutObject_URI_3");
+    flb_s3_test_env_unset("TEST_PutObject_URI_4");
     flb_free(store_dir);
 }
 
@@ -2197,8 +2198,8 @@ void flb_test_s3_startup_buffer_size_accounting(void)
         return;
     }
 
-    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
-    setenv("TEST_PUT_OBJECT_ERROR", ERROR_ACCESS_DENIED, 1);
+    flb_s3_test_env_set("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    flb_s3_test_env_set("TEST_PUT_OBJECT_ERROR", ERROR_ACCESS_DENIED, 1);
 
     ctx = flb_create();
     for (index = 0; index < S3_TEST_STARTUP_FILE_COUNT; index++) {
@@ -2250,7 +2251,7 @@ void flb_test_s3_startup_buffer_size_accounting(void)
     /* Ensure the next process gets a distinct active stream directory. */
     flb_time_msleep(1100);
 
-    unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_PutObject_CALL_COUNT");
 
     ctx = flb_create();
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -2292,8 +2293,8 @@ void flb_test_s3_startup_buffer_size_accounting(void)
     flb_stop(ctx);
     flb_destroy(ctx);
 
-    unsetenv("TEST_PUT_OBJECT_ERROR");
-    unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_PUT_OBJECT_ERROR");
+    flb_s3_test_env_unset("TEST_PutObject_CALL_COUNT");
 
     ctx = flb_create();
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -2333,9 +2334,9 @@ void flb_test_s3_startup_buffer_size_accounting(void)
     flb_stop(ctx);
     flb_destroy(ctx);
 
-    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
-    unsetenv("TEST_PUT_OBJECT_ERROR");
-    unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_s3_test_env_unset("FLB_S3_PLUGIN_UNDER_TEST");
+    flb_s3_test_env_unset("TEST_PUT_OBJECT_ERROR");
+    flb_s3_test_env_unset("TEST_PutObject_CALL_COUNT");
     flb_free(store_dir);
 }
 
