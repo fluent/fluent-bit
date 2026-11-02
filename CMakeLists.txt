@@ -154,7 +154,44 @@ if(FLB_WASM_BROWSER)
 endif()
 include(cmake/platform_feature_checks.cmake)
 set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/sanitizers-cmake/cmake" ${CMAKE_MODULE_PATH})
+
+# The FLB-prefixed options are aliases; direct SANITIZE_* options remain supported.
+option(FLB_SANITIZE_MEMORY "Enable MemorySanitizer through SANITIZE_MEMORY" Off)
+option(FLB_SANITIZE_THREAD "Enable ThreadSanitizer through SANITIZE_THREAD" Off)
+option(SANITIZE_MEMORY "Enable MemorySanitizer for sanitized targets." Off)
+option(SANITIZE_THREAD "Enable ThreadSanitizer for sanitized targets." Off)
+# Keep overrides out of the cache so disabling an alias restores the direct option.
+if(FLB_SANITIZE_MEMORY)
+  set(SANITIZE_MEMORY On)
+endif()
+if(FLB_SANITIZE_THREAD)
+  set(SANITIZE_THREAD On)
+endif()
 find_package(Sanitizers)
+
+# Never let an explicitly requested alias silently produce an unsanitized build.
+if(FLB_SANITIZE_MEMORY AND
+   (NOT SANITIZE_MEMORY OR NOT MSan_${CMAKE_C_COMPILER_ID}_FLAGS))
+  message(FATAL_ERROR
+    "FLB_SANITIZE_MEMORY requires a compiler with MemorySanitizer support on 64-bit Linux")
+endif()
+if(FLB_SANITIZE_THREAD AND
+   (NOT SANITIZE_THREAD OR NOT TSan_${CMAKE_C_COMPILER_ID}_FLAGS))
+  message(FATAL_ERROR
+    "FLB_SANITIZE_THREAD requires a compiler with ThreadSanitizer support on 64-bit Linux or macOS")
+endif()
+
+# MemorySanitizer also needs dependency writes to update shadow memory. Target-only
+# instrumentation reports uninitialized data returned by unsanitized bundled libraries.
+if(SANITIZE_MEMORY AND MSan_${CMAKE_C_COMPILER_ID}_FLAGS)
+  add_compile_options(-fsanitize=memory)
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=memory")
+  set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fsanitize=memory")
+  # Use intercepted clock_gettime() in the bundled telemetry libraries as well.
+  set(CMT_HAVE_TIMESPEC_GET Off)
+  set(CTR_HAVE_TIMESPEC_GET Off)
+  set(CPROF_HAVE_TIMESPEC_GET Off)
+endif()
 
 # Check for CXX support
 include(CheckLanguage)
@@ -1137,7 +1174,8 @@ check_c_source_compiles("
      struct tm tm;
      return timespec_get(&tm, TIME_UTC);
   }" FLB_HAVE_TIMESPEC_GET)
-if(FLB_HAVE_TIMESPEC_GET)
+# Use the intercepted clock_gettime() path for MemorySanitizer builds.
+if(FLB_HAVE_TIMESPEC_GET AND NOT SANITIZE_MEMORY)
   FLB_DEFINITION(FLB_HAVE_TIMESPEC_GET)
 endif()
 
