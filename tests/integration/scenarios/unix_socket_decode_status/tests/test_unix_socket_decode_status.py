@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import signal
 import socket
+import stat
 import struct
 import subprocess
 import time
@@ -33,7 +34,7 @@ def daemon(tmp_path, mode):
     parser.write_text("[PARSER]\n    Name json\n    Format json\n")
     command = [os.environ["FLUENT_BIT_BINARY"], "-f", "0.1", "-R", str(parser), "-i", plugin]
     if plugin == "unix_socket":
-        command += ["-p", f"socket_path={address}"]
+        command += ["-p", f"socket_path={address}", "-p", "socket_permissions=0600"]
     else:
         command += ["-p", "listen=127.0.0.1", "-p", f"port={port}"]
     if mode.endswith("-parser"):
@@ -55,6 +56,10 @@ def daemon(tmp_path, mode):
             return "[output:stdout:" in log.read_text()
         try:
             wait_for(ready)
+            if plugin == "unix_socket":
+                socket_stat = os.lstat(address)
+                assert stat.S_ISSOCK(socket_stat.st_mode)
+                assert socket_stat.st_mode & 0o777 == 0o600
             yield address, process, log
         finally:
             if process.poll() is None:
@@ -125,3 +130,26 @@ def test_nested_json_recovery(tmp_path, mode, kind):
         assert process.poll() is None
         # Parser inputs may preserve rejected JSON as a raw log string.
         assert '"nested":' not in log.read_text()
+
+
+def test_unix_socket_rejects_symlink(tmp_path):
+    victim = tmp_path / "victim"
+    socket_path = tmp_path / "input.sock"
+    victim.write_text("secret")
+    victim.chmod(0o600)
+    socket_path.symlink_to(victim)
+    command = [os.environ["FLUENT_BIT_BINARY"], "-i", "unix_socket",
+               "-p", f"socket_path={socket_path}",
+               "-p", "socket_permissions=0666", "-o", "stdout"]
+    memory_log = tmp_path / "valgrind-refusal.log"
+    if os.environ.get("VALGRIND") == "1":
+        command = ["valgrind", "--leak-check=full", "--show-leak-kinds=all",
+                   "--errors-for-leak-kinds=definite,indirect", "--error-exitcode=99",
+                   f"--log-file={memory_log}"] + command
+    result = subprocess.run(command, capture_output=True, text=True, timeout=30)
+    assert result.returncode != 0
+    assert result.returncode != 99
+    if os.environ.get("VALGRIND") == "1":
+        assert "ERROR SUMMARY: 0 errors" in memory_log.read_text()
+    assert socket_path.is_symlink()
+    assert victim.stat().st_mode & 0o777 == 0o600
