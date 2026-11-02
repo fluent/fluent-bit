@@ -50,13 +50,23 @@ static int read_varint(struct protobuf_frame *frame, uint64_t *value)
     return -1;
 }
 
+static int charge_budget(size_t *remaining, size_t amount)
+{
+    if (amount > *remaining) {
+        return FLB_OTEL_PROTOBUF_LIMIT_EXCEEDED;
+    }
+    *remaining -= amount;
+    return 0;
+}
+
 /*
  * Inspect known message fields before protobuf-c recursively allocates them.
  * Strings, bytes, packed scalars and unknown fields are opaque. The explicit
  * stack bounds our own stack usage as well as the subsequent unpack operation.
  */
-int flb_opentelemetry_protobuf_validate(const ProtobufCMessageDescriptor *descriptor,
-                                        const void *data, size_t size)
+int flb_opentelemetry_protobuf_validate_with_budget(
+        const ProtobufCMessageDescriptor *descriptor,
+        const void *data, size_t size, size_t *remaining)
 {
     struct protobuf_frame frames[OTEL_PROTOBUF_MAX_DEPTH];
     struct protobuf_frame *frame;
@@ -66,8 +76,13 @@ int flb_opentelemetry_protobuf_validate(const ProtobufCMessageDescriptor *descri
     uint64_t length;
     size_t depth;
 
-    if (descriptor == NULL || (data == NULL && size != 0)) {
+    if (descriptor == NULL || remaining == NULL || (data == NULL && size != 0)) {
         return -1;
+    }
+    /* Wire storage covers copied strings/bytes; charge each message separately. */
+    if (charge_budget(remaining, size) != 0 ||
+        charge_budget(remaining, descriptor->sizeof_message) != 0) {
+        return FLB_OTEL_PROTOBUF_LIMIT_EXCEEDED;
     }
     if (size == 0) {
         return 0;
@@ -86,6 +101,15 @@ int flb_opentelemetry_protobuf_validate(const ProtobufCMessageDescriptor *descri
         }
         if (read_varint(frame, &tag) != 0 || tag >> 3 == 0 || tag >> 3 > 0x1fffffff) {
             return -1;
+        }
+
+        /*
+         * Include scanned-member slabs (geometric growth), repeated pointers,
+         * unknown-field bookkeeping and allocation/alignment overhead. Charge
+         * every occurrence, including duplicate singular and unknown fields.
+         */
+        if (charge_budget(remaining, 128) != 0) {
+            return FLB_OTEL_PROTOBUF_LIMIT_EXCEEDED;
         }
 
         switch (tag & 7) {
@@ -119,11 +143,24 @@ int flb_opentelemetry_protobuf_validate(const ProtobufCMessageDescriptor *descri
             continue;
         }
         field = protobuf_c_message_descriptor_get_field(frame->descriptor, tag >> 3);
+        if (field != NULL && field->label == PROTOBUF_C_LABEL_REPEATED &&
+            field->type != PROTOBUF_C_TYPE_MESSAGE &&
+            field->type != PROTOBUF_C_TYPE_STRING && field->type != PROTOBUF_C_TYPE_BYTES) {
+            /* A packed one-byte scalar can expand to an eight-byte value. */
+            if (length > *remaining / 8) {
+                return FLB_OTEL_PROTOBUF_LIMIT_EXCEEDED;
+            }
+            *remaining -= (size_t) length * 8;
+        }
         if (field == NULL || field->type != PROTOBUF_C_TYPE_MESSAGE) {
             continue;
         }
         if (depth >= OTEL_PROTOBUF_MAX_DEPTH) {
             return -1;
+        }
+        if (charge_budget(remaining,
+                          ((const ProtobufCMessageDescriptor *) field->descriptor)->sizeof_message) != 0) {
+            return FLB_OTEL_PROTOBUF_LIMIT_EXCEEDED;
         }
         frames[depth].descriptor = field->descriptor;
         frames[depth].cursor = message;
@@ -131,4 +168,13 @@ int flb_opentelemetry_protobuf_validate(const ProtobufCMessageDescriptor *descri
         depth++;
     }
     return 0;
+}
+
+int flb_opentelemetry_protobuf_validate(const ProtobufCMessageDescriptor *descriptor,
+                                      const void *data, size_t size)
+{
+    size_t remaining;
+
+    remaining = FLB_OTEL_PROTOBUF_DECODE_BUDGET;
+    return flb_opentelemetry_protobuf_validate_with_budget(descriptor, data, size, &remaining);
 }
