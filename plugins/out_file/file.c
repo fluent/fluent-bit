@@ -97,9 +97,14 @@ struct flb_file_conf {
     struct flb_output_instance *ins;
 };
 
-static char *check_delimiter(const char *str)
+/*
+ * Map the delimiter keywords to their character. Any other value is used
+ * literally. The returned string is either a constant or the property value
+ * itself, which lives as long as the output instance, so it is never freed.
+ */
+static const char *check_delimiter(const char *str)
 {
-    if (str == NULL) {
+    if (str == NULL || *str == '\0') {
         return NULL;
     }
 
@@ -113,7 +118,7 @@ static char *check_delimiter(const char *str)
         return ",";
     }
 
-    return NULL;
+    return str;
 }
 
 /*
@@ -551,7 +556,7 @@ static int cb_file_init(struct flb_output_instance *ins,
     int table_size;
     const char *tmp;
     const char *accessor;
-    char *ret_str;
+    const char *ret_str;
     (void) config;
     (void) data;
     struct flb_file_conf *ctx;
@@ -1503,13 +1508,15 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "delimiter", NULL,
      0, FLB_FALSE, 0,
-     "Set a custom delimiter for the records"
+     "Set a custom delimiter for the records. Accepts 'tab', '\\t', 'space' "
+     "and 'comma', any other value is used literally"
     },
 
     {
      FLB_CONFIG_MAP_STR, "label_delimiter", NULL,
      0, FLB_FALSE, 0,
-     "Set a custom label delimiter, to be used with 'ltsv' format"
+     "Set a custom label delimiter, to be used with 'ltsv' format. Accepts "
+     "the same values as 'delimiter'"
     },
 
     {

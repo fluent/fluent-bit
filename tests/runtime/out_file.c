@@ -24,6 +24,8 @@ void flb_test_file_path(void);
 void flb_test_file_delim_csv(void);
 void flb_test_file_delim_ltsv(void);
 void flb_test_file_label_delim(void);
+void flb_test_file_delim_custom(void);
+void flb_test_file_label_delim_custom(void);
 void flb_test_file_template(void);
 void flb_test_file_mkdir(void);
 void flb_test_file_literal_percent(void);
@@ -56,6 +58,8 @@ TEST_LIST = {
     {"delimiter_ltsv",  flb_test_file_delim_ltsv},
     {"delimiter_csv",   flb_test_file_delim_csv},
     {"label_delimiter", flb_test_file_label_delim},
+    {"delimiter_custom", flb_test_file_delim_custom},
+    {"label_delimiter_custom", flb_test_file_label_delim_custom},
     {"json_invalid",    flb_test_file_json_invalid   },
     {"json_long",       flb_test_file_json_long      },
     {"json_small",      flb_test_file_json_small     },
@@ -1209,6 +1213,123 @@ void flb_test_file_label_delim(void)
     flb_output_set(ctx, out_ffd, "format", "ltsv", NULL);
     flb_output_set(ctx, out_ffd, "delimiter", "space", NULL);
     flb_output_set(ctx, out_ffd, "label_delimiter", "space", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+    TEST_CHECK(bytes == strlen(p));
+
+    ret = wait_for_file(TEST_LOGFILE, 1, TEST_TIMEOUT);
+    TEST_CHECK(ret == 0);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    fp = fopen(TEST_LOGFILE, "r");
+    TEST_CHECK(fp != NULL);
+    if (fp != NULL) {
+        bytes = fread(&output[0], sizeof(output), 1, fp);
+        if(!TEST_CHECK(bytes > 0 || feof(fp))) {
+            TEST_MSG("fread error bytes=%d", bytes);
+        }
+        if (!TEST_CHECK(strncmp(expect, &output[0], strlen(expect)) == 0)) {
+            TEST_MSG("format error\n");
+            TEST_MSG("expect: %s\n", expect);
+            TEST_MSG("got   : %s",output);
+        }
+
+        fclose(fp);
+        remove(TEST_LOGFILE);
+    }
+}
+
+void flb_test_file_delim_custom(void)
+{
+    int ret;
+    int bytes;
+    char *p = JSON_BASIC;
+    char output[256] = {0};
+    char *expect = "1448403340.000000000;\"val1\";\"val2\"";
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    FILE *fp;
+
+    remove(TEST_LOGFILE);
+
+    ctx = flb_create();
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "file", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "test", NULL);
+    flb_output_set(ctx, out_ffd, "file", TEST_LOGFILE, NULL);
+    flb_output_set(ctx, out_ffd, "format", "csv", NULL);
+    flb_output_set(ctx, out_ffd, "delimiter", ";", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+    TEST_CHECK(bytes == strlen(p));
+
+    ret = wait_for_file(TEST_LOGFILE, 1, TEST_TIMEOUT);
+    TEST_CHECK(ret == 0);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    fp = fopen(TEST_LOGFILE, "r");
+    TEST_CHECK(fp != NULL);
+    if (fp != NULL) {
+        bytes = fread(&output[0], sizeof(output), 1, fp);
+        if(!TEST_CHECK(bytes > 0 || feof(fp))) {
+            TEST_MSG("fread error bytes=%d", bytes);
+        }
+        if (!TEST_CHECK(strncmp(expect, &output[0], strlen(expect)) == 0)) {
+            TEST_MSG("format error\n");
+            TEST_MSG("expect: %s\n", expect);
+            TEST_MSG("got   : %s",output);
+        }
+
+        fclose(fp);
+        remove(TEST_LOGFILE);
+    }
+}
+
+void flb_test_file_label_delim_custom(void)
+{
+    int ret;
+    int bytes;
+    char *p = JSON_BASIC;
+    char output[256] = {0};
+    char *expect = "\"time\"=1448403340.000000|\"key1\"=\"val1\"|\"key2\"=\"val2\"";
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    FILE *fp;
+
+    remove(TEST_LOGFILE);
+
+    ctx = flb_create();
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "file", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "test", NULL);
+    flb_output_set(ctx, out_ffd, "file", TEST_LOGFILE, NULL);
+    flb_output_set(ctx, out_ffd, "format", "ltsv", NULL);
+    flb_output_set(ctx, out_ffd, "delimiter", "|", NULL);
+    flb_output_set(ctx, out_ffd, "label_delimiter", "=", NULL);
 
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
