@@ -133,6 +133,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         memcpy(payload, data, size);
     }
 
+    memset(&options, 0, sizeof(options));
     options.metadata_key = "otlp";
     options.body_key = (selector & 0x02) ? "log" : NULL;
     options.output_limit = (selector >> 2) == 0 ? SIZE_MAX : (size_t) (selector >> 2) * 256;
