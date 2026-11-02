@@ -744,85 +744,64 @@ void flb_test_input_chunk_correct_total_records(void)
 void flb_test_input_chunk_grouped_auto_records(void)
 {
     int ret;
-    int in_ffd;
-    int out_ffd;
     char *payload;
     size_t payload_size;
-    flb_ctx_t *ctx;
+    struct flb_config *cfg;
     struct flb_input_instance *i_ins;
+    struct flb_output_instance *o_ins;
+    struct cio_ctx *cio;
+    struct cio_options opts;
     struct mk_list *head;
+    struct mk_list *tmp;
     struct flb_input_chunk *ic;
 
     payload = NULL;
     payload_size = 0;
-
     ret = build_grouped_log_payload(&payload, &payload_size);
+    TEST_ASSERT(ret == 0);
+
+    /* Inspect the chunk synchronously so the engine cannot flush it first. */
+    flb_init_env();
+    cfg = flb_config_init();
+    TEST_ASSERT(cfg != NULL);
+    cfg->evl = mk_event_loop_create(256);
+    TEST_ASSERT(cfg->evl != NULL);
+    flb_log_create(cfg, FLB_LOG_STDERR, FLB_LOG_DEBUG, NULL);
+
+    i_ins = flb_input_new(cfg, "lib", NULL, FLB_TRUE);
+    TEST_ASSERT(i_ins != NULL);
+    flb_input_set_property(i_ins, "tag", "test");
+    i_ins->storage_type = CIO_STORE_MEM;
+
+    cio_options_init(&opts);
+    cio = cio_create(&opts);
+    TEST_ASSERT(cio != NULL);
+    ret = flb_storage_input_create(cio, i_ins);
+    TEST_ASSERT(ret == 0);
+    ret = flb_input_init_all(cfg);
+    TEST_ASSERT(ret == 0);
+
+    o_ins = flb_output_new(cfg, "null", NULL, FLB_TRUE);
+    TEST_ASSERT(o_ins != NULL);
+    flb_output_set_property(o_ins, "match", "test");
+    ret = flb_router_io_set(cfg);
+    TEST_ASSERT(ret == 0);
+
+    ret = flb_input_chunk_append_raw(i_ins, FLB_INPUT_LOGS, 0,
+                                     "test", 4, payload, payload_size);
     TEST_CHECK(ret == 0);
-    if (ret != 0) {
-        return;
-    }
-
-    ctx = flb_create();
-    TEST_CHECK(ctx != NULL);
-    if (!ctx) {
-        flb_free(payload);
-        return;
-    }
-
-    ret = flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
-    TEST_CHECK(ret == 0);
-
-    in_ffd = flb_input(ctx, (char *) "lib", NULL);
-    TEST_CHECK(in_ffd >= 0);
-    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
-
-    out_ffd = flb_output(ctx, (char *) "null", NULL);
-    TEST_CHECK(out_ffd >= 0);
-    flb_output_set(ctx, out_ffd, "match", "test", NULL);
-
-    ret = flb_start(ctx);
-    TEST_CHECK(ret == 0);
-    if (ret != 0) {
-        flb_destroy(ctx);
-        flb_free(payload);
-        return;
-    }
-
-    i_ins = mk_list_entry_first(&ctx->config->inputs,
-                                struct flb_input_instance,
-                                _head);
-    TEST_CHECK(i_ins != NULL);
-    if (!i_ins) {
-        flb_stop(ctx);
-        flb_destroy(ctx);
-        flb_free(payload);
-        return;
-    }
-
-    ret = flb_input_chunk_append_raw(i_ins,
-                                     FLB_INPUT_LOGS,
-                                     0,
-                                     "test",
-                                     4,
-                                     payload,
-                                     payload_size);
-    TEST_CHECK(ret == 0);
-
-    flb_time_msleep(200);
-
-    ic = NULL;
-    mk_list_foreach(head, &i_ins->chunks) {
+    TEST_CHECK(mk_list_size(&i_ins->chunks) == 1);
+    mk_list_foreach_safe(head, tmp, &i_ins->chunks) {
         ic = mk_list_entry(head, struct flb_input_chunk, _head);
-        break;
-    }
-
-    TEST_CHECK(ic != NULL);
-    if (ic != NULL) {
         TEST_CHECK(ic->total_records == 1);
+        flb_input_chunk_destroy(ic, FLB_TRUE);
     }
 
-    flb_stop(ctx);
-    flb_destroy(ctx);
+    cio_destroy(cio);
+    flb_router_exit(cfg);
+    flb_input_exit_all(cfg);
+    flb_output_exit(cfg);
+    flb_config_exit(cfg);
     flb_free(payload);
 }
 

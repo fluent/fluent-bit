@@ -53,6 +53,7 @@ self.Worker = class extends BrowserWorker {
     #resolveReady;
     #rejectReady;
     #resolveClosed;
+    #shutdownPromise;
     #ready = new Promise((resolve, reject) => { this.#resolveReady = resolve; this.#rejectReady = reject; });
     constructor(url, options) {
         const prepared = preparedWorkers.get(options?.name);
@@ -104,19 +105,30 @@ self.Worker = class extends BrowserWorker {
         });
     }
     get ready() { return this.#ready; }
-    async shutdown() {
+    shutdown() {
+        if (this.#shutdownPromise) { return this.#shutdownPromise; }
         // Let initialized children close before their owner exits. Terminating
         // both levels at once can retain a Chromium worker after startup fails.
-        let timer;
-        try {
-            await new Promise(resolve => {
-                this.#resolveClosed = resolve;
-                timer = setTimeout(resolve, 250);
-                super.postMessage({flbShutdown: 1});
-            });
-        }
-        catch (_) { /* An unavailable child will be terminated below. */ }
-        finally { clearTimeout(timer); this.terminate(); }
+        this.#rejectReady(new Error('Pthread initialization cancelled'));
+        this.#load = null;
+        this.#shutdownPromise = (async () => {
+            let timer;
+            let acknowledged = false;
+            try {
+                await new Promise(resolve => {
+                    this.#resolveClosed = () => { acknowledged = true; resolve(); };
+                    timer = setTimeout(resolve, 250);
+                    super.postMessage({flbShutdown: 1});
+                });
+            }
+            catch (_) { /* An unavailable child will be terminated below. */ }
+            finally {
+                clearTimeout(timer);
+                pthreadWorkers.delete(this);
+                if (!acknowledged) { super.terminate(); }
+            }
+        })();
+        return this.#shutdownPromise;
     }
     postMessage(...args) {
         if (args[0]?.cmd === PTHREAD_LOAD && !this.#runtimeReady) {
@@ -127,6 +139,12 @@ self.Worker = class extends BrowserWorker {
         super.postMessage(...args);
     }
     terminate() {
+        // Emscripten also terminates the pool during exit. Keep those children
+        // tracked until shutdown finishes so the SDK can await their cleanup.
+        if (this.#shutdownPromise || active?.operation === 4 || state === 'failed') {
+            void this.shutdown();
+            return;
+        }
         this.#rejectReady(new Error('Pthread initialization cancelled'));
         this.#load = null;
         pthreadWorkers.delete(this);
@@ -224,9 +242,9 @@ async function fatal(message, code = 'E_RUNTIME') {
     if (wasmInitialization) { await wasmInitialization.catch(() => {}); }
     releaseStorage?.();
     flushLogs();
-    post({type: 'fatal', code, message: String(message)});
     // Nothing can recover this runtime; release the worker's own event loop.
     self.close();
+    post({type: 'fatal', code, message: String(message), closed: true});
 }
 
 async function lockStorage(namespace) {
@@ -397,8 +415,8 @@ async function execute(request) {
     }
     if (method === 'destroy') {
         await command(id, 4);
-        await drainLogs();
         await Promise.all([...pthreadWorkers].map(worker => worker.shutdown()));
+        await drainLogs();
         releaseStorage?.();
         state = 'destroyed';
         return null;
@@ -432,11 +450,11 @@ self.onmessage = async ({data}) => {
     executing = true;
     try {
         const value = await execute(data);
-        post({type: 'response', id: data.id, ok: true, value});
         if (state === 'destroyed') {
             clearTimeout(logTimer);
             self.close();
         }
+        post({type: 'response', id: data.id, ok: true, value, closed: state === 'destroyed'});
     }
     catch (error) {
         await drainLogs();
