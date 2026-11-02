@@ -202,29 +202,6 @@ static void wait_for_s3_retry_time(struct flb_s3 *ctx, time_t expected)
     }
 }
 
-static struct s3_file *wait_for_s3_file(struct flb_s3 *ctx, const char *tag, int tag_len)
-{
-    uint64_t elapsed_ms;
-    struct flb_time start_time;
-    struct flb_time end_time;
-    struct flb_time diff_time;
-    struct s3_file *s3_file;
-
-    elapsed_ms = 0;
-    flb_time_get(&start_time);
-    s3_file = s3_store_file_get(ctx, tag, tag_len);
-
-    while (s3_file == NULL && elapsed_ms < S3_TEST_WAIT_TIMEOUT_MS) {
-        flb_time_msleep(S3_TEST_WAIT_STEP_MS);
-        flb_time_get(&end_time);
-        flb_time_diff(&end_time, &start_time, &diff_time);
-        elapsed_ms = flb_time_to_nanosec(&diff_time) / 1000000;
-        s3_file = s3_store_file_get(ctx, tag, tag_len);
-    }
-
-    return s3_file;
-}
-
 static void wait_for_file_count(const char *path, int expected)
 {
     uint64_t elapsed_ms;
@@ -1063,7 +1040,6 @@ void flb_test_s3_ordered_backoff_does_not_starve_completion(void)
     flb_ctx_t *ctx;
     char *store_dir;
     struct flb_s3 *s3_ctx;
-    struct s3_file *s3_file;
 
     store_dir = create_test_store_directory("/flb-s3-test-completion-backoff-XXXXXX");
     TEST_CHECK(store_dir != NULL);
@@ -1104,12 +1080,12 @@ void flb_test_s3_ordered_backoff_does_not_starve_completion(void)
                        (int) sizeof(JSON_TD) - 1);
     TEST_CHECK(ret >= 0);
     /* Wait for the requested tag's initialized chunk, not an on-disk file. */
-    s3_file = wait_for_s3_file(s3_ctx, "completing", 10);
-    TEST_CHECK(s3_file != NULL);
-    if (s3_file == NULL) {
+    ret = wait_for_s3_file_create_time(s3_ctx, "completing", 10,
+                                       time(NULL) - 61, NULL, 0);
+    TEST_CHECK_(ret == 0, "Expected completing chunk to be initialized");
+    if (ret != 0) {
         goto cleanup;
     }
-    s3_file->create_time = time(NULL) - 61;
     ret = flb_lib_push(ctx, input_fds[0], (char *) JSON_TD,
                        (int) sizeof(JSON_TD) - 1);
     TEST_CHECK(ret >= 0);
@@ -1118,12 +1094,12 @@ void flb_test_s3_ordered_backoff_does_not_starve_completion(void)
     ret = flb_lib_push(ctx, input_fds[1], (char *) JSON_TD,
                        (int) sizeof(JSON_TD) - 1);
     TEST_CHECK(ret >= 0);
-    s3_file = wait_for_s3_file(s3_ctx, "backoff", 7);
-    TEST_CHECK(s3_file != NULL);
-    if (s3_file == NULL) {
+    ret = wait_for_s3_file_create_time(s3_ctx, "backoff", 7,
+                                       time(NULL) - 61, NULL, 0);
+    TEST_CHECK_(ret == 0, "Expected backoff chunk to be initialized");
+    if (ret != 0) {
         goto cleanup;
     }
-    s3_file->create_time = time(NULL) - 61;
     flb_s3_test_env_set("TEST_CREATE_MULTIPART_UPLOAD_ERROR", ERROR_ACCESS_DENIED, 1);
     ret = flb_lib_push(ctx, input_fds[1], (char *) JSON_TD,
                        (int) sizeof(JSON_TD) - 1);
