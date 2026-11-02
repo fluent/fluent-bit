@@ -12,19 +12,6 @@ on:
       - 1.9
       - 1.8
   pull_request:
-    paths:
-      - '**'
-      - '!.github/**'
-      - '!dockerfiles/**'
-      - '!docker_compose/**'
-      - '!packaging/**'
-      - '!.gitignore'
-      - '!appveyor.yml'
-      - '!examples/**'
-      - '.github/scripts/run-unit-tests.sh'
-      - '.github/scripts/tests/test_unit_test_driver.py'
-      - '.github/workflows/unit-tests.yaml'
-      - '.github/workflows/skipped-unit-tests.yaml'
     branches:
       - master
       - 5.1
@@ -57,7 +44,48 @@ env:
   FLB_TEST_JOBS: ${{ inputs.test_jobs }}
 
 jobs:
+  select-unit-tests:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      run: ${{ steps.changes.outputs.run }}
+    steps:
+      - name: Select unit test coverage
+        id: changes
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            if (context.eventName !== 'pull_request') {
+              core.setOutput('run', true);
+              return;
+            }
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              ...context.repo,
+              pull_number: context.payload.pull_request.number,
+              per_page: 100
+            });
+            const required = new Set([
+              '.github/scripts/run-unit-tests.sh',
+              '.github/scripts/tests/test_unit_test_driver.py',
+              '.github/workflows/unit-tests.yaml',
+              '.github/workflows/skipped-unit-tests.yaml'
+            ]);
+            const ignoredDirectories = [
+              '.github/', 'dockerfiles/', 'docker_compose/', 'packaging/', 'examples/'
+            ];
+            const ignoredFiles = new Set(['.gitignore', 'appveyor.yml']);
+            const paths = files.flatMap(file => [file.filename, file.previous_filename])
+              .filter(Boolean);
+            // An empty or truncated API response must not silently skip coverage.
+            const run = files.length === 0 || files.length >= 3000 || paths.some(path =>
+              required.has(path) || (!ignoredFiles.has(path) &&
+                !ignoredDirectories.some(directory => path.startsWith(directory))));
+            core.setOutput('run', run);
+
   run-ubuntu-unit-tests:
+    needs: select-unit-tests
+    if: needs.select-unit-tests.outputs.run == 'true'
     name: "${{ startsWith(matrix.flb_option, '-DFLB_SANITIZE_') && 'Linux sanitizer smoke' || 'Linux unit tests' }} (${{ matrix.compiler.cc }}, ${{ matrix.flb_option }})"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
@@ -384,6 +412,7 @@ jobs:
     permissions:
       contents: none
     needs:
+      - select-unit-tests
       - run-macos-unit-tests
       - run-ubuntu-unit-tests
       - run-aarch64-unit-tests
@@ -391,5 +420,5 @@ jobs:
     steps:
       - name: Check build matrix status
         # Ignore MacOS failures
-        if: ${{ needs.run-ubuntu-unit-tests.result != 'success' }}
+        if: ${{ needs.select-unit-tests.result != 'success' || (needs.select-unit-tests.outputs.run == 'true' && needs.run-ubuntu-unit-tests.result != 'success') }}
         run: exit 1
