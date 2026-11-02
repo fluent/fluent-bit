@@ -31,6 +31,8 @@ static int in_opentelemetry_init(struct flb_input_instance *ins,
     int                       ret;
     int64_t                   logs_max_size_bytes;
     const char               *logs_max_size;
+    int64_t                   decode_max_size_bytes;
+    const char               *decode_max_size;
     struct flb_opentelemetry *ctx;
     struct flb_http_server_options http_server_options;
 
@@ -58,6 +60,17 @@ static int in_opentelemetry_init(struct flb_input_instance *ins,
     }
     if (logs_max_size_bytes <= 0 || (uint64_t) logs_max_size_bytes > SIZE_MAX) {
         flb_plg_error(ctx->ins, "logs_max_size must be a valid positive size");
+        opentelemetry_config_destroy(ctx);
+        return -1;
+    }
+
+    decode_max_size = flb_input_get_property("protobuf_decode_max_size", ins);
+    decode_max_size_bytes = ctx->protobuf_decode_max_size;
+    if (decode_max_size != NULL) {
+        decode_max_size_bytes = flb_utils_size_to_bytes(decode_max_size);
+    }
+    if (decode_max_size_bytes <= 0 || (uint64_t) decode_max_size_bytes > SIZE_MAX) {
+        flb_plg_error(ctx->ins, "protobuf_decode_max_size must be a valid positive size");
         opentelemetry_config_destroy(ctx);
         return -1;
     }
@@ -219,6 +232,13 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "raw_traces", "false",
      0, FLB_TRUE, offsetof(struct flb_opentelemetry, raw_traces),
      "Forward traces without processing"
+    },
+
+    {
+     FLB_CONFIG_MAP_SIZE, "protobuf_decode_max_size", "33554432",
+     0, FLB_TRUE, offsetof(struct flb_opentelemetry, protobuf_decode_max_size),
+     "Maximum estimated protobuf decode bytes per request across all signals and gRPC frames; "
+     "also caps cumulative logs arena allocations. Must be positive; default 32 MiB"
     },
 
     {
