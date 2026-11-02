@@ -121,6 +121,7 @@ int opentelemetry_process_logs_with_budget(struct flb_opentelemetry *ctx,
     decode_options.metadata_key = ctx->logs_metadata_key;
     decode_options.body_key = ctx->logs_body_key;
     decode_options.output_limit = *remaining;
+    decode_options.protobuf_decode_max_size = ctx->protobuf_decode_max_size;
 
     /* Detect the type of payload */
     if (content_type) {

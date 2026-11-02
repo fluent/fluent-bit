@@ -859,7 +859,8 @@ int opentelemetry_prot_authorize_ng(struct flb_http_request *request,
 }
 
 /* Validate every frame before ingesting any part of the request. */
-static int validate_protobuf_request(struct flb_http_request *request,
+static int validate_protobuf_request(struct flb_opentelemetry *context,
+                                     struct flb_http_request *request,
                                      struct cfl_list *frames, int grpc_request)
 {
     const ProtobufCMessageDescriptor *descriptor;
@@ -888,7 +889,7 @@ static int validate_protobuf_request(struct flb_http_request *request,
             &opentelemetry__proto__collector__logs__v1__export_logs_service_request__descriptor;
     }
 
-    remaining = FLB_OTEL_PROTOBUF_DECODE_BUDGET;
+    remaining = context->protobuf_decode_max_size;
     if (!grpc_request) {
         return flb_opentelemetry_protobuf_validate_with_budget(
                 descriptor, request->body, cfl_sds_len(request->body), &remaining);
@@ -1014,7 +1015,7 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
             return -1;
         }
 
-        ret = validate_protobuf_request(request, &frames, FLB_TRUE);
+        ret = validate_protobuf_request(context, request, &frames, FLB_TRUE);
         if (ret != 0) {
             destroy_grpc_frames(&frames);
             send_grpc_error_response_ng(response,
@@ -1032,7 +1033,7 @@ next_grpc_message:
         grpc_request = FLB_FALSE;
         payload = request->body;
         payload_size = cfl_sds_len(request->body);
-        ret = validate_protobuf_request(request, &frames, FLB_FALSE);
+        ret = validate_protobuf_request(context, request, &frames, FLB_FALSE);
         if (ret != 0) {
             send_response_ng(response,
                     ret == FLB_OTEL_PROTOBUF_LIMIT_EXCEEDED ? 413 : 400,
