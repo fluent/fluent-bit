@@ -19,6 +19,8 @@
 
 #include <fluent-bit.h>
 #include <fluent-bit/flb_engine.h>
+#include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_time.h>
 #include <signal.h>
 #include <string.h>
 #include <time.h>
@@ -103,8 +105,76 @@ void flb_test_duplicate_stop_no_spin(void)
     }
 }
 
+static pthread_mutex_t worker_exit_mutex = PTHREAD_MUTEX_INITIALIZER;
+static int worker_exit_started;
+static int worker_exit_finished;
+
+static int slow_worker_exit(void *context, struct flb_config *config)
+{
+    pthread_mutex_lock(&worker_exit_mutex);
+    worker_exit_started++;
+    pthread_mutex_unlock(&worker_exit_mutex);
+
+    /* Keep the engine in pthread_join() when the caller invokes flb_stop(). */
+    flb_time_msleep(300);
+
+    pthread_mutex_lock(&worker_exit_mutex);
+    worker_exit_finished++;
+    pthread_mutex_unlock(&worker_exit_mutex);
+    return 0;
+}
+
+static void flb_test_stop_waits_for_output_workers(void)
+{
+    flb_ctx_t *ctx;
+    struct flb_output_instance *output;
+    struct flb_output_plugin plugin;
+    int out_ffd;
+    int started;
+    int finished;
+    int i;
+
+    worker_exit_started = 0;
+    worker_exit_finished = 0;
+    ctx = flb_create();
+    TEST_ASSERT(ctx != NULL);
+    TEST_ASSERT(flb_service_set(ctx, "Grace", "1", "Log_Level", "error", NULL) == 0);
+    TEST_ASSERT(flb_input(ctx, "lib", NULL) >= 0);
+    out_ffd = flb_output(ctx, "null", NULL);
+    TEST_ASSERT(out_ffd >= 0);
+    TEST_ASSERT(flb_output_set(ctx, out_ffd, "match", "*", "workers", "2", NULL) == 0);
+
+    output = mk_list_entry_first(&ctx->config->outputs, struct flb_output_instance, _head);
+    plugin = *output->p;
+    plugin.cb_worker_exit = slow_worker_exit;
+    output->p = &plugin;
+    TEST_ASSERT(flb_start(ctx) == 0);
+    TEST_ASSERT(flb_engine_exit(ctx->config) >= 0);
+
+    started = 0;
+    for (i = 0; i < 500 && started == 0; i++) {
+        flb_time_msleep(10);
+        pthread_mutex_lock(&worker_exit_mutex);
+        started = worker_exit_started;
+        pthread_mutex_unlock(&worker_exit_mutex);
+    }
+    TEST_ASSERT(started > 0);
+    TEST_CHECK(flb_stop(ctx) == 0);
+
+    pthread_mutex_lock(&worker_exit_mutex);
+    finished = worker_exit_finished;
+    pthread_mutex_unlock(&worker_exit_mutex);
+    TEST_CHECK_(finished == 2, "only %d of 2 workers exited before flb_stop returned", finished);
+    if (finished != 2) {
+        /* A cancelled engine may leave workers using the context until process exit. */
+        return;
+    }
+    flb_destroy(ctx);
+}
+
 /* Test list */
 TEST_LIST = {
     {"duplicate_stop_no_spin", flb_test_duplicate_stop_no_spin},
+    {"stop_waits_for_output_workers", flb_test_stop_waits_for_output_workers},
     {NULL, NULL}
 };
