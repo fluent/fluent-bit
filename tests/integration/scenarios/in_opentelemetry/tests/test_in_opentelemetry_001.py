@@ -2919,7 +2919,8 @@ def build_direct_cfl_sentinel_payload(keep="yes"):
 
 
 def direct_cfl_service(tmp_path, direct, processors, *, body_key=None, workers=1,
-                       logs_max_size=None, threaded=False, conditional_routes=False):
+                       logs_max_size=None, threaded=False, conditional_routes=False,
+                       protobuf_decode_max_size=None):
     name = f"direct-cfl-{'on' if direct else 'off'}.yaml"
     if not direct:
         processors = [MSGPACK_REFERENCE_FILTER] + (processors or [])
@@ -2928,6 +2929,8 @@ def direct_cfl_service(tmp_path, direct, processors, *, body_key=None, workers=1
         options.append(f"logs_body_key: {body_key}")
     if logs_max_size:
         options.append(f"logs_max_size: {logs_max_size}")
+    if protobuf_decode_max_size is not None:
+        options.append(f"protobuf_decode_max_size: {protobuf_decode_max_size}")
     if threaded:
         options.append("threaded: true")
     option_lines = "\n".join(f"      {option}" for option in options)
@@ -3561,7 +3564,8 @@ def test_in_opentelemetry_protobuf_decode_budget_multiframe():
 
 
 @pytest.mark.parametrize("compressed", [False, True])
-def test_in_opentelemetry_protobuf_decode_budget_profiles(tmp_path, compressed):
+@pytest.mark.parametrize("limit,count", [(None, 300_000), ("64k", 1000)])
+def test_in_opentelemetry_protobuf_decode_budget_profiles(tmp_path, compressed, limit, count):
     config = tmp_path / "profiles-budget.yaml"
     config.write_text("""service:
   flush: 1
@@ -3577,8 +3581,12 @@ pipeline:
     - name: null
       match: '*'
 """)
+    if limit is not None:
+        config.write_text(config.read_text().replace(
+            "      profiles_support: true",
+            f"      profiles_support: true\n      protobuf_decode_max_size: {limit}"))
     service = Service(str(config))
-    payload = b"\x0a\x00" * 300_000
+    payload = b"\x0a\x00" * count
     encoded = gzip.compress(payload) if compressed else payload
     body = bytes([int(compressed)]) + len(encoded).to_bytes(4, "big") + encoded
     try:
@@ -3611,5 +3619,98 @@ def test_in_opentelemetry_protobuf_decode_budget_arena_merge(tmp_path, direct):
         assert response.status_code == 400
         small = service.build_otel_payload("test_logs_001.in.json", "logs")
         assert service.send_raw_request("/v1/logs", small).status_code == 201
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("signal_type", ["logs", "metrics", "traces"])
+@pytest.mark.parametrize("transport", ["http", "grpc"])
+@pytest.mark.parametrize("limit,accepted", [("64k", False), ("256k", True)])
+def test_in_opentelemetry_configurable_decode_budget(tmp_path, signal_type, transport,
+                                                    limit, accepted):
+    service = direct_cfl_service(tmp_path, True, None, protobuf_decode_max_size=limit)
+    try:
+        service.start()
+        small = service.build_otel_payload(f"test_{signal_type}_001.in.json", signal_type)
+        payload = small + b"\x78\x00" * 1000
+        if transport == "http":
+            assert service.send_raw_request(f"/v1/{signal_type}", payload).status_code == (
+                201 if accepted else 413)
+            assert service.send_raw_request(f"/v1/{signal_type}", small).status_code == 201
+        else:
+            assert send_grpc_limit_frames(service, [(payload, True)], signal_type) == (
+                0 if accepted else 8)
+            assert send_grpc_limit_frames(service, [(small, False)], signal_type) == 0
+    finally:
+        service.stop()
+
+
+def test_in_opentelemetry_configurable_decode_budget_above_default(tmp_path):
+    service = direct_cfl_service(tmp_path, True, None, protobuf_decode_max_size="64M")
+    try:
+        service.start()
+        # Exceeds the default preflight budget; both listener and shared logs
+        # decoder must honor the larger configured value.
+        payload = b"\x78\x00" * 300_000
+        assert service.send_raw_request("/v1/logs", payload).status_code == 201
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("direct", [False, True])
+@pytest.mark.parametrize("limit,accepted", [("1M", False), ("16M", True)])
+def test_in_opentelemetry_configurable_decode_budget_arena(tmp_path, direct, limit, accepted):
+    from opentelemetry.proto.resource.v1.resource_pb2 import Resource
+
+    resource = Resource()
+    resource.attributes.add(key="a").value.string_value = "b"
+    wire = resource.SerializeToString()
+    resources = (b"\x0a" + encode_test_varint(len(wire)) + wire) * 1000
+    payload = b"\x0a" + encode_test_varint(len(resources)) + resources
+    service = direct_cfl_service(tmp_path, direct,
+                                 DIRECT_CFL_PROCESSOR_CHAINS["content_modifier"],
+                                 protobuf_decode_max_size=limit)
+    try:
+        service.start()
+        # Preflight fits either budget; cumulative merge allocations exceed 1M.
+        assert service.send_raw_request("/v1/logs", payload).status_code == (
+            201 if accepted else 400)
+        small = service.build_otel_payload("test_logs_001.in.json", "logs")
+        assert service.send_raw_request("/v1/logs", small).status_code == 201
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("limit", ["0", "-1", "-2M", "invalid", "false"])
+def test_in_opentelemetry_configurable_decode_budget_invalid(tmp_path, limit):
+    service = direct_cfl_service(tmp_path, True, None, protobuf_decode_max_size=limit)
+    try:
+        with pytest.raises(FluentBitStartupError):
+            service.start()
+        with open(service.service.flb.log_file, encoding="utf-8", errors="replace") as log:
+            assert "protobuf_decode_max_size must be a valid positive size" in log.read()
+    finally:
+        service.stop()
+
+
+def test_in_opentelemetry_configurable_decode_budget_json(tmp_path):
+    service = direct_cfl_service(tmp_path, True, None, protobuf_decode_max_size="1")
+    try:
+        service.start()
+        assert service.send_raw_request("/v1/logs", b'{"resourceLogs":[]}',
+                                        content_type="application/json").status_code == 201
+        assert service.send_raw_request("/v1/logs", b"\x0a\x00").status_code == 413
+    finally:
+        service.stop()
+
+
+def test_in_opentelemetry_configurable_decode_budget_multiframe(tmp_path):
+    service = direct_cfl_service(tmp_path, True, None, protobuf_decode_max_size="200k")
+    payload = b"\x78\x00" * 1000
+    try:
+        service.start()
+        assert send_grpc_limit_frames(service, [(payload, True)]) == 0
+        assert send_grpc_limit_frames(service, [(payload, True), (payload, False)]) == 8
+        assert send_grpc_limit_frames(service, [(payload, False)]) == 0
     finally:
         service.stop()
