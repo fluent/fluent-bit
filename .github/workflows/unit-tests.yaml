@@ -27,7 +27,7 @@ on:
       - 2.0
       - 1.9
       - 1.8
-    types: [opened, reopened, synchronize]
+    types: [opened, reopened, synchronize, labeled, unlabeled]
   workflow_dispatch:
     inputs:
       build_jobs:
@@ -50,6 +50,7 @@ jobs:
       pull-requests: read
     outputs:
       run: ${{ steps.changes.outputs.run }}
+      qemu: ${{ steps.changes.outputs.qemu }}
     steps:
       - name: Select unit test coverage
         id: changes
@@ -58,8 +59,11 @@ jobs:
           script: |
             if (context.eventName !== 'pull_request') {
               core.setOutput('run', true);
+              core.setOutput('qemu', true);
               return;
             }
+            const qemu = context.payload.pull_request.labels.some(label => label.name === 'ci:qemu');
+            core.setOutput('qemu', qemu);
             const files = await github.paginate(github.rest.pulls.listFiles, {
               ...context.repo,
               pull_number: context.payload.pull_request.number,
@@ -78,7 +82,7 @@ jobs:
             const paths = files.flatMap(file => [file.filename, file.previous_filename])
               .filter(Boolean);
             // An empty or truncated API response must not silently skip coverage.
-            const run = files.length === 0 || files.length >= 3000 || paths.some(path =>
+            const run = qemu || files.length === 0 || files.length >= 3000 || paths.some(path =>
               required.has(path) || (!ignoredFiles.has(path) &&
                 !ignoredDirectories.some(directory => path.startsWith(directory))));
             core.setOutput('run', run);
@@ -336,8 +340,11 @@ jobs:
           CMAKE_HOME: ${{ matrix.config.cmake_home }}
 
   run-qemu-ubuntu-unit-tests:
-    # We chain this after Linux one as there are CPU time costs for QEMU emulation
+    if: needs.select-unit-tests.outputs.qemu == 'true'
+    # PRs opt in with ci:qemu; branch pushes and manual runs retain coverage.
+    # Run after Linux to avoid expensive emulation when the primary matrix fails.
     needs:
+      - select-unit-tests
       - run-ubuntu-unit-tests
     runs-on: ubuntu-22.04
     timeout-minutes: 60
@@ -420,5 +427,5 @@ jobs:
     steps:
       - name: Check build matrix status
         # Ignore MacOS failures
-        if: ${{ needs.select-unit-tests.result != 'success' || (needs.select-unit-tests.outputs.run == 'true' && needs.run-ubuntu-unit-tests.result != 'success') }}
+        if: ${{ needs.select-unit-tests.result != 'success' || (needs.select-unit-tests.outputs.run == 'true' && needs.run-ubuntu-unit-tests.result != 'success') || (needs.select-unit-tests.outputs.qemu == 'true' && needs.run-qemu-ubuntu-unit-tests.result != 'success') }}
         run: exit 1
