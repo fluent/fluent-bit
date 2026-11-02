@@ -858,6 +858,52 @@ int opentelemetry_prot_authorize_ng(struct flb_http_request *request,
     return 0;
 }
 
+/* Validate every frame before ingesting any part of the request. */
+static int validate_protobuf_request(struct flb_http_request *request,
+                                     struct cfl_list *frames, int grpc_request)
+{
+    const ProtobufCMessageDescriptor *descriptor;
+    struct cfl_list *head;
+    struct otlp_grpc_frame *frame;
+    size_t remaining;
+    int ret;
+
+    if (opentelemetry_is_protobuf_content_type(request->content_type) != FLB_TRUE) {
+        return 0;
+    }
+    if (is_profiles_export_path(request->path)) {
+        descriptor =
+            &opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__descriptor;
+    }
+    else if (strstr(request->path, "metrics") || strstr(request->path, "metric.v1")) {
+        descriptor =
+            &opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__descriptor;
+    }
+    else if (strstr(request->path, "traces") || strstr(request->path, "trace.v1")) {
+        descriptor =
+            &opentelemetry__proto__collector__trace__v1__export_trace_service_request__descriptor;
+    }
+    else {
+        descriptor =
+            &opentelemetry__proto__collector__logs__v1__export_logs_service_request__descriptor;
+    }
+
+    remaining = FLB_OTEL_PROTOBUF_DECODE_BUDGET;
+    if (!grpc_request) {
+        return flb_opentelemetry_protobuf_validate_with_budget(
+                descriptor, request->body, cfl_sds_len(request->body), &remaining);
+    }
+    cfl_list_foreach(head, frames) {
+        frame = cfl_list_entry(head, struct otlp_grpc_frame, _head);
+        ret = flb_opentelemetry_protobuf_validate_with_budget(
+                descriptor, frame->payload, frame->size, &remaining);
+        if (ret != 0) {
+            return ret;
+        }
+    }
+    return 0;
+}
+
 /*
  * Protocol handle for requests coming from HTTP/2 server backend. Note that
  * if the payload is compressed (Content-Encoding) it will be decompressed
@@ -968,6 +1014,15 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
             return -1;
         }
 
+        ret = validate_protobuf_request(request, &frames, FLB_TRUE);
+        if (ret != 0) {
+            destroy_grpc_frames(&frames);
+            send_grpc_error_response_ng(response,
+                    ret == FLB_OTEL_PROTOBUF_LIMIT_EXCEEDED ? 8 : 3,
+                    "protobuf decode budget exceeded or invalid payload");
+            return -1;
+        }
+
 next_grpc_message:
         frame = cfl_list_entry_first(&frames, struct otlp_grpc_frame, _head);
         payload = frame->payload;
@@ -977,6 +1032,13 @@ next_grpc_message:
         grpc_request = FLB_FALSE;
         payload = request->body;
         payload_size = cfl_sds_len(request->body);
+        ret = validate_protobuf_request(request, &frames, FLB_FALSE);
+        if (ret != 0) {
+            send_response_ng(response,
+                    ret == FLB_OTEL_PROTOBUF_LIMIT_EXCEEDED ? 413 : 400,
+                    "protobuf decode budget exceeded or invalid payload\n");
+            return -1;
+        }
     }
 
     if (strcmp(request->path, "/v1/metrics") == 0 ||
