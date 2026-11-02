@@ -3509,3 +3509,107 @@ def test_in_opentelemetry_json_logs_replace_invalid_unicode(config_file):
             assert attributes[r"\uACD"] == "key preserved"
     finally:
         service.stop()
+
+
+@pytest.mark.parametrize("signal_type", ["logs", "metrics", "traces"])
+@pytest.mark.parametrize("transport", ["http", "grpc", "grpc-gzip"])
+@pytest.mark.parametrize("shape", ["messages", "unknown", "duplicate", "nested"])
+def test_in_opentelemetry_protobuf_decode_budget(signal_type, transport, shape):
+    # Under 1 MB on the wire, but hundreds of thousands of allocations without
+    # preflight accounting. Unknown and duplicate singular fields also cost memory.
+    if shape == "messages":
+        payload = b"\x0a\x00" * 300_000
+    elif shape == "unknown":
+        payload = b"\x78\x00" * 300_000
+    elif shape == "nested":
+        leaves = b"\x12\x00" * 300_000
+        scope = b"\x12" + encode_test_varint(len(leaves)) + leaves
+        payload = b"\x0a" + encode_test_varint(len(scope)) + scope
+    else:
+        resource = b"\x0a\x00" * 300_000
+        payload = b"\x0a" + encode_test_varint(len(resource)) + resource
+    service = Service("otlp_http2_cleartext.yaml")
+    try:
+        service.start()
+        small = service.build_otel_payload(f"test_{signal_type}_001.in.json", signal_type)
+        if transport == "http":
+            response = service.send_raw_request(
+                f"/v1/{signal_type}", payload, content_type="application/x-protobuf")
+            assert response.status_code == 413
+            response = service.send_raw_request(
+                f"/v1/{signal_type}", small, content_type="application/x-protobuf")
+            assert response.status_code == 201
+        else:
+            compressed = transport == "grpc-gzip"
+            assert send_grpc_limit_frames(service, [(payload, compressed)], signal_type) == 8
+            assert send_grpc_limit_frames(service, [(small, compressed)], signal_type) == 0
+    finally:
+        service.stop()
+
+
+def test_in_opentelemetry_protobuf_decode_budget_multiframe():
+    service = Service("otlp_http2_cleartext.yaml")
+    # Each frame fits independently; the request as a whole exceeds the budget.
+    payload = b"\x0a\x00" * 110_000
+    try:
+        service.start()
+        assert send_grpc_limit_frames(service, [(payload, True), (payload, True)]) == 8
+        small = service.build_otel_payload("test_logs_001.in.json", "logs")
+        assert send_grpc_limit_frames(service, [(small, False)]) == 0
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("compressed", [False, True])
+def test_in_opentelemetry_protobuf_decode_budget_profiles(tmp_path, compressed):
+    config = tmp_path / "profiles-budget.yaml"
+    config.write_text("""service:
+  flush: 1
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+pipeline:
+  inputs:
+    - name: opentelemetry
+      port: ${FLUENT_BIT_TEST_LISTENER_PORT}
+      profiles_support: true
+      http2: on
+  outputs:
+    - name: null
+      match: '*'
+""")
+    service = Service(str(config))
+    payload = b"\x0a\x00" * 300_000
+    encoded = gzip.compress(payload) if compressed else payload
+    body = bytes([int(compressed)]) + len(encoded).to_bytes(4, "big") + encoded
+    try:
+        service.start()
+        result = run_curl_request(
+            f"http://localhost:{service.flb_listener_port}/opentelemetry.proto.collector."
+            "profiles.v1development.ProfilesService/Export",
+            body,
+            headers=["Content-Type: application/grpc", "grpc-encoding: gzip"],
+            http_mode="http2-prior-knowledge", include_headers=True,
+        )
+        assert result["status_code"] == 200
+        assert "grpc-status: 8" in result["headers_raw"].lower()
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("direct", [False, True])
+def test_in_opentelemetry_protobuf_decode_budget_arena_merge(tmp_path, direct):
+    # Each duplicate Resource contributes one empty attribute. protobuf-c merges
+    # the repeated attributes by allocating a larger array on each occurrence.
+    # The wire estimate is small, but the arena retains the intermediate arrays.
+    resource = b"\x0a\x02\x0a\x00" * 10_000
+    payload = b"\x0a" + encode_test_varint(len(resource)) + resource
+    service = direct_cfl_service(tmp_path, direct,
+                                 DIRECT_CFL_PROCESSOR_CHAINS["content_modifier"])
+    try:
+        service.start()
+        response = service.send_raw_request("/v1/logs", payload)
+        assert response.status_code == 400
+        small = service.build_otel_payload("test_logs_001.in.json", "logs")
+        assert service.send_raw_request("/v1/logs", small).status_code == 201
+    finally:
+        service.stop()
