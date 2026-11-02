@@ -59,7 +59,47 @@ static void test_protobuf_wire_boundaries(void)
                                                    sizeof(fixed) - 1) != 0);
 }
 
+static void test_protobuf_budget(void)
+{
+    const ProtobufCMessageDescriptor *descriptor;
+    unsigned char child[] = {0x0a, 0x00};
+    unsigned char unknown[] = {0x78, 0x00};
+    unsigned char packed[] = {0x12, 0x02, 0x00, 0x00};
+    size_t cost;
+    size_t remaining;
+
+    descriptor = &opentelemetry__proto__common__v1__array_value__descriptor;
+    cost = sizeof(child) + descriptor->sizeof_message + 128 +
+           opentelemetry__proto__common__v1__any_value__descriptor.sizeof_message;
+    remaining = cost;
+    TEST_CHECK(flb_opentelemetry_protobuf_validate_with_budget(
+                   descriptor, child, sizeof(child), &remaining) == 0);
+    TEST_CHECK(remaining == 0);
+    remaining = cost - 1;
+    TEST_CHECK(flb_opentelemetry_protobuf_validate_with_budget(
+                   descriptor, child, sizeof(child), &remaining) == FLB_OTEL_PROTOBUF_LIMIT_EXCEEDED);
+
+    descriptor =
+        &opentelemetry__proto__metrics__v1__exponential_histogram_data_point__buckets__descriptor;
+    cost = sizeof(packed) + descriptor->sizeof_message + 128 + 2 * sizeof(uint64_t);
+    remaining = cost;
+    TEST_CHECK(flb_opentelemetry_protobuf_validate_with_budget(
+                   descriptor, packed, sizeof(packed), &remaining) == 0);
+    TEST_CHECK(remaining == 0);
+    remaining = cost - 1;
+    TEST_CHECK(flb_opentelemetry_protobuf_validate_with_budget(
+                   descriptor, packed, sizeof(packed), &remaining) == FLB_OTEL_PROTOBUF_LIMIT_EXCEEDED);
+
+    /* Multiple frames share the budget, including unknown scalar fields. */
+    remaining = 2 * (sizeof(unknown) + descriptor->sizeof_message + 128) - 1;
+    TEST_CHECK(flb_opentelemetry_protobuf_validate_with_budget(
+                   descriptor, unknown, sizeof(unknown), &remaining) == 0);
+    TEST_CHECK(flb_opentelemetry_protobuf_validate_with_budget(
+                   descriptor, unknown, sizeof(unknown), &remaining) == FLB_OTEL_PROTOBUF_LIMIT_EXCEEDED);
+}
+
 TEST_LIST = {
+    {"protobuf_budget", test_protobuf_budget},
     {"protobuf_depth", test_protobuf_depth},
     {"protobuf_wire_boundaries", test_protobuf_wire_boundaries},
     {0}
