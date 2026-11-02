@@ -29,6 +29,8 @@
 #include <msgpack.h>
 
 #ifdef FLB_HAVE_UNIX_SOCKET
+#include <fcntl.h>
+#include <unistd.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/stat.h>
@@ -51,7 +53,7 @@ static int remove_existing_socket_file(char *socket_path)
     struct stat file_data;
     int         result;
 
-    result = stat(socket_path, &file_data);
+    result = lstat(socket_path, &file_data);
 
     if (result == -1) {
         if (errno == ENOENT) {
@@ -79,6 +81,13 @@ static int remove_existing_socket_file(char *socket_path)
 static int fw_unix_create(struct flb_in_fw_config *ctx)
 {
     int ret;
+    char staging_dir[sizeof(((struct sockaddr_un *) 0)->sun_path)];
+    char staging_path[sizeof(((struct sockaddr_un *) 0)->sun_path)];
+    const char *separator;
+    size_t parent_length;
+    const char *bind_path;
+    int staging_fd;
+    struct stat staging_stat;
 
     ret = remove_existing_socket_file(ctx->unix_path);
 
@@ -97,27 +106,63 @@ static int fw_unix_create(struct flb_in_fw_config *ctx)
         return -1;
     }
 
+    /* A socket descriptor's mode is not the mode of its filesystem entry. */
+    bind_path = ctx->unix_path;
+    staging_fd = -1;
+    if (ctx->unix_perm_str) {
+        separator = strrchr(ctx->unix_path, '/');
+        parent_length = separator == NULL ? 0 : separator - ctx->unix_path + 1;
+        if (snprintf(staging_dir, sizeof(staging_dir), "%.*s.fb-XXXXXX",
+                     (int) parent_length, ctx->unix_path) >= sizeof(staging_dir) ||
+            mkdtemp(staging_dir) == NULL) {
+            flb_errno();
+            return -1;
+        }
+        staging_fd = open(staging_dir, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+        if (staging_fd < 0 || fstat(staging_fd, &staging_stat) != 0 ||
+            staging_stat.st_uid != geteuid() || (staging_stat.st_mode & 0777) != 0700 ||
+            snprintf(staging_path, sizeof(staging_path), "%s/s", staging_dir) >=
+            sizeof(staging_path)) {
+            if (staging_fd >= 0) {
+                close(staging_fd);
+            }
+            rmdir(staging_dir);
+            return -1;
+        }
+        bind_path = staging_path;
+    }
+
     ctx->downstream = flb_downstream_create(FLB_TRANSPORT_UNIX_STREAM,
                                             ctx->ins->flags,
-                                            ctx->unix_path,
+                                            bind_path,
                                             0,
                                             ctx->ins->tls,
                                             ctx->ins->config,
                                             &ctx->ins->net_setup);
 
     if (ctx->downstream == NULL) {
+        if (ctx->unix_perm_str) {
+            close(staging_fd);
+            rmdir(staging_dir);
+        }
         return -1;
     }
 
     if (ctx->unix_perm_str) {
-        if (chmod(ctx->unix_path, ctx->unix_perm)) {
+        if (fchmodat(staging_fd, "s", ctx->unix_perm, 0) ||
+            renameat(staging_fd, "s", AT_FDCWD, ctx->unix_path)) {
             flb_errno();
 
             flb_plg_error(ctx->ins, "cannot set permission on '%s' to %04o",
                           ctx->unix_path, ctx->unix_perm);
 
+            unlinkat(staging_fd, "s", 0);
+            close(staging_fd);
+            rmdir(staging_dir);
             return -1;
         }
+        close(staging_fd);
+        rmdir(staging_dir);
     }
 
     return 0;
