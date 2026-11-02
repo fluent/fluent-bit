@@ -1042,7 +1042,7 @@ void test_caching_and_refresh(void)
     config = flb_config_init();
     TEST_CHECK(config != NULL);
 
-    ret = oauth2_mock_server_start(&server, 65, 0);
+    ret = oauth2_mock_server_start(&server, 3600, 0);
     TEST_CHECK(ret == 0);
 
     ctx = create_oauth_ctx(config, &server, 58);
@@ -1067,7 +1067,8 @@ void test_caching_and_refresh(void)
     TEST_CHECK(strcmp(token, "mock-token-1") == 0);
     TEST_CHECK(server.token_requests == 1);
 
-    sleep(2);
+    /* Exercise the refresh boundary without a one-second cache lifetime. */
+    ctx->expires_at = time(NULL) + ctx->refresh_skew;
 
     ret = flb_oauth2_get_access_token(ctx, &token, FLB_FALSE);
     TEST_CHECK(ret == 0);
