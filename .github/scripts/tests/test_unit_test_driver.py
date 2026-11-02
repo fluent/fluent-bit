@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 @unittest.skipUnless(shutil.which("node"), "workflow selector requires Node.js")
 class UnitTestWorkflowFilters(unittest.TestCase):
-    def workflow_matches(self, paths, event="pull_request"):
+    def workflow_matches(self, paths, event="pull_request", labels=(), return_outputs=False):
         source = (ROOT / ".github/workflows/unit-tests.yaml").read_text()
         selector = source.split("  select-unit-tests:\n", 1)[1].split("\n  run-ubuntu-unit-tests:", 1)[0]
         script = re.search(r"          script: \|\n((?:            .*\n|\n)+)", selector)
@@ -29,7 +29,7 @@ const outputs = {};
 let apiCalls = 0;
 const core = {setOutput: (name, value) => {outputs[name] = value;}};
 const context = {eventName: fixture.event, repo: {owner: 'fluent', repo: 'fluent-bit'},
-  payload: {pull_request: {number: 12707}}};
+  payload: {pull_request: {number: 12707, labels: fixture.labels.map(name => ({name}))}}};
 const github = {rest: {pulls: {listFiles: () => {}}}, paginate: async () => {
   apiCalls++;
   return fixture.files;
@@ -44,12 +44,52 @@ const github = {rest: {pulls: {listFiles: () => {}}}, paginate: async () => {
 '''
         files = [{"filename": p} if isinstance(p, str) else p for p in paths]
         result = subprocess.run(["node", "-e", harness],
-                                input=json.dumps({"event": event, "files": files}),
+                                input=json.dumps({"event": event, "files": files, "labels": labels}),
                                 capture_output=True, text=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
         response = json.loads(result.stdout)
         self.assertEqual(response["apiCalls"], 1 if event == "pull_request" else 0)
-        return response["outputs"]["run"]
+        return response["outputs"] if return_outputs else response["outputs"]["run"]
+
+    def test_qemu_requires_exact_pr_label(self):
+        for labels, expected in [((), False), (("ci:qemu",), True),
+                                 (("other",), False), (("ci:qemu-extra",), False)]:
+            with self.subTest(labels=labels):
+                result = self.workflow_matches(["src/flb_lib.c"], labels=labels,
+                                               return_outputs=True)
+                self.assertTrue(result["run"])
+                self.assertEqual(result["qemu"], expected)
+
+    def test_qemu_label_overrides_path_filter(self):
+        result = self.workflow_matches(["packaging/example.spec"], labels=("ci:qemu",),
+                                       return_outputs=True)
+        self.assertEqual(result, {"run": True, "qemu": True})
+
+    def test_push_and_manual_keep_qemu(self):
+        for event in ("push", "workflow_dispatch"):
+            self.assertEqual(self.workflow_matches([], event=event, return_outputs=True),
+                             {"run": True, "qemu": True})
+
+    def test_required_check_propagates_selected_qemu_failures(self):
+        source = (ROOT / ".github/workflows/unit-tests.yaml").read_text()
+        gate = source.split("      - name: Check build matrix status", 1)[1]
+        expression = re.search(r"if: \$\{\{ (.+) \}\}", gate).group(1)
+        for selected in ("true", "false"):
+            for result in ("success", "failure", "cancelled", "skipped"):
+                values = {
+                    "needs.select-unit-tests.result": "success",
+                    "needs.select-unit-tests.outputs.run": "true",
+                    "needs.select-unit-tests.outputs.qemu": selected,
+                    "needs.run-ubuntu-unit-tests.result": "success",
+                    "needs.run-qemu-ubuntu-unit-tests.result": result,
+                }
+                js = expression
+                for key, value in values.items():
+                    js = js.replace(key, json.dumps(value))
+                output = subprocess.check_output(
+                    ["node", "-e", "process.stdout.write(JSON.stringify(" + js + "));"],
+                    text=True)
+                self.assertEqual(json.loads(output), selected == "true" and result != "success")
 
     def test_ci_driver_and_workflow_changes_run_real_tests(self):
         for path in (".github/scripts/run-unit-tests.sh",
