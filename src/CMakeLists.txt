@@ -549,6 +549,10 @@ if(NOT FLB_SYSTEM_WINDOWS AND NOT FLB_WASM_BROWSER)
   set(flb_core_compile_deps ${FLB_DEPS})
   list(REMOVE_ITEM flb_core_compile_deps ${FLB_PLUGINS} ${FLB_PROXY_PLUGINS} flb-http-server)
   target_link_libraries(fluent-bit-core PRIVATE ${flb_core_compile_deps})
+  if(KAFKA_FOUND)
+    # System librdkafka installs its headers below the pkg-config include root.
+    target_include_directories(fluent-bit-core PRIVATE ${KAFKA_INCLUDEDIR}/librdkafka)
+  endif()
 
   set(flb_core_sources flb_api.c)
   set(flb_core_objects fluent-bit-core)
