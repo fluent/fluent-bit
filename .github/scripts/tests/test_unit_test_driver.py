@@ -91,6 +91,30 @@ const github = {rest: {pulls: {listFiles: () => {}}}, paginate: async () => {
                     text=True)
                 self.assertEqual(json.loads(output), selected == "true" and result != "success")
 
+    def test_label_events_preserve_the_required_check(self):
+        source = (ROOT / ".github/workflows/unit-tests.yaml").read_text()
+        selector = source.split("  select-unit-tests:\n", 1)[1]
+        gate = re.search(r"if: \$\{\{ (.+) \}\}", selector).group(1)
+        aggregate = source.split("  run-all-unit-tests:\n", 1)[1]
+        name = re.search(r"name: \$\{\{ (.+) \}\}", aggregate).group(1)
+        for action in ("opened", "synchronize", "labeled", "unlabeled"):
+            for label in ("ci:qemu", "docs-required", "ok-package-test"):
+                expected = action not in ("labeled", "unlabeled") or label == "ci:qemu"
+                values = {"github.event_name": "pull_request", "github.event.action": action,
+                          "github.event.label.name": label}
+                expressions = []
+                for expression in (gate, name):
+                    for key, value in values.items():
+                        expression = expression.replace(key, json.dumps(value))
+                    expressions.append(expression)
+                output = subprocess.check_output(
+                    ["node", "-e", "process.stdout.write(JSON.stringify([" +
+                     ",".join(expressions) + "]));"], text=True)
+                run, check_name = json.loads(output)
+                self.assertEqual(run, expected)
+                self.assertEqual(check_name == "Unit tests (matrix)", expected)
+        self.assertIn("if: always() && needs.select-unit-tests.result != 'skipped'", aggregate)
+
     def test_ci_driver_and_workflow_changes_run_real_tests(self):
         for path in (".github/scripts/run-unit-tests.sh",
                      ".github/scripts/tests/test_unit_test_driver.py",
@@ -133,8 +157,7 @@ const github = {rest: {pulls: {listFiles: () => {}}}, paginate: async () => {
     def test_only_one_workflow_publishes_the_required_check(self):
         self.assertFalse((ROOT / ".github/workflows/skipped-unit-tests.yaml").exists())
         workflows = list((ROOT / ".github/workflows").glob("*.yaml"))
-        required = [p for p in workflows if re.search(r"^    name: Unit tests \(matrix\)$",
-                                                      p.read_text(), re.MULTILINE)]
+        required = [p for p in workflows if "Unit tests (matrix)" in p.read_text()]
         self.assertEqual([p.name for p in required], ["unit-tests.yaml"])
 
 

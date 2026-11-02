@@ -45,6 +45,7 @@ env:
 
 jobs:
   select-unit-tests:
+    if: ${{ github.event_name != 'pull_request' || (github.event.action != 'labeled' && github.event.action != 'unlabeled') || github.event.label.name == 'ci:qemu' }}
     runs-on: ubuntu-latest
     permissions:
       pull-requests: read
@@ -413,9 +414,10 @@ jobs:
 
   # Required check looks at this so do not remove
   run-all-unit-tests:
-    if: always()
+    if: always() && needs.select-unit-tests.result != 'skipped'
     runs-on: ubuntu-latest
-    name: Unit tests (matrix)
+    # Unrelated labels must not replace the required check with a skipped result.
+    name: ${{ (github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name != 'ci:qemu' && 'Unit tests (unrelated label)' || 'Unit tests (matrix)' }}
     permissions:
       contents: none
     needs:
