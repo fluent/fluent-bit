@@ -63,6 +63,15 @@ class StorageFaultHandler(BrowserHandler):
         return super().send_head()
 
 
+class WasmFaultHandler(BrowserHandler):
+    def send_head(self):
+        if self.path == '/sdk/fluent-bit-runtime.wasm':
+            self.server.wasm_fault_requests += 1
+            self.send_error(503, 'Injected WASM download failure')
+            return None
+        return super().send_head()
+
+
 def check_storage_failure(page):
     result = page.evaluate('''async () => {
         const {createFluentBit} = await import('/sdk/fluent-bit.js');
@@ -180,8 +189,11 @@ def main():
                         page.on('console', lambda event: print(event.text, flush=True))
                         errors = []
                         workers = set()
+                        worker_phases = {}
+                        phase = 'lifecycle'
                         def worker_started(worker):
                             workers.add(worker)
+                            worker_phases[worker] = phase
                             worker.on('close', lambda: workers.discard(worker))
                         page.on('worker', worker_started)
                         page.on('pageerror', lambda event: errors.append(str(event)))
@@ -197,20 +209,26 @@ def main():
                         assert result['passed'] and not errors, errors
                         if not args.fts_only:
                             server.RequestHandlerClass = functools.partial(StorageFaultHandler, build_dir=args.build_dir)
+                            phase = 'storage recovery'
                             check_storage_failure(page)
-                            server.RequestHandlerClass = functools.partial(BrowserHandler, build_dir=args.build_dir)
-                            page.route('**/sdk/fluent-bit-runtime.wasm', lambda route: route.abort())
+                            phase = 'download failure'
+                            server.wasm_fault_requests = 0
+                            server.RequestHandlerClass = functools.partial(
+                                WasmFaultHandler, build_dir=args.build_dir)
                             failure = page.evaluate("""async () => {
                                 const {createFluentBit} = await import('/sdk/fluent-bit.js');
-                                try { await createFluentBit(); return null; }
+                                try { await createFluentBit({initTimeoutMs: 10000}); return null; }
                                 catch (error) { return error.code; }
                             }""")
                             assert failure in ('E_LOAD', 'E_RUNTIME', 'E_WORKER'), failure
+                            assert server.wasm_fault_requests == 1
                         for _ in range(100):
                             if not workers:
                                 break
                             page.wait_for_timeout(50)
-                        assert not workers, f'{len(workers)} SDK workers survived destroy'
+                        assert not workers, (
+                            'SDK workers survived destroy: '
+                            f'{[(worker.url, worker_phases[worker]) for worker in workers]}')
                         print(result)
             finally:
                 server.shutdown()
