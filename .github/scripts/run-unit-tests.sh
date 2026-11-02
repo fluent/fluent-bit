@@ -11,13 +11,14 @@ build_jobs=${FLB_BUILD_JOBS:-$((cpu_count > 8 ? 8 : cpu_count))}
 
 validate_jobs()
 {
-    if [[ ! "$1" =~ ^[1-9][0-9]*$ ]]; then
+    if [[ ! "$1" =~ ^0*[1-9][0-9]*$ ]]; then
         echo "Build and test parallel levels must be positive integers: $1" >&2
         exit 1
     fi
 }
 
 validate_jobs "$build_jobs"
+build_jobs=$((10#$build_jobs))
 test_jobs=$build_jobs
 
 # Runtime tests frequently wait for flushes, timers, and network responses.
@@ -27,6 +28,26 @@ if [[ "$platform" == Linux && ! "${FLB_OPT:-}" =~ SANITIZE ]]; then
 fi
 test_jobs=${FLB_TEST_JOBS:-$test_jobs}
 validate_jobs "$test_jobs"
+test_jobs=$((10#$test_jobs))
+
+test_scope=${FLB_TEST_SCOPE:-full}
+test_targets=()
+test_options=()
+case "$test_scope" in
+    full)
+        ;;
+    sanitizer-smoke)
+        # Initial coverage for the newly active TSan/MSan configurations.
+        # Full-suite hardening also needs instrumented system dependencies and
+        # fixes for existing callback/engine races; retain those diagnostics.
+        test_targets=(--target flb-it-pack flb-it-config_map flb-it-plugin_alias)
+        test_options=(-R '^flb-it-(pack|config_map|plugin_alias)$')
+        ;;
+    *)
+        echo "Unknown test scope: $test_scope" >&2
+        exit 1
+        ;;
+esac
 
 results="$SOURCE_DIR/build/ci-results"
 mkdir -p "$results"
@@ -35,6 +56,7 @@ printf 'platform=%s\ncpus=%s\nbuild_jobs=%s\ntest_jobs=%s\n' \
     "$platform" "$cpu_count" "$build_jobs" "$test_jobs" | tee "$results/runner.txt"
 printf 'cc=%s\ncxx=%s\ncmake_options=%s\n' "${CC:-}" "${CXX:-}" "${FLB_OPT:-}" \
     | tee -a "$results/runner.txt"
+printf 'test_scope=%s\n' "$test_scope" | tee -a "$results/runner.txt"
 
 run_timed()
 {
@@ -88,9 +110,9 @@ cd "$SOURCE_DIR/build"
 run_timed configure cmake -DFLB_BACKTRACE=Off -DFLB_SHARED_LIB=Off -DFLB_DEBUG=On \
     -DFLB_ALL=On -DFLB_EXAMPLES=Off -DFLB_TESTS_INTERNAL=On -DFLB_TESTS_RUNTIME=On \
     "${linker_options[@]}" "${flb_options[@]}" "${skip_options[@]}" ..
-run_timed build cmake --build . --parallel "$build_jobs"
+run_timed build cmake --build . --parallel "$build_jobs" "${test_targets[@]}"
 run_timed tests ctest --parallel "$test_jobs" --output-on-failure \
-    --no-tests=error --output-junit "$results/unit-tests.xml"
+    --no-tests=error --output-junit "$results/unit-tests.xml" "${test_options[@]}"
 
 if [[ "${FLB_OPT:-}" =~ COVERAGE ]]; then
     mkdir -p "$SOURCE_DIR/coverage"

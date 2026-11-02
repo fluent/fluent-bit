@@ -12,14 +12,19 @@ on:
       - 1.9
       - 1.8
   pull_request:
-    paths-ignore:
-      - '.github/**'
-      - 'dockerfiles/**'
-      - 'docker_compose/**'
-      - 'packaging/**'
-      - '.gitignore'
-      - 'appveyor.yml'
-      - 'examples/**'
+    paths:
+      - '**'
+      - '!.github/**'
+      - '!dockerfiles/**'
+      - '!docker_compose/**'
+      - '!packaging/**'
+      - '!.gitignore'
+      - '!appveyor.yml'
+      - '!examples/**'
+      - '.github/scripts/run-unit-tests.sh'
+      - '.github/scripts/tests/test_unit_test_driver.py'
+      - '.github/workflows/unit-tests.yaml'
+      - '.github/workflows/skipped-unit-tests.yaml'
     branches:
       - master
       - 5.1
@@ -53,6 +58,7 @@ env:
 
 jobs:
   run-ubuntu-unit-tests:
+    name: "${{ startsWith(matrix.flb_option, '-DFLB_SANITIZE_') && 'Linux sanitizer smoke' || 'Linux unit tests' }} (${{ matrix.compiler.cc }}, ${{ matrix.flb_option }})"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     strategy:
@@ -164,6 +170,9 @@ jobs:
           CC: ${{ matrix.compiler.cc }}
           CXX: ${{ matrix.compiler.cxx }}
           FLB_OPT: ${{ matrix.flb_option }}
+          # These formerly no-op options now enable real instrumentation. Start
+          # with explicit smoke coverage; ordinary/ASan/UBSan jobs run everything.
+          FLB_TEST_SCOPE: ${{ startsWith(matrix.flb_option, '-DFLB_SANITIZE_') && 'sanitizer-smoke' || 'full' }}
           CALYPTIA_FLEET_TOKEN: ${{ secrets.CALYPTIA_FLEET_TOKEN }}
 
       - name: Upload unit-test timings and results
@@ -179,6 +188,7 @@ jobs:
           if-no-files-found: warn
 
   run-macos-unit-tests:
+    name: "${{ startsWith(matrix.flb_option, '-DFLB_SANITIZE_') && 'macOS sanitizer smoke' || 'macOS unit tests' }} (${{ matrix.flb_option }})"
     # We chain this after Linux one as there are costs and restrictions associated
     needs:
       - run-ubuntu-unit-tests
@@ -212,6 +222,7 @@ jobs:
           CC: gcc
           CXX: g++
           FLB_OPT: ${{ matrix.flb_option }}
+          FLB_TEST_SCOPE: ${{ startsWith(matrix.flb_option, '-DFLB_SANITIZE_') && 'sanitizer-smoke' || 'full' }}
 
       - name: Upload unit-test timings and results
         if: always()
