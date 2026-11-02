@@ -58,6 +58,8 @@ export function getBrowserSupport() {
 
 class FluentBit {
     #worker;
+    #workerClosed = false;
+    #terminationTimer;
     #options;
     #state = 'loading';
     #info;
@@ -121,11 +123,21 @@ class FluentBit {
         this.#state = state;
         this.#callback('onStateChange', state);
     }
+    #terminateWorker() {
+        if (this.#workerClosed) {
+            // Give self-close time to finish before enforcing the fallback.
+            // Immediate termination can interrupt nested worker cleanup.
+            if (this.#terminationTimer === undefined) {
+                this.#terminationTimer = setTimeout(() => this.#worker?.terminate(), 250);
+            }
+        }
+        else { this.#worker?.terminate(); }
+    }
     #fatal(failure) {
         if (['failed', 'destroyed'].includes(this.#state)) { return; }
         clearTimeout(this.#loadTimer);
         this.#detachAbort();
-        this.#worker?.terminate();
+        this.#terminateWorker();
         this.#setState('failed');
         this.#rejectReady(failure);
         if (this.#pending) {
@@ -180,6 +192,7 @@ class FluentBit {
             this.#resolveReady();
         }
         else if (message.type === 'fatal') {
+            this.#workerClosed = message.closed === true;
             this.#fatal(error(message.code || 'E_RUNTIME', message.message));
         }
         else if (message.type === 'response' && this.#pending?.id === message.id) {
@@ -191,7 +204,14 @@ class FluentBit {
             const pending = this.#pending;
             this.#pending = null;
             clearTimeout(pending.timer);
-            if (message.ok) { pending.resolve(message.value); }
+            if (message.ok) {
+                // A terminal reply confirms that the owner called self.close().
+                // Interrupting it with terminate() can retain nested Chromium workers.
+                if (pending.method === 'destroy' && message.closed === true) {
+                    this.#workerClosed = true;
+                }
+                pending.resolve(message.value);
+            }
             else {
                 const failure = error(message.code, message.message);
                 pending.reject(failure);
@@ -209,7 +229,7 @@ class FluentBit {
         return new Promise((resolve, reject) => {
             const timer = setTimeout(() => this.#fatal(error('E_TIMEOUT', `${method} timed out; runtime terminated`)),
                                      this.#options.operationTimeoutMs);
-            this.#pending = {id, resolve, reject, timer};
+            this.#pending = {id, method, resolve, reject, timer};
             try { this.#worker.postMessage({abi: ABI, type: 'request', id, method, payload}); }
             catch (_) { this.#fatal(error('E_PROTOCOL', 'Unable to send SDK command')); }
         });
@@ -347,7 +367,7 @@ class FluentBit {
                     this.#pending.reject(error('E_DESTROYED', 'SDK instance was destroyed'));
                     this.#pending = null;
                 }
-                this.#worker?.terminate();
+                this.#terminateWorker();
                 this.#setState('destroyed');
             }
         })();
