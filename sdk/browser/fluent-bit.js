@@ -59,6 +59,7 @@ export function getBrowserSupport() {
 class FluentBit {
     #worker;
     #workerClosed = false;
+    #terminationTimer;
     #options;
     #state = 'loading';
     #info;
@@ -122,11 +123,21 @@ class FluentBit {
         this.#state = state;
         this.#callback('onStateChange', state);
     }
+    #terminateWorker() {
+        if (this.#workerClosed) {
+            // Give self-close time to finish before enforcing the fallback.
+            // Immediate termination can interrupt nested worker cleanup.
+            if (this.#terminationTimer === undefined) {
+                this.#terminationTimer = setTimeout(() => this.#worker?.terminate(), 250);
+            }
+        }
+        else { this.#worker?.terminate(); }
+    }
     #fatal(failure) {
         if (['failed', 'destroyed'].includes(this.#state)) { return; }
         clearTimeout(this.#loadTimer);
         this.#detachAbort();
-        if (!this.#workerClosed) { this.#worker?.terminate(); }
+        this.#terminateWorker();
         this.#setState('failed');
         this.#rejectReady(failure);
         if (this.#pending) {
@@ -356,7 +367,7 @@ class FluentBit {
                     this.#pending.reject(error('E_DESTROYED', 'SDK instance was destroyed'));
                     this.#pending = null;
                 }
-                if (!this.#workerClosed) { this.#worker?.terminate(); }
+                this.#terminateWorker();
                 this.#setState('destroyed');
             }
         })();
