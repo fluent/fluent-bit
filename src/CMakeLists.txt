@@ -459,7 +459,7 @@ endif()
 if(FLB_HAVE_LIBYAML)
 set(FLB_DEPS
   ${FLB_DEPS}
-  yaml
+  ${FLB_LIBYAML_LINK}
   )
 endif()
 
