@@ -121,6 +121,8 @@ static int network_init(struct k8s_events *ctx, struct flb_config *config)
             return -1;
         }
 
+        flb_tls_set_verify_hostname(ctx->tls, ctx->ins->tls_verify_hostname);
+
         io_type = FLB_IO_TLS;
     }
 

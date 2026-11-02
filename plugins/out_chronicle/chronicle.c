@@ -489,14 +489,14 @@ static int cb_chronicle_init(struct flb_output_instance *ins,
                                      io_flags, ins->tls);
     if (!ctx->u) {
         flb_plg_error(ctx->ins, "upstream creation failed");
-        return -1;
+        goto error;
     }
 
     /* Create oauth2 context */
-    ctx->o = flb_oauth2_create(ctx->config, FLB_CHRONICLE_AUTH_URL, 3000);
+    ctx->o = flb_oauth2_create(ins, FLB_CHRONICLE_AUTH_URL, 3000);
     if (!ctx->o) {
         flb_plg_error(ctx->ins, "cannot create oauth2 context");
-        return -1;
+        goto error;
     }
     flb_output_upstream_set(ctx->u, ins);
 
@@ -520,12 +520,21 @@ static int cb_chronicle_init(struct flb_output_instance *ins,
             if (ret != 0) {
                 flb_plg_error(ctx->ins, "Validate log_type failed. '%s' is not supported. ret = %d",
                               ctx->log_type, ret);
-                return -1;
+                goto error;
             }
         }
     }
 
     return 0;
+
+error:
+    if (ctx->u) {
+        flb_upstream_destroy(ctx->u);
+    }
+    pthread_mutex_destroy(&ctx->token_mutex);
+    flb_chronicle_conf_destroy(ctx);
+    flb_output_set_context(ins, NULL);
+    return -1;
 }
 
 enum chronicle_log_key_result {

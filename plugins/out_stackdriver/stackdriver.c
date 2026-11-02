@@ -1397,7 +1397,7 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
                                               FLB_IO_TCP, NULL);
 
     /* Create oauth2 context */
-    ctx->o = flb_oauth2_create(ctx->config, FLB_STD_AUTH_URL, 3000);
+    ctx->o = flb_oauth2_create(ins, FLB_STD_AUTH_URL, 3000);
 
     if (!ctx->u) {
         flb_plg_error(ctx->ins, "upstream creation failed");

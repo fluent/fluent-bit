@@ -66,6 +66,7 @@ static void test_dns_timeout(char *mode, int upstream_first, int timeout)
     struct flb_sched_timer *timer;
     struct flb_sched_timer *deadline = NULL;
     struct mk_list *head;
+    struct mk_list *tmp;
     struct mk_event_loop *evl;
 #ifdef FLB_SYSTEM_WINDOWS
     WSADATA wsa_data;
@@ -144,18 +145,14 @@ static void test_dns_timeout(char *mode, int upstream_first, int timeout)
         TEST_CHECK(mk_list_size(&context.upstream->queue.destroy_queue) == 1);
     }
 
-    /* With a deadline, withhold DNS events to simulate an unresponsive server.
-     * Without one, let the configured resolver complete the .invalid lookup so
-     * the coroutine and lookup context can be cleaned up normally.
+    /* Withhold DNS events to simulate an unresponsive server. A disabled
+     * deadline must leave the lookup pending regardless of resolver behavior.
      */
-    limit = time(NULL) + 5;
+    limit = time(NULL) + (timeout > 0 ? 5 : 1);
     while (!context.done && time(NULL) < limit) {
         mk_event_wait_2(evl, 100);
         mk_event_foreach(event, evl) {
-            if (timeout <= 0 && event->type == FLB_ENGINE_EV_CUSTOM) {
-                event->handler(event);
-            }
-            else if (event->type & FLB_ENGINE_EV_SCHED) {
+            if (event->type & FLB_ENGINE_EV_SCHED) {
                 flb_sched_event_handler(test_env_config, event);
             }
         }
@@ -166,13 +163,27 @@ static void test_dns_timeout(char *mode, int upstream_first, int timeout)
         flb_net_dns_lookup_context_cleanup(&dns);
         flb_time_msleep(10);
     }
+    if (timeout <= 0) {
+        TEST_CHECK(context.done == FLB_FALSE);
+        TEST_CHECK(mk_list_size(&dns.lookups) == 1);
+
+        /* Destroy the pending lookup through deferred cleanup. c-ares reports
+         * ARES_EDESTRUCTION before cleanup resumes the coroutine, so this does
+         * not need a response from the host's configured DNS server.
+         */
+        mk_list_foreach_safe(head, tmp, &dns.lookups) {
+            mk_list_del(head);
+            mk_list_add(head, &dns.lookups_drop);
+        }
+        flb_net_dns_lookup_context_cleanup(&dns);
+    }
     TEST_ASSERT(context.done == FLB_TRUE);
     if (!upstream_first) {
         if (timeout > 0) {
             TEST_CHECK(context.result == ARES_ETIMEOUT);
         }
         else {
-            TEST_CHECK(context.result != ARES_ETIMEOUT);
+            TEST_CHECK(context.result == ARES_EDESTRUCTION);
         }
     }
     else {

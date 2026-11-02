@@ -23,6 +23,7 @@
 #define S3_TEST_WAIT_STEP_MS      10
 #define S3_TEST_WAIT_TIMEOUT_MS 5000
 #define S3_TEST_STARTUP_FILE_COUNT (CIO_MAX_CHUNKS_UP + 2)
+#define S3_TEST_CA_FILE FLB_TESTS_DATA_PATH "/data/tls/ca_certificate.pem"
 
 /* not a real error code, but tests that the code can respond to any error */
 #define ERROR_ACCESS_DENIED "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
@@ -44,6 +45,72 @@ static struct flb_s3 *get_s3_context(flb_ctx_t *ctx)
     ins = mk_list_entry_first(&ctx->config->outputs,
                               struct flb_output_instance, _head);
     return ins->context;
+}
+
+static void flb_test_s3_hostname_verification_propagates(void)
+{
+    flb_ctx_t *ctx;
+    struct flb_s3 *s3;
+    int in_ffd;
+    int out_ffd;
+    int ret;
+    int verify_hostname;
+
+    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+
+    for (verify_hostname = FLB_FALSE; verify_hostname <= FLB_TRUE; verify_hostname++) {
+        ctx = flb_create();
+        TEST_CHECK(ctx != NULL);
+        if (ctx == NULL) {
+            break;
+        }
+
+        in_ffd = flb_input(ctx, (char *) "lib", NULL);
+        TEST_CHECK(in_ffd >= 0);
+        flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+        out_ffd = flb_output(ctx, (char *) "s3", NULL);
+        TEST_CHECK(out_ffd >= 0);
+        flb_output_set(ctx, out_ffd, "match", "*", NULL);
+        flb_output_set(ctx, out_ffd, "region", "us-west-2", NULL);
+        flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+        flb_output_set(ctx, out_ffd, "authorization_endpoint_url",
+                       "https://localhost:1443/authorize", NULL);
+        flb_output_set(ctx, out_ffd, "tls.ca_file", S3_TEST_CA_FILE, NULL);
+        if (verify_hostname == FLB_TRUE) {
+            flb_output_set(ctx, out_ffd, "tls.verify_hostname", "on", NULL);
+        }
+
+        ret = flb_start(ctx);
+        TEST_CHECK(ret == 0);
+        if (ret == 0) {
+            s3 = get_s3_context(ctx);
+            TEST_CHECK(s3 != NULL);
+            if (s3 != NULL) {
+                TEST_CHECK(s3->client_tls != NULL);
+                TEST_CHECK(s3->provider_tls != NULL);
+                TEST_CHECK(s3->authorization_endpoint_tls_context != NULL);
+                if (s3->client_tls != NULL && s3->provider_tls != NULL) {
+                    TEST_CHECK(s3->client_tls->verify_hostname == verify_hostname);
+                    TEST_CHECK(s3->provider_tls->verify_hostname == verify_hostname);
+                }
+                if (s3->authorization_endpoint_tls_context != NULL) {
+                    TEST_CHECK(s3->authorization_endpoint_tls_context->verify == FLB_TRUE);
+                    TEST_CHECK(s3->authorization_endpoint_tls_context->verify_hostname ==
+                               verify_hostname);
+                    TEST_CHECK(s3->authorization_endpoint_tls_context->ca_file != NULL);
+                    if (s3->authorization_endpoint_tls_context->ca_file != NULL) {
+                        TEST_CHECK(strcmp(s3->authorization_endpoint_tls_context->ca_file,
+                                          S3_TEST_CA_FILE) == 0);
+                    }
+                }
+            }
+            flb_stop(ctx);
+        }
+        flb_destroy(ctx);
+    }
+
+    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
 }
 
 static int count_files_recursive(const char *path)
@@ -2483,6 +2550,7 @@ static void flb_test_s3_credentials_serialized(void)
 
 /* Test list */
 TEST_LIST = {
+    {"hostname_verification_propagates", flb_test_s3_hostname_verification_propagates },
     {"credentials_serialized", flb_test_s3_credentials_serialized },
     {"multipart_success", flb_test_s3_multipart_success },
     {"putobject_success", flb_test_s3_putobject_success },

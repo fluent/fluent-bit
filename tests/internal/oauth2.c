@@ -7,6 +7,7 @@
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_oauth2.h>
+#include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_base64.h>
@@ -519,6 +520,9 @@ static struct flb_oauth2 *create_oauth_ctx_with_user_agent(struct flb_config *co
 {
     struct flb_oauth2_config cfg;
     struct flb_oauth2 *ctx;
+    struct flb_output_instance ins = {0};
+
+    ins.config = config;
 
     memset(&cfg, 0, sizeof(cfg));
     cfg.enabled = FLB_TRUE;
@@ -533,7 +537,7 @@ static struct flb_oauth2 *create_oauth_ctx_with_user_agent(struct flb_config *co
 
     flb_sds_printf(&cfg.token_url, "http://127.0.0.1:%d/token", server->port);
 
-    ctx = flb_oauth2_create_from_config(config, &cfg);
+    ctx = flb_oauth2_create_from_config(&ins, &cfg);
 
     flb_oauth2_config_destroy(&cfg);
 
@@ -603,6 +607,9 @@ static struct flb_oauth2 *create_legacy_oauth_ctx(struct flb_config *config,
 {
     flb_sds_t token_url;
     struct flb_oauth2 *ctx;
+    struct flb_output_instance ins = {0};
+
+    ins.config = config;
 
     token_url = flb_sds_create_size(64);
     TEST_CHECK(token_url != NULL);
@@ -612,7 +619,7 @@ static struct flb_oauth2 *create_legacy_oauth_ctx(struct flb_config *config,
 
     flb_sds_printf(&token_url, "http://127.0.0.1:%d/token", server->port);
 
-    ctx = flb_oauth2_create(config, token_url, 300);
+    ctx = flb_oauth2_create(&ins, token_url, 300);
     flb_sds_destroy(token_url);
 
     return ctx;
@@ -871,6 +878,9 @@ static struct flb_oauth2 *create_private_key_jwt_ctx(struct flb_config *config,
 {
     struct flb_oauth2 *ctx;
     struct flb_oauth2_config cfg;
+    struct flb_output_instance ins = {0};
+
+    ins.config = config;
 
     memset(&cfg, 0, sizeof(cfg));
 
@@ -887,7 +897,7 @@ static struct flb_oauth2 *create_private_key_jwt_ctx(struct flb_config *config,
     flb_sds_printf(&cfg.token_url, "http://127.0.0.1:%d/token", server->port);
     cfg.jwt_aud = flb_sds_create(cfg.token_url);
 
-    ctx = flb_oauth2_create_from_config(config, &cfg);
+    ctx = flb_oauth2_create_from_config(&ins, &cfg);
     flb_oauth2_config_destroy(&cfg);
 
     return ctx;
@@ -1274,7 +1284,54 @@ void test_private_key_jwt_x5t_header(void)
     flb_config_exit(config);
 }
 
+void test_hostname_verification_from_output_instance(void)
+{
+    int verify_hostname;
+    struct flb_config *config;
+    struct flb_oauth2 *ctx;
+    struct flb_output_instance ins = {0};
+    struct flb_oauth2_config cfg = {0};
+
+    config = flb_config_init();
+    TEST_CHECK(config != NULL);
+    if (!config) {
+        return;
+    }
+
+    ins.config = config;
+    cfg.enabled = FLB_TRUE;
+    cfg.token_url = flb_sds_create("https://localhost/token");
+    TEST_CHECK(cfg.token_url != NULL);
+    if (!cfg.token_url) {
+        flb_config_exit(config);
+        return;
+    }
+
+    for (verify_hostname = FLB_FALSE; verify_hostname <= FLB_TRUE; verify_hostname++) {
+        ins.tls_verify_hostname = verify_hostname;
+
+        ctx = flb_oauth2_create(&ins, cfg.token_url, 300);
+        TEST_CHECK(ctx != NULL);
+        if (ctx) {
+            TEST_CHECK(ctx->tls->verify_hostname == verify_hostname);
+            flb_oauth2_destroy(ctx);
+        }
+
+        ctx = flb_oauth2_create_from_config(&ins, &cfg);
+        TEST_CHECK(ctx != NULL);
+        if (ctx) {
+            TEST_CHECK(ctx->tls->verify_hostname == verify_hostname);
+            flb_oauth2_destroy(ctx);
+        }
+    }
+
+    flb_oauth2_config_destroy(&cfg);
+    flb_config_exit(config);
+}
+
 TEST_LIST = {
+    {"hostname_verification_from_output_instance",
+     test_hostname_verification_from_output_instance},
     {"parse_refreshes_token_transactionally",
      test_parse_refreshes_token_transactionally},
     {"parse_accepts_quoted_expires_in", test_parse_accepts_quoted_expires_in},

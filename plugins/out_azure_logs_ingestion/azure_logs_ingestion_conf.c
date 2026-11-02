@@ -190,7 +190,7 @@ struct flb_az_li* flb_az_li_ctx_create(struct flb_output_instance *ins,
     pthread_mutex_init(&ctx->token_mutex, NULL);
 
     /* Create oauth2 context */
-    ctx->u_auth = flb_oauth2_create(config, ctx->auth_url,
+    ctx->u_auth = flb_oauth2_create(ins, ctx->auth_url,
                                     FLB_AZ_LI_TOKEN_TIMEOUT);
     if (!ctx->u_auth) {
         flb_plg_error(ins, "cannot create oauth2 context");
