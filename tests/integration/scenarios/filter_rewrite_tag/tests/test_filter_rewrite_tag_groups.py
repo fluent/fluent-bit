@@ -28,7 +28,8 @@ def exported_records(log_file):
 
 @pytest.mark.parametrize("reverse", [False, True])
 @pytest.mark.parametrize("mode", ["split", "same", "keep", "unmatched"])
-def test_rewrite_tag_preserves_group_context(tmp_path, reverse, mode):
+@pytest.mark.parametrize("placement", ["filter", "processor", "batched"])
+def test_rewrite_tag_preserves_group_context(tmp_path, reverse, mode, placement):
     messages = [
         {"level": "info", "message": "order accepted"},
         {"level": "error", "message": "payment authorization failed"},
@@ -86,6 +87,15 @@ def test_rewrite_tag_preserves_group_context(tmp_path, reverse, mode):
             "dummy": json.dumps({"level": "info", "message": "ungrouped event"}),
         },
     ])
+    if placement != "filter":
+        rewrite = config["pipeline"].pop("filters")[0]
+        rewrite.pop("match")
+        if placement == "batched":
+            rewrite["batch_size"] = 256
+        for input_config in config["pipeline"]["inputs"]:
+            input_config.setdefault("processors", {}).setdefault("logs", []).append(
+                copy.deepcopy(rewrite)
+            )
     config_path = tmp_path / "rewrite_tag.yaml"
     config_path.write_text(yaml.safe_dump(config))
     service = FluentBitTestService(str(config_path))

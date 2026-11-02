@@ -1,0 +1,32 @@
+{
+  "functional_integration": {
+    "passed": 39,
+    "failed": 0,
+    "seconds": 116.76
+  },
+  "strict_valgrind_integration": {
+    "passed": 39,
+    "failed": 0,
+    "seconds": 155.02,
+    "errors": 0,
+    "definitely_lost": 0,
+    "indirectly_lost": 0,
+    "possibly_lost": 0
+  },
+  "ctest": {
+    "passed": 11,
+    "failed": 0,
+    "seconds": 107.57
+  },
+  "integration_scenarios": [
+    "filter_rewrite_tag",
+    "filter_multiline",
+    "filter_log_to_metrics"
+  ],
+  "baseline_regressions": {
+    "reproduced": [
+      "reverse emitter shutdown chain loses all 1000 records",
+      "multiple input processors collide on default emitter name"
+    ]
+  }
+}
