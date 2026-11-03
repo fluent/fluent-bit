@@ -97,7 +97,7 @@ RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/rocky-devel.repo
 RUN yum -y update && \
     yum install -y --allowerasing rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
     wget unzip systemd-devel wget flex bison zlib-devel \
-    postgresql-libs postgresql-devel postgresql-server postgresql \
+    libpq libpq-devel \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config  \
     libzstd-devel && \
     yum clean all
@@ -119,7 +119,7 @@ RUN sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/rocky-devel.repo
 RUN yum -y update && \
     yum install -y --allowerasing rpm-build curl ca-certificates gcc gcc-c++ cmake make bash \
     wget unzip systemd-devel wget flex bison zlib-devel \
-    postgresql-libs postgresql-devel postgresql-server postgresql \
+    libpq libpq-devel \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libyaml-devel pkgconf-pkg-config  \
     libzstd-devel && \
     yum clean all
