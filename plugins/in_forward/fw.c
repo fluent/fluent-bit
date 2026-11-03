@@ -837,6 +837,14 @@ static struct flb_config_map config_map[] = {
     "including retained group records and zone overhead."
    },
    {
+    FLB_CONFIG_MAP_SIZE, "signal_object_memory_limit", "100M",
+    0, FLB_TRUE, offsetof(struct flb_in_fw_config, signal_object_memory_limit),
+    "Maximum estimated decoded object memory for a PackedForward metrics or traces "
+    "payload. Each MessagePack root, array element, and map entry is charged "
+    "1024 bytes. This is independent of msgpack_memory_limit and is not an "
+    "exact heap limit."
+   },
+   {
     FLB_CONFIG_MAP_BOOL, "empty_shared_key", "false",
     0, FLB_TRUE, offsetof(struct flb_in_fw_config, empty_shared_key),
     "Enable an empty string as the shared key for authentication."

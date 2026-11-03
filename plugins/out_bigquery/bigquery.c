@@ -251,7 +251,8 @@ static int bigquery_get_oauth2_token(struct flb_bigquery *ctx)
         return -1;
     }
 
-    flb_plg_debug(ctx->ins, "JWT signature:\n%s", sig_data);
+    /* The assertion is a replayable credential; never log its contents. */
+    flb_plg_debug(ctx->ins, "JWT assertion generated");
 
     ret = flb_oauth2_payload_append(ctx->o,
                                     "grant_type", -1,

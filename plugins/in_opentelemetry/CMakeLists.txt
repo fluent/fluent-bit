@@ -4,7 +4,6 @@ endif()
 
 set(src
   opentelemetry.c
-  opentelemetry_protobuf.c
   opentelemetry_prot.c
   opentelemetry_logs.c
   opentelemetry_traces.c

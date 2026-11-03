@@ -512,8 +512,9 @@ static int unpack_span_kind(mpack_reader_t *reader, size_t index, void *ctx)
     int result;
 
     result = ctr_mpack_consume_int32_tag(reader, &kind);
-    if (result == CTR_MPACK_SUCCESS && ctr_span_kind_set(context->span, kind) != 0) {
-        return CTR_MPACK_CORRUPT_INPUT_DATA_ERROR;
+    if (result == CTR_MPACK_SUCCESS) {
+        /* Match proto3 decoding: preserve unknown received enum values. */
+        context->span->kind = kind;
     }
 
     return result;

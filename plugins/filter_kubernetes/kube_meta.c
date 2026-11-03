@@ -760,6 +760,11 @@ static void extract_container_hash(struct flb_kube_meta *meta,
     const char *tmp;
     int tmp_len = 0;
     int name_found = FLB_FALSE;
+
+    if (status.type != MSGPACK_OBJECT_MAP) {
+        return;
+    }
+
     /* Process status/containerStatus map for docker_id, container_hash, container_image */
     for (i = 0;
          (meta->docker_id_len == 0 || meta->container_hash_len == 0 ||
@@ -776,6 +781,11 @@ static void extract_container_hash(struct flb_kube_meta *meta,
                      FLB_KUBE_META_INIT_CONTAINER_STATUSES_KEY_LEN) == 0)) {
             int j;
             v = status.via.map.ptr[i].val;
+
+            if (v.type != MSGPACK_OBJECT_ARRAY) {
+                continue;
+            }
+
             for (j = 0;
                  (meta->docker_id_len == 0 ||
                   meta->container_hash_len == 0 ||
@@ -785,12 +795,22 @@ static void extract_container_hash(struct flb_kube_meta *meta,
                 msgpack_object k1, k2;
                 msgpack_object_str v2;
                 k1 = v.via.array.ptr[j];
+
+                if (k1.type != MSGPACK_OBJECT_MAP) {
+                    continue;
+                }
+
                 for (l = 0;
                      (meta->docker_id_len == 0 ||
                       meta->container_hash_len == 0 ||
                       meta->container_image_len == 0) &&
                      l < k1.via.map.size; l++) {
                     k2 = k1.via.map.ptr[l].key;
+
+                    if (k1.via.map.ptr[l].val.type != MSGPACK_OBJECT_STR) {
+                        continue;
+                    }
+
                     v2 = k1.via.map.ptr[l].val.via.str;
                     if (k2.via.str.size == sizeof("name") - 1 &&
                         !strncmp(k2.via.str.ptr, "name", k2.via.str.size)) {
@@ -1015,11 +1035,18 @@ static int search_podname_and_namespace(struct flb_kube_meta *meta,
     msgpack_object k;
     msgpack_object v;
 
+    if (map.type != MSGPACK_OBJECT_MAP) {
+        return -1;
+    }
+
     for (i = 0; (!podname_found || !namespace_found) &&
                  i < map.via.map.size; i++) {
 
         k = map.via.map.ptr[i].key;
         v = map.via.map.ptr[i].val;
+        if (k.type != MSGPACK_OBJECT_STR) {
+            continue;
+        }
         if (k.via.str.size == 4 && !strncmp(k.via.str.ptr, "name", 4)) {
 
             podname_found = FLB_TRUE;
@@ -1073,6 +1100,9 @@ static int search_metadata_in_items(struct flb_kube_meta *meta,
         for (j = 0; j < item_info_map.via.map.size; j++) {
 
             k = item_info_map.via.map.ptr[j].key;
+            if (k.type != MSGPACK_OBJECT_STR) {
+                continue;
+            }
             if (k.via.str.size == 8 &&
                 !strncmp(k.via.str.ptr, "metadata", 8)) {
 
@@ -1128,9 +1158,16 @@ static int search_item_in_items(struct flb_kube_meta *meta,
     msgpack_object v;
     msgpack_object items_array;
 
+    if (api_map.type != MSGPACK_OBJECT_MAP) {
+        return -1;
+    }
+
     for (i = 0; !items_array_found && i < api_map.via.map.size; i++) {
 
         k = api_map.via.map.ptr[i].key;
+        if (k.type != MSGPACK_OBJECT_STR) {
+            continue;
+        }
         if (k.via.str.size == 5 && !strncmp(k.via.str.ptr, "items", 5)) {
 
             v = api_map.via.map.ptr[i].val;
@@ -1141,10 +1178,11 @@ static int search_item_in_items(struct flb_kube_meta *meta,
         }
     }
 
-    int ret = search_metadata_in_items(meta, ctx, items_array,
-                                       target_item_map);
+    if (!items_array_found) {
+        return -1;
+    }
 
-    return ret;
+    return search_metadata_in_items(meta, ctx, items_array, target_item_map);
 }
 
 
@@ -1246,7 +1284,8 @@ static int merge_namespace_meta(struct flb_kube_meta *meta, struct flb_kube *ctx
     if (api_buf != NULL) {
         msgpack_unpacked_init(&api_result);
         ret = msgpack_unpack_next(&api_result, api_buf, api_size, &off);
-        if (ret == MSGPACK_UNPACK_SUCCESS) {
+        if (ret == MSGPACK_UNPACK_SUCCESS &&
+            api_result.data.type == MSGPACK_OBJECT_MAP) {
             api_map = api_result.data;
 
             /* At this point map points to the ROOT map, eg:
@@ -1434,7 +1473,8 @@ static int merge_pod_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
     if (api_buf != NULL) {
         msgpack_unpacked_init(&api_result);
         ret = msgpack_unpack_next(&api_result, api_buf, api_size, &off);
-        if (ret == MSGPACK_UNPACK_SUCCESS) {
+        if (ret == MSGPACK_UNPACK_SUCCESS &&
+            api_result.data.type == MSGPACK_OBJECT_MAP) {
 
             if (ctx->use_kubelet) {
                 ret = search_item_in_items(meta, ctx, api_result.data, &item_result);
@@ -1477,11 +1517,15 @@ static int merge_pod_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
                 }
                 else if (k.via.str.size == 4 && !strncmp(k.via.str.ptr, "spec", 4)) {
                    spec_val = api_map.via.map.ptr[i].val;
-                   spec_found = FLB_TRUE;
+                   if (spec_val.type == MSGPACK_OBJECT_MAP) {
+                       spec_found = FLB_TRUE;
+                   }
                 }
                 else if (k.via.str.size == 6 && !strncmp(k.via.str.ptr, "status", 6)) {
                    status_val = api_map.via.map.ptr[i].val;
-                   status_found = FLB_TRUE;
+                   if (status_val.type == MSGPACK_OBJECT_MAP) {
+                       status_found = FLB_TRUE;
+                   }
                 }
             }
 

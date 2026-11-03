@@ -76,6 +76,20 @@ static int cb_http_init(struct flb_output_instance *ins,
     return 0;
 }
 
+static const char *http_method_name(int method)
+{
+    switch (method) {
+    case FLB_HTTP_POST:
+        return "POST";
+    case FLB_HTTP_PUT:
+        return "PUT";
+    case FLB_HTTP_PATCH:
+        return "PATCH";
+    }
+
+    return "UNKNOWN";
+}
+
 /* header names and values must not contain line breaks */
 static int header_is_valid(const char *str, size_t len)
 {
@@ -647,7 +661,7 @@ static int send_all_requests(struct flb_out_http *ctx,
         if (body_found && headers_found) {
             flb_plg_trace(ctx->ins, "sending record %zu via %s",
                           record_count++,
-                          ctx->http_method == FLB_HTTP_POST ? "POST" : "PUT");
+                          http_method_name(ctx->http_method));
             ret = http_request(ctx, body, body_size, event_chunk->tag,
                     flb_sds_len(event_chunk->tag), headers);
         }
@@ -902,7 +916,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "http_method", "POST",
      0, FLB_FALSE, 0,
-     "Specify the HTTP method to use. Supported methods are POST and PUT"
+     "Specify the HTTP method to use. Supported methods are POST, PUT and PATCH"
     },
 
     /* Gelf Properties */

@@ -1309,11 +1309,494 @@ int flb_processor_is_active(struct flb_processor *proc)
 #include <fluent-bit/flb_pack.h>
 
 /*
- * This function will run all the processor units for the given tag and data, note
- * that depending of the 'type', 'data' can reference a msgpack for logs, a CMetrics
- * context for metrics, a 'CTraces' context for traces or a 'CProfiles' context for
- * profiles.
+ * A native segment shares one representation. Only optimize it when every
+ * unit accepts the same raw callback; otherwise keep the existing CFL chain.
  */
+static int run_logs_raw_segment(struct flb_processor *proc,
+                                struct flb_processor_unit *first,
+                                const void *data, size_t bytes, int records,
+                                const char *tag, size_t tag_len,
+                                void **out_buf, size_t *out_size,
+                                struct mk_list **last)
+{
+    int result;
+    int out_records;
+    int error;
+    size_t count;
+    size_t index;
+    size_t locked;
+    struct mk_list *head;
+    struct flb_processor_unit *unit;
+    struct flb_processor_instance *initial;
+    struct flb_processor_instance *single;
+    struct flb_processor_instance **instances;
+    const char *scope;
+    const char *owner;
+
+    initial = first->ctx;
+    if (first->condition != NULL || !initial->logs_raw_enabled ||
+        initial->p->cb_process_logs_raw == NULL) {
+        return FLB_PROCESSOR_RAW_UNSUPPORTED;
+    }
+    count = 0;
+    for (head = &first->_head; head != &proc->logs; head = head->next) {
+        unit = mk_list_entry(head, struct flb_processor_unit, _head);
+        if (unit->unit_type == FLB_PROCESSOR_UNIT_FILTER) {
+            break;
+        }
+        if (unit->condition != NULL ||
+            !((struct flb_processor_instance *) unit->ctx)->logs_raw_enabled ||
+            ((struct flb_processor_instance *) unit->ctx)->p->cb_process_logs_raw !=
+            initial->p->cb_process_logs_raw) {
+            return FLB_PROCESSOR_RAW_UNSUPPORTED;
+        }
+        count++;
+    }
+    single = initial;
+    instances = &single;
+    if (count > 1) {
+        instances = flb_calloc(count, sizeof(struct flb_processor_instance *));
+        if (instances == NULL) {
+            flb_errno();
+            return FLB_PROCESSOR_RAW_UNSUPPORTED;
+        }
+    }
+    index = 0;
+    locked = 0;
+    result = FLB_PROCESSOR_FAILURE;
+    for (head = &first->_head; index < count; head = head->next) {
+        unit = mk_list_entry(head, struct flb_processor_unit, _head);
+        instances[index] = unit->ctx;
+        if (acquire_lock(&unit->lock, FLB_PROCESSOR_LOCK_RETRY_LIMIT,
+                         FLB_PROCESSOR_LOCK_RETRY_DELAY) != FLB_TRUE) {
+            goto cleanup;
+        }
+        locked++;
+        index++;
+        *last = head;
+    }
+    result = initial->p->cb_process_logs_raw(instances, count, data, bytes,
+                                            out_buf, out_size, tag, tag_len);
+    if (result == FLB_PROCESSOR_RAW_MODIFIED) {
+        /* A fused segment cannot attribute additions/drops to individual units. */
+        if (*out_buf == NULL || *out_buf == data ||
+            flb_mp_count_log_records(*out_buf, *out_size) != records) {
+            if (*out_buf != data) {
+                flb_free(*out_buf);
+            }
+            *out_buf = NULL;
+            *out_size = 0;
+            result = FLB_PROCESSOR_FAILURE;
+        }
+    }
+    else if (*out_buf != NULL || *out_size != 0 ||
+             (result != FLB_PROCESSOR_RAW_NOTOUCH &&
+              result != FLB_PROCESSOR_RAW_UNSUPPORTED)) {
+        if (*out_buf != data) {
+            flb_free(*out_buf);
+        }
+        *out_buf = NULL;
+        *out_size = 0;
+        result = FLB_PROCESSOR_FAILURE;
+    }
+
+cleanup:
+    scope = processor_metrics_scope(proc);
+    owner = processor_metrics_owner(proc);
+    error = (result == FLB_PROCESSOR_FAILURE);
+    out_records = records;
+    for (index = 0; index < locked; index++) {
+        unit = instances[index]->pu;
+        if (result != FLB_PROCESSOR_RAW_UNSUPPORTED) {
+            processor_metrics_update(proc, unit, scope, owner, "logs",
+                                     records, out_records, FLB_TRUE, error);
+        }
+        release_lock(&unit->lock, FLB_PROCESSOR_LOCK_RETRY_LIMIT,
+                     FLB_PROCESSOR_LOCK_RETRY_DELAY);
+    }
+    if (count > 1) {
+        flb_free(instances);
+    }
+    return result;
+}
+
+/*
+ * Decoder and encoder owned by one processor run. The decoded chunk lives
+ * across several units, so it must not borrow the first unit's decoder: its
+ * lock is released before the next units run and another worker thread
+ * could reset it while records are still being decoded.
+ */
+struct chunk_codec {
+    int ready;
+    struct flb_log_event_decoder decoder;
+    struct flb_log_event_encoder encoder;
+};
+
+static int chunk_codec_prepare(struct chunk_codec *codec)
+{
+    if (codec->ready) {
+        return 0;
+    }
+
+    if (flb_log_event_decoder_init(&codec->decoder, NULL, 0) != FLB_EVENT_DECODER_SUCCESS) {
+        return -1;
+    }
+    /* chunks keep group markers as records, like processor instance decoders */
+    flb_log_event_decoder_read_groups(&codec->decoder, FLB_TRUE);
+
+    if (flb_log_event_encoder_init(&codec->encoder,
+                                   FLB_LOG_EVENT_FORMAT_DEFAULT) != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_decoder_destroy(&codec->decoder);
+        return -1;
+    }
+
+    codec->ready = FLB_TRUE;
+    return 0;
+}
+
+static void chunk_codec_destroy(struct chunk_codec *codec)
+{
+    if (!codec->ready) {
+        return;
+    }
+
+    flb_log_event_decoder_destroy(&codec->decoder);
+    flb_log_event_encoder_destroy(&codec->encoder);
+    codec->ready = FLB_FALSE;
+}
+
+#define CHUNK_MATERIALIZE_OK       0
+#define CHUNK_MATERIALIZE_PARTIAL  1
+
+/*
+ * Decode every record while the per-run codec is private to this call. Keep
+ * the decoded prefix on an error, matching the former lazy callback behavior.
+ * record_next() does not distinguish malformed input from allocation/CFL
+ * conversion failures, so all three use prefix semantics here.
+ */
+static int chunk_cobj_materialize(struct flb_mp_chunk_cobj *chunk_cobj)
+{
+    int ret;
+    int records;
+    struct flb_mp_chunk_record *record;
+
+    while (1) {
+        ret = flb_mp_chunk_cobj_record_next(chunk_cobj, &record);
+        if (ret == FLB_MP_CHUNK_RECORD_EOF) {
+            return CHUNK_MATERIALIZE_OK;
+        }
+        else if (ret != FLB_MP_CHUNK_RECORD_OK) {
+            records = flb_mp_chunk_cobj_count_log_records(chunk_cobj);
+            flb_warn("[processor] failed to decode record, processing %d decoded records",
+                     records);
+            flb_log_event_decoder_reset(chunk_cobj->log_decoder, NULL, 0);
+            chunk_cobj->record_pos = NULL;
+            return CHUNK_MATERIALIZE_PARTIAL;
+        }
+    }
+}
+
+/*
+ * Large log buffers, such as complete chunks reaching output processors, are
+ * processed in windows when every native unit of the run is record local:
+ * each window is decoded, processed by all the units, encoded and released
+ * before the next one, so decoded records never hold more than one window.
+ * Windows only close outside groups, keeping every group in one window.
+ */
+#define FLB_PROCESSOR_LOG_WINDOW_BYTES    65536
+#define FLB_PROCESSOR_LOG_WINDOW_RECORDS  1024
+
+#define LOG_WINDOWS_DONE    0
+#define LOG_WINDOWS_SKIP    1
+#define LOG_WINDOWS_ERROR  -1
+
+struct log_window_unit {
+    struct flb_processor_unit *pu;
+    int in_items;
+    int out_items;
+    int error;
+};
+
+/* last unit of the native run starting at 'head' if windows can be used */
+static struct mk_list *log_window_run_end(struct mk_list *head, struct mk_list *list,
+                                          int *units)
+{
+    struct mk_list *last = NULL;
+    struct flb_processor_unit *pu;
+    struct flb_processor_instance *p_ins;
+
+    *units = 0;
+    for (; head != list; head = head->next) {
+        pu = mk_list_entry(head, struct flb_processor_unit, _head);
+        if (pu->unit_type == FLB_PROCESSOR_UNIT_FILTER) {
+            break;
+        }
+
+        p_ins = pu->ctx;
+        if (p_ins->p->cb_process_logs == NULL ||
+            (p_ins->p->flags & FLB_PROCESSOR_FLAG_LOG_WINDOWS) == 0) {
+            return NULL;
+        }
+
+        last = head;
+        (*units)++;
+    }
+
+    return last;
+}
+
+struct log_window {
+    size_t end;
+    int records;
+};
+
+/* window boundaries for the complete buffer, NULL if one window is enough */
+static struct log_window *log_windows_scan(void *data, size_t data_size, int *count)
+{
+    int records;
+    int capacity = 0;
+    size_t offset = 0;
+    size_t end;
+    struct log_window *tmp;
+    struct log_window *windows = NULL;
+
+    *count = 0;
+    while (offset < data_size) {
+        if (flb_mp_log_window_next(data, data_size, offset,
+                                   FLB_PROCESSOR_LOG_WINDOW_BYTES,
+                                   FLB_PROCESSOR_LOG_WINDOW_RECORDS,
+                                   &end, &records) != 0) {
+            /* Let the final window preserve records before a corrupt tail. */
+            end = data_size;
+            records = 0;
+        }
+
+        if (*count == capacity) {
+            capacity = capacity ? capacity * 2 : 32;
+            tmp = flb_realloc(windows, sizeof(struct log_window) * capacity);
+            if (!tmp) {
+                flb_errno();
+                flb_free(windows);
+                return NULL;
+            }
+            windows = tmp;
+        }
+
+        windows[*count].end = end;
+        windows[*count].records = records;
+        (*count)++;
+        offset = end;
+    }
+
+    if (*count < 2) {
+        flb_free(windows);
+        return NULL;
+    }
+
+    return windows;
+}
+
+/* TRUE when a decoded chunk holds group markers */
+static int chunk_has_group_markers(struct flb_mp_chunk_cobj *chunk)
+{
+    int type;
+    struct cfl_list *head;
+    struct flb_mp_chunk_record *record;
+
+    cfl_list_foreach(head, &chunk->records) {
+        record = cfl_list_entry(head, struct flb_mp_chunk_record, _head);
+        if (flb_log_event_decoder_get_record_type(&record->event, &type) == 0 &&
+            (type == FLB_LOG_EVENT_GROUP_START || type == FLB_LOG_EVENT_GROUP_END)) {
+            return FLB_TRUE;
+        }
+    }
+
+    return FLB_FALSE;
+}
+
+/*
+ * Group boundary flags of the processor input, scanned once and only when a
+ * chunk to normalize has group markers: plain logs never pay for the scan.
+ */
+static int input_group_flags(int *cache, void *data, size_t data_size)
+{
+    if (*cache < 0) {
+        *cache = flb_mp_log_group_boundaries(data, data_size);
+    }
+    return *cache;
+}
+
+static int run_log_windows(struct flb_processor *proc, struct chunk_codec *codec,
+                           struct mk_list *first, int unit_count,
+                           const char *tag, size_t tag_len,
+                           void *data, size_t data_size,
+                           void **out_buf, size_t *out_size,
+                           int *out_records, int *out_normalized,
+                           void *input, size_t input_size, int *group_flags,
+                           const char *metrics_scope,
+                           const char *metrics_owner,
+                           const char *metrics_signal)
+{
+    int i;
+    int w;
+    int ret;
+    int result = LOG_WINDOWS_ERROR;
+    int records;
+    int total_records = 0;
+    int normalized = FLB_TRUE;
+    int window_count;
+    int window_flags;
+    int input_flags;
+    int seen_start = FLB_FALSE;
+    size_t offset;
+    struct mk_list *head;
+    struct log_window *windows;
+    struct log_window_unit *units;
+    struct flb_processor_instance *p_ins;
+    struct flb_mp_chunk_cobj *chunk_cobj = NULL;
+
+    windows = log_windows_scan(data, data_size, &window_count);
+    if (!windows) {
+        return LOG_WINDOWS_SKIP;
+    }
+
+    units = flb_calloc(unit_count, sizeof(struct log_window_unit));
+    if (!units) {
+        flb_errno();
+        flb_free(windows);
+        return LOG_WINDOWS_SKIP;
+    }
+
+    if (chunk_codec_prepare(codec) != 0) {
+        flb_free(units);
+        flb_free(windows);
+        return LOG_WINDOWS_SKIP;
+    }
+
+    head = first;
+    for (i = 0; i < unit_count; i++) {
+        units[i].pu = mk_list_entry(head, struct flb_processor_unit, _head);
+        head = head->next;
+    }
+
+    offset = 0;
+    for (w = 0; w < window_count; w++) {
+        flb_log_event_decoder_reset(&codec->decoder, (char *) data + offset,
+                                    windows[w].end - offset);
+        chunk_cobj = flb_mp_chunk_cobj_create(&codec->encoder, &codec->decoder);
+        if (!chunk_cobj) {
+            goto error;
+        }
+
+        ret = chunk_cobj_materialize(chunk_cobj);
+        if (ret == CHUNK_MATERIALIZE_PARTIAL) {
+            units[0].error = FLB_TRUE;
+        }
+
+        records = flb_mp_chunk_cobj_count_log_records(chunk_cobj);
+        for (i = 0; i < unit_count; i++) {
+            p_ins = units[i].pu->ctx;
+
+            ret = acquire_lock(&units[i].pu->lock,
+                               FLB_PROCESSOR_LOCK_RETRY_LIMIT,
+                               FLB_PROCESSOR_LOCK_RETRY_DELAY);
+            if (ret != FLB_TRUE) {
+                units[i].error = FLB_TRUE;
+                goto error;
+            }
+
+            chunk_cobj->condition = units[i].pu->condition;
+            ret = p_ins->p->cb_process_logs(p_ins, chunk_cobj, tag, tag_len);
+            if (ret != FLB_PROCESSOR_SUCCESS) {
+                units[i].error = FLB_TRUE;
+                flb_warn("[processor] failed to process chunk");
+            }
+            chunk_cobj->record_pos = NULL;
+            chunk_cobj->condition = NULL;
+
+            release_lock(&units[i].pu->lock,
+                         FLB_PROCESSOR_LOCK_RETRY_LIMIT,
+                         FLB_PROCESSOR_LOCK_RETRY_DELAY);
+
+            units[i].in_items += records;
+            records = flb_mp_chunk_cobj_count_log_records(chunk_cobj);
+            units[i].out_items += records;
+        }
+
+        /*
+         * Boundary markers of the input stay with the window holding them: a
+         * leading end until a group starts, the open group in the last window.
+         */
+        window_flags = 0;
+        if (chunk_has_group_markers(chunk_cobj)) {
+            input_flags = input_group_flags(group_flags, input, input_size);
+            if (!seen_start) {
+                window_flags |= input_flags & FLB_MP_GROUPS_KEEP_LEADING_END;
+            }
+            if (w == window_count - 1) {
+                window_flags |= input_flags & FLB_MP_GROUPS_KEEP_TRAILING_OPEN;
+            }
+        }
+        /* only inputs opening with a continued group need the start count */
+        if (*group_flags > 0 && (*group_flags & FLB_MP_GROUPS_KEEP_LEADING_END) &&
+            !seen_start &&
+            flb_mp_log_group_starts((char *) data + offset, windows[w].end - offset) > 0) {
+            seen_start = FLB_TRUE;
+        }
+
+        if (flb_mp_chunk_cobj_normalize_groups_ex(chunk_cobj, window_flags) != 0) {
+            normalized = FLB_FALSE;
+        }
+        total_records += flb_mp_chunk_cobj_count_log_records(chunk_cobj);
+
+        if (cfl_list_size(&chunk_cobj->records) > 0 &&
+            flb_mp_chunk_cobj_encode_append(chunk_cobj) != 0) {
+            goto error;
+        }
+
+        flb_mp_chunk_cobj_destroy(chunk_cobj);
+        chunk_cobj = NULL;
+        offset = windows[w].end;
+    }
+
+    if (total_records == 0 || codec->encoder.output_length == 0) {
+        flb_log_event_encoder_reset(&codec->encoder);
+        *out_buf = NULL;
+        *out_size = 0;
+        total_records = 0;
+    }
+    else {
+        *out_buf = codec->encoder.output_buffer;
+        *out_size = codec->encoder.output_length;
+        flb_log_event_encoder_claim_internal_buffer_ownership(&codec->encoder);
+    }
+
+    *out_records = total_records;
+    *out_normalized = normalized;
+    result = LOG_WINDOWS_DONE;
+    goto exit;
+
+error:
+    if (chunk_cobj) {
+        flb_mp_chunk_cobj_destroy(chunk_cobj);
+    }
+    flb_log_event_encoder_reset(&codec->encoder);
+
+exit:
+    flb_log_event_decoder_reset(&codec->decoder, NULL, 0);
+
+    for (i = 0; i < unit_count; i++) {
+        processor_metrics_update(proc, units[i].pu,
+                                 metrics_scope, metrics_owner, metrics_signal,
+                                 units[i].in_items, units[i].out_items,
+                                 FLB_TRUE, units[i].error);
+    }
+    flb_free(units);
+    flb_free(windows);
+
+    return result;
+}
+
 int flb_processor_run(struct flb_processor *proc,
                       size_t starting_stage,
                       int type,
@@ -1321,12 +1804,33 @@ int flb_processor_run(struct flb_processor *proc,
                       void *data, size_t data_size,
                       void **out_buf, size_t *out_size)
 {
+    return flb_processor_run_with_count(proc, starting_stage, type, tag, tag_len,
+                                        data, data_size, out_buf, out_size, -1, NULL);
+}
+
+/*
+ * Run processor units for a tag and signal. Data contains MessagePack logs,
+ * or a CMetrics, CTraces or CProfiles context for the other signal types.
+ */
+static int processor_run(struct flb_processor *proc, struct chunk_codec *codec,
+                                 struct flb_mp_chunk_cobj *input_chunk,
+                                 size_t starting_stage,
+                                 int type,
+                                 const char *tag, size_t tag_len,
+                                 void *data, size_t data_size,
+                                 void **out_buf, size_t *out_size,
+                                 int input_records, int *output_records)
+{
     int ret;
     int pu_error;
     int unit_in_items;
     int unit_out_items;
     int item_metrics_available;
     int finalize;
+    int raw_result;
+    int unit_lock_held;
+    int log_buffer_normalized = FLB_FALSE;
+    int log_buffer_records = input_records;
     void *cur_buf = NULL;
     size_t cur_size;
     void *tmp_buf = NULL;
@@ -1338,6 +1842,12 @@ int flb_processor_run(struct flb_processor *proc,
     struct flb_filter_instance *f_ins;
     struct flb_processor_instance *p_ins;
     struct flb_mp_chunk_cobj *chunk_cobj = NULL;
+    struct mk_list *raw_last;
+    struct mk_list *run_end;
+    int run_units;
+    int window_records;
+    int window_normalized;
+    int group_flags = -1;
     const char *metrics_scope;
     const char *metrics_owner;
     const char *metrics_signal;
@@ -1348,6 +1858,10 @@ int flb_processor_run(struct flb_processor *proc,
     uint64_t ts;
     char *name;
 #endif
+
+    if (output_records) {
+        *output_records = -1;
+    }
 
     if (type == FLB_PROCESSOR_LOGS) {
         list = &proc->logs;
@@ -1375,6 +1889,18 @@ int flb_processor_run(struct flb_processor *proc,
     cur_buf = data;
     cur_size = data_size;
 
+    /* a chunk built by the caller replaces the msgpack decoding step */
+    if (input_chunk) {
+        if (chunk_codec_prepare(codec) != 0) {
+            flb_mp_chunk_cobj_destroy(input_chunk);
+            return -1;
+        }
+        flb_log_event_decoder_reset(&codec->decoder, NULL, 0);
+        input_chunk->log_encoder = &codec->encoder;
+        input_chunk->log_decoder = &codec->decoder;
+        chunk_cobj = input_chunk;
+    }
+
     /* iterate list units */
     mk_list_foreach(head, list) {
         pu = mk_list_entry(head, struct flb_processor_unit, _head);
@@ -1390,14 +1916,127 @@ int flb_processor_run(struct flb_processor *proc,
         tmp_buf = NULL;
         tmp_size = 0;
         pu_error = FLB_FALSE;
+        unit_lock_held = FLB_FALSE;
         unit_in_items = -1;
         unit_out_items = -1;
         item_metrics_available = FLB_FALSE;
 
         if (type == FLB_PROCESSOR_LOGS) {
-            unit_in_items = flb_mp_count_log_records(cur_buf, cur_size);
+            if (chunk_cobj != NULL &&
+                chunk_cobj->log_decoder->offset == chunk_cobj->log_decoder->length) {
+                unit_in_items = flb_mp_chunk_cobj_count_log_records(chunk_cobj);
+            }
+            else if (!chunk_cobj && log_buffer_records >= 0) {
+                unit_in_items = log_buffer_records;
+            }
+            else {
+                unit_in_items = flb_mp_count_log_records(cur_buf, cur_size);
+            }
             unit_out_items = unit_in_items;
             item_metrics_available = FLB_TRUE;
+        }
+
+        if (type == FLB_PROCESSOR_LOGS && chunk_cobj == NULL &&
+            pu->unit_type == FLB_PROCESSOR_UNIT_NATIVE) {
+            raw_last = head;
+            raw_result = run_logs_raw_segment(proc, pu, cur_buf, cur_size, unit_in_items,
+                                              tag, tag_len, &tmp_buf, &tmp_size, &raw_last);
+            if (raw_result == FLB_PROCESSOR_FAILURE) {
+                if (cur_buf != data) {
+                    flb_free(cur_buf);
+                }
+                return -1;
+            }
+            if (raw_result != FLB_PROCESSOR_RAW_UNSUPPORTED) {
+                if (raw_result == FLB_PROCESSOR_RAW_MODIFIED) {
+                    if (cur_buf != data) {
+                        flb_free(cur_buf);
+                    }
+                    cur_buf = tmp_buf;
+                    cur_size = tmp_size;
+                }
+                log_buffer_records = unit_in_items;
+                head = raw_last;
+                continue;
+            }
+        }
+
+        /* large buffers run record local native units in bounded windows */
+        if (type == FLB_PROCESSOR_LOGS && chunk_cobj == NULL &&
+            pu->unit_type == FLB_PROCESSOR_UNIT_NATIVE &&
+            cur_size > FLB_PROCESSOR_LOG_WINDOW_BYTES) {
+            run_end = log_window_run_end(head, list, &run_units);
+            if (run_end != NULL) {
+                ret = run_log_windows(proc, codec, head, run_units, tag, tag_len,
+                                      cur_buf, cur_size, &tmp_buf, &tmp_size,
+                                      &window_records, &window_normalized,
+                                      data, data_size, &group_flags,
+                                      metrics_scope, metrics_owner, metrics_signal);
+                if (ret == LOG_WINDOWS_ERROR) {
+                    if (cur_buf != data) {
+                        flb_free(cur_buf);
+                    }
+                    return -1;
+                }
+                else if (ret == LOG_WINDOWS_DONE) {
+                    if (cur_buf != data) {
+                        flb_free(cur_buf);
+                    }
+
+                    if (tmp_buf == NULL) {
+                        *out_buf = NULL;
+                        *out_size = 0;
+                        if (output_records) {
+                            *output_records = 0;
+                        }
+                        return 0;
+                    }
+
+                    cur_buf = tmp_buf;
+                    cur_size = tmp_size;
+                    log_buffer_records = window_records;
+                    log_buffer_normalized = window_normalized;
+
+                    /* continue after the last unit of the run */
+                    head = run_end;
+                    continue;
+                }
+            }
+        }
+
+        /*
+         * The decoder and CFL chunk belong to this processor_run() call, not
+         * to a processor instance. Materialize the complete input before
+         * taking the unit lock so concurrent calls do not serialize codec
+         * work behind an otherwise record-local callback.
+         */
+        if (type == FLB_PROCESSOR_LOGS && chunk_cobj == NULL &&
+            pu->unit_type == FLB_PROCESSOR_UNIT_NATIVE) {
+            p_ins = pu->ctx;
+
+            if (p_ins->p->cb_process_logs != NULL) {
+                if (chunk_codec_prepare(codec) != 0) {
+                    if (cur_buf != data) {
+                        flb_free(cur_buf);
+                    }
+                    return -1;
+                }
+
+                flb_log_event_decoder_reset(&codec->decoder, cur_buf, cur_size);
+                chunk_cobj = flb_mp_chunk_cobj_create(&codec->encoder, &codec->decoder);
+                if (chunk_cobj == NULL) {
+                    flb_log_event_decoder_reset(&codec->decoder, NULL, 0);
+                    if (cur_buf != data) {
+                        flb_free(cur_buf);
+                    }
+                    return -1;
+                }
+
+                ret = chunk_cobj_materialize(chunk_cobj);
+                if (ret == CHUNK_MATERIALIZE_PARTIAL) {
+                    pu_error = FLB_TRUE;
+                }
+            }
         }
 
         ret = acquire_lock(&pu->lock,
@@ -1405,8 +2044,12 @@ int flb_processor_run(struct flb_processor *proc,
                            FLB_PROCESSOR_LOCK_RETRY_DELAY);
 
         if (ret != FLB_TRUE) {
+            if (chunk_cobj) {
+                flb_mp_chunk_cobj_destroy(chunk_cobj);
+            }
             return -1;
         }
+        unit_lock_held = FLB_TRUE;
 
         /* run the unit */
         if (pu->unit_type == FLB_PROCESSOR_UNIT_FILTER) {
@@ -1436,7 +2079,12 @@ int flb_processor_run(struct flb_processor *proc,
             }
 #ifdef FLB_HAVE_METRICS
             name = (char *) (flb_filter_name(f_ins));
-            in_records = flb_mp_count_log_records(cur_buf, cur_size);
+            if (log_buffer_records >= 0) {
+                in_records = log_buffer_records;
+            }
+            else {
+                in_records = flb_mp_count_log_records(cur_buf, cur_size);
+            }
             cmt_counter_add(f_ins->cmt_records, ts, in_records,
                     1, (char *[]) {name});
             cmt_counter_add(f_ins->cmt_bytes, ts, tmp_size,
@@ -1500,6 +2148,8 @@ int flb_processor_run(struct flb_processor *proc,
                 cur_buf = tmp_buf;
                 cur_size = tmp_size;
                 out_records = flb_mp_count_log_records(tmp_buf, tmp_size);
+                log_buffer_normalized = FLB_FALSE;
+                log_buffer_records = out_records;
                 unit_out_items = out_records;
 #ifdef FLB_HAVE_METRICS
                     if (out_records > in_records) {
@@ -1542,37 +2192,6 @@ int flb_processor_run(struct flb_processor *proc,
             if (type == FLB_PROCESSOR_LOGS) {
                 if (p_ins->p->cb_process_logs != NULL) {
 
-                    /* if no previous chunkj_cobj exist, create instance. Note that this context will last
-                     * until no more processors exists or the next one is a "filter" type processor.
-                     */
-                    if (!chunk_cobj) {
-                        flb_log_event_decoder_reset(p_ins->log_decoder, cur_buf, cur_size);
-
-                        /* create the context */
-                        chunk_cobj = flb_mp_chunk_cobj_create(p_ins->log_encoder, p_ins->log_decoder);
-                        if (chunk_cobj == NULL) {
-                            flb_log_event_decoder_reset(p_ins->log_decoder, NULL, 0);
-                            if (cur_buf != data) {
-                                flb_free(cur_buf);
-                            }
-
-                            pu_error = FLB_TRUE;
-                            processor_metrics_update(proc, pu,
-                                                     metrics_scope,
-                                                     metrics_owner,
-                                                     metrics_signal,
-                                                     unit_in_items,
-                                                     unit_out_items,
-                                                     item_metrics_available,
-                                                     pu_error);
-                            release_lock(&pu->lock,
-                                        FLB_PROCESSOR_LOCK_RETRY_LIMIT,
-                                        FLB_PROCESSOR_LOCK_RETRY_DELAY);
-
-                            return -1;
-                        }
-                    }
-
                     /* Set the processor condition if it exists */
                     if (pu->condition) {
                         flb_debug("[processor] setting condition for chunk processing (pu=%s)", pu->name);
@@ -1592,6 +2211,10 @@ int flb_processor_run(struct flb_processor *proc,
 
                     /* Clear the condition after processing */
                     chunk_cobj->condition = NULL;
+                    release_lock(&pu->lock,
+                                 FLB_PROCESSOR_LOCK_RETRY_LIMIT,
+                                 FLB_PROCESSOR_LOCK_RETRY_DELAY);
+                    unit_lock_held = FLB_FALSE;
                     finalize = FLB_FALSE;
 
                     /* is this processing_unit the last one from the list ? */
@@ -1610,10 +2233,23 @@ int flb_processor_run(struct flb_processor *proc,
                     }
 
                     if (finalize == FLB_TRUE) {
-                        flb_mp_chunk_cobj_normalize_groups(chunk_cobj);
+                        /*
+                         * The encoder preserves normalized groups and the logical
+                         * count. Reuse them until a filter replaces this serialized
+                         * buffer.
+                         */
+                        /* keep only the boundary markers the input already had */
+                        log_buffer_normalized =
+                            flb_mp_chunk_cobj_normalize_groups_ex(chunk_cobj,
+                                chunk_has_group_markers(chunk_cobj) ?
+                                input_group_flags(&group_flags, data, data_size) : 0) == 0;
+                        log_buffer_records = flb_mp_chunk_cobj_count_log_records(chunk_cobj);
 
                         if (cfl_list_size(&chunk_cobj->records) == 0) {
-                            flb_log_event_encoder_reset(p_ins->log_encoder);
+                            if (output_records) {
+                                *output_records = 0;
+                            }
+                            flb_log_event_encoder_reset(&codec->encoder);
                             flb_mp_chunk_cobj_destroy(chunk_cobj);
 
                             *out_buf = NULL;
@@ -1628,24 +2264,19 @@ int flb_processor_run(struct flb_processor *proc,
                                                      unit_out_items,
                                                      item_metrics_available,
                                                      pu_error);
-                            release_lock(&pu->lock,
-                                        FLB_PROCESSOR_LOCK_RETRY_LIMIT,
-                                        FLB_PROCESSOR_LOCK_RETRY_DELAY);
                             return 0;
                         }
 
                         /* encode chunk_cobj as msgpack */
                         ret = flb_mp_chunk_cobj_encode(chunk_cobj, (char **) &tmp_buf, &tmp_size);
                         if (ret != 0) {
-                            flb_log_event_decoder_reset(p_ins->log_decoder, NULL, 0);
+                            flb_log_event_decoder_reset(&codec->decoder, NULL, 0);
+                            flb_log_event_encoder_reset(&codec->encoder);
+                            flb_mp_chunk_cobj_destroy(chunk_cobj);
 
                             if (cur_buf != data) {
                                 flb_free(cur_buf);
                             }
-
-                            release_lock(&pu->lock,
-                                        FLB_PROCESSOR_LOCK_RETRY_LIMIT,
-                                        FLB_PROCESSOR_LOCK_RETRY_DELAY);
 
                             pu_error = FLB_TRUE;
                             processor_metrics_update(proc, pu,
@@ -1667,8 +2298,8 @@ int flb_processor_run(struct flb_processor *proc,
                         cur_size = tmp_size;
 
 
-                        flb_log_event_decoder_reset(p_ins->log_decoder, NULL, 0);
-                        flb_log_event_encoder_claim_internal_buffer_ownership(p_ins->log_encoder);
+                        flb_log_event_decoder_reset(&codec->decoder, NULL, 0);
+                        flb_log_event_encoder_claim_internal_buffer_ownership(&codec->encoder);
                         flb_mp_chunk_cobj_destroy(chunk_cobj);
                         chunk_cobj = NULL;
                     }
@@ -1677,7 +2308,12 @@ int flb_processor_run(struct flb_processor *proc,
                         unit_out_items = flb_mp_chunk_cobj_count_log_records(chunk_cobj);
                     }
                     else if (cur_buf != NULL) {
-                        unit_out_items = flb_mp_count_log_records(cur_buf, cur_size);
+                        if (log_buffer_records >= 0) {
+                            unit_out_items = log_buffer_records;
+                        }
+                        else {
+                            unit_out_items = flb_mp_count_log_records(cur_buf, cur_size);
+                        }
                     }
                 }
             }
@@ -1704,7 +2340,16 @@ int flb_processor_run(struct flb_processor *proc,
                                      FLB_PROCESSOR_LOCK_RETRY_LIMIT,
                                      FLB_PROCESSOR_LOCK_RETRY_DELAY);
 
-                        out_buf = NULL;
+                        if (cur_buf != data) {
+                            cmt_destroy(cur_buf);
+                        }
+
+                        if (out_buf != NULL) {
+                            *out_buf = NULL;
+                        }
+                        if (out_size != NULL) {
+                            *out_size = 0;
+                        }
 
                         return -1;
                     }
@@ -1803,17 +2448,21 @@ int flb_processor_run(struct flb_processor *proc,
                                  unit_out_items,
                                  item_metrics_available,
                                  pu_error);
-        release_lock(&pu->lock,
-                     FLB_PROCESSOR_LOCK_RETRY_LIMIT,
-                     FLB_PROCESSOR_LOCK_RETRY_DELAY);
+        if (unit_lock_held == FLB_TRUE) {
+            release_lock(&pu->lock,
+                         FLB_PROCESSOR_LOCK_RETRY_LIMIT,
+                         FLB_PROCESSOR_LOCK_RETRY_DELAY);
+        }
     }
 
     /* set output buffer */
     if (type == FLB_PROCESSOR_LOGS &&
-        cur_buf != NULL) {
-        ret = flb_mp_normalize_log_buffer_groups_msgpack(cur_buf, cur_size,
-                                                         (char **) &tmp_buf,
-                                                         &tmp_size);
+        cur_buf != NULL && !log_buffer_normalized) {
+        ret = flb_mp_normalize_log_buffer_groups_msgpack_ex(cur_buf, cur_size,
+                                                            (char **) &tmp_buf, &tmp_size,
+                                                            input_group_flags(&group_flags,
+                                                                              data,
+                                                                              data_size));
         if (ret == 0) {
             if (cur_buf != data) {
                 flb_free(cur_buf);
@@ -1821,11 +2470,15 @@ int flb_processor_run(struct flb_processor *proc,
 
             cur_buf = tmp_buf;
             cur_size = tmp_size;
+            log_buffer_records = -1;
         }
     }
 
-    if (type == FLB_PROCESSOR_LOGS &&
-        (cur_buf == NULL || flb_mp_count_log_records(cur_buf, cur_size) == 0)) {
+    if (type == FLB_PROCESSOR_LOGS && cur_buf != NULL && log_buffer_records < 0) {
+        log_buffer_records = flb_mp_count_log_records(cur_buf, cur_size);
+    }
+
+    if (type == FLB_PROCESSOR_LOGS && (cur_buf == NULL || log_buffer_records == 0)) {
         if (cur_buf != data) {
             flb_free(cur_buf);
         }
@@ -1836,6 +2489,10 @@ int flb_processor_run(struct flb_processor *proc,
 
         if (out_size != NULL) {
             *out_size = 0;
+        }
+
+        if (output_records) {
+            *output_records = 0;
         }
 
         return 0;
@@ -1849,7 +2506,107 @@ int flb_processor_run(struct flb_processor *proc,
         *out_size = cur_size;
     }
 
+    if (output_records && type == FLB_PROCESSOR_LOGS) {
+        *output_records = log_buffer_records;
+    }
+
     return 0;
+}
+
+int flb_processor_run_with_count(struct flb_processor *proc,
+                                 size_t starting_stage,
+                                 int type,
+                                 const char *tag, size_t tag_len,
+                                 void *data, size_t data_size,
+                                 void **out_buf, size_t *out_size,
+                                 int input_records, int *output_records)
+{
+    int ret;
+    struct chunk_codec codec;
+
+    codec.ready = FLB_FALSE;
+    ret = processor_run(proc, &codec, NULL, starting_stage, type, tag, tag_len,
+                        data, data_size, out_buf, out_size,
+                        input_records, output_records);
+    chunk_codec_destroy(&codec);
+
+    return ret;
+}
+
+/*
+ * A logs chunk built directly as CFL records can enter the pipeline when the
+ * every unit is a native processor that processes logs. A worker thread also
+ * requires every unit to be worker-safe. The whole chain is checked before
+ * any unit runs so fallback can never execute an already-processed prefix a
+ * second time. Filters are excluded even in non-worker callers because mixed
+ * native/filter chains cross a serialization boundary between units.
+ */
+int flb_processor_logs_chunk_supported(struct flb_processor *proc,
+                                       int worker_thread)
+{
+    struct mk_list *head;
+    struct flb_processor_unit *pu;
+    struct flb_processor_instance *p_ins;
+
+    if (!proc || !proc->is_active || mk_list_is_empty(&proc->logs) == 0) {
+        return FLB_FALSE;
+    }
+
+    mk_list_foreach(head, &proc->logs) {
+        pu = mk_list_entry(head, struct flb_processor_unit, _head);
+        if (pu->unit_type == FLB_PROCESSOR_UNIT_FILTER) {
+            return FLB_FALSE;
+        }
+
+        p_ins = pu->ctx;
+        if (p_ins->p->cb_process_logs == NULL) {
+            return FLB_FALSE;
+        }
+        if (worker_thread == FLB_TRUE &&
+            (p_ins->p->flags & FLB_PROCESSOR_FLAG_LOGS_WORKER_SAFE) == 0) {
+            return FLB_FALSE;
+        }
+    }
+
+    return FLB_TRUE;
+}
+
+/*
+ * Run the logs processors over a chunk of CFL records. The chunk is always
+ * consumed. On success the output buffer is owned by the caller, it is NULL
+ * with a zero size when every record was dropped.
+ */
+int flb_processor_run_logs_chunk(struct flb_processor *proc,
+                                 const char *tag, size_t tag_len,
+                                 struct flb_mp_chunk_cobj *chunk,
+                                 int worker_thread,
+                                 void **out_buf, size_t *out_size,
+                                 int *output_records)
+{
+    int ret;
+    struct chunk_codec codec;
+
+    *out_buf = NULL;
+    *out_size = 0;
+    if (output_records) {
+        *output_records = -1;
+    }
+
+    if (!chunk) {
+        return -1;
+    }
+
+    if (flb_processor_logs_chunk_supported(proc, worker_thread) == FLB_FALSE) {
+        flb_mp_chunk_cobj_destroy(chunk);
+        return -1;
+    }
+
+    codec.ready = FLB_FALSE;
+    ret = processor_run(proc, &codec, chunk, 0, FLB_PROCESSOR_LOGS, tag, tag_len,
+                        NULL, 0, out_buf, out_size, -1, output_records);
+    chunk_codec_destroy(&codec);
+
+    return ret;
 }
 
 void flb_processor_destroy(struct flb_processor *proc)

@@ -838,12 +838,14 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
     char payload_type;
     char *payload = NULL;
     size_t payload_size = 0;
+    size_t logs_remaining;
     struct flb_opentelemetry *context;
     struct cfl_list frames;
     struct otlp_grpc_frame *frame;
 
     cfl_list_init(&frames);
     context = (struct flb_opentelemetry *) response->stream->user_data;
+    logs_remaining = context->logs_max_size;
 
     if (request->path == NULL || request->path[0] != '/') {
         send_response_ng(response, 400, "error: invalid request\n");
@@ -1018,8 +1020,9 @@ next_grpc_message:
             goto cleanup;
         }
 
-        ret = opentelemetry_process_logs(context, request->content_type, tag, flb_sds_len(tag),
-                                         payload, payload_size);
+        ret = opentelemetry_process_logs_with_budget(context, request->content_type,
+                                                      tag, flb_sds_len(tag),
+                                                      payload, payload_size, &logs_remaining);
     }
     else if (context->profile_support_enabled &&
              is_profiles_export_path(request->path) == FLB_TRUE) {

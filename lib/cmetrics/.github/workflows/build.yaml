@@ -33,7 +33,7 @@ jobs:
           .\scripts\win_build.bat
       - name: Run unit tests.
         run: |
-          ctest --rerun-failed --output-on-failure -C Debug --test-dir .\tests\
+          ctest --test-dir build --output-on-failure --no-tests=error
 
   build-centos:
     name: CentOS 7 build to confirm no issues once used downstream
@@ -116,7 +116,7 @@ jobs:
           submodules: true
 
       - name: Build on ${{ matrix.os }} with ${{ matrix.compiler }}
-        uses: uraimo/run-on-arch-action@v3.2.0
+        uses: uraimo/run-on-arch-action@v3.2.1
         with:
           arch: aarch64
           distro: ubuntu_latest

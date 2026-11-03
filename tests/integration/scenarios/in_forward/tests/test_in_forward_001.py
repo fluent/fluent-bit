@@ -800,7 +800,8 @@ def _secure_forward_handshake(sock, *, username, password, shared_key, hostname=
     return _recv_msgpack_value(sock)
 
 
-def _preflight_config(tmp_path, memory_limit, wire_limit="6M", *, output="http"):
+def _preflight_config(tmp_path, memory_limit, wire_limit="6M", *, output="http",
+                      signal_limit=None):
     template = "in_forward.yaml" if output == "http" else "in_forward_multi_metrics_stdout.yaml"
     source = Path(__file__).resolve().parent.parent / "config" / template
     config = source.read_text().replace(
@@ -808,6 +809,11 @@ def _preflight_config(tmp_path, memory_limit, wire_limit="6M", *, output="http")
         f"    - name: forward\n      msgpack_memory_limit: {memory_limit}\n"
         f"      buffer_max_size: {wire_limit}\n      buffer_chunk_size: 512\n",
     )
+    if signal_limit is not None:
+        config = config.replace(
+            "      msgpack_memory_limit:",
+            f"      signal_object_memory_limit: {signal_limit}\n      msgpack_memory_limit:",
+        )
     target = tmp_path / "preflight.yaml"
     target.write_text(config)
     return str(target)
@@ -850,6 +856,20 @@ def test_in_forward_preflight_invalid_budget(tmp_path, memory_limit, wire_limit,
     with pytest.raises(FluentBitStartupError):
         service.start()
     assert error in read_file(service.flb.log_file)
+
+
+@pytest.mark.parametrize("signal_limit,error", [
+    ("0", "must be at least 1024 bytes"),
+    ("-1", "must be a positive size"),
+    ("-1K", "must be a positive size"),
+    ("bogus", "must be a positive size"),
+])
+def test_in_forward_invalid_signal_object_memory_limit(tmp_path, signal_limit, error):
+    config = _preflight_config(tmp_path, "16K", signal_limit=signal_limit)
+    service = FluentBitTestService(config)
+    with pytest.raises(FluentBitStartupError):
+        service.start()
+    assert f"signal_object_memory_limit {error}" in read_file(service.flb.log_file)
 
 
 @pytest.mark.parametrize("memory_limit,accepted", [("64K", False), ("128K", True)])
@@ -935,6 +955,41 @@ def test_in_forward_preflight_mpack_signal_not_zone_limited(tmp_path, signal):
                 assert sock.recv(1) == b""
             except ConnectionResetError:
                 pass
+    finally:
+        receiver.stop()
+
+
+@pytest.mark.parametrize("compressed", [False, True])
+@pytest.mark.parametrize("signal_limit,spans,accepted", [
+    (None, 8, True), (None, 102401, False),
+    ("1M", 1200, False), ("3M", 1200, True),
+])
+def test_in_forward_trace_object_budget(tmp_path, signal_limit, spans, accepted, compressed):
+    config = _preflight_config(tmp_path, "16K", output="stdout", signal_limit=signal_limit)
+    receiver = FluentBitTestService(config, extra_env={"FORWARD_INPUT_WORKERS": 1})
+    packed = _pack_obj({"resourceSpans": [
+        {"scope_spans": [{"spans": [{"name": "budget-span"} for _ in range(spans)]}]}
+    ]})
+    options = {"fluent_signal": 2, "chunk": "budget"}
+    if compressed:
+        packed = gzip.compress(packed)
+        options["compressed"] = "gzip"
+    receiver.start()
+    try:
+        with socket.create_connection(("127.0.0.1", receiver.flb_listener_port), timeout=10) as sock:
+            sock.sendall(_pack_obj([TEST_TAG, packed, options]))
+            if accepted:
+                assert _recv_msgpack_value(sock) == {"ack": "budget"}
+                receiver.wait_for_condition(
+                    lambda: "[span #0 'budget-span']" in read_file(receiver.flb.log_file),
+                    timeout=10,
+                    description="accepted trace at stdout output",
+                )
+            else:
+                try:
+                    assert sock.recv(1) == b""
+                except ConnectionResetError:
+                    pass
     finally:
         receiver.stop()
 
@@ -1930,6 +1985,35 @@ def test_in_forward_secure_forward_auth_failure():
     assert pong[0] == "PONG"
     assert pong[1] is False
     assert "username/password mismatch" in pong[2]
+
+
+@pytest.mark.parametrize("header", [b"\xdd\xff\xff\xff\xff", b"\xdf\xff\xff\xff\xff"])
+def test_in_forward_secure_forward_rejects_large_ping_container(header):
+    service = Service("in_forward_secure.yaml")
+    service.start()
+
+    try:
+        with socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=5) as sock:
+            _recv_msgpack_value(sock)
+            sock.sendall(header)
+            try:
+                assert sock.recv(1) == b""
+            except ConnectionResetError:
+                pass
+
+        service.wait_for_log_contains("invalid PING frame or MessagePack allocation budget exceeded")
+
+        with socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=5) as sock:
+            pong = _secure_forward_handshake(
+                sock,
+                username=SECURE_USERNAME,
+                password=SECURE_PASSWORD,
+                shared_key=SECURE_SHARED_KEY,
+            )
+        assert pong[0] == "PONG"
+        assert pong[1] is True
+    finally:
+        service.stop()
 
 
 def test_in_forward_e2e_forward_receiver_preserves_metadata_and_signal_options():

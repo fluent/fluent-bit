@@ -10,7 +10,7 @@ try {
     $signalFile = Join-Path $tempDirectory "signal.log"
     $env:SIGNAL_FILE_PATH = $signalFile
     $env:LISTENER_HOST = "127.0.0.1"
-    $env:LISTENER_PORT = "50001"
+    $env:LISTENER_PORT = "20501"
 
     $config = Get-RuntimeConfigPath "in_syslog_tcp_plaintext_expect.conf"
     $process = Start-FluentBit $config

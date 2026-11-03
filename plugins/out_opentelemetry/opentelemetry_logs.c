@@ -175,6 +175,32 @@ static msgpack_object *msgpack_map_get_object(msgpack_object_map *map,
     return &map->ptr[index].val;
 }
 
+static uint32_t dropped_attribute_count(msgpack_object *object)
+{
+    msgpack_object *field;
+
+    if (!object || object->type != MSGPACK_OBJECT_MAP) {
+        return 0;
+    }
+
+    field = msgpack_map_get_object(&object->via.map, "dropped_attributes_count");
+    if (field && field->type == MSGPACK_OBJECT_POSITIVE_INTEGER &&
+        field->via.u64 <= UINT32_MAX) {
+        return (uint32_t) field->via.u64;
+    }
+
+    return 0;
+}
+
+static uint32_t group_dropped_attribute_count(msgpack_object *body, const char *kind)
+{
+    if (!body || body->type != MSGPACK_OBJECT_MAP) {
+        return 0;
+    }
+
+    return dropped_attribute_count(msgpack_map_get_object(&body->via.map, kind));
+}
+
 static uint64_t msgpack_object_hash(msgpack_object *object)
 {
     uint64_t hash;
@@ -570,6 +596,8 @@ static int append_v1_logs_metadata_and_fields(struct opentelemetry_context *ctx,
     int trace_flags_set = FLB_FALSE;
     size_t attr_count = 0;
     struct flb_ra_value *ra_val;
+    msgpack_object *otlp_metadata;
+    msgpack_object *event_name;
     Opentelemetry__Proto__Common__V1__KeyValue **attrs = NULL;
 
     if (ctx == NULL || event == NULL || log_record == NULL) {
@@ -824,6 +852,25 @@ static int append_v1_logs_metadata_and_fields(struct opentelemetry_context *ctx,
         }
     }
 
+    if (event->metadata && event->metadata->type == MSGPACK_OBJECT_MAP) {
+        otlp_metadata = msgpack_map_get_object(&event->metadata->via.map, "otlp");
+        log_record->dropped_attributes_count = dropped_attribute_count(otlp_metadata);
+
+        event_name = NULL;
+        if (otlp_metadata && otlp_metadata->type == MSGPACK_OBJECT_MAP) {
+            event_name = msgpack_map_get_object(&otlp_metadata->via.map, "event_name");
+        }
+
+        if (event_name && event_name->type == MSGPACK_OBJECT_STR) {
+            log_record->event_name = flb_strndup(event_name->via.str.ptr,
+                                                 event_name->via.str.size);
+            if (!log_record->event_name) {
+                flb_errno();
+                return -1;
+            }
+        }
+    }
+
     return 0;
 }
 
@@ -851,6 +898,9 @@ static void free_log_records(Opentelemetry__Proto__Logs__V1__LogRecord **logs, s
         if (log->severity_text != NULL && log->severity_text != protobuf_c_empty_string) {
             flb_free(log->severity_text);
         }
+        if (log->event_name != NULL && log->event_name != protobuf_c_empty_string) {
+            flb_free(log->event_name);
+        }
         if (log->span_id.data != NULL) {
             flb_free(log->span_id.data);
         }
@@ -859,6 +909,36 @@ static void free_log_records(Opentelemetry__Proto__Logs__V1__LogRecord **logs, s
         }
 
         flb_free(log);
+    }
+}
+
+/*
+ * Release the log records of a request that was already sent, keeping its
+ * resources and scopes, so a later request of the same chunk does not repeat
+ * them.
+ */
+static void release_sent_log_records(Opentelemetry__Proto__Collector__Logs__V1__ExportLogsServiceRequest *export_logs)
+{
+    size_t i;
+    size_t j;
+    Opentelemetry__Proto__Logs__V1__ResourceLogs *resource_log;
+    Opentelemetry__Proto__Logs__V1__ScopeLogs *scope_log;
+
+    for (i = 0; i < export_logs->n_resource_logs; i++) {
+        resource_log = export_logs->resource_logs[i];
+        if (resource_log == NULL) {
+            continue;
+        }
+
+        for (j = 0; j < resource_log->n_scope_logs; j++) {
+            scope_log = resource_log->scope_logs[j];
+            if (scope_log == NULL || scope_log->log_records == NULL) {
+                continue;
+            }
+
+            free_log_records(scope_log->log_records, scope_log->n_log_records);
+            scope_log->n_log_records = 0;
+        }
     }
 }
 
@@ -1132,6 +1212,7 @@ int otel_process_logs(struct flb_event_chunk *event_chunk,
     int ret;
     int record_type;
     int log_record_count;
+    int pending_records = 0;
     int max_scopes_limit;
     int max_resources;
     int native_otel = FLB_FALSE;
@@ -1355,6 +1436,8 @@ start_resource:
 
                 /* group body: $resource['attributes'] */
                 set_resource_attributes(ctx->ra_resource_attr, event.body, resource_log->resource);
+                resource_log->resource->dropped_attributes_count =
+                    group_dropped_attribute_count(event.body, "resource");
 
                 /* group body: $schema_url */
                 set_resource_schema_url(ctx->ra_resource_schema_url, event.body, resource_log);
@@ -1476,6 +1559,8 @@ start_resource:
 
                 /* group body: $scope['attributes'] */
                 set_scope_attributes(ctx->ra_scope_attr, event.body, scope_log->scope);
+                scope_log->scope->dropped_attributes_count =
+                    group_dropped_attribute_count(event.body, "scope");
 
                 /* group body: $scope['schema_url'] */
                 set_scope_schema_url(ctx->ra_scope_schema_url, event.body, scope_log);
@@ -1582,13 +1667,14 @@ start_resource:
 
         ret = FLB_OK;
         log_record_count++;
+        pending_records++;
         scope_log->n_log_records = log_record_count;
 
         if (log_record_count >= ctx->batch_size) {
             ret = logs_flush_to_otel(ctx, event_chunk, &export_logs);
-            free_log_records(log_records, log_record_count);
+            release_sent_log_records(&export_logs);
             log_record_count = 0;
-            scope_log->n_log_records = 0;
+            pending_records = 0;
 
             /* Do not let a later batch overwrite this failure. */
             if (ret != FLB_OK) {
@@ -1599,7 +1685,11 @@ start_resource:
 
     flb_log_event_decoder_destroy(decoder);
 
-    if (log_record_count > 0 && ret == FLB_OK) {
+    /*
+     * Records of earlier scopes are pending too: a chunk can end with a group
+     * that has no records yet, for example one opened by the previous append.
+     */
+    if (pending_records > 0 && ret == FLB_OK) {
         ret = logs_flush_to_otel(ctx, event_chunk, &export_logs);
     }
 

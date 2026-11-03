@@ -137,6 +137,8 @@ void flb_net_setup_init(struct flb_net_setup *net);
 int flb_net_host_set(const char *plugin_name, struct flb_net_host *host, const char *address);
 
 /* DNS handling */
+int flb_net_getaddrinfo(const char *node, const char *service, struct addrinfo *hints,
+                       struct addrinfo **res, char *dns_mode_textual, int timeout);
 void flb_net_dns_lookup_context_cleanup(struct flb_net_dns *dns_ctx);
 
 /* TCP options */

@@ -6,6 +6,7 @@ import re
 import shutil
 import socket
 import threading
+import time
 from collections import Counter
 
 import requests
@@ -1454,3 +1455,210 @@ def test_out_opentelemetry_logs_max_scopes_enforcement():
     output = json.loads(json_format.MessageToJson(logs_seen[0]))
     assert len(output["resourceLogs"]) == 4
     assert all(len(resource_log["scopeLogs"]) == 1 for resource_log in output["resourceLogs"])
+
+
+def _pack(value):
+    """Encode forward fixtures without an optional MessagePack dependency."""
+    if isinstance(value, bytes):
+        return value
+    if isinstance(value, int):
+        return b"\xcf" + value.to_bytes(8, "big")
+    if isinstance(value, str):
+        data = value.encode("utf-8")
+        return b"\xdb" + len(data).to_bytes(4, "big") + data
+    if isinstance(value, list):
+        return b"\xdd" + len(value).to_bytes(4, "big") + b"".join(_pack(item) for item in value)
+    if isinstance(value, dict):
+        return b"\xdf" + len(value).to_bytes(4, "big") + b"".join(
+            _pack(key) + _pack(item) for key, item in value.items())
+    raise TypeError(type(value))
+
+
+def _event_time(seconds):
+    return b"\xd7\x00" + seconds.to_bytes(4, "big") + bytes(4)
+
+
+def _group_start(resource_id, name):
+    return [[_event_time(0xFFFFFFFF), {"schema": "otlp", "resource_id": resource_id, "scope_id": 0}],
+            {"resource": {"attributes": {"service.name": name}}, "scope": {"name": "scope"}}]
+
+
+def _group_end():
+    return [[_event_time(0xFFFFFFFE), {}], {}]
+
+
+def _log_record(record_id):
+    return [[_event_time(1700000000), {"otlp": {}}], {"id": record_id}]
+
+
+def _send_forward(service, entries):
+    with socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=10) as connection:
+        connection.sendall(_pack(["test", entries]))
+
+
+def _exported_record_ids():
+    ids = []
+    for export_request in data_storage["logs"]:
+        output = json.loads(json_format.MessageToJson(export_request))
+        for record, _, _ in iter_log_records(output):
+            for item in record["body"]["kvlistValue"]["values"]:
+                if item["key"] == "id":
+                    ids.append(int(item["value"]["intValue"]))
+    return sorted(ids)
+
+
+def test_out_opentelemetry_chunk_ending_with_empty_group_exports_its_records():
+    """A chunk that ends with a group start and no records still exports the earlier groups."""
+    service = Service("out_otel_http_logs_forward_groups.yaml")
+    service.start()
+    try:
+        # the next group starts in this append and receives its records later
+        _send_forward(service, [_group_start(0, "first"), _log_record(0), _log_record(1),
+                                _group_end(), _group_start(1, "second")])
+        service.service.wait_for_condition(
+            lambda: _exported_record_ids() == [0, 1] or None,
+            timeout=15, interval=0.5, description="records of the first group")
+
+        _send_forward(service, [_log_record(2), _group_end()])
+        service.service.wait_for_condition(
+            lambda: _exported_record_ids() == [0, 1, 2] or None,
+            timeout=15, interval=0.5, description="record appended to the open group")
+    finally:
+        service.stop()
+
+
+def test_out_opentelemetry_batch_size_exports_each_record_once():
+    """Records of earlier scopes are not sent again by a later batch."""
+    service = Service("out_otel_http_logs_forward_batch_size.yaml")
+    service.start()
+    try:
+        entries = [_group_start(0, "first")] + [_log_record(i) for i in range(2)] + [_group_end()]
+        entries += [_group_start(1, "second")] + [_log_record(i) for i in range(2, 7)] + [_group_end()]
+        _send_forward(service, entries)
+        service.service.wait_for_condition(
+            lambda: len(_exported_record_ids()) >= 7 or None,
+            timeout=15, interval=0.5, description="seven exported records")
+        # give a duplicated export time to arrive
+        time.sleep(2)
+        assert _exported_record_ids() == list(range(7))
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("placement", ["input", "output"])
+def test_out_opentelemetry_journald_mapping(placement, tmp_path):
+    import yaml
+
+    config_path = _repo_relative("../config", "out_otel_journald.yaml")
+    with open(config_path) as config_file:
+        config = yaml.safe_load(config_file)
+    if placement == "output":
+        config["pipeline"]["outputs"][0]["processors"] = (
+            config["pipeline"]["inputs"][0].pop("processors")
+        )
+        config["pipeline"]["outputs"].append({
+            "name": "opentelemetry",
+            "match": "*",
+            "host": "127.0.0.1",
+            "port": "${TEST_SUITE_HTTP_PORT}",
+            "logs_uri": "/raw/logs",
+        })
+    generated_config = tmp_path / "journald.yaml"
+    generated_config.write_text(yaml.safe_dump(config))
+    service = Service(str(generated_config))
+    service.start()
+    payload = [
+        {
+            "MESSAGE": "first",
+            "PRIORITY": "3",
+            "__REALTIME_TIMESTAMP": "1700000000123456",
+            "_HOSTNAME": "host-a",
+            "_PID": "42",
+            "_COMM": "app",
+            "_EXE": "/bin/app",
+            "_CMDLINE": "app -v",
+            "CODE_FILE": "app.c",
+            "CODE_LINE": "7",
+            "CODE_FUNC": "main",
+            "SYSLOG_IDENTIFIER": "untrusted-name",
+            "SYSLOG_PID": "99",
+            "SYSLOG_FACILITY": "3",
+            "SYSLOG_TIMESTAMP": "Sep 8 10:00:00",
+            "_SYSTEMD_UNIT": "app.service",
+            "EXTRA": ["one", "two"],
+            "_hostname": "lower",
+            "HOSTNAME": "stripped",
+            "pid": "99",
+        },
+        {"MESSAGE": "second", "PRIORITY": "7", "_HOSTNAME": "host-b", "_PID": "43"},
+        {"MESSAGE": "third", "PRIORITY": "bad", "_PID": "42x", "CODE_LINE": "-1"},
+        {"MESSAGE": "fourth", "_PID": "42", "_HOSTNAME": "host-a"},
+    ]
+    response = requests.post(
+        f"http://127.0.0.1:{service.flb_listener_port}/journal",
+        json=payload,
+        timeout=5,
+    )
+    response.raise_for_status()
+
+    def received_records(path="/v1/logs"):
+        records = []
+        for request_seen in data_storage["requests"]:
+            if request_seen["path"] != path:
+                continue
+            export = ExportLogsServiceRequest()
+            export.ParseFromString(request_seen["raw_payload"])
+            records.extend(iter_log_records(json.loads(json_format.MessageToJson(export))))
+        return records if len(records) >= len(payload) else None
+
+    records = service.service.wait_for_condition(
+        received_records, timeout=20, interval=0.25, description="mapped journal logs"
+    )
+    if placement == "output":
+        raw_records = service.service.wait_for_condition(
+            lambda: received_records("/raw/logs"), timeout=20, interval=0.25,
+            description="unmodified journal logs on the second output",
+        )
+        assert len(raw_records) == len(payload)
+        for (record, _, _), original in zip(raw_records, payload):
+            raw_body = _attributes_to_dict(record["body"]["kvlistValue"]["values"])
+            assert raw_body["MESSAGE"] == original["MESSAGE"]
+            assert raw_body["_PID"] == original["_PID"]
+    service.stop()
+    assert len(records) == 4
+    assert [record["body"]["stringValue"] for record, _, _ in records] == [
+        "first", "second", "third", "fourth"
+    ]
+    first, attrs, res = records[0]
+    assert first["timeUnixNano"] == "1700000000123456000"
+    assert first["severityNumber"] == "SEVERITY_NUMBER_ERROR"
+    assert first["severityText"] == "err"
+    assert res == {
+        "host.name": "host-a",
+        "process.pid": "42",
+        "process.executable.path": "/bin/app",
+        "process.command_line": "app -v",
+    }
+    assert attrs == {
+        "code.file.path": "app.c",
+        "code.line.number": "7",
+        "code.function.name": "main",
+        "syslog.identifier": "untrusted-name",
+        "syslog.pid": "99",
+        "syslog.facility.code": "3",
+        "syslog.timestamp": "Sep 8 10:00:00",
+        "journald._hostname": "lower",
+        "journald.HOSTNAME": "stripped",
+        "journald.pid": "99",
+        "journald._COMM": "app",
+        "journald._SYSTEMD_UNIT": "app.service",
+        "journald.EXTRA": {"values": [{"stringValue": "one"}, {"stringValue": "two"}]},
+    }
+    assert records[1][2] == {"host.name": "host-b", "process.pid": "43"}
+    assert records[1][0]["severityNumber"] == "SEVERITY_NUMBER_DEBUG"
+    assert records[2][2] == {}
+    assert "severityNumber" not in records[2][0]
+    assert records[2][1] == {
+        "journald.PRIORITY": "bad", "journald._PID": "42x", "journald.CODE_LINE": "-1"
+    }
+    assert records[3][2] == {"host.name": "host-a", "process.pid": "42"}

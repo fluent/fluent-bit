@@ -1,0 +1,54 @@
+name: Architectures
+
+env:
+  FORCE_COLOR: 1
+  CLICOLOR_FORCE: 1
+
+on:
+  push:
+    paths-ignore:
+      - '**.md'
+      - 'doc/**'
+  pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'doc/**'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+
+  # Check different architectures (QEMU, Debian GCC)
+  arch:
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        plat: [386, arm/v5, arm/v7, arm64, ppc64le, s390x, riscv64]
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v6
+
+    - name: Set Up QEMU
+      uses: docker/setup-qemu-action@v4
+
+    - name: Set Up Docker Buildx
+      uses: docker/setup-buildx-action@v4
+
+    - name: Build and Test
+      run: |
+          docker run --platform linux/${{ matrix.plat }} -v "$PWD:/yyjson" debian:trixie bash -e -c '
+            apt-get update
+            apt-get install -y gcc g++ cmake
+            mkdir build
+            cd build
+            cmake ../yyjson -DYYJSON_BUILD_TESTS=ON
+            cmake --build . --config Release
+            ctest -C Release --output-on-failure
+          '

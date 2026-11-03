@@ -10,6 +10,8 @@ on:
       - 'dockerfiles/Dockerfile.windows'
       - 'dockerfiles/Dockerfile.windows.nano'
       - 'conf/**'
+      - '.github/workflows/call-build-images.yaml'
+      - '.github/workflows/pr-image-tests.yaml'
 
   workflow_dispatch:
 
@@ -89,7 +91,7 @@ jobs:
       name: PR - Docker ${{ matrix.windows-container-type }} build, Windows ${{ matrix.windows-base-version }}
       runs-on: windows-${{ matrix.windows-base-version }}
       strategy:
-        fail-fast: true
+        fail-fast: false
         matrix:
           include:
             - windows-base-version: '2022'
@@ -123,20 +125,57 @@ jobs:
         # https://github.com/actions/runner-images/issues/12199
         # https://github.com/moby/moby/issues/48093
         # https://support.microsoft.com/en-us/topic/gettemppath-changes-in-windows-february-cumulative-update-preview-4cc631fb-9d97-4118-ab6d-f643cd0a7259#ID0EDF
-        - name: Change system temp directory to the drive having sufficient disk space
+        - name: Move Docker storage and system temp to the build drive
           id: relocate-system-temp-dir
           run: |
             $ErrorActionPreference = "Stop"
+            Get-Volume | Where-Object DriveLetter | Select-Object DriveLetter, FileSystem, SizeRemaining, Size
             if (Test-Path -Path "D:\") {
+              if ((Get-Volume -DriveLetter D).FileSystem -ne "NTFS") {
+                throw "Docker Windows container storage requires an NTFS build drive"
+              }
               $newSystemTempDir = "D:\SystemTemp"
               New-Item -ItemType Directory -Path "${newSystemTempDir}" -Force
               $acl = New-Object System.Security.AccessControl.DirectorySecurity
               $acl.SetSecurityDescriptorSddlForm("O:SYG:SYD:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)")
               Set-Acl "${newSystemTempDir}" -AclObject ${acl}
               [Environment]::SetEnvironmentVariable("SYSTEMTEMP", "${newSystemTempDir}", [EnvironmentVariableTarget]::Machine)
-              Restart-Service docker
+
+              # SYSTEMTEMP does not relocate Docker's layer extraction or image storage.
+              $dockerDataRoot = "D:\docker"
+              $daemonConfigPath = Join-Path $env:ProgramData "docker\config\daemon.json"
+              $daemonConfig = @{}
+              if (Test-Path $daemonConfigPath) {
+                $daemonConfig = Get-Content $daemonConfigPath -Raw | ConvertFrom-Json -AsHashtable
+              }
+              $daemonConfig["data-root"] = $dockerDataRoot
+              New-Item -ItemType Directory -Path (Split-Path $daemonConfigPath) -Force | Out-Null
+              Stop-Service docker
+              try {
+                $daemonConfig | ConvertTo-Json -Depth 100 | Set-Content $daemonConfigPath -Encoding utf8NoBOM
+              }
+              finally {
+                Start-Service docker
+              }
+
+              $dockerReady = $false
+              for ($attempt = 0; $attempt -lt 30; $attempt++) {
+                $actualDataRoot = docker info --format '{{.DockerRootDir}}' 2>$null
+                if ($LASTEXITCODE -eq 0) {
+                  $dockerReady = $true
+                  break
+                }
+                Start-Sleep -Seconds 2
+              }
+              if (-not $dockerReady) {
+                throw "Docker did not become ready after relocating its storage"
+              }
+              if ($actualDataRoot.TrimEnd('\') -ne $dockerDataRoot.TrimEnd('\')) {
+                throw "Docker storage relocation failed: expected $dockerDataRoot, got $actualDataRoot"
+              }
+              Write-Host "Docker data root: $actualDataRoot"
             } else {
-              Write-Warning "Drive D doesn't exist, so there is no disk to relocate system temp directory"
+              Write-Warning "Drive D doesn't exist; Docker storage and system temp remain on the system drive"
             }
           shell: pwsh
 

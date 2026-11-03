@@ -22,7 +22,7 @@ REPETITIONS=5 benchmarks/run-perf.sh \
 The executable also accepts individual workloads:
 
 ```text
-cmt-benchmark lookup|update|prometheus|opentelemetry|opentelemetry-mixed CARDINALITY OPERATIONS
+cmt-benchmark cat|lookup|update|prometheus|opentelemetry|opentelemetry-mixed CARDINALITY OPERATIONS
 ```
 
 The `opentelemetry` workload repeatedly encodes a labeled counter with the
@@ -36,3 +36,11 @@ Use the reported in-process `elapsed_ns` for the operation itself and `perf
 stat` for whole-process hardware counters. Whole-process counters include
 series construction and teardown by design, exposing setup complexity as well
 as steady-state behavior.
+
+The `cat` workload builds OPERATIONS contexts with CARDINALITY distinct series
+per context, then times concatenating them into one context. Source construction,
+verification of every merged value, and teardown are outside `elapsed_ns`.
+For the textfile workload, run `cmt-benchmark cat 2000 50` (100,000 series).
+On Windows, build with `cmake --build build-perf --config Release` and use
+`build-perf/benchmarks/Release/cmt-benchmark.exe`; timing uses
+`QueryPerformanceCounter`. Linux `perf stat` counters are not available there.

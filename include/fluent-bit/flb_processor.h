@@ -34,6 +34,21 @@
 #define FLB_PROCESSOR_SUCCESS        0
 #define FLB_PROCESSOR_FAILURE       -1
 
+/*
+ * Optional raw callbacks execute a complete native segment in configuration
+ * order and preserve record cardinality. All units must use the same callback
+ * and enable logs_raw_enabled during init, with no conditions. The runner
+ * locks all participating units and accounts
+ * for each separately. Existing CFL callbacks remain the fallback for the whole
+ * segment. Raw callbacks never modify or release the input buffer.
+ * MODIFIED transfers a separately allocated output buffer to the caller.
+ * NOTOUCH, UNSUPPORTED and FAILURE leave output NULL/zero. UNSUPPORTED must
+ * discard any partial output and invoke no externally visible side effects.
+ */
+#define FLB_PROCESSOR_RAW_NOTOUCH      0
+#define FLB_PROCESSOR_RAW_MODIFIED     1
+#define FLB_PROCESSOR_RAW_UNSUPPORTED  2
+
 /* Processor event types */
 #define FLB_PROCESSOR_LOGS           1
 #define FLB_PROCESSOR_METRICS        2
@@ -43,6 +58,22 @@
 /* Type of processor unit: 'pipeline filter' or 'native unit' */
 #define FLB_PROCESSOR_UNIT_NATIVE    0
 #define FLB_PROCESSOR_UNIT_FILTER    1
+
+/*
+ * Plugin flags
+ *
+ * FLB_PROCESSOR_FLAG_LOG_WINDOWS: the logs callback only depends on each
+ * record and its group, so the processor chain can run it over large buffers
+ * in group aligned windows.
+ *
+ * FLB_PROCESSOR_FLAG_LOGS_WORKER_SAFE: the logs callback is safe to invoke
+ * from an input protocol worker. It must not depend on the caller's event
+ * loop, scheduler, coroutine or thread-local state, emit records through
+ * thread-bound APIs, or require ordering between independently received
+ * batches.
+ */
+#define FLB_PROCESSOR_FLAG_LOG_WINDOWS 1
+#define FLB_PROCESSOR_FLAG_LOGS_WORKER_SAFE (1 << 1)
 
 
 /* The current values mean the processor stack will
@@ -65,6 +96,7 @@ struct flb_log_event_decoder;
 struct flb_log_event_encoder;
 struct flb_processor_instance;
 struct flb_condition;
+struct flb_mp_chunk_cobj;
 
 struct flb_processor_unit {
     int event_type;
@@ -148,7 +180,7 @@ struct flb_processor {
 };
 
 struct flb_processor_plugin {
-    int flags;             /* Flags (not available at the moment */
+    int flags;             /* FLB_PROCESSOR_FLAG_* capabilities  */
     char *name;            /* Processor short name               */
     char *description;     /* Description                        */
 
@@ -165,6 +197,11 @@ struct flb_processor_plugin {
                             void *,       /* struct flb_mp_chunk_cobj_create */
                             const char *,
                             int);
+
+    int (*cb_process_logs_raw) (struct flb_processor_instance **, size_t,
+                                const void *, size_t,
+                                void **, size_t *,
+                                const char *, int);
 
     int (*cb_process_metrics) (struct flb_processor_instance *,
                                struct cmt *, /* in */
@@ -195,6 +232,7 @@ struct flb_processor_instance {
     int id;                                /* instance id              */
     int log_level;                         /* instance log level       */
     int event_type;                        /* event type               */
+    int logs_raw_enabled;                  /* set during init for compatible configurations */
     char name[32];                         /* numbered name            */
     char *alias;                           /* alias name               */
     void *context;                         /* Instance local context   */
@@ -239,6 +277,22 @@ int flb_processor_run(struct flb_processor *proc,
                       void *data, size_t data_size,
                       void **out_buf, size_t *out_size);
 
+
+/* Carry known logical log counts through the pipeline. -1 means unknown. */
+int flb_processor_run_with_count(struct flb_processor *proc, size_t starting_stage, int type,
+                                 const char *tag, size_t tag_len, void *data, size_t data_size,
+                                 void **out_buf, size_t *out_size,
+                                 int input_records, int *output_records);
+
+/* Run the logs processors over a chunk of CFL records, consuming the chunk */
+int flb_processor_logs_chunk_supported(struct flb_processor *proc,
+                                       int worker_thread);
+int flb_processor_run_logs_chunk(struct flb_processor *proc,
+                                 const char *tag, size_t tag_len,
+                                 struct flb_mp_chunk_cobj *chunk,
+                                 int worker_thread,
+                                 void **out_buf, size_t *out_size,
+                                 int *output_records);
 
 struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
                                                      int event_type,

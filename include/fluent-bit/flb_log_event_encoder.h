@@ -234,6 +234,8 @@ struct flb_log_event_encoder {
     int                                         dynamically_allocated;
     char                                       *output_buffer;
     size_t                                      output_length;
+    /* Maximum serialized output bytes; SIZE_MAX by default. */
+    size_t                                      output_limit;
     int                                         initialized;
 
     struct flb_time                             timestamp;

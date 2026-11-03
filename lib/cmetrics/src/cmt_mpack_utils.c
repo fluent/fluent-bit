@@ -332,5 +332,11 @@ int cmt_mpack_peek_array_length(mpack_reader_t *reader)
         return 0;
     }
 
+    /* Callers size allocations from this value before the array is read, so
+     * a declared count that cmt_mpack_unpack_array() rejects reports zero. */
+    if (CMT_MPACK_MAX_ARRAY_ENTRY_COUNT < mpack_tag_array_count(&tag)) {
+        return 0;
+    }
+
     return mpack_tag_array_count(&tag);
 }

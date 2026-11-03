@@ -113,6 +113,69 @@ static void test_bad_alg()
     TEST_CHECK(ret == FLB_OAUTH2_JWT_ERR_ALG_UNSUPPORTED);
 }
 
+static void test_header_fields()
+{
+    const char *headers[] = {
+        "{\"alg\":\"RS256\",\"kid\":\"first\",\"kid\":\"test-key\"}",
+        "{\"kid\":\"test-key\",\"alg\":\"HS256\",\"alg\":\"RS256\"}",
+        "{\"alg\":\"RS256\",\"kid\":\"test-key\",\"kid\":\"test-key\"}",
+        "{\"kid\":\"test-key\",\"alg\":\"RS256\",\"alg\":\"RS256\"}",
+        "{\"alg\":\"RS256\",\"kid\":\"\",\"kid\":\"test-key\"}",
+        "{\"kid\":\"test-key\",\"alg\":\"\",\"alg\":\"RS256\"}",
+        "{\"alg\":\"RS256\",\"kid\":null,\"kid\":\"test-key\"}",
+        "{\"alg\":\"RS256\",\"kid\":\"test-key\",\"kid\":null}",
+        "{\"kid\":\"test-key\",\"alg\":null,\"alg\":\"RS256\"}",
+        "{\"kid\":\"test-key\",\"alg\":\"RS256\",\"alg\":null}",
+        "{\"alg\":\"RS256\",\"kid\":\"test-key\",\"k\\u0069d\":\"test-key\"}",
+        "{\"kid\":\"test-key\",\"alg\":\"RS256\",\"\\u0061lg\":\"RS256\"}",
+        "{\"alg\":\"RS256\",\"kid\":42}",
+        "{\"kid\":\"test-key\",\"alg\":[]}",
+        "{\"kid\":{},\"alg\":\"RS256\"}",
+        "{\"alg\":\"RS256\",\"kid\":\"test-key\",\"extra\":{\"kid\":\"nested\"}}"
+    };
+    unsigned char encoded[512];
+    char token[1024];
+    const char *suffix;
+    size_t encoded_len;
+    size_t i;
+    size_t j;
+    int ret;
+    struct flb_oauth2_jwt jwt;
+
+    suffix = strchr(VALID_JWT, '.');
+    for (i = 0; i < sizeof(headers) / sizeof(headers[0]); i++) {
+        ret = flb_base64_encode(encoded, sizeof(encoded), &encoded_len,
+                                (const unsigned char *) headers[i], strlen(headers[i]));
+        TEST_ASSERT(ret == 0);
+        while (encoded_len > 0 && encoded[encoded_len - 1] == '=') {
+            encoded_len--;
+        }
+        for (j = 0; j < encoded_len; j++) {
+            if (encoded[j] == '+') {
+                encoded[j] = '-';
+            }
+            else if (encoded[j] == '/') {
+                encoded[j] = '_';
+            }
+        }
+        encoded[encoded_len] = '\0';
+        snprintf(token, sizeof(token), "%s%s", encoded, suffix);
+
+        ret = flb_oauth2_jwt_parse(token, strlen(token), &jwt);
+        if (i == sizeof(headers) / sizeof(headers[0]) - 1) {
+            TEST_CHECK(ret == FLB_OAUTH2_JWT_OK);
+        }
+        else {
+            TEST_CHECK(ret == FLB_OAUTH2_JWT_ERR_JSON_HEADER);
+        }
+        TEST_MSG("header: %s, status: %d", headers[i], ret);
+        /* Parse failures already release all JWT allocations. */
+        if (ret == FLB_OAUTH2_JWT_OK) {
+            flb_oauth2_jwt_destroy(&jwt);
+        }
+    }
+}
+
 static void test_static_key_validation()
 {
     int ret;
@@ -267,6 +330,7 @@ TEST_LIST = {
     {"bad_base64", test_bad_base64},
     {"missing_kid", test_missing_kid},
     {"bad_alg", test_bad_alg},
+    {"header_fields", test_header_fields},
     {"static_key_validation", test_static_key_validation},
     {0}
 };

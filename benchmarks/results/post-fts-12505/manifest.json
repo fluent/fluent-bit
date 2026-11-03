@@ -1,0 +1,468 @@
+{
+  "base_commit": "05048e35d7106890006b7b593531bd51a16dfc93",
+  "cpu_model": "AMD Ryzen 9 7940HS w/ Radeon 780M Graphics",
+  "candidate_scope": "Reviewed processor fusion/counting changes plus the independent SQL group fix from PR #12506. None of these benchmark pipelines invokes SQL.",
+  "measured_runs": 160,
+  "measured_records": 44000000,
+  "warmup_records": 1600000,
+  "campaigns": {
+    "confirm-forward-128-6": {
+      "created_utc": "2026-10-26T19:01:49.507948+00:00",
+      "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+      "cpu": 7,
+      "arguments": {
+        "baseline": "/tmp/flb-post-fts-release-baseline/build/bin/fluent-bit",
+        "candidate": "build/bin/fluent-bit",
+        "output": "benchmarks/post-fts-pr-review/confirm-forward-128-6.csv",
+        "records": 200000,
+        "runs": 5,
+        "cpu": 7,
+        "input": "forward",
+        "fields": [
+          128
+        ],
+        "modifiers": 6,
+        "location": "input",
+        "mixed": false
+      },
+      "binaries": {
+        "baseline": "/tmp/flb-post-fts-release-baseline/build/bin/fluent-bit",
+        "candidate": "/tmp/flb-post-fts-pr-review/build/bin/fluent-bit"
+      },
+      "binary_sha256": {
+        "baseline": "666b24a4de01a05cb1cf7f0ce30c8857dfe53def76afa984c5be29e44cc397ce",
+        "candidate": "fb6fa9629c86800cb970bcddb585b7a01e5c1704e7d771ef37370c893f96a485"
+      },
+      "warmup_records": 10000,
+      "batch_records": 1000,
+      "clients": 4,
+      "source_sha256": "d3fffa8c553383f1adc97d5fbba63869665a72f5291648a1f19d769e75b4c208"
+    },
+    "confirm-forward-128-0": {
+      "created_utc": "2026-10-26T19:00:59.459425+00:00",
+      "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+      "cpu": 7,
+      "arguments": {
+        "baseline": "/tmp/flb-post-fts-release-baseline/build/bin/fluent-bit",
+        "candidate": "build/bin/fluent-bit",
+        "output": "benchmarks/post-fts-pr-review/confirm-forward-128-0.csv",
+        "records": 200000,
+        "runs": 5,
+        "cpu": 7,
+        "input": "forward",
+        "fields": [
+          128
+        ],
+        "modifiers": 0,
+        "location": "input",
+        "mixed": false
+      },
+      "binaries": {
+        "baseline": "/tmp/flb-post-fts-release-baseline/build/bin/fluent-bit",
+        "candidate": "/tmp/flb-post-fts-pr-review/build/bin/fluent-bit"
+      },
+      "binary_sha256": {
+        "baseline": "666b24a4de01a05cb1cf7f0ce30c8857dfe53def76afa984c5be29e44cc397ce",
+        "candidate": "fb6fa9629c86800cb970bcddb585b7a01e5c1704e7d771ef37370c893f96a485"
+      },
+      "warmup_records": 10000,
+      "batch_records": 1000,
+      "clients": 4,
+      "source_sha256": "d3fffa8c553383f1adc97d5fbba63869665a72f5291648a1f19d769e75b4c208"
+    },
+    "forward-control": {
+      "created_utc": "2026-10-26T18:51:22.466685+00:00",
+      "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+      "cpu": 7,
+      "arguments": {
+        "baseline": "/tmp/flb-post-fts-release-baseline/build/bin/fluent-bit",
+        "candidate": "build/bin/fluent-bit",
+        "output": "benchmarks/post-fts-pr-review/forward-control.csv",
+        "records": 200000,
+        "runs": 3,
+        "cpu": 7,
+        "input": "forward",
+        "fields": [
+          12,
+          128
+        ],
+        "modifiers": 0,
+        "location": "input",
+        "mixed": false
+      },
+      "binaries": {
+        "baseline": "/tmp/flb-post-fts-release-baseline/build/bin/fluent-bit",
+        "candidate": "/tmp/flb-post-fts-pr-review/build/bin/fluent-bit"
+      },
+      "binary_sha256": {
+        "baseline": "666b24a4de01a05cb1cf7f0ce30c8857dfe53def76afa984c5be29e44cc397ce",
+        "candidate": "fb6fa9629c86800cb970bcddb585b7a01e5c1704e7d771ef37370c893f96a485"
+      },
+      "warmup_records": 10000,
+      "batch_records": 1000,
+      "clients": 4,
+      "source_sha256": "d3fffa8c553383f1adc97d5fbba63869665a72f5291648a1f19d769e75b4c208"
+    },
+    "confirm-forward-12-0": {
+      "created_utc": "2026-10-26T18:59:17.521927+00:00",
+      "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+      "cpu": 7,
+      "arguments": {
+        "baseline": "/tmp/flb-post-fts-release-baseline/build/bin/fluent-bit",
+        "candidate": "build/bin/fluent-bit",
+        "output": "benchmarks/post-fts-pr-review/confirm-forward-12-0.csv",
+        "records": 800000,
+        "runs": 5,
+        "cpu": 7,
+        "input": "forward",
+        "fields": [
+          12
+        ],
+        "modifiers": 0,
+        "location": "input",
+        "mixed": false
+      },
+      "binaries": {
+        "baseline": "/tmp/flb-post-fts-release-baseline/build/bin/fluent-bit",
+        "candidate": "/tmp/flb-post-fts-pr-review/build/bin/fluent-bit"
+      },
+      "binary_sha256": {
+        "baseline": "666b24a4de01a05cb1cf7f0ce30c8857dfe53def76afa984c5be29e44cc397ce",
+        "candidate": "fb6fa9629c86800cb970bcddb585b7a01e5c1704e7d771ef37370c893f96a485"
+      },
+      "warmup_records": 10000,
+      "batch_records": 1000,
+      "clients": 4,
+      "source_sha256": "d3fffa8c553383f1adc97d5fbba63869665a72f5291648a1f19d769e75b4c208"
+    },
+    "http-six": {
+      "created_utc": "2026-10-26T18:49:43.512721+00:00",
+      "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+      "cpu": 7,
+      "arguments": {
+        "baseline": "/tmp/flb-post-fts-release-baseline/build/bin/fluent-bit",
+        "candidate": "build/bin/fluent-bit",
+        "output": "benchmarks/post-fts-pr-review/http-six.csv",
+        "records": 200000,
+        "runs": 3,
+        "cpu": 7,
+        "input": "http",
+        "fields": [
+          12,
+          128
+        ],
+        "modifiers": 6,
+        "location": "input",
+        "mixed": false
+      },
+      "binaries": {
+        "baseline": "/tmp/flb-post-fts-release-baseline/build/bin/fluent-bit",
+        "candidate": "/tmp/flb-post-fts-pr-review/build/bin/fluent-bit"
+      },
+      "binary_sha256": {
+        "baseline": "666b24a4de01a05cb1cf7f0ce30c8857dfe53def76afa984c5be29e44cc397ce",
+        "candidate": "fb6fa9629c86800cb970bcddb585b7a01e5c1704e7d771ef37370c893f96a485"
+      },
+      "warmup_records": 10000,
+      "batch_records": 1000,
+      "clients": 4,
+      "source_sha256": "d3fffa8c553383f1adc97d5fbba63869665a72f5291648a1f19d769e75b4c208"
+    },
+    "otlp-json-six": {
+      "created_utc": "2026-10-26T18:52:16.511363+00:00",
+      "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+      "cpu": 7,
+      "arguments": {
+        "baseline": "/tmp/flb-post-fts-release-baseline/build/bin/fluent-bit",
+        "candidate": "build/bin/fluent-bit",
+        "output": "benchmarks/post-fts-pr-review/otlp-json-six.csv",
+        "records": 200000,
+        "runs": 3,
+        "cpu": 7,
+        "input": "otlp-json",
+        "fields": [
+          12,
+          128
+        ],
+        "modifiers": 6,
+        "location": "input",
+        "mixed": false
+      },
+      "binaries": {
+        "baseline": "/tmp/flb-post-fts-release-baseline/build/bin/fluent-bit",
+        "candidate": "/tmp/flb-post-fts-pr-review/build/bin/fluent-bit"
+      },
+      "binary_sha256": {
+        "baseline": "666b24a4de01a05cb1cf7f0ce30c8857dfe53def76afa984c5be29e44cc397ce",
+        "candidate": "fb6fa9629c86800cb970bcddb585b7a01e5c1704e7d771ef37370c893f96a485"
+      },
+      "warmup_records": 10000,
+      "batch_records": 1000,
+      "clients": 4,
+      "source_sha256": "d3fffa8c553383f1adc97d5fbba63869665a72f5291648a1f19d769e75b4c208"
+    },
+    "otlp-protobuf-six": {
+      "created_utc": "2026-10-26T18:56:06.466021+00:00",
+      "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+      "cpu": 7,
+      "arguments": {
+        "baseline": "/tmp/flb-post-fts-release-baseline/build/bin/fluent-bit",
+        "candidate": "build/bin/fluent-bit",
+        "output": "benchmarks/post-fts-pr-review/otlp-protobuf-six.csv",
+        "records": 200000,
+        "runs": 3,
+        "cpu": 7,
+        "input": "otlp-protobuf",
+        "fields": [
+          12,
+          128
+        ],
+        "modifiers": 6,
+        "location": "input",
+        "mixed": false
+      },
+      "binaries": {
+        "baseline": "/tmp/flb-post-fts-release-baseline/build/bin/fluent-bit",
+        "candidate": "/tmp/flb-post-fts-pr-review/build/bin/fluent-bit"
+      },
+      "binary_sha256": {
+        "baseline": "666b24a4de01a05cb1cf7f0ce30c8857dfe53def76afa984c5be29e44cc397ce",
+        "candidate": "fb6fa9629c86800cb970bcddb585b7a01e5c1704e7d771ef37370c893f96a485"
+      },
+      "warmup_records": 10000,
+      "batch_records": 1000,
+      "clients": 4,
+      "source_sha256": "d3fffa8c553383f1adc97d5fbba63869665a72f5291648a1f19d769e75b4c208"
+    },
+    "confirm-forward-12-6": {
+      "created_utc": "2026-10-26T18:59:57.507929+00:00",
+      "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+      "cpu": 7,
+      "arguments": {
+        "baseline": "/tmp/flb-post-fts-release-baseline/build/bin/fluent-bit",
+        "candidate": "build/bin/fluent-bit",
+        "output": "benchmarks/post-fts-pr-review/confirm-forward-12-6.csv",
+        "records": 800000,
+        "runs": 5,
+        "cpu": 7,
+        "input": "forward",
+        "fields": [
+          12
+        ],
+        "modifiers": 6,
+        "location": "input",
+        "mixed": false
+      },
+      "binaries": {
+        "baseline": "/tmp/flb-post-fts-release-baseline/build/bin/fluent-bit",
+        "candidate": "/tmp/flb-post-fts-pr-review/build/bin/fluent-bit"
+      },
+      "binary_sha256": {
+        "baseline": "666b24a4de01a05cb1cf7f0ce30c8857dfe53def76afa984c5be29e44cc397ce",
+        "candidate": "fb6fa9629c86800cb970bcddb585b7a01e5c1704e7d771ef37370c893f96a485"
+      },
+      "warmup_records": 10000,
+      "batch_records": 1000,
+      "clients": 4,
+      "source_sha256": "d3fffa8c553383f1adc97d5fbba63869665a72f5291648a1f19d769e75b4c208"
+    },
+    "forward-one": {
+      "created_utc": "2026-10-26T18:45:43.006308+00:00",
+      "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+      "cpu": 7,
+      "arguments": {
+        "baseline": "/tmp/flb-post-fts-release-baseline/build/bin/fluent-bit",
+        "candidate": "build/bin/fluent-bit",
+        "output": "benchmarks/post-fts-pr-review/forward-one.csv",
+        "records": 200000,
+        "runs": 3,
+        "cpu": 7,
+        "input": "forward",
+        "fields": [
+          12,
+          128
+        ],
+        "modifiers": 1,
+        "location": "input",
+        "mixed": false
+      },
+      "binaries": {
+        "baseline": "/tmp/flb-post-fts-release-baseline/build/bin/fluent-bit",
+        "candidate": "/tmp/flb-post-fts-pr-review/build/bin/fluent-bit"
+      },
+      "binary_sha256": {
+        "baseline": "666b24a4de01a05cb1cf7f0ce30c8857dfe53def76afa984c5be29e44cc397ce",
+        "candidate": "fb6fa9629c86800cb970bcddb585b7a01e5c1704e7d771ef37370c893f96a485"
+      },
+      "warmup_records": 10000,
+      "batch_records": 1000,
+      "clients": 4,
+      "source_sha256": "d3fffa8c553383f1adc97d5fbba63869665a72f5291648a1f19d769e75b4c208"
+    },
+    "otlp-protobuf-control": {
+      "created_utc": "2026-10-26T18:58:00.522779+00:00",
+      "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+      "cpu": 7,
+      "arguments": {
+        "baseline": "/tmp/flb-post-fts-release-baseline/build/bin/fluent-bit",
+        "candidate": "build/bin/fluent-bit",
+        "output": "benchmarks/post-fts-pr-review/otlp-protobuf-control.csv",
+        "records": 200000,
+        "runs": 3,
+        "cpu": 7,
+        "input": "otlp-protobuf",
+        "fields": [
+          12,
+          128
+        ],
+        "modifiers": 0,
+        "location": "input",
+        "mixed": false
+      },
+      "binaries": {
+        "baseline": "/tmp/flb-post-fts-release-baseline/build/bin/fluent-bit",
+        "candidate": "/tmp/flb-post-fts-pr-review/build/bin/fluent-bit"
+      },
+      "binary_sha256": {
+        "baseline": "666b24a4de01a05cb1cf7f0ce30c8857dfe53def76afa984c5be29e44cc397ce",
+        "candidate": "fb6fa9629c86800cb970bcddb585b7a01e5c1704e7d771ef37370c893f96a485"
+      },
+      "warmup_records": 10000,
+      "batch_records": 1000,
+      "clients": 4,
+      "source_sha256": "d3fffa8c553383f1adc97d5fbba63869665a72f5291648a1f19d769e75b4c208"
+    },
+    "otlp-json-control": {
+      "created_utc": "2026-10-26T18:54:25.458470+00:00",
+      "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+      "cpu": 7,
+      "arguments": {
+        "baseline": "/tmp/flb-post-fts-release-baseline/build/bin/fluent-bit",
+        "candidate": "build/bin/fluent-bit",
+        "output": "benchmarks/post-fts-pr-review/otlp-json-control.csv",
+        "records": 200000,
+        "runs": 3,
+        "cpu": 7,
+        "input": "otlp-json",
+        "fields": [
+          12,
+          128
+        ],
+        "modifiers": 0,
+        "location": "input",
+        "mixed": false
+      },
+      "binaries": {
+        "baseline": "/tmp/flb-post-fts-release-baseline/build/bin/fluent-bit",
+        "candidate": "/tmp/flb-post-fts-pr-review/build/bin/fluent-bit"
+      },
+      "binary_sha256": {
+        "baseline": "666b24a4de01a05cb1cf7f0ce30c8857dfe53def76afa984c5be29e44cc397ce",
+        "candidate": "fb6fa9629c86800cb970bcddb585b7a01e5c1704e7d771ef37370c893f96a485"
+      },
+      "warmup_records": 10000,
+      "batch_records": 1000,
+      "clients": 4,
+      "source_sha256": "d3fffa8c553383f1adc97d5fbba63869665a72f5291648a1f19d769e75b4c208"
+    },
+    "forward-mixed": {
+      "created_utc": "2026-10-26T18:46:55.453095+00:00",
+      "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+      "cpu": 7,
+      "arguments": {
+        "baseline": "/tmp/flb-post-fts-release-baseline/build/bin/fluent-bit",
+        "candidate": "build/bin/fluent-bit",
+        "output": "benchmarks/post-fts-pr-review/forward-mixed.csv",
+        "records": 200000,
+        "runs": 3,
+        "cpu": 7,
+        "input": "forward",
+        "fields": [
+          12,
+          128
+        ],
+        "modifiers": 6,
+        "location": "input",
+        "mixed": true
+      },
+      "binaries": {
+        "baseline": "/tmp/flb-post-fts-release-baseline/build/bin/fluent-bit",
+        "candidate": "/tmp/flb-post-fts-pr-review/build/bin/fluent-bit"
+      },
+      "binary_sha256": {
+        "baseline": "666b24a4de01a05cb1cf7f0ce30c8857dfe53def76afa984c5be29e44cc397ce",
+        "candidate": "fb6fa9629c86800cb970bcddb585b7a01e5c1704e7d771ef37370c893f96a485"
+      },
+      "warmup_records": 10000,
+      "batch_records": 1000,
+      "clients": 4,
+      "source_sha256": "d3fffa8c553383f1adc97d5fbba63869665a72f5291648a1f19d769e75b4c208"
+    },
+    "forward-six": {
+      "created_utc": "2026-10-26T18:44:18.298234+00:00",
+      "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+      "cpu": 7,
+      "arguments": {
+        "baseline": "/tmp/flb-post-fts-release-baseline/build/bin/fluent-bit",
+        "candidate": "build/bin/fluent-bit",
+        "output": "benchmarks/post-fts-pr-review/forward-six.csv",
+        "records": 200000,
+        "runs": 3,
+        "cpu": 7,
+        "input": "forward",
+        "fields": [
+          12,
+          128
+        ],
+        "modifiers": 6,
+        "location": "input",
+        "mixed": false
+      },
+      "binaries": {
+        "baseline": "/tmp/flb-post-fts-release-baseline/build/bin/fluent-bit",
+        "candidate": "/tmp/flb-post-fts-pr-review/build/bin/fluent-bit"
+      },
+      "binary_sha256": {
+        "baseline": "666b24a4de01a05cb1cf7f0ce30c8857dfe53def76afa984c5be29e44cc397ce",
+        "candidate": "fb6fa9629c86800cb970bcddb585b7a01e5c1704e7d771ef37370c893f96a485"
+      },
+      "warmup_records": 10000,
+      "batch_records": 1000,
+      "clients": 4,
+      "source_sha256": "d3fffa8c553383f1adc97d5fbba63869665a72f5291648a1f19d769e75b4c208"
+    },
+    "forward-output": {
+      "created_utc": "2026-10-26T18:48:13.506030+00:00",
+      "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+      "cpu": 7,
+      "arguments": {
+        "baseline": "/tmp/flb-post-fts-release-baseline/build/bin/fluent-bit",
+        "candidate": "build/bin/fluent-bit",
+        "output": "benchmarks/post-fts-pr-review/forward-output.csv",
+        "records": 200000,
+        "runs": 3,
+        "cpu": 7,
+        "input": "forward",
+        "fields": [
+          12,
+          128
+        ],
+        "modifiers": 6,
+        "location": "output",
+        "mixed": false
+      },
+      "binaries": {
+        "baseline": "/tmp/flb-post-fts-release-baseline/build/bin/fluent-bit",
+        "candidate": "/tmp/flb-post-fts-pr-review/build/bin/fluent-bit"
+      },
+      "binary_sha256": {
+        "baseline": "666b24a4de01a05cb1cf7f0ce30c8857dfe53def76afa984c5be29e44cc397ce",
+        "candidate": "fb6fa9629c86800cb970bcddb585b7a01e5c1704e7d771ef37370c893f96a485"
+      },
+      "warmup_records": 10000,
+      "batch_records": 1000,
+      "clients": 4,
+      "source_sha256": "d3fffa8c553383f1adc97d5fbba63869665a72f5291648a1f19d769e75b4c208"
+    }
+  }
+}

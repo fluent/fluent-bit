@@ -26,6 +26,7 @@
 #include <chunkio/cio_error.h>
 
 #include <string.h>
+#include "cio_size.h"
 
 struct cio_chunk *cio_chunk_open(struct cio_ctx *ctx, struct cio_stream *st,
                                  const char *name, int flags, size_t size,
@@ -179,33 +180,131 @@ int cio_chunk_delete(struct cio_ctx *ctx, struct cio_stream *st, const char *nam
 
 /*
  * Write at a specific offset of the content area. Offset must be >= 0 and
- * less than current data length.
+ * no greater than the current data length.
  */
 int cio_chunk_write_at(struct cio_chunk *ch, off_t offset,
                        const void *buf, size_t count)
 {
     int type;
+    int ret;
+    int previous_crc_reset = CIO_FALSE;
+    size_t previous_size;
     struct cio_memfs *mf;
     struct cio_file *cf;
+
+    if (ch == NULL || ch->st == NULL ||
+        ch->backend == NULL || offset < 0) {
+        return CIO_ERROR;
+    }
 
     cio_error_reset(ch);
 
     type = ch->st->type;
     if (type == CIO_STORE_MEM) {
         mf = ch->backend;
+        previous_size = mf->buf_len;
+        if ((uintmax_t) offset > previous_size) {
+            return CIO_ERROR;
+        }
+
         mf->buf_len = offset;
     }
     else if (type == CIO_STORE_FS) {
         cf = ch->backend;
+        previous_size = cf->data_size;
+        if ((uintmax_t) offset > previous_size || !(cf->flags & CIO_OPEN_RW)) {
+            return CIO_ERROR;
+        }
+
+        previous_crc_reset = cf->crc_reset;
         cf->data_size = offset;
         cf->crc_reset = CIO_TRUE;
+    }
+    else {
+        return CIO_ERROR;
     }
 
     /*
      * By default backends (fs, mem) appends data after the it last position,
      * so we just adjust the content size to the given offset.
      */
-    return cio_chunk_write(ch, buf, count);
+    ret = cio_chunk_write(ch, buf, count);
+    if (ret != CIO_OK) {
+        if (type == CIO_STORE_MEM) {
+            mf->buf_len = previous_size;
+        }
+        else {
+            cf->data_size = previous_size;
+            cf->crc_reset = previous_crc_reset;
+        }
+    }
+
+    return ret;
+}
+
+int cio_chunk_get_projected_size(struct cio_chunk *ch, size_t count, size_t *size)
+{
+    int ret;
+    size_t current;
+    size_t used;
+    size_t step;
+    size_t alignment;
+    size_t prefix;
+    size_t physical = 0;
+    struct cio_file *cf;
+    struct cio_memfs *mf;
+
+    if (ch == NULL || ch->st == NULL ||
+        ch->backend == NULL || size == NULL) {
+        return CIO_ERROR;
+    }
+
+    if (ch->st->type == CIO_STORE_FS) {
+        cf = ch->backend;
+        if (cio_file_is_up(ch, cf) == CIO_FALSE ||
+            cf->data_size > UINT32_MAX ||
+            count > UINT32_MAX - cf->data_size) {
+            return CIO_ERROR;
+        }
+
+        prefix = CIO_FILE_HEADER_MIN + cio_file_st_get_meta_len(cf->map);
+        current = cf->alloc_size;
+        physical = cf->fs_size;
+        if (prefix > current || cf->data_size > current - prefix) {
+            return CIO_ERROR;
+        }
+
+        used = prefix + cf->data_size;
+        step = cf->realloc_size;
+        alignment = ch->ctx->page_size;
+    }
+    else if (ch->st->type == CIO_STORE_MEM) {
+        mf = ch->backend;
+        current = mf->buf_size;
+        used = mf->buf_len;
+        step = mf->realloc_size;
+        alignment = 1;
+        if (used > current) {
+            return CIO_ERROR;
+        }
+    }
+    else {
+        return CIO_ERROR;
+    }
+
+    if (used > PTRDIFF_MAX || count > PTRDIFF_MAX - used) {
+        return CIO_ERROR;
+    }
+
+    ret = cio_size_grow(current, used + count, step, alignment,
+                       (ch->ctx->options.flags & CIO_FIXED_GROWTH) == 0, size);
+
+    /* A failed reservation rollback can leave extra space on disk. */
+    if (ret == CIO_OK && *size < physical) {
+        *size = physical;
+    }
+
+    return ret;
 }
 
 int cio_chunk_write(struct cio_chunk *ch, const void *buf, size_t count)
@@ -493,8 +592,16 @@ int cio_chunk_tx_rollback(struct cio_chunk *ch)
     }
     else if (type == CIO_STORE_FS) {
         cf = ch->backend;
+        if (cio_file_is_up(ch, cf) == CIO_FALSE || !(cf->flags & CIO_OPEN_RW)) {
+            return CIO_ERROR;
+        }
         cf->crc_cur = ch->tx_crc;
         cf->data_size = ch->tx_content_length;
+        cf->synced = CIO_FALSE;
+        cf->taint_flag = CIO_TRUE;
+        if (!(ch->ctx->options.flags & CIO_CHECKSUM)) {
+            cio_file_st_set_content_len(cf->map, cf->data_size);
+        }
     }
 
     ch->tx_active = CIO_FALSE;

@@ -63,9 +63,10 @@ static int get_callback_args(lua_State *l, const char *name)
         lua_Debug ar;
 
         if (lua_getinfo(l, ">u", &ar) && ar.nparams >= 5) {
-            lua_pop(l, 1);
-            return 5;
+            nargs = 5;
         }
+        /* The '>' query already consumes the function from the stack. */
+        return nargs;
     }
 #else
     {

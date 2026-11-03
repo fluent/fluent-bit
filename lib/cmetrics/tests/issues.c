@@ -222,6 +222,11 @@ static void check_variant_nesting_limit(int use_maps, size_t nesting_depth,
     mpack_reader_init_data(&reader, buffer, size);
     result = unpack_cfl_variant(&reader, &variant);
     TEST_CHECK((result == 0) == (expected_result == 0));
+    if (result != 0) {
+        TEST_CHECK(variant == NULL);
+        /* A semantic rejection need not consume the remaining containers. */
+        mpack_reader_flag_error(&reader, mpack_error_invalid);
+    }
 
     if (variant != NULL) {
         cfl_variant_destroy(variant);

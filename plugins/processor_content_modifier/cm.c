@@ -41,6 +41,7 @@ static int cb_init(struct flb_processor_instance *ins, void *source_plugin_insta
     }
 
     flb_processor_instance_set_context(ins, ctx);
+    ins->logs_raw_enabled = cm_logs_raw_supported(ins);
 
     return FLB_PROCESSOR_SUCCESS;
 }
@@ -163,9 +164,11 @@ struct flb_processor_plugin processor_content_modifier_plugin = {
     .description        = "Modify the content of Logs, Metrics and Traces",
     .cb_init            = cb_init,
     .cb_process_logs    = cb_process_logs,
+    .cb_process_logs_raw = cm_logs_process_raw,
     .cb_process_metrics = cb_process_metrics,
     .cb_process_traces  = cb_process_traces,
     .cb_exit            = cb_exit,
     .config_map         = config_map,
-    .flags              = 0
+    .flags              = FLB_PROCESSOR_FLAG_LOG_WINDOWS |
+                          FLB_PROCESSOR_FLAG_LOGS_WORKER_SAFE
 };

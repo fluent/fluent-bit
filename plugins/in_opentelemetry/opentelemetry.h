@@ -39,6 +39,7 @@ struct flb_opentelemetry {
     int  tag_from_uri;
     flb_sds_t logs_metadata_key;
     flb_sds_t logs_body_key;
+    size_t logs_max_size;
     int profile_support_enabled;
     int encode_profiles_as_log;
     struct flb_oauth2_jwt_cfg oauth2_cfg;

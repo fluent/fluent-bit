@@ -1,0 +1,48 @@
+service:
+  flush: 0.1
+  grace: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: output_single
+      dummy: '{"message":"output worker single"}'
+      samples: 1
+
+    - name: dummy
+      tag: output_chain
+      dummy: '{"message":"output worker chain"}'
+      samples: 1
+
+  outputs:
+    - name: stdout
+      match: output_single
+      workers: 4
+      processors:
+        logs:
+          - name: content_modifier
+            context: body
+            action: insert
+            key: native_one
+            value: yes
+
+    - name: stdout
+      match: output_chain
+      workers: 4
+      processors:
+        logs:
+          - name: content_modifier
+            context: body
+            action: insert
+            key: native_one
+            value: yes
+          - name: modify
+            add: filter_middle yes
+          - name: content_modifier
+            context: body
+            action: insert
+            key: native_two
+            value: yes

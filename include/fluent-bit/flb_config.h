@@ -311,7 +311,7 @@ struct flb_config {
 #endif
 
     /* LuaJIT environment's context */
-#ifdef FLB_HAVE_LUAJIT
+#ifdef FLB_HAVE_LUA
     struct mk_list luajit_list;
 #endif
 

@@ -63,26 +63,26 @@ macro(ADD_ZSTD_COMPILATION_FLAGS _C _CXX _LD)
         # EnableCompilerFlag("-std=c99" true false)   # Set C compilation to c99 standard
         if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND MSVC)
             # clang-cl normally maps -Wall to -Weverything.
-            EnableCompilerFlag("/clang:-Wall" _C _CXX false)
+            EnableCompilerFlag("/clang:-Wall" ${_C} ${_CXX} false)
         else ()
-            EnableCompilerFlag("-Wall" _C _CXX false)
+            EnableCompilerFlag("-Wall" ${_C} ${_CXX} false)
         endif ()
-        EnableCompilerFlag("-Wextra" _C _CXX false)
-        EnableCompilerFlag("-Wundef" _C _CXX false)
-        EnableCompilerFlag("-Wshadow" _C _CXX false)
-        EnableCompilerFlag("-Wcast-align" _C _CXX false)
-        EnableCompilerFlag("-Wcast-qual" _C _CXX false)
-        EnableCompilerFlag("-Wstrict-prototypes" _C false false)
+        EnableCompilerFlag("-Wextra" ${_C} ${_CXX} false)
+        EnableCompilerFlag("-Wundef" ${_C} ${_CXX} false)
+        EnableCompilerFlag("-Wshadow" ${_C} ${_CXX} false)
+        EnableCompilerFlag("-Wcast-align" ${_C} ${_CXX} false)
+        EnableCompilerFlag("-Wcast-qual" ${_C} ${_CXX} false)
+        EnableCompilerFlag("-Wstrict-prototypes" ${_C} false false)
         # Enable asserts in Debug mode
         if (CMAKE_BUILD_TYPE MATCHES "Debug")
-            EnableCompilerFlag("-DDEBUGLEVEL=1" _C _CXX false)
+            EnableCompilerFlag("-DDEBUGLEVEL=1" ${_C} ${_CXX} false)
         endif ()
         # Add noexecstack flags
         # LDFLAGS
-        EnableCompilerFlag("-Wl,-z,noexecstack" false false _LD)
+        EnableCompilerFlag("-Wl,-z,noexecstack" false false ${_LD})
         # CFLAGS & CXXFLAGS
-        EnableCompilerFlag("-Qunused-arguments" _C _CXX false)
-        EnableCompilerFlag("-Wa,--noexecstack" _C _CXX false)
+        EnableCompilerFlag("-Qunused-arguments" ${_C} ${_CXX} false)
+        EnableCompilerFlag("-Wa,--noexecstack" ${_C} ${_CXX} false)
         # NOTE: Using 3 nested ifs because the variables are sometimes
         # empty if the condition is false, and sometimes equal to false.
         # This implicitly converts them to truthy values. There may be
@@ -99,15 +99,15 @@ macro(ADD_ZSTD_COMPILATION_FLAGS _C _CXX _LD)
 
         set(ACTIVATE_MULTITHREADED_COMPILATION "ON" CACHE BOOL "activate multi-threaded compilation (/MP flag)")
         if (CMAKE_GENERATOR MATCHES "Visual Studio" AND ACTIVATE_MULTITHREADED_COMPILATION)
-            EnableCompilerFlag("/MP" _C _CXX false)
+            EnableCompilerFlag("/MP" ${_C} ${_CXX} false)
         endif ()
 
         # UNICODE SUPPORT
-        EnableCompilerFlag("/D_UNICODE" _C _CXX false)
-        EnableCompilerFlag("/DUNICODE" _C _CXX false)
+        EnableCompilerFlag("/D_UNICODE" ${_C} ${_CXX} false)
+        EnableCompilerFlag("/DUNICODE" ${_C} ${_CXX} false)
         # Enable asserts in Debug mode
         if (CMAKE_BUILD_TYPE MATCHES "Debug")
-            EnableCompilerFlag("/DDEBUGLEVEL=1" _C _CXX false)
+            EnableCompilerFlag("/DDEBUGLEVEL=1" ${_C} ${_CXX} false)
         endif ()
     endif ()
 

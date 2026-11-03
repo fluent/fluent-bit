@@ -257,6 +257,10 @@ void multipart_upload_destroy(struct multipart_upload *m_upload);
 
 struct flb_http_client *mock_s3_call(char *error_env_var, char *api);
 int s3_plugin_under_test();
+char *flb_s3_test_env_get(const char *name);
+int flb_s3_test_env_set(const char *name, const char *value, int overwrite);
+int flb_s3_test_env_unset(const char *name);
+void flb_s3_test_env_reset(void);
 
 int get_md5_base64(char *buf, size_t buf_size, char *md5_str, size_t md5_str_size);
 

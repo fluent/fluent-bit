@@ -551,6 +551,7 @@ int flb_chunk_trace_context_hit_limit(void *input)
             pthread_mutex_unlock(&in->chunk_trace_lock);
             return FLB_TRUE;
         }
+        pthread_mutex_unlock(&in->chunk_trace_lock);
         return FLB_FALSE;
     case FLB_CHUNK_TRACE_LIMIT_COUNT:
         if (ctxt->limit.count <= ctxt->trace_count) {

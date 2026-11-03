@@ -21,6 +21,17 @@
         "}"     \
 	"}]"
 
+#define HTTPREQUEST_CACHE_MISS	"["		\
+	"1591111124,"			\
+	"{"				\
+        "\"logging.googleapis.com/http_request\": "		\
+        "{"            \
+            "\"cacheLookup\": true,"      \
+            "\"cacheHit\": false,"      \
+            "\"cacheValidatedWithOriginServer\": false"      \
+        "}"     \
+	"}]"
+
 #define EMPTY_HTTPREQUEST	"["		\
 	"1591111124,"			\
 	"{"				\

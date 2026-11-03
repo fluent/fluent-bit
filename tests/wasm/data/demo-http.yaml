@@ -1,0 +1,30 @@
+service:
+  flush: 0.5
+  grace: 1
+  log_level: info
+  scheduler.base: 1
+  scheduler.cap: 2
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: browser.http
+      rate: 1
+      dummy: '{"message":"Hello over HTTPS"}'
+      processors:
+        logs:
+          - name: content_modifier
+            action: insert
+            key: runtime
+            value: browser
+  outputs:
+    - name: http
+      match: '*'
+      browser.url: __HTTP_URL__
+      format: json_lines
+      header_tag: X-Fluent-Tag
+      http.response_timeout: 5s
+      retry_limit: 3
+    - name: stdout
+      match: '*'
+      format: json_lines

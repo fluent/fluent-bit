@@ -1,0 +1,211 @@
+--- a/benchmarks/compare_fluent_bit_otelcol.py
++++ b/benchmarks/compare_fluent_bit_otelcol.py
+@@ -39,6 +39,8 @@
+ ENCODINGS = ("json", "protobuf")
+ PIPELINES = ("ingest", "modified")
+ SAMPLE_INTERVAL = 0.05
++WORKERS = 4
++RATE = 0
+ CLIENT_DEADLINE = 900
+ CLIENT_MAX_CONSECUTIVE_FAILURES = 200
+ 
+@@ -270,7 +272,7 @@
+       http2: off
+       tls: off
+       threaded: true
+-      http_server.workers: 4
++      http_server.workers: {WORKERS}
+ {input_storage}{processor}  outputs:
+     - name: null
+       match: '*'
+@@ -342,7 +344,7 @@
+ 
+ def send_requests(task):
+     """Generator process body: one keep-alive connection, bounded retries."""
+-    port, payload, requests, content_type = task
++    port, payload, requests, content_type, interval, start_at = task
+     latencies = []
+     retries = 0
+     failures = 0
+@@ -350,7 +352,10 @@
+     deadline = time.monotonic() + CLIENT_DEADLINE
+     connection = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+     try:
+-        for _ in range(requests):
++        for request_index in range(requests):
++            delay = start_at + request_index * interval - time.monotonic()
++            if interval and delay > 0:
++                time.sleep(delay)
+             started = time.monotonic_ns()
+             while True:
+                 if time.monotonic() > deadline:
+@@ -380,15 +385,37 @@
+ 
+ 
+ def run_clients(pool, clients, port, payload, requests_per_client, content_type):
+-    tasks = [(port, payload, requests_per_client, content_type)] * clients
++    interval = 100 * clients / RATE if RATE else 0
++    start_at = time.monotonic() + 0.1 if RATE else 0
++    tasks = [(port, payload, requests_per_client, content_type, interval,
++              start_at + index * interval / clients) for index in range(clients)]
+     return pool.map(send_requests, tasks, chunksize=1)
+ 
+ 
+-def sample_process(pid, done, samples, metrics_function, metrics_port):
++def host_swap_pages():
++    values = dict(line.split() for line in Path("/proc/vmstat").read_text().splitlines())
++    return int(values["pswpin"]), int(values["pswpout"])
++
++
++def disk_usage(directory):
++    allocated = logical = 0
++    if directory:
++        for path in Path(directory).rglob("*"):
++            try:
++                info = path.stat()
++                if path.is_file():
++                    allocated += info.st_blocks * 512
++                    logical += info.st_size
++            except FileNotFoundError:
++                pass
++    return allocated, logical
++
++
++def sample_process(pid, done, samples, metrics_function, metrics_port, storage_dir):
+     def take():
+         samples.append((time.monotonic(), process_cpu_seconds(pid),
+                         process_rss_bytes(pid), metrics_function(metrics_port),
+-                        thread_cpu_ticks(pid)))
++                        thread_cpu_ticks(pid), *disk_usage(storage_dir)))
+ 
+     while not done.is_set():
+         try:
+@@ -479,6 +506,8 @@
+         log_path = Path(directory) / "server.log"
+         config_path.write_text(config_text)
+         environment = os.environ.copy()
++        environment.pop("MALLOC_CONF", None)
++        environment.pop("LD_PRELOAD", None)
+         if not is_fluent_bit:
+             environment["GOMAXPROCS"] = str(len(args.server_cpu_set))
+         with log_path.open("w+") as log:
+@@ -492,13 +521,14 @@
+                             warmup_records // batch_records // clients, content_type)
+                 wait_completed(metrics_function, metrics_port, process, warmup_records, 120)
+                 idle_rss = process_rss_bytes(process.pid)
++                swap_start = host_swap_pages()
+                 start_cpu = process_cpu_seconds(process.pid)
+                 start = time.monotonic()
+                 done = threading.Event()
+                 samples = []
+                 monitor = threading.Thread(target=sample_process,
+                                            args=(process.pid, done, samples,
+-                                                 metrics_function, metrics_port), daemon=True)
++                                                 metrics_function, metrics_port, storage_dir), daemon=True)
+                 monitor.start()
+                 client_results = run_clients(pool, clients, input_port, payload,
+                                              records // batch_records // clients,
+@@ -508,6 +538,7 @@
+                                                warmup_records + records, 600)
+                 end = time.monotonic()
+                 end_cpu = process_cpu_seconds(process.pid)
++                swap_end = host_swap_pages()
+                 done.set()
+                 monitor.join()
+ 
+@@ -544,6 +575,28 @@
+                     (accepted_end[3]["accepted"] - accepted_start[3]["accepted"]) /
+                     (accepted_end[0] - accepted_start[0]))
+ 
++                post_drain_rss = process_rss_bytes(process.pid) / 1048576
++                if args.cooldown:
++                    time.sleep(args.cooldown)
++                cooldown_rss = process_rss_bytes(process.pid) / 1048576
++                artifact_name = f"{args.output_prefix.name}-{repetition}-{system}-{pipeline}-{encoding}"
++                artifact_dir = args.output_prefix.parent
++                (artifact_dir / (artifact_name + ".config.yaml")).write_text(config_text)
++                log.flush()
++                (artifact_dir / (artifact_name + ".server.log")).write_text(log_path.read_text())
++                series = []
++                for sample in samples:
++                    series.append({"seconds": sample[0] - start,
++                                   "cpu_seconds": sample[1] - start_cpu,
++                                   "rss_mib": sample[2] / 1048576,
++                                   "accepted": sample[3]["accepted"] - warmup_records,
++                                   "completed": sample[3]["completed"] - warmup_records,
++                                   "queue_items": sample[3]["queue"],
++                                   "disk_allocated_mib": sample[5] / 1048576,
++                                   "disk_logical_mib": sample[6] / 1048576})
++                write_csv(artifact_dir / (artifact_name + ".timeseries.csv"), series)
++                status = Path(f"/proc/{process.pid}/status").read_text()
++                high_water = int(re.search(r"^VmHWM:\s+(\d+)", status, re.M).group(1)) / 1024
+                 elapsed = end - start
+                 send_elapsed = send_end - start
+                 cpu = end_cpu - start_cpu
+@@ -552,7 +605,7 @@
+                     "repetition": repetition,
+                     "pipeline": pipeline,
+                     "encoding": encoding,
+-                    "workers_or_gomaxprocs": len(args.server_cpu_set),
++                    "workers_or_gomaxprocs": WORKERS,
+                     "clients": clients,
+                     "batch_records": batch_records,
+                     "payload_bytes": len(payload),
+@@ -584,9 +637,19 @@
+                     "generator_cpu_seconds": generator_cpu,
+                     "generator_cpu_utilization": (generator_cpu / send_elapsed /
+                                                   len(args.generator_cpu_set)),
++                    "post_drain_rss_mib": post_drain_rss,
++                    "cooldown_rss_mib": cooldown_rss,
++                    "cooldown_seconds": args.cooldown,
+                     "idle_rss_mib": idle_rss / 1048576,
+                     "steady_rss_mib": statistics.median(rss_values) / 1048576,
+                     "peak_rss_mib": max(rss_values) / 1048576,
++                    "process_lifetime_hwm_mib": high_water,
++                    "peak_disk_allocated_mib": max(sample[5] for sample in samples) / 1048576,
++                    "peak_disk_logical_mib": max(sample[6] for sample in samples) / 1048576,
++                    "storage": args.storage,
++                    "offered_rate": RATE,
++                    "host_swap_in_pages": swap_end[0] - swap_start[0],
++                    "host_swap_out_pages": swap_end[1] - swap_start[1],
+                     "peak_processing_backlog_records": peak_backlog,
+                     "backlog_at_peak_rss_records": (
+                         peak_rss_sample[3]["accepted"] -
+@@ -618,6 +681,7 @@
+     "peak_cpu_cores_1s", "generator_cpu_utilization",
+     "idle_rss_mib", "steady_rss_mib", "peak_rss_mib", "peak_processing_backlog_records",
+     "latency_p50_us", "latency_p95_us", "latency_p99_us",
++    "process_lifetime_hwm_mib", "peak_disk_allocated_mib", "peak_disk_logical_mib",
+ )
+ 
+ 
+@@ -660,6 +724,7 @@
+ 
+ 
+ def main():
++    global WORKERS, RATE
+     parser = argparse.ArgumentParser(description=__doc__,
+                                      formatter_class=argparse.RawDescriptionHelpFormatter)
+     parser.add_argument("--system", action="append", required=True, metavar="NAME=PATH",
+@@ -684,7 +749,13 @@
+     parser.add_argument("--work-dir", type=Path, default=None,
+                         help="directory for configurations and filesystem storage "
+                              "(default: the system temporary directory)")
++    parser.add_argument("--cooldown", type=float, default=0)
++    parser.add_argument("--workers", type=int, default=4)
++    parser.add_argument("--rate", type=int, default=0, help="aggregate records/s; 0 saturates")
+     args = parser.parse_args()
++    if args.batch_records != 100:
++        parser.error("paced artifact runner requires --batch-records 100")
++    WORKERS, RATE = args.workers, args.rate
+     divisor = args.batch_records * args.clients
+     if args.records % divisor or args.warmup_records % divisor:
+         parser.error("record and warm-up counts must divide evenly across batches and clients")
+@@ -705,6 +776,7 @@
+     payloads = make_payloads(args.batch_records)
+     manifest = {
+         "created_unix": time.time(),
++        "runtime_environment": {key: os.environ.get(key) for key in ("MALLOC_CONF", "LD_PRELOAD", "ASAN_OPTIONS", "VALGRIND")},
+         "server_cpus": sorted(args.server_cpu_set),
+         "generator_cpus": sorted(args.generator_cpu_set),
+         "arguments": {key: str(value) for key, value in vars(args).items()},

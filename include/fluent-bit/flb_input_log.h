@@ -45,4 +45,18 @@ int flb_input_log_append_processed(struct flb_input_instance *ins,
                                    size_t tag_len,
                                    const void *buf,
                                    size_t buf_size);
+int flb_input_log_append_processed_routed(struct flb_input_instance *ins,
+                                          size_t records,
+                                          const char *tag,
+                                          size_t tag_len,
+                                          const void *buf,
+                                          size_t buf_size);
+
+struct flb_mp_chunk_cobj;
+int flb_input_log_chunk_supported(struct flb_input_instance *ins,
+                                  int worker_thread);
+int flb_input_log_append_chunk(struct flb_input_instance *ins,
+                               const char *tag, size_t tag_len,
+                               struct flb_mp_chunk_cobj *chunk,
+                               int worker_thread);
 #endif

@@ -12,7 +12,7 @@ try {
     $env:SIGNAL_FILE_PATH = $signalFile
     $env:LISTENER_VHOST = "leo.vcap.me"
     $env:LISTENER_HOST = "127.0.0.1"
-    $env:LISTENER_PORT = "50002"
+    $env:LISTENER_PORT = "20502"
 
     $config = Get-RuntimeConfigPath "in_syslog_tcp_tls_expect.conf"
     $process = Start-FluentBit $config

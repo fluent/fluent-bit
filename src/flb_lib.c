@@ -129,7 +129,9 @@ static inline struct flb_filter_instance *filter_instance_get(flb_ctx_t *ctx,
 
 void flb_init_env()
 {
+#ifdef FLB_HAVE_TLS
     flb_tls_init();
+#endif
     flb_coro_init();
     flb_upstream_init();
     flb_downstream_init();
@@ -1052,9 +1054,6 @@ int flb_stop(flb_ctx_t *ctx)
          * the service exited for some reason (plugin action). Always
          * wait and double check that the child thread is not running.
          */
-#if defined(FLB_SYSTEM_MACOS)
-        pthread_cancel(tid);
-#endif
         pthread_join(tid, NULL);
         return 0;
     }
@@ -1071,9 +1070,7 @@ int flb_stop(flb_ctx_t *ctx)
     flb_debug("[lib] sending STOP signal to the engine");
 
     flb_engine_exit(ctx->config);
-#if defined(FLB_SYSTEM_MACOS)
-    pthread_cancel(tid);
-#endif
+    /* Let engine cleanup join output workers before releasing their state. */
     ret = pthread_join(tid, NULL);
     if (ret != 0) {
         flb_errno();

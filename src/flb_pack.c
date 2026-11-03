@@ -410,7 +410,7 @@ static int pack_json_to_msgpack_yyjson(const char *js, size_t len, char **buffer
     msgpack_packer pck;
     char *start, *end, *insitu_buf;
 
-    if (!js || !buffer || !size || len > SIZE_MAX - YYJSON_PADDING_SIZE) {
+    if (!js || !buffer || !size || len > SIZE_MAX - YYJSON_PADDING_SIZE || len == 0) {
         return -1;
     }
 

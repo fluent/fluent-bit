@@ -834,7 +834,74 @@ static void timestamp_encoding()
     flb_log_event_encoder_destroy(&encoder);
 }
 
+static void output_limit(void)
+{
+    struct flb_log_event_encoder encoder;
+    int ret;
+
+    TEST_CHECK(flb_log_event_encoder_init(&encoder, FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2) == 0);
+    TEST_CHECK(encoder.output_limit == SIZE_MAX);
+    encoder.output_limit = 3;
+    TEST_CHECK(flb_log_event_encoder_emit_raw_record(&encoder, "abc", 3) == 0);
+    TEST_CHECK(encoder.output_length == 3);
+    TEST_CHECK(flb_log_event_encoder_emit_raw_record(&encoder, "d", 1) < 0);
+    TEST_CHECK(encoder.output_length == 3);
+
+    flb_log_event_encoder_reset(&encoder);
+    TEST_CHECK(encoder.output_limit == 3);
+    TEST_CHECK(flb_log_event_encoder_group_init(&encoder) == 0);
+    ret = flb_log_event_encoder_group_header_end(&encoder);
+    TEST_CHECK(ret < 0);
+    TEST_CHECK(encoder.output_length <= encoder.output_limit);
+
+    flb_log_event_encoder_reset(&encoder);
+    TEST_CHECK(flb_log_event_encoder_group_end(&encoder) < 0);
+    TEST_CHECK(encoder.output_length <= encoder.output_limit);
+
+    flb_log_event_encoder_reset(&encoder);
+    encoder.output_limit = 0;
+    TEST_CHECK(flb_log_event_encoder_emit_raw_record(&encoder, "a", 1) < 0);
+    TEST_CHECK(encoder.output_length == 0);
+    encoder.output_limit = SIZE_MAX;
+    TEST_CHECK(flb_log_event_encoder_group_init(&encoder) == 0);
+    TEST_CHECK(flb_log_event_encoder_group_header_end(&encoder) == 0);
+    TEST_CHECK(flb_log_event_encoder_group_end(&encoder) == 0);
+    flb_log_event_encoder_destroy(&encoder);
+}
+
+static void output_limit_record_rollback(void)
+{
+    struct flb_log_event_encoder encoder;
+    size_t record_size;
+    size_t index;
+    int formats[] = {FLB_LOG_EVENT_FORMAT_FORWARD, FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2};
+
+    for (index = 0; index < sizeof(formats) / sizeof(formats[0]); index++) {
+        TEST_CHECK(flb_log_event_encoder_init(&encoder, formats[index]) == 0);
+        TEST_CHECK(flb_log_event_encoder_begin_record(&encoder) == 0);
+        TEST_CHECK(flb_log_event_encoder_commit_record(&encoder) == 0);
+        record_size = encoder.output_length;
+        flb_log_event_encoder_reset(&encoder);
+
+        TEST_CHECK(flb_log_event_encoder_emit_raw_record(&encoder, "\x01", 1) == 0);
+        encoder.output_limit = record_size;
+        TEST_CHECK(flb_log_event_encoder_begin_record(&encoder) == 0);
+        TEST_CHECK(flb_log_event_encoder_commit_record(&encoder) < 0);
+        TEST_CHECK(encoder.output_length == 1);
+        TEST_CHECK(encoder.buffer.size == 1);
+        TEST_CHECK(encoder.output_buffer[0] == '\x01');
+
+        encoder.output_limit = SIZE_MAX;
+        TEST_CHECK(flb_log_event_encoder_begin_record(&encoder) == 0);
+        TEST_CHECK(flb_log_event_encoder_commit_record(&encoder) == 0);
+        TEST_CHECK(encoder.output_length == 1 + record_size);
+        flb_log_event_encoder_destroy(&encoder);
+    }
+}
+
 TEST_LIST = {
+    { "output_limit_record_rollback", output_limit_record_rollback},
+    { "output_limit", output_limit},
     { "basic_format_fluent_bit_v2", basic_format_fluent_bit_v2},
     { "basic_format_fluent_bit_v1", basic_format_fluent_bit_v1},
     { "basic_metadata_format_fluent_bit_v2", basic_metadata_format_fluent_bit_v2},

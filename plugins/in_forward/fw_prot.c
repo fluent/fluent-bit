@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_random.h>
 #include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_crypto.h>
+#include <fluent-bit/flb_mp_preflight.h>
 
 #include <fluent-bit/flb_input_metric.h>
 #include <fluent-bit/flb_input_trace.h>
@@ -141,12 +142,16 @@ static int secure_forward_read(struct flb_input_instance *in,
                                char *buf, size_t size, size_t *out_len)
 {
     int ret;
-    size_t off;
     size_t avail;
     size_t buf_off = 0;
-    msgpack_unpacked result;
+    size_t consumed;
+    size_t cost;
+    struct flb_mp_preflight *scan;
 
-    msgpack_unpacked_init(&result);
+    scan = flb_mp_preflight_create(65536, size);
+    if (scan == NULL) {
+        return -1;
+    }
     while (1) {
         avail = size - buf_off;
         if (avail < 1) {
@@ -161,22 +166,24 @@ static int secure_forward_read(struct flb_input_instance *in,
         }
         buf_off += ret;
 
-        /* Validate */
-        off = 0;
-        ret = msgpack_unpack_next(&result, buf, buf_off, &off);
+        /* Bound MessagePack zone allocations before check_ping decodes PING. */
+        ret = flb_mp_preflight_scan(scan, buf, buf_off, &consumed, &cost);
         switch (ret) {
-        case MSGPACK_UNPACK_SUCCESS:
-            msgpack_unpacked_destroy(&result);
+        case 1:
+            flb_mp_preflight_destroy(scan);
             *out_len = buf_off;
             return 0;
+        case -1:
+            flb_plg_warn(in, "invalid PING frame or MessagePack allocation budget exceeded");
+            goto error;
         default:
-            print_msgpack_error_code(in, ret, "handshake");
+            print_msgpack_error_code(in, MSGPACK_UNPACK_CONTINUE, "handshake");
             goto error;
         };
     }
 
  error:
-    msgpack_unpacked_destroy(&result);
+    flb_mp_preflight_destroy(scan);
     return -1;
 }
 
@@ -1353,13 +1360,25 @@ static int append_log(struct flb_input_instance *ins, struct fw_conn *conn,
     int ret;
     size_t off = 0;
     size_t preflight_limit = SIZE_MAX;
+    size_t object_limit;
     struct ctrace *ctr;
 
     /* Metrics and traces use mpack readers, not msgpack-c object zones. */
     if (event_type == FLB_EVENT_TYPE_LOGS) {
         preflight_limit = conn->ctx->msgpack_memory_limit - conn->frame_zone_cost;
     }
-    if (flb_mp_preflight_sequence(data, len, preflight_limit) != 0) {
+    /* Mpack signals build independent heap objects. Bound their cumulative
+     * container entries before invoking the allocating decoders. */
+    /* Estimate decoded signal objects independently of the log zone budget. */
+    object_limit = conn->ctx->signal_object_memory_limit / 1024;
+    if (event_type != FLB_EVENT_TYPE_LOGS &&
+        flb_mp_preflight_sequence_limited(data, len, preflight_limit,
+                                          object_limit) != 0) {
+        flb_plg_warn(ins, "PackedForward signal object budget exceeded or invalid payload");
+        return -1;
+    }
+    if (event_type == FLB_EVENT_TYPE_LOGS &&
+        flb_mp_preflight_sequence(data, len, preflight_limit) != 0) {
         flb_plg_warn(ins, "invalid PackedForward payload or MessagePack allocation budget exceeded");
         return -1;
     }
