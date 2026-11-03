@@ -255,6 +255,9 @@ struct flb_service_config service_configs[] = {
     {FLB_CONF_STR_ENABLE_CHUNK_TRACE,
      FLB_CONF_TYPE_BOOL,
      offsetof(struct flb_config, enable_chunk_trace)},
+    {FLB_CONF_STR_CHUNK_TRACE_HTTP_ALLOWED_ENDPOINTS,
+     FLB_CONF_TYPE_STR,
+     offsetof(struct flb_config, chunk_trace_http_allowed_endpoints)},
 #endif
 
 #ifdef FLB_SYSTEM_WINDOWS
@@ -598,6 +601,12 @@ void flb_config_exit(struct flb_config *config)
     if (config->plugins_file) {
         flb_free(config->plugins_file);
     }
+
+#ifdef FLB_HAVE_CHUNK_TRACE
+    if (config->chunk_trace_http_allowed_endpoints) {
+        flb_free(config->chunk_trace_http_allowed_endpoints);
+    }
+#endif
 
     if (config->kernel) {
         flb_kernel_destroy(config->kernel);
