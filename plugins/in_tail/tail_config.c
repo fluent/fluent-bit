@@ -69,6 +69,8 @@ static int multiline_load_parsers(struct flb_tail_config *ctx)
             if (!parser_i) {
                 return -1;
             }
+
+            parser_i->drop_empty_content = ctx->skip_empty_lines;
         }
     }
 
