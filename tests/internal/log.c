@@ -3,6 +3,7 @@
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_worker.h>
+#include <fluent-bit/flb_config.h>
 #include <inttypes.h>
 
 #include "flb_tests_internal.h"
@@ -272,6 +273,33 @@ static void suppress_interval_preserved_during_cache_replacement()
     flb_log_cache_destroy(worker.log_cache);
 }
 
+/* a destroyed log context leaves no worker reference in the creating thread */
+static void destroy_clears_thread_worker()
+{
+    struct flb_log *log;
+    struct flb_config *config;
+    struct flb_worker *previous_worker;
+
+    previous_worker = FLB_TLS_GET(flb_worker_ctx);
+
+    config = flb_config_init();
+    TEST_ASSERT(config != NULL);
+
+    log = flb_log_create(config, FLB_LOG_STDERR, FLB_LOG_INFO, NULL);
+    TEST_ASSERT(log != NULL);
+    TEST_CHECK(flb_worker_get() != NULL);
+    TEST_CHECK(flb_worker_get() == log->worker);
+
+    flb_config_exit(config);
+    TEST_CHECK(flb_worker_get() == NULL);
+
+    /* logging without a context must not touch the released worker */
+    TEST_CHECK(flb_log_check(FLB_LOG_ERROR) == FLB_TRUE);
+    TEST_CHECK(flb_log_check(FLB_LOG_DEBUG) == FLB_FALSE);
+
+    FLB_TLS_SET(flb_worker_ctx, previous_worker);
+}
+
 TEST_LIST = {
     { "cache_basic_timeout" , cache_basic_timeout },
     { "cache_one_slot"      , cache_one_slot      },
@@ -281,5 +309,6 @@ TEST_LIST = {
       suppress_interval_shorter_than_cache_timeout },
     { "suppress_interval_preserved_during_cache_replacement",
       suppress_interval_preserved_during_cache_replacement },
+    { "destroy_clears_thread_worker", destroy_clears_thread_worker },
     { 0 }
 };
