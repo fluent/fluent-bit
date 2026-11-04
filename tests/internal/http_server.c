@@ -973,7 +973,72 @@ void test_http_server_hs_buf_push_during_read_keeps_payload()
     flb_config_exit(config);
 }
 
+/* Exercise every delimiter split and SDS growth without timing assertions. */
+void test_http1_fragmented_header_limit()
+{
+    struct flb_http_server server;
+    struct flb_http_server_session *session;
+    unsigned char *request;
+    const char *prefix = "GET /health HTTP/1.1\r\nHost: localhost\r\nX-Pad: ";
+    size_t fragments[] = {1, 1024, FLB_HTTP1_MAX_HEADER_SIZE};
+    size_t index;
+    size_t offset;
+    size_t length;
+    int result;
+    int over;
+
+    memset(&server, 0, sizeof(server));
+    server.buffer_max_size = 64 * 1024 * 1024;
+    request = flb_malloc(FLB_HTTP1_MAX_HEADER_SIZE + 1);
+    if (!TEST_CHECK(request != NULL)) {
+        return;
+    }
+
+    for (over = 0; over <= 1; over++) {
+        memset(request, 'a', FLB_HTTP1_MAX_HEADER_SIZE + 1);
+        memcpy(request, prefix, strlen(prefix));
+        memcpy(request + FLB_HTTP1_MAX_HEADER_SIZE - 4 + over, "\r\n\r\n", 4);
+
+        for (index = 0; index < sizeof(fragments) / sizeof(fragments[0]); index++) {
+            session = flb_http_server_session_create(HTTP_PROTOCOL_VERSION_11);
+            if (!TEST_CHECK(session != NULL)) {
+                flb_free(request);
+                return;
+            }
+            session->parent = &server;
+
+            for (offset = 0; offset < FLB_HTTP1_MAX_HEADER_SIZE; offset += length) {
+                length = fragments[index];
+                if (length > FLB_HTTP1_MAX_HEADER_SIZE - offset) {
+                    length = FLB_HTTP1_MAX_HEADER_SIZE - offset;
+                }
+                result = flb_http_server_session_ingest(session, request + offset, length);
+                if (offset + length < FLB_HTTP1_MAX_HEADER_SIZE) {
+                    TEST_CHECK(result == HTTP_SERVER_SUCCESS);
+                    TEST_CHECK(session->http1.header_scan_offset == offset + length);
+                    TEST_CHECK(session->http1.headers_complete == FLB_FALSE);
+                    TEST_CHECK(cfl_list_is_empty(&session->request_queue));
+                }
+            }
+
+            if (over) {
+                TEST_CHECK(result == HTTP_SERVER_PROVIDER_ERROR);
+                TEST_CHECK(session->http1.stream.status == HTTP_STREAM_STATUS_ERROR);
+            }
+            else {
+                TEST_CHECK(result == HTTP_SERVER_SUCCESS);
+                TEST_CHECK(session->http1.stream.status == HTTP_STREAM_STATUS_READY);
+                TEST_CHECK(session->http1.header_scan_offset == 0);
+                TEST_CHECK(session->http1.headers_complete == FLB_FALSE);
+            }
+            flb_http_server_session_destroy(session);
+        }
+    }
+    flb_free(request);
+}
+
 TEST_LIST = {
+    { "http1_fragmented_header_limit", test_http1_fragmented_header_limit },
     { "http_server_accept_reaps_stale_sessions_with_limit",
       test_http_server_accept_reaps_stale_sessions_with_limit },
     { "http_server_managed_accept_defers_uncapped_reaping",
