@@ -21,6 +21,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <fluent-bit/flb_socket.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
@@ -643,10 +644,12 @@ int flb_output_instance_destroy(struct flb_output_instance *ins)
 
     if (ins->ch_events[0] > 0) {
         mk_event_closesocket(ins->ch_events[0]);
+        ins->ch_events[0] = FLB_UNINITIALIZED_SOCKET;
     }
 
     if (ins->ch_events[1] > 0) {
         mk_event_closesocket(ins->ch_events[1]);
+        ins->ch_events[1] = FLB_UNINITIALIZED_SOCKET;
     }
 
     /* release properties */
@@ -879,6 +882,9 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
         flb_errno();
         return NULL;
     }
+
+    instance->ch_events[0] = FLB_UNINITIALIZED_SOCKET;
+    instance->ch_events[1] = FLB_UNINITIALIZED_SOCKET;
 
     instance->http_server_config = flb_calloc(1, sizeof(struct flb_http_server_config));
     if (!instance->http_server_config) {
