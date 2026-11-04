@@ -239,45 +239,57 @@ static void vivo_stream_make_room(struct vivo_stream *vs, size_t size)
     }
 }
 
-int vivo_stream_append(struct vivo_stream *vs, void *data, size_t size, flb_sds_t otlp)
+int vivo_stream_entry_fits(struct vivo_stream *vs, size_t size, size_t otlp_size)
 {
-    struct vivo_stream_entry *e;
-    size_t retained_size;
     struct vivo_exporter *ctx = vs->parent;
 
-    if (flb_sds_len(otlp) > ctx->stream_queue_size ||
-        size > ctx->stream_queue_size - flb_sds_len(otlp) || size > ctx->stream_page_size ||
-        flb_sds_len(otlp) > ctx->stream_page_size - 552) {
-        stream_lock(vs);
-        vs->snapshot.rejected_entries++;
-        stream_unlock(vs);
-        flb_plg_error(ctx->ins, "entry sizes v1=%zu v2=%zu exceed queue/page limits %zu/%zu",
-                      size, flb_sds_len(otlp), ctx->stream_queue_size, ctx->stream_page_size);
-        return -2;
-    }
+    return otlp_size <= ctx->stream_queue_size &&
+           size <= ctx->stream_queue_size - otlp_size && size <= ctx->stream_page_size &&
+           otlp_size <= ctx->stream_page_size - 552;
+}
 
-    e = vivo_stream_entry_create(vs, data, size, otlp);
-    if (!e) {
-        return -1;
-    }
+void vivo_stream_entries_destroy(struct mk_list *entries)
+{
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct vivo_stream_entry *entry;
 
-    retained_size = e->size;
+    mk_list_foreach_safe(head, tmp, entries) {
+        entry = mk_list_entry(head, struct vivo_stream_entry, _head);
+        mk_list_del(&entry->_head);
+        flb_sds_destroy(entry->data);
+        flb_sds_destroy(entry->otlp);
+        flb_free(entry);
+    }
+}
+
+/* Publish a fully serialized batch without allocating or exposing a partial flush. */
+void vivo_stream_append_entries(struct vivo_stream *vs, struct mk_list *entries)
+{
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct vivo_stream_entry *entry;
+    struct vivo_exporter *ctx = vs->parent;
+
     stream_lock(vs);
-
-    /* Subtraction avoids overflow and evicts only the actual excess. */
-    if (vs->current_bytes_size > ctx->stream_queue_size - retained_size) {
-        vivo_stream_make_room(vs, vs->current_bytes_size - (ctx->stream_queue_size - retained_size));
+    mk_list_foreach_safe(head, tmp, entries) {
+        entry = mk_list_entry(head, struct vivo_stream_entry, _head);
+        if (vs->current_bytes_size > ctx->stream_queue_size - entry->size) {
+            vivo_stream_make_room(vs, vs->current_bytes_size -
+                                     (ctx->stream_queue_size - entry->size));
+        }
+        mk_list_del(&entry->_head);
+        entry->id = vs->entries_added++;
+        mk_list_add(&entry->_head, &vs->entries);
+        vs->snapshot.retained_entries++;
+        vs->current_bytes_size += entry->size;
     }
-    e->id = vs->entries_added;
-
-    /* add entry to the end of the list */
-    mk_list_add(&e->_head, &vs->entries);
-
-    vs->entries_added++;
-    vs->snapshot.retained_entries++;
-    vs->current_bytes_size += retained_size;
-
     stream_unlock(vs);
+}
 
-    return 0;
+void vivo_stream_reject(struct vivo_stream *vs)
+{
+    stream_lock(vs);
+    vs->snapshot.rejected_entries++;
+    stream_unlock(vs);
 }
