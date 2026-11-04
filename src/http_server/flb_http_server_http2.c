@@ -282,7 +282,9 @@ int flb_http2_response_commit(struct flb_http_response *response)
                                      stream->id, 
                                      headers, 
                                      header_count, 
-                                     &data_provider);
+                                     (stream->request.method == HTTP_METHOD_HEAD &&
+                                      mk_list_is_empty(&response->trailer_headers->entries) == 0) ?
+                                     NULL : &data_provider);
 
     if (result != 0) {
         stream->status = HTTP_STREAM_STATUS_ERROR;
@@ -335,6 +337,12 @@ int flb_http2_response_commit(struct flb_http_response *response)
                                         stream->id,
                                         trailer_headers,
                                         trailer_header_count);
+        if (result != 0) {
+            stream->status = HTTP_STREAM_STATUS_ERROR;
+            flb_free(trailer_headers);
+            flb_free(headers);
+            return -8;
+        }
     }
     else {
         trailer_headers = NULL;
@@ -962,7 +970,7 @@ static ssize_t http2_data_source_read_callback(nghttp2_session *session,
         return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
     }
 
-    if (stream->response.body != NULL) {
+    if (stream->response.body != NULL && stream->request.method != HTTP_METHOD_HEAD) {
         body_offset    = stream->response.body_read_offset;
         content_length = cfl_sds_len(stream->response.body) - body_offset;
     }
