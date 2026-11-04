@@ -153,11 +153,16 @@ class WorkflowTests(unittest.TestCase):
     def test_assets_are_never_overwritten_and_are_verified_after_upload(self):
         uploads = [step for step in self.jobs["publish"]["steps"]
                    if "softprops/action-gh-release@" in step.get("uses", "")]
-        self.assertEqual(len(uploads), 2)
+        self.assertEqual(len(uploads), 1)
         for step in uploads:
             self.assertFalse(step["with"]["overwrite_files"])
         self.assertFalse(uploads[0]["with"]["make_latest"])
         self.assertTrue(uploads[0]["with"]["prerelease"])
+        attachment = next(step for step in self.jobs["publish"]["steps"]
+                          if step.get("name") == "Attach experimental SDK to version release")
+        self.assertIn('gh release upload "$RELEASE_TAG" "$flb_asset"', attachment["run"])
+        self.assertNotIn("--clobber", attachment["run"])
+        self.assertIn('cmp "$flb_asset" "existing/$flb_name"', attachment["run"])
         self.assertIn("gh release download", self.jobs["publish"]["steps"][-1]["run"])
 
 
