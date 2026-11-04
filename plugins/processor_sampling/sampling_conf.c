@@ -86,8 +86,13 @@ static struct sampling_plugin *sampling_config_get_plugin(int type)
     struct mk_list *map;
     struct flb_kv *kv_entry;
 
+    map = flb_config_map_create(config, ctx->plugin->config_map);
+    if (!map) {
+        return -1;
+    }
+    ctx->plugin_config_map = map;
+
     if (!ctx->sampling_settings) {
-        /* no rules have been defined */
         return 0;
     }
 
@@ -117,13 +122,13 @@ static struct sampling_plugin *sampling_config_get_plugin(int type)
         ret = -1;
 
         if (pair->val->type == CFL_VARIANT_INT) {
-            ret = snprintf(val, sizeof(val) - 1, "%ld", pair->val->data.as_int64);
+            ret = snprintf(val, sizeof(val) - 1, "%" PRId64, pair->val->data.as_int64);
         }
         else if (pair->val->type == CFL_VARIANT_UINT) {
-            ret = snprintf(val, sizeof(val) - 1, "%ld", pair->val->data.as_uint64);
+            ret = snprintf(val, sizeof(val) - 1, "%" PRIu64, pair->val->data.as_uint64);
         }
         else if (pair->val->type == CFL_VARIANT_DOUBLE) {
-            ret = snprintf(val, sizeof(val) - 1, "%f", pair->val->data.as_double);
+            ret = snprintf(val, sizeof(val) - 1, "%.17g", pair->val->data.as_double);
         }
         else if (pair->val->type == CFL_VARIANT_BOOL) {
             ret = snprintf(val, sizeof(val) - 1, "%s", pair->val->data.as_bool ? "true" : "false");
@@ -136,7 +141,7 @@ static struct sampling_plugin *sampling_config_get_plugin(int type)
             return -1;
         }
 
-        if (ret <= 0) {
+        if (ret <= 0 || ret >= sizeof(val) - 1) {
             flb_plg_error(ctx->ins, "failed to convert value to string");
             return -1;
         }
@@ -147,13 +152,6 @@ static struct sampling_plugin *sampling_config_get_plugin(int type)
             return -1;
         }
     }
-
-    map = flb_config_map_create(config, ctx->plugin->config_map);
-    if (!map) {
-        flb_plg_error(ctx->ins, "failed to create map for plugin rules");
-        return -1;
-    }
-    ctx->plugin_config_map = map;
 
     ret = flb_config_map_properties_check(ctx->type_str, &ctx->plugin_settings_properties, map);
     if (ret == -1) {
@@ -214,6 +212,12 @@ struct sampling *sampling_config_create(struct flb_processor_instance *processor
 
     cfl_list_init(&ctx->plugins);
     flb_kv_init(&ctx->plugin_settings_properties);
+
+    if (ctx->conditions && ctx->type != SAMPLING_TYPE_TAIL) {
+        flb_plg_error(processor_instance, "conditions are only supported by tail sampling");
+        flb_free(ctx);
+        return NULL;
+    }
 
     /* load conditions */
     if (ctx->conditions) {

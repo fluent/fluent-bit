@@ -135,6 +135,11 @@ static inline void sampling_set_context(struct sampling *ctx, void *plugin_conte
     ctx->plugin_context = plugin_context;
 }
 
+int sampling_probabilistic_logs(struct flb_processor_instance *ins, void *chunk_data,
+                                 const char *tag, int tag_len);
+int sampling_probabilistic_metrics(struct flb_processor_instance *ins, struct cmt *in_cmt,
+                                    struct cmt **out_cmt, const char *tag, int tag_len);
+
 /* sampling_conf */
 int sampling_config_process_rules(struct flb_config *config, struct sampling *ctx);
 

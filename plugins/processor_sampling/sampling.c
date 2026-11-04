@@ -19,6 +19,7 @@
 
 #include <fluent-bit/flb_processor_plugin.h>
 #include <fluent-bit/flb_processor.h>
+#include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_hash_table.h>
 
 #include "sampling.h"
@@ -61,7 +62,7 @@ static void debug_trace(struct sampling *ctx, struct ctrace *ctr, int is_before)
     char tmp[128];
     struct sampling_span_registry *reg = NULL;
 
-    reg = sampling_span_registry_create(100);
+    reg = sampling_span_registry_create(UINT64_MAX);
     if (!reg) {
         return;
     }
@@ -76,6 +77,7 @@ static void debug_trace(struct sampling *ctx, struct ctrace *ctr, int is_before)
         sampling_span_registry_print(ctx, reg, tmp);
     }
 
+    sampling_span_registry_remove_trace(ctx, reg, ctr);
     sampling_span_registry_destroy(reg);
 }
 
@@ -99,8 +101,14 @@ static int cb_process_traces(struct flb_processor_instance *ins,
         debug_trace(ctx, in_ctr, FLB_TRUE);
     }
 
+    *out_ctr = in_ctr;
+
     /* do sampling: the callback will modify the ctrace context */
     ret = ctx->plugin->cb_do_sampling(ctx, ctx->plugin_context, in_ctr, out_ctr);
+
+    if (ret != FLB_PROCESSOR_SUCCESS) {
+        return ret;
+    }
 
     if (ctx->debug_mode && *out_ctr) {
         debug_trace(ctx, *out_ctr, FLB_FALSE);
@@ -115,12 +123,6 @@ static int cb_process_traces(struct flb_processor_instance *ins,
     return ret;
 }
 
-/* register the sampling plugins available */
-static void sampling_plugin_register(struct sampling *ctx)
-{
-    cfl_list_add(&sampling_probabilistic_plugin._head, &ctx->plugins);
-}
-
 static int cb_init(struct flb_processor_instance *processor_instance,
                    void *source_plugin_instance,
                    int source_plugin_type,
@@ -128,35 +130,37 @@ static int cb_init(struct flb_processor_instance *processor_instance,
 {
     int ret;
     struct sampling *ctx;
-    struct flb_sched *sched;
+    struct flb_processor *processor;
+
+    processor = processor_instance->pu->parent;
 
     /* create main plugin context */
     ctx = sampling_config_create(processor_instance, config);
     if (!ctx) {
         return FLB_PROCESSOR_FAILURE;
     }
-    processor_instance->context = (void *) ctx;
-
-    /* register plugins */
-    sampling_plugin_register(ctx);
+    if (ctx->type == SAMPLING_TYPE_TAIL &&
+        (processor_instance->event_type != FLB_PROCESSOR_TRACES ||
+         processor->source_plugin_type != FLB_PLUGIN_INPUT)) {
+        flb_plg_error(processor_instance, "tail sampling requires an input traces pipeline");
+        sampling_config_destroy(config, ctx);
+        return FLB_PROCESSOR_FAILURE;
+    }
 
     ret = sampling_config_process_rules(config, ctx);
     if (ret == -1) {
         flb_plg_error(processor_instance, "failed to parse sampling rules");
-        flb_free(ctx);
-        return -1;
+        sampling_config_destroy(config, ctx);
+        return FLB_PROCESSOR_FAILURE;
     }
 
-    /* get the scheduler context */
-    sched = flb_sched_ctx_get();
-    if (!sched) {
-        flb_plg_error(ctx->ins, "could not get scheduler context");
-        return -1;
-    }
-
-    /* initialize the backend plugin */
     ret = ctx->plugin->cb_init(config, ctx);
+    if (ret != 0) {
+        sampling_config_destroy(config, ctx);
+        return FLB_PROCESSOR_FAILURE;
+    }
 
+    processor_instance->context = ctx;
     return FLB_PROCESSOR_SUCCESS;
 }
 
@@ -199,8 +203,8 @@ struct flb_processor_plugin processor_sampling_plugin = {
     .name               = "sampling",
     .description        = "Sampling",
     .cb_init            = cb_init,
-    .cb_process_logs    = NULL,
-    .cb_process_metrics = NULL,
+    .cb_process_logs    = sampling_probabilistic_logs,
+    .cb_process_metrics = sampling_probabilistic_metrics,
     .cb_process_traces  = cb_process_traces,
     .cb_exit            = cb_exit,
     .config_map         = config_map,
