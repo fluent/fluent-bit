@@ -384,7 +384,7 @@ static msgpack_object *map_get(msgpack_object *map, const char *key)
 
 static void write_any(struct json_writer *writer, msgpack_object *value, int depth);
 
-static int map_has_non_string_keys(msgpack_object *map)
+static int map_requires_typed_encoding(msgpack_object *map)
 {
     size_t index;
 
@@ -393,7 +393,11 @@ static int map_has_non_string_keys(msgpack_object *map)
             return FLB_TRUE;
         }
     }
-    return FLB_FALSE;
+    /* User maps must not impersonate typed values or attribute wrappers. */
+    return map_get(map, "fluentbit.type") != NULL ||
+           map_get(map, "fluentbit.value") != NULL ||
+           map_get(map, "fluentbit.ext_type") != NULL ||
+           map_get(map, "fluentbit.map") != NULL;
 }
 
 static void write_attributes(struct json_writer *writer, msgpack_object *map, int depth)
@@ -401,9 +405,9 @@ static void write_attributes(struct json_writer *writer, msgpack_object *map, in
     size_t index;
     msgpack_object_kv *pair;
 
-    if (map && map->type == MSGPACK_OBJECT_MAP && map_has_non_string_keys(map)) {
+    if (map && map->type == MSGPACK_OBJECT_MAP && map_requires_typed_encoding(map)) {
         /* OTLP attributes require string keys. Keep the original map as a
-         * typed value instead of discarding keys or conflating 1 with "1". */
+         * typed value to preserve key types and escape reserved keys. */
         write_text(writer, "[{\"key\":\"fluentbit.map\",\"value\":");
         write_any(writer, map, depth + 1);
         write_text(writer, "}]");
@@ -495,7 +499,7 @@ static void write_any(struct json_writer *writer, msgpack_object *value, int dep
             write_text(writer, "]}");
             break;
         case MSGPACK_OBJECT_MAP:
-            if (map_has_non_string_keys(value)) {
+            if (map_requires_typed_encoding(value)) {
                 write_text(writer, "\"kvlistValue\":{\"values\":["
                                    "{\"key\":\"fluentbit.type\","
                                    "\"value\":{\"stringValue\":\"msgpack.map\"}},"
