@@ -155,6 +155,63 @@ class Pipeline:
 
 
 @pytest.mark.parametrize("location", ["input", "output"])
+@pytest.mark.parametrize("percentage", [0, 12.5, 100])
+def test_kubernetes_log_selection_preserves_unmatched_records(tmp_path, location, percentage):
+    """Sample only the selected namespace/app, preserving other and unenriched logs."""
+    processor = {
+        "name": "sampling", "type": "probabilistic",
+        "condition": {"op": "and", "rules": [
+            {"field": "$kubernetes['namespace_name']", "op": "eq", "value": "staging"},
+            {"field": "$kubernetes['labels']['app']", "op": "eq", "value": "checkout"},
+        ]},
+        "sampling_settings": {"sampling_percentage": percentage},
+    }
+    source = source_payloads(count=128)["logs"]
+    source_count = len(rows([source], "logs"))
+    selected_ids = set()
+    for index, (_, _, item) in enumerate(rows([source], "logs")):
+        item.body.Clear()
+        fields = item.body.kvlist_value.values
+        fields.add(key="event").value.string_value = f"event-{index}"
+        category = index % 4
+        if category == 3:
+            continue
+        kubernetes = fields.add(key="kubernetes").value.kvlist_value.values
+        namespace = "production" if category == 1 else "staging"
+        app = "payments" if category == 2 else "checkout"
+        kubernetes.add(key="namespace_name").value.string_value = namespace
+        labels = kubernetes.add(key="labels").value.kvlist_value.values
+        labels.add(key="app").value.string_value = app
+        if category == 0:
+            selected_ids.add(item.trace_id)
+
+    expected = [item.SerializeToString() for _, _, item in rows([source], "logs")
+                if item.trace_id not in selected_ids or keep(item.trace_id, percentage)]
+    pipeline = Pipeline(tmp_path, {"logs": [processor]}, location)
+    try:
+        pipeline.service.start()
+        for _ in range(2):
+            pipeline.send("logs", source)
+        pipeline.service.wait_for_condition(
+            lambda: all(len(rows(pipeline.received["logs"][route], "logs")) >=
+                        2 * (len(expected) if location == "input" or route == 0 else source_count)
+                        for route in range(2)),
+            timeout=45, description="selected and bypassed Kubernetes logs")
+        pipeline.service.stop()
+        for route in range(2):
+            route_expected = expected if location == "input" or route == 0 else [
+                item.SerializeToString() for _, _, item in rows([source], "logs")]
+            actual_rows = rows(pipeline.received["logs"][route], "logs")
+            assert Counter(item.SerializeToString() for _, _, item in actual_rows) == Counter(
+                route_expected * 2)
+            assert all(resource.schema_url == "https://example.com/resource" and
+                       scope.schema_url == "https://example.com/scope"
+                       for resource, scope, _ in actual_rows)
+    finally:
+        pipeline.close()
+
+
+@pytest.mark.parametrize("location", ["input", "output"])
 @pytest.mark.parametrize("percentage", [0, 100, 12.5, None], ids=["drop", "keep", "fraction", "default"])
 def test_all_signals_and_route_isolation(tmp_path, location, percentage):
     processor = {"name": "sampling", "type": "probabilistic", "debug": True}
