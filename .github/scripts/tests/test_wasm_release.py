@@ -3,6 +3,9 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
+import subprocess
+import shutil
 import tarfile
 import tempfile
 import unittest
@@ -149,6 +152,52 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(job["needs"], "staging-release-create-release")
         self.assertEqual(job["uses"], "./.github/workflows/wasm-browser.yaml")
         self.assertEqual(job["with"]["release_tag"], "v${{ inputs.version }}")
+
+    def test_version_upload_is_idempotent_and_detects_remote_corruption(self):
+        step = next(step for step in self.jobs["publish"]["steps"]
+                    if step.get("name") == "Attach experimental SDK to version release")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            assets = root / "release-assets"
+            remote = root / "remote"
+            assets.mkdir()
+            remote.mkdir()
+            for name in ("sdk.tar.gz", "sdk.tar.gz.sha256", "sdk.json"):
+                (assets / name).write_text(name)
+            (remote / "sdk.json").write_text("sdk.json")
+            gh = root / "gh"
+            gh.write_text("""#!/usr/bin/env python3
+import pathlib, shutil, sys
+args = sys.argv[1:]
+remote = pathlib.Path('remote')
+if args[:2] == ['release', 'view']:
+    print('\\n'.join(p.name for p in remote.iterdir()))
+elif args[:2] == ['release', 'download']:
+    name = args[args.index('--pattern') + 1]
+    shutil.copyfile(remote / name, pathlib.Path(args[args.index('--dir') + 1]) / name)
+elif args[:2] == ['release', 'upload']:
+    source = pathlib.Path(args[3])
+    destination = remote / source.name
+    assert not destination.exists(), 'existing asset must never be overwritten'
+    shutil.copyfile(source, destination)
+else:
+    sys.exit('unexpected GitHub command: ' + repr(args))
+""")
+            gh.chmod(0o755)
+            env = dict(os.environ, PATH=f"{root}:{os.environ['PATH']}", RELEASE_TAG="v5.2.0")
+            for _ in range(2):
+                result = subprocess.run(['bash', '-c', step['run']], cwd=root, env=env,
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                for asset in assets.iterdir():
+                    self.assertEqual(asset.read_bytes(), (remote / asset.name).read_bytes())
+                # Each Actions retry receives a fresh workspace.
+                shutil.rmtree(root / 'existing')
+            (remote / "sdk.json").write_text("changed remotely")
+            result = subprocess.run(['bash', '-c', step['run']], cwd=root, env=env,
+                                    capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual((remote / "sdk.json").read_text(), "changed remotely")
 
     def test_assets_are_never_overwritten_and_are_verified_after_upload(self):
         uploads = [step for step in self.jobs["publish"]["steps"]
