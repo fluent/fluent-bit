@@ -1,0 +1,160 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "checkout"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "checkout.http",
+            "version": "1.4.0"
+          },
+          "spans": [
+            {
+              "traceId": "5b8efff798038103d269b633813fc60c",
+              "spanId": "eee19b7ec3c1b174",
+              "name": "GET /checkout",
+              "kind": 2,
+              "startTimeUnixNano": "1767225600000000000",
+              "endTimeUnixNano": "1767225600250000000",
+              "attributes": [
+                {
+                  "key": "http.method",
+                  "value": {
+                    "stringValue": "GET"
+                  }
+                },
+                {
+                  "key": "http.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                },
+                {
+                  "key": "http.route",
+                  "value": {
+                    "stringValue": "/checkout"
+                  }
+                },
+                {
+                  "key": "http.target",
+                  "value": {
+                    "stringValue": "/checkout?session=s3cr3t&step=2"
+                  }
+                },
+                {
+                  "key": "enduser.id",
+                  "value": {
+                    "stringValue": "ana"
+                  }
+                }
+              ],
+              "status": {
+                "code": 0
+              },
+              "events": [
+                {
+                  "timeUnixNano": "1767225600010000000",
+                  "name": "request.headers",
+                  "attributes": [
+                    {
+                      "key": "authorization",
+                      "value": {
+                        "stringValue": "Bearer abc123"
+                      }
+                    },
+                    {
+                      "key": "user-agent",
+                      "value": {
+                        "stringValue": "curl/8.5"
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "traceId": "5b8efff798038103d269b633813fc60c",
+              "spanId": "eee19b7ec3c1b175",
+              "name": "cache.lookup",
+              "kind": 1,
+              "startTimeUnixNano": "1767225600020000000",
+              "endTimeUnixNano": "1767225600020500000",
+              "attributes": [
+                {
+                  "key": "cache.hit",
+                  "value": {
+                    "boolValue": true
+                  }
+                }
+              ],
+              "status": {
+                "code": 0
+              },
+              "parentSpanId": "eee19b7ec3c1b174"
+            },
+            {
+              "traceId": "5b8efff798038103d269b633813fc60c",
+              "spanId": "eee19b7ec3c1b176",
+              "name": "SELECT orders",
+              "kind": 3,
+              "startTimeUnixNano": "1767225600030000000",
+              "endTimeUnixNano": "1767225600200000000",
+              "attributes": [
+                {
+                  "key": "db.system",
+                  "value": {
+                    "stringValue": "postgresql"
+                  }
+                },
+                {
+                  "key": "db.operation.name",
+                  "value": {
+                    "stringValue": "SELECT"
+                  }
+                }
+              ],
+              "status": {
+                "code": 0
+              },
+              "parentSpanId": "eee19b7ec3c1b174"
+            },
+            {
+              "traceId": "0af7651916cd43dd8448eb211c80319c",
+              "spanId": "b7ad6b7169203331",
+              "name": "GET /healthz",
+              "kind": 2,
+              "startTimeUnixNano": "1767225601000000000",
+              "endTimeUnixNano": "1767225601001000000",
+              "attributes": [
+                {
+                  "key": "http.method",
+                  "value": {
+                    "stringValue": "GET"
+                  }
+                },
+                {
+                  "key": "http.route",
+                  "value": {
+                    "stringValue": "/healthz"
+                  }
+                }
+              ],
+              "status": {
+                "code": 0
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

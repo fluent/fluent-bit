@@ -1,0 +1,226 @@
+{
+  "resourceMetrics": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "checkout"
+            }
+          }
+        ]
+      },
+      "scopeMetrics": [
+        {
+          "scope": {
+            "name": "checkout.http",
+            "version": "1.4.0"
+          },
+          "metrics": [
+            {
+              "name": "http.server.requests",
+              "unit": "{request}",
+              "description": "Completed requests",
+              "sum": {
+                "aggregationTemporality": 2,
+                "isMonotonic": true,
+                "dataPoints": [
+                  {
+                    "attributes": [
+                      {
+                        "key": "http.route",
+                        "value": {
+                          "stringValue": "/login"
+                        }
+                      },
+                      {
+                        "key": "http.response.status_code",
+                        "value": {
+                          "intValue": "200"
+                        }
+                      },
+                      {
+                        "key": "client.id",
+                        "value": {
+                          "stringValue": "client-a"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1767225540000000000",
+                    "timeUnixNano": "1767225600000000000",
+                    "asInt": "10"
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "http.route",
+                        "value": {
+                          "stringValue": "/login"
+                        }
+                      },
+                      {
+                        "key": "http.response.status_code",
+                        "value": {
+                          "intValue": "200"
+                        }
+                      },
+                      {
+                        "key": "client.id",
+                        "value": {
+                          "stringValue": "client-b"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1767225540000000000",
+                    "timeUnixNano": "1767225600000000000",
+                    "asInt": "5"
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "http.route",
+                        "value": {
+                          "stringValue": "/login"
+                        }
+                      },
+                      {
+                        "key": "http.response.status_code",
+                        "value": {
+                          "intValue": "401"
+                        }
+                      },
+                      {
+                        "key": "client.id",
+                        "value": {
+                          "stringValue": "client-c"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1767225540000000000",
+                    "timeUnixNano": "1767225600000000000",
+                    "asInt": "2"
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "http.route",
+                        "value": {
+                          "stringValue": "/pay"
+                        }
+                      },
+                      {
+                        "key": "http.response.status_code",
+                        "value": {
+                          "intValue": "200"
+                        }
+                      },
+                      {
+                        "key": "client.id",
+                        "value": {
+                          "stringValue": "client-a"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1767225540000000000",
+                    "timeUnixNano": "1767225600000000000",
+                    "asInt": "7"
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "http.route",
+                        "value": {
+                          "stringValue": "/pay"
+                        }
+                      },
+                      {
+                        "key": "http.response.status_code",
+                        "value": {
+                          "intValue": "200"
+                        }
+                      },
+                      {
+                        "key": "client.id",
+                        "value": {
+                          "stringValue": "client-d"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1767225540000000000",
+                    "timeUnixNano": "1767225600000000000",
+                    "asInt": "3"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "http.server.duration",
+              "unit": "ms",
+              "description": "Request duration",
+              "histogram": {
+                "aggregationTemporality": 2,
+                "dataPoints": [
+                  {
+                    "attributes": [
+                      {
+                        "key": "http.route",
+                        "value": {
+                          "stringValue": "/login"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1767225540000000000",
+                    "timeUnixNano": "1767225600000000000",
+                    "count": "17",
+                    "sum": 850.0,
+                    "min": 4.0,
+                    "max": 240.0,
+                    "explicitBounds": [
+                      10.0,
+                      50.0,
+                      250.0
+                    ],
+                    "bucketCounts": [
+                      "3",
+                      "9",
+                      "5",
+                      "0"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "name": "process.memory.usage",
+              "unit": "KiBy",
+              "description": "Resident memory",
+              "gauge": {
+                "dataPoints": [
+                  {
+                    "attributes": [],
+                    "timeUnixNano": "1767225600000000000",
+                    "asInt": "2048"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "debug.queue.depth",
+              "unit": "1",
+              "gauge": {
+                "dataPoints": [
+                  {
+                    "attributes": [],
+                    "timeUnixNano": "1767225600000000000",
+                    "asInt": "4"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,77 @@
+{
+  "resourceLogs": [
+    {
+      "resource": {
+        "attributes": [
+          {"key": "service.name", "value": {"stringValue": "checkout"}}
+        ]
+      },
+      "scopeLogs": [
+        {
+          "scope": {"name": "checkout.http", "version": "1.4.0"},
+          "logRecords": [
+            {
+              "timeUnixNano": "1767225600000000000",
+              "observedTimeUnixNano": "1767225600000000000",
+              "attributes": [
+                {"key": "http.route", "value": {"stringValue": "/login"}},
+                {"key": "user.email", "value": {"stringValue": "ana@example.com"}}
+              ],
+              "body": {
+                "kvlistValue": {
+                  "values": [
+                    {"key": "msg", "value": {"stringValue": "login succeeded for ana@example.com"}},
+                    {"key": "level", "value": {"stringValue": "info"}},
+                    {"key": "user", "value": {"kvlistValue": {"values": [
+                      {"key": "name", "value": {"stringValue": "ana"}},
+                      {"key": "password", "value": {"stringValue": "hunter2"}}
+                    ]}}},
+                    {"key": "headers", "value": {"kvlistValue": {"values": [
+                      {"key": "Authorization", "value": {"stringValue": "Bearer abc123"}},
+                      {"key": "x-request-id", "value": {"stringValue": "req-1"}}
+                    ]}}}
+                  ]
+                }
+              }
+            },
+            {
+              "timeUnixNano": "1767225601000000000",
+              "observedTimeUnixNano": "1767225601000000000",
+              "attributes": [
+                {"key": "http.route", "value": {"stringValue": "/healthz"}}
+              ],
+              "body": {
+                "kvlistValue": {
+                  "values": [
+                    {"key": "msg", "value": {"stringValue": "ok"}}
+                  ]
+                }
+              }
+            },
+            {
+              "timeUnixNano": "1767225602000000000",
+              "observedTimeUnixNano": "1767225602000000000",
+              "attributes": [
+                {"key": "http.route", "value": {"stringValue": "/pay"}}
+              ],
+              "body": {
+                "kvlistValue": {
+                  "values": [
+                    {"key": "msg", "value": {"stringValue": "payment failed token=tok_live_42"}},
+                    {"key": "level", "value": {"stringValue": "error"}},
+                    {"key": "attempt", "value": {"intValue": "3"}},
+                    {"key": "card", "value": {"kvlistValue": {"values": [
+                      {"key": "number", "value": {"stringValue": "4111111111111111"}},
+                      {"key": "expiry", "value": {"stringValue": "12/30"}}
+                    ]}}},
+                    {"key": "db_password", "value": {"stringValue": "not-a-match"}}
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

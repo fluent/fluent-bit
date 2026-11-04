@@ -1,0 +1,18 @@
+service:
+  flush: 1
+  log_level: info
+
+pipeline:
+  inputs:
+    - name: opentelemetry
+      listen: 127.0.0.1
+      port: 4318
+      processors:
+        metrics:
+          - name: fts
+            script: policy.lua
+
+  outputs:
+    - name: stdout
+      match: '*'
+      format: otlp_json

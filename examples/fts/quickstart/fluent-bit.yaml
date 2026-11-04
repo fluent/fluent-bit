@@ -1,0 +1,25 @@
+pipeline:
+  inputs:
+    - name: dummy
+      dummy: '{"user": "ana", "password": "hunter2", "path": "/login", "status": 200}'
+      samples: 1
+      processors:
+        logs:
+          - name: fts
+            code: |
+              local fb = require("fluentbit")
+
+              function process(log)
+                  if log.body:get_string("path") == "/healthz" then
+                      return fb.DROP
+                  end
+
+                  fb.redact(log.body, {"password"})
+                  log.body:set("environment", "dev")
+              end
+
+  outputs:
+    - name: stdout
+      match: '*'
+      format: json_lines
+      json_date_key: false

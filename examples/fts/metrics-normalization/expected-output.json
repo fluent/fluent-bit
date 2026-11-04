@@ -1,0 +1,156 @@
+[
+  {
+    "resourceMetrics": [
+      {
+        "resource": {
+          "attributes": [
+            {
+              "key": "service.name",
+              "value": {
+                "stringValue": "checkout"
+              }
+            }
+          ],
+          "droppedAttributesCount": 0
+        },
+        "scopeMetrics": [
+          {
+            "scope": {
+              "name": "checkout.http",
+              "version": "1.4.0",
+              "droppedAttributesCount": 0
+            },
+            "metrics": [
+              {
+                "name": "http.server.requests",
+                "description": "Completed requests",
+                "unit": "{request}",
+                "sum": {
+                  "dataPoints": [
+                    {
+                      "attributes": [
+                        {
+                          "key": "http.route",
+                          "value": {
+                            "stringValue": "/login"
+                          }
+                        },
+                        {
+                          "key": "http.response.status_code",
+                          "value": {
+                            "intValue": "200"
+                          }
+                        }
+                      ],
+                      "timeUnixNano": "1767225600000000000",
+                      "startTimeUnixNano": "1767225540000000000",
+                      "flags": 0,
+                      "asInt": "15"
+                    },
+                    {
+                      "attributes": [
+                        {
+                          "key": "http.route",
+                          "value": {
+                            "stringValue": "/login"
+                          }
+                        },
+                        {
+                          "key": "http.response.status_code",
+                          "value": {
+                            "intValue": "401"
+                          }
+                        }
+                      ],
+                      "timeUnixNano": "1767225600000000000",
+                      "startTimeUnixNano": "1767225540000000000",
+                      "flags": 0,
+                      "asInt": "2"
+                    },
+                    {
+                      "attributes": [
+                        {
+                          "key": "http.route",
+                          "value": {
+                            "stringValue": "/pay"
+                          }
+                        },
+                        {
+                          "key": "http.response.status_code",
+                          "value": {
+                            "intValue": "200"
+                          }
+                        }
+                      ],
+                      "timeUnixNano": "1767225600000000000",
+                      "startTimeUnixNano": "1767225540000000000",
+                      "flags": 0,
+                      "asInt": "10"
+                    }
+                  ],
+                  "aggregationTemporality": 2,
+                  "isMonotonic": true
+                }
+              },
+              {
+                "name": "process.memory.usage",
+                "description": "Resident memory",
+                "unit": "By",
+                "gauge": {
+                  "dataPoints": [
+                    {
+                      "timeUnixNano": "1767225600000000000",
+                      "startTimeUnixNano": "0",
+                      "flags": 0,
+                      "asInt": "2097152"
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "http.server.request.duration",
+                "description": "Request duration",
+                "unit": "s",
+                "histogram": {
+                  "dataPoints": [
+                    {
+                      "attributes": [
+                        {
+                          "key": "http.route",
+                          "value": {
+                            "stringValue": "/login"
+                          }
+                        }
+                      ],
+                      "timeUnixNano": "1767225600000000000",
+                      "startTimeUnixNano": "1767225540000000000",
+                      "flags": 0,
+                      "count": "17",
+                      "sum": 0.85,
+                      "min": 0.004,
+                      "max": 0.24,
+                      "bucketCounts": [
+                        "3",
+                        "9",
+                        "5",
+                        "0"
+                      ],
+                      "explicitBounds": [
+                        0.01,
+                        0.05,
+                        0.25
+                      ]
+                    }
+                  ],
+                  "aggregationTemporality": 2
+                }
+              }
+            ],
+            "schemaUrl": ""
+          }
+        ],
+        "schemaUrl": ""
+      }
+    ]
+  }
+]
