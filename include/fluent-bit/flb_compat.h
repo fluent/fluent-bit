@@ -38,11 +38,16 @@
 
 #include <monkey/mk_core.h>
 
+/* POSIX guarantees at least 16 vectors. Keep native vector storage bounded. */
+#define FLB_IOV_MAX 16
+
 #ifdef FLB_SYSTEM_WINDOWS
 #define WIN32_LEAN_AND_MEAN
 #include <winsock2.h>
 #include <windows.h>
 #include <Wincrypt.h> /* flb_io_tls.c */
+#include <errno.h>
+#include <limits.h>
 
 #include <monkey/mk_core/mk_sleep.h>
 #include <fluent-bit/flb_dlfcn_win32.h>
@@ -67,6 +72,66 @@
 #define strcasecmp _stricmp
 #define strncasecmp _strnicmp
 #define timegm _mkgmtime
+
+/* Socket writev compatibility; accept at most FLB_IOV_MAX vectors and INT_MAX bytes. */
+static inline ssize_t flb_writev(SOCKET fd, const struct mk_iovec *iov, int count)
+{
+    WSABUF buffers[FLB_IOV_MAX];
+    DWORD written;
+    size_t total;
+    int index;
+    int error;
+
+    if (count < 0 || count > FLB_IOV_MAX || (count > 0 && iov == NULL)) {
+        errno = EINVAL;
+        WSASetLastError(WSAEINVAL);
+        return -1;
+    }
+    if (count == 0) {
+        return 0;
+    }
+
+    total = 0;
+    for (index = 0; index < count; index++) {
+        if (iov[index].iov_len > INT_MAX - total) {
+            errno = EINVAL;
+            WSASetLastError(WSAEINVAL);
+            return -1;
+        }
+        buffers[index].buf = (char *) iov[index].iov_base;
+        buffers[index].len = (ULONG) iov[index].iov_len;
+        total += iov[index].iov_len;
+    }
+
+    if (WSASend(fd, buffers, count, &written, 0, NULL, NULL) == SOCKET_ERROR) {
+        error = WSAGetLastError();
+        switch (error) {
+        case WSAEINTR:
+            errno = EINTR;
+            break;
+        case WSAEWOULDBLOCK:
+            errno = EAGAIN;
+            break;
+        case WSAECONNRESET:
+        case WSAECONNABORTED:
+        case WSAESHUTDOWN:
+            errno = ECONNRESET;
+            break;
+        case WSAENOTCONN:
+            errno = ENOTCONN;
+            break;
+        case WSAENOTSOCK:
+            errno = EBADF;
+            break;
+        default:
+            errno = EIO;
+        }
+        WSASetLastError(error);
+        return -1;
+    }
+
+    return (ssize_t) written;
+}
 
 static inline int getpagesize(void)
 {
@@ -142,8 +207,10 @@ static inline int usleep(LONGLONG usec)
 #include <libgen.h>
 #include <dlfcn.h>
 #include <strings.h>
+#include <sys/uio.h>
 
 #define FLB_DIRCHAR '/'
+#define flb_writev writev
 #endif
 
 #ifdef FLB_HAVE_UNIX_SOCKET
