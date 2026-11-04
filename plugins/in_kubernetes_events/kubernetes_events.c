@@ -831,34 +831,35 @@ static int process_http_chunk(struct k8s_events* ctx, struct flb_http_client *c,
     }
 
     token_end = memchr(token_start, '\n', decoded_end - token_start);
-    while ( token_end != NULL && ret == 0 ) {
+    while (token_end != NULL) {
         token_size = token_end - token_start;
+        /* every complete line is consumed, parsed or not */
+        *bytes_consumed += token_size + 1;
         /* a line may end in "\r\n", keep the '\r' out of the JSON */
         if (token_size > 0 && token_start[token_size - 1] == '\r') {
             token_size--;
         }
-        ret = flb_pack_json(token_start, token_size, &buf_data, &buf_size, &root_type, &consumed);
-        if (ret == -1) {
-            flb_plg_debug(ctx->ins, "could not process payload, incomplete or bad formed JSON: %s",
-                          c->resp.payload);
-        }
-        else {
-            *bytes_consumed += (token_end - token_start) + 1;
-            ret = process_watched_event(ctx, buf_data, buf_size);
-        }
 
-        flb_free(buf_data);
-        if (buf_data) {
+        if (token_size > 0) {
+            ret = flb_pack_json(token_start, token_size, &buf_data, &buf_size,
+                                &root_type, &consumed);
+            if (ret == -1) {
+                flb_plg_debug(ctx->ins,
+                              "could not process payload, incomplete or bad formed JSON: %.*s",
+                              (int) token_size, token_start);
+            }
+            else {
+                process_watched_event(ctx, buf_data, buf_size);
+            }
+            flb_free(buf_data);
             buf_data = NULL;
         }
         token_start = token_end + 1;
         token_end = memchr(token_start, '\n', decoded_end - token_start);
     }
 
-    if (buf_data) {
-        flb_free(buf_data);
-    }
-    return ret;
+    /* never stall the stream on a bad line: the caller keeps reading */
+    return 0;
 }
 
 static void initialize_http_client(struct flb_http_client* c, struct k8s_events* ctx)
