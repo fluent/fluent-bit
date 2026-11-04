@@ -17,6 +17,7 @@ async function application(): Promise<void> {
     const bytes: Uint8Array = await fluent.readFile('/config/example.lua');
     const result: {engineMs: number} = await fluent.start({yaml: '', graceSeconds: 1});
     const accepted: number = (await fluent.push({input: 'app', records: [{message: 'hello'}]})).acceptedRecords;
+    await fluent.drain();
     await fluent.stop();
     await fluent.syncStorage();
     const heap: number = (await fluent.getStats()).wasmMemoryBytes;
