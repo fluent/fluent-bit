@@ -23,6 +23,7 @@
 #include <string.h>
 
 #include <monkey/mk_core.h>
+#include <fluent-bit/flb_socket.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
@@ -396,6 +397,9 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
             flb_errno();
             return NULL;
         }
+
+        instance->ch_events[0] = FLB_UNINITIALIZED_SOCKET;
+        instance->ch_events[1] = FLB_UNINITIALIZED_SOCKET;
 
         instance->http_server_config = flb_calloc(1, sizeof(struct flb_http_server_config));
         if (!instance->http_server_config) {
@@ -1314,18 +1318,22 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
 
     if (ins->ch_events[0] > 0) {
         mk_event_closesocket(ins->ch_events[0]);
+        ins->ch_events[0] = FLB_UNINITIALIZED_SOCKET;
     }
 
     if (ins->ch_events[1] > 0) {
         mk_event_closesocket(ins->ch_events[1]);
+        ins->ch_events[1] = FLB_UNINITIALIZED_SOCKET;
     }
 
     if (ins->ingress_queue_channels[0] > 0) {
         mk_event_closesocket(ins->ingress_queue_channels[0]);
+        ins->ingress_queue_channels[0] = FLB_UNINITIALIZED_SOCKET;
     }
 
     if (ins->ingress_queue_channels[1] > 0) {
         mk_event_closesocket(ins->ingress_queue_channels[1]);
+        ins->ingress_queue_channels[1] = FLB_UNINITIALIZED_SOCKET;
     }
 
     /* Collectors */
