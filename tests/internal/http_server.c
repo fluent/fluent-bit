@@ -1301,7 +1301,31 @@ static void test_http_body_inflation_limit(void)
     }
 }
 
+static void test_http_request_compression_roundtrip(void)
+{
+    struct flb_http_request request;
+    char *encodings[] = {"gzip", "zstd"};
+    unsigned char payload[4096];
+    size_t index;
+
+    memset(payload, 'x', sizeof(payload));
+    for (index = 0; index < sizeof(encodings) / sizeof(encodings[0]); index++) {
+        memset(&request, 0, sizeof(request));
+        TEST_ASSERT(flb_http_request_init(&request) == 0);
+        request.body = cfl_sds_create_len((char *) payload, sizeof(payload));
+        TEST_ASSERT(request.body != NULL);
+        TEST_ASSERT(flb_http_request_compress_body(&request, encodings[index]) == 0);
+        TEST_CHECK(flb_http_request_uncompress_body(&request, sizeof(payload)) == 0);
+        TEST_CHECK(cfl_sds_len(request.body) == sizeof(payload));
+        TEST_CHECK(memcmp(request.body, payload, sizeof(payload)) == 0);
+        TEST_CHECK(request.content_length == sizeof(payload));
+        TEST_CHECK(flb_http_request_get_header(&request, "Content-Encoding") == NULL);
+        flb_http_request_destroy(&request);
+    }
+}
+
 TEST_LIST = {
+    { "http_request_compression_roundtrip", test_http_request_compression_roundtrip },
     { "http_server_rejects_invalid_decoded_body_limit",
       test_http_server_rejects_invalid_decoded_body_limit },
     { "http_body_inflation_limit", test_http_body_inflation_limit },
