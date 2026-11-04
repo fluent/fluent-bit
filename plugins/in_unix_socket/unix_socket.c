@@ -78,10 +78,14 @@ static int in_unix_socket_collect(struct flb_input_instance *in,
     return 0;
 }
 
-static int remove_existing_socket_file(char *socket_path)
+static int remove_existing_socket_file(char *socket_path, int stream_mode)
 {
     struct stat file_data;
     int         result;
+    int         fd;
+    int         saved_errno;
+    struct stat current;
+    struct sockaddr_un address;
 
     result = lstat(socket_path, &file_data);
 
@@ -99,6 +103,31 @@ static int remove_existing_socket_file(char *socket_path)
         return -2;
     }
 
+    fd = socket(AF_UNIX, stream_mode ? SOCK_STREAM : SOCK_DGRAM, 0);
+    if (fd == -1) {
+        return -3;
+    }
+    if (flb_net_socket_nonblocking(fd) == -1) {
+        close(fd);
+        return -3;
+    }
+    memset(&address, 0, sizeof(address));
+    address.sun_family = AF_UNIX;
+    strcpy(address.sun_path, socket_path);
+    result = connect(fd, (struct sockaddr *) &address,
+                     offsetof(struct sockaddr_un, sun_path) + strlen(socket_path) + 1);
+    saved_errno = errno;
+    close(fd);
+    /* Only a refused connection establishes that the old socket is stale. */
+    if (result == 0 || saved_errno != ECONNREFUSED) {
+        errno = EADDRINUSE;
+        return -3;
+    }
+    if (lstat(socket_path, &current) == -1 ||
+        current.st_dev != file_data.st_dev || current.st_ino != file_data.st_ino) {
+        errno = EADDRINUSE;
+        return -3;
+    }
     result = unlink(socket_path);
 
     if (result != 0) {
@@ -131,8 +160,8 @@ static int in_unix_socket_init(struct flb_input_instance *in,
     struct flb_in_unix_socket_config *ctx;
     int                               ret;
     struct flb_tls                   *tls;
-    char                              staging_dir[sizeof(((struct sockaddr_un *) 0)->sun_path)];
-    char                              staging_path[sizeof(((struct sockaddr_un *) 0)->sun_path)];
+    char staging_dir[sizeof(((struct sockaddr_un *) 0)->sun_path) + sizeof(".fb-XXXXXX/s")];
+    char staging_path[sizeof(((struct sockaddr_un *) 0)->sun_path) + sizeof(".fb-XXXXXX/s")];
     const char                       *separator;
     size_t                            parent_length;
     const char                       *bind_path;
@@ -152,25 +181,21 @@ static int in_unix_socket_init(struct flb_input_instance *in,
 
     mk_list_init(&ctx->connections);
 
+#if !(defined(FLB_SYSTEM_LINUX) && defined(SYS_renameat2) && defined(RENAME_NOREPLACE)) && \
+    !(defined(FLB_SYSTEM_MACOS) && defined(RENAME_EXCL))
+    if (ctx->socket_permissions != NULL) {
+        flb_plg_error(in, "socket_permissions requires exclusive rename support on this platform");
+        unix_socket_config_destroy(ctx);
+        return -1;
+    }
+#endif
+
     /* Set the context */
     flb_input_set_context(in, ctx);
 
-    ret = remove_existing_socket_file(ctx->listen);
-
-    if (ret != 0) {
-        if (ret == -2) {
-            flb_plg_error(ctx->ins,
-                          "%s exists and it is not a unix socket. Aborting",
-                          ctx->listen);
-        }
-        else {
-            flb_plg_error(ctx->ins,
-                          "could not remove existing unix socket %s. Aborting",
-                          ctx->listen);
-        }
-
+    if (strlen(ctx->listen) >= sizeof(((struct sockaddr_un *) 0)->sun_path)) {
+        flb_plg_error(ctx->ins, "configured unix socket path is too long: '%s'", ctx->listen);
         unix_socket_config_destroy(ctx);
-
         return -1;
     }
 
@@ -231,6 +256,11 @@ static int in_unix_socket_init(struct flb_input_instance *in,
                           staging_dir, ctx->listen);
             goto staging_setup_error;
         }
+        if (fchmod(staging_fd, 0700) != 0 || fstat(staging_fd, &staging_stat) != 0) {
+            flb_errno();
+            flb_plg_error(ctx->ins, "could not normalize staging directory '%s'", staging_dir);
+            goto staging_setup_error;
+        }
         if ((staging_stat.st_mode & 0777) != 0700) {
             flb_plg_error(ctx->ins, "staging directory '%s' has unsafe mode for unix socket '%s'",
                           staging_dir, ctx->listen);
@@ -250,6 +280,29 @@ static int in_unix_socket_init(struct flb_input_instance *in,
         bind_path = staging_path;
     }
 
+    ret = remove_existing_socket_file(ctx->listen, mode == FLB_TRANSPORT_UNIX_STREAM);
+
+    if (ret != 0) {
+        if (ret == -2) {
+            flb_plg_error(ctx->ins,
+                          "%s exists and it is not a unix socket. Aborting",
+                          ctx->listen);
+        }
+        else {
+            flb_plg_error(ctx->ins,
+                          "could not remove existing unix socket %s. Aborting",
+                          ctx->listen);
+        }
+
+        if (staging_fd >= 0) {
+            close(staging_fd);
+            rmdir(staging_dir);
+        }
+        unix_socket_config_destroy(ctx);
+
+        return -1;
+    }
+
     ctx->downstream = flb_downstream_create(mode,
                                             in->flags,
                                             bind_path,
@@ -260,6 +313,7 @@ static int in_unix_socket_init(struct flb_input_instance *in,
 
     if (ctx->downstream == NULL) {
         if (ctx->socket_permissions != NULL) {
+            unlinkat(staging_fd, "s", 0);
             close(staging_fd);
             rmdir(staging_dir);
         }
@@ -269,6 +323,17 @@ static int in_unix_socket_init(struct flb_input_instance *in,
 
         unix_socket_config_destroy(ctx);
 
+        return -1;
+    }
+
+    if (lstat(bind_path, &ctx->socket_stat) == -1) {
+        flb_errno();
+        if (staging_fd >= 0) {
+            unlinkat(staging_fd, "s", 0);
+            close(staging_fd);
+            rmdir(staging_dir);
+        }
+        unix_socket_config_destroy(ctx);
         return -1;
     }
 
@@ -301,6 +366,8 @@ static int in_unix_socket_init(struct flb_input_instance *in,
         close(staging_fd);
         rmdir(staging_dir);
     }
+
+    ctx->socket_published = FLB_TRUE;
 
     if (ctx->dgram_mode_flag) {
         connection = flb_downstream_conn_get(ctx->downstream);
