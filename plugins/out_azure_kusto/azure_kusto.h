@@ -81,6 +81,7 @@ struct flb_azure_kusto_resources {
     struct flb_upstream_ha *blob_ha;
     struct flb_upstream_ha *queue_ha;
     flb_sds_t identity_token;
+    struct flb_tls *tls;
 
     /* used to reload resouces after some time */
     uint64_t load_time;
@@ -93,6 +94,7 @@ struct flb_azure_kusto_resources {
     struct flb_upstream_ha *old_blob_ha;
     struct flb_upstream_ha *old_queue_ha;
     flb_sds_t old_identity_token;
+    struct flb_tls *old_tls;
 };
 
 struct flb_azure_kusto {

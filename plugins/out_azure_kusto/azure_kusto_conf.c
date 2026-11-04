@@ -42,15 +42,14 @@ typedef struct { uint64_t state;  uint64_t inc; } pcg32_random_t;
 
 static struct flb_upstream_node *flb_upstream_node_create_url(struct flb_azure_kusto *ctx,
                                                               struct flb_config *config,
-                                                              const char *url)
+                                                              const char *url,
+                                                              struct flb_tls *tls)
 {
     int ret;
     char *prot = NULL;
     char *host = NULL;
     char *port = NULL;
     char *uri = NULL;
-    flb_sds_t sds_host = NULL;
-    flb_sds_t sds_port = NULL;
     char *tmp;
     struct flb_hash_table *kv = NULL;
     struct flb_upstream_node *node = NULL;
@@ -82,16 +81,29 @@ static struct flb_upstream_node *flb_upstream_node_create_url(struct flb_azure_k
                                    sas_length);
 
                 if (ret != -1) {
-                    /* if any/all of these creations would fail the node creation will fail and cleanup */
-                    sds_host = flb_sds_create(host);
-                    sds_port = flb_sds_create(port);
-
-                    node = flb_upstream_node_create(
-                        NULL, sds_host, sds_port, FLB_TRUE, ctx->ins->tls->verify,
-                        ctx->ins->tls->verify_hostname,
-                        ctx->ins->tls->debug, ctx->ins->tls->vhost, NULL, NULL, NULL,
-                        NULL, NULL, kv, config);
-
+                    node = flb_calloc(1, sizeof(struct flb_upstream_node));
+                    if (node) {
+                        node->ht = kv;
+                        kv = NULL;
+                        node->host = flb_sds_create(host);
+                        node->port = flb_sds_create(port);
+                        node->name = flb_sds_create_size(strlen(host) + strlen(port) + 1);
+                        if (node->host && node->port && node->name &&
+                            flb_sds_printf(&node->name, "%s:%s", host, port)) {
+                            /*
+                             * The resource generation owns TLS. Only the upstream
+                             * borrows it; node->tls stays NULL so HA destruction
+                             * releases connections without freeing shared TLS.
+                             */
+                            node->tls_enabled = FLB_TRUE;
+                            node->u = flb_upstream_create(config, host, atoi(port),
+                                                         FLB_IO_TLS, tls);
+                        }
+                        if (!node->u) {
+                            flb_upstream_node_destroy(node);
+                            node = NULL;
+                        }
+                    }
                     if (!node) {
                         flb_plg_error(ctx->ins, "error creating resource upstream node");
                     }
@@ -105,7 +117,7 @@ static struct flb_upstream_node *flb_upstream_node_create_url(struct flb_azure_k
             }
 
             /* avoid destorying if function is successful */
-            if (!node) {
+            if (!node && kv) {
                 flb_hash_table_destroy(kv);
             }
         }
@@ -125,6 +137,27 @@ static struct flb_upstream_node *flb_upstream_node_create_url(struct flb_azure_k
     return node;
 }
 
+static struct flb_tls *resource_tls_create(struct flb_azure_kusto *ctx)
+{
+    struct flb_tls *tls;
+
+    tls = flb_tls_create(FLB_TLS_CLIENT_MODE, ctx->ins->tls->verify,
+                        ctx->ins->tls->debug, ctx->ins->tls->vhost,
+                        NULL, NULL, NULL, NULL, NULL);
+    if (!tls) {
+        flb_plg_error(ctx->ins, "error creating resource TLS context");
+        return NULL;
+    }
+
+    if (flb_tls_set_verify_hostname(tls, ctx->ins->tls->verify_hostname) != 0) {
+        flb_plg_error(ctx->ins, "error configuring resource TLS hostname verification");
+        flb_tls_destroy(tls);
+        return NULL;
+    }
+
+    return tls;
+}
+
 static int flb_azure_kusto_resources_clear(struct flb_azure_kusto_resources *resources)
 {
     if (!resources) {
@@ -141,6 +174,11 @@ static int flb_azure_kusto_resources_clear(struct flb_azure_kusto_resources *res
         resources->queue_ha = NULL;
     }
 
+    if (resources->tls) {
+        flb_tls_destroy(resources->tls);
+        resources->tls = NULL;
+    }
+
     if (resources->identity_token) {
         flb_sds_destroy(resources->identity_token);
         resources->identity_token = NULL;
@@ -155,6 +193,11 @@ static int flb_azure_kusto_resources_clear(struct flb_azure_kusto_resources *res
     if (resources->old_queue_ha) {
         flb_upstream_ha_destroy(resources->old_queue_ha);
         resources->old_queue_ha = NULL;
+    }
+
+    if (resources->old_tls) {
+        flb_tls_destroy(resources->old_tls);
+        resources->old_tls = NULL;
     }
 
     if (resources->old_identity_token) {
@@ -182,7 +225,7 @@ static int flb_azure_kusto_resources_clear(struct flb_azure_kusto_resources *res
  */
 static int parse_storage_resources(struct flb_azure_kusto *ctx, struct flb_config *config,
                                    flb_sds_t response, struct flb_upstream_ha *blob_ha,
-                                   struct flb_upstream_ha *queue_ha)
+                                   struct flb_upstream_ha *queue_ha, struct flb_tls *tls)
 {
     jsmn_parser parser;
     jsmntok_t *tokens = NULL;
@@ -331,7 +374,7 @@ static int parse_storage_resources(struct flb_azure_kusto *ctx, struct flb_confi
                     goto cleanup;
                 }
 
-                node = flb_upstream_node_create_url(ctx, config, resource_uri);
+                node = flb_upstream_node_create_url(ctx, config, resource_uri, tls);
 
                 if (!node) {
                     flb_plg_error(ctx->ins, "error creating HA upstream node");
@@ -551,6 +594,7 @@ int azure_kusto_load_ingestion_resources(struct flb_azure_kusto *ctx,
     flb_sds_t identity_token = NULL;
     struct flb_upstream_ha *blob_ha = NULL;
     struct flb_upstream_ha *queue_ha = NULL;
+    struct flb_tls *tls = NULL;
     struct flb_time tm_now;
     uint64_t now;
 
@@ -622,8 +666,14 @@ int azure_kusto_load_ingestion_resources(struct flb_azure_kusto *ctx,
                         ret = -1;
                         goto cleanup;
                     }
-                    ret =
-                            parse_storage_resources(ctx, config, response, blob_ha, queue_ha);
+                    tls = resource_tls_create(ctx);
+                    if (tls) {
+                        ret = parse_storage_resources(ctx, config, response,
+                                                      blob_ha, queue_ha, tls);
+                    }
+                    else {
+                        ret = -1;
+                    }
 
                     if (pthread_mutex_unlock(&ctx->resources_mutex)) {
                         flb_plg_error(ctx->ins, "error unlocking mutex");
@@ -667,6 +717,9 @@ int azure_kusto_load_ingestion_resources(struct flb_azure_kusto *ctx,
                                     flb_upstream_ha_destroy(ctx->resources->old_queue_ha);
                                     flb_plg_debug(ctx->ins, "clearing up old queue HA");
                                 }
+                                if (ctx->resources->old_tls) {
+                                    flb_tls_destroy(ctx->resources->old_tls);
+                                }
                                 if (ctx->resources->old_identity_token) {
                                     flb_sds_destroy(ctx->resources->old_identity_token);
                                     flb_plg_debug(ctx->ins, "clearing up old identity token");
@@ -676,12 +729,18 @@ int azure_kusto_load_ingestion_resources(struct flb_azure_kusto *ctx,
                                 ctx->resources->old_blob_ha = ctx->resources->blob_ha;
                                 ctx->resources->old_queue_ha = ctx->resources->queue_ha;
                                 ctx->resources->old_identity_token = ctx->resources->identity_token;
+                                ctx->resources->old_tls = ctx->resources->tls;
 
                                 /* Assign new resources */
                                 ctx->resources->blob_ha = blob_ha;
                                 ctx->resources->queue_ha = queue_ha;
                                 ctx->resources->identity_token = identity_token;
+                                ctx->resources->tls = tls;
                                 ctx->resources->load_time = now;
+                                blob_ha = NULL;
+                                queue_ha = NULL;
+                                identity_token = NULL;
+                                tls = NULL;
 
                                 flb_plg_info(ctx->ins, "ingestion resources rotated successfully, "
                                              "previous resources moved to deferred cleanup");
@@ -771,6 +830,9 @@ int azure_kusto_load_ingestion_resources(struct flb_azure_kusto *ctx,
         }
         if (blob_ha) {
             flb_upstream_ha_destroy(blob_ha);
+        }
+        if (tls) {
+            flb_tls_destroy(tls);
         }
         if (response) {
             flb_sds_destroy(response);
