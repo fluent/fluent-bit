@@ -17,9 +17,18 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_socket.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_output.h>
+
+#ifndef FLB_SYSTEM_WINDOWS
+#include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
+#endif
 
 #include <stdlib.h>
 #include <string.h>
@@ -137,7 +146,66 @@ static void test_log_level_config_only()
     restore_env_log_level(saved);
 }
 
+static void test_channel_initialization(void)
+{
+    struct flb_config *config;
+    struct flb_input_instance *input;
+    struct flb_output_instance *output;
+
+    config = flb_config_init();
+    TEST_ASSERT(config != NULL);
+    TEST_CHECK(config->ch_data[0] == FLB_UNINITIALIZED_SOCKET);
+    TEST_CHECK(config->ch_data[1] == FLB_UNINITIALIZED_SOCKET);
+    TEST_CHECK(config->ch_manager[0] == FLB_UNINITIALIZED_SOCKET);
+    TEST_CHECK(config->ch_manager[1] == FLB_UNINITIALIZED_SOCKET);
+    TEST_CHECK(config->ch_notif[0] == FLB_UNINITIALIZED_SOCKET);
+    TEST_CHECK(config->ch_notif[1] == FLB_UNINITIALIZED_SOCKET);
+    input = flb_input_new(config, "dummy", NULL, FLB_FALSE);
+    TEST_ASSERT(input != NULL);
+    TEST_CHECK(input->ch_events[0] == FLB_UNINITIALIZED_SOCKET);
+    TEST_CHECK(input->ch_events[1] == FLB_UNINITIALIZED_SOCKET);
+    output = flb_output_new(config, "null", NULL, FLB_FALSE);
+    TEST_ASSERT(output != NULL);
+    TEST_CHECK(output->ch_events[0] == FLB_UNINITIALIZED_SOCKET);
+    TEST_CHECK(output->ch_events[1] == FLB_UNINITIALIZED_SOCKET);
+    flb_input_instance_destroy(input);
+    flb_output_instance_destroy(output);
+    flb_config_exit(config);
+}
+
+#ifndef FLB_SYSTEM_WINDOWS
+/* A missing read end must not prevent release of an owned write end. */
+static void test_partial_config_channels(void)
+{
+    int channel[2];
+    int kind;
+    struct flb_config *config;
+
+    for (kind = 0; kind < 2; kind++) {
+        config = flb_config_init();
+        TEST_ASSERT(config != NULL);
+        TEST_ASSERT(pipe(channel) == 0);
+        close(channel[0]);
+        if (kind == 0) {
+            config->ch_manager[1] = channel[1];
+        }
+        else {
+            config->ch_notif[1] = channel[1];
+        }
+        flb_config_exit(config);
+        errno = 0;
+        TEST_CHECK(fcntl(channel[1], F_GETFD) == -1 && errno == EBADF);
+    }
+}
+
+
+#endif
+
 TEST_LIST = {
+    { "channel_initialization", test_channel_initialization },
+#ifndef FLB_SYSTEM_WINDOWS
+    { "partial_config_channels", test_partial_config_channels },
+#endif
     { "log_level_env_and_config", test_log_level_env_and_config },
     { "log_level_config_only",    test_log_level_config_only },
     { 0 }
