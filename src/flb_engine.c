@@ -1496,7 +1496,8 @@ int flb_engine_start(struct flb_config *config)
                     event->priority = FLB_ENGINE_PRIORITY_SHUTDOWN;
 
                     /*
-                     * Configure a timer of 1 second, on expiration the code will
+                     * Configure a timer of 1 second (immediate for browser
+                     * zero-grace shutdown). On expiration the code will
                      * jump into the FLB_ENGINE_SHUTDOWN condition where it will
                      * check if the grace period has finished, or if there are
                      * any remaining tasks.
@@ -1506,8 +1507,13 @@ int flb_engine_start(struct flb_config *config)
                      */
                     if (config->shutdown_fd <= 0) {
                         config->shutdown_fd = mk_event_timeout_create(evl,
+#ifdef __EMSCRIPTEN__
+                                                                      config->grace == 0 ? 0 : 1,
+                                                                      config->grace == 0 ? 1 : 0,
+#else
                                                                       1,
                                                                       0,
+#endif
                                                                       event);
 
 	                    if (config->shutdown_fd == -1) {
