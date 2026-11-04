@@ -320,6 +320,10 @@ static flb_sds_t format_logs(struct flb_input_instance *src_ins,
         }
     }
 
+    if (flb_log_event_decoder_get_last_result(&log_decoder) != FLB_EVENT_DECODER_SUCCESS) {
+        goto format_error;
+    }
+
     flb_mp_array_header_end(&mh);
     flb_mp_map_header_end(&root_map);
 
