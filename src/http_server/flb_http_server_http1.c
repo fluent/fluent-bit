@@ -550,6 +550,7 @@ int flb_http1_server_session_ingest(struct flb_http1_server_session *session,
 {
     int result;
     size_t available;
+    size_t header_limit;
     size_t offset;
     const char *data;
 
@@ -559,11 +560,17 @@ int flb_http1_server_session_ingest(struct flb_http1_server_session *session,
      * Each new byte is examined once, even when CRLFCRLF spans several reads.
      */
     if (!session->headers_complete) {
+        header_limit = HTTP_SERVER_DEFAULT_HTTP1_MAX_HEADER_SIZE;
+        if (session->parent->parent != NULL &&
+            session->parent->parent->http1_max_header_size > 0) {
+            header_limit = session->parent->parent->http1_max_header_size;
+        }
+
         data = session->parent->incoming_data;
         available = cfl_sds_len(session->parent->incoming_data);
 
         while (session->header_scan_offset < available &&
-               session->header_scan_offset < FLB_HTTP1_MAX_HEADER_SIZE) {
+               session->header_scan_offset < header_limit) {
             offset = ++session->header_scan_offset;
             if (offset >= 4 && memcmp(data + offset - 4, "\r\n\r\n", 4) == 0) {
                 session->headers_complete = FLB_TRUE;
@@ -572,7 +579,7 @@ int flb_http1_server_session_ingest(struct flb_http1_server_session *session,
         }
 
         if (!session->headers_complete) {
-            if (session->header_scan_offset == FLB_HTTP1_MAX_HEADER_SIZE) {
+            if (session->header_scan_offset == header_limit) {
                 session->stream.status = HTTP_STREAM_STATUS_ERROR;
                 return HTTP_SERVER_PROVIDER_ERROR;
             }
