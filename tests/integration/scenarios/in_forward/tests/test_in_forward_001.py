@@ -855,7 +855,7 @@ def test_in_forward_preflight_auto_budget(tmp_path, memory_limit, wire_limit, ex
 def test_in_forward_preflight_invalid_budget(tmp_path, memory_limit, wire_limit, error):
     config = _preflight_config(tmp_path, memory_limit, wire_limit)
     service = FluentBitTestService(config)
-    with pytest.raises(FluentBitStartupError):
+    with pytest.raises(FluentBitStartupError, match="exited early"):
         service.start()
     assert error in read_file(service.flb.log_file)
 
@@ -1497,6 +1497,8 @@ def test_in_forward_unix_socket_rejects_symlink():
         with pytest.raises(FluentBitStartupError):
             service.start()
 
+        with open(service.service.flb.log_file, encoding="utf-8") as log:
+            assert "exists and it is not a unix socket" in log.read()
         assert os.stat(victim).st_mode & 0o777 == 0o600
 
 
