@@ -168,12 +168,20 @@ test('drain validates state, reports unsupported pipelines and waits for log del
     await assert.rejects(sdk.request('drain'), {code: 'E_UNSUPPORTED'});
     sdk.run('command = async () => ({result: -1})');
     await assert.rejects(sdk.request('drain'), {code: 'E_DRAIN'});
-    sdk.run(`command = async () => ({result: 0});
-        let releaseLogs;
-        drainLogs = () => new Promise(resolve => { releaseLogs = resolve; });`);
+    sdk.run(`let releaseCommand, releaseLogs, drainCalls = 0;
+        command = () => new Promise(resolve => { releaseCommand = resolve; });
+        drainLogs = () => {
+            drainCalls++;
+            return new Promise(resolve => { releaseLogs = resolve; });
+        };`);
     let complete = false;
     const draining = sdk.request('drain').then(() => { complete = true; });
     await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(sdk.run('drainCalls'), 0);
+    assert.equal(complete, false);
+    sdk.run('releaseCommand({result: 0})');
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(sdk.run('drainCalls'), 1);
     assert.equal(complete, false);
     sdk.run('releaseLogs()');
     await draining;

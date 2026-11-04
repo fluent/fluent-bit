@@ -122,13 +122,38 @@ pipeline:
             check(fluent.state === 'stopped', 'Stopped');
         }
         console.log(`Warm start/push/drain/stop milliseconds: ${JSON.stringify(timings)}`);
-        await fluent.start({yaml: yaml.replace('flush: 0.1', 'flush: 60').replace('name: stdout',
-            'name: null'), graceSeconds: 0});
+        // Count records at the output processor, emitting only eight small
+        // cumulative summaries so the SDK log transport cannot drop the proof.
+        await fluent.writeFile('/config/delivery-count.lua', `local fb = require("fluentbit")
+            local delivered = 0
+            function process(log)
+                delivered = delivered + 1
+                if delivered % 100 ~= 0 then return fb.DROP end
+                log.body:set("message", "large batch delivered")
+                log.body:set("delivered", delivered)
+                return fb.KEEP
+            end`);
+        const largeBatchYaml = yaml.replace('flush: 0.1', 'flush: 60').replace(
+            '      format: json_lines', `      format: json_lines
+      processors:
+        logs:
+          - name: fts
+            script: /config/delivery-count.lua`);
+        await fluent.start({yaml: largeBatchYaml, graceSeconds: 0});
         for (let batch = 0; batch < 8; batch++) {
             await fluent.push({input: 'app', records: Array.from({length: 100},
                 (_, index) => ({batch, index, message: 'x'.repeat(8000)}))});
         }
         await fluent.drain();
+        const deliveredCounts = logs.flatMap(line => {
+            try {
+                const record = JSON.parse(line);
+                return record.message === 'large batch delivered' ? [record.delivered] : [];
+            }
+            catch (_) { return []; }
+        });
+        check(JSON.stringify(deliveredCounts) === JSON.stringify([100, 200, 300, 400, 500, 600, 700, 800]),
+              'All 800 large records reach output processing before drain resolves');
         await fluent.stop();
         const routedYaml = yaml.replace('flush: 0.1', 'flush: 60') + `
     - name: stdout
@@ -147,6 +172,10 @@ pipeline:
             'match: unmatched'), graceSeconds: 0});
         await fluent.push({input: 'app', records: [{message: 'no matching route'}]});
         await fluent.drain();
+        check(!logs.some(line => {
+            try { return JSON.parse(line).message === 'no matching route'; }
+            catch (_) { return false; }
+        }), 'Unmatched records must not reach stdout');
         await fluent.stop();
         await fluent.start({yaml: yaml.replace('name: lib', 'name: dummy'), graceSeconds: 0});
         await rejected(() => fluent.drain(), 'E_UNSUPPORTED');

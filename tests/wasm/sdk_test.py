@@ -211,6 +211,7 @@ def main():
                             for _ in range(3):
                                 check_pthread_bootstrap(page, server, workers)
                             assert not errors, errors
+                            assert_no_sanitizer_errors('\n'.join(diagnostics))
                             print('Pthread bootstrap faults and worker cleanup passed', flush=True)
                             return
                         page.evaluate('(value) => { globalThis.ftsOnly = value; }', args.fts_only)

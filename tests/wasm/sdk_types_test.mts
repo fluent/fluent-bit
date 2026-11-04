@@ -17,12 +17,12 @@ async function application(): Promise<void> {
     const bytes: Uint8Array = await fluent.readFile('/config/example.lua');
     const result: {engineMs: number} = await fluent.start({yaml: '', graceSeconds: 1});
     const accepted: number = (await fluent.push({input: 'app', records: [{message: 'hello'}]})).acceptedRecords;
-    await fluent.drain();
+    const drained: void = await fluent.drain();
     await fluent.stop();
     await fluent.syncStorage();
     const heap: number = (await fluent.getStats()).wasmMemoryBytes;
     await fluent.destroy();
-    void [bytes, result, accepted, heap];
+    void [bytes, result, accepted, drained, heap];
     // @ts-expect-error Only JSON object records are accepted.
     await fluent.push({input: 'app', records: ['text']});
     // @ts-expect-error Persistent storage requires a namespace.
