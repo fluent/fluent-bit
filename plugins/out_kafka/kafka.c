@@ -169,6 +169,9 @@ static rd_kafka_headers_t *kafka_build_message_headers(struct flb_out_kafka *ctx
     msgpack_object *field;
     const char *field_name;
     size_t field_name_len;
+    char num_buf[64];
+    int num_len;
+    rd_kafka_resp_err_t err;
 
     /* Count configured headers to pre-allocate the headers object */
     mk_list_foreach_safe(head, tmp, ctx->headers) {
@@ -192,24 +195,80 @@ static rd_kafka_headers_t *kafka_build_message_headers(struct flb_out_kafka *ctx
             field          = NULL;
 
             if (kafka_msgpack_get_field(map, field_name, field_name_len,
-                                        &field) == 0 &&
-                field->type == MSGPACK_OBJECT_STR) {
-                rd_kafka_header_add(headers,
-                                    hkey->str, flb_sds_len(hkey->str),
-                                    field->via.str.ptr, field->via.str.size);
+                                        &field) != 0) {
+                /* key absent from the record */
+                flb_plg_warn(ctx->ins,
+                             "header '%s': field '$%.*s' not found in record, "
+                             "skipping",
+                             hkey->str, (int) field_name_len, field_name);
+            }
+            else if (field->type == MSGPACK_OBJECT_STR) {
+                err = rd_kafka_header_add(headers,
+                                          hkey->str, flb_sds_len(hkey->str),
+                                          field->via.str.ptr,
+                                          field->via.str.size);
+                if (err != RD_KAFKA_RESP_ERR_NO_ERROR) {
+                    flb_plg_error(ctx->ins,
+                                  "header '%s': rd_kafka_header_add failed: %s",
+                                  hkey->str, rd_kafka_err2str(err));
+                }
+            }
+            else if (field->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
+                num_len = snprintf(num_buf, sizeof(num_buf),
+                                   "%" PRIu64, field->via.u64);
+                err = rd_kafka_header_add(headers,
+                                          hkey->str, flb_sds_len(hkey->str),
+                                          num_buf, num_len);
+                if (err != RD_KAFKA_RESP_ERR_NO_ERROR) {
+                    flb_plg_error(ctx->ins,
+                                  "header '%s': rd_kafka_header_add failed: %s",
+                                  hkey->str, rd_kafka_err2str(err));
+                }
+            }
+            else if (field->type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
+                num_len = snprintf(num_buf, sizeof(num_buf),
+                                   "%" PRId64, field->via.i64);
+                err = rd_kafka_header_add(headers,
+                                          hkey->str, flb_sds_len(hkey->str),
+                                          num_buf, num_len);
+                if (err != RD_KAFKA_RESP_ERR_NO_ERROR) {
+                    flb_plg_error(ctx->ins,
+                                  "header '%s': rd_kafka_header_add failed: %s",
+                                  hkey->str, rd_kafka_err2str(err));
+                }
+            }
+            else if (field->type == MSGPACK_OBJECT_FLOAT32 ||
+                     field->type == MSGPACK_OBJECT_FLOAT64) {
+                num_len = snprintf(num_buf, sizeof(num_buf),
+                                   "%g", field->via.f64);
+                err = rd_kafka_header_add(headers,
+                                          hkey->str, flb_sds_len(hkey->str),
+                                          num_buf, num_len);
+                if (err != RD_KAFKA_RESP_ERR_NO_ERROR) {
+                    flb_plg_error(ctx->ins,
+                                  "header '%s': rd_kafka_header_add failed: %s",
+                                  hkey->str, rd_kafka_err2str(err));
+                }
             }
             else {
+                /* boolean, array, map, nil — not useful as a header string */
                 flb_plg_warn(ctx->ins,
-                             "header '%s': field '$%.*s' not found in record "
-                             "or not a string, skipping",
-                             hkey->str, (int) field_name_len, field_name);
+                             "header '%s': field '$%.*s' has unsupported type "
+                             "(%d), skipping",
+                             hkey->str, (int) field_name_len, field_name,
+                             field->type);
             }
         }
         else {
             /* Static header: use the configured value verbatim */
-            rd_kafka_header_add(headers,
-                                hkey->str, flb_sds_len(hkey->str),
-                                hval->str, flb_sds_len(hval->str));
+            err = rd_kafka_header_add(headers,
+                                      hkey->str, flb_sds_len(hkey->str),
+                                      hval->str, flb_sds_len(hval->str));
+            if (err != RD_KAFKA_RESP_ERR_NO_ERROR) {
+                flb_plg_error(ctx->ins,
+                              "header '%s': rd_kafka_header_add failed: %s",
+                              hkey->str, rd_kafka_err2str(err));
+            }
         }
     }
 
