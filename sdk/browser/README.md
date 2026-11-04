@@ -14,7 +14,8 @@ Build target `fluent-bit-runtime`. The complete distributable is in
 Browser builds require a separate build directory; in-source configurations are
 rejected to keep generated SDK assets from overwriting source files.
 The CMake install component is `wasm-sdk`. No registry publication is performed.
-The package is deliberately private until the release gates below are met.
+The npm package remains private. Validated archives are published as experimental
+GitHub release assets as described below.
 
 Serve on the application origin over HTTPS (localhost is allowed), with:
 
@@ -214,6 +215,61 @@ commit (the PR merge commit for pull request runs). These are experimental,
 unsanitized browser assets, not a production release or an npm publication.
 Artifact availability does not imply the subsequent browser tests or the ASan
 job passed; check the workflow results before choosing a build.
+
+## Published experimental SDKs
+
+After both optimized and ASan jobs pass all CTest, SDK, browser lifecycle,
+startup-fault and demo tests, master pushes publish a GitHub prerelease named
+`wasm-browser-<full-commit>`. Each snapshot has its own tag and assets; it does
+not replace the latest stable Fluent Bit release. PRs and branch pushes only
+produce Actions artifacts. The `fluent-bit-browser-validated-<source-commit>`
+Actions artifact contains the same release payload after the complete matrix
+passes, including a browser test of the extracted archive and FTS ingestion.
+
+The staging release workflow calls this same build after creating a version
+release. The SDK is built from that release tag, not master. Releases that
+predate the browser profile are skipped. Releases published outside the staging
+workflow also trigger the browser workflow. For recovery, dispatch Browser
+WebAssembly with `release_tag` set to an existing version tag such as `v5.2.0`.
+A manual run without a release tag builds/tests without publishing.
+
+A version release provides these files (snapshots use the full commit instead
+of `v5.2.0`):
+
+- `fluent-bit-browser-experimental-v5.2.0.tar.gz`: complete optimized SDK.
+- `fluent-bit-browser-experimental-v5.2.0.tar.gz.sha256`: archive checksum.
+- `fluent-bit-browser-experimental-v5.2.0.json`: source/build commits, toolchain,
+  SDK version, archive SHA-256, and the successful validation run URL.
+
+Existing assets are never overwritten. Publication downloads the assets again
+and compares them with the validated payload; an existing asset with different
+bytes fails verification. The original archive's `build-info.json` describes
+its build-stage checks; the external JSON manifest records the subsequent
+complete matrix validation. Publication copies the exact tested archive bytes.
+
+### Consume from Fluent Bit Studio
+
+Pin an explicit release or snapshot in Studio's deployment pipeline. Download
+and verify the archive there, then serve the extracted SDK on Studio's own
+origin. Do not load workers directly from GitHub or automatically select a
+moving latest version in an open browser session.
+
+```sh
+flb_tag=v5.2.0
+flb_asset="fluent-bit-browser-experimental-$flb_tag"
+gh release download "$flb_tag" --repo fluent/fluent-bit \
+  --pattern "$flb_asset.tar.gz" --pattern "$flb_asset.tar.gz.sha256" \
+  --pattern "$flb_asset.json"
+sha256sum -c "$flb_asset.tar.gz.sha256"
+mkdir -p "public/wasm/$flb_tag"
+tar -xzf "$flb_asset.tar.gz" --strip-components=1 -C "public/wasm/$flb_tag"
+(cd "public/wasm/$flb_tag" && sha256sum -c SHA256SUMS)
+```
+
+Import `/wasm/v5.2.0/fluent-bit.js` in Studio, keeping the runtime, WASM and both
+worker scripts beside it. Preserve the HTTPS, COOP/COEP, MIME and CSP settings
+above. Use immutable caching for the versioned directory. Published archives
+remain experimental and do not imply a production support guarantee.
 
 ## Typed scripting processor
 
