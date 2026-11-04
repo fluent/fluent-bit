@@ -950,6 +950,13 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
     type = FLB_BITS_U64_HIGH(val);
     key  = FLB_BITS_U64_LOW(val);
 
+#ifdef __EMSCRIPTEN__
+    if (val == FLB_ENGINE_EV_WASM_DRAIN && config->cb_wasm_drain != NULL) {
+        config->cb_wasm_drain(config, FLB_WASM_DRAIN_BEGIN);
+        return 0;
+    }
+#endif
+
     /* Flush all remaining data */
     if (type == 1) {                  /* Engine type */
         if (key == FLB_ENGINE_STOP) {
@@ -1642,6 +1649,12 @@ int flb_engine_start(struct flb_config *config)
             }
         }
 
+#ifdef __EMSCRIPTEN__
+        if (config->cb_wasm_drain != NULL) {
+            config->cb_wasm_drain(config, FLB_WASM_DRAIN_CHECK);
+        }
+#endif
+
         if (rb_flush_flag) {
             flb_input_chunk_ring_buffer_collector(config, NULL);
         }
@@ -1675,6 +1688,11 @@ int flb_engine_shutdown(struct flb_config *config)
     struct flb_output_instance *output;
 #endif
 
+#ifdef __EMSCRIPTEN__
+    if (config->cb_wasm_drain != NULL) {
+        config->cb_wasm_drain(config, FLB_WASM_DRAIN_CANCEL);
+    }
+#endif
     config->is_running = FLB_FALSE;
     config->is_ingestion_active = FLB_FALSE;
 #ifdef __EMSCRIPTEN__

@@ -115,6 +115,11 @@ struct flb_config {
     int verbose;           /* Verbose mode (default OFF)     */
     time_t init_time;      /* Time when Fluent Bit started   */
 
+#ifdef __EMSCRIPTEN__
+    /* Browser SDK hook, invoked exclusively by the engine thread. */
+    void (*cb_wasm_drain)(struct flb_config *, int);
+#endif
+
     /* Used in library mode */
     pthread_t worker;               /* worker tid */
     flb_pipefd_t ch_data[2];        /* pipe to communicate caller with worker */
