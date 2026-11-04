@@ -25,6 +25,12 @@
 #include <sys/un.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <stdio.h>
+
+#ifdef FLB_SYSTEM_LINUX
+#include <sys/syscall.h>
+#include <linux/fs.h>
+#endif
 
 #include "unix_socket.h"
 #include "unix_socket_conn.h"
@@ -100,6 +106,20 @@ static int remove_existing_socket_file(char *socket_path)
     }
 
     return 0;
+}
+
+/* Never replace a path created after the initial occupied-path check. */
+static int publish_socket(int staging_fd, const char *listen_path)
+{
+#if defined(FLB_SYSTEM_LINUX) && defined(SYS_renameat2) && defined(RENAME_NOREPLACE)
+    /* Use the syscall directly to support libc versions without renameat2(). */
+    return syscall(SYS_renameat2, staging_fd, "s", AT_FDCWD, listen_path, RENAME_NOREPLACE);
+#elif defined(FLB_SYSTEM_MACOS) && defined(RENAME_EXCL)
+    return renameatx_np(staging_fd, "s", AT_FDCWD, listen_path, RENAME_EXCL);
+#else
+    errno = ENOTSUP;
+    return -1;
+#endif
 }
 
 /* Initialize plugin */
@@ -256,16 +276,21 @@ static int in_unix_socket_init(struct flb_input_instance *in,
 
     if (ctx->socket_permissions != NULL) {
         ret = fchmodat(staging_fd, "s", ctx->socket_acl, 0);
-        if (ret == 0) {
-            ret = renameat(staging_fd, "s", AT_FDCWD, ctx->listen);
+        if (ret != 0) {
+            flb_errno();
+            flb_plg_error(ctx->ins, "cannot set permission on '%s' to %04o",
+                          ctx->listen, ctx->socket_acl);
+        }
+        else {
+            ret = publish_socket(staging_fd, ctx->listen);
+            if (ret != 0) {
+                flb_errno();
+                flb_plg_error(ctx->ins, "cannot publish unix socket '%s' without replacing an existing path",
+                              ctx->listen);
+            }
         }
 
         if (ret != 0) {
-            flb_errno();
-
-            flb_plg_error(ctx->ins, "cannot set permission on '%s' to %04o",
-                          ctx->listen, ctx->socket_acl);
-
             unlinkat(staging_fd, "s", 0);
             close(staging_fd);
             rmdir(staging_dir);
