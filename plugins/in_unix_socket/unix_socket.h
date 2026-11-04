@@ -28,6 +28,7 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 #include <msgpack.h>
+#include <sys/stat.h>
 
 struct flb_in_unix_socket_config {
     int dgram_mode_flag;               /* Stateless mode flag (UDP alike) */
@@ -41,6 +42,8 @@ struct flb_in_unix_socket_config {
     char *listen;                      /* Unix socket path            */
     char *socket_permissions;          /* Unix socket ACL as string   */
     flb_sds_t socket_mode;             /* Unix socket mode (STREAM or DGRAM) */
+    int socket_published;             /* This instance owns the published inode */
+    struct stat socket_stat;
     int socket_acl;                    /* Unix socket ACL             */
     flb_sds_t raw_separator;           /* Unescaped string delimiterr */
     flb_sds_t separator;               /* String delimiter            */
