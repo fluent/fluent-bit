@@ -54,3 +54,22 @@ endforeach()
 # A reused cache must not silently retain a formerly enabled native plugin.
 check_profile(stale_cache "" -DPROFILE_TEST_MODE=native)
 check_profile(stale_cache "is not supported by the browser build profile" -DPROFILE_TEST_MODE=browser)
+
+# Test in-source rejection in a disposable fixture, never the real checkout.
+get_filename_component(source_root "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+set(in_source_fixture "${TEST_BINARY_ROOT}/in_source")
+file(COPY "${CMAKE_CURRENT_LIST_DIR}/profile/" DESTINATION "${in_source_fixture}")
+file(SHA256 "${source_root}/sdk/browser/fluent-bit-worker.js" worker_hash_before)
+execute_process(
+  COMMAND "${CMAKE_COMMAND}" -S "${in_source_fixture}" -B "${in_source_fixture}"
+    "-DFLB_SOURCE_DIR=${source_root}" -DFLB_WASM_PTHREAD_POOL_SIZE=4
+  RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE error)
+string(FIND "${output}${error}" "FLB_WASM_BROWSER requires an out-of-source build" error_index)
+if(result EQUAL 0 OR error_index EQUAL -1)
+  message(FATAL_ERROR "in_source: expected an out-of-source build error:\n${output}${error}")
+endif()
+file(SHA256 "${source_root}/sdk/browser/fluent-bit-worker.js" worker_hash_after)
+if(NOT worker_hash_before STREQUAL worker_hash_after)
+  message(FATAL_ERROR "in_source: source worker was modified")
+endif()
+message(STATUS "in_source: passed")

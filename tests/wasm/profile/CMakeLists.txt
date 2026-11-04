@@ -3,7 +3,9 @@ project(flb_wasm_profile_test NONE)
 
 # This fixture tests option policy only. The real dependency smoke target is
 # compiled and executed with Emscripten; no compiler is simulated here.
-get_filename_component(FLB_SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
+if(NOT DEFINED FLB_SOURCE_DIR)
+  get_filename_component(FLB_SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
+endif()
 set(PROFILE_TEST_MODE browser CACHE STRING "Profile policy test mode")
 if(PROFILE_TEST_MODE STREQUAL "native")
   set(FLB_WASM_BROWSER OFF)
