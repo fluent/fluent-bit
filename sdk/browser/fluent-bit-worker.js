@@ -383,6 +383,16 @@ async function execute(request) {
         await drainLogs();
         return null;
     }
+    if (method === 'drain') {
+        if (state !== 'running') { throw fail('E_STATE', 'Engine is not running'); }
+        response = await command(id, 5);
+        if (response.result === -2) {
+            throw fail('E_UNSUPPORTED', 'Drain requires memory-backed lib inputs and stdout/null outputs');
+        }
+        if (response.result !== 0) { throw fail('E_DRAIN', 'Engine drain failed'); }
+        await drainLogs();
+        return null;
+    }
     if (method === 'push') {
         if (state !== 'running') { throw fail('E_STATE', 'Engine is not running'); }
         response = await command(id, 3, payload.data, payload.input);

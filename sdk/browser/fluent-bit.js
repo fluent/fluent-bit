@@ -289,6 +289,13 @@ class FluentBit {
     }
     stop() { return this.#enqueue(() => this.#stop()); }
 
+    drain() {
+        return this.#enqueue(() => {
+            if (this.#state !== 'running') { throw error('E_STATE', 'Engine is not running'); }
+            return this.#send('drain');
+        });
+    }
+
     async push(options) {
         object(options, 'push options');
         if (typeof options.input !== 'string' || !/^[A-Za-z0-9_.-]{1,128}$/.test(options.input)) {
