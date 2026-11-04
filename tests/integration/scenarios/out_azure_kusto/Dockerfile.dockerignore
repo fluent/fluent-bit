@@ -1,0 +1,6 @@
+.git
+build*
+**/.venv
+**/__pycache__
+**/.pytest_cache
+tests/integration/results
