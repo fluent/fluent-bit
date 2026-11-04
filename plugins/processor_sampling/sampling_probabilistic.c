@@ -252,11 +252,20 @@ int sampling_probabilistic_logs(struct flb_processor_instance *ins, void *chunk_
     return ret == FLB_MP_CHUNK_RECORD_EOF ? FLB_PROCESSOR_SUCCESS : FLB_PROCESSOR_FAILURE;
 }
 
-static void sample_metric_map(struct sampling_settings *settings, struct cmt_map *map)
+static uint64_t sampling_label_hash(cfl_sds_t key, cfl_sds_t value)
+{
+    uint64_t hash;
+
+    hash = sampling_hash(key, cfl_sds_len(key), UINT64_C(14695981039346656037));
+    hash = sampling_hash("\0", 1, hash);
+    return sampling_hash(value, cfl_sds_len(value), hash);
+}
+
+static void sample_metric_map(struct sampling_settings *settings, struct cmt_map *map,
+                               uint64_t context_labels_hash)
 {
     uint64_t base;
     uint64_t hash;
-    uint64_t pair_hash;
     struct cfl_list *head;
     struct cfl_list *tmp;
     struct cfl_list *key_head;
@@ -267,6 +276,7 @@ static void sample_metric_map(struct sampling_settings *settings, struct cmt_map
 
     base = sampling_hash(map->opts->fqname, cfl_sds_len(map->opts->fqname),
                          UINT64_C(14695981039346656037));
+    base ^= context_labels_hash;
     if (map->metric_static_set && !sampling_keep(settings, base)) {
         map->metric_static_set = 0;
     }
@@ -280,14 +290,10 @@ static void sample_metric_map(struct sampling_settings *settings, struct cmt_map
             }
             key = cfl_list_entry(key_head, struct cmt_map_label, _head);
             value = cfl_list_entry(value_head, struct cmt_map_label, _head);
-            pair_hash = sampling_hash(key->name, cfl_sds_len(key->name),
-                                      UINT64_C(14695981039346656037));
-            pair_hash = sampling_hash("\0", 1, pair_hash);
+            /* NULL values represent absent labels, not empty string values. */
             if (value->name) {
-                pair_hash = sampling_hash(value->name, cfl_sds_len(value->name), pair_hash);
+                hash ^= sampling_label_hash(key->name, value->name);
             }
-            /* Label order must not change the series decision. */
-            hash ^= pair_hash;
             key_head = key_head->next;
         }
         if (!sampling_keep(settings, hash)) {
@@ -299,7 +305,7 @@ static void sample_metric_map(struct sampling_settings *settings, struct cmt_map
 #define SAMPLE_FAMILIES(list, type, destroy) \
     cfl_list_foreach_safe(head, tmp, &in_cmt->list) { \
         struct type *family = cfl_list_entry(head, struct type, _head); \
-        sample_metric_map(settings, family->map); \
+        sample_metric_map(settings, family->map, context_labels_hash); \
         if (!family->map->metric_static_set && cfl_list_is_empty(&family->map->metrics)) { \
             destroy(family); \
         } \
@@ -312,6 +318,14 @@ int sampling_probabilistic_metrics(struct flb_processor_instance *ins, struct cm
     struct sampling_settings *settings = ctx->plugin_context;
     struct cfl_list *head;
     struct cfl_list *tmp;
+    struct cmt_label *label;
+    uint64_t context_labels_hash = 0;
+
+    /* Use the same pair hash for context and per-point labels. */
+    cfl_list_foreach(head, &in_cmt->static_labels->list) {
+        label = cfl_list_entry(head, struct cmt_label, _head);
+        context_labels_hash ^= sampling_label_hash(label->key, label->val);
+    }
 
     SAMPLE_FAMILIES(counters, cmt_counter, cmt_counter_destroy);
     SAMPLE_FAMILIES(gauges, cmt_gauge, cmt_gauge_destroy);
