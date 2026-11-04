@@ -158,3 +158,24 @@ test('fatal startup cleanup marks the owner closing before notifying its parent'
     assert.equal(sdk.run('closingReply'), true);
     assert.equal(sdk.run('state'), 'failed');
 });
+
+
+test('drain validates state, reports unsupported pipelines and waits for log delivery', async () => {
+    const sdk = worker();
+    sdk.run('state = "stopped"');
+    await assert.rejects(sdk.request('drain'), {code: 'E_STATE'});
+    sdk.run('state = "running"; command = async () => ({result: -2})');
+    await assert.rejects(sdk.request('drain'), {code: 'E_UNSUPPORTED'});
+    sdk.run('command = async () => ({result: -1})');
+    await assert.rejects(sdk.request('drain'), {code: 'E_DRAIN'});
+    sdk.run(`command = async () => ({result: 0});
+        let releaseLogs;
+        drainLogs = () => new Promise(resolve => { releaseLogs = resolve; });`);
+    let complete = false;
+    const draining = sdk.request('drain').then(() => { complete = true; });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(complete, false);
+    sdk.run('releaseLogs()');
+    await draining;
+    assert.equal(complete, true);
+});

@@ -5,6 +5,7 @@ import base64
 import hashlib
 import functools
 import io
+import re
 from pathlib import Path
 import subprocess
 import ssl
@@ -12,6 +13,7 @@ import tempfile
 import threading
 
 from playwright.sync_api import sync_playwright
+from browser_page_test import assert_no_sanitizer_errors
 from browser_server import DEFAULT_BUILD_DIR
 from browser_server import BrowserHandler, create_server, development_certificate, server_tls_context
 
@@ -126,7 +128,7 @@ def check_pthread_bootstrap(page, server, workers):
     ]
     cases = [(name, source, expected, position)
              for name, source, expected in cases
-             for position in ([1, 4] if expected else [0])]
+             for position in ([1, server.pthread_pool_size] if expected else [0])]
     for name, source, expected, position in cases:
         # Nested worker entry requests are not consistently intercepted by
         # Playwright page routing. Inject actual HTTP responses at the server.
@@ -176,6 +178,9 @@ def main():
                              check=True, capture_output=True).stdout
         pin = base64.b64encode(hashlib.sha256(der).digest()).decode()
         with create_server(args.build_dir, 0, tls_context=server_tls_context(cert, key)) as server:
+            worker_source = (args.build_dir / 'sdk/browser/fluent-bit-worker.js').read_text()
+            server.pthread_pool_size = int(re.search(r'const PTHREAD_POOL_SIZE = (\d+);',
+                                                    worker_source).group(1))
             if args.pthread_only:
                 server.RequestHandlerClass = functools.partial(PthreadFaultHandler, build_dir=args.build_dir)
             thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -186,7 +191,11 @@ def main():
                             args=[f'--ignore-certificate-errors-spki-list={pin}']) as browser:
                         page = browser.new_page()
                         page.set_default_timeout(120000)
-                        page.on('console', lambda event: print(event.text, flush=True))
+                        diagnostics = []
+                        def console_message(event):
+                            diagnostics.append(event.text)
+                            print(event.text, flush=True)
+                        page.on('console', console_message)
                         errors = []
                         workers = set()
                         worker_phases = {}
@@ -229,6 +238,7 @@ def main():
                         assert not workers, (
                             'SDK workers survived destroy: '
                             f'{[(worker.url, worker_phases[worker]) for worker in workers]}')
+                        assert_no_sanitizer_errors('\n'.join(diagnostics + result.get('logs', [])))
                         print(result)
             finally:
                 server.shutdown()

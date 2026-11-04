@@ -254,3 +254,19 @@ test('fatal closure acknowledgement delays the termination fallback', async () =
     await new Promise(resolve => setTimeout(resolve, 300));
     assert.equal(instances[0].terminated, true);
 });
+
+
+test('drain stays in FIFO order between push and stop on a warm instance', async () => {
+    const sdk = await createFluentBit(defaults);
+    await assert.rejects(sdk.drain(), {code: 'E_STATE'});
+    const methods = [];
+    reply = (worker, message) => {
+        if (message.type !== 'request') { return; }
+        methods.push(message.method);
+        worker.emit({type: 'response', id: message.id, ok: true, value: null});
+    };
+    await Promise.all([sdk.start({yaml: 'pipeline: {}'}),
+        sdk.push({input: 'app', records: [{message: 'queued'}]}), sdk.drain(), sdk.stop()]);
+    assert.deepEqual(methods, ['start', 'push', 'drain', 'stop']);
+    await sdk.destroy();
+});
