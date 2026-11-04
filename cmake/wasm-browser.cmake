@@ -1,5 +1,11 @@
 # Experimental browser cross-compilation profile, distinct from FLB_WASM
 # (which embeds WAMR in a native Fluent Bit process).
+if(PROJECT_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
+  message(FATAL_ERROR
+    "FLB_WASM_BROWSER requires an out-of-source build. Use: "
+    "emcmake cmake -S . -B build-wasm -DFLB_WASM_BROWSER=ON")
+endif()
+
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   message(FATAL_ERROR
     "FLB_WASM_BROWSER requires Emscripten. Use: "
