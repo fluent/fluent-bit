@@ -22,6 +22,7 @@
 #include <string.h>
 #include <time.h>
 #include <ctype.h>
+#include <math.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -632,7 +633,7 @@ int64_t flb_utils_size_to_binary_bytes(const char *size)
     len = strlen(size);
     val = atof(size);
 
-    if (len == 0) {
+    if (len == 0 || !isfinite(val)) {
         return -1;
     }
 
@@ -646,6 +647,10 @@ int64_t flb_utils_size_to_binary_bytes(const char *size)
     }
 
     if (plen == 0) {
+        /* INT64_MAX rounds to 2^63 as a double, so the upper bound is exclusive. */
+        if (val < -9223372036854775808.0 || val >= 9223372036854775808.0) {
+            return -1;
+        }
         return (int64_t)val;
     }
     else if (plen > 3) {
