@@ -14,7 +14,8 @@ MAX_HEADERS = 32768
 
 @pytest.fixture
 def listener(tmp_path, request):
-    header_limit, workers = getattr(request, "param", (None, 1))
+    parameters = getattr(request, "param", (None, 1))
+    header_limit, workers = parameters[:2]
     config = tmp_path / "http1_headers.yaml"
     configuration = """service:
   flush: 1
@@ -39,6 +40,8 @@ pipeline:
             f"      http_server.http1_max_header_size: {header_limit}\n"
             "      http_server.buffer_max_size: 64M",
         )
+    if len(parameters) > 2:
+        configuration = configuration.replace("  outputs:\n", parameters[2] + "  outputs:\n")
     config.write_text(configuration)
     service = FluentBitTestService(str(config), extra_env={
         "HEADER_TEST_WORKERS": str(workers),
@@ -134,3 +137,28 @@ def test_http1_configured_header_limit(listener, limit):
                 assert sock.recv(1024) == b"", "configured header limit was not enforced"
             except (BrokenPipeError, ConnectionResetError):
                 pass
+
+
+@pytest.mark.parametrize("listener", [
+    (None, 1, "      http_server.idle_timeout: 0\n      http_server.max_connections: 1\n"),
+], indirect=True, ids=["no-timeout-one-slot"])
+@pytest.mark.parametrize("fragment", [1, 1024])
+def test_http1_invalid_request_line_releases_slot(listener, fragment):
+    good_request = b"GET /health HTTP/1.1\r\nHost: localhost\r\n\r\n"
+    for malformed in (b"ABCDEFGHIJKL", b"GET /bad\r", b"GET /bad\n"):
+        for keepalive in (False, True):
+            with socket.create_connection(("127.0.0.1", listener), timeout=5) as sock:
+                if keepalive:
+                    sock.sendall(good_request)
+                    assert response(sock) == 200
+                for offset in range(0, len(malformed), fragment):
+                    sock.sendall(malformed[offset:offset + fragment])
+                    time.sleep(0.002)
+                try:
+                    assert sock.recv(1024) == b"", "invalid request line retained the slot"
+                except ConnectionResetError:
+                    pass
+            # The only slot must become available without an idle timeout.
+            with socket.create_connection(("127.0.0.1", listener), timeout=5) as sock:
+                sock.sendall(good_request)
+                assert response(sock) == 200
