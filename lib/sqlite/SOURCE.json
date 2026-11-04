@@ -1,9 +1,5 @@
 {
   "archives": {
-    "amalgamation": {
-      "sha3_256": "92281c86e2957f9b9305890f9ac04204caa7b677cc868dc326d942689df28e30",
-      "url": "https://www.sqlite.org/2026/sqlite-amalgamation-3540100.zip"
-    },
     "src": {
       "sha3_256": "877c6f4996ce7adb368686bce21638de9e3d91534832ad3d9d119037d1bc22ad",
       "url": "https://www.sqlite.org/2026/sqlite-src-3540100.zip"
