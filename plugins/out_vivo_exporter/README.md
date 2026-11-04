@@ -78,10 +78,14 @@ to the signal. It follows the [OTLP JSON encoding rules](https://opentelemetry.i
   They use a `kvlistValue` with `fluentbit.type` = `"uint64"` and
   `fluentbit.value` = the exact decimal string. Nil becomes an empty AnyValue.
   Maps with non-string keys use a typed `kvlistValue`: `fluentbit.type` is
-  `"msgpack.map"`, and `fluentbit.value` is an array of `[key, value] AnyValue
+  `"msgpack.map"`, and `fluentbit.value` is an array of `[key, value]` AnyValue
   pairs. This preserves key types, ordering, and integer/string key collisions.
   An attributes map with non-string keys is wrapped in one `fluentbit.map`
-  attribute containing that representation.
+  attribute containing that representation. Maps containing any reserved key
+  (`fluentbit.type`, `fluentbit.value`, `fluentbit.ext_type`, or `fluentbit.map`)
+  also use the typed pair representation, including string-keyed maps. This
+  applies recursively and to attribute maps, so user data cannot impersonate
+  a typed value or an attribute wrapper. Other string-keyed maps are unchanged.
 * MessagePack extension values use a `kvlistValue` with `fluentbit.type` =
   `"msgpack.ext"`, `fluentbit.ext_type` = the signed extension code as an
   `intValue`, and `fluentbit.value` = the payload as a `bytesValue`. In v1 these
