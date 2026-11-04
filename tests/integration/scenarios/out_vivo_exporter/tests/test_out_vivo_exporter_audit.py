@@ -162,7 +162,7 @@ def test_oversized_entry_keeps_history(exporter):
     service, urls = exporter
     assert requests.post(urls["INPUT"] + "/audit", json={"message": "retained"}, timeout=5).ok
     before = poll(service, urls["EXPORTER"] + "/api/v1/logs", lambda r: "retained" in r.text)
-    assert requests.post(urls["INPUT"] + "/audit", json={"message": "x" * 600000}, timeout=5).ok
+    assert requests.post(urls["INPUT"] + "/audit", json=[{"message": "must not publish a prefix"}, {"message": "x" * 600000}], timeout=5).ok
     after = poll(service, urls["EXPORTER"] + "/api/v1/logs",
                  lambda r: int(r.headers["vivo-stream-rejected-entries"]) > 0)
     assert before.text == after.text
@@ -291,12 +291,16 @@ def test_forward_bulk_metrics_contexts(exporter):
     for index in range(2):
         payload = ExportMetricsServiceRequest()
         metric = payload.resource_metrics.add().scope_metrics.add().metrics.add(name=f"bulk_{index}")
-        metric.gauge.data_points.add(time_unix_nano=1789516800123456789, as_double=1.0)
+        metric.gauge.data_points.add(time_unix_nano=1789516800123456789, as_double=1.5)
         assert requests.post(urls["OTEL"] + "/v1/metrics", data=payload.SerializeToString(),
                              headers={"Content-Type": "application/x-protobuf"}, timeout=5).ok
     response = poll(service, urls["EXPORTER"] + "/api/v1/metrics", lambda r: "bulk_1" in r.text)
     contexts = [json.loads(line) for line in response.text.splitlines()]
     assert len(contexts) == 2
+    # Native point metadata contains embedded MessagePack bytes, which v1 JSON
+    # cannot round-trip. Forward fixtures retain the external OTLP metadata.
+    for context in contexts:
+        context["meta"]["cmetrics"].pop("__cmetrics_native_metadata_v1", None)
     cursor = response.headers["vivo-stream-tail-id"]
     packed_contexts = b"".join(pack_forward(context) for context in contexts)
     forwarded = pack_forward(["bulk", packed_contexts, {"fluent_signal": 1}])
@@ -340,3 +344,134 @@ def pack_forward(value):
         return (b"\xdf" + struct.pack(">I", len(value)) +
                 b"".join(pack_forward(k) + pack_forward(v) for k, v in value.items()))
     raise TypeError(type(value))
+
+
+@pytest.mark.parametrize("exporter", [{"stream_page_size": "4096"}], indirect=True)
+def test_large_grouped_log_batch_is_paginated(exporter):
+    service, urls = exporter
+    resources = []
+    for group in range(2):
+        resources.append({
+            "resource": {"attributes": [{"key": "service.name",
+                          "value": {"stringValue": f"split-service-{group}"}}]},
+            "scopeLogs": [{"scope": {"name": f"split-scope-{group}"}, "logRecords": [
+                {"timeUnixNano": "1789516800123456789",
+                 "body": {"stringValue": f"record-{index:02}-" + "x" * 300}}
+                for index in range(group * 10, (group + 1) * 10)
+            ]}],
+        })
+    assert requests.post(urls["OTEL"] + "/v1/logs", json={"resourceLogs": resources}, timeout=5).ok
+    poll(service, urls["EXPORTER"] + "/api/v2/logs", lambda r: bool(r.json()["entries"]))
+    for version in (1, 2):
+        cursor = 0
+        bodies = []
+        while True:
+            response = requests.get(urls["EXPORTER"] + f"/api/v{version}/logs?from={cursor}", timeout=5)
+            assert response.ok and len(response.content) <= 4096
+            assert response.headers["vivo-stream-rejected-entries"] == "0"
+            if version == 1:
+                for line in response.text.splitlines():
+                    entry = json.loads(line)
+                    assert len(entry["records"]) == len(entry["record_groups"])
+                    for record, group in zip(entry["records"], entry["record_groups"]):
+                        index = int(record[1]["log"][7:9])
+                        assert group["attributes"]["scope"]["name"] == f"split-scope-{index // 10}"
+                        bodies.append(record[1]["log"])
+            else:
+                for entry in response.json()["entries"]:
+                    for resource in entry["payload"]["resourceLogs"]:
+                        scope = resource["scopeLogs"][0]
+                        record = scope["logRecords"][0]
+                        body = record["body"]["stringValue"]
+                        index = int(body[7:9])
+                        assert scope["scope"]["name"] == f"split-scope-{index // 10}"
+                        assert f"split-service-{index // 10}" in json.dumps(resource["resource"])
+                        assert record["timeUnixNano"] == "1789516800123456789"
+                        bodies.append(body)
+            next_cursor = int(response.headers["vivo-stream-next-id"])
+            assert next_cursor > cursor
+            cursor = next_cursor
+            if cursor == int(response.headers["vivo-stream-tail-id"]):
+                break
+        assert bodies == [f"record-{index:02}-" + "x" * 300 for index in range(20)]
+        assert cursor > 1
+
+
+@pytest.mark.parametrize("signal,signal_id", [("metrics", 1), ("traces", 2)])
+@pytest.mark.parametrize("exporter", [{"stream_page_size": "4096"}], indirect=True)
+def test_large_forward_context_batch_is_paginated(exporter, signal, signal_id):
+    service, urls = exporter
+    if signal == "metrics":
+        payload = {"resourceMetrics": [{"scopeMetrics": [{"metrics": [
+            {"name": "split_metric", "gauge": {"dataPoints": [
+                {"timeUnixNano": "1789516800123456789", "asDouble": 1.5}]}}
+        ]}]}]}
+        marker = "split_metric"
+    else:
+        payload = {"resourceSpans": [{"scopeSpans": [{"spans": [
+            {"name": "split_span", "traceId": "12" * 16, "spanId": "34" * 8,
+             "startTimeUnixNano": "1789516800123456789",
+             "endTimeUnixNano": "1789516800124456789"}
+        ]}]}]}
+        marker = "split_span"
+    assert requests.post(urls["OTEL"] + f"/v1/{signal}", json=payload, timeout=5).ok
+    response = poll(service, urls["EXPORTER"] + f"/api/v1/{signal}", lambda r: marker in r.text)
+    context = pack_forward(json.loads(response.text))
+    start_cursor = int(response.headers["vivo-stream-tail-id"])
+    # Forward accepts a list of metric contexts, but one trace context per message.
+    packet = (pack_forward(["split", context * 20, {"fluent_signal": signal_id}])
+              if signal == "metrics" else
+              pack_forward(["split", context, {"fluent_signal": signal_id}]) * 20)
+    with socket.create_connection(("127.0.0.1", int(os.environ["AUDIT_FORWARD_PORT"])), timeout=5) as conn:
+        conn.sendall(packet)
+    poll(service, urls["EXPORTER"] + f"/api/v2/{signal}?from={start_cursor}",
+         lambda r: bool(r.json()["entries"]))
+    for version in (1, 2):
+        cursor = start_cursor
+        count = 0
+        while True:
+            response = requests.get(urls["EXPORTER"] + f"/api/v{version}/{signal}?from={cursor}", timeout=5)
+            assert response.ok and len(response.content) <= 4096
+            assert response.headers["vivo-stream-rejected-entries"] == "0"
+            if version == 1:
+                count += len(response.text.splitlines())
+            else:
+                resource_key = "resourceMetrics" if signal == "metrics" else "resourceSpans"
+                scope_key = "scopeMetrics" if signal == "metrics" else "scopeSpans"
+                items_key = "metrics" if signal == "metrics" else "spans"
+                count += sum(len(scope[items_key]) for entry in response.json()["entries"]
+                             for resource in entry["payload"][resource_key]
+                             for scope in resource[scope_key])
+            next_cursor = int(response.headers["vivo-stream-next-id"])
+            assert next_cursor > cursor
+            cursor = next_cursor
+            if cursor == int(response.headers["vivo-stream-tail-id"]):
+                break
+        assert count == 20
+        assert cursor > start_cursor + 1
+
+
+@pytest.mark.parametrize("exporter", [{"stream_queue_size": "4000", "stream_page_size": "2048"}],
+                         indirect=True)
+def test_split_batch_retention_is_bounded(exporter):
+    service, urls = exporter
+    batch = [{"index": index, "message": "x" * 100} for index in range(20)]
+    assert requests.post(urls["INPUT"] + "/split", json=batch, timeout=5).ok
+    first = poll(service, urls["EXPORTER"] + "/api/v2/logs", lambda r: bool(r.json()["entries"]))
+    oldest = int(first.headers["vivo-stream-oldest-id"])
+    tail = int(first.headers["vivo-stream-tail-id"])
+    assert 0 < oldest < tail
+    assert first.headers["vivo-stream-evicted-entries"] == str(oldest)
+    assert first.headers["vivo-stream-rejected-entries"] == "0"
+    assert int(first.headers["vivo-stream-retained-bytes"]) <= 4000
+    seen = []
+    cursor = oldest
+    while cursor < tail:
+        response = requests.get(urls["EXPORTER"] + f"/api/v1/logs?from={cursor}", timeout=5)
+        assert response.ok and len(response.content) <= 2048
+        seen.extend(record[1]["index"] for line in response.text.splitlines()
+                    for record in json.loads(line)["records"])
+        next_cursor = int(response.headers["vivo-stream-next-id"])
+        assert next_cursor > cursor
+        cursor = next_cursor
+    assert seen == list(range(seen[0], 20))
