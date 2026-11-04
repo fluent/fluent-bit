@@ -95,8 +95,9 @@ unwrapped when it is the sole body field. Other log bodies remain structured
 kvlist values. This follows the information available after Fluent Bit ingestion;
 it is not a byte-for-byte replay of the original OTLP request.
 
-Each retained entry represents one atomic Fluent Bit chunk and may contain many
-records or contexts. v1 and v2 share entry IDs and retention.
+Each retained entry contains one or more records or contexts. Chunks exceeding
+entry limits are split at log-record or metric/trace-context boundaries, preserving
+order and log groups. Both API versions share entry IDs and retention.
 
 `/api/v2/internal/metrics` returns one OTLP ExportMetricsServiceRequest JSON object
 as a current snapshot, with no stream envelope or cursor. The v1 internal snapshot
@@ -162,10 +163,12 @@ entire page. Multiple viewers never acknowledge or delete entries.
 `empty_stream_on_read On` is rejected: implicit acknowledgment is incompatible
 with shared inspection. `stream_queue_size` (default 20M) is a positive retained
 payload byte limit **per signal**, counting the combined v1 and v2 representations.
-They are prepared once, then inserted or rejected atomically. Oldest entries are
-evicted only until an incoming entry fits. An oversized entry is rejected without
-evicting history and logged as an output failure. No partial chunk is published
-on a serialization failure.
+All entries for a chunk are prepared before insertion, then published under one
+queue lock. Oldest entries are evicted only until an incoming entry fits; a batch
+larger than the queue can evict its own earliest entries. A single log record or
+metric/trace context that cannot fit is rejected, along with the rest of its
+chunk, without evicting history. This is logged as an output failure. No partial
+chunk is published on a serialization failure.
 
 `stream_page_size` (default 1M, minimum 1K) bounds uncompressed stream response
 bodies. v2 reserves 512 bytes for its page envelope and space for each entry ID;
