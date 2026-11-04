@@ -508,6 +508,7 @@ int flb_http1_server_session_init(struct flb_http1_server_session *session,
 
     session->initialized = FLB_TRUE;
     session->header_scan_offset = 0;
+    session->request_line_state = MK_ST_REQ_METHOD;
     session->headers_complete = FLB_FALSE;
 
     dummy_mk_http_session_init(&session->inner_session, &session->inner_server);
@@ -572,6 +573,28 @@ int flb_http1_server_session_ingest(struct flb_http1_server_session *session,
         while (session->header_scan_offset < available &&
                session->header_scan_offset < header_limit) {
             offset = ++session->header_scan_offset;
+
+            /* Preserve early request-line rejection while scanning only new bytes. */
+            if (session->request_line_state == MK_ST_REQ_METHOD) {
+                if (data[offset - 1] == ' ') {
+                    session->request_line_state = MK_ST_REQ_URI;
+                }
+                else if (offset > 11) {
+                    /* Monkey rejects a non-space method byte at index > 10. */
+                    session->stream.status = HTTP_STREAM_STATUS_ERROR;
+                    return HTTP_SERVER_PROVIDER_ERROR;
+                }
+            }
+            else if (session->request_line_state == MK_ST_REQ_URI) {
+                if (data[offset - 1] == ' ') {
+                    session->request_line_state = MK_ST_REQ_PROT_VERSION;
+                }
+                else if (data[offset - 1] == '\r' || data[offset - 1] == '\n') {
+                    session->stream.status = HTTP_STREAM_STATUS_ERROR;
+                    return HTTP_SERVER_PROVIDER_ERROR;
+                }
+            }
+
             if (offset >= 4 && memcmp(data + offset - 4, "\r\n\r\n", 4) == 0) {
                 session->headers_complete = FLB_TRUE;
                 break;
@@ -605,6 +628,7 @@ int flb_http1_server_session_ingest(struct flb_http1_server_session *session,
 
         http1_evict_request(session);
         session->header_scan_offset = 0;
+        session->request_line_state = MK_ST_REQ_METHOD;
         session->headers_complete = FLB_FALSE;
     }
     else if (result == MK_HTTP_PARSER_PENDING) {
