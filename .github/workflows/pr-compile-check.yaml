@@ -148,10 +148,10 @@ jobs:
       - name: Checkout Fluent Bit code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Compile w/ CXX support
+      - name: Compile without CXX or SQLite
         run: |
           export CXX=/bin/false
           export nparallel=$(( $(getconf _NPROCESSORS_ONLN) > 8 ? 8 : $(getconf _NPROCESSORS_ONLN) ))
-          cmake -DFLB_PREFER_SYSTEM_LIB_KAFKA=ON ../
+          cmake -DFLB_PREFER_SYSTEM_LIB_KAFKA=ON -DFLB_SQLDB=Off ../
           make -j $nparallel
         working-directory: build
