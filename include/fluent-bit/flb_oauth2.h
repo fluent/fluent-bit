@@ -46,6 +46,8 @@ struct flb_oauth2_config {
     flb_sds_t scope;
     flb_sds_t audience;
     flb_sds_t resource;
+    flb_sds_t authorization_details;
+    flb_sds_t authorization_details_file;
     flb_sds_t jwt_key_file;
     flb_sds_t jwt_cert_file;
     flb_sds_t jwt_aud;
