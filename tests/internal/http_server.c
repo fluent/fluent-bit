@@ -987,10 +987,16 @@ void test_http1_header_limit_binary_units(void)
     } cases[] = {
         {"32KiB", 32768},
         {"64KiB", 65536},
+        {"64kib", 65536},
+        {"1.5KiB", 1536},
         {"1MiB", 1024 * 1024},
         {"1GiB", 1024 * 1024 * 1024},
         {"65536", 65536},
         {"0", 32768}
+    };
+    char *invalid_values[] = {
+        "invalid", "-1", "bogus123", "64KiB5", "32KiBgarbage", "64 KiB", "",
+        "NaN", "Infinity", "1e999", "9223372036854775808"
     };
     size_t index;
     int result;
@@ -1008,10 +1014,58 @@ void test_http1_header_limit_binary_units(void)
         TEST_CHECK(options.http1_max_header_size == cases[index].expected);
     }
 
-    server_config.http1_max_header_size = "invalid";
-    TEST_CHECK(flb_input_http_server_options_init(&options, &input, 0, NULL, NULL) == -1);
-    server_config.http1_max_header_size = "-1";
-    TEST_CHECK(flb_input_http_server_options_init(&options, &input, 0, NULL, NULL) == -1);
+    for (index = 0; index < sizeof(invalid_values) / sizeof(invalid_values[0]); index++) {
+        server_config.http1_max_header_size = invalid_values[index];
+        TEST_CHECK_(flb_input_http_server_options_init(&options, &input, 0, NULL, NULL) == -1,
+                    "accepted invalid header limit: %s", invalid_values[index]);
+    }
+}
+
+void test_http1_rejects_invalid_partial_request_line(void)
+{
+    struct flb_http_server server;
+    struct flb_http_server_session *session;
+    struct {
+        char *data;
+        int expected;
+    } cases[] = {
+        {"ABCDEFGHIJK", HTTP_SERVER_SUCCESS},
+        {"ABCDEFGHIJKL", HTTP_SERVER_PROVIDER_ERROR},
+        {"GET /bad\r", HTTP_SERVER_PROVIDER_ERROR},
+        {"GET /bad\n", HTTP_SERVER_PROVIDER_ERROR},
+        {"GET /query?q=x\n", HTTP_SERVER_PROVIDER_ERROR},
+        {"GET /good", HTTP_SERVER_SUCCESS},
+        {"GET /good HTTP/1.1\r\n", HTTP_SERVER_SUCCESS},
+        {"GET /good HTTP/1.1\r\nHost: localhost\r\n", HTTP_SERVER_SUCCESS}
+    };
+    size_t index;
+    size_t offset;
+    size_t length;
+    int fragmented;
+    int result;
+
+    memset(&server, 0, sizeof(server));
+    server.buffer_max_size = HTTP_SERVER_MAXIMUM_BUFFER_SIZE;
+    for (index = 0; index < sizeof(cases) / sizeof(cases[0]); index++) {
+        length = strlen(cases[index].data);
+        for (fragmented = 0; fragmented <= 1; fragmented++) {
+            session = flb_http_server_session_create(HTTP_PROTOCOL_VERSION_11);
+            if (!TEST_CHECK(session != NULL)) {
+                return;
+            }
+            session->parent = &server;
+            for (offset = 0; offset < length; offset += fragmented ? 1 : length) {
+                result = flb_http_server_session_ingest(session,
+                             (unsigned char *) cases[index].data + offset,
+                             fragmented ? 1 : length);
+                if (fragmented && offset + 1 < length) {
+                    TEST_CHECK(result == HTTP_SERVER_SUCCESS);
+                }
+            }
+            TEST_CHECK_(result == cases[index].expected, "request line: %s", cases[index].data);
+            flb_http_server_session_destroy(session);
+        }
+    }
 }
 
 /* Exercise every delimiter split and SDS growth without timing assertions. */
@@ -1087,6 +1141,7 @@ void test_http1_fragmented_header_limit(void)
 }
 
 TEST_LIST = {
+    { "http1_rejects_invalid_partial_request_line", test_http1_rejects_invalid_partial_request_line },
     { "http1_header_limit_binary_units", test_http1_header_limit_binary_units },
     { "http1_fragmented_header_limit", test_http1_fragmented_header_limit },
     { "http_server_accept_reaps_stale_sessions_with_limit",
