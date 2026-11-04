@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_pthread.h>
 #include <fluent-bit/flb_downstream_worker.h>
 #include <fluent-bit/flb_pipe.h>
+#include <fluent-bit/flb_utils.h>
 #include <string.h>
 
 #include <fluent-bit/http_server/flb_http_server.h>
@@ -230,6 +231,7 @@ static int flb_http_server_apply_options(struct flb_http_server *session,
 
     session->downstream = NULL;
     session->buffer_max_size = options->buffer_max_size;
+    session->http1_max_header_size = options->http1_max_header_size;
     session->buffer_chunk_size = options->buffer_chunk_size;
     session->max_connections = options->max_connections;
     cfl_atomic_store(&session->active_connections, 0);
@@ -1035,6 +1037,7 @@ static int flb_http_server_worker_initialize(struct flb_downstream_worker *worke
     options.system_context = parent->system_context;
     options.idle_timeout = parent->idle_timeout;
     options.buffer_max_size = parent->buffer_max_size;
+    options.http1_max_header_size = parent->http1_max_header_size;
     options.buffer_chunk_size = parent->buffer_chunk_size;
     options.max_connections = parent->max_connections;
     options.connection_counter = parent->connection_counter;
@@ -1220,6 +1223,7 @@ void flb_http_server_options_init(struct flb_http_server_options *options)
     memset(options, 0, sizeof(struct flb_http_server_options));
 
     options->buffer_max_size = HTTP_SERVER_MAXIMUM_BUFFER_SIZE;
+    options->http1_max_header_size = HTTP_SERVER_DEFAULT_HTTP1_MAX_HEADER_SIZE;
     options->buffer_chunk_size = HTTP_SERVER_INITIAL_BUFFER_SIZE;
     options->idle_timeout = HTTP_SERVER_DEFAULT_IDLE_TIMEOUT;
     options->max_connections = 0;
@@ -1269,6 +1273,7 @@ int flb_input_http_server_options_init(struct flb_http_server_options *options,
                                        void *user_data)
 {
     int protocol_version;
+    int64_t header_limit;
     size_t buffer_max_size;
     int result;
     struct flb_http_server_config *server_config;
@@ -1307,6 +1312,16 @@ int flb_input_http_server_options_init(struct flb_http_server_options *options,
 
     if (server_config != NULL) {
         options->idle_timeout = server_config->idle_timeout;
+        if (server_config->http1_max_header_size != NULL) {
+            header_limit = flb_utils_size_to_binary_bytes(server_config->http1_max_header_size);
+            if (header_limit < 0 || (uint64_t) header_limit > SIZE_MAX) {
+                flb_error("[http_server] invalid http_server.http1_max_header_size");
+                return -1;
+            }
+            if (header_limit > 0) {
+                options->http1_max_header_size = (size_t) header_limit;
+            }
+        }
         if (server_config->buffer_chunk_size > 0) {
             options->buffer_chunk_size = server_config->buffer_chunk_size;
         }
@@ -1327,6 +1342,10 @@ int flb_http_server_init_with_options(
 
     if (options->buffer_max_size == 0) {
         options->buffer_max_size = HTTP_SERVER_MAXIMUM_BUFFER_SIZE;
+    }
+
+    if (options->http1_max_header_size == 0) {
+        options->http1_max_header_size = HTTP_SERVER_DEFAULT_HTTP1_MAX_HEADER_SIZE;
     }
 
     if (options->workers <= 0) {

@@ -27,9 +27,6 @@
 struct flb_http_server_session;
 struct flb_http_stream;
 
-/* Request line and headers, including the terminating CRLF pair. */
-#define FLB_HTTP1_MAX_HEADER_SIZE 32768
-
 struct flb_http1_server_session {
     struct mk_http_session          inner_session;
     struct mk_http_request          inner_request;
