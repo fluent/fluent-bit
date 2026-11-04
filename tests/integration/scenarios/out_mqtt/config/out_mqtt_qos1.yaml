@@ -1,0 +1,26 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+  scheduler.base: 1
+  scheduler.cap: 2
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: fleet.edge01
+      dummy: '{"message":"hello from out_mqtt","level":"info"}'
+      rate: 5
+      samples: 5
+
+  outputs:
+    - name: mqtt
+      match: fleet.*
+      host: 127.0.0.1
+      port: ${MQTT_BROKER_PORT}
+      topic: devices/$TAG[1]/logs
+      qos: 1
+      max_inflight: 2
+      retry_limit: 10
