@@ -113,6 +113,7 @@ static int in_opentelemetry_init(struct flb_input_instance *ins,
             http_server_options.buffer_max_size = FLB_OTEL_REQUEST_MAX_SIZE;
         }
         ctx->request_max_size = http_server_options.buffer_max_size;
+        http_server_options.decompression_max_size = ctx->request_max_size;
         if (ctx->request_max_size > SIZE_MAX - FLB_OTEL_HTTP_OVERHEAD_SIZE) {
             flb_plg_error(ctx->ins, "HTTP buffer limit leaves no room for protocol overhead");
             opentelemetry_config_destroy(ctx);
