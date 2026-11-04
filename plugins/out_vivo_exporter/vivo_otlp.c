@@ -12,6 +12,7 @@
 #include <inttypes.h>
 #include <limits.h>
 #include <math.h>
+#include <locale.h>
 #include <ctype.h>
 
 #include "vivo_otlp.h"
@@ -113,7 +114,10 @@ static void write_int64(struct json_writer *writer, int64_t value, int quoted)
 
 static void write_double(struct json_writer *writer, double value)
 {
-    char number[32];
+    char number[64];
+    char *separator;
+    const char *decimal_point;
+    size_t decimal_length;
 
     if (isnan(value)) {
         write_text(writer, "\"NaN\"");
@@ -126,6 +130,16 @@ static void write_double(struct json_writer *writer, double value)
     }
     else {
         snprintf(number, sizeof(number), "%.17g", value);
+        decimal_point = localeconv()->decimal_point;
+        decimal_length = strlen(decimal_point);
+        if (decimal_length > 0 && strcmp(decimal_point, ".") != 0) {
+            separator = strstr(number, decimal_point);
+            if (separator) {
+                *separator = '.';
+                memmove(separator + 1, separator + decimal_length,
+                        strlen(separator + decimal_length) + 1);
+            }
+        }
         write_text(writer, number);
     }
 }
@@ -370,19 +384,35 @@ static msgpack_object *map_get(msgpack_object *map, const char *key)
 
 static void write_any(struct json_writer *writer, msgpack_object *value, int depth);
 
+static int map_has_non_string_keys(msgpack_object *map)
+{
+    size_t index;
+
+    for (index = 0; index < map->via.map.size; index++) {
+        if (map->via.map.ptr[index].key.type != MSGPACK_OBJECT_STR) {
+            return FLB_TRUE;
+        }
+    }
+    return FLB_FALSE;
+}
+
 static void write_attributes(struct json_writer *writer, msgpack_object *map, int depth)
 {
     size_t index;
     msgpack_object_kv *pair;
 
+    if (map && map->type == MSGPACK_OBJECT_MAP && map_has_non_string_keys(map)) {
+        /* OTLP attributes require string keys. Keep the original map as a
+         * typed value instead of discarding keys or conflating 1 with "1". */
+        write_text(writer, "[{\"key\":\"fluentbit.map\",\"value\":");
+        write_any(writer, map, depth + 1);
+        write_text(writer, "}]");
+        return;
+    }
     write_text(writer, "[");
     if (map && map->type == MSGPACK_OBJECT_MAP) {
         for (index = 0; index < map->via.map.size; index++) {
             pair = &map->via.map.ptr[index];
-            if (pair->key.type != MSGPACK_OBJECT_STR) {
-                writer->error = FLB_TRUE;
-                break;
-            }
             if (index) {
                 write_text(writer, ",");
             }
@@ -465,6 +495,25 @@ static void write_any(struct json_writer *writer, msgpack_object *value, int dep
             write_text(writer, "]}");
             break;
         case MSGPACK_OBJECT_MAP:
+            if (map_has_non_string_keys(value)) {
+                write_text(writer, "\"kvlistValue\":{\"values\":["
+                                   "{\"key\":\"fluentbit.type\","
+                                   "\"value\":{\"stringValue\":\"msgpack.map\"}},"
+                                   "{\"key\":\"fluentbit.value\","
+                                   "\"value\":{\"arrayValue\":{\"values\":[");
+                for (index = 0; index < value->via.map.size; index++) {
+                    if (index) {
+                        write_text(writer, ",");
+                    }
+                    write_text(writer, "{\"arrayValue\":{\"values\":[");
+                    write_any(writer, &value->via.map.ptr[index].key, depth + 1);
+                    write_text(writer, ",");
+                    write_any(writer, &value->via.map.ptr[index].val, depth + 1);
+                    write_text(writer, "]}}");
+                }
+                write_text(writer, "]}}}]}");
+                break;
+            }
             write_text(writer, "\"kvlistValue\":{\"values\":");
             write_attributes(writer, value, depth + 1);
             write_text(writer, "}");
