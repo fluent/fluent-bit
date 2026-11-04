@@ -99,7 +99,7 @@ jobs:
       matrix:
         flb_option:
           - "-DFLB_JEMALLOC=On"
-          - "-DFLB_JEMALLOC=Off"
+          - "-DFLB_JEMALLOC=Off -DFLB_SQLITE_AMALGAMATION=On"
           - "-DFLB_SMALL=On"
           - "-DSANITIZE_ADDRESS=On"
           - "-DSANITIZE_UNDEFINED=On"

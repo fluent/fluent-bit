@@ -109,6 +109,7 @@ fi
 cd "$SOURCE_DIR/build"
 run_timed configure cmake -DFLB_BACKTRACE=Off -DFLB_SHARED_LIB=Off -DFLB_DEBUG=On \
     -DFLB_ALL=On -DFLB_EXAMPLES=Off -DFLB_TESTS_INTERNAL=On -DFLB_TESTS_RUNTIME=On \
+    -DFLB_SQLITE_AMALGAMATION=Off \
     "${linker_options[@]}" "${flb_options[@]}" "${skip_options[@]}" ..
 run_timed build cmake --build . --parallel "$build_jobs" "${test_targets[@]}"
 run_timed tests ctest --parallel "$test_jobs" --output-on-failure \
