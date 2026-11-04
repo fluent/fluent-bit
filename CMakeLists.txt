@@ -409,6 +409,13 @@ option(FLB_PREFER_SYSTEM_LIB_NGHTTP2      "Prefer the libnghttp2 system library"
 option(FLB_PREFER_SYSTEM_LIB_SQLITE       "Prefer the libsqlite3 system library"      ${FLB_PREFER_SYSTEM_LIBS})
 option(FLB_PREFER_SYSTEM_LIB_ZSTD         "Prefer the libzstd system library"         ${FLB_PREFER_SYSTEM_LIBS})
 
+set(flb_sqlite_amalgamation_default On)
+if(FLB_DEV)
+  set(flb_sqlite_amalgamation_default Off)
+endif()
+option(FLB_SQLITE_AMALGAMATION "Build bundled SQLite as one translation unit"
+       ${flb_sqlite_amalgamation_default})
+
 # Enable all features
 if(FLB_ALL)
   # Global
