@@ -1,5 +1,9 @@
 import os
 import socket
+import struct
+from pathlib import Path
+
+import yaml
 import time
 
 import pytest
@@ -134,6 +138,10 @@ def _pack_map(mapping):
 
 
 def _pack_obj(value):
+    if isinstance(value, tuple) and value[0] == "__ext__":
+        return b"\xd7" + bytes([value[1]]) + value[2]
+    if isinstance(value, bytes):
+        return b"\xc6" + struct.pack(">I", len(value)) + value
     if isinstance(value, int):
         return _pack_uint(value)
     if isinstance(value, str):
@@ -201,3 +209,78 @@ def test_out_forward_fluent_bit_to_fluent_bit_opt_out_drops_metadata():
     assert len(record["raw"]) == 2
     assert not record["raw"][0][1]
     assert record["raw"][1] == {"message": "metadata-opt-out"}
+
+
+@pytest.mark.parametrize("ack", [False, True])
+@pytest.mark.parametrize("integer_time", [False, True])
+def test_dynamic_tags_preserve_groups_across_forward_hop(tmp_path, ack, integer_time):
+    config_dir = Path(__file__).parent.parent / "config"
+    sender = yaml.safe_load((config_dir / "out_forward_metadata_sender_default.yaml").read_text())
+    sender["pipeline"]["outputs"][0].update(
+        tag="$route", match="*", require_ack_response=ack, time_as_integer=integer_time, workers=1)
+    receiver = yaml.safe_load((config_dir / "out_forward_metadata_receiver.yaml").read_text())
+    # The capture server services one persistent connection at a time.
+    receiver["pipeline"]["outputs"][0].update({"match": "*", "workers": 1, "net.keepalive": False})
+    sender_path = tmp_path / "sender.yaml"
+    receiver_path = tmp_path / "receiver.yaml"
+    sender_path.write_text(yaml.safe_dump(sender))
+    receiver_path.write_text(yaml.safe_dump(receiver))
+    service = FluentBitForwardChain(str(sender_path))
+    service.receiver_config_file = str(receiver_path)
+    start_time = ("__ext__", 0, struct.pack(">II", 0xFFFFFFFF, 0))
+    end_time = ("__ext__", 0, struct.pack(">II", 0xFFFFFFFE, 0))
+    timestamp = ("__ext__", 0, struct.pack(">II", TEST_TS, 123456789))
+    records = []
+    for group in range(2):
+        records.append([[start_time, {"schema": "otlp", "identity": group}],
+                        {"resource": {"name": f"resource-{group}"},
+                         "scope": {"name": f"scope-{group}"}}])
+        for index in range(2):
+            records.append([[timestamp, {"otlp": {"severity_number": 9}}],
+                            {"route": f"route.{index}", "message": f"group-{group}-{index}"}])
+        records.append([[end_time, {}], {}])
+    records.append([[timestamp, {"native": "keep"}],
+                    {"route": "route.ungrouped", "message": "ungrouped"}])
+    payload = _pack_obj([TEST_TAG, b"".join(_pack_obj(record) for record in records), {}])
+    service.start()
+    try:
+        with socket.create_connection(("127.0.0.1", service.sender_port), timeout=5) as sock:
+            sock.sendall(payload)
+        deadline = time.time() + (30 if memory_check_enabled() else 15)
+        while time.time() < deadline:
+            captured = [record for msg in forward_data_storage["messages"]
+                        for record in msg["records"] if "message" in record.get("body", {})]
+            if len(captured) >= 5:
+                break
+            time.sleep(0.2)
+        messages = list(forward_data_storage["messages"])
+    finally:
+        service.stop()
+    seen = set()
+    for message in messages:
+        group_metadata = None
+        group_attributes = None
+        for record in message["records"]:
+            ts = record["timestamp"]
+            seconds, nanos = (struct.unpack(">II", ts["__ext__"]["data"])
+                              if isinstance(ts, dict) else (ts, 0))
+            if seconds == 0xFFFFFFFF:
+                group_metadata, group_attributes = record["metadata"], record["body"]
+                continue
+            if seconds == 0xFFFFFFFE:
+                group_metadata = group_attributes = None
+                continue
+            body = record["body"]
+            seen.add(body["message"])
+            assert message["tag"] == body["route"]
+            assert seconds == TEST_TS
+            assert nanos == (0 if integer_time else 123456789)
+            if body["message"] == "ungrouped":
+                assert group_metadata is None and record["metadata"] == {"native": "keep"}
+            else:
+                group = int(body["message"].split("-")[1])
+                assert group_metadata == {"schema": "otlp", "identity": group}
+                assert group_attributes == {"resource": {"name": f"resource-{group}"},
+                                            "scope": {"name": f"scope-{group}"}}
+                assert record["metadata"] == {"otlp": {"severity_number": 9}}
+    assert seen == {"group-0-0", "group-0-1", "group-1-0", "group-1-1", "ungrouped"}
