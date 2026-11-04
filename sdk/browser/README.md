@@ -69,6 +69,25 @@ same YAML as the demo. A `lib` input is needed only for JavaScript `push()`.
 Write Lua/config assets with `writeFile('/config/script.lua', source)` before
 starting. Filesystem asset operations are rejected while the engine runs.
 
+For interactive runs, create one instance and retain it across runs:
+
+```js
+await fluent.start({yaml, graceSeconds: 0});
+await fluent.push({input: 'application', records});
+await fluent.drain(); // Output callbacks have run; no setTimeout is needed.
+await fluent.stop();  // The module and pthread pool remain warm.
+// Repeat start/push/drain/stop with the next YAML, then destroy on final disposal.
+```
+
+A zero-grace stop checks shutdown immediately instead of waiting for a one-second
+shutdown tick. Call `drain()` first when queued local records must finish.
+The regular engine event loop still runs; there is no scheduler-free batch mode
+or guaranteed runtime in milliseconds. Timers/network retries and buffered
+processors cannot be replaced by a general synchronous pipeline call.
+Configure `FLB_WASM_PTHREAD_POOL_SIZE` (3–16, default 3) at build time if a workload
+needs additional pthreads. CMake sets both the runtime pool and worker limit.
+One or two threads cannot host the current SDK's three concurrent C threads.
+
 ## Lifecycle and delivery contract
 
 - Creation resolves when the command worker and C runtime are ready. `start()`
@@ -83,6 +102,14 @@ starting. Filesystem asset operations are rejected while the engine runs.
   rejected. This is a logs API, not an arbitrary MessagePack/OTLP ingestion API.
 - A partial input write makes the instance unusable: it cannot be replayed safely.
   Queue-full errors mean the command was not sent and may be retried after draining.
+- `drain()` immediately collects pending `lib` pipe data, flushes chunks through
+  the engine and awaits completion of local output tasks and delivery of queued
+  stdout/stderr callbacks. It requires exclusively nonthreaded, memory-backed
+  `lib` inputs and `stdout`/`null` outputs; other pipelines reject with
+  `E_UNSUPPORTED`. Filtered/dropped and unmatched records need not produce output.
+  Filter/processor-private buffered records are outside this engine-chunk barrier.
+  Existing bounded log transport can truncate/drop lines; this is not a lossless
+  output collection API. The operation deadline still applies.
 - `stop()` applies the grace configured by `start({graceSeconds})` (default 5,
   maximum 30), releases the engine, and checkpoints persistent storage. Grace
   expiry may drop outstanding data. A successful stop is not an output receipt.
@@ -107,7 +134,7 @@ load/decoding errors are captured from construction and forwarded as runtime
 errors; `[SDK pthread]` diagnostics identify boot, handler readiness, payload
 receipt and completed initialization. Failed initialization cancels streaming
 WASM work and terminates the created pthread workers before reporting failure.
-The four pthread scripts initialize sequentially before the runtime is created;
+The pthread scripts initialize sequentially before the runtime is created;
 the runtime then reuses those workers. This avoids cancelling sibling module
 loads when a script fails, at the cost of serializing their startup latency.
 
@@ -120,7 +147,7 @@ individual lines are truncated at 4096 characters and overload is reported as
 `E_LOG_DROPPED`. Configure Fluent Bit chunk/retry/memory limits too: SDK admission
 limits alone do not bound downstream backlog. WASM growth is capped at 1 GiB;
 worker and JS heap allocations are additional, not included in that cap.
-The SDK caps its pthread pool at four workers and rejects dedicated threaded
+The SDK defaults to three pthread workers (command, engine, logging) and rejects dedicated threaded
 inputs at startup; set `threaded: false`, including for `event_type` inputs.
 
 `await fluent.getStats()` returns an immutable snapshot of lifetime accepted
@@ -203,7 +230,7 @@ Passing Chromium tests alone is not a claim that all these gates are complete.
 
 The Emscripten 6.0.9 migration passes the optimized/ASan SDK and demo suites.
 The Chrome 151 worker-retention failure is covered by repeated startup fault tests
-against the first and fourth workers. Sequential bootstrap alone was insufficient
+against the first and last workers. Sequential bootstrap alone was insufficient
 in later runs. Failed startup now requests cooperative child shutdown before
 terminating the parent, with a 250 ms fallback for an unresponsive child. Optional ASan
 `detect_stack_use_after_return=1` still fails during the SDK's pthread `munmap`
