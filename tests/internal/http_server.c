@@ -182,10 +182,12 @@ void test_http_server_options_defaults()
     TEST_CHECK(options.reuse_port == FLB_FALSE);
     TEST_CHECK(options.idle_timeout == HTTP_SERVER_DEFAULT_IDLE_TIMEOUT);
     TEST_CHECK(options.buffer_max_size == HTTP_SERVER_MAXIMUM_BUFFER_SIZE);
+    TEST_CHECK(options.http1_max_header_size == HTTP_SERVER_DEFAULT_HTTP1_MAX_HEADER_SIZE);
     TEST_CHECK(options.max_connections == 0);
     TEST_CHECK(config.http2 == FLB_TRUE);
     TEST_CHECK(config.idle_timeout == HTTP_SERVER_DEFAULT_IDLE_TIMEOUT);
     TEST_CHECK(config.buffer_max_size == HTTP_SERVER_MAXIMUM_BUFFER_SIZE);
+    TEST_CHECK(strcmp(config.http1_max_header_size, "32KiB") == 0);
     TEST_CHECK(config.max_connections == 0);
     TEST_CHECK(flb_http_server_property_is_allowed("http_server.idle_timeout") == FLB_TRUE);
     TEST_CHECK(flb_http_server_property_is_allowed("idle_timeout") == FLB_FALSE);
@@ -973,14 +975,53 @@ void test_http_server_hs_buf_push_during_read_keeps_payload()
     flb_config_exit(config);
 }
 
+void test_http1_header_limit_binary_units(void)
+{
+    struct flb_config config;
+    struct flb_input_instance input;
+    struct flb_http_server_config server_config;
+    struct flb_http_server_options options;
+    struct {
+        char *value;
+        size_t expected;
+    } cases[] = {
+        {"32KiB", 32768},
+        {"64KiB", 65536},
+        {"1MiB", 1024 * 1024},
+        {"1GiB", 1024 * 1024 * 1024},
+        {"65536", 65536},
+        {"0", 32768}
+    };
+    size_t index;
+    int result;
+
+    memset(&config, 0, sizeof(config));
+    memset(&input, 0, sizeof(input));
+    flb_http_server_config_init(&server_config);
+    input.config = &config;
+    input.http_server_config = &server_config;
+
+    for (index = 0; index < sizeof(cases) / sizeof(cases[0]); index++) {
+        server_config.http1_max_header_size = cases[index].value;
+        result = flb_input_http_server_options_init(&options, &input, 0, NULL, NULL);
+        TEST_CHECK(result == 0);
+        TEST_CHECK(options.http1_max_header_size == cases[index].expected);
+    }
+
+    server_config.http1_max_header_size = "invalid";
+    TEST_CHECK(flb_input_http_server_options_init(&options, &input, 0, NULL, NULL) == -1);
+    server_config.http1_max_header_size = "-1";
+    TEST_CHECK(flb_input_http_server_options_init(&options, &input, 0, NULL, NULL) == -1);
+}
+
 /* Exercise every delimiter split and SDS growth without timing assertions. */
-void test_http1_fragmented_header_limit()
+static void check_http1_fragmented_header_limit(size_t header_limit)
 {
     struct flb_http_server server;
     struct flb_http_server_session *session;
     unsigned char *request;
     const char *prefix = "GET /health HTTP/1.1\r\nHost: localhost\r\nX-Pad: ";
-    size_t fragments[] = {1, 1024, FLB_HTTP1_MAX_HEADER_SIZE};
+    size_t fragments[] = {1, 1024, header_limit};
     size_t index;
     size_t offset;
     size_t length;
@@ -989,15 +1030,16 @@ void test_http1_fragmented_header_limit()
 
     memset(&server, 0, sizeof(server));
     server.buffer_max_size = 64 * 1024 * 1024;
-    request = flb_malloc(FLB_HTTP1_MAX_HEADER_SIZE + 1);
+    server.http1_max_header_size = header_limit;
+    request = flb_malloc(header_limit + 1);
     if (!TEST_CHECK(request != NULL)) {
         return;
     }
 
     for (over = 0; over <= 1; over++) {
-        memset(request, 'a', FLB_HTTP1_MAX_HEADER_SIZE + 1);
+        memset(request, 'a', header_limit + 1);
         memcpy(request, prefix, strlen(prefix));
-        memcpy(request + FLB_HTTP1_MAX_HEADER_SIZE - 4 + over, "\r\n\r\n", 4);
+        memcpy(request + header_limit - 4 + over, "\r\n\r\n", 4);
 
         for (index = 0; index < sizeof(fragments) / sizeof(fragments[0]); index++) {
             session = flb_http_server_session_create(HTTP_PROTOCOL_VERSION_11);
@@ -1007,13 +1049,13 @@ void test_http1_fragmented_header_limit()
             }
             session->parent = &server;
 
-            for (offset = 0; offset < FLB_HTTP1_MAX_HEADER_SIZE; offset += length) {
+            for (offset = 0; offset < header_limit; offset += length) {
                 length = fragments[index];
-                if (length > FLB_HTTP1_MAX_HEADER_SIZE - offset) {
-                    length = FLB_HTTP1_MAX_HEADER_SIZE - offset;
+                if (length > header_limit - offset) {
+                    length = header_limit - offset;
                 }
                 result = flb_http_server_session_ingest(session, request + offset, length);
-                if (offset + length < FLB_HTTP1_MAX_HEADER_SIZE) {
+                if (offset + length < header_limit) {
                     TEST_CHECK(result == HTTP_SERVER_SUCCESS);
                     TEST_CHECK(session->http1.header_scan_offset == offset + length);
                     TEST_CHECK(session->http1.headers_complete == FLB_FALSE);
@@ -1037,7 +1079,15 @@ void test_http1_fragmented_header_limit()
     flb_free(request);
 }
 
+void test_http1_fragmented_header_limit(void)
+{
+    check_http1_fragmented_header_limit(HTTP_SERVER_DEFAULT_HTTP1_MAX_HEADER_SIZE);
+    check_http1_fragmented_header_limit(64 * 1024);
+    check_http1_fragmented_header_limit(8 * 1024);
+}
+
 TEST_LIST = {
+    { "http1_header_limit_binary_units", test_http1_header_limit_binary_units },
     { "http1_fragmented_header_limit", test_http1_fragmented_header_limit },
     { "http_server_accept_reaps_stale_sessions_with_limit",
       test_http_server_accept_reaps_stale_sessions_with_limit },
