@@ -42,7 +42,8 @@ export interface FluentBit {
     start(options: {yaml: string; graceSeconds?: number}): Promise<{engineMs: number}>;
     /** Quiesces the engine and checkpoints persistent chunks; not a delivery guarantee. */
     stop(): Promise<void>;
-    /** Flushes queued engine chunks and awaits stdout callbacks. Requires memory-backed
+    /** Flushes queued engine chunks and invokes stdout/stderr callbacks before resolving.
+     * Promises returned by callbacks are not awaited. Requires memory-backed
      * lib inputs and stdout/null outputs; filter/processor-private buffers are excluded. */
     drain(): Promise<void>;
     /** Input alias must select one lib input. Records receive an ingestion timestamp. */
