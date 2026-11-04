@@ -1,0 +1,15 @@
+parsers:
+  - name: rabbitmq
+    # https://rubular.com/r/6ZCuwV4Xa7nfA3
+    format: regex
+    regex: (?<date>[^ ]+)\s(?<time>[^ ]+)\s\[(?<log_level>[^ \]]*)\]\s(?<PID>[^ ]*)\s(?<msg>((([a-zA-Z]*\s+)+[^ ]*)+)+)
+
+  - name: neo4j
+    # https://rubular.com/r/jWfJIOMKr2LgcO
+    format: regex
+    regex: (?<date>[^ ]*) (?<time>[^ ]*) (?<log_level>[^ ]*)\s(?<msg>([^ ]*\s+[^ ]*)+)
+
+  - name: external-dns
+    # https://rubular.com/r/U8VbByp0oRPLU6
+    format: regex
+    regex: ([^ ])\"(?<time>[^ ]+)\"\s([^ ]+)\=(?<log_level>[.+a-zA-Z]+)\s([^ ]+)\"(?<msg>([^ ]*\s+[^ ]*\s[a-zA-Z0-9]*)+)
