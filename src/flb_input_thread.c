@@ -18,6 +18,7 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_socket.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_engine.h>
@@ -209,17 +210,21 @@ static void input_thread_instance_destroy(struct flb_input_thread_instance *thi)
     /* ch_parent_events */
     if (thi->ch_parent_events[0] > 0) {
         mk_event_closesocket(thi->ch_parent_events[0]);
+        thi->ch_parent_events[0] = FLB_UNINITIALIZED_SOCKET;
     }
     if (thi->ch_parent_events[1] > 0) {
         mk_event_closesocket(thi->ch_parent_events[1]);
+        thi->ch_parent_events[1] = FLB_UNINITIALIZED_SOCKET;
     }
 
     /* ch_thread_events */
     if (thi->ch_thread_events[0] > 0) {
         mk_event_closesocket(thi->ch_thread_events[0]);
+        thi->ch_thread_events[0] = FLB_UNINITIALIZED_SOCKET;
     }
     if (thi->ch_thread_events[1] > 0) {
         mk_event_closesocket(thi->ch_thread_events[1]);
+        thi->ch_thread_events[1] = FLB_UNINITIALIZED_SOCKET;
     }
 
     flb_tp_destroy(thi->tp);
@@ -237,6 +242,11 @@ static struct flb_input_thread_instance *input_thread_instance_create(struct flb
         flb_errno();
         return NULL;
     }
+    thi->ch_parent_events[0] = FLB_UNINITIALIZED_SOCKET;
+    thi->ch_parent_events[1] = FLB_UNINITIALIZED_SOCKET;
+    thi->ch_thread_events[0] = FLB_UNINITIALIZED_SOCKET;
+    thi->ch_thread_events[1] = FLB_UNINITIALIZED_SOCKET;
+
     thi->ins = ins;
     thi->config = ins->config;
 
