@@ -507,6 +507,8 @@ int flb_http1_server_session_init(struct flb_http1_server_session *session,
     }
 
     session->initialized = FLB_TRUE;
+    session->header_scan_offset = 0;
+    session->headers_complete = FLB_FALSE;
 
     dummy_mk_http_session_init(&session->inner_session, &session->inner_server);
 
@@ -547,6 +549,37 @@ int flb_http1_server_session_ingest(struct flb_http1_server_session *session,
                                     size_t length)
 {
     int result;
+    size_t available;
+    size_t offset;
+    const char *data;
+
+    /*
+     * Wait for a complete, bounded header block before invoking Monkey. Keep
+     * only an offset across reads: incoming_data can move when the SDS grows.
+     * Each new byte is examined once, even when CRLFCRLF spans several reads.
+     */
+    if (!session->headers_complete) {
+        data = session->parent->incoming_data;
+        available = cfl_sds_len(session->parent->incoming_data);
+
+        while (session->header_scan_offset < available &&
+               session->header_scan_offset < FLB_HTTP1_MAX_HEADER_SIZE) {
+            offset = ++session->header_scan_offset;
+            if (offset >= 4 && memcmp(data + offset - 4, "\r\n\r\n", 4) == 0) {
+                session->headers_complete = FLB_TRUE;
+                break;
+            }
+        }
+
+        if (!session->headers_complete) {
+            if (session->header_scan_offset == FLB_HTTP1_MAX_HEADER_SIZE) {
+                session->stream.status = HTTP_STREAM_STATUS_ERROR;
+                return HTTP_SERVER_PROVIDER_ERROR;
+            }
+
+            return HTTP_SERVER_SUCCESS;
+        }
+    }
 
     result = mk_http_parser(&session->inner_request,
                             &session->inner_parser,
@@ -564,15 +597,14 @@ int flb_http1_server_session_ingest(struct flb_http1_server_session *session,
         }
 
         http1_evict_request(session);
+        session->header_scan_offset = 0;
+        session->headers_complete = FLB_FALSE;
     }
     else if (result == MK_HTTP_PARSER_PENDING) {
         /*
-         * No significant actions are taken here until we reach MK_HTTP_PARSER_OK.
-         * The primary reason is that the caller may need to expand the buffer size
-         * when payloads exceed the current buffer's capacity. In such cases, parser
-         * pointers could end up referencing incorrect memory locations.
-         * To prevent this, we reset the parser state, which introduces a minimal
-         * performance overhead in exchange for ensuring safety.
+         * The body is incomplete. Reset Monkey's pointers before the receive
+         * buffer can move. Header reparsing is bounded by the independent header
+         * limit; incomplete headers never reach this parser.
          */
     }
     else if (result == MK_HTTP_PARSER_ERROR) {
