@@ -149,6 +149,7 @@ def test_unix_socket_rejects_symlink(tmp_path):
     result = subprocess.run(command, capture_output=True, text=True, timeout=30)
     assert result.returncode != 0
     assert result.returncode != 99
+    assert "exists and it is not a unix socket" in result.stderr, result.stderr
     if os.environ.get("VALGRIND") == "1":
         assert "ERROR SUMMARY: 0 errors" in memory_log.read_text()
     assert socket_path.is_symlink()
