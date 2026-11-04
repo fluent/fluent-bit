@@ -261,12 +261,24 @@ jobs:
           files: release-assets/*
       - name: Attach experimental SDK to version release
         if: needs.prepare.outputs.release_tag != ''
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
-        with:
-          tag_name: ${{ needs.prepare.outputs.release_tag }}
-          overwrite_files: false
-          fail_on_unmatched_files: true
-          files: release-assets/*
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' > existing-assets.txt
+          mkdir existing
+          for flb_asset in release-assets/*; do
+            flb_name=$(basename "$flb_asset")
+            if grep -Fxq -- "$flb_name" existing-assets.txt; then
+              gh release download "$RELEASE_TAG" --pattern "$flb_name" --dir existing
+              cmp "$flb_asset" "existing/$flb_name"
+            else
+              gh release upload "$RELEASE_TAG" "$flb_asset"
+            fi
+          done
       - name: Verify the published files
         shell: bash
         env:
