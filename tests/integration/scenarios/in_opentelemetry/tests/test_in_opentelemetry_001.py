@@ -3787,3 +3787,31 @@ def test_in_opentelemetry_request_size_default_json(delta, status):
         assert result["status_code"] == status
     finally:
         service.stop()
+
+
+@pytest.mark.parametrize("encoding", [
+    "gzip", "zstd", "zstd-unknown", "zstd-unknown-large-window",
+    "snappy", "snappy-framed", "snappy-mixed",
+])
+@pytest.mark.parametrize("workers", [1, 4])
+@pytest.mark.parametrize("http_mode", ["http1.1", "http2-prior-knowledge"])
+def test_in_opentelemetry_http_bounded_content_encoding(encoding, workers, http_mode):
+    service = Service("otlp_grpc_bounded.yaml")
+    service.service.extra_env["OTLP_TEST_HTTP_WORKERS"] = workers
+    content_encoding = encoding.split("-")[0]
+    try:
+        service.start()
+        for size, expected in [(4095, 201), (4096, 201), (4097, 413),
+                               (128 * 1024, 413), (1024, 201)]:
+            payload = encode_grpc_limit_payload(grpc_limit_payload(service, size), encoding)
+            result = run_curl_request(
+                f"http://localhost:{service.flb_listener_port}/v1/logs", payload,
+                headers=["Content-Type: application/x-protobuf",
+                         f"Content-Encoding: {content_encoding}"],
+                http_mode=http_mode,
+            )
+            assert result["status_code"] == expected
+    finally:
+        service.stop()
+    # Only accepted requests may reach ingestion; each fixture has four records.
+    assert len(received_grpc_log_records()) == 12
