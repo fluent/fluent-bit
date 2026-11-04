@@ -13,9 +13,10 @@ MAX_HEADERS = 32768
 
 
 @pytest.fixture
-def listener(tmp_path):
+def listener(tmp_path, request):
+    header_limit, workers = getattr(request, "param", (None, 1))
     config = tmp_path / "http1_headers.yaml"
-    config.write_text("""service:
+    configuration = """service:
   flush: 1
   grace: 1
   http_server: on
@@ -27,11 +28,21 @@ pipeline:
       port: ${FLUENT_BIT_TEST_LISTENER_PORT}
       enable_health_endpoint: on
       http_server.buffer_max_size: 64M
+      http_server.workers: ${HEADER_TEST_WORKERS}
   outputs:
     - name: null
       match: '*'
-""")
-    service = FluentBitTestService(str(config))
+"""
+    if header_limit is not None:
+        configuration = configuration.replace(
+            "      http_server.buffer_max_size: 64M",
+            f"      http_server.http1_max_header_size: {header_limit}\n"
+            "      http_server.buffer_max_size: 64M",
+        )
+    config.write_text(configuration)
+    service = FluentBitTestService(str(config), extra_env={
+        "HEADER_TEST_WORKERS": str(workers),
+    })
     service.start()
     try:
         yield service.flb_listener_port
@@ -97,3 +108,29 @@ def test_http1_fragmented_headers_and_large_body(listener, chunked):
         assert response(sock) == 201
         sock.sendall(b"GET /health HTTP/1.1\r\nHost: localhost\r\n\r\n")
         assert response(sock) == 200
+
+
+@pytest.mark.parametrize("listener,limit", [
+    (("64KiB", 1), 65536),
+    (("64KiB", 2), 65536),
+    (("8KiB", 1), 8192),
+    (("32KiB", 1), MAX_HEADERS),
+    (("0", 1), MAX_HEADERS),
+], indirect=["listener"])
+def test_http1_configured_header_limit(listener, limit):
+    prefix = b"GET /health HTTP/1.1\r\nHost: localhost\r\nX-Pad: "
+    accepted = prefix + b"a" * (limit - len(prefix) - 4) + b"\r\n\r\n"
+    for suffix in (b"\r\n\r\n", b""):
+        with socket.create_connection(("127.0.0.1", listener), timeout=5) as sock:
+            # Configured limits apply to the first request and keep-alive reuse.
+            for offset in range(0, len(accepted), 512):
+                sock.sendall(accepted[offset:offset + 512])
+                time.sleep(0.002)
+            assert response(sock) == 200
+            padding = limit - len(prefix) - (3 if suffix else 0)
+            rejected = prefix + b"a" * padding + suffix
+            try:
+                sock.sendall(rejected)
+                assert sock.recv(1024) == b"", "configured header limit was not enforced"
+            except (BrokenPipeError, ConnectionResetError):
+                pass
