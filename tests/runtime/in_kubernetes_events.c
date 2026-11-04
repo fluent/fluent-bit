@@ -30,6 +30,14 @@
 #include <monkey/mk_core.h>
 #include <monkey/mk_lib.h>
 
+#ifndef _WIN32
+#include <sys/socket.h>
+#include <sys/select.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#endif
+#include <fluent-bit/flb_socket.h>
+
 #include "flb_tests_runtime.h"
 #include "../include/flb_tests_tmpdir.h"
 
@@ -261,12 +269,13 @@ struct test_k8s_server_ctx *initialize_mock_k8s_api(const char* filename,
     return server;
 }
 
-static struct test_ctx *test_ctx_create(struct flb_lib_out_cb *data)
+static struct test_ctx *test_ctx_create_url(struct flb_lib_out_cb *data,
+                                            const char *kube_url,
+                                            const char *interval_sec)
 {
     int i_ffd;
     int o_ffd;
     struct test_ctx *ctx = NULL;
-    char kube_url[512] = {0};
 
 
     ctx = flb_calloc(1, sizeof(struct test_ctx));
@@ -289,13 +298,12 @@ static struct test_ctx *test_ctx_create(struct flb_lib_out_cb *data)
     TEST_CHECK(i_ffd >= 0);
     ctx->i_ffd = i_ffd;
 
-    sprintf(kube_url, "http://%s:%d", KUBE_API_HOST, KUBE_API_PORT);
     TEST_CHECK(flb_input_set(ctx->flb, i_ffd, 
               "kube_url", kube_url,
               "kube_token_file", KUBE_TOKEN_FILE,
               "kube_retention_time", "3650d",
               "tls", "off",
-              "interval_sec", "1",
+              "interval_sec", interval_sec,
               "interval_nsec", "0",
               NULL) == 0);
 
@@ -309,6 +317,14 @@ static struct test_ctx *test_ctx_create(struct flb_lib_out_cb *data)
                          NULL);
 
     return ctx;
+}
+
+static struct test_ctx *test_ctx_create(struct flb_lib_out_cb *data)
+{
+    char kube_url[512] = {0};
+
+    sprintf(kube_url, "http://%s:%d", KUBE_API_HOST, KUBE_API_PORT);
+    return test_ctx_create_url(data, kube_url, "1");
 }
 
 #ifdef FLB_HAVE_SQLDB
@@ -526,6 +542,345 @@ void flb_test_events_with_chunkedrecv()
 
     mock_k8s_api_destroy(k8s_server);
     test_ctx_destroy(ctx);
+}
+
+/*
+ * Raw HTTP mock for the watch stream tests. Unlike the monkey based mock, it
+ * controls where chunks and socket writes start and end: it answers the LIST
+ * with no events, sends 'writes' on the watch (the second one only once event
+ * 'wait_event' is ingested), and keeps the watch open until the test stops it.
+ */
+#define WATCH_LIST_BODY \
+    "{\"kind\":\"EventList\",\"apiVersion\":\"v1\"," \
+    "\"metadata\":{\"resourceVersion\":\"100\"},\"items\":[]}"
+
+#define WATCH_RESPONSE_HEADERS \
+    "HTTP/1.1 200 OK\r\n" \
+    "Content-Type: application/json\r\n" \
+    "Transfer-Encoding: chunked\r\n" \
+    "\r\n"
+
+#define WATCH_EVENT_FORMAT \
+    "{\"type\":\"ADDED\",\"object\":{\"metadata\":{\"uid\":\"watch-event-%d\"," \
+    "\"resourceVersion\":\"%d\",\"creationTimestamp\":\"2024-07-31T18:26:51Z\"}}}"
+
+#define WATCH_MALFORMED_LINE "{\"type\":\"ADDED\",\"object\":{this is not json}}"
+
+struct watch_server {
+    int listen_fd;
+    int port;
+    int stop;               /* set by the test, guarded by result_mutex */
+    pthread_t thread;
+    flb_sds_t writes[2];    /* watch response body, one send() each */
+    int wait_event;         /* event to wait for before the second write */
+};
+
+/* first arrival time (ms) of each watch event, 0 if not ingested */
+static uint64_t watch_event_ms[8];
+static struct flb_lib_out_cb watch_cb;
+
+/* wait up to timeout_ms for a watch event, returns its arrival time or 0 */
+static uint64_t wait_watch_event(int id, int timeout_ms)
+{
+    int waited;
+    uint64_t ms = 0;
+
+    for (waited = 0; ms == 0 && waited <= timeout_ms; waited += 100) {
+        pthread_mutex_lock(&result_mutex);
+        ms = watch_event_ms[id];
+        pthread_mutex_unlock(&result_mutex);
+        if (ms == 0) {
+            flb_time_msleep(100);
+        }
+    }
+
+    return ms;
+}
+
+static int watch_server_stopped(struct watch_server *server)
+{
+    int stop;
+
+    pthread_mutex_lock(&result_mutex);
+    stop = server->stop;
+    pthread_mutex_unlock(&result_mutex);
+
+    return stop;
+}
+
+/* wait until fd is readable, returns -1 once the test stops the server */
+static int watch_wait_readable(struct watch_server *server, int fd)
+{
+    fd_set fds;
+    struct timeval timeout;
+
+    while (watch_server_stopped(server) == FLB_FALSE) {
+        FD_ZERO(&fds);
+        FD_SET(fd, &fds);
+        timeout.tv_sec = 0;
+        timeout.tv_usec = 100000;
+        if (select(fd + 1, &fds, NULL, NULL, &timeout) > 0) {
+            return 0;
+        }
+    }
+
+    return -1;
+}
+
+static void *watch_server_thread(void *data)
+{
+    int i;
+    int fd;
+    ssize_t bytes;
+    char buf[4096];
+    struct watch_server *server = data;
+
+    if (watch_wait_readable(server, server->listen_fd) != 0) {
+        return NULL;
+    }
+    fd = accept(server->listen_fd, NULL, NULL);
+    if (fd == -1) {
+        return NULL;
+    }
+
+    /* the plugin sends the LIST and then the watch on the same connection */
+    while (watch_wait_readable(server, fd) == 0) {
+        bytes = recv(fd, buf, sizeof(buf) - 1, 0);
+        if (bytes <= 0) {
+            break;
+        }
+        buf[bytes] = '\0';
+
+        if (strstr(buf, "watch=1") == NULL) {
+            snprintf(buf, sizeof(buf), "HTTP/1.1 200 OK\r\nContent-Length: %zu\r\n\r\n%s",
+                     strlen(WATCH_LIST_BODY), WATCH_LIST_BODY);
+            send(fd, buf, strlen(buf), 0);
+            continue;
+        }
+
+        send(fd, WATCH_RESPONSE_HEADERS, strlen(WATCH_RESPONSE_HEADERS), 0);
+        for (i = 0; i < 2 && server->writes[i] != NULL; i++) {
+            if (i > 0) {
+                wait_watch_event(server->wait_event, 10000);
+            }
+            send(fd, server->writes[i], flb_sds_len(server->writes[i]), 0);
+        }
+    }
+
+    flb_socket_close(fd);
+    return NULL;
+}
+
+static int watch_server_start(struct watch_server *server)
+{
+    socklen_t length;
+    struct sockaddr_in address;
+
+    server->listen_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (server->listen_fd == -1) {
+        return -1;
+    }
+
+    memset(&address, 0, sizeof(address));
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    length = sizeof(address);
+    if (bind(server->listen_fd, (struct sockaddr *) &address, sizeof(address)) == -1 ||
+        listen(server->listen_fd, 4) == -1 ||
+        getsockname(server->listen_fd, (struct sockaddr *) &address, &length) == -1) {
+        flb_socket_close(server->listen_fd);
+        return -1;
+    }
+    server->port = ntohs(address.sin_port);
+
+    if (pthread_create(&server->thread, NULL, watch_server_thread, server) != 0) {
+        flb_socket_close(server->listen_fd);
+        return -1;
+    }
+
+    return 0;
+}
+
+static void watch_server_stop(struct watch_server *server)
+{
+    pthread_mutex_lock(&result_mutex);
+    server->stop = FLB_TRUE;
+    pthread_mutex_unlock(&result_mutex);
+
+    pthread_join(server->thread, NULL);
+    flb_socket_close(server->listen_fd);
+}
+
+static int cb_watch_record(void *record, size_t size, void *data)
+{
+    int id;
+    char *p;
+    struct flb_time now;
+    const char *marker = "\"uid\":\"watch-event-";
+
+    flb_time_get(&now);
+    p = strstr((char *) record, marker);
+    if (p != NULL) {
+        id = atoi(p + strlen(marker));
+        pthread_mutex_lock(&result_mutex);
+        if (id > 0 && id < 8 && watch_event_ms[id] == 0) {
+            watch_event_ms[id] = flb_time_to_nanosec(&now) / 1000000;
+        }
+        pthread_mutex_unlock(&result_mutex);
+    }
+
+    flb_free(record);
+    return 0;
+}
+
+static flb_sds_t watch_event(int id)
+{
+    flb_sds_t event = flb_sds_create_size(256);
+
+    flb_sds_printf(&event, WATCH_EVENT_FORMAT, id, 100 + id);
+    return event;
+}
+
+/* frame 'body' as a single HTTP chunk */
+static flb_sds_t watch_chunk(const char *body)
+{
+    flb_sds_t chunk = flb_sds_create_size(strlen(body) + 16);
+
+    flb_sds_printf(&chunk, "%zx\r\n%s\r\n", strlen(body), body);
+    return chunk;
+}
+
+static struct test_ctx *watch_test_start(struct watch_server *server,
+                                         const char *interval_sec)
+{
+    char kube_url[64];
+    struct test_ctx *ctx;
+
+    pthread_mutex_lock(&result_mutex);
+    memset(watch_event_ms, 0, sizeof(watch_event_ms));
+    pthread_mutex_unlock(&result_mutex);
+
+    if (!TEST_CHECK(watch_server_start(server) == 0)) {
+        return NULL;
+    }
+
+    snprintf(kube_url, sizeof(kube_url), "http://127.0.0.1:%d", server->port);
+    watch_cb.cb = cb_watch_record;
+    watch_cb.data = NULL;
+    ctx = test_ctx_create_url(&watch_cb, kube_url, interval_sec);
+    if (!TEST_CHECK(ctx != NULL)) {
+        watch_server_stop(server);
+        return NULL;
+    }
+    TEST_CHECK(flb_start(ctx->flb) == 0);
+
+    return ctx;
+}
+
+/* stop the server first so the plugin is not left waiting on the watch */
+static void watch_test_stop(struct watch_server *server, struct test_ctx *ctx)
+{
+    watch_server_stop(server);
+    test_ctx_destroy(ctx);
+}
+
+/*
+ * Chunk A ends in the middle of event 2, and the first write also carries the
+ * size line of chunk B. Event 2 must be ingested as soon as the rest of chunk
+ * B arrives, not on the next collector tick. The rest is only sent once event
+ * 1 is ingested, so the plugin cannot get both writes in a single read.
+ */
+void flb_test_events_watch_line_split_across_chunks()
+{
+    size_t half;
+    uint64_t first_ms;
+    uint64_t second_ms;
+    flb_sds_t event_1 = watch_event(1);
+    flb_sds_t event_2 = watch_event(2);
+    struct test_ctx *ctx;
+    struct watch_server server = {0};
+
+    half = flb_sds_len(event_2) / 2;
+    server.writes[0] = flb_sds_create_size(1024);
+    flb_sds_printf(&server.writes[0], "%zx\r\n%s\n%.*s\r\n%zx\r\n%.8s",
+                   flb_sds_len(event_1) + 1 + half, event_1, (int) half, event_2,
+                   flb_sds_len(event_2) - half + 1, event_2 + half);
+    server.writes[1] = flb_sds_create_size(1024);
+    flb_sds_printf(&server.writes[1], "%s\n\r\n", event_2 + half + 8);
+    server.wait_event = 1;
+
+    /* the collector tick after the one that opens the watch is 4 seconds away */
+    ctx = watch_test_start(&server, "4");
+    if (ctx != NULL) {
+        first_ms = wait_watch_event(1, 10000);
+        second_ms = wait_watch_event(2, 6000);
+        if (TEST_CHECK(first_ms > 0 && second_ms > 0)) {
+            TEST_CHECK(second_ms - first_ms < 2000);
+            TEST_MSG("event 2 was ingested %d ms after event 1",
+                     (int) (second_ms - first_ms));
+        }
+        watch_test_stop(&server, ctx);
+    }
+
+    flb_sds_destroy(server.writes[0]);
+    flb_sds_destroy(server.writes[1]);
+    flb_sds_destroy(event_1);
+    flb_sds_destroy(event_2);
+}
+
+/* a malformed line is skipped and the event after it is still ingested */
+void flb_test_events_watch_malformed_line()
+{
+    flb_sds_t body = flb_sds_create_size(1024);
+    flb_sds_t event_1 = watch_event(1);
+    flb_sds_t event_2 = watch_event(2);
+    struct test_ctx *ctx;
+    struct watch_server server = {0};
+
+    flb_sds_printf(&body, "%s\n" WATCH_MALFORMED_LINE "\n%s\n", event_1, event_2);
+    server.writes[0] = watch_chunk(body);
+
+    ctx = watch_test_start(&server, "1");
+    if (ctx != NULL) {
+        TEST_CHECK(wait_watch_event(1, 5000) > 0);
+        TEST_CHECK(wait_watch_event(2, 3000) > 0);
+        TEST_MSG("the event after the malformed line was not ingested");
+        watch_test_stop(&server, ctx);
+    }
+
+    flb_sds_destroy(server.writes[0]);
+    flb_sds_destroy(body);
+    flb_sds_destroy(event_1);
+    flb_sds_destroy(event_2);
+}
+
+/* lines ending in "\r\n", and a blank "\r\n" line, are all accepted */
+void flb_test_events_watch_crlf_lines()
+{
+    flb_sds_t body = flb_sds_create_size(1024);
+    flb_sds_t event_1 = watch_event(1);
+    flb_sds_t event_2 = watch_event(2);
+    flb_sds_t event_3 = watch_event(3);
+    struct test_ctx *ctx;
+    struct watch_server server = {0};
+
+    flb_sds_printf(&body, "%s\r\n%s\r\n\r\n%s\r\n", event_1, event_2, event_3);
+    server.writes[0] = watch_chunk(body);
+
+    ctx = watch_test_start(&server, "1");
+    if (ctx != NULL) {
+        TEST_CHECK(wait_watch_event(1, 5000) > 0);
+        TEST_CHECK(wait_watch_event(2, 3000) > 0);
+        TEST_CHECK(wait_watch_event(3, 3000) > 0);
+        TEST_MSG("an event around the \\r\\n lines was not ingested");
+        watch_test_stop(&server, ctx);
+    }
+
+    flb_sds_destroy(server.writes[0]);
+    flb_sds_destroy(body);
+    flb_sds_destroy(event_1);
+    flb_sds_destroy(event_2);
+    flb_sds_destroy(event_3);
 }
 
 #ifdef FLB_HAVE_SQLDB
@@ -801,6 +1156,9 @@ TEST_LIST = {
     {"events_v1_with_lastTimestamp", flb_test_events_v1_with_lastTimestamp},
     {"events_v1_with_creationTimestamp", flb_test_events_v1_with_creationTimestamp},
     //{"events_v1_with_chunkedrecv", flb_test_events_with_chunkedrecv},
+    {"events_watch_line_split_across_chunks", flb_test_events_watch_line_split_across_chunks},
+    {"events_watch_malformed_line", flb_test_events_watch_malformed_line},
+    {"events_watch_crlf_lines", flb_test_events_watch_crlf_lines},
 #ifdef FLB_HAVE_SQLDB
     {"database_indexes_created", flb_test_database_indexes_created},
     {"database_indexes_migrated", flb_test_database_indexes_migrated},
