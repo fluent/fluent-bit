@@ -77,7 +77,11 @@ to the signal. It follows the [OTLP JSON encoding rules](https://opentelemetry.i
 * Native unsigned log integers above INT64_MAX cannot fit OTLP's signed `intValue`.
   They use a `kvlistValue` with `fluentbit.type` = `"uint64"` and
   `fluentbit.value` = the exact decimal string. Nil becomes an empty AnyValue.
-  Maps require string keys.
+  Maps with non-string keys use a typed `kvlistValue`: `fluentbit.type` is
+  `"msgpack.map"`, and `fluentbit.value` is an array of `[key, value] AnyValue
+  pairs. This preserves key types, ordering, and integer/string key collisions.
+  An attributes map with non-string keys is wrapped in one `fluentbit.map`
+  attribute containing that representation.
 * MessagePack extension values use a `kvlistValue` with `fluentbit.type` =
   `"msgpack.ext"`, `fluentbit.ext_type` = the signed extension code as an
   `intValue`, and `fluentbit.value` = the payload as a `bytesValue`. In v1 these
