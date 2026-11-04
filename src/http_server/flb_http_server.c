@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_utils.h>
 #include <string.h>
+#include <stdlib.h>
 
 #include <fluent-bit/http_server/flb_http_server.h>
 #include <fluent-bit/http_server/flb_http_server_config_map.h>
@@ -1266,6 +1267,25 @@ int flb_http_server_options_init_from_input(struct flb_http_server_options *opti
     return 0;
 }
 
+/* The binary-size helper accepts numeric prefixes; require a complete value here. */
+static int http_server_header_size_is_valid(const char *value)
+{
+    char *suffix;
+
+    strtod(value, &suffix);
+    if (suffix == value) {
+        return FLB_FALSE;
+    }
+
+    return *suffix == '\0' ||
+           strcasecmp(suffix, "K") == 0 || strcasecmp(suffix, "KB") == 0 ||
+           strcasecmp(suffix, "KiB") == 0 ||
+           strcasecmp(suffix, "M") == 0 || strcasecmp(suffix, "MB") == 0 ||
+           strcasecmp(suffix, "MiB") == 0 ||
+           strcasecmp(suffix, "G") == 0 || strcasecmp(suffix, "GB") == 0 ||
+           strcasecmp(suffix, "GiB") == 0;
+}
+
 int flb_input_http_server_options_init(struct flb_http_server_options *options,
                                        struct flb_input_instance *input_instance,
                                        uint64_t flags,
@@ -1313,6 +1333,10 @@ int flb_input_http_server_options_init(struct flb_http_server_options *options,
     if (server_config != NULL) {
         options->idle_timeout = server_config->idle_timeout;
         if (server_config->http1_max_header_size != NULL) {
+            if (!http_server_header_size_is_valid(server_config->http1_max_header_size)) {
+                flb_error("[http_server] invalid http_server.http1_max_header_size");
+                return -1;
+            }
             header_limit = flb_utils_size_to_binary_bytes(server_config->http1_max_header_size);
             if (header_limit < 0 || (uint64_t) header_limit > SIZE_MAX) {
                 flb_error("[http_server] invalid http_server.http1_max_header_size");
