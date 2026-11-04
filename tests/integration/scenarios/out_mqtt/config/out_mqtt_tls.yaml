@@ -1,0 +1,26 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+  scheduler.base: 1
+  scheduler.cap: 2
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: tls
+      dummy: '{"message":"hello over tls"}'
+      rate: 5
+      samples: 3
+
+  outputs:
+    - name: mqtt
+      match: tls
+      host: 127.0.0.1
+      port: ${MQTT_BROKER_PORT}
+      topic: secure/tls
+      tls: on
+      tls.verify: off
+      retry_limit: 10

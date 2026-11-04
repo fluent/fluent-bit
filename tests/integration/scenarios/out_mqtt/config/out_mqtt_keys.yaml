@@ -1,0 +1,26 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+  scheduler.base: 1
+  scheduler.cap: 2
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: alerts
+      dummy: '{"dest":"alerts/high","body":{"level":"high","code":42},"message":"ignored"}'
+      rate: 5
+      samples: 2
+
+  outputs:
+    - name: mqtt
+      match: alerts
+      host: 127.0.0.1
+      port: ${MQTT_BROKER_PORT}
+      topic: alerts/default
+      topic_key: dest
+      payload_key: body
+      retry_limit: 10
