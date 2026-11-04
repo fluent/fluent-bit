@@ -29,12 +29,19 @@ def rows(messages, signal):
             for scope in getattr(resource, scope_key) for item in getattr(scope, item_key)]
 
 
-def keep(data, percentage):
-    """Independent reference for the documented stable hash contract."""
-    mask = 2**64 - 1
+def fnv_hash(data):
     h = 14695981039346656037
     for b in data:
-        h = ((h ^ b) * 1099511628211) & mask
+        h = ((h ^ b) * 1099511628211) & (2**64 - 1)
+    return h
+
+
+def keep(data, percentage, labels=()):
+    """Independent reference for the documented stable hash contract."""
+    mask = 2**64 - 1
+    h = fnv_hash(data)
+    for key, value in labels:
+        h ^= fnv_hash(key.encode() + b"\0" + value.encode())
     h ^= h >> 33
     h = h * 0xff51afd7ed558ccd & mask
     h ^= h >> 33
@@ -173,6 +180,30 @@ def test_all_signals_and_route_isolation(tmp_path, location, percentage):
                         return False
             return True
 
+        if rate == 0 and location == "input":
+            def all_zero_rate_requests_processed():
+                response = requests.get(
+                    f"http://127.0.0.1:{pipeline.service.flb.http_monitoring_port}"
+                    "/api/v2/metrics/prometheus", timeout=5)
+                response.raise_for_status()
+                counts = {signal: 0 for signal in SIGNALS}
+                for line in response.text.splitlines():
+                    if not line.startswith("fluentbit_processor_invocations_total{"):
+                        continue
+                    if 'scope="input"' not in line or 'processor="sampling"' not in line:
+                        continue
+                    for signal in SIGNALS:
+                        if f'signal="{signal}"' in line:
+                            counts[signal] += float(line.split("}", 1)[1].split()[0])
+                # Logs and traces have one invocation per request. Metrics have
+                # one per scope; wait for both scopes of both requests as well.
+                return (counts["logs"] == 2 and counts["traces"] == 2 and
+                        counts["metrics"] == 2 * sum(len(resource.scope_metrics)
+                                                    for resource in source["metrics"].resource_metrics))
+
+            pipeline.service.wait_for_condition(all_zero_rate_requests_processed, timeout=30,
+                                                 description="all zero-rate input requests processed")
+
         pipeline.service.wait_for_condition(all_outputs_arrived, timeout=45,
                                              description="all sampled output requests")
         pipeline.service.stop()
@@ -277,10 +308,11 @@ def test_metric_series_identity_ignores_label_order(tmp_path):
     payload = ExportMetricsServiceRequest()
     scope = payload.resource_metrics.add().scope_metrics.add()
     metric = scope.metrics.add(name="requests", description="requests")
-    for i in range(128):
-        point = metric.sum.data_points.add(time_unix_nano=1700000000000000000, as_int=42)
-        point.attributes.add(key="tenant").value.string_value = f"tenant-{i}"
-        point.attributes.add(key="region").value.string_value = "east"
+    for region in ["east", "west"]:
+        for i in range(128):
+            point = metric.sum.data_points.add(time_unix_nano=1700000000000000000, as_int=42)
+            point.attributes.add(key="tenant").value.string_value = f"tenant-{i}"
+            point.attributes.add(key="region").value.string_value = region
     metric.sum.aggregation_temporality = 2
     metric.sum.is_monotonic = True
     reordered = deepcopy(payload)
@@ -295,15 +327,20 @@ def test_metric_series_identity_ignores_label_order(tmp_path):
         cohorts = {}
         for _, _, metric in rows(pipeline.received["metrics"][0], "metrics"):
             for point in metric.sum.data_points:
-                attrs = tuple(sorted((attr.key, attr.value.string_value) for attr in point.attributes))
-                cohorts.setdefault(point.time_unix_nano, set()).add(attrs)
+                attrs = {attr.key: attr.value.string_value for attr in point.attributes}
+                cohorts.setdefault((point.time_unix_nano, attrs["region"]), set()).add(attrs["tenant"])
                 assert point.as_int == 42
             assert metric.sum.is_monotonic
             assert metric.sum.aggregation_temporality == 2
-        assert len(cohorts) == 2
-        first, second = cohorts.values()
-        assert 0 < len(first) < 128
-        assert first == second
+        assert len(cohorts) == 4
+        for region in ["east", "west"]:
+            first = cohorts[(1700000000000000000, region)]
+            second = cohorts[(1700000000000000001, region)]
+            expected = {f"tenant-{i}" for i in range(128)
+                        if keep(b"requests", 50, [("tenant", f"tenant-{i}"), ("region", region)])}
+            assert 0 < len(first) < 128
+            assert first == second == expected
+        assert cohorts[(1700000000000000000, "east")] != cohorts[(1700000000000000000, "west")]
     finally:
         pipeline.close()
 
@@ -330,12 +367,111 @@ def test_invalid_trace_ids_are_dropped(tmp_path):
         pipeline.close()
 
 
-def test_tail_defaults_release_pending_spans_at_shutdown(tmp_path):
+def test_tail_defaults_discard_pending_spans_at_shutdown(tmp_path):
     pipeline = Pipeline(tmp_path, {"traces": [{"name": "sampling", "type": "tail"}]})
     try:
         pipeline.service.start()
         pipeline.send("traces", source_payloads(8)["traces"])
         pipeline.service.stop()
         assert not rows(pipeline.received["traces"][0], "traces")
+    finally:
+        pipeline.close()
+
+
+
+def test_metric_series_identity_ignores_absent_labels(tmp_path):
+    processor = {"name": "sampling", "type": "probabilistic",
+                 "sampling_settings": {"sampling_percentage": 10}}
+    pipeline = Pipeline(tmp_path, {"metrics": [processor]}, "output")
+    payloads = []
+    for batch, extra in enumerate([None, "east", "east", ""]):
+        payload = ExportMetricsServiceRequest()
+        metric = payload.resource_metrics.add().scope_metrics.add().metrics.add(
+            name="requests", description="requests")
+        for i in range(128):
+            point = metric.gauge.data_points.add(time_unix_nano=1700000000000000000 + batch,
+                                                as_int=42)
+            point.attributes.add(key="tenant").value.string_value = f"tenant-{i}"
+        if extra is not None:
+            point = metric.gauge.data_points.add(time_unix_nano=1700000000000000000 + batch,
+                                                as_int=42)
+            point.attributes.add(key="region").value.string_value = extra
+            point.attributes.add(key="tenant").value.string_value = "extra"
+        if batch == 1:
+            metric.gauge.data_points.reverse()
+        payloads.append(payload)
+    expected = {f"tenant-{i}" for i in range(128)
+                if keep(b"requests", 10, [("tenant", f"tenant-{i}")])}
+    assert 0 < len(expected) < 128
+    try:
+        pipeline.service.start()
+        for payload in payloads:
+            pipeline.send("metrics", payload)
+        pipeline.service.wait_for_condition(
+            lambda: sum(len(metric.gauge.data_points)
+                        for _, _, metric in rows(pipeline.received["metrics"][1], "metrics")) == 515,
+            timeout=30, description="all metric batches on the control route")
+        pipeline.service.stop()
+        cohorts = {}
+        for _, _, metric in rows(pipeline.received["metrics"][0], "metrics"):
+            for point in metric.gauge.data_points:
+                attrs = {attr.key: attr.value.string_value for attr in point.attributes}
+                if attrs["tenant"] != "extra":
+                    cohorts.setdefault(point.time_unix_nano, set()).add(attrs["tenant"])
+        assert len(cohorts) == 4
+        assert all(cohort == expected for cohort in cohorts.values())
+    finally:
+        pipeline.close()
+
+
+@pytest.mark.parametrize("storage", ["context", "point"])
+def test_metric_series_identity_includes_all_exported_labels(tmp_path, storage):
+    processors = [{"name": "sampling", "type": "probabilistic",
+                   "sampling_settings": {"sampling_percentage": 25}}]
+    if storage == "context":
+        processors.insert(0, {"name": "labels", "upsert": "region east"})
+    pipeline = Pipeline(tmp_path, {"metrics": processors})
+    payload = source_payloads()["metrics"]
+    expected = Counter()
+    for _, _, metric in rows([payload], "metrics"):
+        if storage == "point":
+            data = getattr(metric, metric.WhichOneof("data"))
+            data.data_points[0].attributes.add(key="region").value.string_value = "east"
+        if keep(metric.name.encode(), 25, [("region", "east")]):
+            expected[metric.name] += 1
+    assert 0 < sum(expected.values()) < 256
+    try:
+        pipeline.service.start()
+        pipeline.send("metrics", payload)
+        pipeline.service.stop()
+        for route in range(2):
+            result = rows(pipeline.received["metrics"][route], "metrics")
+            assert Counter(metric.name for _, _, metric in result) == expected
+            for _, _, metric in result:
+                data = getattr(metric, metric.WhichOneof("data"))
+                labels = {attr.key: attr.value.string_value for attr in data.data_points[0].attributes}
+                assert labels == {"region": "east"}
+    finally:
+        pipeline.close()
+
+
+
+def test_tail_without_conditions_retains_traces_after_wait(tmp_path):
+    pipeline = Pipeline(tmp_path, {"traces": [{"name": "sampling", "type": "tail",
+                        "sampling_settings": {"decision_wait": "1s", "max_traces": 128}}]})
+    payload = source_payloads(8)["traces"]
+    expected = Counter(span.SerializeToString() for _, _, span in rows([payload], "traces"))
+    try:
+        pipeline.service.start()
+        pipeline.send("traces", payload)
+        pipeline.service.wait_for_condition(
+            lambda: all(len(rows(pipeline.received["traces"][route], "traces")) == 16
+                        for route in range(2)),
+            timeout=30, description="tail decisions without conditions on both routes")
+        pipeline.service.stop()
+        for route in range(2):
+            actual = Counter(span.SerializeToString()
+                             for _, _, span in rows(pipeline.received["traces"][route], "traces"))
+            assert actual == expected
     finally:
         pipeline.close()
