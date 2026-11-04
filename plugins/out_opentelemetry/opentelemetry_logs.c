@@ -597,6 +597,7 @@ static int append_v1_logs_metadata_and_fields(struct opentelemetry_context *ctx,
     size_t attr_count = 0;
     struct flb_ra_value *ra_val;
     msgpack_object *otlp_metadata;
+    msgpack_object *count_metadata;
     msgpack_object *event_name;
     Opentelemetry__Proto__Common__V1__KeyValue **attrs = NULL;
 
@@ -854,7 +855,11 @@ static int append_v1_logs_metadata_and_fields(struct opentelemetry_context *ctx,
 
     if (event->metadata && event->metadata->type == MSGPACK_OBJECT_MAP) {
         otlp_metadata = msgpack_map_get_object(&event->metadata->via.map, "otlp");
-        log_record->dropped_attributes_count = dropped_attribute_count(otlp_metadata);
+        count_metadata = msgpack_map_get_object(&event->metadata->via.map, ctx->logs_metadata_key);
+        if (count_metadata == NULL) {
+            count_metadata = otlp_metadata;
+        }
+        log_record->dropped_attributes_count = dropped_attribute_count(count_metadata);
 
         event_name = NULL;
         if (otlp_metadata && otlp_metadata->type == MSGPACK_OBJECT_MAP) {
@@ -1405,8 +1410,10 @@ start_resource:
 
                 /* group body: $resource['attributes'] */
                 set_resource_attributes(ctx->ra_resource_attr, event.body, resource_log->resource);
-                resource_log->resource->dropped_attributes_count =
-                    group_dropped_attribute_count(event.body, "resource");
+                if (inside_native_otel_group == FLB_TRUE) {
+                    resource_log->resource->dropped_attributes_count =
+                        group_dropped_attribute_count(event.body, "resource");
+                }
 
                 /* group body: $schema_url */
                 set_resource_schema_url(ctx->ra_resource_schema_url, event.body, resource_log);
@@ -1528,8 +1535,10 @@ start_resource:
 
                 /* group body: $scope['attributes'] */
                 set_scope_attributes(ctx->ra_scope_attr, event.body, scope_log->scope);
-                scope_log->scope->dropped_attributes_count =
-                    group_dropped_attribute_count(event.body, "scope");
+                if (inside_native_otel_group == FLB_TRUE) {
+                    scope_log->scope->dropped_attributes_count =
+                        group_dropped_attribute_count(event.body, "scope");
+                }
 
                 /* group body: $scope['schema_url'] */
                 set_scope_schema_url(ctx->ra_scope_schema_url, event.body, scope_log);
