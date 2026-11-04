@@ -11,6 +11,8 @@ Configure Fluent Bit with Emscripten 6.0.9 and `FLB_WASM_BROWSER=ON`,
 `FLB_DEBUG=OFF`, `FLB_RELEASE=OFF`, and `CMAKE_BUILD_TYPE=MinSizeRel`.
 Build target `fluent-bit-runtime`. The complete distributable is in
 `build-wasm-6.0.9-release/sdk/browser/`; copy the entire directory, not only the WASM.
+Browser builds require a separate build directory; in-source configurations are
+rejected to keep generated SDK assets from overwriting source files.
 The CMake install component is `wasm-sdk`. No registry publication is performed.
 The package is deliberately private until the release gates below are met.
 
@@ -74,7 +76,7 @@ For interactive runs, create one instance and retain it across runs:
 ```js
 await fluent.start({yaml, graceSeconds: 0});
 await fluent.push({input: 'application', records});
-await fluent.drain(); // Output callbacks have run; no setTimeout is needed.
+await fluent.drain(); // Output callbacks have been invoked; no setTimeout is needed.
 await fluent.stop();  // The module and pthread pool remain warm.
 // Repeat start/push/drain/stop with the next YAML, then destroy on final disposal.
 ```
@@ -103,8 +105,10 @@ One or two threads cannot host the current SDK's three concurrent C threads.
 - A partial input write makes the instance unusable: it cannot be replayed safely.
   Queue-full errors mean the command was not sent and may be retried after draining.
 - `drain()` immediately collects pending `lib` pipe data, flushes chunks through
-  the engine and awaits completion of local output tasks and delivery of queued
-  stdout/stderr callbacks. It requires exclusively nonthreaded, memory-backed
+  the engine, awaits completion of local output tasks, and invokes queued
+  stdout/stderr callbacks before resolving. It does not await promises returned
+  by those callbacks; applications must track their own asynchronous work.
+  It requires exclusively nonthreaded, memory-backed
   `lib` inputs and `stdout`/`null` outputs; other pipelines reject with
   `E_UNSUPPORTED`. Filtered/dropped and unmatched records need not produce output.
   Filter/processor-private buffered records are outside this engine-chunk barrier.
