@@ -81,13 +81,18 @@ static int remove_existing_socket_file(char *socket_path)
 static int fw_unix_create(struct flb_in_fw_config *ctx)
 {
     int ret;
-    char staging_dir[sizeof(((struct sockaddr_un *) 0)->sun_path)];
-    char staging_path[sizeof(((struct sockaddr_un *) 0)->sun_path)];
+    char staging_dir[sizeof(((struct sockaddr_un *) 0)->sun_path) + sizeof(".fb-XXXXXX/s")];
+    char staging_path[sizeof(((struct sockaddr_un *) 0)->sun_path) + sizeof(".fb-XXXXXX/s")];
     const char *separator;
     size_t parent_length;
     const char *bind_path;
     int staging_fd;
     struct stat staging_stat;
+
+    if (strlen(ctx->unix_path) >= sizeof(((struct sockaddr_un *) 0)->sun_path)) {
+        flb_plg_error(ctx->ins, "configured unix socket path is too long: '%s'", ctx->unix_path);
+        return -1;
+    }
 
     ret = remove_existing_socket_file(ctx->unix_path);
 
@@ -148,6 +153,11 @@ static int fw_unix_create(struct flb_in_fw_config *ctx)
                           staging_dir, ctx->unix_path);
             goto staging_setup_error;
         }
+        if (fchmod(staging_fd, 0700) != 0 || fstat(staging_fd, &staging_stat) != 0) {
+            flb_errno();
+            flb_plg_error(ctx->ins, "could not normalize staging directory '%s'", staging_dir);
+            goto staging_setup_error;
+        }
         if ((staging_stat.st_mode & 0777) != 0700) {
             flb_plg_error(ctx->ins, "staging directory '%s' has unsafe mode for unix socket '%s'",
                           staging_dir, ctx->unix_path);
@@ -177,6 +187,7 @@ static int fw_unix_create(struct flb_in_fw_config *ctx)
 
     if (ctx->downstream == NULL) {
         if (ctx->unix_perm_str) {
+            unlinkat(staging_fd, "s", 0);
             close(staging_fd);
             rmdir(staging_dir);
         }
