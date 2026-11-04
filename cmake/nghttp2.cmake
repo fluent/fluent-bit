@@ -8,8 +8,8 @@ FLB_DEFINITION(NGHTTP2_STATICLIB)
 
 include_directories(
     ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_NGHTTP2}/lib/includes/
-    ${FLB_PATH_ROOT_BINARY_DIR}/lib/nghttp2
-    ${FLB_PATH_ROOT_BINARY_DIR}/lib/nghttp2/lib/includes/
+    ${FLB_PATH_ROOT_BINARY_DIR}/${FLB_PATH_LIB_NGHTTP2}
+    ${FLB_PATH_ROOT_BINARY_DIR}/${FLB_PATH_LIB_NGHTTP2}/lib/includes/
 )
 
 add_subdirectory(${FLB_PATH_LIB_NGHTTP2} EXCLUDE_FROM_ALL)
