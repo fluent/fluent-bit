@@ -97,6 +97,35 @@ test('callback failures are isolated and log acknowledgments still flow', async 
     assert.deepEqual(codes.sort(), ['E_CALLBACK', 'E_LOG_DROPPED']);
     await sdk.destroy();
 });
+test('drain invokes output callbacks without awaiting their asynchronous work', async () => {
+    let releaseCallback;
+    let callbackDone = false;
+    const callback = new Promise(resolve => { releaseCallback = resolve; });
+    const sdk = await createFluentBit({...defaults, onStdout: async () => {
+        await callback;
+        callbackDone = true;
+    }});
+    await sdk.start({yaml: 'pipeline: {}'});
+    let drainRequest;
+    reply = (worker, message) => {
+        if (message.type === 'request' && message.method === 'drain') {
+            drainRequest = message;
+            worker.emit({type: 'logs', entries: [{stream: 'stdout', text: 'output'}], dropped: 0});
+        }
+        else if (message.type === 'log-ack') {
+            worker.emit({type: 'response', id: drainRequest.id, ok: true, value: null});
+        }
+        else if (message.type === 'request') {
+            worker.emit({type: 'response', id: message.id, ok: true, value: null});
+        }
+    };
+    await sdk.drain();
+    assert.equal(callbackDone, false);
+    releaseCallback();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(callbackDone, true);
+    await sdk.destroy();
+});
 test('ABI mismatch rejects initialization and terminates', async () => {
     reply = worker => worker.emit({abi: 2, type: 'ready'});
     await assert.rejects(createFluentBit(defaults), {code: 'E_ABI'});
@@ -260,13 +289,26 @@ test('drain stays in FIFO order between push and stop on a warm instance', async
     const sdk = await createFluentBit(defaults);
     await assert.rejects(sdk.drain(), {code: 'E_STATE'});
     const methods = [];
+    let releaseDrain;
+    let drainPosted;
+    const draining = new Promise(resolve => { drainPosted = resolve; });
     reply = (worker, message) => {
         if (message.type !== 'request') { return; }
         methods.push(message.method);
-        worker.emit({type: 'response', id: message.id, ok: true, value: null});
+        const respond = () => worker.emit({type: 'response', id: message.id, ok: true, value: null});
+        if (message.method === 'drain') {
+            releaseDrain = respond;
+            drainPosted();
+        }
+        else { respond(); }
     };
-    await Promise.all([sdk.start({yaml: 'pipeline: {}'}),
+    const operations = Promise.all([sdk.start({yaml: 'pipeline: {}'}),
         sdk.push({input: 'app', records: [{message: 'queued'}]}), sdk.drain(), sdk.stop()]);
+    await draining;
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.deepEqual(methods, ['start', 'push', 'drain']);
+    releaseDrain();
+    await operations;
     assert.deepEqual(methods, ['start', 'push', 'drain', 'stop']);
     await sdk.destroy();
 });
