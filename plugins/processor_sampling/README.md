@@ -70,6 +70,46 @@ trace cohort at intermediate percentages. Upgrade instances that must agree on
 trace decisions together. Configuration syntax and the default percentage stay
 the same; explicit invalid percentages now fail startup.
 
+### Sample logs from selected Kubernetes namespaces or applications
+
+Use the generic processor `condition` (singular) to select which logs are
+eligible for sampling. This example samples 10% of logs from the `checkout`
+application in the `staging` namespace and preserves all other logs:
+
+```yaml
+processors:
+  logs:
+    - name: sampling
+      type: probabilistic
+      condition:
+        op: and
+        rules:
+          - field: "$kubernetes['namespace_name']"
+            op: eq
+            value: staging
+          - field: "$kubernetes['labels']['app']"
+            op: eq
+            value: checkout
+      sampling_settings:
+        sampling_percentage: 10
+```
+
+These accessors read the log body. Kubernetes enrichment must run before this
+processor; for logs enriched by the Kubernetes filter, place the sampler on the
+output pipeline. Records missing either field bypass this sampler. Remove one
+rule to select only a namespace or application. Separate samplers can assign
+different rates to disjoint selections; overlapping selections are sampled again
+by each matching processor.
+
+Keep `sampling_key` set to `trace_id`, or use a request ID for ordinary logs.
+Namespace and application fields select eligible logs; using either as the
+sampling key makes the entire namespace or application share one keep/drop
+decision. Selecting only some logs can also break log/trace retention parity.
+
+This generic log condition is separate from tail sampling's `conditions` array.
+Tail attribute conditions retain matching traces and drop unmatched traces;
+they do not provide a percentage for selected namespaces with bypass for others.
+
 ### Metrics: stable series selection
 
 Metric sampling is opt-in under `processors.metrics`:
