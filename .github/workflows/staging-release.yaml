@@ -1202,6 +1202,15 @@ jobs:
           REPOSITORY: ${{ github.repository }}
         shell: bash
 
+  staging-release-browser-sdk:
+    name: Validate and publish the experimental browser SDK
+    needs: staging-release-create-release
+    permissions:
+      contents: write
+    uses: ./.github/workflows/wasm-browser.yaml
+    with:
+      release_tag: v${{ inputs.version }}
+
   staging-release-windows-checksums:
     name: Get Windows checksums for new release
     runs-on: ubuntu-22.04
