@@ -244,7 +244,7 @@ def test_disable_compression(exporter):
 def test_forward_log_anyvalue_uint64_and_bytes(exporter):
     service, urls = exporter
     # Forward isolates exporter fidelity from OTLP intake integer conversion.
-    body = {"double": 1.5, "int64": 9007199254740993, "minimum": -9223372036854775808, "uint64": 18446744073709551615, "int": 42, "str": "42", "bytes": b"\x00\xff", "nil": None, "unicode": '雪\n"\\\x00'}
+    body = {"int64_max": 9223372036854775807, "double": 1.5, "int64": 9007199254740993, "minimum": -9223372036854775808, "uint64": 18446744073709551615, "int": 42, "str": "42", "bytes": b"\x00\xff", "nil": None, "unicode": '雪\n"\\\x00'}
     forwarded = pack_forward(["typed", [[1789516800, body]], {}])
     with socket.create_connection(("127.0.0.1", int(os.environ["AUDIT_FORWARD_PORT"])), timeout=5) as conn:
         conn.sendall(forwarded)
@@ -255,6 +255,8 @@ def test_forward_log_anyvalue_uint64_and_bytes(exporter):
     assert values["str"].WhichOneof("value") == "string_value" and values["str"].string_value == "42"
     assert values["double"].double_value == 1.5
     assert values["int64"].int_value == 9007199254740993
+    assert values["int64_max"].WhichOneof("value") == "int_value"
+    assert values["int64_max"].int_value == 9223372036854775807
     assert values["minimum"].int_value == -9223372036854775808
     assert values["bytes"].bytes_value == b"\x00\xff"
     assert values["nil"].WhichOneof("value") is None
@@ -367,9 +369,53 @@ def test_non_string_map_keys_preserve_chunk_and_key_types(exporter):
     assert len(records[0].attributes) == 1
     assert records[0].attributes[0].key == "fluentbit.map"
     metadata_pairs = pairs(records[0].attributes[0].value)
+    assert metadata_pairs[0][1].string_value == "integer metadata"
+    assert metadata_pairs[1][1].string_value == "string metadata"
     assert metadata_pairs[0][0].int_value == 7
     assert metadata_pairs[1][0].string_value == "7"
     legacy = requests.get(urls["EXPORTER"] + "/api/v1/logs", timeout=5)
     assert legacy.ok and "valid companion" in legacy.text
     assert len([record for line in legacy.text.splitlines()
                 for record in json.loads(line)["records"]]) == 2
+
+
+@pytest.mark.parametrize("original", [
+    {1: "x"},
+    {"fluentbit.map": {1: "x"}},
+    {"fluentbit.type": "msgpack.map", "fluentbit.value": [[1, "x"]]},
+    {"fluentbit.type": "uint64", "fluentbit.value": "18446744073709551615"},
+    {"fluentbit.type": "msgpack.ext", "fluentbit.ext_type": 1,
+     "fluentbit.value": b"x"},
+    {"fluentbit.value": "ordinary value"},
+    {"fluentbit.ext_type": "ordinary type"},
+    {"fluentbit.map": {"fluentbit.map": {1: "x"}}},
+])
+def test_reserved_map_keys_round_trip(exporter, original):
+    service, urls = exporter
+    packet = pack_forward(["reserved-keys", [
+        [[1789516800, original], {"nested": original}],
+    ], {}])
+    with socket.create_connection(("127.0.0.1", int(os.environ["AUDIT_FORWARD_PORT"])), timeout=5) as conn:
+        conn.sendall(packet)
+    response = poll(service, urls["EXPORTER"] + "/api/v2/logs", lambda r: bool(r.json()["entries"]))
+    decoded = decode_otlp(response.json()["entries"][0]["payload"], ExportLogsServiceRequest)
+    record = decoded.resource_logs[0].scope_logs[0].log_records[0]
+
+    def unpack(value):
+        kind = value.WhichOneof("value")
+        if kind == "kvlist_value":
+            fields = {pair.key: pair.value for pair in value.kvlist_value.values}
+            if "fluentbit.type" in fields:
+                assert fields["fluentbit.type"].string_value == "msgpack.map"
+                return {unpack(pair.array_value.values[0]): unpack(pair.array_value.values[1])
+                        for pair in fields["fluentbit.value"].array_value.values}
+            return {key: unpack(item) for key, item in fields.items()}
+        if kind == "array_value":
+            return [unpack(item) for item in value.array_value.values]
+        assert kind in ("string_value", "int_value", "bytes_value")
+        return getattr(value, kind)
+
+    assert unpack(record.body) == {"nested": original}
+    assert len(record.attributes) == 1
+    assert record.attributes[0].key == "fluentbit.map"
+    assert unpack(record.attributes[0].value) == original
