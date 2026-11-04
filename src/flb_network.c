@@ -51,6 +51,10 @@
 #include <monkey/mk_core.h>
 #include <ares.h>
 
+#ifdef FLB_HAVE_UNIX_SOCKET
+#include <sys/wait.h>
+#endif
+
 #ifdef FLB_SYSTEM_MACOS
 #ifdef _GNU_SOURCE
 #undef _GNU_SOURCE
@@ -1795,6 +1799,84 @@ flb_sockfd_t flb_net_server_udp(const char *port, const char *listen_addr, int s
 }
 
 #ifdef FLB_HAVE_UNIX_SOCKET
+/* Bind long staging paths without changing the multithreaded parent's cwd. */
+static int net_bind_unix_long(flb_sockfd_t fd, const char *path)
+{
+    char *directory;
+    char *name;
+    int directory_fd;
+    int channel[2];
+    int error;
+    int status;
+    ssize_t count;
+    pid_t child;
+    pid_t waited;
+    struct sockaddr_un address;
+
+    directory = flb_strdup(path);
+    if (directory == NULL) {
+        return -1;
+    }
+    name = strrchr(directory, '/');
+    if (name == NULL || strlen(name + 1) >= sizeof(address.sun_path)) {
+        flb_free(directory);
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+    memset(&address, 0, sizeof(address));
+    address.sun_family = AF_UNIX;
+    strcpy(address.sun_path, name + 1);
+    *name = '\0';
+    directory_fd = open(directory[0] ? directory : "/", O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+    flb_free(directory);
+    if (directory_fd == -1) {
+        return -1;
+    }
+    if (pipe(channel) == -1) {
+        error = errno;
+        close(directory_fd);
+        errno = error;
+        return -1;
+    }
+    child = fork();
+    if (child == 0) {
+        /* Only async-signal-safe operations are allowed after fork. */
+        close(channel[0]);
+        error = 0;
+        if (fchdir(directory_fd) == -1 ||
+            bind(fd, (struct sockaddr *) &address,
+                 offsetof(struct sockaddr_un, sun_path) + strlen(address.sun_path) + 1) == -1) {
+            error = errno;
+        }
+        do {
+            count = write(channel[1], &error, sizeof(error));
+        } while (count == -1 && errno == EINTR);
+        _exit(count == sizeof(error) ? 0 : 1);
+    }
+    error = errno;
+    close(channel[1]);
+    close(directory_fd);
+    if (child == -1) {
+        close(channel[0]);
+        errno = error;
+        return -1;
+    }
+    do {
+        count = read(channel[0], &error, sizeof(error));
+    } while (count == -1 && errno == EINTR);
+    close(channel[0]);
+    do {
+        waited = waitpid(child, &status, 0);
+    } while (waited == -1 && errno == EINTR);
+    if (count != sizeof(error) || waited == -1 ||
+        !WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+        errno = EIO;
+        return -1;
+    }
+    errno = error;
+    return error == 0 ? 0 : -1;
+}
+
 flb_sockfd_t flb_net_server_unix(const char *listen_path,
                                  int stream_mode,
                                  int backlog,
@@ -1831,7 +1913,13 @@ flb_sockfd_t flb_net_server_unix(const char *listen_path,
             return -1;
         }
 
-        if (stream_mode) {
+        if (path_length >= sizeof(address.sun_path)) {
+            ret = net_bind_unix_long(fd, listen_path);
+            if (ret == 0 && stream_mode) {
+                ret = listen(fd, backlog);
+            }
+        }
+        else if (stream_mode) {
             ret = flb_net_bind(fd,
                                (const struct sockaddr *) &address,
                                address_length,
@@ -1847,6 +1935,7 @@ flb_sockfd_t flb_net_server_unix(const char *listen_path,
             flb_warn("Cannot bind to or listen on %s", listen_path);
 
             flb_socket_close(fd);
+            return -1;
         }
     }
     else {
