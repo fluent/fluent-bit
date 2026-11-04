@@ -5,7 +5,7 @@ const ABI = 1;
 const PTHREAD_LOAD = 1;
 const PTHREAD_LOADED = 3;
 // Keep the prewarmed pool aligned with cmake/wasm-sdk.cmake.
-const PTHREAD_POOL_SIZE = 4;
+const PTHREAD_POOL_SIZE = 3;
 const preparedWorkers = new Map();
 let runtime;
 let state = 'loading';
