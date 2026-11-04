@@ -25,6 +25,7 @@
 #include <errno.h>
 
 #include <monkey/mk_core.h>
+#include <fluent-bit/flb_socket.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
@@ -290,6 +291,13 @@ struct flb_config *flb_config_init()
         flb_errno();
         return NULL;
     }
+
+    config->ch_data[0] = FLB_UNINITIALIZED_SOCKET;
+    config->ch_data[1] = FLB_UNINITIALIZED_SOCKET;
+    config->ch_manager[0] = FLB_UNINITIALIZED_SOCKET;
+    config->ch_manager[1] = FLB_UNINITIALIZED_SOCKET;
+    config->ch_notif[0] = FLB_UNINITIALIZED_SOCKET;
+    config->ch_notif[1] = FLB_UNINITIALIZED_SOCKET;
 
     /* Prepare worker TLS before any config-time logging checks. */
     flb_worker_init(config);
@@ -603,32 +611,38 @@ void flb_config_exit(struct flb_config *config)
         flb_kernel_destroy(config->kernel);
     }
 
-    /* release resources */
-    if (config->ch_event.fd) {
-        mk_event_closesocket(config->ch_event.fd);
+    /* The manager channel owns ch_event.fd; do not close the alias. */
+    if (config->ch_data[0] > 0) {
+        flb_pipe_close(config->ch_data[0]);
+        config->ch_data[0] = FLB_UNINITIALIZED_SOCKET;
     }
-
-    /* Pipe */
-    if (config->ch_data[0]) {
-        flb_pipe_destroy(config->ch_data);
+    if (config->ch_data[1] > 0) {
+        flb_pipe_close(config->ch_data[1]);
+        config->ch_data[1] = FLB_UNINITIALIZED_SOCKET;
     }
 
     /* Channel manager */
     if (config->ch_manager[0] > 0) {
         mk_event_closesocket(config->ch_manager[0]);
-        if (config->ch_manager[0] != config->ch_manager[1]) {
-            mk_event_closesocket(config->ch_manager[1]);
-        }
     }
+    if (config->ch_manager[1] > 0 &&
+        config->ch_manager[1] != config->ch_manager[0]) {
+        mk_event_closesocket(config->ch_manager[1]);
+    }
+    config->ch_manager[0] = FLB_UNINITIALIZED_SOCKET;
+    config->ch_manager[1] = FLB_UNINITIALIZED_SOCKET;
+    config->ch_event.fd = FLB_UNINITIALIZED_SOCKET;
 
     /* Channel notifications */
     if (config->ch_notif[0] > 0) {
         mk_event_closesocket(config->ch_notif[0]);
-        if (config->ch_notif[1] > 0 &&
-            config->ch_notif[0] != config->ch_notif[1]) {
-            mk_event_closesocket(config->ch_notif[1]);
-        }
     }
+    if (config->ch_notif[1] > 0 &&
+        config->ch_notif[1] != config->ch_notif[0]) {
+        mk_event_closesocket(config->ch_notif[1]);
+    }
+    config->ch_notif[0] = FLB_UNINITIALIZED_SOCKET;
+    config->ch_notif[1] = FLB_UNINITIALIZED_SOCKET;
 
     /* free heap-owned multiline_buffer_limit if set */
     if (config->multiline_buffer_limit) {
