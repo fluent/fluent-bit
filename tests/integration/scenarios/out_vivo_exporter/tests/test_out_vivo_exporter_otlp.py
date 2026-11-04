@@ -244,7 +244,7 @@ def test_disable_compression(exporter):
 def test_forward_log_anyvalue_uint64_and_bytes(exporter):
     service, urls = exporter
     # Forward isolates exporter fidelity from OTLP intake integer conversion.
-    body = {"int64": 9007199254740993, "minimum": -9223372036854775808, "uint64": 18446744073709551615, "int": 42, "str": "42", "bytes": b"\x00\xff", "nil": None, "unicode": '雪\n"\\\x00'}
+    body = {"double": 1.5, "int64": 9007199254740993, "minimum": -9223372036854775808, "uint64": 18446744073709551615, "int": 42, "str": "42", "bytes": b"\x00\xff", "nil": None, "unicode": '雪\n"\\\x00'}
     forwarded = pack_forward(["typed", [[1789516800, body]], {}])
     with socket.create_connection(("127.0.0.1", int(os.environ["AUDIT_FORWARD_PORT"])), timeout=5) as conn:
         conn.sendall(forwarded)
@@ -253,6 +253,7 @@ def test_forward_log_anyvalue_uint64_and_bytes(exporter):
     values = {pair.key: pair.value for pair in decoded.resource_logs[0].scope_logs[0].log_records[0].body.kvlist_value.values}
     assert values["int"].WhichOneof("value") == "int_value" and values["int"].int_value == 42
     assert values["str"].WhichOneof("value") == "string_value" and values["str"].string_value == "42"
+    assert values["double"].double_value == 1.5
     assert values["int64"].int_value == 9007199254740993
     assert values["minimum"].int_value == -9223372036854775808
     assert values["bytes"].bytes_value == b"\x00\xff"
@@ -336,3 +337,39 @@ def test_head_matches_get_headers(exporter, mode):
             if "/internal/" not in path:
                 assert head_headers.get("content-length") == get_headers.get("content-length")
     assert "head parity" in requests.get(urls["EXPORTER"] + "/api/v2/logs", timeout=5).text
+
+
+def test_non_string_map_keys_preserve_chunk_and_key_types(exporter):
+    service, urls = exporter
+    body = {"nested": {1: "integer", "1": "string", -2: 1.5}}
+    metadata = {7: "integer metadata", "7": "string metadata"}
+    packet = pack_forward(["map-keys", [
+        [[1789516800, metadata], body],
+        [1789516800, {"message": "valid companion"}],
+    ], {}])
+    with socket.create_connection(("127.0.0.1", int(os.environ["AUDIT_FORWARD_PORT"])), timeout=5) as conn:
+        conn.sendall(packet)
+    response = poll(service, urls["EXPORTER"] + "/api/v2/logs", lambda r: "valid companion" in r.text)
+    records = [record for entry in response.json()["entries"]
+               for resource in decode_otlp(entry["payload"], ExportLogsServiceRequest).resource_logs
+               for scope in resource.scope_logs for record in scope.log_records]
+    assert len(records) == 2
+
+    def pairs(value):
+        fields = {pair.key: pair.value for pair in value.kvlist_value.values}
+        assert fields["fluentbit.type"].string_value == "msgpack.map"
+        return [pair.array_value.values for pair in fields["fluentbit.value"].array_value.values]
+
+    body_pairs = pairs(records[0].body.kvlist_value.values[0].value)
+    assert body_pairs[0][0].int_value == 1 and body_pairs[0][1].string_value == "integer"
+    assert body_pairs[1][0].string_value == "1" and body_pairs[1][1].string_value == "string"
+    assert body_pairs[2][0].int_value == -2 and body_pairs[2][1].double_value == 1.5
+    assert len(records[0].attributes) == 1
+    assert records[0].attributes[0].key == "fluentbit.map"
+    metadata_pairs = pairs(records[0].attributes[0].value)
+    assert metadata_pairs[0][0].int_value == 7
+    assert metadata_pairs[1][0].string_value == "7"
+    legacy = requests.get(urls["EXPORTER"] + "/api/v1/logs", timeout=5)
+    assert legacy.ok and "valid companion" in legacy.text
+    assert len([record for line in legacy.text.splitlines()
+                for record in json.loads(line)["records"]]) == 2
