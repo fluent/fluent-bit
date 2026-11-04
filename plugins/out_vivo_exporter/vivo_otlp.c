@@ -1,10 +1,6 @@
 /* Fluent Bit - Copyright (C) 2015-2026 The Fluent Bit Authors
  * SPDX-License-Identifier: Apache-2.0
  */
-#include <inttypes.h>
-#include <limits.h>
-#include <math.h>
-#include <ctype.h>
 #include <fluent-bit/flb_base64.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <cmetrics/cmt_decode_msgpack.h>
@@ -12,6 +8,12 @@
 #include <ctraces/ctr_decode_msgpack.h>
 #include <ctraces/ctr_encode_opentelemetry.h>
 #include <opentelemetry/proto/collector/trace/v1/trace_service.pb-c.h>
+
+#include <inttypes.h>
+#include <limits.h>
+#include <math.h>
+#include <ctype.h>
+
 #include "vivo_otlp.h"
 
 /* Keep the OTLP type information until the final JSON write. */

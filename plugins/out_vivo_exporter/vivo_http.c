@@ -25,9 +25,9 @@
 #include <fluent-bit/flb_metrics_exporter.h>
 #include <fluent-bit/http_server/flb_hs_utils.h>
 
-#include <ctype.h>
-
 #include <cmetrics/cmt_encode_msgpack.h>
+
+#include <ctype.h>
 
 #include "vivo.h"
 #include "vivo_http.h"
