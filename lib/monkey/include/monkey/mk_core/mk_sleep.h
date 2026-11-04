@@ -34,6 +34,7 @@
 #include <windows.h>	/* WinAPI */
 
 /* Windows sleep in 100ns units */
+#ifndef __MINGW32__
 static inline BOOLEAN nanosleep(LONGLONG ns){
 	/* Declarations */
 	HANDLE timer;	/* Timer handle */
@@ -54,6 +55,7 @@ static inline BOOLEAN nanosleep(LONGLONG ns){
 	/* Slept without problems */
 	return TRUE;
 }
+#endif
 #endif
 
 #endif

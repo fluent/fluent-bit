@@ -27,6 +27,8 @@
 #include "we.h"
 #include "we_wmi.h"
 #include "we_config.h"
+#include "we_util.h"
+#include "we_perflib.h"
 
 /* collectors */
 #include "we_cpu.h"

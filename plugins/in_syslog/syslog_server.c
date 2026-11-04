@@ -53,9 +53,11 @@ static int remove_existing_socket_file(char *socket_path)
         return -1;
     }
 
+#ifdef S_ISSOCK
     if (S_ISSOCK(file_data.st_mode) == 0) {
         return -2;
     }
+#endif
 
     result = unlink(socket_path);
 
