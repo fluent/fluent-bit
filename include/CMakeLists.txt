@@ -1,5 +1,5 @@
 # Install fluent-bit headers
-install(FILES "fluent-bit.h"
+install(FILES "fluent-bit.h" "fluent-bit-minimal.h"
     DESTINATION ${FLB_INSTALL_INCLUDEDIR}
     COMPONENT headers
     PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
