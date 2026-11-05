@@ -184,6 +184,12 @@ order is preserved.
 | `fb.set_severity(log, level)` | Set severity text and number from a level name: `trace`, `debug`, `info`, `warn`, `error`, `fatal`, and common aliases. |
 | `fb.set_trace_context(log, trace_hex, span_hex)` | Set the trace and span IDs from hexadecimal strings. IDs must be nonzero. |
 | `fb.log_field(log, name)` | Read an OpenTelemetry log field such as `severity_number`, `trace_id`, or `observed_timestamp`. |
+| `fb.unpack_json(log, field)` | Decode a JSON object from a body field (`message` by default) and replace `log.body`. Return `true` on success or `false, error` for a missing/non-string field, ordinary parse failure, or non-object JSON; the original body is preserved for these failures. Uses the same typed parser and limits as `fb.parse_json`. |
+
+Instruction-limit exhaustion in the JSON helpers fails the callback instead of
+returning a recoverable decode error. Changes are rolled
+back and `error_mode` determines the record outcome: the default `drop` removes
+the record, while `keep` forwards the original.
 
 ### Example: parse an embedded JSON message
 
@@ -191,32 +197,68 @@ order is preserved.
 local fb = require("fluentbit")
 
 function process(log)
-    local text = log.body:get_string("message")
-    if not text or not text:match("^%s*{") then
-        return
-    end
-
-    local ok, app = pcall(fb.parse_json, text)
-    if not ok then
-        return fb.DROP
-    end
-
-    fb.redact(app, {"authorization", "password"})
-    log.body = app
-
-    if fb.is_otel(log) then
-        local level = app:get_string("level")
-        if level then
-            fb.set_severity(log, level)
-        end
-
-        local time = app:get_string("time")
-        if time then
-            log.timestamp = fb.parse_time(time)
-        end
-    end
+    fb.unpack_json(log, "message")
+    fb.redact(log.body, {"authorization", "password"})
 end
 ```
+
+The example allows mixed streams to pass plain text through. The unpack call
+keeps plain text, missing/non-string fields, malformed JSON, and non-object JSON
+unchanged. `fb.redact` matches keys in maps and arrays; it does not inspect
+secrets inside the unchanged message string. If every forwarded message must be
+decoded for key-based redaction, drop records when decoding fails:
+
+```lua
+function process(log)
+    if not fb.unpack_json(log, "message") then return fb.DROP end
+    fb.redact(log.body, {"authorization", "password"})
+end
+```
+
+### Decode a field in place
+
+Use `fb.decode_json(container, key)` to replace only the selected string field
+with its decoded value. The same helper works with body maps, nested maps,
+OpenTelemetry attributes, and array elements:
+
+```lua
+function process(log)
+    fb.decode_json(log.body, "message")
+    if fb.is_otel(log) then
+        fb.decode_json(log.attributes, "payload")
+        fb.decode_json(log.resource.attributes, "labels")
+    end
+    fb.redact(log.body, {"authorization", "password"})
+end
+```
+
+For example, `{"message":"{\"level\":\"info\"}","host":"web"}` becomes
+`{"message":{"level":"info"},"host":"web"}`. By comparison,
+`fb.unpack_json(log, "message")` produces `{"level":"info"}` as the whole body.
+Both operations decode one selected string; strings inside the decoded JSON
+require another explicit call.
+
+`fb.decode_json` accepts any valid JSON value, including arrays, null, and
+booleans. `fb.unpack_json` requires an object because a log body must be a map.
+Missing/non-string fields and ordinary parse failures return `false, error`
+without changing the target. Successful decoding returns `true`. Invalid
+container/key arguments, expired views, and failures while applying a mutation
+raise errors and follow the callback's `error_mode`.
+
+For OpenTelemetry log bodies and attributes, the JSON helpers reject unsigned
+integers above `9223372036854775807` (`INT64_MAX`), including values nested in
+objects or arrays. OTLP AnyValue integers must fit signed 64 bits. The helpers
+return `false, error` before mutation, preserving the original field or body.
+Ordinary logs, detached scratch maps, `fb.parse_json`, and `fb.try_parse_json`
+retain full unsigned 64-bit support.
+
+These helper statuses are separate from callback results. Leaving `process`
+without an explicit return is equivalent to `return fb.KEEP`: successful
+changes are committed and the record is forwarded. To remove a record, return
+`fb.DROP` explicitly; do not return a helper's boolean status from `process`.
+
+Use `fb.try_parse_json(text)` when you need the parsed value without mutating a
+container. `fb.parse_json(text)` remains the throwing parser.
 
 ## Metrics
 
@@ -316,6 +358,8 @@ parent references.
 | `fb.redact(value, keys, replacement)` | Replace the values of matching keys in nested maps and arrays. Key matching is case-insensitive. The default replacement is `[REDACTED]`. |
 | `fb.keep_keys(map, keys)` | Remove every key not listed. |
 | `fb.parse_json(text)` | Parse a JSON document into typed values. Integer widths are preserved; duplicate keys and nesting beyond 64 levels are rejected. Input is limited to 1 MiB. |
+| `fb.decode_json(container, key)` | Decode a string field in a typed map or array in place. Return `true` on success or `false, error` for a missing/non-string field or ordinary parse failure. Preserve sibling fields and leave the source unchanged on failure. Array indexes start at 1; map keys are literal. |
+| `fb.try_parse_json(text)` | Return the same typed value as `fb.parse_json`, or `nil, error` for invalid JSON or non-string input (including a missing field). JSON `null` returns a typed null value, and JSON `false` returns a typed boolean value. The same parser and policy limits apply. |
 | `fb.parse_time(text)` | Parse an RFC 3339 timestamp into `{sec, nsec}`. |
 
 Key-based redaction does not inspect free-form strings; secrets embedded in
