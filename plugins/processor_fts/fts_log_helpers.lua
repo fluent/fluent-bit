@@ -1,4 +1,18 @@
 local fb = package.loaded.fluentbit
+--- Replace a log body with a decoded object; preserve it and return false, error on failure.
+function fb.unpack_json(log, field)
+  local source = log.body:get(field or 'message')
+  if not source or source:type() ~= 'string' then
+    return false, 'JSON source field must be a string'
+  end
+  local value, err = fb.try_parse_json(source:value())
+  if not value then return false, err end
+  if value:type() ~= 'map' then return false, 'JSON body must be an object' end
+  err = fb._fts_json_integer_error(log.body, value)
+  if err then return false, err end
+  log.body = value
+  return true
+end
 function fb.is_otel(log)
   local schema = rawget(log, 'context') and rawget(log, 'context').metadata:get('schema')
   return schema and schema:type() == 'string' and schema:value() == 'otlp' or false
