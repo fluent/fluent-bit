@@ -330,3 +330,15 @@ def test_wait_for_hot_reload_count_times_out(monkeypatch):
 
     with pytest.raises(TimeoutError, match="Timed out waiting for hot reload count 1"):
         manager.wait_for_hot_reload_count(1, timeout=0.25)
+
+
+
+def test_monitoring_port_excludes_service_listener_ports(monkeypatch):
+    ports = iter([31337, 31338, 31339])
+    monkeypatch.setattr(manager_module, "find_available_port", lambda *args: next(ports))
+    monkeypatch.setenv("FTS_TEST_MONITOR_PORT", "previous")
+    manager = FluentBitManager("/tmp/fluent-bit.yaml")
+    manager.excluded_ports.update([31337, 31338])
+    manager.set_http_monitoring_port("FTS_TEST_MONITOR_PORT")
+    assert manager.http_monitoring_port == "31339"
+    assert manager_module.os.environ["FTS_TEST_MONITOR_PORT"] == "31339"

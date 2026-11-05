@@ -806,6 +806,9 @@ class Service:
     def scrape_prometheus_metrics(self):
         url = f"http://127.0.0.1:{self.flb.http_monitoring_port}/api/v2/metrics/prometheus"
         response = requests.get(url, timeout=5)
+        if response.status_code in (404, 503):
+            # Health readiness can precede the first v2 metrics snapshot.
+            return ""
         response.raise_for_status()
         return response.text
 

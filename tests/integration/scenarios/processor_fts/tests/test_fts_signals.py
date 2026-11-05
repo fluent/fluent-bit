@@ -166,7 +166,7 @@ class SignalRunner:
         self.sequence = 0
 
     def run(self, case, kind="gauge", transport="protobuf", points=None, temporality=None,
-            extra_resource=None):
+            extra_resource=None, custom_items=None):
         self.log_offset = len(Path(self.manager.log_file).read_text())
         self.sequence += 1
         request_id = f"{case}-{self.sequence}"
@@ -174,6 +174,8 @@ class SignalRunner:
         resource_key, scope_key, item_key = (("resourceMetrics", "scopeMetrics", "metrics") if metrics else
                                             ("resourceSpans", "scopeSpans", "spans"))
         items = [metric(kind, case), metric(kind, "control")] if metrics else [span(case), span("control")]
+        if custom_items is not None:
+            items = copy.deepcopy(custom_items)
         if points is not None:
             items[0][kind]["dataPoints"] = points
         if temporality is not None:
