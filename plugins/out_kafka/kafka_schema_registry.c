@@ -112,6 +112,11 @@ static int schema_registry_endpoint_create(struct flb_out_kafka *ctx,
     }
     else if (strcasecmp(protocol, "https") == 0) {
 #ifdef FLB_HAVE_TLS
+        if (!ctx->ins->use_tls || ctx->ins->tls == NULL) {
+            flb_plg_error(ctx->ins, "HTTPS Schema Registry requires tls on");
+            ret = -1;
+            goto cleanup;
+        }
         port = port_str != NULL ? atoi(port_str) : 443;
         io_flags = FLB_IO_TLS;
 #else
