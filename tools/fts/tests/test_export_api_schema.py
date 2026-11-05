@@ -79,6 +79,19 @@ class ExportApiTests(unittest.TestCase):
             self.assertEqual(result.returncode, 1)
             self.assertIn("stale API manifest", result.stderr)
 
+    def test_json_helper_signatures_and_availability(self):
+        """Expose safe JSON decoding with its tuple returns and log-only helper."""
+        functions = {f["name"]: f for f in self.manifest["modules"]["fb"]["functions"]}
+        for name, result in [("try_parse_json", "FtsValue?"), ("decode_json", "boolean"),
+                             ("unpack_json", "boolean")]:
+            self.assertEqual([r["type"] for r in functions[name]["returns"]], [result, "string?"])
+        self.assertTrue(functions["try_parse_json"]["nodiscard"])
+        self.assertFalse(functions["decode_json"]["nodiscard"])
+        self.assertFalse(functions["unpack_json"]["nodiscard"])
+        self.assertEqual(functions["decode_json"]["signals"], ["logs", "metrics", "traces"])
+        self.assertEqual(functions["unpack_json"]["signals"], ["logs"])
+        self.assertTrue(functions["unpack_json"]["parameters"][1]["optional"])
+
     def test_unsupported_or_incomplete_declarations_fail(self):
         """Reject unsupported syntax and annotations without a declaration."""
         for old, new in [
