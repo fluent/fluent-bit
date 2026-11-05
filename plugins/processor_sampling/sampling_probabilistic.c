@@ -210,7 +210,15 @@ int sampling_probabilistic_logs(struct flb_processor_instance *ins, void *chunk_
         value = map_field(map_field(record->cobj_metadata->variant, "otlp"),
                           settings->sampling_key);
         if (!value) {
+            value = map_field(map_field(map_field(record->cobj_metadata->variant, "otlp"),
+                                         "attributes"), settings->sampling_key);
+        }
+        if (!value) {
             value = map_field(record->cobj_metadata->variant, settings->sampling_key);
+        }
+        if (!value) {
+            value = map_field(map_field(record->cobj_metadata->variant, "attributes"),
+                               settings->sampling_key);
         }
         if (!value) {
             value = map_field(record->cobj_record->variant, settings->sampling_key);
