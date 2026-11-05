@@ -154,8 +154,6 @@ static int str_to_regex(const char *pattern, OnigRegex *reg)
 /* Initialize backend library */
 int flb_regex_init()
 {
-    /* Bound VM work across the entire search, including all start positions. */
-    onig_set_match_operation_limit(10000000UL);
     return onig_init();
 }
 
