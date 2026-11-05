@@ -117,11 +117,38 @@ static int cb_kafka_init(struct flb_output_instance *ins,
         return -1;
     }
 
+#ifdef FLB_HAVE_METRICS
+    ctx->cmt_rejected_records = cmt_counter_create(ins->cmt,
+        "fluentbit", "kafka", "rejected_records_total",
+        "Records permanently rejected by the serializer (including retry attempts).",
+        2, (char *[]) {"name", "format"});
+    if (ctx->cmt_rejected_records == NULL) {
+        flb_out_kafka_destroy(ctx);
+        return -1;
+    }
+#endif
+
     /* Set global context */
     flb_output_set_context(ins, ctx);
     return 0;
 }
 
+#ifdef FLB_HAVE_KAFKA_SCHEMA_REGISTRY
+/* A rejected record is consumed; continue with the remaining chunk records. */
+static int reject_record(struct flb_out_kafka *ctx, char *format)
+{
+    flb_plg_error(ctx->ins, "permanently rejected %s record: serialization failed", format);
+#ifdef FLB_HAVE_METRICS
+    cmt_counter_inc(ctx->cmt_rejected_records, cfl_time_now(), 2,
+                    (char *[]) {flb_output_name(ctx->ins), format});
+#endif
+    return FLB_OK;
+}
+#endif
+
+/** Serialize and enqueue one record, consuming invalid data and retrying resources.
+ * Avro output sizing is measured independently of the input MessagePack size.
+ */
 int produce_message(struct flb_time *tm, msgpack_object *map,
                     struct flb_out_kafka *ctx, struct flb_config *config)
 {
@@ -357,7 +384,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         s = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size, config->json_escape_unicode);
         if (s == NULL) {
             msgpack_sbuffer_destroy(&mp_sbuf);
-            return FLB_ERROR;
+            return FLB_RETRY;
         }
         ret = flb_kafka_protobuf_encode(ctx->protobuf, ctx->schema_id, s, flb_sds_len(s),
                                        &protobuf_payload, &out_size,
@@ -366,13 +393,13 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         if (ret != 0) {
             flb_plg_error(ctx->ins, "cannot encode Protobuf event: %s", protobuf_error);
             msgpack_sbuffer_destroy(&mp_sbuf);
-            return FLB_ERROR;
+            return ret == -2 ? FLB_RETRY : reject_record(ctx, "protobuf");
         }
         s = flb_sds_create_len(protobuf_payload, out_size);
         flb_kafka_protobuf_free(protobuf_payload);
         if (s == NULL) {
             msgpack_sbuffer_destroy(&mp_sbuf);
-            return FLB_ERROR;
+            return FLB_RETRY;
         }
         out_buf = s;
     }
@@ -400,39 +427,35 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         if (mp_sbuf.size > AVRO_LINE_MAX_LEN) {
             flb_plg_warn(ctx->ins, "skipping long line AVRO:len:%zu:limit:%zu:schemaID:%d:\n", (size_t)mp_sbuf.size, (size_t)AVRO_LINE_MAX_LEN, ctx->schema_id);
             msgpack_sbuffer_destroy(&mp_sbuf);
-            return FLB_OK;
+            return reject_record(ctx, "avro");
         }
 
         flb_plg_debug(ctx->ins, "using default buffer AVRO:len:%zu:limit:%zu:schemaID:%d:\n", (size_t)mp_sbuf.size, (size_t)AVRO_DEFAULT_BUFFER_SIZE, ctx->schema_id);
         out_buf = avro_buff;
         out_size = AVRO_DEFAULT_BUFFER_SIZE;
 
-	if (mp_sbuf.size + AVRO_SCHEMA_OVERHEAD >= AVRO_DEFAULT_BUFFER_SIZE) {
-            flb_plg_info(ctx->ins, "upsizing to dynamic buffer AVRO:len:%zu:schemaID:%d:\n", (size_t)mp_sbuf.size, ctx->schema_id);
-            avro_fast_buffer = false;
-            // avro will always be  smaller than msgpack
-            // it contains no meta-info aside from the schemaid
-            // all the metadata is in the schema which is not part of the msg
-            // add schemaid + magic byte for safety buffer and allocate
-            // that's 16 byte schemaid and one byte magic byte
-            out_size = mp_sbuf.size + AVRO_SCHEMA_OVERHEAD;
-            out_buf = flb_malloc(out_size);
-            if (!out_buf) {
-                flb_plg_error(ctx->ins, "error allocating memory for decoding to AVRO:schema:%s:schemaID:%d:\n", ctx->schema_str, ctx->schema_id);
-                msgpack_sbuffer_destroy(&mp_sbuf);
-                return FLB_ERROR;
-            }
-	}
-
         avro_fields.schema_str = ctx->schema_str;
         avro_fields.schema_id = ctx->schema_id;
-        if(!flb_msgpack_raw_to_avro_sds(mp_sbuf.data, mp_sbuf.size, &avro_fields, out_buf, &out_size)) {
-            flb_plg_error(ctx->ins, "error encoding to AVRO:schema:%s:schemaID:%d:\n", ctx->schema_str, ctx->schema_id);
+        ret = flb_msgpack_raw_to_avro_status(mp_sbuf.data, mp_sbuf.size, &avro_fields,
+                                             out_buf, &out_size);
+        if (ret == FLB_AVRO_BUFFER_TOO_SMALL) {
+            /* Avro can be larger than MessagePack. Use the measured wire size. */
+            out_buf = flb_malloc(out_size);
+            if (out_buf == NULL) {
+                msgpack_sbuffer_destroy(&mp_sbuf);
+                return FLB_RETRY;
+            }
+            avro_fast_buffer = false;
+            ret = flb_msgpack_raw_to_avro_status(mp_sbuf.data, mp_sbuf.size, &avro_fields,
+                                                 out_buf, &out_size);
+        }
+        if (ret != FLB_TRUE) {
+            flb_plg_error(ctx->ins, "cannot encode Avro event (schema ID %d)", ctx->schema_id);
             msgpack_sbuffer_destroy(&mp_sbuf);
             if (!avro_fast_buffer) {
                 flb_free(out_buf);
 	    }
-            return FLB_ERROR;
+            return ret < 0 ? FLB_RETRY : reject_record(ctx, "avro");
         }
 
     }
