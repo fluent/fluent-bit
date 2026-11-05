@@ -45,6 +45,11 @@ def reset_schema_registry_server_state():
     data_storage["requests"] = []
 
 
+class SchemaRegistryServer(ThreadingHTTPServer):
+    # Allow concurrent test clients to connect while the accept loop is scheduled.
+    request_queue_size = 64
+
+
 class SchemaRegistryHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -112,7 +117,7 @@ def schema_registry_server_run(port, host="127.0.0.1", *, responses=None,
 
     response_overrides = responses or {}
     reset_schema_registry_server_state()
-    server_instance = ThreadingHTTPServer((host, port), SchemaRegistryHandler)
+    server_instance = SchemaRegistryServer((host, port), SchemaRegistryHandler)
     if tls_crt_file is not None:
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.load_cert_chain(tls_crt_file, tls_key_file)
