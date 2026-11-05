@@ -18,6 +18,7 @@
  */
 
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_log_event_encoder.h>
 #include <fluent-bit/flb_byteswap.h>
 #include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_mem.h>
@@ -25,6 +26,8 @@
 #include <cfl/cfl_container.h>
 #include <math.h>
 #include "fts.h"
+#include "fts_state.h"
+#include "fts_window.h"
 #include "fts_helpers.h"
 
 /* Log semantics remain in the log adapter. */
@@ -671,7 +674,9 @@ static int run_record(lua_State *l)
             lua_pushliteral(l, "drop");
             return 1;
         }
-        if (!result || result_length != 4 || memcmp(result, "keep", 4) != 0) {
+        if (!result || result_length != 4 ||
+            (memcmp(result, "keep", 4) != 0 &&
+             !(call->ctx->window_requested && memcmp(result, "hold", 4) == 0))) {
             return luaL_error(l, "callback must return nil, fb.KEEP or fb.DROP");
         }
     }
@@ -780,7 +785,7 @@ static int run_record(lua_State *l)
      * Determine final changes only after all helpers have finished. Results:
      * "keep", body, metadata, context attributes, context metadata, sec, nsec.
      */
-    lua_pushliteral(l, "keep");
+    lua_pushstring(l, call->ctx->window_requested ? "hold" : "keep");
 
     call->result_body = push_record_result(l, event, FTS_KEY_BODY, original_body);
     call->result_metadata = push_record_result(l, event, FTS_KEY_METADATA, original_metadata);
@@ -1368,6 +1373,63 @@ static int reopen_source_group(struct fts_runtime *ctx, struct flb_mp_chunk_cobj
     return 0;
 }
 
+/* Freeze one complete event with its context; no Lua views escape the callback. */
+static int window_capture(struct fts_runtime *ctx, struct flb_mp_chunk_record *record,
+                           struct cfl_object *attributes, struct cfl_object *metadata,
+                           const char *tag, int tag_length)
+{
+    struct flb_log_event_encoder *encoder;
+    struct flb_log_event_decoder *decoder;
+    struct flb_mp_chunk_cobj *temporary;
+    struct flb_mp_chunk_record *copy;
+    struct flb_mp_chunk_record *group;
+    char *buffer;
+    size_t bytes;
+    int result;
+
+    encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+    decoder = flb_log_event_decoder_create(NULL, 0);
+    temporary = encoder && decoder ? flb_mp_chunk_cobj_create(encoder, decoder) : NULL;
+    copy = NULL;
+    group = NULL;
+    buffer = NULL;
+    result = FTS_WINDOW_ERROR;
+    if (temporary == NULL) {
+        goto done;
+    }
+    if (attributes->variant != NULL &&
+        append_marker(temporary, FLB_LOG_EVENT_GROUP_START, attributes, metadata, &group) != 0) {
+        goto done;
+    }
+    copy = flb_mp_chunk_record_create(temporary);
+    if (copy == NULL) {
+        goto done;
+    }
+    copy->event = record->event;
+    copy->cobj_record = record->cobj_record;
+    copy->cobj_metadata = record->cobj_metadata;
+    copy->cobj_group_attributes = group ? group->cobj_record : NULL;
+    copy->cobj_group_metadata = group ? group->cobj_metadata : NULL;
+    cfl_list_add(&copy->_head, &temporary->records);
+    if (group && append_marker(temporary, FLB_LOG_EVENT_GROUP_END, NULL, NULL, NULL) != 0) {
+        goto done;
+    }
+    if (flb_mp_chunk_cobj_encode(temporary, &buffer, &bytes) == 0) {
+        result = fts_window_stage_tagged(ctx->window, ctx->window_key, ctx->window_key_length,
+            (void **) &buffer, bytes, ctx->window_error, ctx->window_baseline, tag, tag_length);
+    }
+done:
+    if (copy != NULL) {
+        copy->cobj_record = NULL;
+        copy->cobj_metadata = NULL;
+    }
+    flb_mp_chunk_cobj_destroy(temporary);
+    flb_log_event_encoder_destroy(encoder);
+    flb_log_event_decoder_destroy(decoder);
+    flb_free(buffer);
+    return result;
+}
+
 int fts_process_logs(struct flb_processor_instance *ins, void *data,
                      const char *tag, int tag_len)
 {
@@ -1414,7 +1476,17 @@ int fts_process_logs(struct flb_processor_instance *ins, void *data,
     struct cfl_variant *id_value;
     size_t output_bytes = 0;
     size_t cost;
+    size_t window_late = 0;
+    size_t window_overflow = 0;
+    size_t window_held;
+    int window_result;
+    struct flb_mp_chunk_record captured_record;
+    struct cfl_object captured_body = {0};
+    struct cfl_object captured_metadata = {0};
+    size_t window_context_passthrough = 0;
 
+    fts_window_begin(ctx->window);
+    fts_state_begin(ctx->state);
     ctx->tag_ready = FLB_FALSE;
     cfl_list_init(&borrowed);
 
@@ -1510,6 +1582,8 @@ int fts_process_logs(struct flb_processor_instance *ins, void *data,
         body = NULL;
         metadata = NULL;
 
+        ctx->window_requested = 0;
+        ctx->window_classification = FTS_WINDOW_ACCEPT;
         /* Run the policy for selected records */
         if (selected) {
             memset(&call, 0, sizeof(call));
@@ -1525,6 +1599,7 @@ int fts_process_logs(struct flb_processor_instance *ins, void *data,
              * Plain records edit the chunk's heap tree in place; the undo log
              * keeps the whole chunk reversible until its output is final.
              */
+            fts_state_savepoint(ctx->state);
             undo_mark = ctx->undo_count;
             ctx->inplace_ok = !source_attrs && ctx->undo_held <= ctx->memory_limit;
             ret = fts_runtime_call(ctx, &call, 7);
@@ -1533,9 +1608,13 @@ int fts_process_logs(struct flb_processor_instance *ins, void *data,
             ctx->undo_charged = 0;
 
             if (ret != 0) {
+                fts_state_rollback_item(ctx->state);
                 fts_undo_rollback(ctx, undo_mark);
                 errors++;
-                if (errors <= 5) {
+                if (errors <= 5 && ctx->recipe) {
+                    fts_recipe_report_error(ins, ctx, NULL);
+                }
+                else if (errors <= 5) {
                     flb_plg_error(ins, "log policy failed: %.256s; edits rolled back",
                                   lua_type(l, -1) == LUA_TSTRING ?
                                   lua_tostring(l, -1) : "non-string error");
@@ -1565,9 +1644,13 @@ int fts_process_logs(struct flb_processor_instance *ins, void *data,
 
             /* a group context would split the group continued from a previous append */
             if (continuation_end && attrs.variant) {
+                fts_state_rollback_item(ctx->state);
                 fts_undo_rollback(ctx, undo_mark);
                 errors++;
-                if (errors <= 5) {
+                if (errors <= 5 && ctx->recipe) {
+                    fts_recipe_report_error(ins, ctx, NULL);
+                }
+                else if (errors <= 5) {
                     flb_plg_error(ins, "log policy failed: records continuing a group "
                                   "from a previous chunk cannot set a context; "
                                   "edits rolled back");
@@ -1581,6 +1664,46 @@ int fts_process_logs(struct flb_processor_instance *ins, void *data,
                 metadata = NULL;
                 attrs.variant = NULL;
                 meta.variant = NULL;
+            }
+        }
+
+        /* Freeze retained data before charging or allocating emitted output.
+         * A continuation lacks its preceding group context in this append;
+         * keep it in the original stream after applying all sanitization. */
+        if (ctx->window && selected && ret == 0) {
+            if (ctx->window_requested && continuation_end != NULL) {
+                window_context_passthrough++;
+            }
+            else if (ctx->window_requested) {
+                captured_record = *record;
+                captured_body.type = CFL_OBJECT_KVLIST;
+                captured_body.variant = body ? body : record->cobj_record->variant;
+                captured_metadata.type = CFL_OBJECT_KVLIST;
+                captured_metadata.variant = metadata ? metadata : record->cobj_metadata->variant;
+                captured_record.cobj_record = &captured_body;
+                captured_record.cobj_metadata = &captured_metadata;
+                captured_record.event.timestamp.tm.tv_sec = (time_t) lua_tonumber(l, base + 6);
+                captured_record.event.timestamp.tm.tv_nsec = (long) lua_tonumber(l, base + 7);
+                if (captured_record.event.timestamp.tm.tv_sec != record->event.timestamp.tm.tv_sec ||
+                    captured_record.event.timestamp.tm.tv_nsec != record->event.timestamp.tm.tv_nsec) {
+                    captured_record.event.raw_timestamp = NULL;
+                }
+                window_result = window_capture(ctx, &captured_record, &attrs, &meta, tag, tag_len);
+                if (window_result < 0) {
+                    lua_settop(l, base);
+                    goto failure;
+                }
+                if (window_result == FTS_WINDOW_ACCEPT) {
+                    lua_settop(l, base);
+                    continue;
+                }
+                window_overflow++;
+            }
+            else if (ctx->window_classification == FTS_WINDOW_LATE) {
+                window_late++;
+            }
+            else if (ctx->window_classification == FTS_WINDOW_OVERFLOW) {
+                window_overflow++;
             }
         }
 
@@ -1785,7 +1908,19 @@ int fts_process_logs(struct flb_processor_instance *ins, void *data,
         goto failure;
     }
 
+    /* Report HOLD exactly once, only after all batch construction can succeed. */
+    window_held = fts_window_pending(ctx->window);
+    if (window_held != 0 && flb_processor_log_hold(ins, window_held) != 0) {
+        goto failure;
+    }
+    fts_window_finish(ctx->window, FLB_TRUE);
+    fts_window_count(ctx, "held", window_held);
+    fts_window_count(ctx, "late_passthrough", window_late);
+    fts_window_count(ctx, "context_passthrough", window_context_passthrough);
+    fts_window_count(ctx, "overflow_keep", window_overflow);
     /* Commit: drop the source records and move the staged ones into the chunk */
+    fts_state_finish(ctx->state, FLB_TRUE);
+    fts_state_metrics_update(ctx);
     fts_undo_commit(ctx);
     release_borrowed_records(&borrowed, &borrow_pool, FLB_TRUE);
 
@@ -1817,6 +1952,9 @@ int fts_process_logs(struct flb_processor_instance *ins, void *data,
     return FLB_PROCESSOR_SUCCESS;
 
 failure:
+    fts_window_finish(ctx->window, FLB_FALSE);
+    fts_state_finish(ctx->state, FLB_FALSE);
+    fts_state_metrics_update(ctx);
     fts_undo_rollback(ctx, 0);
     release_borrowed_records(&borrowed, &borrow_pool, FLB_FALSE);
     flb_mp_chunk_cobj_destroy(out);

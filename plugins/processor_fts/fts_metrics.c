@@ -30,6 +30,7 @@
 #include <cmetrics/cmt_cat.h>
 #include <cmetrics/cmt_otlp_metadata.h>
 #include "fts_telemetry.h"
+#include "fts_metric_window.h"
 #include <stddef.h>
 
 const struct fts_signal_adapter fts_metrics_adapter = {
@@ -522,6 +523,7 @@ int fts_process_metrics(struct flb_processor_instance *ins, struct cmt *input,
     const char *phase = "encode native metrics";
 
     *output = NULL;
+    fts_metric_window_begin(ctx);
     cfl_list_init(&contexts);
 
     family_count = cfl_list_size(&input->counters) + cfl_list_size(&input->gauges) +
@@ -596,10 +598,12 @@ int fts_process_metrics(struct flb_processor_instance *ins, struct cmt *input,
         fts_report_policy_error(ins);
     }
 
+    fts_metric_window_finish(ctx, 1);
     flb_free(rejected);
     return FLB_PROCESSOR_SUCCESS;
 
 failure:
+    fts_metric_window_finish(ctx, 0);
     for (index = 0; index < rejected_count; index++) {
         cfl_kvlist_destroy(rejected[index].metadata);
     }

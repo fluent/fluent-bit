@@ -11,12 +11,21 @@ endfunction()
 fts_embed_lua(FTS_VALUE_HELPERS fts_value_helpers.lua)
 fts_embed_lua(FTS_LOG_HELPERS fts_log_helpers.lua)
 fts_embed_lua(FTS_TELEMETRY_HELPERS fts_telemetry_helpers.lua)
+fts_embed_lua(FTS_RECIPE_HELPERS fts_recipe.lua)
 configure_file(fts_helpers.h.in fts_helpers.h @ONLY)
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
 set(src
   fts.c
   fts_runtime.c
+  fts_hash_api.c
+  fts_crypto_api.c
+  fts_recipe.c
+  fts_state.c
+  fts_window.c
+  fts_window_runtime.c
+  fts_snapshot_window.c
+  fts_metric_window.c
   fts_values.c
   fts_logs.c
   fts_proto.c
