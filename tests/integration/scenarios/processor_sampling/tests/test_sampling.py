@@ -3,6 +3,7 @@ from collections import Counter
 from copy import deepcopy
 from pathlib import Path
 import threading
+import subprocess
 
 import pytest
 import requests
@@ -11,7 +12,10 @@ from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import ExportLogsSer
 from opentelemetry.proto.collector.metrics.v1.metrics_service_pb2 import ExportMetricsServiceRequest
 from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
 
-from utils.fluent_bit_manager import FluentBitStartupError
+from utils.fluent_bit_manager import FluentBitManager, FluentBitStartupError
+from utils.memory_check import valgrind_enabled, leaks_enabled
+from utils.valgrind import assert_valgrind_clean
+from utils.leaks import assert_leaks_clean
 from utils.test_service import FluentBitTestService
 
 
@@ -532,3 +536,99 @@ def test_tail_without_conditions_retains_traces_after_wait(tmp_path):
             assert actual == expected
     finally:
         pipeline.close()
+
+
+
+@pytest.mark.parametrize("match_type", ["strict", "regex"])
+@pytest.mark.parametrize("legacy", [False, True])
+def test_tail_attribute_selection_preserves_scope_schema(tmp_path, match_type, legacy):
+    values = ["^svc-[01]$"] if match_type == "regex" else ["svc-0", "svc-1"]
+    processor = {"name": "sampling", "type": "tail",
+                 "sampling_settings": {"decision_wait": "1s", "legacy_reconcile": legacy},
+                 "conditions": [{"type": "string_attribute", "key": "service.name",
+                                 "match_type": match_type, "values": values}]}
+    pipeline = Pipeline(tmp_path, {"traces": [processor]})
+    payload = source_payloads(2)["traces"]
+    try:
+        pipeline.service.start()
+        pipeline.send("traces", payload)
+        pipeline.service.wait_for_condition(
+            lambda: all(len(rows(pipeline.received["traces"][route], "traces")) == 4
+                        for route in range(2)), timeout=15, description="tail attribute decisions")
+        pipeline.service.stop()
+        for route in range(2):
+            for resource, scope, span in rows(pipeline.received["traces"][route], "traces"):
+                assert resource.schema_url == "https://example.com/resource"
+                assert scope.schema_url == "https://example.com/scope"
+                assert scope.scope.name in ("scope-0", "scope-1")
+    finally:
+        pipeline.close()
+
+
+@pytest.mark.parametrize("location", ["input", "output"])
+@pytest.mark.parametrize("percentage", [0, 12.5, 100])
+@pytest.mark.parametrize("key_type", ["string_value", "bytes_value"])
+def test_otlp_log_attribute_sampling_key(tmp_path, location, percentage, key_type):
+    processor = {"name": "sampling", "type": "probabilistic",
+                 "sampling_settings": {"sampling_percentage": percentage, "sampling_key": "customer"}}
+    pipeline = Pipeline(tmp_path, {"logs": [processor]}, location)
+    payload = source_payloads()["logs"]
+    for index, (_, _, record) in enumerate(rows([payload], "logs")):
+        key = f"tenant-{index}"
+        value = record.attributes.add(key="customer").value
+        setattr(value, key_type, key.encode() if key_type == "bytes_value" else key)
+        if index % 2:
+            record.body.Clear()
+            record.body.kvlist_value.values.add(key="customer").value.string_value = "body-fallback"
+    selected = [record.SerializeToString() for index, (_, _, record) in enumerate(rows([payload], "logs"))
+                if keep(f"tenant-{index}".encode(), percentage)]
+    try:
+        pipeline.service.start()
+        for _ in range(2):
+            pipeline.send("logs", payload)
+        pipeline.service.wait_for_condition(
+            lambda: all(len(rows(pipeline.received["logs"][route], "logs")) >=
+                        2 * (len(rows([payload], "logs")) if location == "output" and route == 1
+                             else len(selected)) for route in range(2)),
+            timeout=30, description="OTLP attribute sampling decisions")
+        pipeline.service.stop()
+        for route in range(2):
+            expected = ([record.SerializeToString() for _, _, record in rows([payload], "logs")]
+                        if location == "output" and route == 1 else selected)
+            assert Counter(record.SerializeToString() for _, _, record in
+                           rows(pipeline.received["logs"][route], "logs")) == Counter(expected * 2)
+    finally:
+        pipeline.close()
+
+
+@pytest.mark.parametrize("signal,location", [(signal, location) for signal in SIGNALS
+                                            for location in ["input", "output"]] + [("tail", "input")])
+def test_sampling_configuration_dry_run(tmp_path, signal, location):
+    processor = {"name": "sampling", "type": "probabilistic",
+                 "sampling_settings": {"sampling_percentage": 12.5}}
+    if signal == "tail":
+        signal = "traces"
+        processor.update(type="tail", sampling_settings={"decision_wait": "1s"},
+                         conditions=[{"type": "status_code", "status_codes": ["ERROR"]}])
+    source = {"name": "opentelemetry"}
+    output = {"name": "null", "match": "*"}
+    (source if location == "input" else output)["processors"] = {signal: [processor]}
+    config = tmp_path / "dry-run.yaml"
+    config.write_text(yaml.safe_dump({"pipeline": {"inputs": [source], "outputs": [output]}}))
+    command = [FluentBitManager(str(config)).binary_absolute_path, "--dry-run", "-c", str(config)]
+    memory_log = tmp_path / "memory.log"
+    if valgrind_enabled():
+        command = ["valgrind", "--error-exitcode=97", "--leak-check=full",
+                   f"--log-file={memory_log}", *command]
+    elif leaks_enabled():
+        command = ["leaks", "--atExit", "--", *command]
+    result = subprocess.run(command, cwd=tmp_path, capture_output=True, text=True, timeout=60)
+    diagnostic = result.stdout + result.stderr
+    (tmp_path / "dry-run.log").write_text(diagnostic)
+    if valgrind_enabled():
+        assert_valgrind_clean(memory_log)
+    elif leaks_enabled():
+        memory_log.write_text(diagnostic)
+        assert_leaks_clean(result.returncode, memory_log)
+    assert result.returncode == 0, diagnostic
+    assert "configuration test is successful" in diagnostic
