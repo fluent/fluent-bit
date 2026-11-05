@@ -45,8 +45,10 @@ Trace decisions hash all 16 bytes of the trace ID. Missing, incorrectly sized an
 all-zero trace IDs are dropped. Spans sharing a trace ID make the same decision,
 independent of request boundaries, span IDs, host byte order or processor instance.
 
-Log key lookup checks OTLP record metadata, ordinary record metadata, then the
-log body. With the default `trace_id` key, 16-byte binary IDs and 32-character
+Log key lookup checks OTLP record fields, OTLP record attributes, ordinary
+record metadata fields, ordinary metadata attributes, then the log body.
+For example, `sampling_key: customer` reads the OTLP log attribute named
+`customer` before looking for a body field with that name. With the default `trace_id` key, 16-byte binary IDs and 32-character
 hex IDs (including uppercase hex) normalize to the same value as trace spans.
 Use the same percentage to retain corresponding logs and spans. A malformed,
 zero or absent log trace ID uses an independent probabilistic decision, so
@@ -207,7 +209,9 @@ The focused integration scenario is
 input/output for all three signals, grouped logs, multiple resources/scopes,
 0/100/fractional/default rates, repeated requests, sibling output isolation,
 trace/log correlation, metric family preservation, label ordering, unkeyed and
-custom-key logs, invalid configuration and tail error retention.
+custom-key logs, OTLP attribute keys, invalid configuration, configuration
+dry-run cleanup, tail error retention, regular-expression conditions, and scope
+schema preservation in both tail reconstruction modes.
 
 ```sh
 FLUENT_BIT_BINARY=/path/to/build/bin/fluent-bit \
@@ -216,4 +220,13 @@ FLUENT_BIT_BINARY=/path/to/build/bin/fluent-bit \
 VALGRIND=1 VALGRIND_STRICT=1 FLUENT_BIT_BINARY=/path/to/build/bin/fluent-bit \
   tests/integration/.venv/bin/python -m pytest \
   tests/integration/scenarios/processor_sampling -q
+```
+
+
+The sampling benchmark initializes its backend through the normal configuration
+API and reports retained spans as well as total spans. With benchmarks enabled,
+run the following command. Rates of 0 and 100 also check their retention boundaries.
+
+```sh
+build/bin/flb-bench-processor_sampling -m probabilistic -i 128 -w 2 -s 4 -a 0 -c 128 -p 50
 ```
