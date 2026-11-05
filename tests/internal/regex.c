@@ -19,6 +19,7 @@
  */
 
 #include <string.h>
+#include <onigmo.h>
 #include <fluent-bit/flb_regex.h>
 #include "flb_tests_internal.h"
 
@@ -408,7 +409,58 @@ static void test_slash_delimited_literal_slashes()
     }
 }
 
+static void test_operation_limit(void)
+{
+    struct flb_regex *regex;
+    struct flb_regex_search result;
+    char text[65];
+
+    TEST_CHECK(flb_regex_init() == 0);
+    TEST_CHECK(onig_get_match_operation_limit() == 10000000UL);
+    memset(text, 'a', sizeof(text) - 2);
+    text[sizeof(text) - 2] = '!';
+    text[sizeof(text) - 1] = '\0';
+    regex = flb_regex_create("^(a+)+$");
+    TEST_ASSERT(regex != NULL);
+    TEST_CHECK(flb_regex_match(regex, (unsigned char *) text, strlen(text)) ==
+               ONIGERR_MATCH_OPERATION_LIMIT_OVER);
+    TEST_CHECK(flb_regex_do(regex, text, strlen(text), &result) ==
+               ONIGERR_MATCH_OPERATION_LIMIT_OVER);
+    TEST_CHECK(result.region == NULL);
+    TEST_CHECK(flb_regex_match(regex, (unsigned char *) "aaaa", 4) == 1);
+    TEST_CHECK(flb_regex_match(regex, (unsigned char *) "!", 1) == 0);
+    flb_regex_destroy(regex);
+}
+
+static void test_operation_limit_linear(void)
+{
+    struct flb_regex *regex;
+    struct flb_regex_search result;
+    const char *prefix = "2026-11-05T00:00:00Z stdout F ";
+    char *text;
+    size_t length = 600000;
+    size_t prefix_length;
+
+    TEST_CHECK(flb_regex_init() == 0);
+    text = flb_malloc(length);
+    TEST_ASSERT(text != NULL);
+    prefix_length = strlen(prefix);
+    memcpy(text, prefix, prefix_length);
+    memset(text + prefix_length, 'a', length - prefix_length);
+    /* Same expression as the built-in CRI multiline parser. */
+    regex = flb_regex_create("^(?<time>.+?) (?<stream>stdout|stderr) (?<_p>F|P) (?<log>.*)$");
+    TEST_ASSERT(regex != NULL);
+    TEST_CHECK(flb_regex_do(regex, text, length, &result) == 4);
+    if (result.region != NULL) {
+        flb_regex_results_release(&result);
+    }
+    flb_regex_destroy(regex);
+    flb_free(text);
+}
+
 TEST_LIST = {
+    { "operation_limit_linear", test_operation_limit_linear},
+    { "operation_limit", test_operation_limit},
     { "basic" , test_basic},
     { "uri" , test_uri},
     { "option_ignore_case", test_option_ignore_case},
