@@ -433,6 +433,13 @@ static int get_or_create_scope_span(struct sampling *ctx,
         return -1;
     }
 
+    if (original->schema_url != NULL) {
+        if (ctr_scope_span_set_schema_url(new_scope_span, original->schema_url) != 0) {
+            flb_plg_error(ctx->ins, "could not copy scope schema URL");
+            return -1;
+        }
+    }
+
     if (original->instrumentation_scope != NULL) {
         attr = NULL;
 
@@ -626,6 +633,14 @@ static struct ctrace *reconcile_and_create_ctrace_legacy(struct sampling *ctx,
             scope_span = ctr_scope_span_create(resource_span);
             if (!scope_span) {
                 flb_plg_error(ctx->ins, "could not create scope span");
+                ctr_destroy(ctr);
+                return NULL;
+            }
+        }
+
+        if (span->scope_span->schema_url != NULL) {
+            if (ctr_scope_span_set_schema_url(scope_span, span->scope_span->schema_url) != 0) {
+                flb_plg_error(ctx->ins, "could not copy scope schema URL");
                 ctr_destroy(ctr);
                 return NULL;
             }
