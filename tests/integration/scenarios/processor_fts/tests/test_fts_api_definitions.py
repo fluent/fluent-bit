@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[5]
 
 @pytest.mark.parametrize("signal", ["logs", "metrics", "traces"])
 def test_public_api_definitions_match_runtime(tmp_path, signal):
+    """Verify each signal VM exposes the declared script functions and methods."""
     output = tmp_path / "fts_api.json"
     subprocess.run([sys.executable, str(ROOT / "tools/fts/export_api_schema.py"),
                     "--output", str(output)], check=True)
@@ -70,5 +71,43 @@ end
             result = service.wait_for_condition(lambda: records(service), timeout=30)
             assert all(record["message"] == "api-verified" for record in result)
         assert "edits rolled back" not in log_text(service)
+    finally:
+        service.stop()
+
+
+def test_metric_window_methods_in_pack_binding(tmp_path):
+    """Construct a window in an author factory and verify its declared methods."""
+    if not (ROOT / "plugins/processor_fts/fts_recipe.lua").exists():
+        pytest.skip("metric-window pack binding requires the separate FTS recipe implementation")
+    output = tmp_path / "fts_api.json"
+    subprocess.run([sys.executable, str(ROOT / "tools/fts/export_api_schema.py"),
+                    "--output", str(output)], check=True)
+    manifest = json.loads(output.read_text())
+    methods = [method["name"] for method in manifest["types"]["FtsMetricWindow"]["methods"]]
+    assert set(methods) == {"get", "hold"}
+    (tmp_path / "check.lua").write_text('''return function(parameters)
+    assert(type(fb.metric_window) == "function", "metric-window pack binding unavailable")
+    local window = fb.metric_window{interval_ms=1000}
+    for _, name in ipairs(METHODS) do
+        assert(type(window[name]) == "function", "missing window method: " .. name)
+    end
+    return function(metric) end
+end
+'''.replace("METHODS", "{" + ",".join(json.dumps(name) for name in methods) + "}"))
+    (tmp_path / "pack.json").write_text(json.dumps({"pack_version": 1,
+        "fts_api_version": 1, "id": "org.fluentbit.api-check", "version": "1.0.0",
+        "blocks": [{"name": "window", "signals": ["metrics"],
+                    "source": "check.lua", "parameters": {}}]}))
+    service = make_service(tmp_path, "unused")
+    config = tmp_path / "typed.yaml"
+    document = yaml.safe_load(config.read_text())
+    processor = {"name": "fts", "packages_dir": str(tmp_path), "packs": ["pack.json"],
+        "state_commit": "local", "recipe": [{"id": "check", "use": "org.fluentbit.api-check/window"}]}
+    document["pipeline"]["inputs"] = [{"name": "opentelemetry",
+        "port": "${FLUENT_BIT_TEST_LISTENER_PORT}", "processors": {"metrics": [processor]}}]
+    config.write_text(yaml.safe_dump(document))
+    try:
+        # Initialization runs the author factory and its native window binding.
+        service.start()
     finally:
         service.stop()
