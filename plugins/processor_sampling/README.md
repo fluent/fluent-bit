@@ -180,13 +180,13 @@ priorities are engineering judgments, not measured customer or market demand.
 | Priority | Adoption need | Finding and status |
 |---|---|---|
 | P0 | Basic multi-signal volume control | Log and metric callbacks were absent. Added correlated/keyed log sampling and stable metric-series selection. |
-| P0 | Safe startup and diagnostics | Fixed ignored backend failures, missing default config maps, unsafe settings truncation, diagnostic span destruction and backend registration through a shared global list node. |
+| P0 | Configuration and diagnostics | Fixed ignored backend failures, missing default config maps, truncated settings, diagnostic span destruction and backend registration through a shared global list node. |
 | P0 | Reliable probability control | Added fractional percentages, bounded finite validation and hashing of the full trace ID. Fixed invalid trace IDs being treated as a valid zero-valued sampling key. |
 | P0 | Defined deployment support | Tail sampling on outputs or non-trace signals now fails startup. Stateless sampling supports input/output processing and multiple instances. |
 | P1 | Preserve valuable events while limiting cost | Tail conditions retain error traces, but no built-in mixed error/slow/baseline allocation or log sampling-priority overrides exist. Add explicit policy composition and retention overrides next. |
 | P1 | Bounded state and late-arrival consistency | Tail sampling has a trace-count limit, but no byte/span budget, decision cache or persistence. Add those before positioning it for large production tail-sampling fleets. |
 | P1 | Backend interoperability | No OpenTelemetry probability metadata propagation or compatible sampler mode. Implement as an explicit mode with interoperability fixtures; do not claim compatibility from deterministic hashing alone. |
-| P1 | Safe routing and shutdown | Tail sampling loses dynamic tags and discards pending state at shutdown. Preserve route identity and define drain behavior before supporting those deployments. |
+| P1 | Routing and shutdown | Tail sampling loses dynamic tags and discards pending state at shutdown. Preserve route identity and define drain behavior before supporting those deployments. |
 | P2 | Metric cost reduction with exact aggregates | Stable series selection is available; temporal aggregation, delta-aware downsampling and estimation are separate features. |
 | P2 | Operator confidence | Add workload benchmarks, measured memory budgets, eviction/late-span counters and rollout recipes. Generic processor accounting alone cannot explain tail-buffer pressure. |
 
