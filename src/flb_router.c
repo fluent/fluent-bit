@@ -71,6 +71,10 @@ static inline int router_match(const char *tag, int tag_len,
                        (const unsigned char *) tag + tag_len,
                        (const unsigned char *) tag, 0,
                        ONIG_OPTION_NONE);
+        if (n < ONIG_MISMATCH) {
+            flb_error("[router] regex match failed: %d", n);
+            return FLB_FALSE;
+        }
         if (n > 0) {
             return 1;
         }
