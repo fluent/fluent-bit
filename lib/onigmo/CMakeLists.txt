@@ -270,6 +270,10 @@ endif()
 # Test Source
 
 if(ONIGMO_CTESTS)
+  add_executable(test_match_operation_limit test_match_operation_limit.c)
+  target_link_libraries(test_match_operation_limit onigmo-static)
+  add_test(NAME test_match_operation_limit COMMAND test_match_operation_limit)
+  set_tests_properties(test_match_operation_limit PROPERTIES TIMEOUT 10)
   enable_testing()
   if(ONIGMO_SYSTEM_WINDOWS)
     add_executable(testc win32/testc.c)
