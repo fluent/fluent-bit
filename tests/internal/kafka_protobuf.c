@@ -119,6 +119,7 @@ static void test_reference_and_validation(void)
         ret = flb_kafka_protobuf_encode(ctx, 42, invalid[i], strlen(invalid[i]),
                                        &payload, &size, error, sizeof(error));
         TEST_CHECK(ret == -1);
+        TEST_CHECK(strcmp(error, "JSON does not match Protobuf schema") == 0);
         TEST_CHECK(payload == NULL);
         TEST_CHECK(size == 0);
     }
