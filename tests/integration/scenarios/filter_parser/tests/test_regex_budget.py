@@ -26,10 +26,10 @@ def shipped_pattern(filename, name):
     raise AssertionError(f"Missing parser {name}")
 
 
-@pytest.mark.parametrize("case", ["nested", "kube-custom", "ambassador"])
+@pytest.mark.parametrize("case", ["nested", "backreference", "kube-custom", "ambassador"])
 def test_regex_budget(tmp_path, case):
-    if case == "nested":
-        pattern = "^(?<value>a+)+$"
+    if case in ("nested", "backreference"):
+        pattern = r"^(?<value>a+)+\k<value>$" if case == "backreference" else "^(?<value>a+)+$"
         hostile = "a" * 64 + "!"
         valid = "aaaa"
         capture = "value"
@@ -70,4 +70,7 @@ def test_regex_budget(tmp_path, case):
     finally:
         service.stop()
     log = Path(service.flb.log_file).read_text()
-    assert "[regex] search failed: -17" in log
+    if case == "backreference":
+        assert "[regex] search failed: -17" in log
+    else:
+        assert "[regex] search failed:" not in log
