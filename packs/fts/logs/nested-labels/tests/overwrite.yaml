@@ -1,0 +1,48 @@
+fixture_version: 1
+signal: logs
+processor:
+  name: fts
+  recipe_version: 1
+  packs:
+  - ../pack.json
+  error_mode: keep
+  recipe:
+  - id: enrich
+    use: org.fluentbit.nested-labels/enrich_logs
+    with:
+      labels:
+      - name: environment
+        value: staging
+      - name: account_id
+        value:
+          type: uint64
+          value: '18446744073709551615'
+      - name: verified
+        value: true
+      - name: synthetic_bytes
+        value:
+          type: bytes
+          value: 00ff
+      target:
+        overwrite: true
+cases:
+- name: explicit-overwrite
+  input:
+  - body:
+      labels:
+        environment: existing
+        other: keep
+  expected:
+    records:
+    - body:
+        labels:
+          environment: staging
+          account_id: 18446744073709551615
+          verified: true
+          synthetic_bytes: !!binary |
+            AP8=
+          other: keep
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0

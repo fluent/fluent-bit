@@ -1701,6 +1701,302 @@ static void processor_native_chain_counters(void)
     }
 }
 
+struct preflight_probe_config {
+    struct cfl_variant *rules;
+};
+
+static int preflight_probe_calls;
+static int preflight_probe_initializations;
+static int preflight_probe_fail;
+
+static struct flb_config_map preflight_probe_map[] = {
+    {FLB_CONFIG_MAP_VARIANT, "rules", NULL, 0, FLB_TRUE,
+     offsetof(struct preflight_probe_config, rules), "Borrowed nested configuration"},
+    {0}
+};
+
+static int preflight_probe_validate(struct flb_processor_instance *ins,
+                                    struct flb_config *config)
+{
+    struct preflight_probe_config options = {0};
+
+    preflight_probe_calls++;
+    TEST_CHECK(ins->context == NULL);
+    TEST_CHECK(ins->cmt == NULL);
+    TEST_CHECK(flb_processor_instance_config_map_set(ins, &options) == 0);
+    TEST_ASSERT(options.rules != NULL);
+    TEST_CHECK(options.rules->type == CFL_VARIANT_ARRAY);
+    TEST_CHECK(options.rules->data.as_array->entry_count == 1);
+    return preflight_probe_fail ? -1 : 0;
+}
+
+static int preflight_probe_init(struct flb_processor_instance *ins, void *source,
+                                int type, struct flb_config *config)
+{
+    struct preflight_probe_config options = {0};
+
+    preflight_probe_initializations++;
+    TEST_CHECK(flb_processor_instance_config_map_set(ins, &options) == 0);
+    TEST_ASSERT(options.rules != NULL);
+    TEST_CHECK(options.rules->data.as_array->entry_count == 1);
+    ins->context = ins;
+    return 0;
+}
+
+static void processor_preflight_is_repeatable_and_preserves_variants(void)
+{
+    size_t i;
+    int signals[] = {FLB_PROCESSOR_LOGS, FLB_PROCESSOR_METRICS,
+                     FLB_PROCESSOR_TRACES, FLB_PROCESSOR_PROFILES};
+    struct flb_config *config;
+    struct flb_processor *proc;
+    struct flb_processor_unit *units[4];
+    struct flb_processor_instance *ins;
+    struct cfl_variant *value;
+    struct cfl_array *array;
+    struct flb_processor_plugin plugin = {
+        .name = "preflight_probe",
+        .flags = FLB_PROCESSOR_FLAG_PREFLIGHT,
+        .description = "verify configuration-only validation",
+        .config_map = preflight_probe_map,
+        .cb_preflight = preflight_probe_validate,
+        .cb_init = preflight_probe_init
+    };
+
+    flb_init_env();
+    config = flb_config_init();
+    TEST_ASSERT(config != NULL);
+    mk_list_add(&plugin._head, &config->processor_plugins);
+    proc = flb_processor_create(config, "preflight", NULL, 0);
+    TEST_ASSERT(proc != NULL);
+    array = cfl_array_create(1);
+    TEST_ASSERT(array != NULL);
+    TEST_CHECK(cfl_array_append_string(array, "value") == 0);
+    value = cfl_variant_create_from_array(array);
+    TEST_ASSERT(value != NULL);
+    for (i = 0; i < 4; i++) {
+        units[i] = flb_processor_unit_create(proc, signals[i], plugin.name);
+        TEST_ASSERT(units[i] != NULL);
+        TEST_CHECK(flb_processor_unit_set_property(units[i], "rules", value) == 0);
+    }
+    preflight_probe_calls = 0;
+    plugin.flags = 0;
+    TEST_CHECK(flb_processor_preflight(proc) == 0);
+    TEST_CHECK(preflight_probe_calls == 0);
+    plugin.flags = FLB_PROCESSOR_FLAG_PREFLIGHT;
+    preflight_probe_initializations = 0;
+    preflight_probe_fail = 0;
+    TEST_CHECK(flb_processor_preflight(proc) == 0);
+    TEST_CHECK(flb_processor_preflight(proc) == 0);
+    TEST_CHECK(preflight_probe_calls == 8);
+    TEST_CHECK(preflight_probe_initializations == 0);
+    TEST_CHECK(proc->is_active == FLB_FALSE);
+    for (i = 0; i < 4; i++) {
+        ins = units[i]->ctx;
+        TEST_CHECK(ins->config_map == NULL);
+        TEST_CHECK(ins->context == NULL);
+        TEST_CHECK(ins->cmt == NULL);
+    }
+    preflight_probe_fail = 1;
+    TEST_CHECK(flb_processor_preflight(proc) == -1);
+    preflight_probe_fail = 0;
+    TEST_CHECK(flb_processor_init(proc) == 0);
+    TEST_CHECK(preflight_probe_initializations == 4);
+    TEST_CHECK(flb_processor_preflight(proc) == -1);
+    flb_processor_destroy(proc);
+    cfl_variant_destroy(value);
+    mk_list_del(&plugin._head);
+    flb_config_exit(config);
+}
+
+static void processor_preflight_rejects_filter_properties(void)
+{
+    struct flb_config *config;
+    struct flb_processor *proc;
+    struct flb_processor_unit *unit;
+    struct flb_filter_instance *filter;
+
+    flb_init_env();
+    config = flb_config_init();
+    TEST_ASSERT(config != NULL);
+    proc = flb_processor_create(config, "filter_preflight", NULL, 0);
+    TEST_ASSERT(proc != NULL);
+    unit = flb_processor_unit_create(proc, FLB_PROCESSOR_LOGS, "grep");
+    TEST_ASSERT(unit != NULL);
+    TEST_CHECK(flb_processor_unit_set_property_str(unit, "unknown_property", "value") == 0);
+    TEST_CHECK(flb_processor_preflight(proc) == -1);
+    filter = unit->ctx;
+    TEST_CHECK(filter->config_map == NULL);
+    TEST_CHECK(filter->context == NULL);
+    flb_processor_destroy(proc);
+    flb_config_exit(config);
+}
+
+static void test_ingress_resume_ownership(void)
+{
+    struct flb_input_instance ins;
+    void *buffer;
+    void *original;
+    int ret;
+
+    memset(&ins, 0, sizeof(ins));
+    pthread_mutex_init(&ins.ingress_queue_lock, NULL);
+    pthread_cond_init(&ins.ingress_queue_space_available, NULL);
+    mk_list_init(&ins.ingress_queue);
+    buffer = flb_malloc(4);
+    TEST_ASSERT(buffer != NULL);
+    memcpy(buffer, "test", 4);
+    original = buffer;
+
+    ret = flb_input_ingress_try_resume_log(&ins, 1, NULL, 0, &buffer, 4, 1);
+    TEST_CHECK(ret == -1);
+    TEST_CHECK(buffer == original);
+    TEST_CHECK(memcmp(buffer, "test", 4) == 0);
+
+    ins.ingress_queue_enabled = FLB_TRUE;
+    ins.ingress_queue_signal_pending = FLB_TRUE;
+    ins.ingress_queue_byte_limit = 3;
+    ret = flb_input_ingress_try_resume_log(&ins, 1, NULL, 0, &buffer, 4, 1);
+    TEST_CHECK(ret == FLB_INPUT_INGRESS_BUSY);
+    TEST_CHECK(buffer == original);
+    TEST_CHECK(ins.ingress_queue_pending_bytes == 0);
+
+    ins.ingress_queue_byte_limit = 4;
+    ins.ingress_queue_event_limit = 1;
+    ret = flb_input_ingress_try_resume_log(&ins, 1, "test", 4, &buffer, 4, 1);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(buffer == NULL);
+    TEST_CHECK(ins.ingress_queue_pending_bytes == 4);
+    TEST_CHECK(ins.ingress_queue_pending_events == 1);
+
+    buffer = flb_malloc(4);
+    TEST_ASSERT(buffer != NULL);
+    memcpy(buffer, "next", 4);
+    original = buffer;
+    ret = flb_input_ingress_try_resume_log(&ins, 1, NULL, 0, &buffer, 4, 1);
+    TEST_CHECK(ret == FLB_INPUT_INGRESS_BUSY);
+    TEST_CHECK(buffer == original);
+    TEST_CHECK(memcmp(buffer, "next", 4) == 0);
+    flb_input_ingress_destroy(&ins);
+    TEST_CHECK(ins.ingress_queue_pending_bytes == 0);
+    TEST_CHECK(ins.ingress_queue_pending_events == 0);
+    ret = flb_input_ingress_try_resume_log(&ins, 1, NULL, 0, &buffer, 4, 1);
+    TEST_CHECK(ret == -1);
+    TEST_CHECK(buffer == original);
+    flb_free(buffer);
+    pthread_mutex_destroy(&ins.ingress_queue_lock);
+    pthread_cond_destroy(&ins.ingress_queue_space_available);
+}
+
+static int input_stop_probe(struct flb_processor_instance *ins, void *data)
+{
+    int *calls;
+
+    (void) ins;
+    calls = data;
+    (*calls)++;
+    return -1;
+}
+
+static void test_input_stop_idempotent_and_opt_in(void)
+{
+    struct flb_processor proc;
+    struct flb_processor_plugin plugin;
+    struct flb_processor_instance instances[4];
+    struct flb_processor_unit units[4];
+    struct mk_list *lists[4];
+    int calls[4] = {0};
+    size_t i;
+
+    memset(&proc, 0, sizeof(proc));
+    memset(&plugin, 0, sizeof(plugin));
+    memset(instances, 0, sizeof(instances));
+    memset(units, 0, sizeof(units));
+    lists[0] = &proc.logs;
+    lists[1] = &proc.metrics;
+    lists[2] = &proc.traces;
+    lists[3] = &proc.profiles;
+    plugin.cb_input_stop = input_stop_probe;
+    proc.source_plugin_type = FLB_PLUGIN_INPUT;
+    for (i = 0; i < 4; i++) {
+        mk_list_init(lists[i]);
+        instances[i].p = &plugin;
+        instances[i].context = &calls[i];
+        units[i].unit_type = FLB_PROCESSOR_UNIT_NATIVE;
+        units[i].ctx = &instances[i];
+        units[i].name = "stop-test";
+        mk_list_add(&units[i]._head, lists[i]);
+    }
+    flb_processor_input_stop(&proc);
+    for (i = 0; i < 4; i++) {
+        TEST_CHECK(calls[i] == 0);
+    }
+    plugin.flags = FLB_PROCESSOR_FLAG_INPUT_STOP;
+    proc.source_plugin_type = FLB_PLUGIN_OUTPUT;
+    flb_processor_input_stop(&proc);
+    for (i = 0; i < 4; i++) {
+        TEST_CHECK(calls[i] == 0);
+    }
+    proc.source_plugin_type = FLB_PLUGIN_INPUT;
+    flb_processor_input_stop(&proc);
+    flb_processor_input_stop(&proc);
+    for (i = 0; i < 4; i++) {
+        TEST_CHECK(calls[i] == 1);
+        TEST_CHECK(instances[i].input_stopped == FLB_TRUE);
+        TEST_CHECK(instances[i].context == &calls[i]);
+    }
+}
+
+static void test_log_hold_bounds(void)
+{
+    struct flb_processor proc;
+    struct flb_processor_plugin plugin;
+    struct flb_processor_instance ins;
+    struct flb_processor_unit unit;
+
+    memset(&proc, 0, sizeof(proc));
+    memset(&plugin, 0, sizeof(plugin));
+    memset(&ins, 0, sizeof(ins));
+    memset(&unit, 0, sizeof(unit));
+    proc.source_plugin_type = FLB_PLUGIN_INPUT;
+    unit.parent = &proc;
+    unit.unit_type = FLB_PROCESSOR_UNIT_NATIVE;
+    ins.p = &plugin;
+    ins.pu = &unit;
+    ins.event_type = FLB_PROCESSOR_LOGS;
+    ins.log_hold_limit = 3;
+    TEST_CHECK(flb_processor_log_hold(&ins, 1) == -1);
+    TEST_CHECK(ins.log_held_current == 0);
+    ins.log_callback_active = FLB_TRUE;
+    TEST_CHECK(flb_processor_log_hold(&ins, 2) == 0);
+    TEST_CHECK(ins.log_held_current == 2 && ins.log_held_delta == 2);
+    TEST_CHECK(flb_processor_log_hold(&ins, 2) == -1);
+    TEST_CHECK(flb_processor_log_release(&ins, 3) == -1);
+    TEST_CHECK(ins.log_held_current == 2 && ins.log_held_delta == 2);
+    TEST_CHECK(flb_processor_log_release(&ins, 1) == 0);
+    ins.input_stopped = FLB_TRUE;
+    TEST_CHECK(flb_processor_log_release(&ins, 1) == -1);
+    TEST_CHECK(flb_processor_log_discard(&ins, 1) == 0);
+    TEST_CHECK(flb_processor_log_discard(&ins, 1) == -1);
+    TEST_CHECK(ins.log_held_current == 0);
+    TEST_CHECK(ins.accounting_error_logged == FLB_TRUE);
+    ins.input_stopped = FLB_FALSE;
+    ins.log_held_delta = 0;
+    ins.log_held_current = SIZE_MAX;
+    TEST_CHECK(flb_processor_log_hold(&ins, 1) == -1);
+    TEST_CHECK(ins.log_held_current == SIZE_MAX);
+    ins.log_held_current = 0;
+    proc.source_plugin_type = FLB_PLUGIN_OUTPUT;
+    TEST_CHECK(flb_processor_log_hold(&ins, 1) == -1);
+    proc.source_plugin_type = FLB_PLUGIN_INPUT;
+    ins.event_type = FLB_PROCESSOR_METRICS;
+    TEST_CHECK(flb_processor_log_hold(&ins, 1) == -1);
+    ins.event_type = FLB_PROCESSOR_LOGS;
+    plugin.flags = FLB_PROCESSOR_FLAG_LOGS_WORKER_SAFE;
+    TEST_CHECK(flb_processor_log_hold(&ins, 1) == -1);
+    TEST_CHECK(ins.log_held_current == 0);
+}
+
 static void processor_borrowed_variants_before_initialization(void)
 {
     int phase;
@@ -1747,6 +2043,11 @@ static void processor_borrowed_variants_before_initialization(void)
 TEST_LIST = {
     {"processor_borrowed_variants_before_initialization",
       processor_borrowed_variants_before_initialization},
+    {"log_hold_bounds", test_log_hold_bounds},
+    {"input_stop_idempotent_and_opt_in", test_input_stop_idempotent_and_opt_in},
+    {"ingress_resume_ownership", test_ingress_resume_ownership},
+    {"processor_preflight_repeatable_variants", processor_preflight_is_repeatable_and_preserves_variants},
+    {"processor_preflight_filter_properties", processor_preflight_rejects_filter_properties},
     { "processor_native_chain_counters", processor_native_chain_counters },
     {"processor_metrics_failure_clears_output", processor_metrics_failure_clears_output},
     { "processor_private_inputs_use_main_loop", processor_private_inputs_use_main_loop },

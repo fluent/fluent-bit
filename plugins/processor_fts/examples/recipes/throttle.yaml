@@ -1,0 +1,41 @@
+# Token bucket per trusted tenant/service; overflow passes untracked records.
+# This suppresses telemetry locally. It is not a security admission quota.
+service:
+  flush: 1
+  grace: 1
+pipeline:
+  inputs:
+    - name: dummy
+      tag: example.throttle
+      rate: 20
+      samples: 100
+      dummy: '{"trusted_tenant":"demo","service":"api","message":"repeated diagnostic","authorization":"synthetic-only"}'
+      processors:
+        logs:
+          - name: fts
+            context: native
+            error_mode: drop
+            state_commit: local
+            state_limit: 1M
+            recipe:
+              - id: privacy
+                use: shared.redact_keys
+                with:
+                  targets: [{root: body, path: []}]
+                  keys: [password, authorization]
+              - id: burst_control
+                use: logs.throttle
+                with:
+                  tenant: {root: body, path: [trusted_tenant]}
+                  keys: [{root: body, path: [service]}]
+                  rate: 2
+                  burst: 10
+                  ttl_ms: 60000
+                  max_keys: 1024
+                  max_key_bytes: 1024
+                  on_missing: error
+                  overflow: keep
+  outputs:
+    - name: stdout
+      match: example.throttle
+      format: json_lines

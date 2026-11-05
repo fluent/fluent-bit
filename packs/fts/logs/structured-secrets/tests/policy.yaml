@@ -1,0 +1,42 @@
+fixture_version: 1
+signal: logs
+processor:
+  name: fts
+  packs:
+  - ../pack.json
+  recipe_version: 1
+  error_mode: drop
+  recipe:
+  - id: policy
+    use: org.fluentbit.policy.structured-secrets/apply
+cases:
+- name: nested-and-control
+  input:
+  - body:
+      password: synthetic
+      nested:
+        api_key: synthetic
+        keep: 1
+  expected:
+    records:
+    - body:
+        password: '[REDACTED]'
+        nested:
+          api_key: '[REDACTED]'
+          keep: 1
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0
+- name: control
+  input:
+  - body:
+      message: unchanged
+  expected:
+    records:
+    - body:
+        message: unchanged
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0

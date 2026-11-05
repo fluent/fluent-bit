@@ -321,6 +321,7 @@ static void input_thread(void *data)
     int thread_id;
     char tmp[64];
     int instance_exit = FLB_FALSE;
+    int input_initialized = FLB_FALSE;
     struct mk_event *event;
     struct flb_input_instance *ins;
     struct flb_bucket_queue *evl_bktq = NULL;
@@ -372,15 +373,13 @@ static void input_thread(void *data)
         goto init_error;
     }
 
+    input_initialized = FLB_TRUE;
     ins->processor->notification_channel = ins->notification_channel;
 
     ret = flb_processor_init(ins->processor);
     if (ret == -1) {
         flb_error("failed initialize processors for input %s",
                   flb_input_name(ins));
-        if (p->cb_exit && ins->context) {
-            p->cb_exit(ins->context, ins->config);
-        }
         goto init_error;
     }
 
@@ -395,7 +394,7 @@ static void input_thread(void *data)
     if (ret == -1) {
         flb_error("could not retrieve collectors signal from parent thread on '%s'",
                   flb_input_name(ins));
-        return;
+        goto init_error;
     }
 
     /* event loop queue */
@@ -502,6 +501,7 @@ static void input_thread(void *data)
 
         /* Check if the instance must exit */
         if (instance_exit) {
+            flb_processor_input_stop(ins->processor);
             /* Invoke exit callback */
             if (ins->p->cb_exit && ins->context) {
                 ins->p->cb_exit(ins->context, ins->config);
@@ -519,6 +519,11 @@ static void input_thread(void *data)
     return;
 
 init_error:
+    flb_processor_input_stop(ins->processor);
+    if (input_initialized && p->cb_exit && ins->context) {
+        p->cb_exit(ins->context, ins->config);
+        ins->context = NULL;
+    }
     flb_net_dns_lookup_context_cleanup(&dns_ctx);
     flb_sched_destroy(sched);
     input_thread_instance_set_status(ins, FLB_INPUT_THREAD_ERROR);

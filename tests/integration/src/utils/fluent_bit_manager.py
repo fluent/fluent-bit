@@ -164,6 +164,7 @@ class FluentBitManager:
         self.binary_absolute_path = _resolve_binary_path(self.binary_path)
         self.process = None
         self.http_monitoring_port = None
+        self.excluded_ports = set()
         self.results_dir = None
         self.log_file = None
         self.valgrind_log_file = None
@@ -174,6 +175,8 @@ class FluentBitManager:
 
     def set_http_monitoring_port(self, env_var_name, starting_port=0):
         port = find_available_port(starting_port)
+        while port in self.excluded_ports:
+            port = find_available_port()
         os.environ[env_var_name] = str(port)
         self.http_monitoring_port = str(port)
 

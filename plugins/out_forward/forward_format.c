@@ -19,6 +19,7 @@
 
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_byteswap.h>
 #include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_crypto.h>
@@ -212,6 +213,27 @@ static int append_options(struct flb_forward *ctx,
 }
 
 #ifdef FLB_HAVE_RECORD_ACCESSOR
+/* Group markers are regular Fluent Bit log events in Forward array mode. */
+static int pack_group_marker(msgpack_packer *packer, int type,
+                             msgpack_object *metadata, msgpack_object *attributes)
+{
+    uint32_t timestamp[2];
+
+    /* Internal group sentinels use the EventTime bit pattern, not a valid
+     * wall-clock timestamp accepted by flb_time_append_to_msgpack(). */
+    timestamp[0] = FLB_UINT32_TO_NETWORK_BYTE_ORDER((uint32_t) type);
+    timestamp[1] = 0;
+    if (msgpack_pack_array(packer, 2) != 0 ||
+        msgpack_pack_array(packer, 2) != 0 ||
+        msgpack_pack_ext(packer, sizeof(timestamp), 0) != 0 ||
+        msgpack_pack_ext_body(packer, timestamp, sizeof(timestamp)) != 0 ||
+        (metadata ? msgpack_pack_object(packer, *metadata) : msgpack_pack_map(packer, 0)) != 0 ||
+        (attributes ? msgpack_pack_object(packer, *attributes) : msgpack_pack_map(packer, 0)) != 0) {
+        return -1;
+    }
+    return 0;
+}
+
 /*
  * Forward Protocol: Message Mode
  * ------------------------------
@@ -243,6 +265,7 @@ static int flb_forward_format_message_mode(struct flb_forward *ctx,
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
     int ret;
+    int grouped;
 
     /*
      * Our only reason to use Message Mode is because the user wants to generate
@@ -273,13 +296,27 @@ static int flb_forward_format_message_mode(struct flb_forward *ctx,
                     &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
         flb_time_copy(&tm, &log_event.timestamp);
 
-        /* Prepare main array: tag, timestamp and record/map */
-        msgpack_pack_array(&mp_pck, 4);
+        grouped = fc->fwd_retain_metadata &&
+                  (log_event.group_metadata || log_event.group_attributes);
+
+        /* Grouped records need Forward array framing so the schema and resource
+         * markers travel with each record under its independently resolved tag. */
+        msgpack_pack_array(&mp_pck, grouped ? 3 : 4);
 
         /* Generate dynamic Tag or use default one */
         flb_forward_format_append_tag(ctx, fc, &mp_pck,
                                       log_event.body,
                                       tag, tag_len);
+
+        if (grouped) {
+            if (msgpack_pack_array(&mp_pck, 3) != 0 ||
+                pack_group_marker(&mp_pck, FLB_LOG_EVENT_GROUP_START,
+                                  log_event.group_metadata, log_event.group_attributes) != 0 ||
+                msgpack_pack_array(&mp_pck, 2) != 0 ||
+                msgpack_pack_array(&mp_pck, 2) != 0) {
+                goto format_error;
+            }
+        }
 
         /* Pack timestamp */
         if (fc->time_as_integer == FLB_TRUE) {
@@ -293,8 +330,16 @@ static int flb_forward_format_message_mode(struct flb_forward *ctx,
                                        FLB_TIME_ETFMT_V1_FIXEXT);
         }
 
+        if (grouped && msgpack_pack_object(&mp_pck, *log_event.metadata) != 0) {
+            goto format_error;
+        }
+
         /* Pack records */
         msgpack_pack_object(&mp_pck, *log_event.body);
+
+        if (grouped && pack_group_marker(&mp_pck, FLB_LOG_EVENT_GROUP_END, NULL, NULL) != 0) {
+            goto format_error;
+        }
 
         record_size = log_decoder.record_length;
 
@@ -305,20 +350,30 @@ static int flb_forward_format_message_mode(struct flb_forward *ctx,
             chunk = chunk_buf;
         }
 
-        append_options(ctx, fc, FLB_EVENT_TYPE_LOGS, &mp_pck, 0,
-                       (void *) log_decoder.record_base, record_size,
-                       log_event.metadata,
-                       chunk);
+        ret = append_options(ctx, fc, FLB_EVENT_TYPE_LOGS, &mp_pck, grouped ? 3 : 0,
+                             (void *) log_decoder.record_base, record_size,
+                             grouped ? NULL : log_event.metadata, chunk);
+        if (ret != 0) {
+            goto format_error;
+        }
 
         entries++;
     }
 
+    if (flb_log_event_decoder_get_last_result(&log_decoder) != FLB_EVENT_DECODER_SUCCESS) {
+        goto format_error;
+    }
     flb_log_event_decoder_destroy(&log_decoder);
 
     *out_buf  = mp_sbuf.data;
     *out_size = mp_sbuf.size;
 
     return entries;
+
+format_error:
+    flb_log_event_decoder_destroy(&log_decoder);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+    return -1;
 }
 #endif
 

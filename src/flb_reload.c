@@ -32,6 +32,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_reload.h>
+#include <fluent-bit/flb_processor.h>
 #include <fluent-bit/flb_time.h>
 
 #include <cfl/cfl.h>
@@ -205,6 +206,27 @@ static int flb_custom_propery_check_all(struct flb_config *config)
     return 0;
 }
 
+static int processor_property_check_all(struct flb_config *config)
+{
+    struct mk_list *head;
+    struct flb_input_instance *input;
+    struct flb_output_instance *output;
+
+    mk_list_foreach(head, &config->inputs) {
+        input = mk_list_entry(head, struct flb_input_instance, _head);
+        if (flb_processor_preflight(input->processor) != 0) {
+            return -1;
+        }
+    }
+    mk_list_foreach(head, &config->outputs) {
+        output = mk_list_entry(head, struct flb_output_instance, _head);
+        if (flb_processor_preflight(output->processor) != 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
 int flb_reload_property_check_all(struct flb_config *config)
 {
     int ret = 0;
@@ -238,6 +260,11 @@ int flb_reload_property_check_all(struct flb_config *config)
     if (ret == -1) {
         flb_error("[reload] check properties for output plugins is failed");
 
+        return -1;
+    }
+
+    if (processor_property_check_all(config) != 0) {
+        flb_error("[reload] processor configuration preflight failed");
         return -1;
     }
 

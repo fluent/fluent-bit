@@ -18,6 +18,7 @@
  */
 
 #include <errno.h>
+#include <limits.h>
 #include <time.h>
 #include <string.h>
 
@@ -46,6 +47,8 @@ struct flb_input_ingress_event {
     int type;
     flb_sds_t tag;
     size_t size;
+    int metrics_resume;
+    size_t metrics_starting_stage;
 
     union {
         struct {
@@ -53,6 +56,8 @@ struct flb_input_ingress_event {
             size_t  size;
             size_t  records;
             int     processed;
+            int     resume;
+            size_t  starting_stage;
         } log;
         struct ctrace *traces;
         struct cprof  *profiles;
@@ -315,6 +320,119 @@ static struct flb_input_ingress_event *flb_input_ingress_event_create(
     return event;
 }
 
+int flb_input_ingress_try_resume_log(struct flb_input_instance *ins,
+                                     size_t starting_stage,
+                                     const char *tag, size_t tag_len,
+                                     void **buf, size_t buf_size, size_t records)
+{
+    int should_signal;
+    struct flb_input_ingress_event *event;
+
+    if (ins == NULL || buf == NULL || *buf == NULL || buf_size == 0 ||
+        (tag == NULL && tag_len != 0) || tag_len > INT_MAX) {
+        return -1;
+    }
+
+    /* Allocate only the envelope/tag. Until publication it owns no payload. */
+    event = flb_input_ingress_event_create(FLB_INPUT_INGRESS_LOG, tag, tag_len);
+    if (event == NULL) {
+        return -1;
+    }
+    event->size = buf_size;
+    event->data.log.size = buf_size;
+    event->data.log.records = records;
+    event->data.log.resume = FLB_TRUE;
+    event->data.log.starting_stage = starting_stage;
+
+    pthread_mutex_lock(&ins->ingress_queue_lock);
+    if (ins->ingress_queue_enabled != FLB_TRUE) {
+        pthread_mutex_unlock(&ins->ingress_queue_lock);
+        flb_input_ingress_event_destroy(event);
+        return -1;
+    }
+    if ((ins->ingress_queue_event_limit > 0 &&
+         ins->ingress_queue_pending_events >= ins->ingress_queue_event_limit) ||
+        (ins->ingress_queue_byte_limit > 0 &&
+         (buf_size > ins->ingress_queue_byte_limit ||
+          ins->ingress_queue_pending_bytes > ins->ingress_queue_byte_limit - buf_size)) ||
+        ins->ingress_queue_pending_bytes > SIZE_MAX - buf_size ||
+        ins->ingress_queue_pending_events == SIZE_MAX) {
+        pthread_mutex_unlock(&ins->ingress_queue_lock);
+        return flb_input_ingress_busy(ins, event);
+    }
+
+    event->data.log.buf = *buf;
+    *buf = NULL;
+    mk_list_add(&event->_head, &ins->ingress_queue);
+    ins->ingress_queue_pending_events++;
+    ins->ingress_queue_pending_bytes += buf_size;
+    flb_input_ingress_update_metrics(ins);
+    should_signal = ins->ingress_queue_signal_pending == FLB_FALSE;
+    ins->ingress_queue_signal_pending = FLB_TRUE;
+    pthread_mutex_unlock(&ins->ingress_queue_lock);
+
+    if (should_signal) {
+        flb_input_ingress_signal(ins);
+    }
+    return 0;
+}
+
+int flb_input_ingress_try_resume_metrics(struct flb_input_instance *ins,
+                                         size_t starting_stage,
+                                         const char *tag, size_t tag_len,
+                                         struct cmt **context, size_t payload_size)
+{
+    int should_signal;
+    struct flb_input_ingress_event *event;
+
+    if (ins == NULL || context == NULL || *context == NULL || payload_size == 0 ||
+        (tag == NULL && tag_len != 0) || tag_len > INT_MAX) {
+        return -1;
+    }
+    event = flb_input_ingress_event_create(FLB_INPUT_INGRESS_METRICS, tag, tag_len);
+    if (event == NULL) {
+        return -1;
+    }
+    event->size = payload_size;
+    event->metrics_resume = FLB_TRUE;
+    event->metrics_starting_stage = starting_stage;
+
+    pthread_mutex_lock(&ins->ingress_queue_lock);
+    if (ins->ingress_queue_enabled != FLB_TRUE) {
+        pthread_mutex_unlock(&ins->ingress_queue_lock);
+        flb_input_ingress_event_destroy(event);
+        return -1;
+    }
+    if ((ins->ingress_queue_event_limit > 0 &&
+         ins->ingress_queue_pending_events >= ins->ingress_queue_event_limit) ||
+        (ins->ingress_queue_byte_limit > 0 &&
+         (payload_size > ins->ingress_queue_byte_limit ||
+          ins->ingress_queue_pending_bytes > ins->ingress_queue_byte_limit - payload_size)) ||
+        ins->ingress_queue_pending_bytes > SIZE_MAX - payload_size ||
+        ins->ingress_queue_pending_events == SIZE_MAX) {
+        pthread_mutex_unlock(&ins->ingress_queue_lock);
+        return flb_input_ingress_busy(ins, event);
+    }
+
+    if (!cfl_list_entry_is_orphan(&(*context)->_head)) {
+        cfl_list_del(&(*context)->_head);
+    }
+    cfl_list_add(&(*context)->_head, &event->metrics);
+    *context = NULL;
+    mk_list_add(&event->_head, &ins->ingress_queue);
+    ins->ingress_queue_pending_events++;
+    ins->ingress_queue_pending_bytes += payload_size;
+    flb_input_ingress_update_metrics(ins);
+    should_signal = ins->ingress_queue_signal_pending == FLB_FALSE;
+    ins->ingress_queue_signal_pending = FLB_TRUE;
+    pthread_mutex_unlock(&ins->ingress_queue_lock);
+
+    if (should_signal) {
+        flb_input_ingress_signal(ins);
+    }
+    return 0;
+}
+
 static void flb_input_ingress_drain_signal(struct flb_input_instance *ins)
 {
     int result;
@@ -333,115 +451,123 @@ static int flb_input_ingress_collector(struct flb_input_instance *ins,
                                        void *context)
 {
     int result;
-    size_t pending_events;
-    size_t pending_bytes;
-    struct mk_list *head;
-    struct mk_list *tmp;
-    struct mk_list queue;
     struct flb_input_ingress_event *event;
+    struct cmt *metrics_context;
 
     (void) config;
     (void) context;
 
-    mk_list_init(&queue);
     flb_input_ingress_drain_signal(ins);
-
     while (FLB_TRUE) {
         pthread_mutex_lock(&ins->ingress_queue_lock);
-
         if (mk_list_is_empty(&ins->ingress_queue) == 0) {
             ins->ingress_queue_signal_pending = FLB_FALSE;
             pthread_mutex_unlock(&ins->ingress_queue_lock);
             break;
         }
-
-        pending_events = ins->ingress_queue_pending_events;
-        pending_bytes = ins->ingress_queue_pending_bytes;
-        mk_list_foreach_safe(head, tmp, &ins->ingress_queue) {
-            mk_list_del(head);
-            mk_list_add(head, &queue);
+        /* Pause before invoking downstream processors: a generic append error
+         * can follow partial publication and must never be blindly retried. */
+        if (flb_input_paused(ins) == FLB_TRUE &&
+            (ins->config->is_shutting_down == FLB_FALSE ||
+             (ins->flags & FLB_INPUT_SHUTDOWN_FLUSH) == 0)) {
+            ins->ingress_queue_signal_pending = FLB_TRUE;
+            pthread_mutex_unlock(&ins->ingress_queue_lock);
+            flb_input_collector_pause(ins->ingress_queue_collector_id, ins);
+            flb_input_ingress_signal(ins);
+            return 0;
         }
-
-        ins->ingress_queue_pending_events = 0;
-        ins->ingress_queue_pending_bytes = 0;
-        ins->ingress_queue_signal_pending = FLB_FALSE;
-        flb_input_ingress_update_metrics(ins);
-
-        if (pending_events > 0 || pending_bytes > 0) {
-            pthread_cond_broadcast(&ins->ingress_queue_space_available);
-        }
-
+        event = mk_list_entry(ins->ingress_queue.next, struct flb_input_ingress_event, _head);
+        mk_list_del(&event->_head);
+        mk_list_entry_init(&event->_head);
+        /* In-flight events continue counting against queue bounds until their
+         * append settles, so concurrent producers cannot overfill a paused queue. */
         pthread_mutex_unlock(&ins->ingress_queue_lock);
 
-        mk_list_foreach_safe(head, tmp, &queue) {
-            event = mk_list_entry(head, struct flb_input_ingress_event, _head);
-            mk_list_del(head);
-            mk_list_entry_init(&event->_head);
-
-            if (event->type == FLB_INPUT_INGRESS_LOG) {
-                if (event->data.log.processed == FLB_TRUE) {
-                    result = flb_input_log_append_processed_routed(
-                                ins,
-                                event->data.log.records,
-                                event->tag,
-                                event->tag != NULL ? flb_sds_len(event->tag) : 0,
-                                event->data.log.buf,
-                                event->data.log.size);
-                }
-                else if (event->data.log.records > 0) {
-                    result = flb_input_log_append_records(
-                                ins,
-                                event->data.log.records,
-                                event->tag,
-                                event->tag != NULL ? flb_sds_len(event->tag) : 0,
-                                event->data.log.buf,
-                                event->data.log.size);
-                }
-                else {
-                    result = flb_input_log_append(
-                                ins,
-                                event->tag,
-                                event->tag != NULL ? flb_sds_len(event->tag) : 0,
-                                event->data.log.buf,
-                                event->data.log.size);
-                }
+        if (event->type == FLB_INPUT_INGRESS_LOG) {
+            if (event->data.log.resume == FLB_TRUE) {
+                result = flb_input_log_append_skip_processor_stages(
+                            ins, event->data.log.starting_stage,
+                            event->tag,
+                            event->tag != NULL ? flb_sds_len(event->tag) : 0,
+                            event->data.log.buf, event->data.log.size);
             }
-            else if (event->type == FLB_INPUT_INGRESS_METRICS) {
+            else if (event->data.log.processed == FLB_TRUE) {
+                result = flb_input_log_append_processed_routed(
+                            ins,
+                            event->data.log.records,
+                            event->tag,
+                            event->tag != NULL ? flb_sds_len(event->tag) : 0,
+                            event->data.log.buf,
+                            event->data.log.size);
+            }
+            else if (event->data.log.records > 0) {
+                result = flb_input_log_append_records(
+                            ins,
+                            event->data.log.records,
+                            event->tag,
+                            event->tag != NULL ? flb_sds_len(event->tag) : 0,
+                            event->data.log.buf,
+                            event->data.log.size);
+            }
+            else {
+                result = flb_input_log_append(
+                            ins,
+                            event->tag,
+                            event->tag != NULL ? flb_sds_len(event->tag) : 0,
+                            event->data.log.buf,
+                            event->data.log.size);
+            }
+        }
+        else if (event->type == FLB_INPUT_INGRESS_METRICS) {
+            if (event->metrics_resume == FLB_TRUE) {
+                metrics_context = cfl_list_entry(event->metrics.next, struct cmt, _head);
+                result = flb_input_metrics_append_skip_processor_stages(
+                             ins, event->metrics_starting_stage,
+                             event->tag,
+                             event->tag != NULL ? flb_sds_len(event->tag) : 0,
+                             metrics_context);
+            }
+            else {
                 result = flb_input_metrics_append_list(
                              ins,
                              event->tag,
                              event->tag != NULL ? flb_sds_len(event->tag) : 0,
                              &event->metrics);
             }
-            else if (event->type == FLB_INPUT_INGRESS_TRACES) {
-                result = flb_input_trace_append(ins,
-                                                event->tag,
-                                                event->tag != NULL ? flb_sds_len(event->tag) : 0,
-                                                event->data.traces);
+        }
+        else if (event->type == FLB_INPUT_INGRESS_TRACES) {
+            result = flb_input_trace_append(ins,
+                                            event->tag,
+                                            event->tag != NULL ? flb_sds_len(event->tag) : 0,
+                                            event->data.traces);
 
-                if (result == 0) {
-                    event->data.traces = NULL;
-                }
-            }
-            else if (event->type == FLB_INPUT_INGRESS_PROFILES) {
-                result = flb_input_profiles_append(ins,
-                                                   event->tag,
-                                                   event->tag != NULL ? flb_sds_len(event->tag) : 0,
-                                                   event->data.profiles);
-            }
-            else {
-                result = -1;
-            }
-
-            flb_input_ingress_event_destroy(event);
-
-            if (result != 0) {
-                flb_error("[input %s] could not ingest deferred worker payload",
-                          flb_input_name(ins));
+            if (result == 0) {
+                event->data.traces = NULL;
             }
         }
-    }
+        else if (event->type == FLB_INPUT_INGRESS_PROFILES) {
+            result = flb_input_profiles_append(ins,
+                                               event->tag,
+                                               event->tag != NULL ? flb_sds_len(event->tag) : 0,
+                                               event->data.profiles);
+        }
+        else {
+            result = -1;
+        }
 
+
+        pthread_mutex_lock(&ins->ingress_queue_lock);
+        ins->ingress_queue_pending_events--;
+        ins->ingress_queue_pending_bytes -= event->size;
+        flb_input_ingress_update_metrics(ins);
+        pthread_cond_broadcast(&ins->ingress_queue_space_available);
+        pthread_mutex_unlock(&ins->ingress_queue_lock);
+        flb_input_ingress_event_destroy(event);
+        if (result != 0) {
+            flb_error("[input %s] could not ingest deferred worker payload",
+                      flb_input_name(ins));
+        }
+    }
     return 0;
 }
 

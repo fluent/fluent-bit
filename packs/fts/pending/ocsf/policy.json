@@ -1,0 +1,6 @@
+{
+  "catalog_version": 1,
+  "id": "ocsf",
+  "status": "pending",
+  "dependency": "Requires a pinned OCSF schema/class version, reviewed source field mapping, schema validator and independent conformance fixtures. Generic field renaming is not a substitute for OCSF conformance."
+}

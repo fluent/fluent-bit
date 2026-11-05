@@ -18,16 +18,16 @@ import socket
 import time
 
 def find_available_port(starting_port=0):
+    # Reuse would let this probe bind an active reusable client port even though
+    # a new listener cannot claim that port exclusively.
     if starting_port in (None, 0):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             sock.bind(("127.0.0.1", 0))
             return sock.getsockname()[1]
 
     for port in range(starting_port, 65535):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             try:
-                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 sock.bind(("127.0.0.1", port))
                 return port
             except OSError:

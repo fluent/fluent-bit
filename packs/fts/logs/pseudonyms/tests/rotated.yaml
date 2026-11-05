@@ -1,0 +1,31 @@
+fixture_version: 1
+signal: logs
+processor:
+  name: fts
+  recipe_version: 1
+  packs:
+  - ../pack.json
+  error_mode: drop
+  recipe:
+  - id: policy
+    use: org.fluentbit.policy.pseudonyms/apply
+    with:
+      key_ref: email-v2
+      tenant: tenant-a
+  secret_refs:
+    email-v2: FTS_FIXTURE_HMAC_V2
+cases:
+- name: key-version-rotation
+  input:
+  - body:
+      email: alice@example.test
+  expected:
+    records:
+    - body:
+        email.pseudonym: hmac-sha256-v1:email-v2:e7557cb8b890c343fb41dc26e8363d48ac8bcf6428dfce7cd8c9947664e5934c
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0
+environment:
+  FTS_FIXTURE_HMAC_V2: public-unit-test-key-v2

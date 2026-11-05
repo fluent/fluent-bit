@@ -53,6 +53,7 @@ enum fts_key {
 };
 
 struct fts_runtime;
+struct fts_state;
 
 /* Reversible in-place edits of chunk-owned log values. */
 struct fts_undo_entry {
@@ -92,6 +93,62 @@ struct fts_runtime {
     char *code;
     char *call;
     char *error_mode;
+    struct cfl_variant *recipe;
+    struct cfl_variant *packs;
+    struct cfl_variant *secret_refs;
+    struct fts_secret *secret_keys;
+    struct flb_env *env;
+    char *packages_dir;
+    char *package_buffer;
+    size_t package_buffer_size;
+    char *recipe_version;
+    char *recipe_context;
+    char recipe_step[65];
+    char recipe_stage[32];
+    const char *recipe_error_class;
+    char recipe_parameter[65];
+    char recipe_reason[32];
+    char *recipe_owner;
+    char *recipe_scope;
+    char *recipe_processor;
+    int recipe_metric_names_ref;
+    int recipe_metric_projection_ref;
+    int recipe_needs_metric_names;
+    struct cmt_counter *recipe_outcomes;
+    struct fts_state *state;
+    struct fts_window *window;
+    struct fts_snapshot_window *metric_window;
+    struct flb_input_instance *metric_window_input;
+    struct flb_sched_timer *metric_window_timer;
+    struct cmt_counter *metric_window_events;
+    struct cmt_gauge *metric_window_inventory;
+    char *metric_window_key;
+    size_t metric_window_key_limit;
+    size_t metric_window_key_length;
+    size_t metric_window_tag_length;
+    size_t metric_window_request_bytes;
+    struct fts_value *metric_window_request_value;
+    int metric_window_request_ref;
+    int metric_window_active;
+    struct flb_processor_instance *instance;
+    struct flb_input_instance *window_input;
+    struct flb_sched_timer *window_timer;
+    char *window_key;
+    size_t window_key_limit;
+    size_t window_key_length;
+    int window_requested;
+    int window_classification;
+    int window_error;
+    int window_baseline;
+    struct cmt_counter *window_outcomes;
+    char *state_commit;
+    size_t state_limit;
+    int state_input;
+    struct cmt_gauge *state_keys;
+    struct cmt_counter *state_evictions;
+    struct cmt_counter *state_overflow;
+    struct cmt_counter *state_commits;
+    struct cmt_counter *state_dropped;
     const struct fts_signal_adapter *adapter;
     const void *value_metatable;
     int value_metatable_ref;
@@ -99,6 +156,8 @@ struct fts_runtime {
     int empty_metatable_ref;
     int key_refs[FTS_KEY_COUNT];
     int tag_ref;
+    /* Current OTLP event for destination-aware JSON validation. */
+    int json_event_ref;
     uint64_t generation;
     struct fts_undo_entry *undo;
     size_t undo_count;
@@ -128,11 +187,20 @@ extern const struct fts_signal_adapter fts_logs_adapter;
 /* runtime: Lua VM lifecycle, policy calls and error reporting */
 int fts_runtime_initialize(struct fts_runtime *ctx, struct flb_config *config);
 void fts_runtime_destroy(struct fts_runtime *ctx);
+void fts_hash_register(lua_State *l);
 void fts_report_policy_error(struct flb_processor_instance *ins);
 void fts_sanitizer_forget_unwound_frames(void);
 int fts_runtime_call(struct fts_runtime *ctx, void *data, int results);
 int fts_register_values(lua_State *l);
 void fts_collect(struct fts_runtime *ctx, int emergency);
+
+int fts_recipe_metric_names(struct fts_runtime *ctx, void *items, size_t count);
+int fts_recipe_metrics_initialize(struct flb_processor_instance *ins, struct fts_runtime *ctx);
+void fts_recipe_count(struct fts_runtime *ctx, const char *outcome);
+int fts_recipe_register(lua_State *l);
+int fts_recipe_initialize(lua_State *l, struct fts_runtime *ctx);
+void fts_recipe_report_error(struct flb_processor_instance *ins, struct fts_runtime *ctx,
+                             const char *error_class);
 
 /* cached field-name keys */
 void fts_getfield(lua_State *l, int index, enum fts_key key);

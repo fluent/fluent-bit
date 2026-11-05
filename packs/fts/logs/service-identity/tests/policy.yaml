@@ -1,0 +1,54 @@
+fixture_version: 1
+signal: logs
+processor:
+  name: fts
+  packs:
+  - ../pack.json
+  recipe_version: 1
+  error_mode: drop
+  recipe:
+  - id: policy
+    use: org.fluentbit.policy.service-identity/apply
+cases:
+- name: fill-absent
+  input:
+  - body:
+      message: ok
+  expected:
+    records:
+    - body:
+        message: ok
+        service.name: checkout
+        deployment.environment.name: production
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0
+- name: preserve-existing
+  input:
+  - body:
+      service.name: payments
+      deployment.environment.name: staging
+  expected:
+    records:
+    - body:
+        service.name: payments
+        deployment.environment.name: staging
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0
+- name: explicit-null-control
+  input:
+  - body:
+      service.name: null
+      deployment.environment.name: null
+  expected:
+    records:
+    - body:
+        service.name: null
+        deployment.environment.name: null
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0

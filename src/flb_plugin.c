@@ -19,6 +19,7 @@
 
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
+#include <stddef.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_error.h>
@@ -252,14 +253,26 @@ int flb_plugin_load(char *path, struct flb_plugins *ctx,
     }
     else if (is_processor(plugin_stname) == FLB_TRUE) {
         type = FLB_PLUGIN_PROCESSOR;
-        processor = flb_malloc(sizeof(struct flb_processor_plugin));
+        processor = flb_calloc(1, sizeof(struct flb_processor_plugin));
         if (processor == NULL) {
             flb_errno();
             flb_free(plugin_stname);
             dlclose(dso_handle);
             return -1;
         }
-        memcpy(processor, symbol, sizeof(struct flb_processor_plugin));
+        /* Old descriptors end before cb_preflight. Do not read their trailing
+         * memory; flags in the stable prefix opt into the new extension. */
+        memcpy(processor, symbol, offsetof(struct flb_processor_plugin, cb_preflight));
+        if (processor->flags & FLB_PROCESSOR_FLAG_PREFLIGHT) {
+            memcpy(&processor->cb_preflight,
+                   (char *) symbol + offsetof(struct flb_processor_plugin, cb_preflight),
+                   sizeof(processor->cb_preflight));
+        }
+        if (processor->flags & FLB_PROCESSOR_FLAG_INPUT_STOP) {
+            memcpy(&processor->cb_input_stop,
+                   (char *) symbol + offsetof(struct flb_processor_plugin, cb_input_stop),
+                   sizeof(processor->cb_input_stop));
+        }
         mk_list_add(&processor->_head, &config->processor_plugins);
     }
     else if (is_filter(plugin_stname) == FLB_TRUE) {

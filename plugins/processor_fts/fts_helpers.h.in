@@ -12,4 +12,7 @@ static const char fts_log_helpers[] =
 static const char fts_telemetry_helpers[] =
 "@FTS_TELEMETRY_HELPERS@";
 
+static const char fts_recipe_helpers[] =
+"@FTS_RECIPE_HELPERS@";
+
 #endif

@@ -1,0 +1,22 @@
+{
+  "pack_version": 1,
+  "fts_api_version": 1,
+  "id": "org.fluentbit.policy.log-trace-correlation",
+  "version": "1.0.1",
+  "title": "Semantic log trace correlation",
+  "description": "OTLP structured map log bodies only. Promote trace/span hexadecimal strings to semantic log context through the existing typed helper. No ID generation, parent rewriting or inference from arbitrary strings. Invalid IDs fail and drop.",
+  "blocks": [
+    {
+      "name": "apply",
+      "signals": [
+        "logs"
+      ],
+      "source": "blocks/apply.lua",
+      "parameters": {},
+      "privacy": false
+    }
+  ],
+  "fixtures": [
+    "tests/policy.yaml"
+  ]
+}

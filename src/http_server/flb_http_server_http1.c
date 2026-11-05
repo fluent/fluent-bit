@@ -130,6 +130,15 @@ static int http1_session_process_request(struct flb_http1_server_session *sessio
         return -1;
     }
 
+    if (session->inner_request.query_string.len > 0) {
+        session->stream.request.query_string =
+            cfl_sds_create_len(session->inner_request.query_string.data,
+                               session->inner_request.query_string.len);
+        if (session->stream.request.query_string == NULL) {
+            return -1;
+        }
+    }
+
     result = flb_http_request_normalize(&session->stream.request);
     if (result != 0) {
         return -1;
@@ -423,7 +432,7 @@ int flb_http1_response_commit(struct flb_http_response *response)
 
     response_buffer = sds_result;
 
-    if (response->body != NULL) {
+    if (response->body != NULL && response->stream->request.method != HTTP_METHOD_HEAD) {
         sds_result = cfl_sds_cat(response_buffer,
                                  response->body,
                                  cfl_sds_len(response->body));

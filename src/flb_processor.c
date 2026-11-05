@@ -37,14 +37,26 @@
 #include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_plugin_alias.h>
 #include <cfl/cfl.h>
+#include <cmetrics/cmt_gauge.h>
 
-/* Config-map binding clears kv->val for borrowed variants. Track their source
- * references so teardown before initialization never frees them as SDS values. */
+/* Config-map binding clears kv->val for borrowed variants. Preserve the source
+ * reference for repeatable preflight, and never free it as an SDS on teardown. */
 struct processor_variant_property {
     struct flb_kv *property;
     struct cfl_variant *value;
     struct mk_list _head;
 };
+
+static void processor_restore_variant_properties(struct flb_processor_instance *ins)
+{
+    struct mk_list *head;
+    struct processor_variant_property *entry;
+
+    mk_list_foreach(head, &ins->variant_properties) {
+        entry = mk_list_entry(head, struct processor_variant_property, _head);
+        entry->property->val = (void *) entry->value;
+    }
+}
 
 struct flb_config_map processor_global_properties[] = {
     {
@@ -231,7 +243,167 @@ static int processor_metrics_register(struct flb_processor *proc)
         return -1;
     }
 
+    proc->cmt_items_held = cmt_counter_create(cmt, "fluentbit", "processor",
+        "items_held_total", "Total logical logs admitted to retention.", 5,
+        (char *[]) {"scope", "owner", "processor", "stage", "signal"});
+    proc->cmt_items_held_current = cmt_gauge_create(cmt, "fluentbit", "processor",
+        "items_held_current", "Logical logs currently owned by a processor.", 5,
+        (char *[]) {"scope", "owner", "processor", "stage", "signal"});
+    proc->cmt_accounting_errors = cmt_counter_create(cmt, "fluentbit", "processor",
+        "accounting_errors_total", "Invalid processor retention accounting operations.", 5,
+        (char *[]) {"scope", "owner", "processor", "stage", "signal"});
+    if (proc->cmt_items_held == NULL || proc->cmt_items_held_current == NULL ||
+        proc->cmt_accounting_errors == NULL) {
+        return -1;
+    }
+
     return 0;
+}
+
+static struct flb_processor *processor_hold_parent(struct flb_processor_instance *ins)
+{
+    if (ins == NULL || ins->pu == NULL) {
+        return NULL;
+    }
+    return ins->pu->parent;
+}
+
+static void processor_hold_labels(struct flb_processor_instance *ins,
+                                   char *stage, char **labels)
+{
+    struct flb_processor *proc;
+
+    proc = processor_hold_parent(ins);
+    snprintf(stage, 32, "%zu", ins->pu->stage);
+    labels[0] = (char *) processor_metrics_scope(proc);
+    labels[1] = (char *) processor_metrics_owner(proc);
+    labels[2] = (char *) ins->pu->name;
+    labels[3] = stage;
+    labels[4] = "logs";
+}
+
+/* Materialize settlement series before a holder can transfer any ownership. */
+static int processor_hold_prepare(struct flb_processor_instance *ins)
+{
+    struct flb_processor *proc;
+    char stage[32];
+    char *labels[5];
+    uint64_t now;
+
+    proc = processor_hold_parent(ins);
+    if (proc == NULL || proc->source_plugin_type != FLB_PLUGIN_INPUT ||
+        ins->event_type != FLB_PROCESSOR_LOGS || proc->cmt_items_held == NULL) {
+        return 0;
+    }
+    processor_hold_labels(ins, stage, labels);
+    now = cfl_time_now();
+    if (cmt_counter_add(proc->cmt_items_held, now, 0, 5, labels) != 0 ||
+        cmt_gauge_set(proc->cmt_items_held_current, now, 0, 5, labels) != 0 ||
+        cmt_counter_add(proc->cmt_accounting_errors, now, 0, 5, labels) != 0 ||
+        cmt_counter_add(proc->cmt_items_out, now, 0, 5, labels) != 0 ||
+        cmt_counter_add(proc->cmt_items_drop, now, 0, 5, labels) != 0) {
+        return -1;
+    }
+    return 0;
+}
+
+static int processor_hold_error(struct flb_processor_instance *ins)
+{
+    struct flb_processor *proc;
+    char stage[32];
+    char *labels[5];
+
+    proc = processor_hold_parent(ins);
+    if (ins != NULL && !ins->accounting_error_logged) {
+        ins->accounting_error_logged = FLB_TRUE;
+        flb_error("[processor] invalid retention accounting operation for '%s'", ins->name);
+    }
+    if (proc != NULL && proc->cmt_accounting_errors != NULL &&
+        proc->source_plugin_type == FLB_PLUGIN_INPUT && ins->event_type == FLB_PROCESSOR_LOGS) {
+        processor_hold_labels(ins, stage, labels);
+        cmt_counter_inc(proc->cmt_accounting_errors, cfl_time_now(), 5, labels);
+    }
+    return -1;
+}
+
+static int processor_hold_valid(struct flb_processor_instance *ins)
+{
+    struct flb_processor *proc;
+
+    proc = processor_hold_parent(ins);
+    return proc != NULL && proc->source_plugin_type == FLB_PLUGIN_INPUT &&
+           ins->pu->unit_type == FLB_PROCESSOR_UNIT_NATIVE && ins->event_type == FLB_PROCESSOR_LOGS && ins->p != NULL &&
+           !(ins->p->flags & FLB_PROCESSOR_FLAG_LOGS_WORKER_SAFE);
+}
+
+int flb_processor_log_hold(struct flb_processor_instance *ins, size_t records)
+{
+    struct flb_processor *proc;
+    char stage[32];
+    char *labels[5];
+    uint64_t now;
+
+    if (!processor_hold_valid(ins) || !ins->log_callback_active || ins->input_stopped ||
+        ins->log_held_delta > ins->log_hold_limit ||
+        records > ins->log_hold_limit - ins->log_held_delta ||
+        records > SIZE_MAX - ins->log_held_current) {
+        return processor_hold_error(ins);
+    }
+    ins->log_held_delta += records;
+    ins->log_held_current += records;
+    proc = processor_hold_parent(ins);
+    if (proc->cmt_items_held != NULL) {
+        processor_hold_labels(ins, stage, labels);
+        now = cfl_time_now();
+        cmt_counter_add(proc->cmt_items_held, now, records, 5, labels);
+        cmt_gauge_set(proc->cmt_items_held_current, now, ins->log_held_current, 5, labels);
+    }
+    return 0;
+}
+
+static int processor_log_settle(struct flb_processor_instance *ins, size_t records, int drop)
+{
+    struct flb_processor *proc;
+    char stage[32];
+    char *labels[5];
+    uint64_t now;
+
+    if (!processor_hold_valid(ins) || records > ins->log_held_current ||
+        (ins->input_stopped && !drop)) {
+        return processor_hold_error(ins);
+    }
+    ins->log_held_current -= records;
+    proc = processor_hold_parent(ins);
+    if (proc->cmt_items_held != NULL) {
+        processor_hold_labels(ins, stage, labels);
+        now = cfl_time_now();
+        cmt_counter_add(drop ? proc->cmt_items_drop : proc->cmt_items_out, now, records, 5, labels);
+        cmt_gauge_set(proc->cmt_items_held_current, now, ins->log_held_current, 5, labels);
+    }
+    return 0;
+}
+
+int flb_processor_log_release(struct flb_processor_instance *ins, size_t records)
+{
+    return processor_log_settle(ins, records, FLB_FALSE);
+}
+
+int flb_processor_log_discard(struct flb_processor_instance *ins, size_t records)
+{
+    return processor_log_settle(ins, records, FLB_TRUE);
+}
+
+static void processor_log_begin(struct flb_processor_instance *ins, int records)
+{
+    ins->log_callback_active = FLB_TRUE;
+    ins->log_hold_limit = records > 0 ? records : 0;
+    ins->log_held_delta = 0;
+}
+
+static size_t processor_log_end(struct flb_processor_instance *ins)
+{
+    ins->log_callback_active = FLB_FALSE;
+    return ins->log_held_delta;
 }
 
 static void processor_metrics_update(struct flb_processor *proc,
@@ -241,11 +413,13 @@ static void processor_metrics_update(struct flb_processor *proc,
                                      const char *signal,
                                      int in_items,
                                      int out_items,
+                                     size_t held_items,
                                      int item_metrics_available,
                                      int error)
 {
     char stage_label[32];
     char *labels[5];
+    double produced;
 
     if (proc == NULL || pu == NULL || proc->cmt_invocations == NULL) {
         return;
@@ -269,14 +443,15 @@ static void processor_metrics_update(struct flb_processor *proc,
         cmt_counter_add(proc->cmt_items_in, cfl_time_now(), in_items, 5, labels);
         cmt_counter_add(proc->cmt_items_out, cfl_time_now(), out_items, 5, labels);
 
-        if (in_items > out_items) {
+        produced = (double) out_items + (double) held_items;
+        if (in_items > produced) {
             cmt_counter_add(proc->cmt_items_drop, cfl_time_now(),
-                            (in_items - out_items),
+                            (in_items - produced),
                             5, labels);
         }
-        else if (out_items > in_items) {
+        else if (produced > in_items) {
             cmt_counter_add(proc->cmt_items_add, cfl_time_now(),
-                            (out_items - in_items),
+                            (produced - in_items),
                             5, labels);
         }
     }
@@ -1240,6 +1415,130 @@ int flb_processor_unit_init(struct flb_processor_unit *pu)
     return ret;
 }
 
+/* Validate configuration without initializing any processing unit. */
+static int processor_unit_preflight(struct flb_processor_unit *unit)
+{
+    int ret;
+    int saved_level;
+    struct mk_list *saved_map;
+    struct flb_processor *proc;
+    struct flb_processor_instance *ins;
+    struct flb_filter_instance *filter;
+    const char *active;
+
+    proc = unit->parent;
+    if (unit->unit_type == FLB_PROCESSOR_UNIT_FILTER) {
+        filter = unit->ctx;
+        saved_map = filter->config_map;
+        filter->config_map = NULL;
+        ret = flb_filter_plugin_property_check(filter, proc->config);
+        active = flb_filter_get_property("active", filter);
+        if (ret == 0 && filter->p->cb_pre_run != NULL &&
+            !(active != NULL && (strcasecmp(active, "false") == 0 || strcmp(active, "0") == 0))) {
+            ret = filter->p->cb_pre_run(filter, proc->config, filter->data);
+        }
+        if (filter->config_map) {
+            flb_config_map_destroy(filter->config_map);
+        }
+        filter->config_map = saved_map;
+        return ret;
+    }
+
+    ins = unit->ctx;
+    if (ins->context || ins->cmt) {
+        flb_error("[processor] preflight cannot validate an initialized unit");
+        return -1;
+    }
+    saved_map = ins->config_map;
+    saved_level = ins->log_level;
+    ins->config_map = NULL;
+    if (ins->log_level == -1) {
+        ins->log_level = proc->config->verbose;
+    }
+    ret = flb_processor_instance_check_properties(ins, proc->config);
+    if (ret == 0 && (ins->p->flags & FLB_PROCESSOR_FLAG_PREFLIGHT) &&
+        ins->p->cb_preflight) {
+        ret = ins->p->cb_preflight(ins, proc->config);
+    }
+    if (ins->config_map) {
+        flb_config_map_destroy(ins->config_map);
+    }
+    ins->config_map = saved_map;
+    ins->log_level = saved_level;
+    processor_restore_variant_properties(ins);
+    return ret;
+}
+
+int flb_processor_preflight(struct flb_processor *proc)
+{
+    int ret;
+    size_t i;
+    struct mk_list *lists[4];
+    struct mk_list *head;
+    struct flb_processor_unit *unit;
+
+    if (!proc) {
+        return 0;
+    }
+    if (proc->is_active) {
+        flb_error("[processor] preflight requires an inactive pipeline");
+        return -1;
+    }
+    lists[0] = &proc->logs;
+    lists[1] = &proc->metrics;
+    lists[2] = &proc->traces;
+    lists[3] = &proc->profiles;
+    for (i = 0; i < 4; i++) {
+        mk_list_foreach(head, lists[i]) {
+            unit = mk_list_entry(head, struct flb_processor_unit, _head);
+            ret = processor_unit_preflight(unit);
+            if (ret != 0) {
+                flb_error("[processor] preflight failed for unit '%s'", unit->name);
+                return -1;
+            }
+        }
+    }
+    return 0;
+}
+
+/* Called by input lifecycle paths on the owner thread, never by an output. */
+void flb_processor_input_stop(struct flb_processor *proc)
+{
+    size_t i;
+    int ret;
+    struct mk_list *lists[4];
+    struct mk_list *head;
+    struct flb_processor_unit *unit;
+    struct flb_processor_instance *ins;
+
+    if (proc == NULL || proc->source_plugin_type != FLB_PLUGIN_INPUT) {
+        return;
+    }
+    lists[0] = &proc->logs;
+    lists[1] = &proc->metrics;
+    lists[2] = &proc->traces;
+    lists[3] = &proc->profiles;
+    for (i = 0; i < 4; i++) {
+        mk_list_foreach(head, lists[i]) {
+            unit = mk_list_entry(head, struct flb_processor_unit, _head);
+            if (unit->unit_type != FLB_PROCESSOR_UNIT_NATIVE) {
+                continue;
+            }
+            ins = unit->ctx;
+            if (ins->input_stopped || ins->context == NULL ||
+                !(ins->p->flags & FLB_PROCESSOR_FLAG_INPUT_STOP) ||
+                ins->p->cb_input_stop == NULL) {
+                continue;
+            }
+            ins->input_stopped = FLB_TRUE;
+            ret = ins->p->cb_input_stop(ins, ins->context);
+            if (ret != 0) {
+                flb_error("[processor] input stop failed for unit '%s'", unit->name);
+            }
+        }
+    }
+}
+
 /* Initialize the processor and all the units */
 int flb_processor_init(struct flb_processor *proc)
 {
@@ -1417,7 +1716,7 @@ cleanup:
         unit = instances[index]->pu;
         if (result != FLB_PROCESSOR_RAW_UNSUPPORTED) {
             processor_metrics_update(proc, unit, scope, owner, "logs",
-                                     records, out_records, FLB_TRUE, error);
+                                     records, out_records, 0, FLB_TRUE, error);
         }
         release_lock(&unit->lock, FLB_PROCESSOR_LOCK_RETRY_LIMIT,
                      FLB_PROCESSOR_LOCK_RETRY_DELAY);
@@ -1522,6 +1821,7 @@ struct log_window_unit {
     struct flb_processor_unit *pu;
     int in_items;
     int out_items;
+    size_t held_items;
     int error;
 };
 
@@ -1714,7 +2014,9 @@ static int run_log_windows(struct flb_processor *proc, struct chunk_codec *codec
             }
 
             chunk_cobj->condition = units[i].pu->condition;
+            processor_log_begin(p_ins, records);
             ret = p_ins->p->cb_process_logs(p_ins, chunk_cobj, tag, tag_len);
+            units[i].held_items += processor_log_end(p_ins);
             if (ret != FLB_PROCESSOR_SUCCESS) {
                 units[i].error = FLB_TRUE;
                 flb_warn("[processor] failed to process chunk");
@@ -1796,7 +2098,7 @@ exit:
     for (i = 0; i < unit_count; i++) {
         processor_metrics_update(proc, units[i].pu,
                                  metrics_scope, metrics_owner, metrics_signal,
-                                 units[i].in_items, units[i].out_items,
+                                 units[i].in_items, units[i].out_items, units[i].held_items,
                                  FLB_TRUE, units[i].error);
     }
     flb_free(units);
@@ -1833,6 +2135,7 @@ static int processor_run(struct flb_processor *proc, struct chunk_codec *codec,
     int pu_error;
     int unit_in_items;
     int unit_out_items;
+    size_t unit_held_items;
     int item_metrics_available;
     int finalize;
     int raw_result;
@@ -1927,6 +2230,7 @@ static int processor_run(struct flb_processor *proc, struct chunk_codec *codec,
         unit_lock_held = FLB_FALSE;
         unit_in_items = -1;
         unit_out_items = -1;
+        unit_held_items = 0;
         item_metrics_available = FLB_FALSE;
 
         if (type == FLB_PROCESSOR_LOGS) {
@@ -2143,6 +2447,7 @@ static int processor_run(struct flb_processor *proc, struct chunk_codec *codec,
                                              metrics_signal,
                                              unit_in_items,
                                              unit_out_items,
+                                             unit_held_items,
                                              item_metrics_available,
                                              pu_error);
                     release_lock(&pu->lock,
@@ -2210,7 +2515,9 @@ static int processor_run(struct flb_processor *proc, struct chunk_codec *codec,
                     }
 
                     /* Invoke processor plugin callback */
+                    processor_log_begin(p_ins, flb_mp_chunk_cobj_count_log_records(chunk_cobj));
                     ret = p_ins->p->cb_process_logs(p_ins, chunk_cobj, tag, tag_len);
+                    unit_held_items = processor_log_end(p_ins);
                     if (ret != FLB_PROCESSOR_SUCCESS) {
                         pu_error = FLB_TRUE;
                         flb_warn("[processor] failed to process chunk");
@@ -2270,6 +2577,7 @@ static int processor_run(struct flb_processor *proc, struct chunk_codec *codec,
                                                      metrics_signal,
                                                      unit_in_items,
                                                      unit_out_items,
+                                                     unit_held_items,
                                                      item_metrics_available,
                                                      pu_error);
                             return 0;
@@ -2293,6 +2601,7 @@ static int processor_run(struct flb_processor *proc, struct chunk_codec *codec,
                                                      metrics_signal,
                                                      unit_in_items,
                                                      unit_out_items,
+                                                     unit_held_items,
                                                      item_metrics_available,
                                                      pu_error);
                             return -1;
@@ -2342,6 +2651,7 @@ static int processor_run(struct flb_processor *proc, struct chunk_codec *codec,
                                                  metrics_signal,
                                                  unit_in_items,
                                                  unit_out_items,
+                                                 unit_held_items,
                                                  item_metrics_available,
                                                  pu_error);
                         release_lock(&pu->lock,
@@ -2388,6 +2698,7 @@ static int processor_run(struct flb_processor *proc, struct chunk_codec *codec,
                                                  metrics_signal,
                                                  unit_in_items,
                                                  unit_out_items,
+                                                 unit_held_items,
                                                  item_metrics_available,
                                                  pu_error);
                         release_lock(&pu->lock,
@@ -2410,6 +2721,7 @@ static int processor_run(struct flb_processor *proc, struct chunk_codec *codec,
                                                      metrics_signal,
                                                      unit_in_items,
                                                      unit_out_items,
+                                                     unit_held_items,
                                                      item_metrics_available,
                                                      pu_error);
                             release_lock(&pu->lock,
@@ -2436,6 +2748,7 @@ static int processor_run(struct flb_processor *proc, struct chunk_codec *codec,
                                                  metrics_signal,
                                                  unit_in_items,
                                                  unit_out_items,
+                                                 unit_held_items,
                                                  item_metrics_available,
                                                  pu_error);
                         release_lock(&pu->lock,
@@ -2454,6 +2767,7 @@ static int processor_run(struct flb_processor *proc, struct chunk_codec *codec,
                                  metrics_signal,
                                  unit_in_items,
                                  unit_out_items,
+                                 unit_held_items,
                                  item_metrics_available,
                                  pu_error);
         if (unit_lock_held == FLB_TRUE) {
@@ -3106,6 +3420,11 @@ int flb_processor_instance_init(
      * configuration parameters are valid if the plugin is registering a config map.
      */
     if (flb_processor_instance_check_properties(ins, config) == -1) {
+        return -1;
+    }
+
+    if (processor_hold_prepare(ins) != 0) {
+        flb_error("[processor] could not prepare retention accounting series");
         return -1;
     }
 

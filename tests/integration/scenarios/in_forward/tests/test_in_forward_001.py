@@ -1987,6 +1987,35 @@ def test_in_forward_secure_forward_auth_failure():
     assert "username/password mismatch" in pong[2]
 
 
+@pytest.mark.parametrize("header", [b"\xdd\xff\xff\xff\xff", b"\xdf\xff\xff\xff\xff"])
+def test_in_forward_secure_forward_rejects_large_ping_container(header):
+    service = Service("in_forward_secure.yaml")
+    service.start()
+
+    try:
+        with socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=5) as sock:
+            _recv_msgpack_value(sock)
+            sock.sendall(header)
+            try:
+                assert sock.recv(1) == b""
+            except ConnectionResetError:
+                pass
+
+        service.wait_for_log_contains("invalid PING frame or MessagePack allocation budget exceeded")
+
+        with socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=5) as sock:
+            pong = _secure_forward_handshake(
+                sock,
+                username=SECURE_USERNAME,
+                password=SECURE_PASSWORD,
+                shared_key=SECURE_SHARED_KEY,
+            )
+        assert pong[0] == "PONG"
+        assert pong[1] is True
+    finally:
+        service.stop()
+
+
 def test_in_forward_e2e_forward_receiver_preserves_metadata_and_signal_options():
     service = ForwardReceiverService("in_forward_to_forward_receiver.yaml")
     service.start()

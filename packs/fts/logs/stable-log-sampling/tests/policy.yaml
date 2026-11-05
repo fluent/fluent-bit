@@ -1,0 +1,51 @@
+fixture_version: 1
+signal: logs
+processor:
+  name: fts
+  recipe_version: 1
+  packs:
+  - ../pack.json
+  error_mode: keep
+  recipe:
+  - id: policy
+    use: org.fluentbit.policy.stable-log-sampling/apply
+    with:
+      basis_points: 0
+cases:
+- name: zero-budget-drops-keyed-info
+  input:
+  - body:
+      request_id: a
+      level: INFO
+  expected:
+    records: []
+    outcomes:
+      kept: 0
+      dropped: 1
+      errors: 0
+- name: preserve-errors
+  input:
+  - body:
+      request_id: a
+      level: ERROR
+  expected:
+    records:
+    - body:
+        request_id: a
+        level: ERROR
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0
+- name: missing-key-control
+  input:
+  - body:
+      message: unkeyed
+  expected:
+    records:
+    - body:
+        message: unkeyed
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0

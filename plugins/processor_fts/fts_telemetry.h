@@ -27,6 +27,7 @@ extern const struct fts_signal_adapter fts_traces_adapter;
 
 /* shared metrics and traces policy path */
 int fts_register_telemetry_helpers(lua_State *l);
+int fts_metric_snapshot_encode(struct cfl_variant *, size_t, void **, size_t *);
 int fts_run_telemetry(lua_State *l);
 int fts_telemetry_transform(struct flb_processor_instance *ins, char *buffer, size_t size,
                             char **output, size_t *output_size, const char *tag, int tag_len);
