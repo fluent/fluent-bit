@@ -1,0 +1,117 @@
+fixture_version: 1
+signal: traces
+processor:
+  name: fts
+  packs:
+  - ../pack.json
+  recipe_version: 1
+  error_mode: drop
+  recipe:
+  - id: policy
+    use: org.fluentbit.observability/span_route_name
+    with: {}
+cases:
+- name: span-route-name
+  input:
+    resourceSpans:
+    - resource:
+        attributes:
+        - key: service.name
+          value:
+            stringValue: checkout
+      scopeSpans:
+      - scope:
+          name: fixture
+        spans:
+        - traceId: 0102030405060708090a0b0c0d0e0f10
+          spanId: 0102030405060708
+          name: GET /users/123
+          kind: 2
+          startTimeUnixNano: '1700000000000000000'
+          endTimeUnixNano: '1700000000100000000'
+          attributes:
+          - key: http.route
+            value:
+              stringValue: /users/{id}
+          status:
+            code: 1
+  expected:
+    otlp:
+      resourceSpans:
+      - resource:
+          attributes:
+          - key: service.name
+            value:
+              stringValue: checkout
+        scopeSpans:
+        - scope:
+            name: fixture
+          spans:
+          - traceId: 0102030405060708090a0b0c0d0e0f10
+            spanId: 0102030405060708
+            name: /users/{id}
+            kind: 2
+            startTimeUnixNano: '1700000000000000000'
+            endTimeUnixNano: '1700000000100000000'
+            attributes:
+            - key: http.route
+              value:
+                stringValue: /users/{id}
+            status:
+              code: 1
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0
+- name: empty-route-preserves-name
+  input:
+    resourceSpans:
+    - resource:
+        attributes:
+        - key: service.name
+          value:
+            stringValue: checkout
+      scopeSpans:
+      - scope:
+          name: fixture
+        spans:
+        - traceId: 0102030405060708090a0b0c0d0e0f10
+          spanId: 0102030405060708
+          name: GET /users/123
+          kind: 2
+          startTimeUnixNano: '1700000000000000000'
+          endTimeUnixNano: '1700000000100000000'
+          attributes:
+          - key: http.route
+            value:
+              stringValue: ''
+          status:
+            code: 1
+  expected:
+    otlp:
+      resourceSpans:
+      - resource:
+          attributes:
+          - key: service.name
+            value:
+              stringValue: checkout
+        scopeSpans:
+        - scope:
+            name: fixture
+          spans:
+          - traceId: 0102030405060708090a0b0c0d0e0f10
+            spanId: 0102030405060708
+            name: GET /users/123
+            kind: 2
+            startTimeUnixNano: '1700000000000000000'
+            endTimeUnixNano: '1700000000100000000'
+            attributes:
+            - key: http.route
+              value:
+                stringValue: ''
+            status:
+              code: 1
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0

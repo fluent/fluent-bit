@@ -1,0 +1,27 @@
+{
+  "pack_version": 1,
+  "fts_api_version": 1,
+  "id": "org.fluentbit.policy.url-sanitization",
+  "version": "1.0.1",
+  "title": "Structured URL credential removal",
+  "description": "For one declared structured HTTP(S) URL field, remove complete userinfo, query and fragment using bounded delimiter parsing. Paths can still contain private data. This is not a general URL validator or free-text PII scanner; invalid/ambiguous input drops transactionally.",
+  "blocks": [
+    {
+      "name": "apply",
+      "signals": [
+        "logs"
+      ],
+      "source": "blocks/apply.lua",
+      "parameters": {
+        "field": {
+          "type": "string",
+          "default": "url"
+        }
+      },
+      "privacy": true
+    }
+  ],
+  "fixtures": [
+    "tests/policy.yaml"
+  ]
+}

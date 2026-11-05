@@ -1,0 +1,51 @@
+fixture_version: 1
+signal: logs
+processor:
+  name: fts
+  packs: [../pack.json]
+  recipe_version: 1
+  error_mode: drop
+  recipe:
+    - id: privacy
+      use: org.fluentbit.observability/redact_log
+cases:
+  - name: nested_keys_and_control
+    input:
+      - body:
+          password: synthetic-secret
+          user: {Authorization: synthetic-token, name: alice}
+          operations: [{api_key: synthetic-key, action: login}]
+          message: preserved
+    expected:
+      records:
+        - body:
+            password: '[REDACTED]'
+            user: {Authorization: '[REDACTED]', name: alice}
+            operations: [{api_key: '[REDACTED]', action: login}]
+            message: preserved
+      outcomes: {kept: 1, dropped: 0, errors: 0}
+  - name: exact_types_survive
+    input:
+      - body:
+          password: synthetic-secret
+          unsigned: !uint64 18446744073709551615
+          signed: !int64 -9223372036854775808
+          fraction: !double 1.25
+          payload: !!binary AAECAw==
+          empty_list: []
+          empty_map: {}
+          enabled: true
+          absent_value: null
+    expected:
+      records:
+        - body:
+            password: '[REDACTED]'
+            unsigned: !uint64 18446744073709551615
+            signed: !int64 -9223372036854775808
+            fraction: !double 1.25
+            payload: !!binary AAECAw==
+            empty_list: []
+            empty_map: {}
+            enabled: true
+            absent_value: null
+      outcomes: {kept: 1, dropped: 0, errors: 0}

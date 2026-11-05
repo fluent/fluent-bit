@@ -1,0 +1,100 @@
+fixture_version: 1
+signal: logs
+processor:
+  name: fts
+  packs:
+  - ../pack.json
+  recipe_version: 1
+  error_mode: drop
+  recipe:
+  - id: policy
+    use: org.fluentbit.policy.successful-probes/apply
+cases:
+- name: drop-fast-success
+  input:
+  - body:
+      path: /health
+      status: 200
+      duration_ms: 1
+  expected:
+    records: []
+    outcomes:
+      kept: 0
+      dropped: 1
+      errors: 0
+- name: keep-failure
+  input:
+  - body:
+      path: /health
+      status: 500
+      duration_ms: 1
+  expected:
+    records:
+    - body:
+        path: /health
+        status: 500
+        duration_ms: 1
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0
+- name: keep-slow
+  input:
+  - body:
+      path: /health
+      status: 200
+      duration_ms: 500
+  expected:
+    records:
+    - body:
+        path: /health
+        status: 200
+        duration_ms: 500
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0
+- name: missing-status-control
+  input:
+  - body:
+      path: /health
+  expected:
+    records:
+    - body:
+        path: /health
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0
+- name: double-status
+  input:
+  - body:
+      path: /health
+      status: 200.0
+      duration_ms: 1
+  expected:
+    records:
+    - body:
+        path: /health
+        status: 200.0
+        duration_ms: 1
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0
+- name: negative-duration
+  input:
+  - body:
+      path: /health
+      status: 200
+      duration_ms: -1
+  expected:
+    records:
+    - body:
+        path: /health
+        status: 200
+        duration_ms: -1
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0

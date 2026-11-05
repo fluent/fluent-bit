@@ -1,0 +1,41 @@
+fixture_version: 1
+signal: logs
+processor:
+  name: fts
+  packs:
+  - ../pack.json
+  recipe_version: 1
+  error_mode: drop
+  recipe:
+  - id: policy
+    use: org.fluentbit.policy.genai-privacy/apply
+cases:
+- name: redact-content-preserve-usage
+  input:
+  - body:
+      gen_ai.input.messages:
+      - content: synthetic-private
+      gen_ai.usage.input_tokens: 12
+      latency_ms: 10
+  expected:
+    records:
+    - body:
+        gen_ai.input.messages: '[REDACTED]'
+        gen_ai.usage.input_tokens: 12
+        latency_ms: 10
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0
+- name: no-content-control
+  input:
+  - body:
+      gen_ai.usage.output_tokens: 7
+  expected:
+    records:
+    - body:
+        gen_ai.usage.output_tokens: 7
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0

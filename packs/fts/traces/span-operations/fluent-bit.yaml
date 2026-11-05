@@ -1,0 +1,24 @@
+service:
+  flush: 1
+  grace: 1
+  parsers_file: parsers.conf
+pipeline:
+  inputs:
+  - name: opentelemetry
+    listen: 127.0.0.1
+    port: 4318
+    processors:
+      traces:
+      - name: fts
+        packs:
+        - traces/span-operations/pack.json
+        recipe_version: 1
+        error_mode: drop
+        recipe:
+        - id: policy
+          use: org.fluentbit.policy.span-operations/apply
+        packages_dir: ${FTS_PACKAGES_DIR}
+  outputs:
+  - name: stdout
+    match: '*'
+    format: otlp_json

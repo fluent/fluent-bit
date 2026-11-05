@@ -1,0 +1,42 @@
+{
+  "pack_version": 1,
+  "fts_api_version": 1,
+  "id": "org.fluentbit.gauge-rollup",
+  "version": "1.0.0",
+  "title": "Temporal gauge rollup",
+  "description": "Lua reduction over bounded, processing-time metric-family windows. OTLP input only; volatile local ownership.",
+  "blocks": [
+    {
+      "name": "apply",
+      "signals": [
+        "metrics"
+      ],
+      "source": "blocks/apply.lua",
+      "parameters": {
+        "names": {
+          "type": "strings",
+          "required": true
+        },
+        "operation": {
+          "type": "string",
+          "default": "sum"
+        },
+        "interval_ms": {
+          "type": "number",
+          "default": 2000
+        },
+        "max_samples": {
+          "type": "number",
+          "default": 1000000
+        }
+      }
+    }
+  ],
+  "fixtures": [
+    "tests/sum.yaml",
+    "tests/mean.yaml",
+    "tests/count.yaml",
+    "tests/min.yaml",
+    "tests/max.yaml"
+  ]
+}

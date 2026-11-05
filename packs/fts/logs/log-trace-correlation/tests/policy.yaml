@@ -1,0 +1,146 @@
+fixture_version: 1
+signal: logs
+processor:
+  name: fts
+  packs:
+  - ../pack.json
+  recipe_version: 1
+  error_mode: drop
+  recipe:
+  - id: policy
+    use: org.fluentbit.policy.log-trace-correlation/apply
+cases:
+- name: promote-valid-context
+  input:
+    resourceLogs:
+    - resource:
+        attributes:
+        - key: service.name
+          value:
+            stringValue: checkout
+      scopeLogs:
+      - scope:
+          name: fixture
+        logRecords:
+        - timeUnixNano: '1700000000000000000'
+          body:
+            kvlistValue:
+              values:
+              - key: trace
+                value:
+                  stringValue: 0102030405060708090a0b0c0d0e0f10
+              - key: span
+                value:
+                  stringValue: 0102030405060708
+  expected:
+    otlp:
+      resourceLogs:
+      - resource:
+          attributes:
+          - key: service.name
+            value:
+              stringValue: checkout
+        scopeLogs:
+        - scope:
+            name: fixture
+          logRecords:
+          - timeUnixNano: '1700000000000000000'
+            body:
+              kvlistValue:
+                values:
+                - key: trace
+                  value:
+                    stringValue: 0102030405060708090a0b0c0d0e0f10
+                - key: span
+                  value:
+                    stringValue: 0102030405060708
+            traceId: 0102030405060708090a0b0c0d0e0f10
+            spanId: 0102030405060708
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0
+- name: reject-zero-trace-id
+  input:
+    resourceLogs:
+    - resource:
+        attributes:
+        - key: service.name
+          value:
+            stringValue: checkout
+      scopeLogs:
+      - scope:
+          name: fixture
+        logRecords:
+        - timeUnixNano: '1700000000000000000'
+          body:
+            kvlistValue:
+              values:
+              - key: trace
+                value:
+                  stringValue: '00000000000000000000000000000000'
+              - key: span
+                value:
+                  stringValue: 0102030405060708
+  expected:
+    otlp: {}
+    outcomes:
+      kept: 0
+      dropped: 1
+      errors: 1
+    error:
+      step: policy
+      class: invalid_parameter
+- name: preserve-existing-native-ids
+  input:
+    resourceLogs:
+    - resource:
+        attributes:
+        - key: service.name
+          value:
+            stringValue: checkout
+      scopeLogs:
+      - scope:
+          name: fixture
+        logRecords:
+        - timeUnixNano: '1700000000000000000'
+          body:
+            kvlistValue:
+              values:
+              - key: trace
+                value:
+                  stringValue: 0102030405060708090a0b0c0d0e0f10
+              - key: span
+                value:
+                  stringValue: 0102030405060708
+          traceId: '11111111111111111111111111111111'
+          spanId: '2222222222222222'
+  expected:
+    otlp:
+      resourceLogs:
+      - resource:
+          attributes:
+          - key: service.name
+            value:
+              stringValue: checkout
+        scopeLogs:
+        - scope:
+            name: fixture
+          logRecords:
+          - timeUnixNano: '1700000000000000000'
+            body:
+              kvlistValue:
+                values:
+                - key: trace
+                  value:
+                    stringValue: 0102030405060708090a0b0c0d0e0f10
+                - key: span
+                  value:
+                    stringValue: 0102030405060708
+            traceId: '11111111111111111111111111111111'
+            spanId: '2222222222222222'
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0
+transport: otlp

@@ -1,0 +1,22 @@
+{
+  "pack_version": 1,
+  "fts_api_version": 1,
+  "id": "org.fluentbit.policy.kubernetes-hygiene",
+  "version": "1.0.1",
+  "title": "Kubernetes metadata hygiene",
+  "description": "Consume already-enriched native Kubernetes logs. Remove labels/annotations while retaining pod/namespace/container identity and message. Does not fetch Kubernetes metadata or configure backend labels. Configure native Kubernetes enrichment before this policy.",
+  "blocks": [
+    {
+      "name": "apply",
+      "signals": [
+        "logs"
+      ],
+      "source": "blocks/apply.lua",
+      "parameters": {},
+      "privacy": false
+    }
+  ],
+  "fixtures": [
+    "tests/policy.yaml"
+  ]
+}
