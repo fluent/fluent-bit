@@ -74,6 +74,9 @@
  */
 #define FLB_PROCESSOR_FLAG_LOG_WINDOWS 1
 #define FLB_PROCESSOR_FLAG_LOGS_WORKER_SAFE (1 << 1)
+/* Declares the appended cb_preflight descriptor extension. */
+#define FLB_PROCESSOR_FLAG_PREFLIGHT (1 << 2)
+#define FLB_PROCESSOR_FLAG_INPUT_STOP (1 << 3)
 
 
 /* The current values mean the processor stack will
@@ -177,6 +180,11 @@ struct flb_processor {
 
     /* Fluent Bit context */
     struct flb_config *config;
+
+    /* Appended accounting extensions preserve existing DSO offsets. */
+    struct cmt_counter *cmt_items_held;
+    struct cmt_gauge *cmt_items_held_current;
+    struct cmt_counter *cmt_accounting_errors;
 };
 
 struct flb_processor_plugin {
@@ -226,6 +234,23 @@ struct flb_processor_plugin {
     int (*cb_notification) (struct flb_processor_instance *, struct flb_config *, void *);
 
     struct mk_list _head;  /* Link to parent list (config->filters) */
+
+    /*
+     * Optional extension, enabled only by FLB_PROCESSOR_FLAG_PREFLIGHT.
+     * Configuration-only validation: the config map is temporary.
+     * Do not start collectors, register metrics or retain instance context.
+     * Release all temporary resources before returning; may run more than once.
+     */
+    int (*cb_preflight) (struct flb_processor_instance *, struct flb_config *);
+
+    /* Optional INPUT_STOP extension, input-only. Runs once on the input owner
+     * thread before the input cb_exit and before scheduler destruction, also
+     * for partially initialized chains and reload. Cancel admissions/timers
+     * (flb_sched_timer_invalidate), discard/count pending data. Do not append,
+     * enter another unit's VM or free context: processor cb_exit owns cleanup.
+     * A nonzero result is logged but cannot interrupt shutdown. */
+    int (*cb_input_stop) (struct flb_processor_instance *, void *);
+
 };
 
 struct flb_processor_instance {
@@ -255,6 +280,15 @@ struct flb_processor_instance {
 
     /* Keep a reference to the original context this instance belongs to */
     struct flb_config *config;
+
+    /* Appended to preserve existing DSO field offsets. */
+    struct mk_list variant_properties;     /* borrowed typed values    */
+    int input_stopped;                     /* owner-thread stop guard  */
+    int log_callback_active;
+    int accounting_error_logged;
+    size_t log_hold_limit;
+    size_t log_held_delta;
+    size_t log_held_current;
 };
 
 
@@ -266,8 +300,20 @@ struct flb_processor *flb_processor_create(struct flb_config *config,
                                            int source_plugin_type);
 
 int flb_processor_is_active(struct flb_processor *proc);
+void flb_processor_input_stop(struct flb_processor *proc);
+
+/* Owner-thread log retention accounting, for non-worker-safe input processors.
+ * HOLD reports committed native ownership during a CFL log callback only;
+ * exclude group markers. Release follows successful engine queue transfer.
+ * Discard settles a policy/shutdown loss, including from cb_input_stop.
+ * Failure preserves inventory, logs once and counts accounting errors. These
+ * functions never transfer payloads, append or stop the input. */
+int flb_processor_log_hold(struct flb_processor_instance *ins, size_t records);
+int flb_processor_log_release(struct flb_processor_instance *ins, size_t records);
+int flb_processor_log_discard(struct flb_processor_instance *ins, size_t records);
 
 int flb_processor_init(struct flb_processor *proc);
+int flb_processor_preflight(struct flb_processor *proc);
 void flb_processor_destroy(struct flb_processor *proc);
 
 int flb_processor_run(struct flb_processor *proc,
