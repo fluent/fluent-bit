@@ -1,4 +1,25 @@
 local fb = package.loaded.fluentbit
+--- Parse JSON into a typed value, or return nil and the ordinary parse error.
+function fb.try_parse_json(text)
+  local ok, value = pcall(fb.parse_json, text)
+  if ok then return value end
+  return nil, value
+end
+--- Decode one string field in place; return false and an error without mutating on failure.
+function fb.decode_json(container, key)
+  local source = container:get(key)
+  if not source or source:type() ~= 'string' then
+    return false, 'JSON source field must be a string'
+  end
+  local value, err = fb.try_parse_json(source:value())
+  if not value then return false, err end
+  if fb._fts_json_integer_error then
+    err = fb._fts_json_integer_error(container, value)
+    if err then return false, err end
+  end
+  container:set(key, value)
+  return true
+end
 function fb.keep_keys(map, keys)
   local keep = {}; for _, k in ipairs(keys) do keep[k] = true end
   for _, k in ipairs(map:keys()) do if not keep[k] then map:remove(k) end end

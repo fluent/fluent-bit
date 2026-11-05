@@ -156,6 +156,8 @@ struct fts_runtime {
     int empty_metatable_ref;
     int key_refs[FTS_KEY_COUNT];
     int tag_ref;
+    /* Current OTLP event for destination-aware JSON validation. */
+    int json_event_ref;
     uint64_t generation;
     struct fts_undo_entry *undo;
     size_t undo_count;

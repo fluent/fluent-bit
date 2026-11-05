@@ -363,12 +363,14 @@ static int initialize_policy(lua_State *l)
     return 0;
 }
 
+/* Initialize the bounded Lua runtime and the selected signal adapter's helpers. */
 int fts_runtime_initialize(struct fts_runtime *ctx, struct flb_config *config)
 {
     lua_State *l;
     int ret;
 
     ctx->env = config->env;
+    ctx->json_event_ref = LUA_NOREF;
     ctx->vm = flb_luajit_create(config);
     if (!ctx->vm) {
         return FLB_PROCESSOR_FAILURE;
@@ -450,6 +452,11 @@ int fts_runtime_call(struct fts_runtime *ctx, void *data, int results)
     ret = lua_pcall(l, 1, results, 0);
     if (ret != 0) {
         fts_sanitizer_forget_unwound_frames();
+    }
+    /* Release callback-only roots before error-path garbage collection. */
+    if (ctx->json_event_ref != LUA_NOREF) {
+        lua_pushboolean(l, 0);
+        lua_rawseti(l, LUA_REGISTRYINDEX, ctx->json_event_ref);
     }
     if (ret == 0 && !ctx->jit && ctx->instructions_left <= 0) {
         lua_settop(l, base);
