@@ -26,12 +26,17 @@ def shipped_pattern(filename, name):
     raise AssertionError(f"Missing parser {name}")
 
 
-@pytest.mark.parametrize("case", ["nested", "backreference", "kube-custom", "ambassador"])
+@pytest.mark.parametrize("case", ["nested", "backreference", "kube-custom", "ambassador", "bounded-repeat"])
 def test_regex_budget(tmp_path, case):
     if case in ("nested", "backreference"):
         pattern = r"^(?<value>a+)+\k<value>$" if case == "backreference" else "^(?<value>a+)+$"
         hostile = "a" * 64 + "!"
         valid = "aaaa"
+        capture = "value"
+    elif case == "bounded-repeat":
+        pattern = "^(?<value>a|aa){3,10}b$"
+        hostile = "a" * 21 + "b"
+        valid = "a" * 15 + "b"
         capture = "value"
     elif case == "kube-custom":
         pattern = shipped_pattern("parsers.conf", case)
@@ -74,3 +79,7 @@ def test_regex_budget(tmp_path, case):
         assert "[regex] search failed: -17" in log
     else:
         assert "[regex] search failed:" not in log
+
+    if case == "bounded-repeat":
+        records = [json.loads(line) for line in log.splitlines() if line.startswith("{")]
+        assert [record["value"] for record in records if "value" in record] == ["aa"]
