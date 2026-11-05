@@ -93,6 +93,9 @@ class FluentBitTestService:
             if self.pre_start:
                 self.pre_start(self)
 
+            # The monitoring listener must not reuse any source/server port
+            # allocated by this service before native listeners are started.
+            self.flb.excluded_ports.update(self._allocated_ports)
             self.flb.start()
         except Exception:
             self.stop()

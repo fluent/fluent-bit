@@ -263,6 +263,10 @@ macro(FLB_TEST_COPY_DATA path)
   configure_file(${path} ${CMAKE_CURRENT_BINARY_DIR}/${path} COPYONLY)
 endmacro()
 
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+  list(APPEND UNIT_TESTS_FILES input_ingest_alloc.c)
+endif()
+
 foreach(test_data ${UNIT_TESTS_DATA})
   FLB_TEST_COPY_DATA(${test_data})
 endforeach()
@@ -423,4 +427,18 @@ if(FLB_PROTOBUF_ENCODER)
     target_compile_features(${test_target} PRIVATE cxx_std_11)
     target_link_libraries(${test_target} protobuf::libprotobuf protobuf::libprotoc)
   endforeach()
+endif()
+
+if(TARGET flb-it-input_ingest_alloc)
+  # Private core copy permits deterministic envelope/tag allocation failures.
+  target_sources(flb-it-input_ingest_alloc PRIVATE
+    ${PROJECT_SOURCE_DIR}/src/flb_input_ingest.c)
+  foreach(ingress_api try_resume_log try_resume_metrics enable destroy queue_log queue_log_take
+      queue_log_take_records queue_log_processed_take_records queue_metrics
+      queue_metrics_list queue_traces queue_profiles)
+    target_compile_definitions(flb-it-input_ingest_alloc PRIVATE
+      flb_input_ingress_${ingress_api}=flb_test_ingress_${ingress_api})
+  endforeach()
+  target_link_options(flb-it-input_ingest_alloc PRIVATE
+    "-Wl,--wrap=calloc" "-Wl,--wrap=flb_sds_create_len")
 endif()

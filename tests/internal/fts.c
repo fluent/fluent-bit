@@ -1,5 +1,10 @@
+#include "../../plugins/processor_fts/fts_snapshot_window.h"
+#include "../../plugins/processor_fts/fts_window.h"
 /* Fluent Bit: log-policy regression tests, Apache-2.0. */
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_scheduler.h>
+#include <fluent-bit/flb_pipe.h>
+#include "../../plugins/processor_fts/fts_metric_window.h"
 #include <fluent-bit/flb_processor.h>
 #include <fluent-bit/flb_conditionals.h>
 #include <fluent-bit/flb_log_event_encoder.h>
@@ -13,6 +18,7 @@
 #include <cfl/cfl_arena.h>
 #include <math.h>
 #include "../../plugins/processor_fts/fts.h"
+#include "../../plugins/processor_fts/fts_state.h"
 
 static msgpack_object *field(msgpack_object *map, const char *key)
 {
@@ -31,10 +37,13 @@ static msgpack_object *field(msgpack_object *map, const char *key)
     return NULL;
 }
 
-static void run_policy(const char *code, int grouped, const char *error_mode,
+static void run_policy_with_block(const char *code, int grouped, const char *error_mode,
                        int expected_records, int expected_groups, int conditional,
-                       const char *limit_key, const char *limit)
+                       const char *limit_key, const char *limit, const char *block_source)
 {
+    struct fts_runtime *ctx = NULL;
+    struct cfl_variant recipe_marker = {0};
+    lua_State *l;
     struct flb_config *config;
     struct flb_processor *processor;
     struct flb_processor_unit *unit;
@@ -80,6 +89,22 @@ static void run_policy(const char *code, int grouped, const char *error_mode,
                                           "selected", 0, RECORD_CONTEXT_BODY) == FLB_TRUE);
     }
     TEST_ASSERT(flb_processor_init(processor) == 0);
+    if (block_source) {
+        ctx = ((struct flb_processor_instance *) unit->ctx)->context;
+        l = ctx->vm->state;
+        TEST_ASSERT(fts_recipe_register(l) == 0);
+        lua_rawgeti(l, LUA_REGISTRYINDEX, ctx->module_ref);
+        lua_getfield(l, -1, "_recipe_bind");
+        lua_remove(l, -2);
+        lua_pushstring(l, block_source);
+        lua_newtable(l);
+        ret = lua_pcall(l, 2, 1, 0);
+        TEST_ASSERT(ret == 0);
+        luaL_unref(l, LUA_REGISTRYINDEX, ctx->policy_ref);
+        ctx->policy_ref = luaL_ref(l, LUA_REGISTRYINDEX);
+        ctx->recipe = &recipe_marker;
+    }
+
     encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
     TEST_ASSERT(encoder != NULL);
     for (i = 0; i < 6; i++) {
@@ -177,6 +202,9 @@ static void run_policy(const char *code, int grouped, const char *error_mode,
     ret = flb_processor_run(processor, 0, FLB_PROCESSOR_LOGS, "test", 4,
                             encoder->output_buffer, encoder->output_length, &output, &output_size);
     TEST_CHECK(ret == 0);
+    if (block_source) {
+        TEST_CHECK(strcmp(ctx->recipe_error_class, "operation_failed") == 0);
+    }
     if (output_size > 0) {
         TEST_ASSERT(flb_log_event_decoder_init(&decoder, output, output_size) == 0);
         flb_log_event_decoder_read_groups(&decoder, FLB_TRUE);
@@ -286,6 +314,33 @@ static void run_policy(const char *code, int grouped, const char *error_mode,
     flb_config_exit(config);
 }
 
+static void run_policy(const char *code, int grouped, const char *error_mode,
+                       int expected_records, int expected_groups, int conditional,
+                       const char *limit_key, const char *limit)
+{
+    run_policy_with_block(code, grouped, error_mode, expected_records, expected_groups,
+                          conditional, limit_key, limit, NULL);
+}
+
+static void recipe_cannot_swallow_partial_mutation(void)
+{
+    const char *source =
+        "return function(p) return function(log) "
+        "log.body:set('grow','synthetic-private'); "
+        "pcall(function() error('synthetic-private') end) end end";
+
+    run_policy_with_block("function process(log) end", 0, "keep", 6, 0, 0,
+                          NULL, NULL, source);
+    run_policy_with_block("function process(log) end", 0, "drop", 0, 0, 0,
+                          NULL, NULL, source);
+    /* The raw Lua exception contains a secret. The public diagnostic class
+     * must remain fixed, and the item's mutation must still roll back. */
+    source = "return function(p) return function(log) "
+             "log.body:set('grow','partial');error('synthetic-error-secret') end end";
+    run_policy_with_block("function process(log) end", 0, "keep", 6, 0, 0,
+                          NULL, NULL, source);
+}
+
 static void generic_context_isolation(void)
 {
     run_policy("function process(log) "
@@ -374,6 +429,147 @@ static void strict_parsing_and_time(void)
                "assert(fb.parse_time('2024-02-29T00:00:00.000000001Z').nsec == 1); "
                "assert(not pcall(fb.parse_time,'2100-02-29T00:00:00Z')) end",
                0, "drop", 6, 0, 0, NULL, NULL);
+}
+
+/* Parsing keeps exact typed values and reports ordinary errors as return values. */
+static void try_parse_json_preserves_types_and_errors(void)
+{
+    run_policy("local fb=require('fluentbit'); function process(log) "
+               "local value,err=fb.try_parse_json('18446744073709551615'); "
+               "assert(value:type()=='uint64' and value:value()=='18446744073709551615'); "
+               "assert(err==nil); "
+               "assert(fb.try_parse_json('-9223372036854775808'):value()=='-9223372036854775808'); "
+               "assert(fb.try_parse_json('null'):type()=='null'); "
+               "assert(fb.try_parse_json('false'):value()==false); "
+               "assert(fb.try_parse_json('[1,2]'):len()==2); "
+               "assert(fb.try_parse_json(' \\n {\"nested\":{\"ok\":true}}')"
+               ":get('nested'):get('ok'):value()==true); "
+               "local function invalid(text) local v,e=fb.try_parse_json(text); "
+               "assert(v==nil and type(e)=='string') end; "
+               "invalid(nil); invalid(false); invalid(42); invalid({}); invalid(''); "
+               "invalid('plain text'); invalid('{'); invalid('{} garbage'); "
+               "invalid('{\"a\":1,\"a\":2}'); invalid('18446744073709551616'); "
+               "invalid(string.rep(' ',1048577)); "
+               "invalid(string.rep('[',65)..'0'..string.rep(']',65)); "
+               "assert(not pcall(fb.parse_json,'plain text')) end",
+               0, "drop", 6, 0, 0, NULL, NULL);
+}
+
+/* Unpacking replaces the body only after an object has been decoded successfully. */
+static void unpack_json_replaces_only_object_bodies(void)
+{
+    run_policy("local fb=require('fluentbit'); function process(log) "
+               "local record={body=fb.map()}; local original=record.body; "
+               "local ok,err=fb.unpack_json(record); "
+               "assert(ok==false and type(err)=='string' and record.body==original); "
+               "for _,text in ipairs({'plain text','{','[]','null','false','42'}) do "
+               "record.body:set('message',text); ok,err=fb.unpack_json(record); "
+               "assert(ok==false and type(err)=='string' and record.body==original); "
+               "assert(record.body:get_string('message')==text) end; "
+               "record.body:set('message',42); assert(not fb.unpack_json(record)); "
+               "assert(record.body==original); "
+               "record.body:set('payload','{\"id\":18446744073709551615}'); "
+               "ok,err=fb.unpack_json(record,'payload'); assert(ok==true and err==nil); "
+               "assert(record.body:get('id'):value()=='18446744073709551615'); "
+               "record.body:set('message','{}'); assert(fb.unpack_json(record)); "
+               "assert(record.body:len()==0) end",
+               0, "drop", 6, 0, 0, NULL, NULL);
+}
+
+/* Field decoding preserves siblings, scalar types, and failed input strings. */
+static void decode_json_fields_preserve_siblings_and_types(void)
+{
+    run_policy("local fb=require('fluentbit'); function process(log) "
+               "local map=fb.map(); map:set('sibling','keep'); "
+               "local function decode(text,kind) map:set('payload',text); "
+               "local ok,err=fb.decode_json(map,'payload'); assert(ok==true and err==nil); "
+               "assert(map:get('payload'):type()==kind and map:get_string('sibling')=='keep'); "
+               "return map:get('payload') end; "
+               "assert(decode('{\"id\":18446744073709551615}','map')"
+               ":get('id'):value()=='18446744073709551615'); "
+               "assert(decode('[1,2]','array'):len()==2); decode('null','null'); "
+               "assert(decode('false','bool'):value()==false); "
+               "assert(decode('\"text\"','string'):value()=='text'); "
+               "assert(decode('9007199254740993','uint64'):value()=='9007199254740993'); "
+               "for _,text in ipairs({'plain text','{','{} trailing','{\"a\":1,\"a\":2}'}) do "
+               "map:set('payload',text); local ok,err=fb.decode_json(map,'payload'); "
+               "assert(ok==false and type(err)=='string' and map:get_string('payload')==text); "
+               "assert(map:get_string('sibling')=='keep') end; "
+               "assert(not fb.decode_json(map,'missing')); "
+               "map:set('payload',42); assert(not fb.decode_json(map,'payload')); "
+               "assert(map:get_number('payload')==42); "
+               "local array=fb.array(); array:append('false'); array:append('null'); "
+               "assert(fb.decode_json(array,1) and array:get(1):value()==false); "
+               "assert(fb.decode_json(array,2) and array:get(2):type()=='null'); "
+               "assert(not pcall(fb.decode_json,map,1)); "
+               "assert(not pcall(fb.decode_json,nil,'payload')) end",
+               0, "drop", 6, 0, 0, NULL, NULL);
+}
+
+/* Both JSON mutation helpers retain terminal instruction-budget semantics. */
+static void json_helpers_cannot_swallow_instruction_exhaustion(void)
+{
+    const char *decode;
+    const char *unpack;
+
+    decode = "local fb=require('fluentbit'); function process(log) "
+             "log.body:set('payload','{\"items\":['..string.rep('0,',30000)..'0]}'); "
+             "fb.decode_json(log.body,'payload') end";
+    unpack = "local fb=require('fluentbit'); function process(log) "
+             "log.body:set('payload','{\"items\":['..string.rep('0,',30000)..'0]}'); "
+             "fb.unpack_json(log,'payload') end";
+    run_policy(decode, 0, "drop", 0, 0, 0, NULL, NULL);
+    run_policy(unpack, 0, "drop", 0, 0, 0, NULL, NULL);
+    run_policy(decode, 0, "keep", 6, 0, 0, NULL, NULL);
+    run_policy(unpack, 0, "keep", 6, 0, 0, NULL, NULL);
+}
+
+/* Reject OTLP integer overflow without restricting generic parser or scratch values. */
+static void json_helpers_reject_otel_unsigned_overflow(void)
+{
+    run_policy("local fb=require('fluentbit'); function process(log) "
+               "local function reject(container,text) container:set('payload',text); "
+               "local ok,err=fb.decode_json(container,'payload'); "
+               "assert(ok==false and type(err)=='string'); "
+               "assert(container:get_string('payload')==text) end; "
+               "for _,container in ipairs({log.body,log.attributes,"
+               "log.resource.attributes,log.scope.attributes,log.body:ensure_map('nested')}) do "
+               "reject(container,'{\"nested\":[{\"id\":18446744073709551615}]}'); "
+               "reject(container,'[{\"id\":9223372036854775808}]'); "
+               "reject(container,'18446744073709551615'); "
+               "container:set('payload','{\"id\":9223372036854775807}'); "
+               "assert(fb.decode_json(container,'payload')); "
+               "assert(container:get('payload'):get('id'):value()=='9223372036854775807') end; "
+               "local array=fb.array(); array:append('18446744073709551615'); "
+               "log.body:set('array',array); "
+               "assert(not fb.decode_json(log.body:get('array'),1)); "
+               "assert(log.body:get('array'):get(1):value()=='18446744073709551615'); "
+               "local scratch=fb.map(); scratch:set('payload','18446744073709551615'); "
+               "assert(fb.decode_json(scratch,'payload')); "
+               "assert(scratch:get('payload'):value()=='18446744073709551615'); "
+               "assert(fb.try_parse_json('18446744073709551615'):value()=='18446744073709551615'); "
+               "log.body=log.body:copy(); reject(log.body,'9223372036854775808'); "
+               "log.body:set('message','{\"id\":9223372036854775808}'); "
+               "local body=log.body; local ok,err=fb.unpack_json(log); "
+               "assert(ok==false and type(err)=='string' and log.body==body) end",
+               3, "drop", 6, 2, 0, NULL, NULL);
+}
+
+/* A scratch decode must not read a temporarily invalid context as a Lua table. */
+static void json_helpers_ignore_non_table_contexts(void)
+{
+    run_policy("local fb=require('fluentbit'); function process(log) "
+               "local context=log.context; local scratch=fb.map(); "
+               "local function decode() scratch:set('payload','18446744073709551615'); "
+               "assert(fb.decode_json(scratch,'payload')); "
+               "assert(scratch:get('payload'):value()=='18446744073709551615') end; "
+               "for _,value in ipairs({false,42,'context',fb.map(),fb.array()}) do "
+               "log.context=value; decode() end; "
+               "log.context=nil; decode(); log.context=context; "
+               "log.resource.attributes:set('payload','9223372036854775808'); "
+               "assert(not fb.decode_json(log.resource.attributes,'payload')); "
+               "assert(log.resource.attributes:get_string('payload')=='9223372036854775808') end",
+               3, "drop", 6, 2, 0, NULL, NULL);
 }
 
 static void output_growth_fails_closed(void)
@@ -1475,7 +1671,810 @@ static void json_large_objects_parse_in_linear_time(void)
                0, "drop", 6, 0, 0, "memory_limit", "128M");
 }
 
+/* Exercise the production binder with hostile block sources, never registered
+ * in the production catalog or accepted from configuration. */
+static void recipe_block_environments_are_isolated(void)
+{
+    struct flb_config *config;
+    struct fts_runtime ctx = {0};
+    lua_State *l;
+    int ret;
+    const char *probe =
+        "local fb=require('fluentbit'); local original=fb.redact; "
+        "local attempts={"
+        "'fb.redact=function() end',"
+        "'string.lower=function() end',"
+        "'math.huge=0',"
+        "'math.randomseed(1)',"
+        "'injected=true',"
+        "'p.keys[1]=\"changed\"',"
+        "'p.nested.key=\"changed\"',"
+        "'pcall(function() error(\"secret\") end)'"
+        "}; "
+        "for _,source in ipairs(attempts) do "
+        "local apply=bind('return function(p) return function(item) '..source..' end end',"
+        "{keys={'password'},nested={key='original'}}); "
+        "assert(not pcall(apply,{})); assert(fb.redact==original); end; "
+        "local apply=bind([[return function(p) return function(item) "
+        "local keys={};for _,key in ipairs(p.keys) do keys[#keys+1]=key end; "
+        "fb.redact(item.body,keys) end end]],{keys={'password'}}); "
+        "local body=fb.map();body:set('password','synthetic');apply({body=body}); "
+        "assert(body:get_string('password')=='[REDACTED]')";
+
+    config = flb_config_init();
+    TEST_ASSERT(config != NULL);
+    ctx.code = "function process(item) end";
+    ctx.call = "process";
+    ctx.error_mode = "drop";
+    ctx.adapter = &fts_logs_adapter;
+    ctx.instruction_limit = 1000000;
+    ctx.memory_limit = 32 * 1024 * 1024;
+    ctx.output_limit = 64 * 1024 * 1024;
+    TEST_ASSERT(fts_runtime_initialize(&ctx, config) == FLB_PROCESSOR_SUCCESS);
+    l = ctx.vm->state;
+    TEST_ASSERT(fts_recipe_register(l) == 0);
+    lua_rawgeti(l, LUA_REGISTRYINDEX, ctx.module_ref);
+    lua_getfield(l, -1, "_recipe_bind");
+    lua_setglobal(l, "bind");
+    lua_pop(l, 1);
+    ret = luaL_loadstring(l, probe);
+    TEST_ASSERT(ret == 0);
+    ret = lua_pcall(l, 0, 0, 0);
+    if (ret) {
+        TEST_MSG("%s", lua_tostring(l, -1));
+        fts_sanitizer_forget_unwound_frames();
+    }
+    TEST_CHECK(ret == 0);
+    fts_runtime_destroy(&ctx);
+    flb_config_exit(config);
+}
+
+static uint64_t state_test_clock(void *data)
+{
+    return *(uint64_t *) data;
+}
+
+static int state_decision(struct fts_state *state, const char *key)
+{
+    int work = 100000;
+
+    fts_state_savepoint(state);
+    return fts_state_decide(state, key, strlen(key), &work);
+}
+
+static void state_dedupe_transactions(void)
+{
+    struct fts_state *state;
+    uint64_t now = 0;
+    size_t empty_bytes;
+
+    state = fts_state_create(FTS_STATE_DEDUPE, 1000, 0, 0, 2, 16, 65536);
+    TEST_ASSERT(state != NULL);
+    state->clock = state_test_clock;
+    state->clock_data = &now;
+    empty_bytes = state->bytes;
+    fts_state_begin(state);
+    TEST_CHECK(state_decision(state, "a") == FTS_STATE_KEEP);
+    TEST_CHECK(state_decision(state, "a") == FTS_STATE_DROP);
+    fts_state_rollback_item(state);
+    TEST_CHECK(state->dropped == 0);
+    TEST_CHECK(state_decision(state, "a") == FTS_STATE_DROP);
+    TEST_CHECK(state_decision(state, "b") == FTS_STATE_KEEP);
+    fts_state_rollback_item(state);
+    TEST_CHECK(state_decision(state, "b") == FTS_STATE_KEEP);
+    TEST_CHECK(state_decision(state, "c") == FTS_STATE_OVERFLOW);
+    fts_state_finish(state, 1);
+    TEST_CHECK(state->keys == 2 && state->commits == 1);
+    TEST_CHECK(state->total_dropped == 1 && state->total_overflow == 1);
+    now = 999999999;
+    fts_state_begin(state);
+    TEST_CHECK(state_decision(state, "a") == FTS_STATE_DROP);
+    fts_state_finish(state, 0);
+    TEST_CHECK(state->keys == 2 && state->commits == 1 && state->total_dropped == 1);
+    now++;
+    fts_state_begin(state);
+    TEST_CHECK(state->keys == 0 && state->expirations == 2);
+    TEST_CHECK(state->bytes == empty_bytes);
+    TEST_CHECK(state_decision(state, "a") == FTS_STATE_KEEP);
+    fts_state_finish(state, 0);
+    TEST_CHECK(state->keys == 0 && state->bytes == empty_bytes);
+    fts_state_destroy(state);
+}
+
+static void state_throttle_boundaries(void)
+{
+    struct fts_state *state;
+    uint64_t now = 0;
+
+    state = fts_state_create(FTS_STATE_THROTTLE, 1000, 2, 2, 2, 16, 65536);
+    TEST_ASSERT(state != NULL);
+    state->clock = state_test_clock;
+    state->clock_data = &now;
+    fts_state_begin(state);
+    TEST_CHECK(state_decision(state, "a") == FTS_STATE_KEEP);
+    TEST_CHECK(state_decision(state, "a") == FTS_STATE_KEEP);
+    fts_state_rollback_item(state);
+    TEST_CHECK(state_decision(state, "a") == FTS_STATE_KEEP);
+    TEST_CHECK(state_decision(state, "a") == FTS_STATE_DROP);
+    fts_state_finish(state, 1);
+    now = 499999999;
+    fts_state_begin(state);
+    TEST_CHECK(state_decision(state, "a") == FTS_STATE_DROP);
+    fts_state_finish(state, 1);
+    now++;
+    fts_state_begin(state);
+    TEST_CHECK(state_decision(state, "a") == FTS_STATE_KEEP);
+    fts_state_finish(state, 0);
+    fts_state_begin(state);
+    TEST_CHECK(state_decision(state, "a") == FTS_STATE_KEEP);
+    TEST_CHECK(state_decision(state, "a") == FTS_STATE_DROP);
+    fts_state_finish(state, 1);
+    now = 0; /* A faulty injected clock cannot refill or expire backwards. */
+    fts_state_begin(state);
+    TEST_CHECK(state_decision(state, "a") == FTS_STATE_DROP);
+    fts_state_finish(state, 1);
+    now = 1500000000;
+    fts_state_begin(state);
+    TEST_CHECK(state->keys == 0 && state->expirations == 1);
+    TEST_CHECK(state_decision(state, "a") == FTS_STATE_KEEP);
+    TEST_CHECK(state_decision(state, "a") == FTS_STATE_KEEP);
+    fts_state_finish(state, 1);
+    TEST_CHECK(state->total_dropped == 4);
+    fts_state_destroy(state);
+}
+
+static void state_limits_and_budget(void)
+{
+    struct fts_state *state;
+    uint64_t now = 0;
+    size_t empty_bytes;
+    int work;
+
+    state = fts_state_create(FTS_STATE_DEDUPE, 1000, 0, 0, 1, 2, fts_state_base_cost(1));
+    TEST_ASSERT(state != NULL);
+    state->clock = state_test_clock;
+    state->clock_data = &now;
+    empty_bytes = state->bytes;
+    fts_state_begin(state);
+    TEST_CHECK(state_decision(state, "abc") == FTS_STATE_OVERFLOW);
+    TEST_CHECK(state_decision(state, "a") == FTS_STATE_OVERFLOW);
+    TEST_CHECK(state->bytes == empty_bytes && state->keys == 0);
+    fts_state_finish(state, 1);
+    TEST_CHECK(state->total_overflow == 2 && state->commits == 0);
+    state->limit += 1024;
+    fts_state_begin(state);
+    fts_state_savepoint(state);
+    work = 0;
+    TEST_CHECK(fts_state_decide(state, "a", 1, &work) == FTS_STATE_BUDGET);
+    fts_state_rollback_item(state);
+    TEST_CHECK(state->bytes == empty_bytes);
+    TEST_CHECK(state_decision(state, "a") == FTS_STATE_KEEP);
+    fts_state_finish(state, 1);
+    fts_state_begin(state);
+    TEST_CHECK(state_decision(state, "b") == FTS_STATE_OVERFLOW);
+    TEST_CHECK(state_decision(state, "a") == FTS_STATE_DROP);
+    fts_state_finish(state, 0);
+    TEST_CHECK(state->total_overflow == 2 && state->total_dropped == 0);
+    fts_state_destroy(state);
+    TEST_CHECK(fts_state_create(FTS_STATE_THROTTLE, 999, 1, 1, 1, 16, 65536) == NULL);
+    TEST_CHECK(fts_state_create(FTS_STATE_DEDUPE, 0, 0, 0, 1, 16, 65536) == NULL);
+    TEST_CHECK(fts_state_create(FTS_STATE_DEDUPE, 1, 0, 0, 0, 16, 65536) == NULL);
+}
+
+static void state_seeded_hash_resists_old_bucket_collisions(void)
+{
+    struct fts_state *state;
+    unsigned char key[8];
+    uint64_t hash;
+    uint64_t now = 0;
+    uint64_t seed;
+    unsigned int i;
+    unsigned int j;
+    unsigned int suffix;
+    int pass;
+    int work;
+
+    for (seed = 1; seed <= 3; seed++) {
+        state = fts_state_create(FTS_STATE_DEDUPE, 1000, 0, 0, 4096, 8, 2 * 1024 * 1024);
+        TEST_ASSERT(state != NULL);
+        TEST_CHECK(state->bucket_count == 4096);
+        TEST_CHECK(state->bytes == fts_state_base_cost(4096));
+        state->hash_seed = seed; /* Deterministic test distribution, never configuration. */
+        state->clock = state_test_clock;
+        state->clock_data = &now;
+        for (pass = 0; pass < 2; pass++) {
+            fts_state_begin(state);
+            for (i = 0; i < 4096; i++) {
+                key[0] = 'k';
+                key[1] = 'e';
+                key[2] = 'y';
+                for (j = 0; j < 4; j++) {
+                    key[j + 3] = (i >> (8 * j)) & 255;
+                }
+                for (suffix = 0; suffix < 256; suffix++) {
+                    key[7] = suffix;
+                    hash = UINT64_C(14695981039346656037);
+                    for (j = 0; j < sizeof(key); j++) {
+                        hash = (hash ^ key[j]) * UINT64_C(1099511628211);
+                    }
+                    if (hash % 256 == 0) {
+                        break;
+                    }
+                }
+                TEST_ASSERT(suffix < 256);
+                work = 1000;
+                fts_state_savepoint(state);
+                TEST_CHECK(fts_state_decide(state, (char *) key, sizeof(key), &work) ==
+                           (pass == 0 ? FTS_STATE_KEEP : FTS_STATE_DROP));
+                TEST_CHECK(work >= 950);
+            }
+            fts_state_finish(state, 1);
+        }
+        TEST_CHECK(state->keys == 4096 && state->total_dropped == 4096);
+        TEST_CHECK(state->bytes <= state->limit);
+        fts_state_destroy(state);
+    }
+    TEST_CHECK(fts_state_base_cost(3) == sizeof(struct fts_state) + 8 * sizeof(void *));
+    TEST_CHECK(fts_state_base_cost(65536) == sizeof(struct fts_state) + 131072 * sizeof(void *));
+    TEST_CHECK(fts_state_base_cost(65537) == 0);
+}
+
+static void state_internal_errors_are_not_budget_errors(void)
+{
+    struct fts_state *state;
+    int work = 1000;
+
+    state = fts_state_create(FTS_STATE_DEDUPE, 1000, 0, 0, 1, 16, 65536);
+    TEST_ASSERT(state != NULL);
+    TEST_CHECK(fts_state_decide(NULL, "a", 1, &work) == FTS_STATE_ERROR);
+    TEST_CHECK(fts_state_decide(state, "a", 1, &work) == FTS_STATE_ERROR);
+    fts_state_begin(state);
+    fts_state_savepoint(state);
+    TEST_CHECK(fts_state_decide(state, "a", 1, &work) == FTS_STATE_KEEP);
+    TEST_CHECK(fts_state_decide(state, "a", 1, &work) == FTS_STATE_ERROR);
+    fts_state_rollback_item(state);
+    TEST_CHECK(state->proposed_keys == 0);
+    work = 0;
+    TEST_CHECK(fts_state_decide(state, "a", 1, &work) == FTS_STATE_BUDGET);
+    fts_state_destroy(state);
+}
+
+struct window_test_clock {
+    uint64_t now;
+    int busy;
+    int emitted;
+    int dropped;
+    char values[16];
+};
+
+static uint64_t window_clock(void *data)
+{
+    return ((struct window_test_clock *) data)->now;
+}
+
+static int window_emit(void *data, void **buffer, size_t bytes, size_t records,
+                        const char *tag, size_t tag_length)
+{
+    struct window_test_clock *clock;
+
+    (void) tag;
+    (void) tag_length;
+    clock = data;
+    if (clock->busy) {
+        return -2;
+    }
+    TEST_CHECK(bytes == records);
+    TEST_CHECK(clock->emitted + bytes <= sizeof(clock->values));
+    memcpy(clock->values + clock->emitted, *buffer, bytes);
+    clock->emitted += records;
+    flb_free(*buffer);
+    *buffer = NULL;
+    return 0;
+}
+
+static void window_drop(void *data, size_t records, const char *reason)
+{
+    struct window_test_clock *clock;
+
+    (void) reason;
+    clock = data;
+    clock->dropped += records;
+}
+
+static int window_stage_value(struct fts_window *window, const char *key,
+                              char value, int error, int baseline)
+{
+    void *buffer;
+    int result;
+
+    buffer = flb_malloc(1);
+    TEST_ASSERT(buffer != NULL);
+    *((char *) buffer) = value;
+    result = fts_window_stage(window, key, strlen(key), &buffer, 1, error, baseline);
+    TEST_CHECK((buffer == NULL) == (result == FTS_WINDOW_ACCEPT));
+    flb_free(buffer);
+    return result;
+}
+
+static void test_window_transactions_and_deadline(void)
+{
+    struct fts_window *window;
+    struct window_test_clock clock = {0};
+    size_t bytes;
+
+    window = fts_window_create(8, 64, 65536, 100, 200, 500);
+    TEST_ASSERT(window != NULL);
+    fts_window_clock(window, window_clock, &clock);
+    bytes = fts_window_bytes(window);
+    fts_window_begin(window);
+    TEST_CHECK(window_stage_value(window, "request", 'x', 1, 0) == FTS_WINDOW_ACCEPT);
+    TEST_CHECK(fts_window_pending(window) == 1);
+    fts_window_finish(window, 0);
+    TEST_CHECK(fts_window_records(window) == 0);
+    TEST_CHECK(fts_window_bytes(window) == bytes);
+    fts_window_begin(window);
+    TEST_CHECK(window_stage_value(window, "request", 'a', 0, 0) == FTS_WINDOW_ACCEPT);
+    fts_window_finish(window, 1);
+    clock.now = 50000000;
+    fts_window_begin(window);
+    TEST_CHECK(window_stage_value(window, "request", 'b', 1, 0) == FTS_WINDOW_ACCEPT);
+    fts_window_finish(window, 1);
+    clock.now = 99999999;
+    fts_window_poll(window, window_emit, window_drop, &clock);
+    TEST_CHECK(clock.emitted == 0 && fts_window_records(window) == 2);
+    clock.now = 100000000;
+    clock.busy = 1;
+    bytes = fts_window_bytes(window);
+    fts_window_poll(window, window_emit, window_drop, &clock);
+    TEST_CHECK(fts_window_records(window) == 2 && fts_window_bytes(window) >= bytes);
+    bytes = fts_window_bytes(window);
+    fts_window_poll(window, window_emit, window_drop, &clock);
+    TEST_CHECK(fts_window_records(window) == 2 && fts_window_bytes(window) == bytes);
+    fts_window_begin(window);
+    TEST_CHECK(fts_window_classify(window, "request", 7) == FTS_WINDOW_LATE);
+    fts_window_finish(window, 1);
+    clock.busy = 0;
+    fts_window_poll(window, window_emit, window_drop, &clock);
+    TEST_CHECK(clock.emitted == 2 && memcmp(clock.values, "ab", 2) == 0);
+    TEST_CHECK(clock.dropped == 0 && fts_window_records(window) == 0);
+    clock.now = 300000000;
+    fts_window_begin(window);
+    TEST_CHECK(window_stage_value(window, "request", 'c', 0, 0) == FTS_WINDOW_ACCEPT);
+    fts_window_finish(window, 1);
+    fts_window_stop(window, window_drop, &clock);
+    TEST_CHECK(clock.dropped == 1 && fts_window_records(window) == 0);
+    fts_window_destroy(window);
+}
+
+static void test_window_overflow_and_baseline(void)
+{
+    struct fts_window *window;
+    struct window_test_clock clock = {0};
+
+    window = fts_window_create(1, 4, 65536, 10, 10, 20);
+    TEST_ASSERT(window != NULL);
+    fts_window_clock(window, window_clock, &clock);
+    fts_window_begin(window);
+    TEST_CHECK(window_stage_value(window, "a", 'd', 0, 0) == FTS_WINDOW_ACCEPT);
+    TEST_CHECK(window_stage_value(window, "a", 'i', 0, 1) == FTS_WINDOW_ACCEPT);
+    TEST_CHECK(window_stage_value(window, "b", 'x', 1, 0) == FTS_WINDOW_OVERFLOW);
+    TEST_CHECK(window_stage_value(window, "large", 'x', 1, 0) == FTS_WINDOW_OVERFLOW);
+    fts_window_finish(window, 1);
+    clock.now = 10000000;
+    fts_window_poll(window, window_emit, window_drop, &clock);
+    TEST_CHECK(clock.dropped == 1 && clock.emitted == 1 && clock.values[0] == 'i');
+    TEST_CHECK(fts_window_records(window) == 0);
+    fts_window_destroy(window);
+}
+
+static void test_window_budget_and_ready_expiry(void)
+{
+    struct fts_window *window;
+    struct window_test_clock clock = {0};
+    size_t bytes;
+    int work;
+
+    window = fts_window_create(2, 64, 65536, 10, 10, 20);
+    TEST_ASSERT(window != NULL);
+    fts_window_clock(window, window_clock, &clock);
+    bytes = fts_window_bytes(window);
+    fts_window_begin(window);
+    work = 1;
+    TEST_CHECK(fts_window_classify_work(window, "a", 1, &work) == FTS_WINDOW_BUDGET);
+    TEST_CHECK(work == 0 && fts_window_pending(window) == 0);
+    TEST_CHECK(window_stage_value(window, "a", 'a', 1, 0) == FTS_WINDOW_ACCEPT);
+    work = 2;
+    TEST_CHECK(fts_window_classify_work(window, "a", 1, &work) == FTS_WINDOW_BUDGET);
+    TEST_CHECK(work == 0);
+    fts_window_finish(window, 1);
+    clock.now = 10000000;
+    clock.busy = 1;
+    fts_window_poll(window, window_emit, window_drop, &clock);
+    TEST_CHECK(fts_window_records(window) == 1);
+    clock.now = 30000000;
+    fts_window_poll(window, window_emit, window_drop, &clock);
+    TEST_CHECK(clock.dropped == 1 && clock.emitted == 0);
+    TEST_CHECK(fts_window_bytes(window) == bytes);
+    TEST_CHECK(fts_window_records(window) == 0);
+    fts_window_destroy(window);
+}
+
+struct window_batch_clock {
+    uint64_t now;
+    size_t attempts;
+    size_t emitted;
+    size_t dropped;
+    int busy;
+};
+
+static uint64_t window_batch_now(void *data)
+{
+    return ((struct window_batch_clock *) data)->now;
+}
+
+static int window_batch_emit(void *data, void **buffer, size_t bytes, size_t records,
+                              const char *tag, size_t tag_length)
+{
+    struct window_batch_clock *clock;
+    size_t index;
+
+    (void) tag;
+    (void) tag_length;
+    clock = data;
+    clock->attempts++;
+    if (clock->busy) {
+        return -2;
+    }
+    TEST_CHECK(bytes == records * 3);
+    for (index = 0; index < records; index++) {
+        TEST_CHECK(memcmp((char *) *buffer + index * 3, "\x92\x01\x80", 3) == 0);
+    }
+    clock->emitted += records;
+    flb_free(*buffer);
+    *buffer = NULL;
+    return 0;
+}
+
+static void window_batch_drop(void *data, size_t records, const char *reason)
+{
+    (void) reason;
+    ((struct window_batch_clock *) data)->dropped += records;
+}
+
+static int window_batch_stage(struct fts_window *window, const char *key)
+{
+    void *buffer;
+    int result;
+
+    buffer = flb_malloc(3);
+    TEST_ASSERT(buffer != NULL);
+    memcpy(buffer, "\x92\x01\x80", 3);
+    result = fts_window_stage(window, key, strlen(key), &buffer, 3, 1, 0);
+    TEST_CHECK((buffer == NULL) == (result == FTS_WINDOW_ACCEPT));
+    flb_free(buffer);
+    return result;
+}
+
+static void test_window_idle_poll_constant_work(void)
+{
+    struct fts_window *window;
+    struct window_batch_clock clock = {0};
+    size_t index;
+    size_t bytes;
+    char key[32];
+
+    window = fts_window_create(65536, 64, 16 * 1024 * 1024, 1000, 1000, 1000);
+    TEST_ASSERT(window != NULL);
+    fts_window_clock(window, window_batch_now, &clock);
+    bytes = fts_window_bytes(window);
+    fts_window_begin(window);
+    for (index = 0; index < 5000; index++) {
+        snprintf(key, sizeof(key), "key-%zu", index);
+        TEST_ASSERT(window_batch_stage(window, key) == FTS_WINDOW_ACCEPT);
+    }
+    fts_window_finish(window, 1);
+    fts_window_poll(window, window_batch_emit, window_batch_drop, &clock);
+    TEST_CHECK(fts_window_poll_visits(window) <= 1);
+    TEST_CHECK(clock.attempts == 0 && fts_window_records(window) == 5000);
+    fts_window_stop(window, window_batch_drop, &clock);
+    TEST_CHECK(clock.dropped == 5000 && fts_window_bytes(window) == bytes);
+    fts_window_poll(window, window_batch_emit, window_batch_drop, &clock);
+    TEST_CHECK(clock.attempts == 0);
+    fts_window_destroy(window);
+}
+
+static void test_window_large_batched_release_and_busy_cutoff(void)
+{
+    struct fts_window *window;
+    struct window_batch_clock clock = {0};
+    size_t index;
+    size_t bytes;
+
+    window = fts_window_create(4, 64, 4 * 1024 * 1024, 10, 1000, 1000);
+    TEST_ASSERT(window != NULL);
+    fts_window_clock(window, window_batch_now, &clock);
+    fts_window_begin(window);
+    for (index = 0; index < 10000; index++) {
+        TEST_ASSERT(window_batch_stage(window, "batch") == FTS_WINDOW_ACCEPT);
+    }
+    TEST_ASSERT(window_batch_stage(window, "second") == FTS_WINDOW_ACCEPT);
+    fts_window_finish(window, 1);
+    clock.now = 10000000;
+    clock.busy = 1;
+    fts_window_poll(window, window_batch_emit, window_batch_drop, &clock);
+    TEST_CHECK(clock.attempts == 1 && fts_window_records(window) == 10001);
+    bytes = fts_window_bytes(window);
+    fts_window_poll(window, window_batch_emit, window_batch_drop, &clock);
+    TEST_CHECK(clock.attempts == 2 && fts_window_bytes(window) == bytes);
+    clock.busy = 0;
+    fts_window_poll(window, window_batch_emit, window_batch_drop, &clock);
+    TEST_CHECK(clock.attempts == 4 && clock.emitted == 10001 && clock.dropped == 0);
+    TEST_CHECK(fts_window_records(window) == 0);
+    fts_window_destroy(window);
+}
+
+static void test_window_full_store_release_makes_progress(void)
+{
+    struct fts_window *window;
+    struct window_batch_clock clock = {0};
+    size_t records;
+
+    window = fts_window_create(1, 64, 4096, 10, 1000, 1000);
+    TEST_ASSERT(window != NULL);
+    fts_window_clock(window, window_batch_now, &clock);
+    fts_window_begin(window);
+    records = 0;
+    while (window_batch_stage(window, "full") == FTS_WINDOW_ACCEPT) {
+        records++;
+    }
+    TEST_ASSERT(records > 1);
+    fts_window_finish(window, 1);
+    clock.now = 10000000;
+    fts_window_poll(window, window_batch_emit, window_batch_drop, &clock);
+    TEST_CHECK(clock.emitted == records && clock.dropped == 0);
+    TEST_CHECK(fts_window_records(window) == 0);
+    fts_window_destroy(window);
+}
+
+struct snapshot_test_clock {
+    uint64_t now;
+    int busy;
+    size_t attempts;
+    size_t released;
+    size_t expired;
+    size_t shutdown;
+    int value;
+};
+
+static uint64_t snapshot_test_now(void *data)
+{
+    return ((struct snapshot_test_clock *) data)->now;
+}
+
+static int snapshot_test_emit(void *data, const void *payload, size_t size, size_t charge,
+                              const char *tag, size_t tag_length)
+{
+    struct snapshot_test_clock *clock;
+
+    clock = data;
+    clock->attempts++;
+    TEST_CHECK(size == sizeof(int));
+    TEST_CHECK(charge >= size);
+    TEST_CHECK(tag_length == 3 && memcmp(tag, "tag", 3) == 0);
+    memcpy(&clock->value, payload, size);
+    return clock->busy ? -1 : 0;
+}
+
+static void snapshot_test_settle(void *data, size_t samples, const char *reason)
+{
+    struct snapshot_test_clock *clock;
+
+    clock = data;
+    if (strcmp(reason, "released") == 0) {
+        clock->released += samples;
+    }
+    else if (strcmp(reason, "expired") == 0) {
+        clock->expired += samples;
+    }
+    else if (strcmp(reason, "shutdown") == 0) {
+        clock->shutdown += samples;
+    }
+}
+
+static int snapshot_test_put(struct fts_snapshot_window *window, const char *key, int number)
+{
+    struct cfl_variant *value;
+    void *payload;
+    int result;
+    int work;
+
+    value = cfl_variant_create_from_int64(number);
+    TEST_ASSERT(value != NULL);
+    payload = flb_malloc(sizeof(number));
+    TEST_ASSERT(payload != NULL);
+    memcpy(payload, &number, sizeof(number));
+    work = 10000;
+    result = fts_snapshot_window_put(window, key, strlen(key), value, &payload,
+                                      sizeof(number), "tag", 3, &work);
+    TEST_CHECK((result == FTS_SNAPSHOT_ACCEPT) == (payload == NULL));
+    flb_free(payload);
+    cfl_variant_destroy(value);
+    return result;
+}
+
+static void test_snapshot_window_transactions(void)
+{
+    struct fts_snapshot_window *window;
+    struct snapshot_test_clock clock = {0};
+    const struct cfl_variant *value;
+    size_t baseline;
+    int work;
+
+    window = fts_snapshot_window_create(4, 64, 100, 65536, 10, 20);
+    TEST_ASSERT(window != NULL);
+    fts_snapshot_window_clock(window, snapshot_test_now, &clock);
+    baseline = fts_snapshot_window_bytes(window);
+    fts_snapshot_window_begin(window);
+    TEST_CHECK(snapshot_test_put(window, "a", 3) == 0);
+    fts_snapshot_window_item(window, 0);
+    TEST_CHECK(fts_snapshot_window_bytes(window) == baseline);
+    TEST_CHECK(snapshot_test_put(window, "a", 4) == 0);
+    fts_snapshot_window_item(window, 1);
+    TEST_CHECK(snapshot_test_put(window, "a", 9) == 0);
+    fts_snapshot_window_item(window, 1);
+    TEST_CHECK(fts_snapshot_window_pending(window) == 2);
+    fts_snapshot_window_finish(window, 0);
+    TEST_CHECK(fts_snapshot_window_held(window) == 0);
+    TEST_CHECK(fts_snapshot_window_bytes(window) == baseline);
+    fts_snapshot_window_begin(window);
+    TEST_CHECK(snapshot_test_put(window, "a", 5) == 0);
+    fts_snapshot_window_item(window, 1);
+    fts_snapshot_window_finish(window, 1);
+    fts_snapshot_window_begin(window);
+    TEST_CHECK(snapshot_test_put(window, "a", 8) == 0);
+    fts_snapshot_window_item(window, 1);
+    fts_snapshot_window_finish(window, 0);
+    fts_snapshot_window_begin(window);
+    work = 10;
+    value = fts_snapshot_window_get(window, "a", 1, NULL, &work);
+    TEST_ASSERT(value != NULL);
+    TEST_CHECK(value->data.as_int64 == 5);
+    fts_snapshot_window_finish(window, 1);
+    clock.now = 10000000;
+    fts_snapshot_window_poll(window, snapshot_test_emit, snapshot_test_settle, &clock);
+    TEST_CHECK(clock.released == 1 && clock.value == 5);
+    TEST_CHECK(fts_snapshot_window_bytes(window) == baseline);
+    fts_snapshot_window_destroy(window);
+}
+
+static void test_snapshot_window_busy_and_expiry(void)
+{
+    struct fts_snapshot_window *window;
+    struct snapshot_test_clock clock = {0};
+
+    window = fts_snapshot_window_create(2, 64, 3, 65536, 10, 20);
+    TEST_ASSERT(window != NULL);
+    fts_snapshot_window_clock(window, snapshot_test_now, &clock);
+    fts_snapshot_window_begin(window);
+    TEST_CHECK(snapshot_test_put(window, "a", 1) == 0);
+    fts_snapshot_window_item(window, 1);
+    fts_snapshot_window_finish(window, 1);
+    clock.now = 10000000;
+    clock.busy = 1;
+    fts_snapshot_window_poll(window, snapshot_test_emit, snapshot_test_settle, &clock);
+    TEST_CHECK(clock.attempts == 1 && fts_snapshot_window_held(window) == 1);
+    /* A closed generation is never returned to a new observation of that key. */
+    fts_snapshot_window_begin(window);
+    TEST_CHECK(snapshot_test_put(window, "a", 2) == 0);
+    fts_snapshot_window_item(window, 1);
+    TEST_CHECK(snapshot_test_put(window, "b", 3) == FTS_SNAPSHOT_OVERFLOW);
+    fts_snapshot_window_finish(window, 1);
+    clock.now = 20000000;
+    fts_snapshot_window_poll(window, snapshot_test_emit, snapshot_test_settle, &clock);
+    TEST_CHECK(clock.attempts == 2); /* First BUSY stops this poll. */
+    clock.now = 30000000;
+    clock.busy = 0;
+    fts_snapshot_window_poll(window, snapshot_test_emit, snapshot_test_settle, &clock);
+    TEST_CHECK(clock.expired == 1 && clock.released == 1 && clock.value == 2);
+    TEST_CHECK(fts_snapshot_window_held(window) == 0);
+    fts_snapshot_window_destroy(window);
+}
+
+static void test_snapshot_window_limits_and_stop(void)
+{
+    struct fts_snapshot_window *window;
+    struct snapshot_test_clock clock = {0};
+    size_t baseline;
+    int work;
+
+    window = fts_snapshot_window_create(1, 1, 1, 4096, 10, 20);
+    TEST_ASSERT(window != NULL);
+    fts_snapshot_window_clock(window, snapshot_test_now, &clock);
+    baseline = fts_snapshot_window_bytes(window);
+    fts_snapshot_window_begin(window);
+    TEST_CHECK(snapshot_test_put(window, "aa", 1) == FTS_SNAPSHOT_OVERFLOW);
+    TEST_CHECK(snapshot_test_put(window, "a", 1) == 0);
+    fts_snapshot_window_item(window, 1);
+    TEST_CHECK(snapshot_test_put(window, "a", 2) == FTS_SNAPSHOT_OVERFLOW);
+    TEST_CHECK(snapshot_test_put(window, "b", 2) == FTS_SNAPSHOT_OVERFLOW);
+    work = -1;
+    TEST_CHECK(fts_snapshot_window_get(window, "a", 1, NULL, &work) == NULL);
+    TEST_CHECK(work == 0);
+    fts_snapshot_window_finish(window, 1);
+    fts_snapshot_window_stop(window, snapshot_test_settle, &clock);
+    TEST_CHECK(clock.shutdown == 1 && fts_snapshot_window_held(window) == 0);
+    TEST_CHECK(fts_snapshot_window_bytes(window) == baseline);
+    fts_snapshot_window_stop(window, snapshot_test_settle, &clock);
+    TEST_CHECK(clock.shutdown == 1);
+    fts_snapshot_window_destroy(window);
+    TEST_CHECK(fts_snapshot_window_create(1, 1, 1, 1, 10, 20) == NULL);
+}
+
+static void unused_window_timer(struct flb_config *config, void *data)
+{
+    (void) config;
+    (void) data;
+    TEST_CHECK(0); /* Destroyed runtimes must never remain callback targets. */
+}
+
+static void partial_runtime_destruction_cancels_timers(void)
+{
+    struct flb_sched sched = {0};
+    struct fts_runtime runtime = {0};
+    struct flb_sched_timer *log_timer;
+    struct flb_sched_timer *metric_timer;
+#ifdef FLB_SYSTEM_WINDOWS
+    WSADATA wsa_data;
+
+    TEST_ASSERT(WSAStartup(MAKEWORD(2, 2), &wsa_data) == 0);
+#endif
+
+    sched.evl = mk_event_loop_create(8);
+    TEST_ASSERT(sched.evl != NULL);
+    mk_list_init(&sched.timers);
+    mk_list_init(&sched.timers_drop);
+    TEST_ASSERT(flb_sched_timer_cb_create(&sched, FLB_SCHED_TIMER_CB_PERM, 1000,
+                                         unused_window_timer, &runtime, &log_timer) == 0);
+    TEST_ASSERT(flb_sched_timer_cb_create(&sched, FLB_SCHED_TIMER_CB_PERM, 1000,
+                                         unused_window_timer, &runtime, &metric_timer) == 0);
+    runtime.window_timer = log_timer;
+    runtime.metric_window_timer = metric_timer;
+    /* Exercise cleanup without input_stop, as on partial initialization failure. */
+    fts_window_runtime_destroy(&runtime);
+    fts_metric_window_destroy(&runtime);
+    TEST_CHECK(runtime.window_timer == NULL && runtime.metric_window_timer == NULL);
+    TEST_CHECK(log_timer->active == FLB_FALSE && log_timer->timer_fd == -1);
+    TEST_CHECK(metric_timer->active == FLB_FALSE && metric_timer->timer_fd == -1);
+    TEST_CHECK(mk_list_size(&sched.timers) == 0);
+    TEST_CHECK(mk_list_size(&sched.timers_drop) == 2);
+    fts_window_runtime_destroy(&runtime);
+    fts_metric_window_destroy(&runtime);
+    flb_sched_timer_destroy(log_timer);
+    flb_sched_timer_destroy(metric_timer);
+    mk_event_loop_destroy(sched.evl);
+#ifdef FLB_SYSTEM_WINDOWS
+    WSACleanup();
+#endif
+}
+
 TEST_LIST = {
+    {"partial_runtime_destruction_cancels_timers", partial_runtime_destruction_cancels_timers},
+    {"snapshot_window_transactions", test_snapshot_window_transactions},
+    {"snapshot_window_busy_and_expiry", test_snapshot_window_busy_and_expiry},
+    {"snapshot_window_limits_and_stop", test_snapshot_window_limits_and_stop},
+    {"window_idle_poll_constant_work", test_window_idle_poll_constant_work},
+    {"window_large_batched_release_and_busy_cutoff", test_window_large_batched_release_and_busy_cutoff},
+    {"window_full_store_release_makes_progress", test_window_full_store_release_makes_progress},
+    {"window_budget_and_ready_expiry", test_window_budget_and_ready_expiry},
+    {"window_transactions_and_deadline", test_window_transactions_and_deadline},
+    {"window_overflow_and_baseline", test_window_overflow_and_baseline},
+    {"state_seeded_hash_collisions", state_seeded_hash_resists_old_bucket_collisions},
+    {"state_internal_error_classes", state_internal_errors_are_not_budget_errors},
+    {"state_dedupe_transactions", state_dedupe_transactions},
+    {"state_throttle_boundaries", state_throttle_boundaries},
+    {"state_limits_and_budget", state_limits_and_budget},
+    {"recipe_cannot_swallow_partial_mutation", recipe_cannot_swallow_partial_mutation},
+    {"recipe_block_environment_isolation", recipe_block_environments_are_isolated},
     {"empty_metadata_cow_isolation", empty_metadata_is_materialized_independently},
     {"edited_record_one_policy_tree", edited_record_needs_one_policy_tree},
     {"native_result_arena_snapshot_lifetime", native_result_arena_does_not_own_lua_snapshots},
@@ -1525,6 +2524,12 @@ TEST_LIST = {
     {"vm_memory_exhaustion_drops", vm_memory_exhaustion_drops},
     {"native_memory_exhaustion_drops", native_memory_exhaustion_drops},
     {"strict_parsing_and_time", strict_parsing_and_time},
+    {"try_parse_json_types_and_errors", try_parse_json_preserves_types_and_errors},
+    {"unpack_json_object_bodies", unpack_json_replaces_only_object_bodies},
+    {"decode_json_fields", decode_json_fields_preserve_siblings_and_types},
+    {"json_helpers_instruction_exhaustion", json_helpers_cannot_swallow_instruction_exhaustion},
+    {"json_helpers_otel_unsigned_overflow", json_helpers_reject_otel_unsigned_overflow},
+    {"json_helpers_non_table_contexts", json_helpers_ignore_non_table_contexts},
     {"output_growth_fails_closed", output_growth_fails_closed},
     {"output_growth_keep_restores_whole_chunk", output_growth_keep_restores_whole_chunk},
     {"initialization_failures", initialization_failures},

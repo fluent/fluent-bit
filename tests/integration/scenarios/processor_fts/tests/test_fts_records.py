@@ -73,6 +73,116 @@ def send(service, records):
 
 
 @pytest.mark.parametrize("placement", ["input", "output"])
+@pytest.mark.parametrize("decoder", ["try_parse_json", "unpack_json"])
+def test_json_embedded_messages(tmp_path, placement, decoder):
+    """Parse or unpack mixed JSON and plain messages without losing exact integers."""
+    code = '''
+      local fb = require("fluentbit")
+      function process(log)
+        local app, err = fb.try_parse_json(log.body:get_string("message"))
+        if not app then
+          assert(type(err) == "string")
+          return
+        end
+        assert(err == nil)
+        if app:type() ~= "map" then return end
+        fb.redact(app, {"authorization", "password"})
+        log.body = app
+      end
+    '''
+    if decoder == "unpack_json":
+        code = '''
+          local fb = require("fluentbit")
+          function process(log)
+            fb.unpack_json(log, "message")
+            fb.redact(log.body, {"authorization", "password"})
+          end
+        '''
+    records = [
+        {"message": json.dumps({"level": "error", "user": "ana", "password": "secret",
+                                "nested": {"authorization": "Bearer token"}})},
+        {"message": "plain text line"},
+        {"message": '{"level":"info","order_id":9007199254740993}'},
+        {"message": '{"order_id":18446744073709551615}'},
+        {"message": ' \n\t{"ok":true}'},
+        {"message": '{"broken":'},
+        {"message": '{"duplicate":1,"duplicate":2}'},
+        {"message": '{} trailing'},
+        {"message": '18446744073709551616'},
+        {"message": ""},
+        {"other": "missing message"},
+        {"message": "null"},
+        {"message": "false"},
+        {"message": '[{"password":"secret"}]'},
+        {"message": '"JSON string"'},
+    ]
+    expected = [
+        {"level": "error", "user": "ana", "password": "[REDACTED]",
+         "nested": {"authorization": "[REDACTED]"}},
+        records[1],
+        {"level": "info", "order_id": 9007199254740993},
+        {"order_id": 18446744073709551615},
+        {"ok": True},
+        *records[5:],
+    ]
+    if decoder == "unpack_json":
+        records.append({"message": 42})
+        expected.append({"message": 42})
+    service = start_service(tmp_path, code, placement)
+    try:
+        send(service, records)
+        output = service.wait_for_condition(
+            lambda: rows(service) if len(rows(service)) >= len(expected) else None,
+            timeout=45, description="decoded embedded JSON messages")
+        assert [{key: value for key, value in row.items() if key != "date"}
+                for row in output] == expected
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("placement", ["input", "output"])
+def test_json_fields_decode_in_place(tmp_path, placement):
+    """Body, nested map, and array fields use the same decoder and keep siblings."""
+    code = '''
+      local fb = require("fluentbit")
+      function process(log)
+        fb.decode_json(log.body, "message")
+        fb.decode_json(log.body:get("attributes"), "payload")
+        fb.decode_json(log.body:get("values"), 1)
+        fb.redact(log.body, {"password"})
+      end
+    '''
+    fixtures = [
+        ('{"nested":{"password":"secret"}}', {"nested": {"password": "[REDACTED]"}}),
+        ('{"id":9007199254740993}', {"id": 9007199254740993}),
+        ('[1,2]', [1, 2]),
+        ('null', None),
+        ('false', False),
+        ('18446744073709551615', 18446744073709551615),
+        ('"text"', "text"),
+        ('plain text', 'plain text'),
+        ('{"broken":', '{"broken":'),
+        ('{"a":1,"a":2}', '{"a":1,"a":2}'),
+        (42, 42),
+    ]
+    records = [{"message": text, "host": "web", "attributes": {"payload": text, "keep": "s"},
+                "values": [text, "sibling"]} for text, _ in fixtures]
+    expected = [{"message": value, "host": "web", "attributes": {"payload": value, "keep": "s"},
+                 "values": [value, "sibling"]} for _, value in fixtures]
+    service = start_service(tmp_path, code, placement)
+    try:
+        send(service, records)
+        output = service.wait_for_condition(
+            lambda: rows(service) if len(rows(service)) >= len(expected) else None,
+            timeout=45, description="decoded fields with preserved siblings")
+        assert [{key: value for key, value in row.items() if key != "date"}
+                for row in output] == expected
+        assert "policy failed" not in log_text(service)
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("placement", ["input", "output"])
 @pytest.mark.parametrize("chain", ["direct", "filter", "native", "replacement"])
 @pytest.mark.parametrize("error_mode", ["keep", "drop"])
 def test_records_commits_and_retained_views(tmp_path, placement, chain, error_mode):
@@ -524,11 +634,12 @@ def test_missing_transport_ids_are_group_local(tmp_path, error_mode):
         service.stop()
 
 
-def start_otlp_json_service(tmp_path, processors):
+def start_otlp_json_service(tmp_path, processors, placement="input"):
+    """Start a forward-to-OTLP JSON pipeline with processors at the selected stage."""
     source = {"name": "forward", "port": "${FLUENT_BIT_TEST_LISTENER_PORT}", "tag": "stream"}
-    if processors:
-        source["processors"] = {"logs": processors}
     output = {"name": "stdout", "match": "*", "format": "otlp_json"}
+    if processors:
+        (source if placement == "input" else output)["processors"] = {"logs": processors}
     config = tmp_path / "otlp-json.yaml"
     config.write_text(yaml.safe_dump({"service": {"flush": 1, "grace": 1,
         "http_server": True, "http_port": "${FLUENT_BIT_HTTP_MONITORING_PORT}"},
@@ -536,6 +647,182 @@ def start_otlp_json_service(tmp_path, processors):
     service = FluentBitTestService(str(config))
     service.start()
     return service
+
+
+@pytest.mark.parametrize("placement", ["input", "output"])
+@pytest.mark.parametrize("invalid_context", [False, True])
+def test_json_fields_decode_otel_attributes(tmp_path, placement, invalid_context):
+    """Decode actual OTel attribute maps and verify their exported values."""
+    code = '''
+      local fb = require("fluentbit")
+      function process(log)
+        assert(fb.decode_json(log.attributes, "payload"))
+        assert(fb.decode_json(log.resource.attributes, "labels"))
+        fb.redact(log.attributes, {"password"})
+        assert(log.body:get_string("message") == "body stays unchanged")
+      end
+    '''
+    if invalid_context:
+        code = code.replace('function process(log)', '''function process(log)
+          local context = log.context
+          local scratch = fb.map()
+          local function decode()
+            scratch:set("payload", "18446744073709551615")
+            assert(fb.decode_json(scratch, "payload"))
+            assert(scratch:get("payload"):value() == "18446744073709551615")
+          end
+          for _, value in ipairs({false, 42, "context", fb.map(), fb.array()}) do
+            log.context = value
+            decode()
+          end
+          log.context = nil
+          decode()
+          log.context = context
+        ''', 1)
+    service = start_otlp_json_service(tmp_path, [{"name": "fts", "code": code}], placement)
+    try:
+        start, end = event_time(0xFFFFFFFF), event_time(0xFFFFFFFE)
+        now = event_time(1700000000)
+        entries = [
+            [[start, {"schema": "otlp", "resource_id": 0, "scope_id": 0}],
+             {"resource": {"attributes": {"labels": '{"region":"east"}', "keep": "r"}},
+              "scope": {"name": "json-test"}}],
+            [[now, {"otlp": {"attributes": {
+                "payload": '{"id":9007199254740993,"password":"secret"}', "keep": "a"}}}],
+             {"message": "body stays unchanged"}],
+            [[end, {}], {}],
+        ]
+        with socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=30) as connection:
+            connection.sendall(pack(["stream", entries]))
+        output = service.wait_for_condition(lambda: rows(service), timeout=45,
+                                            description="decoded OTel attributes")
+        resources = [resource for document in output for resource in document["resourceLogs"]]
+        assert len(resources) == 1
+        resource = resources[0]
+        attrs = {item["key"]: item["value"] for item in resource["resource"]["attributes"]}
+        assert attrs["keep"] == {"stringValue": "r"}
+        assert attrs["labels"] == {"kvlistValue": {"values": [
+            {"key": "region", "value": {"stringValue": "east"}}]}}
+        logs = [log for scope in resource["scopeLogs"] for log in scope["logRecords"]]
+        assert len(logs) == 1
+        attrs = {item["key"]: item["value"] for item in logs[0]["attributes"]}
+        assert attrs["keep"] == {"stringValue": "a"}
+        payload = {item["key"]: item["value"]
+                   for item in attrs["payload"]["kvlistValue"]["values"]}
+        assert payload == {"id": {"intValue": "9007199254740993"},
+                           "password": {"stringValue": "[REDACTED]"}}
+        assert logs[0]["body"] == {"stringValue": "body stays unchanged"}
+        assert "policy failed" not in log_text(service)
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("placement", ["input", "output"])
+def test_json_otel_unsigned_bounds(tmp_path, placement):
+    """OTLP decode rejects unsigned overflow before any field is changed."""
+    code = '''
+      local fb = require("fluentbit")
+      function process(log)
+        local allowed = log.body:get_number("allowed") == 1
+        local function check(container, key)
+          local original = container:get(key):value()
+          local ok, err = fb.decode_json(container, key)
+          assert(ok == allowed)
+          if allowed then assert(err == nil)
+          else
+            assert(type(err) == "string")
+            assert(container:get(key):value() == original)
+          end
+        end
+        if log.body:get_string("operation") == "unpack" then
+          local body = log.body
+          local ok, err = fb.unpack_json(log, "encoded")
+          assert(ok == allowed)
+          if not allowed then assert(type(err) == "string" and log.body == body) end
+        else
+          check(log.body, "payload")
+          check(log.body:get("nested"), "payload")
+          check(log.body:get("values"), 1)
+          check(log.attributes, "payload")
+          check(log.resource.attributes, "payload")
+          check(log.scope.attributes, "payload")
+        end
+        local scratch = fb.map()
+        scratch:set("payload", "18446744073709551615")
+        assert(fb.decode_json(scratch, "payload"))
+        assert(scratch:get("payload"):value() == "18446744073709551615")
+        log.body:set("checked", true)
+      end
+    '''
+
+    def any_value(value):
+        """Decode exported AnyValue fixtures without rounding integer strings."""
+        if "kvlistValue" in value:
+            return {item["key"]: any_value(item["value"])
+                    for item in value["kvlistValue"]["values"]}
+        if "arrayValue" in value:
+            return [any_value(item) for item in value["arrayValue"]["values"]]
+        if "intValue" in value:
+            return int(value["intValue"])
+        if "boolValue" in value:
+            return value["boolValue"]
+        return value["stringValue"]
+
+    fixtures = []
+    entries = []
+    start, end = event_time(0xFFFFFFFF), event_time(0xFFFFFFFE)
+    now = event_time(1700000000)
+    for operation in ("decode", "unpack"):
+        for number in (9223372036854775807, 9223372036854775808, 18446744073709551615):
+            index = len(fixtures)
+            allowed = number <= 9223372036854775807
+            text = json.dumps({"outer": [{"id": number}]})
+            body = {"operation": operation, "allowed": int(allowed), "encoded": text,
+                    "payload": text, "nested": {"payload": text}, "values": [text]}
+            attrs = {"payload": text, "record_id": str(index)}
+            entries.extend([
+                [[start, {"schema": "otlp", "resource_id": index, "scope_id": index}],
+                 {"resource": {"attributes": dict(attrs)},
+                  "scope": {"name": "bounds", "attributes": dict(attrs)}}],
+                [[now, {"otlp": {"attributes": dict(attrs)}}], body],
+                [[end, {}], {}],
+            ])
+            fixtures.append((operation, allowed, text, body))
+
+    service = start_otlp_json_service(tmp_path, [{"name": "fts", "code": code}], placement)
+    try:
+        with socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=30) as connection:
+            connection.sendall(pack(["stream", entries]))
+        output = service.wait_for_condition(
+            lambda: rows(service) if sum(len(scope["logRecords"])
+                for document in rows(service) for resource in document["resourceLogs"]
+                for scope in resource["scopeLogs"]) >= len(fixtures) else None,
+            timeout=45, description="OTLP records with recoverable JSON overflow")
+        seen = []
+        for document in output:
+            for resource in document["resourceLogs"]:
+                for scope in resource["scopeLogs"]:
+                    for log in scope["logRecords"]:
+                        attrs = {item["key"]: any_value(item["value"]) for item in log["attributes"]}
+                        index = int(attrs["record_id"])
+                        seen.append(index)
+                        operation, allowed, text, body = fixtures[index]
+                        value = json.loads(text) if allowed else text
+                        expected = dict(body)
+                        if operation == "decode":
+                            expected.update(payload=value, nested={"payload": value}, values=[value])
+                        elif allowed:
+                            expected = json.loads(text)
+                        expected["checked"] = True
+                        assert any_value(log["body"]) == expected
+                        for attributes in (log["attributes"], resource["resource"]["attributes"],
+                                           scope["scope"]["attributes"]):
+                            decoded = {item["key"]: any_value(item["value"]) for item in attributes}
+                            assert decoded["payload"] == (value if operation == "decode" else text)
+        assert sorted(seen) == list(range(len(fixtures)))
+        assert "policy failed" not in log_text(service)
+    finally:
+        service.stop()
 
 
 def otlp_resources(service):

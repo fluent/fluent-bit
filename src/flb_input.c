@@ -1155,6 +1155,10 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
     struct mk_list *head;
     struct flb_input_collector *collector;
 
+    /* Threaded owners already stopped their processors before joining. */
+    if (!flb_input_is_threaded(ins)) {
+        flb_processor_input_stop(ins->processor);
+    }
     flb_input_ingress_destroy(ins);
 
 #ifdef FLB_HAVE_METRICS
@@ -2154,6 +2158,7 @@ void flb_input_instance_exit(struct flb_input_instance *ins,
         return;
     }
 
+    flb_processor_input_stop(ins->processor);
     p = ins->p;
     if (p->cb_exit && ins->context) {
         /* Multi-threaded input plugins use the same function signature for exit callbacks. */
@@ -3034,6 +3039,9 @@ int flb_input_test_pause_resume(struct flb_input_instance *ins, int sleep_second
 
 static void flb_input_ingestion_paused(struct flb_input_instance *ins)
 {
+    if (ins->ingress_queue_enabled == FLB_TRUE && ins->ingress_queue_collector_id >= 0) {
+        flb_input_collector_pause(ins->ingress_queue_collector_id, ins);
+    }
     if (ins->cmt_ingestion_paused != NULL) {
         /* cmetrics */
         cmt_gauge_set(ins->cmt_ingestion_paused, cfl_time_now(), 1,
@@ -3043,6 +3051,9 @@ static void flb_input_ingestion_paused(struct flb_input_instance *ins)
 
 static void flb_input_ingestion_resumed(struct flb_input_instance *ins)
 {
+    if (ins->ingress_queue_enabled == FLB_TRUE && ins->ingress_queue_collector_id >= 0) {
+        flb_input_collector_resume(ins->ingress_queue_collector_id, ins);
+    }
     if (ins->cmt_ingestion_paused != NULL) {
         /* cmetrics */
         cmt_gauge_set(ins->cmt_ingestion_paused, cfl_time_now(), 0,
@@ -3056,10 +3067,10 @@ int flb_input_plugin_pause(struct flb_input_instance *ins)
 
     ret = 0;
 
-    if (ins->p->cb_pause_checked != NULL) {
+    if (ins->context != NULL && ins->p->cb_pause_checked != NULL) {
         ret = ins->p->cb_pause_checked(ins->context, ins->config);
     }
-    else if (ins->p->cb_pause != NULL) {
+    else if (ins->context != NULL && ins->p->cb_pause != NULL) {
         ins->p->cb_pause(ins->context, ins->config);
     }
 
@@ -3076,10 +3087,10 @@ int flb_input_plugin_resume(struct flb_input_instance *ins)
 
     ret = 0;
 
-    if (ins->p->cb_resume_checked != NULL) {
+    if (ins->context != NULL && ins->p->cb_resume_checked != NULL) {
         ret = ins->p->cb_resume_checked(ins->context, ins->config);
     }
-    else if (ins->p->cb_resume != NULL) {
+    else if (ins->context != NULL && ins->p->cb_resume != NULL) {
         ins->p->cb_resume(ins->context, ins->config);
     }
 
@@ -3097,6 +3108,10 @@ int flb_input_pause(struct flb_input_instance *ins)
         (ins->config == NULL || ins->config->is_shutting_down == FLB_FALSE ||
          (ins->flags & FLB_INPUT_SHUTDOWN_FLUSH) == 0)) {
         return -1;
+    }
+
+    if (ins->ingress_queue_enabled == FLB_TRUE && flb_input_is_threaded(ins)) {
+        return flb_input_thread_instance_pause(ins);
     }
 
     /* Pause only if a callback is set and a local context exists */
@@ -3118,6 +3133,9 @@ int flb_input_pause(struct flb_input_instance *ins)
 
 int flb_input_resume(struct flb_input_instance *ins)
 {
+    if (ins->ingress_queue_enabled == FLB_TRUE && flb_input_is_threaded(ins)) {
+        return flb_input_thread_instance_resume(ins);
+    }
     if ((ins->p->cb_resume || ins->p->cb_resume_checked) && ins->context) {
         if (flb_input_is_threaded(ins)) {
             /* signal the thread event loop about the 'resume' operation */

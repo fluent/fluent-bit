@@ -1,0 +1,54 @@
+fixture_version: 1
+signal: logs
+transport: otlp
+processor:
+  name: fts
+  packs:
+  - ../pack.json
+  error_mode: drop
+  recipe:
+  - id: privacy
+    use: org.fluentbit.observability/redact_log
+cases:
+- name: redact-otlp-attributes
+  input:
+    resourceLogs:
+    - resource: {}
+      scopeLogs:
+      - scope:
+          name: fixture
+        logRecords:
+        - timeUnixNano: '1700000000000000000'
+          body:
+            kvlistValue:
+              values:
+              - key: control
+                value:
+                  intValue: '1'
+          attributes:
+          - key: password
+            value:
+              stringValue: synthetic-private
+  expected:
+    otlp:
+      resourceLogs:
+      - resource: {}
+        scopeLogs:
+        - scope:
+            name: fixture
+          logRecords:
+          - timeUnixNano: '1700000000000000000'
+            body:
+              kvlistValue:
+                values:
+                - key: control
+                  value:
+                    intValue: '1'
+            attributes:
+            - key: password
+              value:
+                stringValue: '[REDACTED]'
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0

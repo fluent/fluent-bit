@@ -1,0 +1,26 @@
+service:
+  flush: 1
+  grace: 1
+  parsers_file: parsers.conf
+pipeline:
+  inputs:
+  - name: tail
+    path: events.jsonl
+    read_from_head: true
+    parser: json
+    tag: fts.catalog
+    processors:
+      logs:
+      - name: fts
+        packs:
+        - logs/service-identity/pack.json
+        recipe_version: 1
+        error_mode: drop
+        recipe:
+        - id: policy
+          use: org.fluentbit.policy.service-identity/apply
+        packages_dir: ${FTS_PACKAGES_DIR}
+  outputs:
+  - name: stdout
+    match: '*'
+    format: json_lines

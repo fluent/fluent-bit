@@ -476,8 +476,26 @@ local function identity(point, keys)
     return table.concat(parts, '|')
 end
 
-function fb.aggregate_metric(metric, keys, operation)
+local function aggregation_point(point, max_exemplars)
+    if max_exemplars == nil then return clone(point) end
+    local result = fb.map()
+    for _,key in ipairs(point:keys()) do
+        if key ~= 'exemplars' then result:set(key,point:get(key)) end
+    end
+    local exemplars = point:get('exemplars')
+    if exemplars and max_exemplars > 0 then
+        local retained = fb.array()
+        for i=1,math.min(max_exemplars,exemplars:len()) do retained:append(exemplars:get(i)) end
+        result:set('exemplars',retained)
+    end
+    return result
+end
+
+function fb.aggregate_metric(metric, keys, operation, max_exemplars)
     operation = operation or 'sum'
+    assert(max_exemplars == nil or (type(max_exemplars) == 'number' and
+        max_exemplars >= 0 and max_exemplars <= 128 and max_exemplars % 1 == 0),
+        'invalid exemplar limit')
     assert(metric.type == 'gauge' or metric.type == 'sum' or metric.type == 'histogram',
         'aggregation supports gauges, sums and explicit histograms')
     assert(operation == 'sum' or (metric.type == 'gauge' and
@@ -485,7 +503,7 @@ function fb.aggregate_metric(metric, keys, operation)
         'unsupported aggregation for this metric type')
     local groups, ordered = {}, {}
     for i=1,metric.datapoints:len() do
-        local point = clone(metric.datapoints:get(i))
+        local point = aggregation_point(metric.datapoints:get(i), max_exemplars)
         local key = identity(point, keys)
         local state = groups[key]
         if not state then
@@ -524,7 +542,8 @@ function fb.aggregate_metric(metric, keys, operation)
             local exemplars = point:get('exemplars')
             if exemplars then
                 local target_exemplars = target:get('exemplars') or fb.array()
-                for j=1,exemplars:len() do target_exemplars:append(exemplars:get(j)) end
+                local remaining = max_exemplars and math.max(0,max_exemplars-target_exemplars:len()) or exemplars:len()
+                for j=1,math.min(exemplars:len(),remaining) do target_exemplars:append(exemplars:get(j)) end
                 target:set('exemplars', target_exemplars)
             end
         end
@@ -568,4 +587,144 @@ function fb.merge_histogram_buckets(metric, bounds)
         output:append(total)
         point:set('explicit_bounds', new_bounds); point:set('bucket_counts', output)
     end
+end
+
+-- A window identity includes routing, producer/context metadata, and the complete
+-- set of series. Observation values/timestamps are deliberately excluded.
+local function window_key_value(value, depth)
+    if depth > 32 then error('invalid_parameter',0) end
+    local kind=value:type()
+    if kind=='double' then
+        local number=value:value()
+        if number~=number or number==math.huge or number==-math.huge then error('wrong_type',0) end
+    elseif kind=='map' then
+        for _,key in ipairs(value:keys()) do window_key_value(value:get(key),depth+1) end
+    elseif kind=='array' then
+        for i=1,value:len() do window_key_value(value:get(i),depth+1) end
+    end
+end
+
+local function window_point_key(point)
+    local copy=point:copy()
+    for _,key in ipairs({'as_int','as_double','time_unix_nano','start_time_unix_nano','exemplars'}) do
+        copy:remove(key)
+    end
+    window_key_value(copy,0)
+    return typed_identity(copy)
+end
+
+function fb.metric_window_key(metric)
+    if metric.type~='gauge' or metric.datapoints:len()==0 then error('wrong_type',0) end
+    local source=roots[metric]
+    local identity_root=fb.map()
+    for _,key in ipairs({'resource','scope','resource_schema_url','scope_schema_url'}) do
+        local value=source:get(key)
+        if value then identity_root:set(key,value) end
+    end
+    local header=source:get('item'):copy()
+    header:remove('gauge')
+    identity_root:set('item',header)
+    window_key_value(identity_root,0)
+    local series,seen={},{}
+    for i=1,metric.datapoints:len() do
+        local point=metric.datapoints:get(i)
+        local key=window_point_key(point)
+        if seen[key] then error('invalid_parameter',0) end
+        seen[key]=true
+        local number=fb.metric_value(point)
+        if not number then error('wrong_type',0) end
+        local kind=number:type()=='double' and 'double' or 'integer'
+        series[#series+1]=#key..':'..key..':'..kind
+    end
+    table.sort(series)
+    local parts={}
+    for _,key in ipairs(series) do parts[#parts+1]=#key..':'..key end
+    local tag=metric.tag or ''
+    local context=typed_identity(identity_root)
+    return 'metric-family-window-v1:'..#tag..':'..tag..#context..':'..context..table.concat(parts)
+end
+
+function fb._metric_window_controller()
+    return {
+        get=function(_,key)
+            local root,samples=fb._metric_window_get(key)
+            if not root then return nil,nil,0 end
+            return fb._fts_wrap(root,'metrics',nil,''),root:get('_fts_window_state'),samples
+        end,
+        hold=function(_,key,metric,state)
+            local root=roots[metric]
+            if not root then error('invalid_context',0) end
+            root:set('_fts_window_state',state or fb.map())
+            fb._metric_window_request(key,root,metric.tag or '')
+            return 'hold'
+        end
+    }
+end
+
+-- Lua owns the reduction. Native code only stores/freezes validated snapshots.
+function fb.gauge_rollup(metric,previous,state,samples,operation)
+    if metric.type~='gauge' then error('wrong_type',0) end
+    local points,ordered={},{}
+    for i=1,metric.datapoints:len() do
+        local point=metric.datapoints:get(i)
+        local flags=point:get('flags')
+        local exemplars=point:get('exemplars')
+        if (flags and flags:number()~=0) or
+            (exemplars and exemplars:len()>0) then error('wrong_type',0) end
+        local key=window_point_key(point)
+        if points[key] then error('invalid_parameter',0) end
+        points[key]=point;ordered[#ordered+1]=key
+    end
+    table.sort(ordered)
+    if samples>0 and (not previous or not state or state:type()~='map' or
+        state:get_string('operation')~=operation) then error('invalid_parameter',0) end
+    local old_sums=state and state:get('values')
+    if samples>0 and (not old_sums or old_sums:type()~='array' or old_sums:len()~=#ordered) then
+        error('invalid_parameter',0)
+    end
+    local old_points={}
+    if previous then
+        for i=1,previous.datapoints:len() do
+            local point=previous.datapoints:get(i)
+            old_points[window_point_key(point)]=point
+        end
+    end
+    local values=fb.array()
+    for i,key in ipairs(ordered) do
+        local point=points[key]
+        local value=fb.metric_value(point)
+        if not value then error('wrong_type',0) end
+        if value:type()=='double' then
+            local number=value:value()
+            if number~=number or number==math.huge or number==-math.huge then error('wrong_type',0) end
+        end
+        local aggregate=value
+        if samples>0 then
+            local old=old_sums:get(i)
+            if operation=='sum' or operation=='mean' then aggregate=fb._fts_add(old,value)
+            elseif operation=='min' or operation=='max' then
+                local comparison=fb.numeric_compare(value,old)
+                if comparison==nil then error('wrong_type',0) end
+                if (operation=='min' and comparison>=0) or (operation=='max' and comparison<=0) then aggregate=old end
+            elseif operation~='count' then error('invalid_parameter',0) end
+            local before=old_points[key]
+            if not before then error('invalid_parameter',0) end
+            local old_time=before:get('time_unix_nano')
+            local old_start=before:get('start_time_unix_nano')
+            if after_or_equal(unsigned_time(old_time),unsigned_time(point:get('time_unix_nano'))) then
+                point:set('time_unix_nano',old_time)
+            end
+            if after_or_equal(unsigned_time(point:get('start_time_unix_nano')),unsigned_time(old_start)) then
+                point:set('start_time_unix_nano',old_start)
+            end
+        end
+        values:append(aggregate)
+        if operation=='mean' then fb.set_metric_value(point,aggregate:number()/(samples+1))
+        elseif operation=='count' then fb.set_metric_value(point,fb.int64(samples+1))
+        elseif operation=='sum' or operation=='min' or operation=='max' then fb.set_metric_value(point,aggregate)
+        else error('invalid_parameter',0) end
+    end
+    if operation=='count' then metric.unit='1' end
+    local output=fb.map();output:set('operation',operation);output:set('values',values)
+    return output
 end
