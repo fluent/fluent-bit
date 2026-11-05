@@ -365,6 +365,37 @@ function fb.bytes(value) end
 ---@nodiscard
 function fb.parse_json(text) end
 
+--- Parse JSON without throwing on ordinary parse errors or non-string input.
+--- JSON null/false return typed values, not Lua nil/false. Same parser limits as parse_json.
+--- Instruction-budget exhaustion still fails the callback.
+---@param text any # JSON text; missing or non-string input returns nil and an error.
+---@return FtsValue? value
+---@return string? error
+---@nodiscard
+function fb.try_parse_json(text) end
+
+--- Decode a string field in place, preserving siblings. Return false,error without
+--- mutation for missing/non-string fields, ordinary parse errors or OTel log integers
+--- above INT64_MAX. Accepts any JSON value. Map keys are literal; arrays are 1-based.
+--- Invalid containers/keys, expired views, mutation errors and budget exhaustion raise.
+--- These boolean results are not callback actions; do not return them from process.
+---@param container FtsMap|FtsArray<FtsValue>
+---@param key string|integer
+---@return boolean success
+---@return string? error
+function fb.decode_json(container, key) end
+
+--- Availability: logs; modes: script,pack.
+--- Decode a JSON object and replace log.body. Preserve the body and return false,error
+--- for missing/non-string fields, ordinary parse errors, non-object JSON or OTel log
+--- integers above INT64_MAX. Invalid arguments and budget exhaustion still raise.
+--- Ignoring failure keeps the original body. Boolean results are not callback actions.
+---@param log FtsLogRecord
+---@param field? string # Literal source field; defaults to message.
+---@return boolean success
+---@return string? error
+function fb.unpack_json(log, field) end
+
 --- Parse strict RFC3339 time; raises on invalid input or unsupported event time range.
 ---@param text string
 ---@return FtsTimestamp
