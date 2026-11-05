@@ -456,6 +456,15 @@ cleanup:
     return ret;
 }
 
+static void chronicle_context_destroy(struct flb_chronicle *ctx)
+{
+    if (ctx->u) {
+        flb_upstream_destroy(ctx->u);
+    }
+    pthread_mutex_destroy(&ctx->token_mutex);
+    flb_chronicle_conf_destroy(ctx);
+}
+
 static int cb_chronicle_init(struct flb_output_instance *ins,
                              struct flb_config *config, void *data)
 {
@@ -471,15 +480,18 @@ static int cb_chronicle_init(struct flb_output_instance *ins,
         return -1;
     }
 
-    flb_output_set_context(ins, ctx);
-
     /* Network mode IPv6 */
     if (ins->host.ipv6 == FLB_TRUE) {
         io_flags |= FLB_IO_IPV6;
     }
 
     /* Create mutex for acquiring oauth tokens (they are shared across flush coroutines) */
-    pthread_mutex_init(&ctx->token_mutex, NULL);
+    ret = pthread_mutex_init(&ctx->token_mutex, NULL);
+    if (ret != 0) {
+        flb_plg_error(ins, "cannot initialize token mutex");
+        flb_chronicle_conf_destroy(ctx);
+        return -1;
+    }
 
     /*
      * Create upstream context for Chronicle Streaming Inserts
@@ -489,14 +501,14 @@ static int cb_chronicle_init(struct flb_output_instance *ins,
                                      io_flags, ins->tls);
     if (!ctx->u) {
         flb_plg_error(ctx->ins, "upstream creation failed");
-        return -1;
+        goto error;
     }
 
     /* Create oauth2 context */
     ctx->o = flb_oauth2_create(ctx->config, FLB_CHRONICLE_AUTH_URL, 3000);
     if (!ctx->o) {
         flb_plg_error(ctx->ins, "cannot create oauth2 context");
-        return -1;
+        goto error;
     }
     flb_output_upstream_set(ctx->u, ins);
 
@@ -520,12 +532,17 @@ static int cb_chronicle_init(struct flb_output_instance *ins,
             if (ret != 0) {
                 flb_plg_error(ctx->ins, "Validate log_type failed. '%s' is not supported. ret = %d",
                               ctx->log_type, ret);
-                return -1;
+                goto error;
             }
         }
     }
 
+    flb_output_set_context(ins, ctx);
     return 0;
+
+error:
+    chronicle_context_destroy(ctx);
+    return -1;
 }
 
 enum chronicle_log_key_result {
@@ -1800,12 +1817,7 @@ static int cb_chronicle_exit(void *data, struct flb_config *config)
         return -1;
     }
 
-    if (ctx->u) {
-        flb_upstream_destroy(ctx->u);
-    }
-    pthread_mutex_destroy(&ctx->token_mutex);
-
-    flb_chronicle_conf_destroy(ctx);
+    chronicle_context_destroy(ctx);
     return 0;
 }
 
