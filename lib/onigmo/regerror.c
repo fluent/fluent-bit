@@ -57,6 +57,8 @@ onig_error_code_to_format(OnigPosition code)
     p = "undefined bytecode (bug)"; break;
   case ONIGERR_UNEXPECTED_BYTECODE:
     p = "unexpected bytecode (bug)"; break;
+  case ONIGERR_MATCH_OPERATION_LIMIT_OVER:
+    p = "match operation limit over"; break;
   case ONIGERR_MATCH_STACK_LIMIT_OVER:
     p = "match-stack limit over"; break;
   case ONIGERR_PARSE_DEPTH_LIMIT_OVER:
