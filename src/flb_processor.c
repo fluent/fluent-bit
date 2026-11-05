@@ -38,6 +38,14 @@
 #include <fluent-bit/flb_plugin_alias.h>
 #include <cfl/cfl.h>
 
+/* Config-map binding clears kv->val for borrowed variants. Track their source
+ * references so teardown before initialization never frees them as SDS values. */
+struct processor_variant_property {
+    struct flb_kv *property;
+    struct cfl_variant *value;
+    struct mk_list _head;
+};
+
 struct flb_config_map processor_global_properties[] = {
     {
         FLB_CONFIG_MAP_STR, "alias", NULL,
@@ -2816,6 +2824,7 @@ int flb_processor_instance_set_property(struct flb_processor_instance *ins,
     int len;
     int ret;
     struct flb_kv *kv;
+    struct processor_variant_property *borrowed;
     cfl_sds_t tmp = NULL;
 
     len = strlen(k);
@@ -2881,10 +2890,15 @@ int flb_processor_instance_set_property(struct flb_processor_instance *ins,
             kv->val = tmp;
         }
         else {
-            /* Hacky workaround: We store the variant address in a char * just to pass
-             * the variant reference to the plugin. After this happens,
-             * kv->val must be set to NULL (done in flb_config_map.c) */
-            kv->val = (void *)v;
+            borrowed = flb_calloc(1, sizeof(struct processor_variant_property));
+            if (!borrowed) {
+                flb_kv_item_destroy(kv);
+                return -1;
+            }
+            borrowed->property = kv;
+            borrowed->value = v;
+            mk_list_add(&borrowed->_head, &ins->variant_properties);
+            kv->val = (void *) v;
         }
     }
 
@@ -2925,7 +2939,7 @@ struct flb_processor_instance *flb_processor_instance_create(struct flb_config *
         return NULL;
     }
 
-    instance = flb_calloc(1, sizeof(struct flb_filter_instance));
+    instance = flb_calloc(1, sizeof(struct flb_processor_instance));
     if (!instance) {
         flb_errno();
         return NULL;
@@ -2948,6 +2962,7 @@ struct flb_processor_instance *flb_processor_instance_create(struct flb_config *
     instance->pu = pu;
 
     mk_list_init(&instance->properties);
+    mk_list_init(&instance->variant_properties);
 
     instance->log_encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
     if (instance->log_encoder == NULL) {
@@ -3117,6 +3132,10 @@ void flb_processor_instance_set_context(struct flb_processor_instance *ins, void
 
 void flb_processor_instance_destroy(struct flb_processor_instance *ins)
 {
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct processor_variant_property *entry;
+
     if (ins == NULL) {
         return;
     }
@@ -3124,6 +3143,13 @@ void flb_processor_instance_destroy(struct flb_processor_instance *ins)
     /* destroy config map */
     if (ins->config_map != NULL) {
         flb_config_map_destroy(ins->config_map);
+    }
+
+    mk_list_foreach_safe(head, tmp, &ins->variant_properties) {
+        entry = mk_list_entry(head, struct processor_variant_property, _head);
+        entry->property->val = NULL;
+        mk_list_del(&entry->_head);
+        flb_free(entry);
     }
 
     /* release properties */

@@ -255,6 +255,9 @@ struct flb_processor_instance {
 
     /* Keep a reference to the original context this instance belongs to */
     struct flb_config *config;
+
+    /* Appended to preserve existing DSO field offsets. */
+    struct mk_list variant_properties;     /* borrowed typed values    */
 };
 
 
