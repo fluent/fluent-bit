@@ -33,11 +33,14 @@ def typed(text):
         elif char in ")>]}":
             depth -= 1
         elif char.isspace() and depth == 0:
+            if text[:index].endswith("|") or text[index:].lstrip().startswith("|"):
+                raise ValueError("whitespace around union pipes is unsupported")
             return text[:index], text[index:].strip().removeprefix("#").strip()
     return text, ""
 
 
 def export(source):
+    """Build a manifest from the supported LuaLS declaration subset."""
     manifest = {"version": "1.0.0", "engine": "fts", "constants": [],
                 "modules": {"fb": {"require": "fluentbit", "functions": []}}, "types": {}}
     types = manifest["types"]
@@ -49,9 +52,11 @@ def export(source):
     description = []
 
     def documentation():
+        """Join the documentation attached to the next declaration."""
         return " ".join(description)
 
     def reset():
+        """Clear annotations and documentation consumed by a declaration."""
         pending.clear()
         description.clear()
 
@@ -82,7 +87,7 @@ def export(source):
                     current = {"kind": "class", "description": documentation(),
                                "fields": [], "methods": []}
                     if generics:
-                        current["generics"] = generics[1:-1].split(",")
+                        current["generics"] = [name.strip() for name in generics[1:-1].split(",")]
                     if base:
                         current["extends"] = base
                     types[name] = current
@@ -171,7 +176,7 @@ def export(source):
                     raise ValueError("unsupported module constant")
                 name, expression = match.groups()
                 constant = {"name": name, "module": "fb", "description": documentation()}
-                if "." in expression:
+                if re.fullmatch(r"[A-Za-z_]\w*\.[A-Za-z_]\w*", expression):
                     owner, member = expression.split(".", 1)
                     enum_name = enums[owner]
                     value = next(v for v in types[enum_name]["values"] if v["name"] == member)
@@ -185,6 +190,8 @@ def export(source):
                 manifest["constants"].append(constant)
                 reset()
             elif line == "return fb":
+                if pending or description:
+                    raise ValueError("unconsumed annotations or description before return fb")
                 reset()
             else:
                 raise ValueError("unsupported declaration")
@@ -199,6 +206,7 @@ def export(source):
 
 
 def main():
+    """Write the manifest or check that the existing artifact is current."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, default=DEFAULT_SOURCE)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
