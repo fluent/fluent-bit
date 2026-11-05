@@ -23,6 +23,10 @@
 #include <string.h>
 
 #include "fts.h"
+#include "fts_state.h"
+#include "fts_window.h"
+#include "fts_metric_window.h"
+#include <fluent-bit/flb_plugin.h>
 #include "fts_telemetry.h"
 
 static int cb_exit(struct flb_processor_instance *ins, void *data)
@@ -41,8 +45,29 @@ static int cb_exit(struct flb_processor_instance *ins, void *data)
 
 static int config_validate(struct flb_processor_instance *ins, struct fts_runtime *ctx)
 {
-    if ((!ctx->script && !ctx->code) || (ctx->script && ctx->code)) {
-        flb_plg_error(ins, "FTS requires exactly one of script or code");
+    if (!!ctx->script + !!ctx->code + !!ctx->recipe != 1) {
+        flb_plg_error(ins, "FTS requires exactly one of script, code or recipe");
+        return -1;
+    }
+
+    if (ctx->packs && (!ctx->recipe || !ctx->packages_dir)) {
+        flb_plg_error(ins, "packs require recipe and an explicit packages_dir");
+        return -1;
+    }
+
+    if (ctx->recipe && (strcmp(ctx->recipe_version, "1") != 0 || ctx->jit)) {
+        flb_plg_error(ins, "recipe requires recipe_version=1 and jit=false");
+        return -1;
+    }
+    if (strcmp(ctx->recipe_context, "native") != 0 &&
+        strcmp(ctx->recipe_context, "otel") != 0 &&
+        strcmp(ctx->recipe_context, "any") != 0) {
+        flb_plg_error(ins, "context must be native, otel or any");
+        return -1;
+    }
+
+    if (ctx->state_commit && (!ctx->recipe || strcmp(ctx->state_commit, "local") != 0)) {
+        flb_plg_error(ins, "state_commit requires a recipe and value local");
         return -1;
     }
 
@@ -75,8 +100,8 @@ static int config_validate(struct flb_processor_instance *ins, struct fts_runtim
     return 0;
 }
 
-static int cb_init(struct flb_processor_instance *ins, void *source, int type,
-                   struct flb_config *config)
+static int initialize_context(struct flb_processor_instance *ins, struct flb_config *config,
+                              int preflight)
 {
     int ret;
     lua_State *l;
@@ -116,12 +141,24 @@ static int cb_init(struct flb_processor_instance *ins, void *source, int type,
         return FLB_PROCESSOR_FAILURE;
     }
 
+    ctx->instance = ins;
+    ctx->state_input = ins->pu && ins->pu->parent &&
+        ((struct flb_processor *) ins->pu->parent)->source_plugin_type == FLB_PLUGIN_INPUT;
+
     /* Load the helpers and the policy script into a private Lua state */
     ret = fts_runtime_initialize(ctx, config);
     if (ret != FLB_PROCESSOR_SUCCESS) {
         l = ctx->vm ? ctx->vm->state : NULL;
         if (!l) {
             flb_plg_error(ins, "FTS initialization failed: VM allocation error");
+        }
+        else if (ctx->recipe) {
+            fts_recipe_report_error(ins, ctx, "invalid_configuration");
+            if (lua_type(l, -1) == LUA_TSTRING &&
+                strcmp(lua_tostring(l, -1),
+                       "merge_histogram_buckets must precede metrics.scale") == 0) {
+                flb_plg_error(ins, "merge_histogram_buckets must precede metrics.scale");
+            }
         }
         else if (lua_type(l, -1) == LUA_TSTRING) {
             flb_plg_error(ins, "FTS initialization failed: %.256s", lua_tostring(l, -1));
@@ -133,12 +170,76 @@ static int cb_init(struct flb_processor_instance *ins, void *source, int type,
         return FLB_PROCESSOR_FAILURE;
     }
 
+    if (preflight) {
+        cb_exit(ins, ctx);
+        return FLB_PROCESSOR_SUCCESS;
+    }
+
+    if (fts_recipe_metrics_initialize(ins, ctx) != 0) {
+        cb_exit(ins, ctx);
+        return FLB_PROCESSOR_FAILURE;
+    }
+
+    if (fts_window_runtime_start(ctx) != 0 || fts_metric_window_start(ctx) != 0) {
+        cb_exit(ins, ctx);
+        return FLB_PROCESSOR_FAILURE;
+    }
+
     flb_processor_instance_set_context(ins, ctx);
 
     return FLB_PROCESSOR_SUCCESS;
 }
 
+static int cb_input_stop(struct flb_processor_instance *ins, void *data)
+{
+    (void) ins;
+    fts_window_runtime_stop(data);
+    fts_metric_window_stop(data);
+    return FLB_PROCESSOR_SUCCESS;
+}
+
+static int cb_init(struct flb_processor_instance *ins, void *source, int type,
+                   struct flb_config *config)
+{
+    return initialize_context(ins, config, FLB_FALSE);
+}
+
+static int cb_preflight(struct flb_processor_instance *ins, struct flb_config *config)
+{
+    return initialize_context(ins, config, FLB_TRUE);
+}
+
 static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_VARIANT, "secret_refs", NULL,
+     0, FLB_TRUE, offsetof(struct fts_runtime, secret_refs),
+     "Map opaque HMAC key references to environment variable names, resolved at init."
+    },
+    {
+     FLB_CONFIG_MAP_VARIANT, "packs", NULL,
+     0, FLB_TRUE, offsetof(struct fts_runtime, packs),
+     "Local pack manifest paths relative to packages_dir. No downloads."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "packages_dir", NULL,
+     0, FLB_TRUE, offsetof(struct fts_runtime, packages_dir),
+     "Directory containing trusted local Lua packs."
+    },
+    {
+     FLB_CONFIG_MAP_VARIANT, "recipe", NULL,
+     0, FLB_TRUE, offsetof(struct fts_runtime, recipe),
+     "Ordered built-in block steps. Exclusive with script and code."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "recipe_version", "1",
+     0, FLB_TRUE, offsetof(struct fts_runtime, recipe_version),
+     "Recipe grammar version."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "context", "any",
+     0, FLB_TRUE, offsetof(struct fts_runtime, recipe_context),
+     "Recipe log context: native, otel or any."
+    },
     {
      FLB_CONFIG_MAP_STR, "script", NULL,
      0, FLB_TRUE, offsetof(struct fts_runtime, script),
@@ -180,6 +281,17 @@ static struct flb_config_map config_map[] = {
      "Maximum memory used by the policy: Lua heap plus typed values."
     },
 
+    {
+     FLB_CONFIG_MAP_STR, "state_commit", NULL,
+     0, FLB_TRUE, offsetof(struct fts_runtime, state_commit),
+     "Stateful recipes require explicit local commit; no delivery guarantee."
+    },
+    {
+     FLB_CONFIG_MAP_SIZE, "state_limit", "1M",
+     0, FLB_TRUE, offsetof(struct fts_runtime, state_limit),
+     "Maximum native state bytes, including provisional entries and bookkeeping."
+    },
+
     /* EOF */
     {0}
 };
@@ -187,11 +299,14 @@ static struct flb_config_map config_map[] = {
 struct flb_processor_plugin processor_fts_plugin = {
     .name = "fts",
     .description = "Fluent Typed Scripting: Lua-powered typed telemetry policies",
+    .cb_preflight = cb_preflight,
     .cb_init = cb_init,
     .cb_process_logs = fts_process_logs,
     .cb_process_metrics = fts_process_metrics,
     .cb_process_traces = fts_process_traces,
     .cb_exit = cb_exit,
+    .cb_input_stop = cb_input_stop,
     .config_map = config_map,
-    .flags = FLB_PROCESSOR_FLAG_LOG_WINDOWS
+    .flags = FLB_PROCESSOR_FLAG_PREFLIGHT | FLB_PROCESSOR_FLAG_LOG_WINDOWS |
+             FLB_PROCESSOR_FLAG_INPUT_STOP
 };

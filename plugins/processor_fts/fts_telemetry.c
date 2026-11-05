@@ -23,6 +23,7 @@
 #include <opentelemetry/proto/collector/trace/v1/trace_service.pb-c.h>
 #include "fts_telemetry.h"
 #include "fts_helpers.h"
+#include "fts_metric_window.h"
 
 struct telemetry_call {
     struct fts_runtime *ctx;
@@ -192,6 +193,8 @@ int fts_run_telemetry(lua_State *l)
     int module;
     int view;
     int drop = FLB_FALSE;
+    int hold = FLB_FALSE;
+    int window_result;
 
     call = lua_touserdata(l, 1);
     if (call->ctx->adapter->event_type == FLB_PROCESSOR_METRICS) {
@@ -253,10 +256,15 @@ int fts_run_telemetry(lua_State *l)
             result = lua_tolstring(l, -1, &length);
         }
 
-        if (!result || length != 4 || (memcmp(result, "keep", 4) && memcmp(result, "drop", 4))) {
-            return luaL_error(l, "callback must return nil, fb.KEEP or fb.DROP");
+        if (!result || length != 4 || (memcmp(result, "keep", 4) && memcmp(result, "drop", 4) &&
+            !(memcmp(result, "hold", 4) == 0 && fts_metric_window_requested(call->ctx)))) {
+            return luaL_error(l, "callback must return nil, fb.KEEP, fb.DROP or a requested HOLD");
         }
         drop = memcmp(result, "drop", 4) == 0;
+        hold = memcmp(result, "hold", 4) == 0;
+        if (hold && emissions->owned->data.as_array->entry_count != 0) {
+            return luaL_error(l, "invalid_parameter");
+        }
     }
 
     if (!drop) {
@@ -279,7 +287,17 @@ int fts_run_telemetry(lua_State *l)
         lua_call(l, 2, 0);
     }
 
-    lua_pushstring(l, drop ? "drop" : "keep");
+    if (hold) {
+        if (call->ctx->metric_window_request_value != lua_touserdata(l, raw)) {
+            call->ctx->recipe_error_class = "invalid_context";
+            return luaL_error(l, "invalid_context");
+        }
+        window_result = fts_metric_window_propose(call->ctx);
+        if (window_result != 0) {
+            return luaL_error(l, window_result == -2 ? "budget_exceeded" : "operation_failed");
+        }
+    }
+    lua_pushstring(l, hold ? "hold" : drop ? "drop" : "keep");
     lua_pushvalue(l, raw);
     lua_pushvalue(l, output);
     return 3;
@@ -400,6 +418,58 @@ static int stage(struct cfl_variant *groups, struct cfl_variant *value, int metr
 
     *used += cost;
     return 0;
+}
+
+/* Freeze an already validated complete metric snapshot, excluding private state. */
+int fts_metric_snapshot_encode(struct cfl_variant *value, size_t limit,
+                                void **buffer, size_t *size)
+{
+    struct cfl_variant *result;
+    struct cfl_variant *groups;
+    struct cfl_variant *group;
+    struct fts_proto_budget budget;
+    ProtobufCMessage *message;
+    int ret;
+
+    *buffer = NULL;
+    *size = 0;
+    result = new_map();
+    groups = new_array();
+    group = group_from_snapshot(value, 1);
+    if (!result || !groups || !group) {
+        cfl_variant_destroy(result);
+        cfl_variant_destroy(groups);
+        cfl_variant_destroy(group);
+        return -1;
+    }
+    ret = cfl_array_append(groups->data.as_array, group);
+    if (ret != 0) {
+        cfl_variant_destroy(group);
+        cfl_variant_destroy(groups);
+        cfl_variant_destroy(result);
+        return -1;
+    }
+    if (put(result, "resource_metrics", groups) != 0) {
+        cfl_variant_destroy(result);
+        return -1;
+    }
+    budget.used = 0;
+    budget.limit = limit;
+    message = fts_proto_build(&opentelemetry__proto__metrics__v1__metrics_data__descriptor,
+                              result, &budget, 0);
+    cfl_variant_destroy(result);
+    if (message == NULL) {
+        return -1;
+    }
+    *size = protobuf_c_message_get_packed_size(message);
+    if (*size <= limit) {
+        *buffer = flb_malloc(*size ? *size : 1);
+        if (*buffer != NULL) {
+            protobuf_c_message_pack(message, *buffer);
+        }
+    }
+    protobuf_c_message_free_unpacked(message, NULL);
+    return *buffer ? 0 : -1;
 }
 
 /* Coalesce adjacent unchanged contexts without teaching policies about groups. */
@@ -636,6 +706,10 @@ int fts_telemetry_transform(struct flb_processor_instance *ins, char *buffer, si
         for (s = 0; s < scope_count; s++) {
             scope = read_context(scopes[s], item_key, &budget);
             items = children_of(scopes[s], item_key, &item_count);
+            if (metrics && fts_recipe_metric_names(ctx, items, item_count) != 0) {
+                phase = "prepare recipe metric namespace";
+                goto failure;
+            }
             for (i = 0; i < item_count; i++) {
                 phase = "create telemetry snapshot";
                 budget.used = 0;
@@ -698,9 +772,15 @@ int fts_telemetry_transform(struct flb_processor_instance *ins, char *buffer, si
                     }
                 }
 
+                fts_metric_window_item_end(ctx, !failed &&
+                    strcmp(lua_tostring(l, base + 1), "hold") == 0);
+
                 if (failed) {
                     errors++;
-                    if (errors <= 5) {
+                    if (errors <= 5 && ctx->recipe) {
+                        fts_recipe_report_error(ins, ctx, NULL);
+                    }
+                    else if (errors <= 5) {
                         flb_plg_error(ins, "FTS telemetry policy failed: %.256s; edits rolled back",
                                       ret && lua_type(l, -1) == LUA_TSTRING ?
                                       lua_tostring(l, -1) :
@@ -781,6 +861,7 @@ int fts_telemetry_transform(struct flb_processor_instance *ins, char *buffer, si
     cfl_variant_destroy(original_item);
     cfl_variant_destroy(result);
 
+    fts_recipe_metric_names(ctx, NULL, 0);
     ctx->instructions_left = ctx->instruction_limit;
     lua_gc(l, LUA_GCCOLLECT, 0);
 
@@ -791,6 +872,7 @@ int fts_telemetry_transform(struct flb_processor_instance *ins, char *buffer, si
     return errors;
 
 failure:
+    fts_metric_window_item_end(ctx, 0);
     if (message) {
         protobuf_c_message_free_unpacked(message, NULL);
     }
@@ -803,6 +885,7 @@ failure:
     cfl_variant_destroy(value);
     cfl_variant_destroy(pending);
 
+    fts_recipe_metric_names(ctx, NULL, 0);
     ctx->instructions_left = ctx->instruction_limit;
     lua_gc(l, LUA_GCCOLLECT, 0);
 
