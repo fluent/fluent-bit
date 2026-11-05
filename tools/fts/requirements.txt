@@ -1,0 +1,6 @@
+PyYAML>=6,<7
+msgpack>=1,<2
+protobuf>=4.25,<7
+opentelemetry-proto>=1.25,<2
+
+jsonschema>=4.23,<5
