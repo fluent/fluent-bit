@@ -1,0 +1,31 @@
+fixture_version: 1
+signal: logs
+processor:
+  name: fts
+  recipe_version: 1
+  packs:
+  - ../pack.json
+  error_mode: drop
+  recipe:
+  - id: policy
+    use: org.fluentbit.policy.pseudonyms/apply
+    with:
+      key_ref: email-v1
+      tenant: tenant-b
+  secret_refs:
+    email-v1: FTS_FIXTURE_HMAC_V1
+cases:
+- name: tenant-separation
+  input:
+  - body:
+      email: alice@example.test
+  expected:
+    records:
+    - body:
+        email.pseudonym: hmac-sha256-v1:email-v1:3839ba3176a77265e20ae57317e9a9a40b7ba7265e6075964150e1661d190951
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0
+environment:
+  FTS_FIXTURE_HMAC_V1: public-unit-test-key-v1

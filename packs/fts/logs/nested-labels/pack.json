@@ -1,0 +1,54 @@
+{
+  "pack_version": 2,
+  "fts_api_version": 1,
+  "id": "org.fluentbit.nested-labels",
+  "version": "1.0.0",
+  "title": "Typed deployment log labels",
+  "description": "A small author Lua pack demonstrating bounded recursive configuration and exact typed labels.",
+  "blocks": [
+    {
+      "name": "enrich_logs",
+      "signals": [
+        "logs"
+      ],
+      "source": "blocks/enrich.lua",
+      "parameters": {
+        "target": {
+          "type": "object",
+          "default": {},
+          "fields": {
+            "field": {
+              "type": "string",
+              "default": "labels"
+            },
+            "overwrite": {
+              "type": "bool",
+              "default": false
+            }
+          }
+        },
+        "labels": {
+          "type": "array",
+          "required": true,
+          "items": {
+            "type": "object",
+            "fields": {
+              "name": {
+                "type": "string",
+                "required": true
+              },
+              "value": {
+                "type": "literal",
+                "required": true
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "fixtures": [
+    "tests/preserve.yaml",
+    "tests/overwrite.yaml"
+  ]
+}

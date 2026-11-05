@@ -1,0 +1,45 @@
+{
+  "pack_version": 1,
+  "fts_api_version": 1,
+  "id": "org.fluentbit.policy.pseudonyms",
+  "version": "1.0.0",
+  "title": "Tenant/domain-scoped stable pseudonyms",
+  "description": "Tenant/domain-scoped stable pseudonyms",
+  "blocks": [
+    {
+      "name": "apply",
+      "signals": [
+        "logs"
+      ],
+      "source": "blocks/apply.lua",
+      "privacy": true,
+      "parameters": {
+        "field": {
+          "type": "string",
+          "default": "email"
+        },
+        "destination": {
+          "type": "string",
+          "default": "email.pseudonym"
+        },
+        "key_ref": {
+          "type": "string",
+          "required": true
+        },
+        "tenant": {
+          "type": "string",
+          "required": true
+        },
+        "domain": {
+          "type": "string",
+          "default": "email"
+        }
+      }
+    }
+  ],
+  "fixtures": [
+    "tests/policy.yaml",
+    "tests/tenant-b.yaml",
+    "tests/rotated.yaml"
+  ]
+}

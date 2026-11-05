@@ -1,0 +1,72 @@
+fixture_version: 1
+signal: metrics
+processor:
+  name: fts
+  packs:
+  - ../pack.json
+  recipe_version: 1
+  error_mode: drop
+  recipe:
+  - id: policy
+    use: org.fluentbit.observability/metric_allowlist
+    with:
+      names:
+      - requests
+cases:
+- name: metric-allowlist
+  input:
+    resourceMetrics:
+    - resource:
+        attributes:
+        - key: environment
+          value:
+            stringValue: test
+      scopeMetrics:
+      - scope:
+          name: fixture
+        metrics:
+        - name: requests
+          unit: '1'
+          gauge:
+            dataPoints:
+            - timeUnixNano: '1700000000000000000'
+              asInt: '9223372036854775807'
+              attributes:
+              - key: service.name
+                value:
+                  stringValue: checkout
+          description: Requests received
+        - name: debug_counter
+          sum:
+            aggregationTemporality: 2
+            isMonotonic: true
+            dataPoints:
+            - timeUnixNano: '1700000000000000000'
+              asDouble: 1.25
+  expected:
+    otlp:
+      resourceMetrics:
+      - resource:
+          attributes:
+          - key: environment
+            value:
+              stringValue: test
+        scopeMetrics:
+        - scope:
+            name: fixture
+          metrics:
+          - name: requests
+            unit: '1'
+            gauge:
+              dataPoints:
+              - timeUnixNano: '1700000000000000000'
+                asInt: '9223372036854775807'
+                attributes:
+                - key: service.name
+                  value:
+                    stringValue: checkout
+            description: Requests received
+    outcomes:
+      kept: 1
+      dropped: 1
+      errors: 0

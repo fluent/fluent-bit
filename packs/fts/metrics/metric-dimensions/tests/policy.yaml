@@ -1,0 +1,193 @@
+fixture_version: 1
+signal: metrics
+processor:
+  name: fts
+  packs:
+  - ../pack.json
+  recipe_version: 1
+  error_mode: drop
+  recipe:
+  - id: policy
+    use: org.fluentbit.policy.metric-dimensions/apply
+cases:
+- name: aggregate-gauge-dimensions
+  input:
+    resourceMetrics:
+    - resource:
+        attributes:
+        - key: service.name
+          value:
+            stringValue: checkout
+      scopeMetrics:
+      - scope:
+          name: fixture
+        metrics:
+        - name: queue_depth
+          description: Synthetic fixture
+          unit: '1'
+          gauge:
+            dataPoints:
+            - timeUnixNano: '1700000000000000000'
+              asInt: '1'
+              attributes:
+              - key: zone
+                value:
+                  stringValue: a
+            - timeUnixNano: '1700000000000000000'
+              asInt: '2'
+              attributes:
+              - key: zone
+                value:
+                  stringValue: b
+  expected:
+    otlp:
+      resourceMetrics:
+      - resource:
+          attributes:
+          - key: service.name
+            value:
+              stringValue: checkout
+        scopeMetrics:
+        - scope:
+            name: fixture
+          metrics:
+          - name: queue_depth
+            description: Synthetic fixture
+            unit: '1'
+            gauge:
+              dataPoints:
+              - timeUnixNano: '1700000000000000000'
+                asInt: '3'
+                attributes: []
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0
+- name: unselected-family-control
+  input:
+    resourceMetrics:
+    - resource:
+        attributes:
+        - key: service.name
+          value:
+            stringValue: checkout
+      scopeMetrics:
+      - scope:
+          name: fixture
+        metrics:
+        - name: control
+          description: Synthetic fixture
+          unit: '1'
+          gauge:
+            dataPoints:
+            - timeUnixNano: '1700000000000000000'
+              asInt: '1'
+              attributes:
+              - key: zone
+                value:
+                  stringValue: a
+            - timeUnixNano: '1700000000000000000'
+              asInt: '2'
+              attributes:
+              - key: zone
+                value:
+                  stringValue: b
+  expected:
+    otlp:
+      resourceMetrics:
+      - resource:
+          attributes:
+          - key: service.name
+            value:
+              stringValue: checkout
+        scopeMetrics:
+        - scope:
+            name: fixture
+          metrics:
+          - name: control
+            description: Synthetic fixture
+            unit: '1'
+            gauge:
+              dataPoints:
+              - timeUnixNano: '1700000000000000000'
+                asInt: '1'
+                attributes:
+                - key: zone
+                  value:
+                    stringValue: a
+              - timeUnixNano: '1700000000000000000'
+                asInt: '2'
+                attributes:
+                - key: zone
+                  value:
+                    stringValue: b
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0
+- name: non-gauge-passthrough
+  input:
+    resourceMetrics:
+    - resource:
+        attributes:
+        - key: service.name
+          value:
+            stringValue: checkout
+      scopeMetrics:
+      - scope:
+          name: fixture
+        metrics:
+        - name: queue_depth
+          description: Synthetic fixture
+          unit: '1'
+          sum:
+            dataPoints:
+            - timeUnixNano: '1700000000000000000'
+              asInt: '1'
+              attributes:
+              - key: zone
+                value:
+                  stringValue: a
+            - timeUnixNano: '1700000000000000000'
+              asInt: '2'
+              attributes:
+              - key: zone
+                value:
+                  stringValue: b
+            aggregationTemporality: 2
+            isMonotonic: true
+  expected:
+    otlp:
+      resourceMetrics:
+      - resource:
+          attributes:
+          - key: service.name
+            value:
+              stringValue: checkout
+        scopeMetrics:
+        - scope:
+            name: fixture
+          metrics:
+          - name: queue_depth
+            description: Synthetic fixture
+            unit: '1'
+            sum:
+              dataPoints:
+              - timeUnixNano: '1700000000000000000'
+                asInt: '1'
+                attributes:
+                - key: zone
+                  value:
+                    stringValue: a
+              - timeUnixNano: '1700000000000000000'
+                asInt: '2'
+                attributes:
+                - key: zone
+                  value:
+                    stringValue: b
+              aggregationTemporality: 2
+              isMonotonic: true
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0

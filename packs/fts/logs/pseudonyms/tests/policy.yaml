@@ -1,0 +1,58 @@
+fixture_version: 1
+signal: logs
+processor:
+  name: fts
+  recipe_version: 1
+  packs:
+  - ../pack.json
+  error_mode: drop
+  recipe:
+  - id: policy
+    use: org.fluentbit.policy.pseudonyms/apply
+    with:
+      key_ref: email-v1
+      tenant: tenant-a
+  secret_refs:
+    email-v1: FTS_FIXTURE_HMAC_V1
+cases:
+- name: remove-original-and-emit-versioned-pseudonym
+  input:
+  - body:
+      email: alice@example.test
+      control: 1
+  expected:
+    records:
+    - body:
+        email.pseudonym: hmac-sha256-v1:email-v1:b918724d5082f25823aac7b88b2cacec4a25f5d8b87189c2e63c148b751c54b6
+        control: 1
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0
+- name: missing-value-control
+  input:
+  - body:
+      control: 1
+  expected:
+    records:
+    - body:
+        control: 1
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0
+- name: wrong-type-drops
+  input:
+  - body:
+      email: 123
+  expected:
+    records: []
+    outcomes:
+      kept: 0
+      dropped: 1
+      errors: 1
+    error:
+      step: policy
+      class: wrong_type
+environment:
+  FTS_FIXTURE_HMAC_V1: public-unit-test-key-v1

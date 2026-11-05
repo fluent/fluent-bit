@@ -1,0 +1,121 @@
+fixture_version: 1
+signal: metrics
+processor:
+  name: fts
+  packs:
+  - ../pack.json
+  recipe_version: 1
+  state_commit: local
+  error_mode: keep
+  recipe:
+  - id: rollup
+    use: org.fluentbit.gauge-rollup/apply
+    with:
+      names:
+      - queue_depth
+      operation: max
+cases:
+- name: two-families-four-points-one-output-family
+  input:
+  - resourceMetrics:
+    - resource:
+        attributes:
+        - key: tenant
+          value:
+            stringValue: synthetic
+      scopeMetrics:
+      - scope:
+          name: fixture
+          version: '1'
+        metrics:
+        - name: queue_depth
+          unit: items
+          gauge:
+            dataPoints:
+            - timeUnixNano: '1700000001000000000'
+              startTimeUnixNano: '1700000000000000000'
+              asInt: '3'
+              attributes:
+              - key: queue
+                value:
+                  stringValue: a
+            - timeUnixNano: '1700000001000000000'
+              startTimeUnixNano: '1700000000000000000'
+              asInt: '8'
+              attributes:
+              - key: queue
+                value:
+                  stringValue: b
+          description: Queue depth
+  - resourceMetrics:
+    - resource:
+        attributes:
+        - key: tenant
+          value:
+            stringValue: synthetic
+      scopeMetrics:
+      - scope:
+          name: fixture
+          version: '1'
+        metrics:
+        - name: queue_depth
+          unit: items
+          gauge:
+            dataPoints:
+            - timeUnixNano: '1700000002000000000'
+              startTimeUnixNano: '1700000000000000000'
+              asInt: '5'
+              attributes:
+              - key: queue
+                value:
+                  stringValue: a
+            - timeUnixNano: '1700000002000000000'
+              startTimeUnixNano: '1700000000000000000'
+              asInt: '4'
+              attributes:
+              - key: queue
+                value:
+                  stringValue: b
+          description: Queue depth
+  expected:
+    otlp:
+      resourceMetrics:
+      - resource:
+          attributes:
+          - key: tenant
+            value:
+              stringValue: synthetic
+        scopeMetrics:
+        - scope:
+            name: fixture
+            version: '1'
+          metrics:
+          - name: queue_depth
+            unit: items
+            gauge:
+              dataPoints:
+              - timeUnixNano: '1700000002000000000'
+                startTimeUnixNano: '1700000000000000000'
+                asInt: '5'
+                attributes:
+                - key: queue
+                  value:
+                    stringValue: a
+              - timeUnixNano: '1700000002000000000'
+                startTimeUnixNano: '1700000000000000000'
+                asInt: '8'
+                attributes:
+                - key: queue
+                  value:
+                    stringValue: b
+            description: Queue depth
+    outcomes:
+      kept: 0
+      dropped: 0
+      errors: 0
+      held: 2
+    metric_window_families:
+      held: 2
+      released: 1
+      reduced: 1
+      pending: 0

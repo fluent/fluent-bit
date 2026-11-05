@@ -1,0 +1,30 @@
+{
+  "pack_version": 1,
+  "fts_api_version": 1,
+  "id": "org.fluentbit.policy.vpc-flow",
+  "version": "2.0.0",
+  "title": "AWS VPC flow v2 normalization",
+  "description": "Requires explicit layout=aws-default-v2 and a producer using the default 14-field AWS v2 flow-log layout. Preserve raw records, REJECT and log status; omit dash values. Custom layouts cannot be detected from field count and must use a different pack. Malformed declared v2 records fail transactionally.",
+  "blocks": [
+    {
+      "name": "apply",
+      "signals": [
+        "logs"
+      ],
+      "source": "blocks/apply.lua",
+      "parameters": {
+        "layout": {
+          "type": "string",
+          "required": true,
+          "enum": [
+            "aws-default-v2"
+          ]
+        }
+      },
+      "privacy": false
+    }
+  ],
+  "fixtures": [
+    "tests/policy.yaml"
+  ]
+}

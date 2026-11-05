@@ -1,0 +1,97 @@
+fixture_version: 1
+signal: traces
+processor:
+  name: fts
+  packs:
+  - ../pack.json
+  recipe_version: 1
+  error_mode: drop
+  recipe:
+  - id: policy
+    use: org.fluentbit.policy.span-operations/apply
+cases:
+- name: trusted-route-template
+  input:
+    resourceSpans:
+    - resource:
+        attributes:
+        - key: service.name
+          value:
+            stringValue: checkout
+      scopeSpans:
+      - scope:
+          name: fixture
+        spans:
+        - traceId: 0102030405060708090a0b0c0d0e0f10
+          spanId: 0102030405060708
+          name: GET /users/123
+          kind: 2
+          startTimeUnixNano: '1700000000000000000'
+          endTimeUnixNano: '1700000000100000000'
+          attributes:
+          - key: http.route
+            value:
+              stringValue: /users/{id}
+          status:
+            code: 1
+  expected:
+    otlp:
+      resourceSpans:
+      - resource:
+          attributes:
+          - key: service.name
+            value:
+              stringValue: checkout
+        scopeSpans:
+        - scope:
+            name: fixture
+          spans:
+          - traceId: 0102030405060708090a0b0c0d0e0f10
+            spanId: 0102030405060708
+            name: HTTP /users/{id}
+            kind: 2
+            startTimeUnixNano: '1700000000000000000'
+            endTimeUnixNano: '1700000000100000000'
+            attributes:
+            - key: http.route
+              value:
+                stringValue: /users/{id}
+            status:
+              code: 1
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0
+- name: reject-nonstring-route
+  input:
+    resourceSpans:
+    - resource:
+        attributes:
+        - key: service.name
+          value:
+            stringValue: checkout
+      scopeSpans:
+      - scope:
+          name: fixture
+        spans:
+        - traceId: 0102030405060708090a0b0c0d0e0f10
+          spanId: 0102030405060708
+          name: GET /users/123
+          kind: 2
+          startTimeUnixNano: '1700000000000000000'
+          endTimeUnixNano: '1700000000100000000'
+          attributes:
+          - key: http.route
+            value:
+              intValue: '123'
+          status:
+            code: 1
+  expected:
+    otlp: {}
+    outcomes:
+      kept: 0
+      dropped: 1
+      errors: 1
+    error:
+      step: policy
+      class: wrong_type

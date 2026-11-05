@@ -1,0 +1,27 @@
+{
+  "pack_version": 1,
+  "fts_api_version": 1,
+  "id": "org.fluentbit.policy.event-quality",
+  "version": "1.0.0",
+  "title": "Required fields and message budget",
+  "description": "Require a string event_id and bound message UTF-8 bytes with an explicit truncation marker. Other fields remain. This does not enforce total serialized event size or quarantine invalid events.",
+  "blocks": [
+    {
+      "name": "apply",
+      "signals": [
+        "logs"
+      ],
+      "source": "blocks/apply.lua",
+      "parameters": {
+        "max_bytes": {
+          "type": "number",
+          "default": 16
+        }
+      },
+      "privacy": false
+    }
+  ],
+  "fixtures": [
+    "tests/policy.yaml"
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "pack_version": 1,
+  "fts_api_version": 1,
+  "id": "org.fluentbit.policy.application-json",
+  "version": "1.0.0",
+  "title": "Application JSON onboarding",
+  "description": "Parse a JSON object from log, normalize app.level, redact structured keys and remove the raw log string. Timestamp parsing is deliberately not inferred; add logs.parse_timestamp for a declared source field/format.",
+  "blocks": [
+    {
+      "name": "apply",
+      "signals": [
+        "logs"
+      ],
+      "source": "blocks/apply.lua",
+      "parameters": {
+        "keys": {
+          "type": "strings",
+          "default": [
+            "password",
+            "api_key"
+          ]
+        },
+        "replacement": {
+          "type": "string",
+          "default": "[REDACTED]"
+        }
+      },
+      "privacy": true
+    }
+  ],
+  "fixtures": [
+    "tests/policy.yaml"
+  ]
+}
