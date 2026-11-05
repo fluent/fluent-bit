@@ -431,6 +431,147 @@ static void strict_parsing_and_time(void)
                0, "drop", 6, 0, 0, NULL, NULL);
 }
 
+/* Parsing keeps exact typed values and reports ordinary errors as return values. */
+static void try_parse_json_preserves_types_and_errors(void)
+{
+    run_policy("local fb=require('fluentbit'); function process(log) "
+               "local value,err=fb.try_parse_json('18446744073709551615'); "
+               "assert(value:type()=='uint64' and value:value()=='18446744073709551615'); "
+               "assert(err==nil); "
+               "assert(fb.try_parse_json('-9223372036854775808'):value()=='-9223372036854775808'); "
+               "assert(fb.try_parse_json('null'):type()=='null'); "
+               "assert(fb.try_parse_json('false'):value()==false); "
+               "assert(fb.try_parse_json('[1,2]'):len()==2); "
+               "assert(fb.try_parse_json(' \\n {\"nested\":{\"ok\":true}}')"
+               ":get('nested'):get('ok'):value()==true); "
+               "local function invalid(text) local v,e=fb.try_parse_json(text); "
+               "assert(v==nil and type(e)=='string') end; "
+               "invalid(nil); invalid(false); invalid(42); invalid({}); invalid(''); "
+               "invalid('plain text'); invalid('{'); invalid('{} garbage'); "
+               "invalid('{\"a\":1,\"a\":2}'); invalid('18446744073709551616'); "
+               "invalid(string.rep(' ',1048577)); "
+               "invalid(string.rep('[',65)..'0'..string.rep(']',65)); "
+               "assert(not pcall(fb.parse_json,'plain text')) end",
+               0, "drop", 6, 0, 0, NULL, NULL);
+}
+
+/* Unpacking replaces the body only after an object has been decoded successfully. */
+static void unpack_json_replaces_only_object_bodies(void)
+{
+    run_policy("local fb=require('fluentbit'); function process(log) "
+               "local record={body=fb.map()}; local original=record.body; "
+               "local ok,err=fb.unpack_json(record); "
+               "assert(ok==false and type(err)=='string' and record.body==original); "
+               "for _,text in ipairs({'plain text','{','[]','null','false','42'}) do "
+               "record.body:set('message',text); ok,err=fb.unpack_json(record); "
+               "assert(ok==false and type(err)=='string' and record.body==original); "
+               "assert(record.body:get_string('message')==text) end; "
+               "record.body:set('message',42); assert(not fb.unpack_json(record)); "
+               "assert(record.body==original); "
+               "record.body:set('payload','{\"id\":18446744073709551615}'); "
+               "ok,err=fb.unpack_json(record,'payload'); assert(ok==true and err==nil); "
+               "assert(record.body:get('id'):value()=='18446744073709551615'); "
+               "record.body:set('message','{}'); assert(fb.unpack_json(record)); "
+               "assert(record.body:len()==0) end",
+               0, "drop", 6, 0, 0, NULL, NULL);
+}
+
+/* Field decoding preserves siblings, scalar types, and failed input strings. */
+static void decode_json_fields_preserve_siblings_and_types(void)
+{
+    run_policy("local fb=require('fluentbit'); function process(log) "
+               "local map=fb.map(); map:set('sibling','keep'); "
+               "local function decode(text,kind) map:set('payload',text); "
+               "local ok,err=fb.decode_json(map,'payload'); assert(ok==true and err==nil); "
+               "assert(map:get('payload'):type()==kind and map:get_string('sibling')=='keep'); "
+               "return map:get('payload') end; "
+               "assert(decode('{\"id\":18446744073709551615}','map')"
+               ":get('id'):value()=='18446744073709551615'); "
+               "assert(decode('[1,2]','array'):len()==2); decode('null','null'); "
+               "assert(decode('false','bool'):value()==false); "
+               "assert(decode('\"text\"','string'):value()=='text'); "
+               "assert(decode('9007199254740993','uint64'):value()=='9007199254740993'); "
+               "for _,text in ipairs({'plain text','{','{} trailing','{\"a\":1,\"a\":2}'}) do "
+               "map:set('payload',text); local ok,err=fb.decode_json(map,'payload'); "
+               "assert(ok==false and type(err)=='string' and map:get_string('payload')==text); "
+               "assert(map:get_string('sibling')=='keep') end; "
+               "assert(not fb.decode_json(map,'missing')); "
+               "map:set('payload',42); assert(not fb.decode_json(map,'payload')); "
+               "assert(map:get_number('payload')==42); "
+               "local array=fb.array(); array:append('false'); array:append('null'); "
+               "assert(fb.decode_json(array,1) and array:get(1):value()==false); "
+               "assert(fb.decode_json(array,2) and array:get(2):type()=='null'); "
+               "assert(not pcall(fb.decode_json,map,1)); "
+               "assert(not pcall(fb.decode_json,nil,'payload')) end",
+               0, "drop", 6, 0, 0, NULL, NULL);
+}
+
+/* Both JSON mutation helpers retain terminal instruction-budget semantics. */
+static void json_helpers_cannot_swallow_instruction_exhaustion(void)
+{
+    const char *decode;
+    const char *unpack;
+
+    decode = "local fb=require('fluentbit'); function process(log) "
+             "log.body:set('payload','{\"items\":['..string.rep('0,',30000)..'0]}'); "
+             "fb.decode_json(log.body,'payload') end";
+    unpack = "local fb=require('fluentbit'); function process(log) "
+             "log.body:set('payload','{\"items\":['..string.rep('0,',30000)..'0]}'); "
+             "fb.unpack_json(log,'payload') end";
+    run_policy(decode, 0, "drop", 0, 0, 0, NULL, NULL);
+    run_policy(unpack, 0, "drop", 0, 0, 0, NULL, NULL);
+    run_policy(decode, 0, "keep", 6, 0, 0, NULL, NULL);
+    run_policy(unpack, 0, "keep", 6, 0, 0, NULL, NULL);
+}
+
+/* Reject OTLP integer overflow without restricting generic parser or scratch values. */
+static void json_helpers_reject_otel_unsigned_overflow(void)
+{
+    run_policy("local fb=require('fluentbit'); function process(log) "
+               "local function reject(container,text) container:set('payload',text); "
+               "local ok,err=fb.decode_json(container,'payload'); "
+               "assert(ok==false and type(err)=='string'); "
+               "assert(container:get_string('payload')==text) end; "
+               "for _,container in ipairs({log.body,log.attributes,"
+               "log.resource.attributes,log.scope.attributes,log.body:ensure_map('nested')}) do "
+               "reject(container,'{\"nested\":[{\"id\":18446744073709551615}]}'); "
+               "reject(container,'[{\"id\":9223372036854775808}]'); "
+               "reject(container,'18446744073709551615'); "
+               "container:set('payload','{\"id\":9223372036854775807}'); "
+               "assert(fb.decode_json(container,'payload')); "
+               "assert(container:get('payload'):get('id'):value()=='9223372036854775807') end; "
+               "local array=fb.array(); array:append('18446744073709551615'); "
+               "log.body:set('array',array); "
+               "assert(not fb.decode_json(log.body:get('array'),1)); "
+               "assert(log.body:get('array'):get(1):value()=='18446744073709551615'); "
+               "local scratch=fb.map(); scratch:set('payload','18446744073709551615'); "
+               "assert(fb.decode_json(scratch,'payload')); "
+               "assert(scratch:get('payload'):value()=='18446744073709551615'); "
+               "assert(fb.try_parse_json('18446744073709551615'):value()=='18446744073709551615'); "
+               "log.body=log.body:copy(); reject(log.body,'9223372036854775808'); "
+               "log.body:set('message','{\"id\":9223372036854775808}'); "
+               "local body=log.body; local ok,err=fb.unpack_json(log); "
+               "assert(ok==false and type(err)=='string' and log.body==body) end",
+               3, "drop", 6, 2, 0, NULL, NULL);
+}
+
+/* A scratch decode must not read a temporarily invalid context as a Lua table. */
+static void json_helpers_ignore_non_table_contexts(void)
+{
+    run_policy("local fb=require('fluentbit'); function process(log) "
+               "local context=log.context; local scratch=fb.map(); "
+               "local function decode() scratch:set('payload','18446744073709551615'); "
+               "assert(fb.decode_json(scratch,'payload')); "
+               "assert(scratch:get('payload'):value()=='18446744073709551615') end; "
+               "for _,value in ipairs({false,42,'context',fb.map(),fb.array()}) do "
+               "log.context=value; decode() end; "
+               "log.context=nil; decode(); log.context=context; "
+               "log.resource.attributes:set('payload','9223372036854775808'); "
+               "assert(not fb.decode_json(log.resource.attributes,'payload')); "
+               "assert(log.resource.attributes:get_string('payload')=='9223372036854775808') end",
+               3, "drop", 6, 2, 0, NULL, NULL);
+}
+
 static void output_growth_fails_closed(void)
 {
     run_policy("function process(log) log.body:set('grow', string.rep('x',300000)) end",
@@ -2383,6 +2524,12 @@ TEST_LIST = {
     {"vm_memory_exhaustion_drops", vm_memory_exhaustion_drops},
     {"native_memory_exhaustion_drops", native_memory_exhaustion_drops},
     {"strict_parsing_and_time", strict_parsing_and_time},
+    {"try_parse_json_types_and_errors", try_parse_json_preserves_types_and_errors},
+    {"unpack_json_object_bodies", unpack_json_replaces_only_object_bodies},
+    {"decode_json_fields", decode_json_fields_preserve_siblings_and_types},
+    {"json_helpers_instruction_exhaustion", json_helpers_cannot_swallow_instruction_exhaustion},
+    {"json_helpers_otel_unsigned_overflow", json_helpers_reject_otel_unsigned_overflow},
+    {"json_helpers_non_table_contexts", json_helpers_ignore_non_table_contexts},
     {"output_growth_fails_closed", output_growth_fails_closed},
     {"output_growth_keep_restores_whole_chunk", output_growth_keep_restores_whole_chunk},
     {"initialization_failures", initialization_failures},
