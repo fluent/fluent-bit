@@ -39,13 +39,14 @@ The definitions follow the bindings in `plugins/processor_fts/`: `KEEP` and
 `DROP` are strings, edits commit on `nil`/`KEEP`, and Lua errors roll back edits.
 There are no `MODIFY`/`ERROR`, `has`/`delete`, scalar comparison methods, or
 hex-decoding bytes constructor. Use `get(key) ~= nil`, `remove(key)`,
-`fb.numeric_compare`, and raw byte strings respectively. `parse_json` returns
+`fb.numeric_compare` (author packs only, unavailable in script mode), and raw
+byte strings respectively. `parse_json` returns
 typed userdata (including typed null), and raises on invalid JSON. Log bodies
 must be maps; severity fields use `fb.log_field` and `fb.set_severity` rather
 than direct properties. `FtsClassicFilterCallback` documents the separate
 numeric-status `filter_lua` ABI and is not an FTS callback contract.
 
-Generate the machine-readable manifest from any working directory with Python
+Generate the machine-readable manifest from the checkout root with Python
 3.9 or later; no third-party packages, Lua executable or Fluent Bit binary are
 needed:
 
