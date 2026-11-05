@@ -127,7 +127,7 @@ static void test_router_regex_limit(void)
     memset(tag, 'a', sizeof(tag) - 2);
     tag[sizeof(tag) - 2] = '!';
     tag[sizeof(tag) - 1] = '\0';
-    regex = flb_regex_create("^(a+)+$");
+    regex = flb_regex_create("^(a+)+\\1$");
     TEST_ASSERT(regex != NULL);
     TEST_CHECK(flb_router_match(tag, strlen(tag), "*", regex) == FLB_FALSE);
     TEST_CHECK(flb_router_match("aaaa", 4, NULL, regex) == FLB_TRUE);
