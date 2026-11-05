@@ -21,6 +21,8 @@
 #include <string.h>
 #include <onigmo.h>
 #include <fluent-bit/flb_regex.h>
+#include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_thread_storage.h>
 #include "flb_tests_internal.h"
 
 struct kv_list {
@@ -477,7 +479,61 @@ static void test_cached_operation_limit(void)
     flb_regex_destroy(regex);
 }
 
+struct regex_init_worker {
+    struct flb_regex *regex;
+    int failed;
+};
+
+static void *regex_init_match_worker(void *data)
+{
+    struct regex_init_worker *worker = data;
+    int i;
+
+    for (i = 0; i < 2000; i++) {
+        if (onig_get_match_operation_limit() != 10000000UL ||
+            flb_regex_match(worker->regex, (unsigned char *) "aaaaaaaaaaaaaaab", 16) != 1) {
+            worker->failed = 1;
+            break;
+        }
+    }
+    return NULL;
+}
+
+static void test_operation_limit_initialization(void)
+{
+    struct regex_init_worker worker = {0};
+    struct flb_config *config;
+    pthread_t thread;
+    unsigned long saved_limit;
+    int i;
+
+    /* The budget exists even before the first explicit backend init. */
+    saved_limit = onig_get_match_operation_limit();
+    TEST_CHECK(saved_limit == 10000000UL);
+    TEST_CHECK(flb_regex_init() == 0);
+    worker.regex = flb_regex_create("^(a|aa){3,10}b$");
+    TEST_ASSERT(worker.regex != NULL);
+    TEST_ASSERT(pthread_create(&thread, NULL, regex_init_match_worker, &worker) == 0);
+    for (i = 0; i < 2000; i++) {
+        TEST_CHECK(flb_regex_init() == 0);
+    }
+    TEST_CHECK(pthread_join(thread, NULL) == 0);
+    TEST_CHECK(worker.failed == 0);
+    flb_regex_destroy(worker.regex);
+
+    /* Sequential overrides must not be overwritten by context creation. */
+    onig_set_match_operation_limit(saved_limit - 1);
+    config = flb_config_init();
+    TEST_CHECK(config != NULL);
+    TEST_CHECK(onig_get_match_operation_limit() == saved_limit - 1);
+    if (config != NULL) {
+        flb_config_exit(config);
+    }
+    onig_set_match_operation_limit(saved_limit);
+}
+
 TEST_LIST = {
+    { "operation_limit_initialization", test_operation_limit_initialization},
     { "cached_operation_limit", test_cached_operation_limit},
     { "operation_limit_linear", test_operation_limit_linear},
     { "operation_limit", test_operation_limit},
