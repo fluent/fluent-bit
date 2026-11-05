@@ -169,6 +169,7 @@ int sampling_span_registry_add_span(struct sampling *ctx, struct sampling_span_r
         hex_trace_id = ctr_id_to_lower_base16(span->trace_id);
         if (!hex_trace_id) {
             flb_plg_error(ctx->ins, "failed to convert trace_id to readable format");
+            ctr_id_destroy(t_entry->trace_id);
             flb_free(t_entry);
             return -1;
         }
@@ -187,6 +188,8 @@ int sampling_span_registry_add_span(struct sampling *ctx, struct sampling_span_r
             flb_plg_error(ctx->ins, "failed to add trace entry to buffer");
             cfl_list_del(&t_entry->_head);
             cfl_list_del(&t_entry->_head_complete);
+            cfl_sds_destroy(t_entry->hex_trace_id);
+            ctr_id_destroy(t_entry->trace_id);
             flb_free(t_entry);
             return -1;
         }

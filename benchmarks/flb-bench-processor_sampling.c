@@ -19,6 +19,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_kv.h>
 #include <ctraces/ctraces.h>
 #include "../plugins/processor_sampling/sampling.h"
 #include "../plugins/processor_sampling/sampling_span_registry.h"
@@ -67,10 +69,6 @@ int sampling_conditions_check(struct sampling *ctx,
     (void) span;
     return FLB_TRUE;
 }
-
-struct probabilistic_settings {
-    int sampling_percentage;
-};
 
 static long diff_ns(struct timespec *s, struct timespec *e)
 {
@@ -204,60 +202,89 @@ static struct ctrace *create_trace(uint64_t trace_key, int spans_per_trace,
 static int run_probabilistic(int iterations, int spans_per_trace, int attrs_per_span,
                              int trace_cardinality, int sampling_percentage,
                              int warmup_iterations, uint64_t seed,
-                             long *elapsed_ns, uint64_t *spans_processed)
+                             long *elapsed_ns, uint64_t *spans_processed,
+                             uint64_t *spans_retained)
 {
-    int i;
-    int ret;
+    uint64_t i;
+    uint64_t trace_index;
+    int ret = -1;
+    int count;
+    char percentage[32];
     struct timespec ts;
     struct timespec te;
     struct ctrace *ctr;
     struct ctrace *out_ctr;
     struct sampling ctx;
+    struct flb_config *config;
     struct flb_processor_instance ins;
-    struct probabilistic_settings settings;
 
     memset(&ctx, 0, sizeof(ctx));
     memset(&ins, 0, sizeof(ins));
     ctx.ins = &ins;
+    ctx.plugin = &sampling_probabilistic_plugin;
+    flb_kv_init(&ctx.plugin_settings_properties);
+    *spans_retained = 0;
 
-    settings.sampling_percentage = sampling_percentage;
-
-    for (i = 0; i < warmup_iterations; i++) {
-        ctr = create_trace((uint64_t) (i % trace_cardinality),
-                           spans_per_trace, attrs_per_span, seed);
-        if (!ctr) {
-            return -1;
-        }
-        out_ctr = NULL;
-        ret = sampling_probabilistic_plugin.cb_do_sampling(&ctx, &settings, ctr, &out_ctr);
-        if (ret != 0) {
-            ctr_destroy(ctr);
-            return -1;
-        }
-        ctr_destroy(out_ctr);
+    config = flb_config_init();
+    if (!config) {
+        return -1;
+    }
+    ins.config = config;
+    ctx.plugin_config_map = flb_config_map_create(config, ctx.plugin->config_map);
+    if (!ctx.plugin_config_map) {
+        goto cleanup;
+    }
+    snprintf(percentage, sizeof(percentage), "%d", sampling_percentage);
+    if (!flb_kv_item_create(&ctx.plugin_settings_properties, "sampling_percentage", percentage)) {
+        goto cleanup;
+    }
+    if (ctx.plugin->cb_init(config, &ctx) != 0) {
+        goto cleanup;
     }
 
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    for (i = 0; i < iterations; i++) {
-        ctr = create_trace((uint64_t) (i % trace_cardinality),
+    for (i = 0; i < (uint64_t) warmup_iterations + iterations; i++) {
+        if (i == warmup_iterations) {
+            clock_gettime(CLOCK_MONOTONIC, &ts);
+        }
+        trace_index = i >= warmup_iterations ? i - warmup_iterations : i;
+        ctr = create_trace(trace_index % trace_cardinality,
                            spans_per_trace, attrs_per_span, seed);
         if (!ctr) {
-            return -1;
+            ret = -1;
+            goto cleanup;
         }
         out_ctr = NULL;
-        ret = sampling_probabilistic_plugin.cb_do_sampling(&ctx, &settings, ctr, &out_ctr);
+        ret = ctx.plugin->cb_do_sampling(&ctx, ctx.plugin_context, ctr, &out_ctr);
         if (ret != 0) {
             ctr_destroy(ctr);
-            return -1;
+            goto cleanup;
+        }
+        count = cfl_list_size(&out_ctr->span_list);
+        if ((sampling_percentage == 0 && count != 0) ||
+            (sampling_percentage == 100 && count != spans_per_trace)) {
+            fprintf(stderr, "sampling boundary check failed\n");
+            ctr_destroy(out_ctr);
+            ret = -1;
+            goto cleanup;
+        }
+        if (i >= warmup_iterations) {
+            *spans_retained += count;
         }
         ctr_destroy(out_ctr);
     }
     clock_gettime(CLOCK_MONOTONIC, &te);
-
     *elapsed_ns = diff_ns(&ts, &te);
     *spans_processed = (uint64_t) iterations * (uint64_t) spans_per_trace;
+    ret = 0;
 
-    return 0;
+cleanup:
+    ctx.plugin->cb_exit(config, ctx.plugin_context);
+    if (ctx.plugin_config_map) {
+        flb_config_map_destroy(ctx.plugin_config_map);
+    }
+    flb_kv_release(&ctx.plugin_settings_properties);
+    flb_config_exit(config);
+    return ret;
 }
 
 static int run_tail_reconcile(int iterations, int spans_per_trace, int attrs_per_span,
@@ -377,6 +404,7 @@ int main(int argc, char **argv)
     uint64_t seed = 0x5eed1234ULL;
     long elapsed_ns;
     uint64_t spans_processed;
+    uint64_t spans_retained;
     double ns_per_span;
     double spans_per_sec;
     enum bench_mode mode = MODE_PROBABILISTIC;
@@ -450,7 +478,7 @@ int main(int argc, char **argv)
         ret = run_probabilistic(iterations, spans_per_trace, attrs_per_span,
                                 trace_cardinality, sampling_percentage,
                                 warmup_iterations, seed,
-                                &elapsed_ns, &spans_processed);
+                                &elapsed_ns, &spans_processed, &spans_retained);
     }
     else {
         ret = run_tail_reconcile(iterations, spans_per_trace, attrs_per_span,
@@ -492,6 +520,9 @@ int main(int argc, char **argv)
     printf("----------------------------\n");
     printf("Total time       : %ld ns (%.3f s)\n", elapsed_ns, elapsed_ns / 1e9);
     printf("Total spans      : %" PRIu64 "\n", spans_processed);
+    if (mode == MODE_PROBABILISTIC) {
+        printf("Retained spans   : %" PRIu64 "\n", spans_retained);
+    }
     printf("Per span         : %.2f ns\n", ns_per_span);
     printf("Throughput       : %.0f spans/s\n", spans_per_sec);
 

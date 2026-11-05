@@ -1997,7 +1997,52 @@ static void test_log_hold_bounds(void)
     TEST_CHECK(ins.log_held_current == 0);
 }
 
+static void processor_borrowed_variants_before_initialization(void)
+{
+    int phase;
+    int ret;
+    struct flb_config *config;
+    struct flb_processor *proc;
+    struct flb_processor_unit *unit;
+    struct cfl_kvlist *settings;
+    struct cfl_variant *variant;
+    struct cfl_variant *percentage;
+
+    for (phase = 0; phase < 3; phase++) {
+        config = flb_config_init();
+        TEST_ASSERT(config != NULL);
+        proc = flb_processor_create(config, "borrowed_variant_test", NULL, 0);
+        TEST_ASSERT(proc != NULL);
+        unit = flb_processor_unit_create(proc, FLB_PROCESSOR_TRACES, "sampling");
+        TEST_ASSERT(unit != NULL);
+        settings = cfl_kvlist_create();
+        TEST_ASSERT(settings != NULL);
+        TEST_ASSERT(cfl_kvlist_insert_int64(settings, "sampling_percentage", 25) == 0);
+        variant = cfl_variant_create_from_kvlist(settings);
+        TEST_ASSERT(variant != NULL);
+        ret = flb_processor_unit_set_property(unit, "sampling_settings", variant);
+        TEST_ASSERT(ret == 0);
+        if (phase == 2) {
+            ret = flb_processor_unit_set_property(unit, "unknown_variant_property", variant);
+            TEST_ASSERT(ret == 0);
+        }
+        if (phase > 0) {
+            ret = flb_processor_instance_check_properties(unit->ctx, config);
+            TEST_CHECK(ret == (phase == 2 ? -1 : 0));
+        }
+        flb_processor_destroy(proc);
+        /* The caller retains ownership, even after configuration rejection. */
+        percentage = cfl_kvlist_fetch(settings, "sampling_percentage");
+        TEST_ASSERT(percentage != NULL);
+        TEST_CHECK(percentage->data.as_int64 == 25);
+        cfl_variant_destroy(variant);
+        flb_config_exit(config);
+    }
+}
+
 TEST_LIST = {
+    {"processor_borrowed_variants_before_initialization",
+      processor_borrowed_variants_before_initialization},
     {"log_hold_bounds", test_log_hold_bounds},
     {"input_stop_idempotent_and_opt_in", test_input_stop_idempotent_and_opt_in},
     {"ingress_resume_ownership", test_ingress_resume_ownership},

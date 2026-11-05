@@ -101,7 +101,7 @@ static int cond_attr_check_kvlist(struct cond_attribute *ctx, struct cfl_kvlist 
                 }
             }
         }
-        else if (ctx->match_type == MATCH_TYPE_REGEX && attribute_type == CFL_VARIANT_STRING) {
+        else if (ctx->match_type == MATCH_TYPE_REGEX && attribute_type == ATTRIBUTE_TYPE_STRING) {
             if (flb_regex_match(str_val->regex_value,
                                 (unsigned char *) var->data.as_string,
                                 cfl_sds_len(var->data.as_string))) {
