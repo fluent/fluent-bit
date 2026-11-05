@@ -1641,7 +1641,14 @@ start_resource:
             break;
         }
 
-        append_v1_logs_metadata_and_fields(ctx, &event, log_record);
+        ret = append_v1_logs_metadata_and_fields(ctx, &event, log_record);
+        if (ret == -1) {
+            /* as before, it can only fail on a memory allocation */
+            ret = FLB_RETRY;
+            free_log_records(&log_record, 1);
+            log_records[log_record_count] = NULL;
+            break;
+        }
 
         ret = FLB_OK;
         log_record_count++;
