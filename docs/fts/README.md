@@ -46,6 +46,16 @@ must be maps; severity fields use `fb.log_field` and `fb.set_severity` rather
 than direct properties. `FtsClassicFilterCallback` documents the separate
 numeric-status `filter_lua` ABI and is not an FTS callback contract.
 
+`fb.try_parse_json(text)` returns a typed value or `nil, error` for ordinary
+parse failures. `fb.decode_json(container, key)` decodes one string field in
+place; log-only `fb.unpack_json(log, field)` replaces the body with a decoded
+object, reading `message` by default. Both mutation helpers return `true` on
+success or `false, error` without mutation for ordinary decoding failures.
+OTel log destinations reject unsigned integers above `INT64_MAX` before mutation.
+Invalid mutation arguments and budget exhaustion still raise errors. Helper
+boolean results are separate from callback actions: do not return them from
+`process`. Ignoring a decoding failure preserves the original data.
+
 Generate the machine-readable manifest from the checkout root with Python
 3.9 or later; no third-party packages, Lua executable or Fluent Bit binary are
 needed:
