@@ -66,10 +66,12 @@ def test_assertion_not_logged(tmp_path, monkeypatch, plugin, log_level):
     config_path = tmp_path / "assertion-logging.yaml"
     config_path.write_text(yaml.safe_dump(config))
     service = FluentBitTestService(str(config_path), shutdown_timeout=30)
+    startup_failed = False
     try:
         try:
             service.start()
         except FluentBitStartupError:
+            startup_failed = True
             # Chronicle validates its log type during startup, which also needs
             # authentication. The rejecting proxy makes that validation fail.
             if plugin != "chronicle":
@@ -83,6 +85,9 @@ def test_assertion_not_logged(tmp_path, monkeypatch, plugin, log_level):
             thread.join(timeout=5)
 
     logs = Path(service.flb.log_file).read_text()
+    if plugin == "chronicle":
+        assert startup_failed
+        assert "Validate log_type failed" in logs
     assert not re.search(r"[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{20,}", logs)
     assert "assertion=" not in logs
     assert "JWT assertion generated" in logs
