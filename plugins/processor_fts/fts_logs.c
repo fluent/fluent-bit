@@ -289,6 +289,120 @@ static struct cfl_variant *log_field(struct cfl_variant *metadata, const char *k
     return value ? value : map_field(metadata, key);
 }
 
+/* Compare live ancestors, including views into a replaced log body. */
+static int json_target_within(lua_State *l, struct cfl_variant *payload)
+{
+    struct fts_value *value;
+    int base;
+    int depth;
+
+    if (!payload) {
+        return FLB_FALSE;
+    }
+
+    base = lua_gettop(l);
+    lua_pushvalue(l, 1);
+    for (depth = 0; depth < FTS_MAX_DEPTH; depth++) {
+        if (fts_resolve_value(l, -1, 0) == payload) {
+            lua_settop(l, base);
+            return FLB_TRUE;
+        }
+        value = lua_touserdata(l, -1);
+        if (value->owned) {
+            break;
+        }
+        fts_lua_getuservalue(l, -1);
+        lua_rawgeti(l, -1, 1);
+        lua_replace(l, base + 1);
+        lua_settop(l, base + 1);
+    }
+    lua_settop(l, base);
+    return FLB_FALSE;
+}
+
+/* Read a typed field from an already validated table without invoking policy code. */
+static struct cfl_variant *json_payload_field(lua_State *l, int table, const char *key)
+{
+    struct cfl_variant *value;
+
+    lua_pushstring(l, key);
+    lua_rawget(l, table);
+    value = fts_resolve_value(l, -1, 0);
+    lua_pop(l, 1);
+    return value;
+}
+
+/* Check every nested integer while charging traversal to the policy budget. */
+static int json_integers_fit(lua_State *l, struct fts_runtime *ctx,
+                             struct cfl_variant *value, int depth)
+{
+    struct cfl_list *head;
+    struct cfl_kvpair *pair;
+    size_t i;
+
+    if (depth >= FTS_MAX_DEPTH || (!ctx->jit && --ctx->instructions_left <= 0)) {
+        return luaL_error(l, "JSON integer validation exceeds nesting or instruction limit");
+    }
+    if (value->type == CFL_VARIANT_UINT) {
+        return value->data.as_uint64 <= INT64_MAX;
+    }
+    if (value->type == CFL_VARIANT_KVLIST) {
+        cfl_list_foreach(head, &value->data.as_kvlist->list) {
+            pair = cfl_list_entry(head, struct cfl_kvpair, _head);
+            if (!json_integers_fit(l, ctx, pair->val, depth + 1)) {
+                return FLB_FALSE;
+            }
+        }
+    }
+    else if (value->type == CFL_VARIANT_ARRAY) {
+        for (i = 0; i < value->data.as_array->entry_count; i++) {
+            if (!json_integers_fit(l, ctx, value->data.as_array->entries[i], depth + 1)) {
+                return FLB_FALSE;
+            }
+        }
+    }
+    return FLB_TRUE;
+}
+
+/* JSON decode failures must be recoverable before OTLP commit validation. */
+static int json_integer_error(lua_State *l)
+{
+    struct fts_runtime *ctx;
+    struct cfl_variant *metadata;
+    struct cfl_variant *value;
+    int event;
+    int payload;
+
+    lua_getallocf(l, (void **) &ctx);
+    lua_rawgeti(l, LUA_REGISTRYINDEX, ctx->json_event_ref);
+    if (!lua_istable(l, -1)) {
+        lua_pushnil(l);
+        return 1;
+    }
+    event = lua_gettop(l);
+    payload = json_target_within(l, json_payload_field(l, event, "body"));
+    if (!payload) {
+        metadata = json_payload_field(l, event, "metadata");
+        payload = json_target_within(l, log_field(metadata, "attributes"));
+    }
+    if (!payload) {
+        lua_pushliteral(l, "context");
+        lua_rawget(l, event);
+        if (lua_istable(l, -1)) {
+            value = json_payload_field(l, lua_gettop(l), "attributes");
+            payload = json_target_within(l, value);
+        }
+        lua_pop(l, 1);
+    }
+    if (payload && !json_integers_fit(l, ctx, fts_resolve_value(l, 2, 0), 0)) {
+        lua_pushliteral(l, "OTel AnyValue integers must fit signed 64 bits");
+    }
+    else {
+        lua_pushnil(l);
+    }
+    return 1;
+}
+
 static void push_changed_fields(lua_State *l, struct record_call *call,
                                 struct cfl_variant *metadata, struct cfl_variant *context)
 {
@@ -578,6 +692,7 @@ static void require_plain_table(lua_State *l, int index, const char *name)
     }
 }
 
+/* Run one log policy with transactional values and validate its committed result. */
 static int run_record(lua_State *l)
 {
     struct record_call *call;
@@ -649,6 +764,8 @@ static int run_record(lua_State *l)
     }
 
     if (has_otel_context(call->metadata)) {
+        lua_pushvalue(l, event);
+        lua_rawseti(l, LUA_REGISTRYINDEX, call->ctx->json_event_ref);
         lua_rawgeti(l, LUA_REGISTRYINDEX, call->ctx->module_ref);
         lua_getfield(l, -1, "_attach");
         lua_pushvalue(l, event);
@@ -1976,8 +2093,22 @@ failure:
     return FLB_PROCESSOR_FAILURE;
 }
 
+/* Reserve callback context storage and expose native and Lua log helpers. */
 static int register_log_helpers(lua_State *l)
 {
+    struct fts_runtime *ctx;
+
+    lua_getallocf(l, (void **) &ctx);
+    lua_pushboolean(l, 0);
+    ctx->json_event_ref = luaL_ref(l, LUA_REGISTRYINDEX);
+
+    lua_getglobal(l, "package");
+    lua_getfield(l, -1, "loaded");
+    lua_getfield(l, -1, "fluentbit");
+    lua_pushcfunction(l, json_integer_error);
+    lua_setfield(l, -2, "_fts_json_integer_error");
+    lua_pop(l, 3);
+
     if (fts_load_helpers(l, fts_log_helpers, sizeof(fts_log_helpers) - 1,
                          "fluentbit.log_helpers") != 0) {
         return -1;
