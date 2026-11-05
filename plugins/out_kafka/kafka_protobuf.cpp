@@ -229,6 +229,9 @@ int flb_kafka_protobuf_compile(struct flb_kafka_protobuf *ctx,
     }
 }
 
+/** Encode a Confluent frame and report a payload-free diagnostic on failure.
+ * Invalid data returns -1; allocation failures or exceptions return -2.
+ */
 int flb_kafka_protobuf_encode(struct flb_kafka_protobuf *ctx, int32_t schema_id,
                             const char *json, size_t json_size,
                             char **out, size_t *out_size,
@@ -252,7 +255,8 @@ int flb_kafka_protobuf_encode(struct flb_kafka_protobuf *ctx, int32_t schema_id,
         options.ignore_unknown_fields = false;
         status = pb::util::JsonStringToMessage(std::string(json, json_size), message.get(), options);
         if (!status.ok()) {
-            report_error(error, error_size, status.ToString().c_str());
+            /* Parser status text can contain record values. Keep logs payload-free. */
+            report_error(error, error_size, "JSON does not match Protobuf schema");
             return -1;
         }
         if (!message->IsInitialized()) {
@@ -271,7 +275,7 @@ int flb_kafka_protobuf_encode(struct flb_kafka_protobuf *ctx, int32_t schema_id,
         result = static_cast<char *>(std::malloc(payload.size()));
         if (result == nullptr) {
             report_error(error, error_size, "cannot allocate Protobuf payload");
-            return -1;
+            return -2;
         }
         std::memcpy(result, payload.data(), payload.size());
         *out = result;
@@ -280,7 +284,7 @@ int flb_kafka_protobuf_encode(struct flb_kafka_protobuf *ctx, int32_t schema_id,
     }
     catch (...) {
         report_error(error, error_size, "exception while encoding Protobuf message");
-        return -1;
+        return -2;
     }
 }
 
