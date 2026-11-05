@@ -15,7 +15,7 @@
 ---@alias FtsWindowCallback fun(log: FtsLogRecord): "hold"?
 -- Compatibility documentation for filter_lua only: FTS does not call this ABI.
 ---@alias FtsClassicResultCode -1|0|1|2
----@alias FtsClassicFilterCallback fun(tag: string, timestamp: FtsTimestamp, record: table): FtsClassicResultCode, FtsTimestamp?, table?
+---@alias FtsClassicFilterCallback fun(tag: string, timestamp: FtsTimestamp|number, record: table): FtsClassicResultCode, FtsTimestamp|number|nil, table?
 ---@alias FtsValueKind "map"|"array"|"string"|"bytes"|"bool"|"int64"|"uint64"|"double"|"null"
 ---@alias FtsWritableValue FtsValue|string|boolean|number
 ---@alias FtsNumeric FtsInt64|FtsUInt64|FtsDouble
@@ -174,12 +174,12 @@ function FtsNull:value() end
 
 ---@class FtsResource
 ---@field attributes FtsMap # Mutate through set/remove; do not replace this view.
----@field schema_url string?
----@field dropped_attributes_count integer? # Metric/span contexts; logs expose this through context maps.
+---@field schema_url? string?
+---@field dropped_attributes_count? integer? # Metric/span contexts; logs expose this through context maps.
 
 ---@class FtsScope: FtsResource
----@field name string?
----@field version string?
+---@field name? string?
+---@field version? string?
 
 ---@class FtsLogContext
 ---@field attributes FtsMap
