@@ -54,13 +54,23 @@ def _responses():
     }
 
 
-def _service(tmp_path, *, responses=None, event=None, tls=False, samples=3):
+def _service(
+    tmp_path,
+    *,
+    responses=None,
+    event=None,
+    tls=False,
+    samples=3,
+    output_options=None,
+):
     config = yaml.safe_load((Path(__file__).parent / "../config/out_kafka_avro_schema_registry.yaml").read_text())
     config["pipeline"]["inputs"][0].update(dummy=json.dumps(EVENT if event is None else event), samples=samples)
     output = config["pipeline"]["outputs"][0]
     output.update(format="protobuf", schema_registry_subject="events-value", schema_registry_version="3",
                   protobuf_message="registry.Envelope.Event", schema_registry_http_user="registry-user",
                   schema_registry_http_passwd="registry-password", workers=2)
+    if output_options:
+        output.update(output_options)
     options = {"responses": _responses() if responses is None else responses}
     if tls:
         cert_dir = (Path(__file__).parent / "../../in_splunk/certificate").resolve()
@@ -127,6 +137,43 @@ def test_protobuf_schema_registry_reference_cache_and_payload(tmp_path, tls):
     assert all(r["method"] == "GET" for r in requests)
     assert all(r["headers"]["Authorization"] == "Basic cmVnaXN0cnktdXNlcjpyZWdpc3RyeS1wYXNzd29yZA=="
                for r in requests)
+
+
+def test_protobuf_schema_registry_record_headers(tmp_path):
+    event = {
+        **EVENT,
+        "kafka_headers": {
+            "trace-id": "abc-123",
+            "empty": "",
+            "null": None,
+        },
+    }
+    service = _service(
+        tmp_path,
+        event=event,
+        samples=1,
+        output_options={
+            "headers_key": "kafka_headers",
+            "rdkafka.api.version.request": True,
+        },
+    )
+    service.start()
+    try:
+        messages = service.wait_for_messages(1, timeout=30)
+    finally:
+        service.stop()
+
+    message = messages[0]
+    assert message["headers"] == [
+        ("trace-id", b"abc-123"),
+        ("empty", b""),
+        ("null", None),
+    ]
+
+    event_class = _event_class()
+    decoded = event_class.FromString(message["value"][8:])
+    assert decoded.message == "hello protobuf"
+    assert decoded.number == 7
 
 
 @pytest.mark.parametrize("event", [

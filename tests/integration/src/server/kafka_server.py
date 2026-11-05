@@ -18,11 +18,13 @@ import logging
 import socket
 import struct
 import threading
+import time
 
 
 logger = logging.getLogger(__name__)
 
 API_KEY_PRODUCE = 0
+API_KEY_FETCH = 1
 API_KEY_METADATA = 3
 API_KEY_API_VERSIONS = 18
 
@@ -37,6 +39,7 @@ data_storage = {
 server_thread = None
 server_socket = None
 server_port = None
+produce_response_delay = 0
 server_stop_event = threading.Event()
 server_ready_event = threading.Event()
 
@@ -76,6 +79,35 @@ def _read_int32(data, offset):
 
 def _read_int64(data, offset):
     return struct.unpack_from(">q", data, offset)[0], offset + 8
+
+
+def _read_int8(data, offset):
+    return data[offset], offset + 1
+
+
+def _read_varint(data, offset, limit=None):
+    value = 0
+    shift = 0
+
+    if limit is None:
+        limit = len(data)
+
+    while True:
+        if offset >= limit:
+            raise ValueError("Truncated Kafka varint")
+        byte = data[offset]
+        offset += 1
+        value |= (byte & 0x7F) << shift
+        if byte & 0x80 == 0:
+            return value, offset
+        shift += 7
+        if shift >= 64:
+            raise ValueError("Kafka varint is too large")
+
+
+def _read_varint_signed(data, offset, limit=None):
+    value, offset = _read_varint(data, offset, limit)
+    return (value >> 1) ^ -(value & 1), offset
 
 
 def _read_string(data, offset):
@@ -146,22 +178,26 @@ def _encode_metadata_response(topics, host, port):
     return b"".join(body)
 
 
-def _encode_produce_response(topic, partition=0, base_offset=0):
-    return b"".join(
-        [
-            struct.pack(">i", 1),
-            _encode_string(topic),
-            struct.pack(">i", 1),
-            struct.pack(">i", partition),
-            struct.pack(">h", 0),
-            struct.pack(">q", base_offset),
-        ]
-    )
+def _encode_produce_response(topic, api_version, partition=0, base_offset=0):
+    body = [
+        struct.pack(">i", 1),
+        _encode_string(topic),
+        struct.pack(">i", 1),
+        struct.pack(">i", partition),
+        struct.pack(">h", 0),
+        struct.pack(">q", base_offset),
+    ]
+    if api_version >= 2:
+        body.append(struct.pack(">q", -1))
+    if api_version >= 1:
+        body.append(struct.pack(">i", 0))
+    return b"".join(body)
 
 
 def _encode_api_versions_response(api_version):
     api_versions = [
-        (API_KEY_PRODUCE, 0, 0),
+        (API_KEY_PRODUCE, 0, 3),
+        (API_KEY_FETCH, 0, 4),
         (API_KEY_METADATA, 0, 0),
         (API_KEY_API_VERSIONS, 0, 3),
     ]
@@ -243,6 +279,8 @@ def _parse_message_set(data):
                 "attributes": attributes,
                 "key": key,
                 "value": value,
+                "headers": [],
+                "batch_index": None,
             }
         )
         offset = end
@@ -250,8 +288,133 @@ def _parse_message_set(data):
     return messages
 
 
-def _parse_produce_request(body):
-    required_acks, offset = _read_int16(body, 0)
+def _parse_record_batch(data):
+    messages = []
+    offset = 0
+    batch_index = 0
+
+    while offset < len(data):
+        if len(data) - offset < 61:
+            break
+
+        message_offset, offset = _read_int64(data, offset)
+        batch_length, offset = _read_int32(data, offset)
+        batch_end = offset + batch_length
+        if batch_length < 49 or batch_end > len(data):
+            raise ValueError("Invalid Kafka record batch length")
+
+        _, offset = _read_int32(data, offset)  # partition leader epoch
+        magic, offset = _read_int8(data, offset)
+        if magic != 2:
+            raise ValueError("Unsupported Kafka record batch magic")
+
+        offset += 4  # CRC
+        batch_attributes, offset = _read_int16(data, offset)
+        if batch_attributes & 0x07:
+            raise ValueError("Compressed Kafka record batches are not supported by the fake broker")
+
+        _, offset = _read_int32(data, offset)  # last offset delta
+        offset += 8  # first timestamp
+        offset += 8  # max timestamp
+        offset += 8  # producer id
+        offset += 2  # producer epoch
+        offset += 4  # base sequence
+        record_count, offset = _read_int32(data, offset)
+        if record_count < 0:
+            raise ValueError("Invalid Kafka record count")
+
+        for _ in range(record_count):
+            record_length, offset = _read_varint_signed(data, offset, batch_end)
+            record_end = offset + record_length
+            if record_length < 0 or record_end > batch_end:
+                raise ValueError("Invalid Kafka record length")
+            if offset >= record_end:
+                raise ValueError("Truncated Kafka record")
+
+            attributes, offset = _read_int8(data, offset)
+            _, offset = _read_varint_signed(data, offset, record_end)  # timestamp delta
+            offset_delta, offset = _read_varint_signed(data, offset, record_end)
+
+            key_length, offset = _read_varint_signed(data, offset, record_end)
+            if key_length < 0:
+                key = None
+            else:
+                if offset + key_length > record_end:
+                    raise ValueError("Invalid Kafka record key length")
+                key = data[offset:offset + key_length]
+                offset += key_length
+
+            value_length, offset = _read_varint_signed(data, offset, record_end)
+            if value_length < 0:
+                value = None
+            else:
+                if offset + value_length > record_end:
+                    raise ValueError("Invalid Kafka record value length")
+                value = data[offset:offset + value_length]
+                offset += value_length
+
+            header_count, offset = _read_varint_signed(data, offset, record_end)
+            if header_count < 0:
+                raise ValueError("Invalid Kafka record header count")
+
+            headers = []
+            for _ in range(header_count):
+                header_key_length, offset = _read_varint_signed(data, offset, record_end)
+                if header_key_length < 0 or offset + header_key_length > record_end:
+                    raise ValueError("Invalid Kafka header key length")
+                header_key = data[offset:offset + header_key_length].decode(
+                    "utf-8", errors="replace"
+                )
+                offset += header_key_length
+
+                header_value_length, offset = _read_varint_signed(
+                    data,
+                    offset,
+                    record_end,
+                )
+                if header_value_length < 0:
+                    header_value = None
+                else:
+                    if offset + header_value_length > record_end:
+                        raise ValueError("Invalid Kafka header value length")
+                    header_value = data[offset:offset + header_value_length]
+                    offset += header_value_length
+                headers.append((header_key, header_value))
+
+            if offset != record_end:
+                raise ValueError("Kafka record length does not match its fields")
+
+            messages.append(
+                {
+                    "offset": message_offset + offset_delta,
+                    "magic": magic,
+                    "attributes": attributes,
+                    "key": key,
+                    "value": value,
+                    "headers": headers,
+                    "batch_index": batch_index,
+                }
+            )
+
+        offset = batch_end
+        batch_index += 1
+
+    return messages
+
+
+def _parse_records(data):
+    if len(data) >= 17 and data[16] == 2:
+        return _parse_record_batch(data)
+    return _parse_message_set(data)
+
+
+def _parse_produce_request(body, api_version):
+    if api_version >= 3:
+        _, offset = _read_string(body, 0)
+    else:
+        offset = 0
+
+    required_acks, offset = _read_int16(body, offset)
     timeout_ms, offset = _read_int32(body, offset)
     topic_count, offset = _read_array_length(body, offset)
     produced_topics = []
@@ -264,7 +427,7 @@ def _parse_produce_request(body):
         for _ in range(partition_count):
             partition, offset = _read_int32(body, offset)
             message_set, offset = _read_bytes(body, offset)
-            records = _parse_message_set(message_set or b"")
+            records = _parse_records(message_set or b"")
             partitions.append(
                 {
                     "partition": partition,
@@ -316,7 +479,7 @@ def _handle_request(sock, request, host, port):
         return
 
     if request["api_key"] == API_KEY_PRODUCE:
-        produced = _parse_produce_request(request["body"])
+        produced = _parse_produce_request(request["body"], request["api_version"])
         for topic_data in produced["topics"]:
             for partition_data in topic_data["partitions"]:
                 for record in partition_data["records"]:
@@ -328,15 +491,20 @@ def _handle_request(sock, request, host, port):
                             "value": record["value"],
                             "magic": record["magic"],
                             "attributes": record["attributes"],
+                            "headers": record["headers"],
+                            "batch_index": record["batch_index"],
+                            "produce_correlation_id": request["correlation_id"],
                             "client_id": request["client_id"],
                         }
                     )
 
         first_topic = produced["topics"][0]["topic"] if produced["topics"] else "test"
+        if produce_response_delay > 0:
+            time.sleep(produce_response_delay)
         sock.sendall(
             _encode_response(
                 request["correlation_id"],
-                _encode_produce_response(first_topic),
+                _encode_produce_response(first_topic, request["api_version"]),
             )
         )
         return
@@ -399,10 +567,11 @@ def _server_loop(host, port):
         server_socket = None
 
 
-def kafka_server_run(port, host="127.0.0.1"):
-    global server_thread
+def kafka_server_run(port, host="127.0.0.1", response_delay=0):
+    global produce_response_delay, server_thread
 
     reset_kafka_server_state()
+    produce_response_delay = response_delay
     server_thread = threading.Thread(target=_server_loop, args=(host, port), daemon=True)
     server_thread.start()
     server_ready_event.wait(timeout=5)
