@@ -420,7 +420,7 @@ static void test_operation_limit(void)
     memset(text, 'a', sizeof(text) - 2);
     text[sizeof(text) - 2] = '!';
     text[sizeof(text) - 1] = '\0';
-    regex = flb_regex_create("^(a+)+$");
+    regex = flb_regex_create("^(a+)+\\1$");
     TEST_ASSERT(regex != NULL);
     TEST_CHECK(flb_regex_match(regex, (unsigned char *) text, strlen(text)) ==
                ONIGERR_MATCH_OPERATION_LIMIT_OVER);
@@ -458,7 +458,27 @@ static void test_operation_limit_linear(void)
     flb_free(text);
 }
 
+static void test_cached_operation_limit(void)
+{
+    struct flb_regex *regex;
+    struct flb_regex_search result;
+    char text[1002];
+
+    TEST_CHECK(flb_regex_init() == 0);
+    memset(text, 'a', sizeof(text) - 2);
+    text[sizeof(text) - 2] = '!';
+    text[sizeof(text) - 1] = '\0';
+    regex = flb_regex_create("^(a+)+$");
+    TEST_ASSERT(regex != NULL);
+    TEST_CHECK(flb_regex_match(regex, (unsigned char *) text, strlen(text)) == 0);
+    TEST_CHECK(flb_regex_do(regex, text, strlen(text), &result) == -1);
+    TEST_CHECK(result.region == NULL);
+    TEST_CHECK(flb_regex_match(regex, (unsigned char *) "aaaa", 4) == 1);
+    flb_regex_destroy(regex);
+}
+
 TEST_LIST = {
+    { "cached_operation_limit", test_cached_operation_limit},
     { "operation_limit_linear", test_operation_limit_linear},
     { "operation_limit", test_operation_limit},
     { "basic" , test_basic},
