@@ -1078,6 +1078,109 @@ void test_http_response_chunked_oversized_length()
     test_ctx_destroy(ctx);
 }
 
+/*
+ * A streaming caller consumes the decoded payload while the buffer still ends
+ * with the first hex digit of the next chunk-size line ("1" of "1a\r\n").
+ * Consuming must leave that digit undecoded, so the next chunk is parsed as
+ * 0x1a bytes and not as a 0xa-byte chunk followed by garbage.
+ */
+void test_http_response_chunked_consume_keeps_partial_size_line()
+{
+    int ret;
+    struct test_ctx *ctx;
+    struct flb_http_client *c;
+    const char *next = "abcdefghijklmnopqrstuvwxy\n";
+
+    ctx = test_ctx_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        exit(EXIT_FAILURE);
+    }
+
+    c = flb_http_client(ctx->u_conn, FLB_HTTP_GET, "/", NULL, 0,
+                        "127.0.0.1", 80, NULL, FLB_HTTP_11);
+    if (!TEST_CHECK(c != NULL)) {
+        TEST_MSG("flb_http_client failed");
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    append_response_fragment(c,
+                             "HTTP/1.1 200 OK\r\n"
+                             "Transfer-Encoding: chunked\r\n"
+                             "\r\n"
+                             "6\r\nline1\n\r\n"
+                             "1");
+    ret = flb_http_client_process_response_buffer(c);
+    TEST_CHECK(ret == FLB_HTTP_CHUNK_AVAILABLE);
+    TEST_CHECK(c->resp.chunk_processed_end - c->resp.payload == 6);
+    TEST_CHECK(strncmp(c->resp.payload, "line1\n", 6) == 0);
+
+    ret = flb_http_client_consume_payload(c, 6);
+    TEST_CHECK(ret == FLB_HTTP_OK);
+    TEST_CHECK(c->resp.payload_size == 1);
+    TEST_CHECK(c->resp.chunk_processed_end == c->resp.payload);
+    TEST_MSG("undecoded bytes marked as decoded: %ld",
+             (long) (c->resp.chunk_processed_end - c->resp.payload));
+
+    append_response_fragment(c, "a\r\nabcdefghijklmnopqrstuvwxy\n\r\n");
+    ret = flb_http_client_process_response_buffer(c);
+    TEST_CHECK(ret == FLB_HTTP_CHUNK_AVAILABLE);
+    TEST_MSG("ret=%d (expected FLB_HTTP_CHUNK_AVAILABLE=%d)", ret, FLB_HTTP_CHUNK_AVAILABLE);
+    TEST_CHECK(c->resp.payload_size == strlen(next));
+    TEST_CHECK(c->resp.chunk_processed_end - c->resp.payload == (ssize_t) strlen(next));
+    TEST_CHECK(strncmp(c->resp.payload, next, strlen(next)) == 0);
+
+    flb_http_client_destroy(c);
+    test_ctx_destroy(ctx);
+}
+
+/* Consuming the whole decoded payload leaves the decoder ready for the next chunk. */
+void test_http_response_chunked_consume_full_payload()
+{
+    int ret;
+    struct test_ctx *ctx;
+    struct flb_http_client *c;
+
+    ctx = test_ctx_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        exit(EXIT_FAILURE);
+    }
+
+    c = flb_http_client(ctx->u_conn, FLB_HTTP_GET, "/", NULL, 0,
+                        "127.0.0.1", 80, NULL, FLB_HTTP_11);
+    if (!TEST_CHECK(c != NULL)) {
+        TEST_MSG("flb_http_client failed");
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    append_response_fragment(c,
+                             "HTTP/1.1 200 OK\r\n"
+                             "Transfer-Encoding: chunked\r\n"
+                             "\r\n"
+                             "6\r\nline1\n\r\n");
+    ret = flb_http_client_process_response_buffer(c);
+    TEST_CHECK(ret == FLB_HTTP_CHUNK_AVAILABLE);
+
+    ret = flb_http_client_consume_payload(c, 6);
+    TEST_CHECK(ret == FLB_HTTP_OK);
+    TEST_CHECK(c->resp.payload_size == 0);
+    TEST_CHECK(c->resp.chunk_processed_end == c->resp.payload);
+
+    append_response_fragment(c, "6\r\nline2\n\r\n");
+    ret = flb_http_client_process_response_buffer(c);
+    TEST_CHECK(ret == FLB_HTTP_CHUNK_AVAILABLE);
+    TEST_CHECK(c->resp.payload_size == 6);
+    TEST_CHECK(strncmp(c->resp.payload, "line2\n", 6) == 0);
+
+    /* consuming more than the payload is rejected */
+    ret = flb_http_client_consume_payload(c, 7);
+    TEST_CHECK(ret == FLB_HTTP_ERROR);
+
+    flb_http_client_destroy(c);
+    test_ctx_destroy(ctx);
+}
+
 void test_http_timeout_setters_preserve_upstream_io_timeout()
 {
     struct test_ctx *ctx;
@@ -1337,6 +1440,8 @@ TEST_LIST = {
     { "response_chunked_partial_trailer_preserves_chunk_available", test_http_response_chunked_partial_trailer_preserves_chunk_available},
     { "response_chunked_invalid_size_suffix", test_http_response_chunked_invalid_size_suffix},
     { "response_chunked_oversized_length", test_http_response_chunked_oversized_length},
+    { "response_chunked_consume_keeps_partial_size_line", test_http_response_chunked_consume_keeps_partial_size_line},
+    { "response_chunked_consume_full_payload", test_http_response_chunked_consume_full_payload},
     { "timeout_setters_preserve_upstream_io_timeout", test_http_timeout_setters_preserve_upstream_io_timeout},
     { 0 }
 };
