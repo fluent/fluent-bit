@@ -34,6 +34,7 @@ struct flb_http1_server_session {
     struct mk_server                inner_server;
     int                             initialized;
     size_t                          header_scan_offset;
+    size_t                          request_line_version_offset;
     int                             request_line_state;
     int                             headers_complete;
     struct flb_http_stream          stream;

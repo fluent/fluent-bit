@@ -508,6 +508,7 @@ int flb_http1_server_session_init(struct flb_http1_server_session *session,
 
     session->initialized = FLB_TRUE;
     session->header_scan_offset = 0;
+    session->request_line_version_offset = 0;
     session->request_line_state = MK_ST_REQ_METHOD;
     session->headers_complete = FLB_FALSE;
 
@@ -588,11 +589,21 @@ int flb_http1_server_session_ingest(struct flb_http1_server_session *session,
             else if (session->request_line_state == MK_ST_REQ_URI) {
                 if (data[offset - 1] == ' ') {
                     session->request_line_state = MK_ST_REQ_PROT_VERSION;
+                    session->request_line_version_offset = offset;
                 }
                 else if (data[offset - 1] == '\r' || data[offset - 1] == '\n') {
                     session->stream.status = HTTP_STREAM_STATUS_ERROR;
                     return HTTP_SERVER_PROVIDER_ERROR;
                 }
+            }
+            else if (session->request_line_state == MK_ST_REQ_PROT_VERSION &&
+                     offset - session->request_line_version_offset == 7) {
+                /* Reject an invalid protocol as soon as its prefix is available. */
+                if (memcmp(data + session->request_line_version_offset, "HTTP/1.", 7) != 0) {
+                    session->stream.status = HTTP_STREAM_STATUS_ERROR;
+                    return HTTP_SERVER_PROVIDER_ERROR;
+                }
+                session->request_line_state = MK_ST_FIRST_CONTINUE;
             }
 
             if (offset >= 4 && memcmp(data + offset - 4, "\r\n\r\n", 4) == 0) {
@@ -628,6 +639,7 @@ int flb_http1_server_session_ingest(struct flb_http1_server_session *session,
 
         http1_evict_request(session);
         session->header_scan_offset = 0;
+        session->request_line_version_offset = 0;
         session->request_line_state = MK_ST_REQ_METHOD;
         session->headers_complete = FLB_FALSE;
     }
