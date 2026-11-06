@@ -593,6 +593,12 @@ static void in_tail_resume(void *data, struct flb_config *config)
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
     {
+     FLB_CONFIG_MAP_BOOL, "follow_symlinks", "true",
+     0, FLB_TRUE, offsetof(struct flb_tail_config, follow_symlinks),
+     "Follow symbolic links when accessing files. Set false to reject symbolic links "
+     "and Windows reparse points in file paths."
+    },
+    {
      FLB_CONFIG_MAP_CLIST, "path", NULL,
      0, FLB_TRUE, offsetof(struct flb_tail_config, path_list),
      "pattern specifying log files or multiple ones through "

@@ -52,6 +52,7 @@
 #endif
 
 struct flb_tail_config {
+    int follow_symlinks;
     int fd_notify;             /* inotify fd               */
     flb_pipefd_t ch_manager[2];    /* pipe: channel manager    */
     flb_pipefd_t ch_pending[2];    /* pipe: pending events     */
