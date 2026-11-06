@@ -5,6 +5,7 @@
 
 #include "data/td/json_td.h"
 #include "../../plugins/out_gcs/gcs.h"
+#include <fluent-bit/tls/flb_tls.h>
 #include "../../plugins/out_gcs/gcs_store.h"
 
 /* Local 'test' credentials file */
@@ -13,6 +14,10 @@
 #define SERVICE_CREDENTIALS_EXTRA_FIELDS \
     FLB_TESTS_DATA_PATH "/data/gcs/gcs-credentials-extra-fields.json"
 #define TEST_PRIVATE_KEY FLB_TESTS_DATA_PATH "/data/tls/private_key.pem"
+#define TEST_CLIENT_CERT FLB_TESTS_DATA_PATH "/data/tls/client_certificate.pem"
+#define TEST_CLIENT_KEY FLB_TESTS_DATA_PATH "/data/tls/client_private_key.pem"
+#define TEST_CA_CERT FLB_TESTS_DATA_PATH "/data/tls/ca_certificate.pem"
+#define TEST_UNRELATED_CERT FLB_TESTS_DATA_PATH "/data/tls/certificate.pem"
 
 static char *create_test_store_directory(const char *postfix)
 {
@@ -1865,6 +1870,592 @@ void flb_test_gcs_total_file_size_zero_disables_size_trigger(void)
     flb_free(store_dir);
 }
 
+/*
+ * The body of a PEM certificate is the base64 DER the STS subject token
+ * carries: strip the markers and line breaks to get the expected element
+ */
+static flb_sds_t pem_body_base64(const char *path)
+{
+    char *buf;
+    char *p;
+    char *end;
+    flb_sds_t out;
+
+    buf = mk_file_to_buffer(path);
+    if (!buf) {
+        return NULL;
+    }
+
+    p = strstr(buf, "-----BEGIN CERTIFICATE-----");
+    end = p ? strstr(p, "-----END CERTIFICATE-----") : NULL;
+    if (!p || !end) {
+        flb_free(buf);
+        return NULL;
+    }
+    p += sizeof("-----BEGIN CERTIFICATE-----") - 1;
+
+    out = flb_sds_create_size(end - p);
+    for (; out && p < end; p++) {
+        if (*p != '\n' && *p != '\r') {
+            if (flb_sds_cat_safe(&out, p, 1) < 0) {
+                flb_sds_destroy(out);
+                out = NULL;
+            }
+        }
+    }
+    flb_free(buf);
+    return out;
+}
+
+/* Write 'content' to '<dir>/<name>' and return the path */
+static flb_sds_t write_test_file(const char *dir, const char *name,
+                                 const char *content)
+{
+    FILE *fp;
+    flb_sds_t path;
+
+    path = flb_sds_create_size(strlen(dir) + strlen(name) + 2);
+    if (!path) {
+        return NULL;
+    }
+    flb_sds_printf(&path, "%s/%s", dir, name);
+
+    fp = fopen(path, "w");
+    if (!fp) {
+        flb_sds_destroy(path);
+        return NULL;
+    }
+    fputs(content, fp);
+    fclose(fp);
+    return path;
+}
+
+/* Concatenate PEM files into '<dir>/<name>' and return the path */
+static flb_sds_t concat_test_files(const char *dir, const char *name,
+                                   const char *first, const char *second)
+{
+    char *a;
+    char *b;
+    flb_sds_t content;
+    flb_sds_t path;
+
+    a = mk_file_to_buffer(first);
+    b = mk_file_to_buffer(second);
+    if (!a || !b) {
+        flb_free(a);
+        flb_free(b);
+        return NULL;
+    }
+    content = flb_sds_create(a);
+    flb_sds_cat_safe(&content, b, strlen(b));
+    path = write_test_file(dir, name, content);
+    flb_sds_destroy(content);
+    flb_free(a);
+    flb_free(b);
+    return path;
+}
+
+/* output instance id of the context last built by x509_federation_ctx */
+static int x509_last_out_ffd = -1;
+
+/*
+ * Build a lib input -> gcs output context with identity federation enabled
+ * for 'source'. Optional arguments left NULL are not set; a source other
+ * than 'x509' also gets an 'identity_token_file'. The output instance id is
+ * stored in x509_last_out_ffd so the caller can set more properties.
+ */
+static flb_ctx_t *x509_federation_ctx(const char *store_dir,
+                                      const char *source,
+                                      const char *crt_file,
+                                      const char *key_file,
+                                      const char *chain_file,
+                                      const char *service_account)
+{
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "enable_identity_federation", "true", NULL);
+    flb_output_set(ctx, out_ffd, "identity_federation_source", source, NULL);
+    flb_output_set(ctx, out_ffd, "project_number", "123456789", NULL);
+    flb_output_set(ctx, out_ffd, "pool_id", "my-pool", NULL);
+    flb_output_set(ctx, out_ffd, "provider_id", "my-provider", NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+    if (strcmp(source, "x509") != 0) {
+        flb_output_set(ctx, out_ffd, "identity_token_file", TEST_PRIVATE_KEY,
+                       NULL);
+    }
+    if (crt_file) {
+        flb_output_set(ctx, out_ffd, "tls.crt_file", crt_file, NULL);
+    }
+    if (key_file) {
+        flb_output_set(ctx, out_ffd, "tls.key_file", key_file, NULL);
+    }
+    if (chain_file) {
+        flb_output_set(ctx, out_ffd, "x509_trust_chain_file", chain_file, NULL);
+    }
+    if (service_account) {
+        flb_output_set(ctx, out_ffd, "google_service_account", service_account,
+                       NULL);
+    }
+    x509_last_out_ffd = out_ffd;
+    return ctx;
+}
+
+/* Start 'ctx' in test mode and compare the exported subject token */
+static void check_x509_subject_token(flb_ctx_t *ctx, const char *expected)
+{
+    int ret;
+    char *token;
+
+    setenv("FLB_GCS_PLUGIN_UNDER_TEST", "true", 1);
+    unsetenv("TEST_GCS_X509_SUBJECT_TOKEN");
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    token = getenv("TEST_GCS_X509_SUBJECT_TOKEN");
+    TEST_CHECK(token != NULL);
+    TEST_CHECK_(token && expected && strcmp(token, expected) == 0,
+                "unexpected subject token: %s", token ? token : "(null)");
+
+    if (ret == 0) {
+        flb_stop(ctx);
+    }
+    flb_destroy(ctx);
+    unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+    unsetenv("TEST_GCS_X509_SUBJECT_TOKEN");
+}
+
+/* "[\"<a>\",\"<b>\"]" from the PEM bodies of two files; 'second' may be NULL */
+static flb_sds_t expected_x509_subject_token(const char *first,
+                                             const char *second)
+{
+    flb_sds_t a;
+    flb_sds_t b = NULL;
+    flb_sds_t out = NULL;
+    flb_sds_t tmp;
+
+    a = pem_body_base64(first);
+    if (second) {
+        b = pem_body_base64(second);
+    }
+    if (!a || (second && !b)) {
+        goto cleanup;
+    }
+
+    out = flb_sds_create_size(flb_sds_len(a) + (b ? flb_sds_len(b) : 0) + 16);
+    if (!out) {
+        goto cleanup;
+    }
+    if (b) {
+        tmp = flb_sds_printf(&out, "[\"%s\",\"%s\"]", a, b);
+    }
+    else {
+        tmp = flb_sds_printf(&out, "[\"%s\"]", a);
+    }
+    if (!tmp) {
+        flb_sds_destroy(out);
+        out = NULL;
+    }
+
+cleanup:
+    flb_sds_destroy(a);
+    flb_sds_destroy(b);
+    return out;
+}
+
+/* Leaf certificate plus a CA chain file: the token is [leaf, CA] */
+void flb_test_gcs_x509_federation_subject_token(void)
+{
+    flb_ctx_t *ctx;
+    char *store_dir;
+    flb_sds_t expected;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-x509-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    expected = expected_x509_subject_token(TEST_CLIENT_CERT, TEST_CA_CERT);
+    TEST_CHECK(expected != NULL);
+    if (!expected) {
+        flb_free(store_dir);
+        return;
+    }
+
+    ctx = x509_federation_ctx(store_dir, "x509", TEST_CLIENT_CERT,
+                              TEST_CLIENT_KEY, TEST_CA_CERT, NULL);
+    check_x509_subject_token(ctx, expected);
+
+    flb_sds_destroy(expected);
+    flb_free(store_dir);
+}
+
+/* A chain file that only repeats the leaf yields a token with the leaf once */
+void flb_test_gcs_x509_federation_chain_repeats_leaf(void)
+{
+    flb_ctx_t *ctx;
+    char *store_dir;
+    flb_sds_t expected;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-x509-leaf-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    expected = expected_x509_subject_token(TEST_CLIENT_CERT, NULL);
+    TEST_CHECK(expected != NULL);
+    if (!expected) {
+        flb_free(store_dir);
+        return;
+    }
+
+    /* a chain file that only repeats the leaf must not duplicate it */
+    ctx = x509_federation_ctx(store_dir, "x509", TEST_CLIENT_CERT,
+                              TEST_CLIENT_KEY, TEST_CLIENT_CERT, NULL);
+    check_x509_subject_token(ctx, expected);
+
+    flb_sds_destroy(expected);
+    flb_free(store_dir);
+}
+
+/*
+ * A fullchain 'tls.crt_file' used with the same fullchain as chain file sends
+ * every certificate exactly once
+ */
+void flb_test_gcs_x509_federation_bundled_chain(void)
+{
+    flb_ctx_t *ctx;
+    char *store_dir;
+    flb_sds_t bundle;
+    flb_sds_t expected;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-x509-bundle-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    /*
+     * fullchain style tls.crt_file (leaf + CA) with the same full chain as
+     * the chain file: every certificate must appear once
+     */
+    bundle = concat_test_files(store_dir, "fullchain.pem",
+                               TEST_CLIENT_CERT, TEST_CA_CERT);
+    expected = expected_x509_subject_token(TEST_CLIENT_CERT, TEST_CA_CERT);
+    TEST_CHECK(bundle != NULL && expected != NULL);
+    if (!bundle || !expected) {
+        flb_sds_destroy(bundle);
+        flb_sds_destroy(expected);
+        flb_free(store_dir);
+        return;
+    }
+
+    ctx = x509_federation_ctx(store_dir, "x509", bundle, TEST_CLIENT_KEY,
+                              bundle, NULL);
+    check_x509_subject_token(ctx, expected);
+
+    flb_sds_destroy(bundle);
+    flb_sds_destroy(expected);
+    flb_free(store_dir);
+}
+
+/* 'google_service_account' is accepted with the x509 source; same token */
+void flb_test_gcs_x509_federation_accepts_service_account(void)
+{
+    flb_ctx_t *ctx;
+    char *store_dir;
+    flb_sds_t expected;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-x509-sa-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    expected = expected_x509_subject_token(TEST_CLIENT_CERT, NULL);
+    TEST_CHECK(expected != NULL);
+    if (!expected) {
+        flb_free(store_dir);
+        return;
+    }
+
+    /*
+     * google_service_account is accepted with the x509 source and leaves the
+     * subject token unchanged; the impersonation call itself is not reached
+     * in test mode
+     */
+    ctx = x509_federation_ctx(store_dir, "x509", TEST_CLIENT_CERT,
+                              TEST_CLIENT_KEY, NULL,
+                              "logger@my-proj.iam.gserviceaccount.com");
+    check_x509_subject_token(ctx, expected);
+
+    flb_sds_destroy(expected);
+    flb_free(store_dir);
+}
+
+/* A chain certificate that did not issue the leaf is still sent, in order */
+void flb_test_gcs_x509_federation_unrelated_chain_is_sent(void)
+{
+    flb_ctx_t *ctx;
+    char *store_dir;
+    flb_sds_t expected;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-x509-chain-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    /*
+     * a certificate that did not issue the leaf is sent in file order (the
+     * STS validates the path); the plugin only warns
+     */
+    expected = expected_x509_subject_token(TEST_CLIENT_CERT,
+                                           TEST_UNRELATED_CERT);
+    TEST_CHECK(expected != NULL);
+    if (!expected) {
+        flb_free(store_dir);
+        return;
+    }
+
+    ctx = x509_federation_ctx(store_dir, "x509", TEST_CLIENT_CERT,
+                              TEST_CLIENT_KEY, TEST_UNRELATED_CERT, NULL);
+    check_x509_subject_token(ctx, expected);
+
+    flb_sds_destroy(expected);
+    flb_free(store_dir);
+}
+
+/* An unknown 'identity_federation_source' value fails the output at init */
+void flb_test_gcs_rejects_invalid_federation_source(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    char *store_dir;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-wif-source-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    ctx = x509_federation_ctx(store_dir, "saml", NULL, NULL, NULL, NULL);
+    ret = flb_start(ctx);
+    TEST_CHECK(ret != 0);
+    flb_destroy(ctx);
+    flb_free(store_dir);
+}
+
+/*
+ * The STS and IAM TLS contexts always verify their hostname and ignore
+ * 'tls.vhost' with the x509 source, while the instance settings are kept
+ */
+void flb_test_gcs_x509_federation_forces_sts_hostname_check(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    char *store_dir;
+    struct flb_output_instance *out_ins;
+    struct flb_gcs *gcs_ctx;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-x509-host-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    setenv("FLB_GCS_PLUGIN_UNDER_TEST", "true", 1);
+
+    /*
+     * 'tls.verify_hostname false' and 'tls.vhost' apply to the upload
+     * connection only: the STS and IAM contexts verify their own hostname
+     */
+    ctx = x509_federation_ctx(store_dir, "x509", TEST_CLIENT_CERT,
+                              TEST_CLIENT_KEY, NULL,
+                              "logger@my-proj.iam.gserviceaccount.com");
+    flb_output_set(ctx, x509_last_out_ffd, "tls.verify_hostname", "false",
+                   "tls.vhost", "storage.example.com", NULL);
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    out_ins = flb_output_get_instance(ctx->config, x509_last_out_ffd);
+    gcs_ctx = out_ins ? out_ins->context : NULL;
+    TEST_CHECK(gcs_ctx != NULL && gcs_ctx->sts_tls != NULL &&
+               gcs_ctx->iam_tls != NULL);
+    if (gcs_ctx && gcs_ctx->sts_tls && gcs_ctx->iam_tls) {
+        TEST_CHECK(gcs_ctx->sts_tls->verify_hostname == FLB_TRUE);
+        TEST_CHECK(gcs_ctx->sts_tls->vhost == NULL);
+        TEST_CHECK(gcs_ctx->iam_tls->verify_hostname == FLB_TRUE);
+        TEST_CHECK(gcs_ctx->iam_tls->vhost == NULL);
+        TEST_CHECK(out_ins->tls_verify_hostname == FLB_FALSE);
+        TEST_CHECK(out_ins->tls_vhost != NULL);
+    }
+
+    if (ret == 0) {
+        flb_stop(ctx);
+    }
+    flb_destroy(ctx);
+    unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+    unsetenv("TEST_GCS_X509_SUBJECT_TOKEN");
+    flb_free(store_dir);
+}
+
+/* The x509 source refuses to start when 'tls.verify' is disabled */
+void flb_test_gcs_x509_federation_rejects_tls_verify_off(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    char *store_dir;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-x509-verify-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    ctx = x509_federation_ctx(store_dir, "x509", TEST_CLIENT_CERT,
+                              TEST_CLIENT_KEY, NULL, NULL);
+    flb_output_set(ctx, x509_last_out_ffd, "tls.verify", "false", NULL);
+    ret = flb_start(ctx);
+    TEST_CHECK(ret != 0);
+    flb_destroy(ctx);
+    flb_free(store_dir);
+}
+
+/* The x509 source needs both 'tls.crt_file' and 'tls.key_file' to start */
+void flb_test_gcs_x509_federation_requires_certificate(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    char *store_dir;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-x509-nocert-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    /* no certificate and no key */
+    ctx = x509_federation_ctx(store_dir, "x509", NULL, NULL, NULL, NULL);
+    ret = flb_start(ctx);
+    TEST_CHECK(ret != 0);
+    flb_destroy(ctx);
+
+    /* certificate without key */
+    ctx = x509_federation_ctx(store_dir, "x509", TEST_CLIENT_CERT, NULL, NULL,
+                              NULL);
+    ret = flb_start(ctx);
+    TEST_CHECK(ret != 0);
+    flb_destroy(ctx);
+
+    /* key without certificate */
+    ctx = x509_federation_ctx(store_dir, "x509", NULL, TEST_CLIENT_KEY, NULL,
+                              NULL);
+    ret = flb_start(ctx);
+    TEST_CHECK(ret != 0);
+    flb_destroy(ctx);
+
+    flb_free(store_dir);
+}
+
+/* A chain file whose PEM block cannot be decoded fails the output at init */
+void flb_test_gcs_x509_federation_rejects_malformed_chain(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    char *store_dir;
+    flb_sds_t bad;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-x509-bad-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    bad = write_test_file(store_dir, "bad.pem",
+                          "-----BEGIN CERTIFICATE-----\n"
+                          "not base64 at all!!\n"
+                          "-----END CERTIFICATE-----\n");
+    TEST_CHECK(bad != NULL);
+    if (!bad) {
+        flb_free(store_dir);
+        return;
+    }
+
+    ctx = x509_federation_ctx(store_dir, "x509", TEST_CLIENT_CERT,
+                              TEST_CLIENT_KEY, bad, NULL);
+    ret = flb_start(ctx);
+    TEST_CHECK(ret != 0);
+    flb_destroy(ctx);
+
+    flb_sds_destroy(bad);
+    flb_free(store_dir);
+}
+
+/*
+ * A chain file with the leaf below its top is rejected, also when a
+ * fullchain 'tls.crt_file' already contains every certificate in it
+ */
+void flb_test_gcs_x509_federation_rejects_leaf_below_chain_top(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    char *store_dir;
+    flb_sds_t chain;
+    flb_sds_t bundle = NULL;
+
+    store_dir = create_test_store_directory("/flb-gcs-test-x509-order-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (!store_dir) {
+        return;
+    }
+
+    /* CA first, leaf second: the leaf must be at the top */
+    chain = concat_test_files(store_dir, "reversed.pem",
+                              TEST_CA_CERT, TEST_CLIENT_CERT);
+    TEST_CHECK(chain != NULL);
+    if (!chain) {
+        flb_free(store_dir);
+        return;
+    }
+
+    ctx = x509_federation_ctx(store_dir, "x509", TEST_CLIENT_CERT,
+                              TEST_CLIENT_KEY, chain, NULL);
+    ret = flb_start(ctx);
+    TEST_CHECK(ret != 0);
+    flb_destroy(ctx);
+
+    /* a fullchain tls.crt_file does not excuse the misplaced leaf */
+    bundle = concat_test_files(store_dir, "fullchain.pem",
+                               TEST_CLIENT_CERT, TEST_CA_CERT);
+    TEST_CHECK(bundle != NULL);
+    if (bundle) {
+        ctx = x509_federation_ctx(store_dir, "x509", bundle, TEST_CLIENT_KEY,
+                                  chain, NULL);
+        ret = flb_start(ctx);
+        TEST_CHECK(ret != 0);
+        flb_destroy(ctx);
+    }
+
+    flb_sds_destroy(bundle);
+    flb_sds_destroy(chain);
+    flb_free(store_dir);
+}
+
 TEST_LIST = {
     {"jwt_signing", flb_test_gcs_jwt_signing},
     {"net_settings_applied_to_upstream", flb_test_gcs_net_settings_applied_to_upstream},
@@ -1897,6 +2488,26 @@ TEST_LIST = {
 #endif
     {"identity_federation_upload", flb_test_gcs_identity_federation_upload},
     {"rejects_incomplete_federation", flb_test_gcs_rejects_incomplete_federation},
+    {"rejects_invalid_federation_source",
+     flb_test_gcs_rejects_invalid_federation_source},
+    {"x509_federation_subject_token", flb_test_gcs_x509_federation_subject_token},
+    {"x509_federation_chain_repeats_leaf",
+     flb_test_gcs_x509_federation_chain_repeats_leaf},
+    {"x509_federation_bundled_chain", flb_test_gcs_x509_federation_bundled_chain},
+    {"x509_federation_accepts_service_account",
+     flb_test_gcs_x509_federation_accepts_service_account},
+    {"x509_federation_unrelated_chain_is_sent",
+     flb_test_gcs_x509_federation_unrelated_chain_is_sent},
+    {"x509_federation_forces_sts_hostname_check",
+     flb_test_gcs_x509_federation_forces_sts_hostname_check},
+    {"x509_federation_rejects_tls_verify_off",
+     flb_test_gcs_x509_federation_rejects_tls_verify_off},
+    {"x509_federation_requires_certificate",
+     flb_test_gcs_x509_federation_requires_certificate},
+    {"x509_federation_rejects_malformed_chain",
+     flb_test_gcs_x509_federation_rejects_malformed_chain},
+    {"x509_federation_rejects_leaf_below_chain_top",
+     flb_test_gcs_x509_federation_rejects_leaf_below_chain_top},
     {"rejects_conflicting_credentials", flb_test_gcs_rejects_conflicting_credentials},
     {"rejects_invalid_configuration", flb_test_gcs_rejects_invalid_configuration},
     {"rejects_invalid_compression", flb_test_gcs_rejects_invalid_compression},
