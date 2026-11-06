@@ -193,47 +193,50 @@ def _build_streaming_response(config):
     )
 
 
-def _build_response():
-    if response_config["delay_seconds"]:
-        _sleep_interruptible(response_config["delay_seconds"])
+def _build_response(config):
+    if config["delay_seconds"]:
+        _sleep_interruptible(config["delay_seconds"])
 
-    if response_config["hang_before_response"]:
+    if config["hang_before_response"]:
         _wait_for_shutdown()
         return Response(status=503)
 
-    if response_config["stream_fragments"] is not None:
-        return _build_streaming_response(response_config)
+    if config["stream_fragments"] is not None:
+        return _build_streaming_response(config)
 
-    body = response_config["body"]
+    body = config["body"]
     if isinstance(body, (dict, list)):
-        return jsonify(body), response_config["status_code"]
+        return jsonify(body), config["status_code"]
 
     return Response(
         body,
-        status=response_config["status_code"],
-        content_type=response_config["content_type"],
+        status=config["status_code"],
+        content_type=config["content_type"],
     )
 
 
-def _record_request():
+def _record_request(response_status=None):
     raw_payload = request.get_data(cache=True)
     decoded_payload = _decode_payload(raw_payload)
     data = _decode_json_payload(decoded_payload)
     raw_data = raw_payload.decode("utf-8", errors="replace")
     decoded_data = decoded_payload.decode("utf-8", errors="replace")
+    request_data = {
+        "path": request.path,
+        "query_string": request.query_string.decode("utf-8", errors="replace"),
+        "method": request.method,
+        "headers": dict(request.headers),
+        "raw_data": raw_data,
+        "decoded_data": decoded_data,
+        "json": data,
+    }
+
+    if response_status is not None:
+        request_data["response_status"] = response_status
 
     data_storage["payloads"].append(data)
-    data_storage["requests"].append(
-        {
-            "path": request.path,
-            "query_string": request.query_string.decode("utf-8", errors="replace"),
-            "method": request.method,
-            "headers": dict(request.headers),
-            "raw_data": raw_data,
-            "decoded_data": decoded_data,
-            "json": data,
-        }
-    )
+    data_storage["requests"].append(request_data)
+    return request_data
 
 
 def _decode_payload(raw_payload):
@@ -259,16 +262,22 @@ def _decode_json_payload(decoded_payload):
 @app.route('/loki/api/v1/push', methods=['POST'])
 @app.route('/dataCollectionRules/<path:subpath>', methods=['POST'])
 def receive_data(subpath=None):
-    _record_request()
-    return _build_response()
+    response_snapshot = response_config.copy()
+    request_data = _record_request(response_status=response_snapshot["status_code"])
+    response = _build_response(response_snapshot)
+    request_data["response_completed"] = True
+    return response
 
 
 @app.route('/services/collector', methods=['POST'])
 @app.route('/services/collector/event', methods=['POST'])
 @app.route('/services/collector/raw', methods=['POST'])
 def receive_splunk_hec():
-    _record_request()
-    return _build_response()
+    response_snapshot = response_config.copy()
+    request_data = _record_request(response_status=response_snapshot["status_code"])
+    response = _build_response(response_snapshot)
+    request_data["response_completed"] = True
+    return response
 
 
 @app.route('/jwks', methods=['GET'])
