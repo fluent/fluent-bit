@@ -1907,6 +1907,24 @@ static int azb_timer_create(struct flb_azure_blob *ctx)
     return 0;
 }
 
+/*
+ * Wait without blocking other workers from buffering. The caller holds
+ * buffer_mutex, and the file stays locked until this callback finishes with it.
+ * Return a refreshed list cursor because other files may have been removed
+ * while the mutex was released.
+ */
+static struct mk_list *azure_blob_retry_wait(struct flb_azure_blob *ctx,
+                                   struct azure_blob_file *file,
+                                   unsigned int delay)
+{
+    azure_blob_store_file_lock(file);
+    pthread_mutex_unlock(&ctx->buffer_mutex);
+    sleep(delay);
+    pthread_mutex_lock(&ctx->buffer_mutex);
+
+    return file->fsf->_head.next;
+}
+
 /**
  * Azure Blob Storage ingestion callback function
  * This function handles the upload of data chunks to Azure Blob Storage with retry mechanism
@@ -1981,7 +1999,7 @@ static void cb_azure_blob_ingest(struct flb_config *config, void *data) {
                 int jitter = rand() % backoff_time;
                 flb_plg_warn(ctx->ins, "cb_azure_blob_ingest :: failure in construct_request_buffer :: Retrying in %d seconds (attempt %d of %d) with jitter %d for file %s",
                              backoff_time + jitter, retry_count, ctx->scheduler_max_retries, jitter, file->fsf->name);
-                sleep(backoff_time + jitter);
+                tmp = azure_blob_retry_wait(ctx, file, backoff_time + jitter);
                 backoff_time = (backoff_time * 2 < max_backoff_time) ? backoff_time * 2 : max_backoff_time;
                 continue;
             }
@@ -2015,17 +2033,16 @@ static void cb_azure_blob_ingest(struct flb_config *config, void *data) {
                 int jitter = rand() % backoff_time;
                 flb_plg_warn(ctx->ins, "cb_azure_blob_ingest :: error sending blob :: Retrying in %d seconds (attempt %d of %d) with jitter %d for file %s",
                              backoff_time + jitter, retry_count, ctx->scheduler_max_retries, jitter, file->fsf->name);
-                sleep(backoff_time + jitter);
+                tmp = azure_blob_retry_wait(ctx, file, backoff_time + jitter);
                 backoff_time = (backoff_time * 2 < max_backoff_time) ? backoff_time * 2 : max_backoff_time;
                 continue;
             }
 
             /* Handle successful upload */
+            flb_plg_debug(ctx->ins, "cb_azure_blob_ingest :: deleting successfully ingested file %s",
+                          fsf->name);
             ret = azure_blob_store_file_delete(ctx, file);
-            if (ret == 0) {
-                flb_plg_debug(ctx->ins, "cb_azure_blob_ingest :: deleted successfully ingested file %s", fsf->name);
-            }
-            else {
+            if (ret != 0) {
                 flb_plg_error(ctx->ins, "cb_azure_blob_ingest :: failed to delete ingested file %s", fsf->name);
                 if (file) {
                     azure_blob_store_file_unlock(file);
