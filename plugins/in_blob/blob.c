@@ -17,6 +17,7 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_file.h>
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_pack.h>
@@ -467,7 +468,16 @@ static ssize_t recursive_file_search(struct blob_ctx *ctx,
     }
 
     for (index = 0; index < glob_context.gl_pathc; index++) {
+#ifdef FLB_SYSTEM_WINDOWS
         result = stat(glob_context.gl_pathv[index], &fs_entry_metadata);
+#else
+        if (ctx->follow_symlinks) {
+            result = stat(glob_context.gl_pathv[index], &fs_entry_metadata);
+        }
+        else {
+            result = lstat(glob_context.gl_pathv[index], &fs_entry_metadata);
+        }
+#endif
 
         if (result != 0) {
             flb_plg_debug(ctx->ins, "skip entry=%s", glob_context.gl_pathv[index]);
@@ -477,6 +487,12 @@ static ssize_t recursive_file_search(struct blob_ctx *ctx,
 
         if (is_directory(glob_context.gl_pathv[index],
                          &fs_entry_metadata)) {
+#ifdef FLB_SYSTEM_WINDOWS
+            if (!ctx->follow_symlinks &&
+                flb_file_mkdir_safe(glob_context.gl_pathv[index], 0) != 0) {
+                continue;
+            }
+#endif
             local_path[0] = '\0';
 
             cfl_sds_len_set(local_path, 0);
@@ -774,7 +790,12 @@ static int in_blob_notification(struct flb_input_instance *in_context,
     if (notification->success == FLB_TRUE) {
         switch (context->upload_success_action) {
         case POST_UPLOAD_ACTION_DELETE:
-            result = unlink(notification->path);
+            if (context->follow_symlinks) {
+                result = unlink(notification->path);
+            }
+            else {
+                result = flb_file_unlink_safe(notification->path);
+            }
 
             if (result == -1) {
                 flb_errno();
@@ -858,7 +879,12 @@ static int in_blob_notification(struct flb_input_instance *in_context,
 
             new_filename = sds_result;
 
-            result = rename(notification->path, new_filename);
+            if (context->follow_symlinks) {
+                result = rename(notification->path, new_filename);
+            }
+            else {
+                result = flb_file_rename_safe(notification->path, new_filename);
+            }
 
             if (result == -1) {
                 flb_errno();
@@ -877,7 +903,12 @@ static int in_blob_notification(struct flb_input_instance *in_context,
     else if (notification->success == FLB_FALSE) {
         switch (context->upload_failure_action) {
         case POST_UPLOAD_ACTION_DELETE:
-            result = unlink(notification->path);
+            if (context->follow_symlinks) {
+                result = unlink(notification->path);
+            }
+            else {
+                result = flb_file_unlink_safe(notification->path);
+            }
 
             if (result == -1) {
                 flb_errno();
@@ -961,7 +992,12 @@ static int in_blob_notification(struct flb_input_instance *in_context,
 
             new_filename = sds_result;
 
-            result = rename(notification->path, new_filename);
+            if (context->follow_symlinks) {
+                result = rename(notification->path, new_filename);
+            }
+            else {
+                result = flb_file_rename_safe(notification->path, new_filename);
+            }
 
             if (result == -1) {
                 flb_errno();
@@ -982,6 +1018,12 @@ static int in_blob_notification(struct flb_input_instance *in_context,
 }
 
 static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_BOOL, "follow_symlinks", "true",
+     0, FLB_TRUE, offsetof(struct blob_ctx, follow_symlinks),
+     "Follow symbolic links when accessing files. Set false to reject symbolic links "
+     "and Windows reparse points in file paths."
+    },
     {
      FLB_CONFIG_MAP_STR, "path", NULL,
      0, FLB_TRUE, offsetof(struct blob_ctx, path),
