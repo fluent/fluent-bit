@@ -529,6 +529,12 @@ static int ingest_all_chunks(struct flb_azure_kusto *ctx, struct flb_config *con
             ret = azure_kusto_load_ingestion_resources(ctx, config);
             if (ret != 0) {
                 flb_plg_error(ctx->ins, "ingest_all_old_buffer_files :: cannot load ingestion resources");
+                flb_sds_destroy(tag_sds);
+                flb_sds_destroy(payload);
+                if (is_compressed) {
+                    flb_free(final_payload);
+                }
+                azure_kusto_store_file_unlock(chunk);
                 return -1;
             }
 
