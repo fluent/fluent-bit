@@ -1,4 +1,4 @@
-﻿/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
 /*  Fluent Bit
  *  ==========
@@ -26,6 +26,8 @@ Approach for this tests is basing on filter_kubernetes tests
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_pthread.h>
 #include <fluent-bit/flb_compat.h>
+#include <fluent-bit/flb_engine.h>
+#include <fluent-bit/flb_parser.h>
 #ifdef FLB_HAVE_UNICODE_ENCODER
 #include <fluent-bit/flb_unicode.h>
 #endif
@@ -3139,8 +3141,81 @@ void flb_test_db_compare_filename()
 }
 #endif /* FLB_HAVE_SQLDB */
 
+#ifdef FLB_HAVE_PARSER
+void flb_test_cri_pending_shutdown(void)
+{
+    struct flb_lib_out_cb cb;
+    struct test_tail_ctx *ctx;
+    char *paths[] = {"cri_pending_shutdown.log"};
+    char *messages =
+        "2026-10-23T01:00:00.000000000Z stdout P pending-one..\n"
+        "2026-10-23T01:00:00.000000000Z stdout P two\n"
+        "2026-10-23T01:00:00.000000000Z stderr F shutdown-barrier";
+    int ret;
+    int num;
+
+    clear_output_num();
+    cb.cb = cb_count_msgpack;
+    cb.data = NULL;
+    ctx = test_tail_ctx_create(&cb, paths, 1, FLB_TRUE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        return;
+    }
+
+    /*
+     * Load a CRI compatible multiline parser with a long flush timeout so
+     * the pending fragment is still buffered when the engine is stopped.
+     */
+    ret = flb_parser_conf_file(DPATH_COMMON "/parsers_cri_shutdown.conf",
+                               ctx->flb->config);
+    TEST_CHECK(ret == 0);
+
+    /* Allow the shutdown flush to complete even near a timer tick. */
+    ret = flb_service_set(ctx->flb, "Grace", "3", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "path", paths[0],
+                        "read_from_head", "true",
+                        "multiline.parser", "cri_test_ml", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_output_set(ctx->flb, ctx->o_ffd, "match", "*", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+    ret = write_msg(ctx, messages, strlen(messages));
+    TEST_CHECK(ret > 0);
+
+    /* The stderr record proves ingestion while stdout is still pending. */
+    wait_num_with_timeout(5000, &num);
+    TEST_CHECK(num == 1);
+
+    /*
+     * Signal the shutdown separately and wait for the pending group to be
+     * flushed: on some platforms the engine worker is cancelled right after
+     * the notification, which can preempt the shutdown pause callback.
+     */
+    ret = flb_engine_exit(ctx->flb->config);
+    TEST_CHECK(ret >= 0);
+    wait_expected_num_with_timeout(5000, 2, &num);
+    TEST_CHECK(num == 2);
+
+    /* Keep the file present: unlinking it can flush the stream before stop. */
+    ret = flb_stop(ctx->flb);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(get_output_num() == 2);
+    flb_destroy(ctx->flb);
+    close(ctx->fds[0]);
+    unlink(paths[0]);
+    flb_free(ctx->fds);
+    flb_free(ctx);
+}
+#endif
+
 /* Test list */
 TEST_LIST = {
+#ifdef FLB_HAVE_PARSER
+    {"cri_pending_shutdown", flb_test_cri_pending_shutdown},
+#endif
     {"issue_3943", flb_test_in_tail_issue_3943},
     /* Properties */
     {"skip_long_lines", flb_test_in_tail_skip_long_lines},
