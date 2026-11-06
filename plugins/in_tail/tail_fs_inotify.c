@@ -209,12 +209,15 @@ static int reconcile_file_state(struct flb_tail_config *ctx,
     }
 
     if (st.st_nlink == 0) {
-        if (file->pending_bytes > 0) {
+        flb_tail_file_refresh_pending(file, &st);
+        if (flb_tail_file_has_pending(file) == FLB_TRUE) {
             return 0;
         }
 
         if (file->buf_len > 0) {
-            return 0;
+            flb_plg_warn(ctx->ins,
+                         "inode=%"PRIu64" purged deleted file %s with %zu unparsed partial bytes at EOF",
+                         file->inode, file->name, file->buf_len);
         }
 
         flb_plg_debug(ctx->ins, "inode=%"PRIu64" file has been deleted: %s",
