@@ -2440,6 +2440,14 @@ static int cb_worker_exit(void *data, struct flb_config *config)
     struct worker_info *info;
     struct flb_azure_blob *ctx = data;
 
+    /*
+     * The plugin context does not exist if the output was never initialized
+     * (e.g. --dry-run, which validates the configuration and tears down).
+     */
+    if (!ctx) {
+        return 0;
+    }
+
     flb_plg_info(ctx->ins, "initializing worker");
 
     info = FLB_TLS_GET(worker_info);
