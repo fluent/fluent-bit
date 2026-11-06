@@ -1454,3 +1454,38 @@ def test_out_opentelemetry_logs_max_scopes_enforcement():
     output = json.loads(json_format.MessageToJson(logs_seen[0]))
     assert len(output["resourceLogs"]) == 4
     assert all(len(resource_log["scopeLogs"]) == 1 for resource_log in output["resourceLogs"])
+
+
+def _pack(value):
+    """Encode forward fixtures without an optional MessagePack dependency."""
+    if isinstance(value, bytes):
+        return value
+    if isinstance(value, int):
+        return b"\xcf" + value.to_bytes(8, "big")
+    if isinstance(value, str):
+        data = value.encode("utf-8")
+        return b"\xdb" + len(data).to_bytes(4, "big") + data
+    if isinstance(value, list):
+        return b"\xdd" + len(value).to_bytes(4, "big") + b"".join(_pack(item) for item in value)
+    if isinstance(value, dict):
+        return b"\xdf" + len(value).to_bytes(4, "big") + b"".join(
+            _pack(key) + _pack(item) for key, item in value.items())
+    raise TypeError(type(value))
+
+
+def _event_time(seconds):
+    return b"\xd7\x00" + seconds.to_bytes(4, "big") + bytes(4)
+
+
+def _group_start(resource_id, name):
+    return [[_event_time(0xFFFFFFFF), {"schema": "otlp", "resource_id": resource_id, "scope_id": 0}],
+            {"resource": {"attributes": {"service.name": name}}, "scope": {"name": "scope"}}]
+
+
+def _group_end():
+    return [[_event_time(0xFFFFFFFE), {}], {}]
+
+
+def _send_forward(service, entries):
+    with socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=10) as connection:
+        connection.sendall(_pack(["test", entries]))
