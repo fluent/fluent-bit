@@ -22,8 +22,26 @@
 #define FLB_FILE_H
 
 #include <fluent-bit/flb_sds.h>
+#include <stdio.h>
 
 flb_sds_t flb_file_read(const char *path);
+/*
+ * Open a regular file without following symlinks (or Windows reparse points)
+ * in any path component. POSIX callers may also open a directory with O_DIRECTORY.
+ * With root != NULL, path must be relative and stay beneath root.
+ * Parent traversal is rejected. mkdir_mode != 0 creates missing parents.
+ */
+int flb_file_open_safe(const char *root, const char *path, int flags,
+                       int mode, int mkdir_mode);
+FILE *flb_file_fopen_safe(const char *root, const char *path, const char *mode,
+                          int mkdir_mode);
+int flb_file_mkdir_safe(const char *path, int mode);
+int flb_file_rename_safe(const char *source, const char *destination);
+int flb_file_unlink_safe(const char *path);
+#ifdef FLB_SYSTEM_WINDOWS
+int flb_file_open_safe_utf8(const char *path, int flags);
+int flb_file_remove_tree_safe(const char *path);
+#endif
 // TODO int flb_file_write(const char *path, flb_sds_t contents);
 
 #endif
