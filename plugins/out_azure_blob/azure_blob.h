@@ -55,6 +55,7 @@
 #define AZURE_BLOB_AUTH_SAS 1
 
 struct flb_azure_blob {
+    int follow_symlinks;
     int auto_create_container;
     int emulator_mode;
     int compression;
