@@ -2155,7 +2155,31 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
 
 
     if (ret != FLB_HTTP_OK) {
-        return ret;
+        /*
+         * If the status line was already parsed as 2xx, do not treat a
+         * response body that exceeded the client buffer as a delivery
+         * failure. Returning an error here makes outputs retry a batch
+         * the server already accepted (regression vs 3.0.7, see #12739).
+         */
+        if (c->resp.status >= 200 && c->resp.status <= 299) {
+            if (c->u_conn && c->u_conn->upstream) {
+                flb_warn("[http_client] discarding oversized HTTP %i response "
+                         "body from %s:%i (buffer max=%zu)",
+                         c->resp.status,
+                         c->u_conn->upstream->tcp_host,
+                         c->u_conn->upstream->tcp_port,
+                         c->resp.data_size_max);
+            }
+            else {
+                flb_warn("[http_client] discarding oversized HTTP %i response "
+                         "body (buffer max=%zu)",
+                         c->resp.status, c->resp.data_size_max);
+            }
+            ret = FLB_HTTP_OK;
+        }
+        else {
+            return ret;
+        }
     }
 
     /* Check 'Connection' response header */
