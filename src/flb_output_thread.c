@@ -937,7 +937,14 @@ void flb_output_thread_pool_destroy(struct flb_output_instance *ins)
             th->status == FLB_THREAD_POOL_RUNNING) {
             th_ins->dispatch_shutdown = FLB_TRUE;
             cfl_atomic_store(&th_ins->shutdown_requested, FLB_TRUE);
-            n = flb_pipe_w(th_ins->ch_parent_events[1], &wakeup, sizeof(wakeup));
+            /* Retry interrupted shutdown wakeups before joining workers. */
+            do {
+                n = flb_pipe_w(th_ins->ch_parent_events[1], &wakeup, sizeof(wakeup));
+#ifdef FLB_SYSTEM_WINDOWS
+            } while (n < 0 && WSAGetLastError() == WSAEINTR);
+#else
+            } while (n < 0 && errno == EINTR);
+#endif
         }
         else {
             th_ins->dispatch_shutdown = FLB_TRUE;
