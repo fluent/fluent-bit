@@ -1995,6 +1995,43 @@ static int http_client_read_idle_timeout_reached(struct flb_http_client *c,
     return FLB_FALSE;
 }
 
+/*
+ * Remove the first 'bytes_consumed' bytes from the response payload, the bytes
+ * a streaming caller already processed after flb_http_get_response_data()
+ * returned FLB_HTTP_CHUNK_AVAILABLE.
+ *
+ * On chunked responses 'chunk_processed_end' is moved back by the same amount,
+ * so the bytes that were not de-chunked yet stay pending for the decoder.
+ *
+ * Returns FLB_HTTP_OK on success, or FLB_HTTP_ERROR if 'bytes_consumed' is
+ * larger than the payload.
+ */
+int flb_http_client_consume_payload(struct flb_http_client *c, size_t bytes_consumed)
+{
+    if (bytes_consumed > c->resp.payload_size) {
+        flb_error("[http_client] attempting to consume more bytes than "
+                  "available. Attempted bytes_consumed=%zu payload_size=%zu ",
+                  bytes_consumed,
+                  c->resp.payload_size);
+        return FLB_HTTP_ERROR;
+    }
+
+    c->resp.payload_size -= bytes_consumed;
+    c->resp.data_len -= bytes_consumed;
+    memmove(c->resp.payload, c->resp.payload + bytes_consumed, c->resp.payload_size);
+    if (c->resp.chunked_encoding == FLB_TRUE && c->resp.chunk_processed_end != NULL &&
+        c->resp.chunk_processed_end - c->resp.payload >= (ssize_t) bytes_consumed) {
+        /* keep the decoder position; any undecoded tail is still raw chunk framing */
+        c->resp.chunk_processed_end -= bytes_consumed;
+    }
+    else {
+        c->resp.chunk_processed_end = c->resp.payload + c->resp.payload_size;
+    }
+    c->resp.data[c->resp.data_len] = '\0';
+
+    return FLB_HTTP_OK;
+}
+
 int flb_http_get_response_data(struct flb_http_client *c, size_t bytes_consumed)
 {
     /* returns
@@ -2020,20 +2057,9 @@ int flb_http_get_response_data(struct flb_http_client *c, size_t bytes_consumed)
     /* If the caller has consumed some of the payload (via bytes_consumed)
      * we consume those bytes off the payload
      */
-    if( bytes_consumed > 0 ) {
-        if(bytes_consumed > c->resp.payload_size) {
-            flb_error("[http_client] attempting to consume more bytes than "
-                      "available. Attempted bytes_consumed=%zu payload_size=%zu ",
-                        bytes_consumed,
-                        c->resp.payload_size);
-            return FLB_HTTP_ERROR;
-        }
-
-        c->resp.payload_size -= bytes_consumed;
-        c->resp.data_len -= bytes_consumed;
-        memmove(c->resp.payload, c->resp.payload+bytes_consumed, c->resp.payload_size);
-        c->resp.chunk_processed_end = c->resp.payload+c->resp.payload_size;
-        c->resp.data[c->resp.data_len] = '\0';
+    if (bytes_consumed > 0 &&
+        flb_http_client_consume_payload(c, bytes_consumed) != FLB_HTTP_OK) {
+        return FLB_HTTP_ERROR;
     }
 
     while (ret == FLB_HTTP_MORE) {
