@@ -2378,7 +2378,10 @@ char *flb_tail_file_name(struct flb_tail_file *file)
     }
 
     s = readlink(tmp, buf, PATH_MAX);
-    if (s == -1) {
+    if (s < 0 || s >= PATH_MAX) {
+        if (s >= PATH_MAX) {
+            errno = ENAMETOOLONG;
+        }
         flb_free(buf);
         flb_errno();
         return NULL;
