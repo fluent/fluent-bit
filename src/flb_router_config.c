@@ -1418,7 +1418,8 @@ static struct flb_output_instance *find_output_instance(struct flb_config *confi
 }
 
 static int input_has_direct_route(struct flb_input_instance *in,
-                                  struct flb_output_instance *out)
+                                  struct flb_output_instance *out,
+                                  struct flb_route *route)
 {
     struct cfl_list *head;
     struct flb_router_path *path;
@@ -1427,9 +1428,16 @@ static int input_has_direct_route(struct flb_input_instance *in,
         return FLB_FALSE;
     }
 
+    /*
+     * A direct route is identified by the (route, output) pair, not the output
+     * alone: several routes may target the same output (e.g. different
+     * conditions merging into one output), and each is evaluated independently
+     * at runtime via its own flb_router_path. Deduplicating on the output only
+     * would drop all but the first route, so compare the route too.
+     */
     cfl_list_foreach(head, &in->routes_direct) {
         path = cfl_list_entry(head, struct flb_router_path, _head);
-        if (path->ins == out) {
+        if (path->ins == out && path->route == route) {
             return FLB_TRUE;
         }
     }
@@ -1526,7 +1534,7 @@ int flb_router_apply_config(struct flb_config *config)
 
                 route_output->ins = output_ins;
 
-                if (input_has_direct_route(input_ins, output_ins)) {
+                if (input_has_direct_route(input_ins, output_ins, route)) {
                     continue;
                 }
 
