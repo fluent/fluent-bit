@@ -535,6 +535,7 @@ static int ingest_all_chunks(struct flb_azure_kusto *ctx, struct flb_config *con
                     flb_free(final_payload);
                 }
                 azure_kusto_store_file_unlock(chunk);
+                chunk->failures += 1;
                 return -1;
             }
 
