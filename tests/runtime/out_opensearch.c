@@ -200,6 +200,21 @@ static void cb_check_logstash_prefix_separator(void *ctx, int ffd,
     flb_sds_destroy(res_data);
 }
 
+static void cb_check_logstash_format_long_prefix(void *ctx, int ffd,
+                                                 int res_ret, void *res_data, size_t res_size,
+                                                 void *data)
+{
+    /* A prefix that fills the 256-byte logstash_index buffer leaves no room
+     * for the separator and date, so compose_index_header fails on both the
+     * configured and the default separator. The record is dropped instead of
+     * being emitted under an index that has no date, so nothing is formatted. */
+    if (!TEST_CHECK(res_size == 0)) {
+        TEST_MSG("expected the oversized-prefix record to be dropped, "
+                 "got %zu bytes", res_size);
+    }
+    flb_sds_destroy(res_data);
+}
+
 static void cb_check_logstash_format_nanos(void *ctx, int ffd,
                                            int res_ret, void *res_data, size_t res_size,
                                            void *data)
@@ -750,6 +765,50 @@ void flb_test_logstash_format()
     flb_destroy(ctx);
 }
 
+void flb_test_logstash_format_long_prefix()
+{
+    int ret;
+    int size = sizeof(JSON_ES) - 1;
+    char long_prefix[300];
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* A prefix longer than the 256-byte logstash_index buffer. */
+    memset(long_prefix, 'a', sizeof(long_prefix) - 1);
+    long_prefix[sizeof(long_prefix) - 1] = '\0';
+
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "opensearch", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   NULL);
+
+    flb_output_set(ctx, out_ffd,
+                   "logstash_format", "on",
+                   "logstash_prefix", long_prefix,
+                   "logstash_dateformat", "%Y-%m-%d",
+                   NULL);
+
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_logstash_format_long_prefix,
+                              NULL, NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    flb_lib_push(ctx, in_ffd, (char *) JSON_ES, size);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 void flb_test_logstash_format_nanos()
 {
     int ret;
@@ -1159,6 +1218,7 @@ TEST_LIST = {
     {"index_record_accessor_id_key", flb_test_index_record_accessor_with_id_key},
     {"index_record_accessor_generate_id", flb_test_index_record_accessor_with_generate_id},
     {"logstash_format"       , flb_test_logstash_format },
+    {"logstash_format_long_prefix" , flb_test_logstash_format_long_prefix },
     {"logstash_format_nanos" , flb_test_logstash_format_nanos },
     {"tag_key"               , flb_test_tag_key },
     {"replace_dots"          , flb_test_replace_dots },
