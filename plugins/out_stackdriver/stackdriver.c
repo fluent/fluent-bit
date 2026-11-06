@@ -2548,8 +2548,10 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
             msgpack_pack_str_body(&mp_pck, "trace", 5);
 
             if (ctx->autoformat_stackdriver_trace) {
-                len = snprintf(stackdriver_trace, sizeof(stackdriver_trace) - 1,
+                snprintf(stackdriver_trace, sizeof(stackdriver_trace) - 1,
                     "projects/%s/traces/%s", ctx->project_id, trace);
+                /* snprintf may report more bytes than fit in the buffer. */
+                len = strlen(stackdriver_trace);
                 new_trace = stackdriver_trace;
             }
             else {
@@ -2652,11 +2654,11 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
         }
 
         if (project_id_extracted == FLB_TRUE) {
-            len = snprintf(path, sizeof(path) - 1,
+            snprintf(path, sizeof(path) - 1,
                        "projects/%s/logs/%s", project_id_key, new_log_name);
             flb_sds_destroy(project_id_key);
         } else {
-            len = snprintf(path, sizeof(path) - 1,
+            snprintf(path, sizeof(path) - 1,
                        "projects/%s/logs/%s", ctx->export_to_project_id, new_log_name);
         }
 
@@ -2667,6 +2669,8 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
 
         msgpack_pack_str(&mp_pck, 7);
         msgpack_pack_str_body(&mp_pck, "logName", 7);
+        /* Only serialize bytes actually stored in the buffer. */
+        len = strlen(path);
         msgpack_pack_str(&mp_pck, len);
         msgpack_pack_str_body(&mp_pck, path, len);
         flb_sds_destroy(stream_key);
