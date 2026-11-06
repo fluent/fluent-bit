@@ -1529,7 +1529,7 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
     if (is_compressed && final_payload) {
         flb_free(final_payload);
     }
-    if (tag_name) {
+    if (tag_name && ctx->unify_tag == FLB_TRUE) {
         flb_sds_destroy(tag_name);
     }
     FLB_OUTPUT_RETURN(ret);
@@ -1542,7 +1542,7 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
     if (is_compressed && final_payload) {
         flb_free(final_payload);
     }
-    if (tag_name) {
+    if (tag_name && ctx->unify_tag == FLB_TRUE) {
         flb_sds_destroy(tag_name);
     }
     FLB_OUTPUT_RETURN(ret);
