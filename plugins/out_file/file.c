@@ -18,7 +18,9 @@
  */
 
 #include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_file.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_time.h>
@@ -52,12 +54,6 @@
 #define NEWLINE "\n"
 #endif
 
-#ifdef FLB_SYSTEM_WINDOWS
-#define FLB_PATH_SEPARATOR "\\"
-#else
-#define FLB_PATH_SEPARATOR "/"
-#endif
-
 #define FLB_OUT_FILE_DEFAULT_MAX_DYNAMIC_FILES  1024
 
 enum {
@@ -67,6 +63,7 @@ enum {
 };
 
 struct flb_file_conf {
+    int follow_symlinks;
     const char *out_path;
     const char *out_file;
     const char *fallback_path;
@@ -741,7 +738,7 @@ static int cb_file_init(struct flb_output_instance *ins,
 
     ctx->rotation = file_rotate_create(ins, ctx->rotate, ctx->rotate_max_size,
                                        ctx->rotate_max_files,
-                                       ctx->rotate_gzip);
+                                       ctx->rotate_gzip, ctx->follow_symlinks);
     if (ctx->rotation == NULL) {
         file_conf_destroy(ctx);
         return -1;
@@ -1253,6 +1250,10 @@ static FILE *open_output_file(struct flb_file_conf *ctx, const char *output)
     FILE *fp;
     char *output_copy;
 
+    if (!ctx->follow_symlinks) {
+        return flb_file_fopen_safe(NULL, output, "ab+", ctx->mkdir ? 0755 : 0);
+    }
+
     fp = fopen(output, "ab+");
     if (ctx->mkdir == FLB_TRUE && fp == NULL && errno == ENOENT) {
         output_copy = strdup(output);
@@ -1443,7 +1444,6 @@ static void cb_file_flush(struct flb_event_chunk *event_chunk,
     struct flb_file_conf *ctx = out_context;
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
-    char* out_file_copy;
     struct file_rotate_entry *rot_entry = NULL;
 
     (void) config;
@@ -1509,22 +1509,7 @@ static void cb_file_flush(struct flb_event_chunk *event_chunk,
     }
 
     /* Open output file with default name as the Tag */
-    fp = fopen(out_file, "ab+");
-    if (ctx->mkdir == FLB_TRUE && fp == NULL && errno == ENOENT) {
-        out_file_copy = strdup(out_file);
-        if (out_file_copy) {
-#ifdef FLB_SYSTEM_WINDOWS
-            PathRemoveFileSpecA(out_file_copy);
-            ret = mkpath(ctx->ins, out_file_copy);
-#else
-            ret = mkpath(ctx->ins, dirname(out_file_copy));
-#endif
-            free(out_file_copy);
-            if (ret == 0) {
-                fp = fopen(out_file, "ab+");
-            }
-        }
-    }
+    fp = open_output_file(ctx, out_file);
     if (fp == NULL) {
         flb_errno();
         flb_plg_error(ctx->ins, "error opening: %s", out_file);
@@ -1659,6 +1644,12 @@ static int cb_file_exit(void *data, struct flb_config *config)
 
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_BOOL, "follow_symlinks", "true",
+     0, FLB_TRUE, offsetof(struct flb_file_conf, follow_symlinks),
+     "Follow symbolic links when accessing files. Set false to reject symbolic links "
+     "and Windows reparse points in file paths."
+    },
     {
      FLB_CONFIG_MAP_STR, "path", NULL,
      0, FLB_TRUE, offsetof(struct flb_file_conf, out_path),
