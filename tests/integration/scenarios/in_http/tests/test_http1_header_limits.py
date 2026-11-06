@@ -145,7 +145,10 @@ def test_http1_configured_header_limit(listener, limit):
 @pytest.mark.parametrize("fragment", [1, 1024])
 def test_http1_invalid_request_line_releases_slot(listener, fragment):
     good_request = b"GET /health HTTP/1.1\r\nHost: localhost\r\n\r\n"
-    for malformed in (b"ABCDEFGHIJKL", b"GET /bad\r", b"GET /bad\n"):
+    for malformed in (
+        b"ABCDEFGHIJKL", b"GET /bad\r", b"GET /bad\n",
+        b"GET /health XXXXXXX", b"GET /health http/1.", b"GET /health HTTP/2.",
+    ):
         for keepalive in (False, True):
             with socket.create_connection(("127.0.0.1", listener), timeout=5) as sock:
                 if keepalive:
