@@ -4084,7 +4084,12 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
     }
 
     /* read the file content */
-    ret = flb_utils_read_file_offset(file_path, offset_start, offset_end, &out_buf, &out_size);
+    if (ctx->follow_symlinks) {
+        ret = flb_utils_read_file_offset(file_path, offset_start, offset_end, &out_buf, &out_size);
+    }
+    else {
+        ret = flb_utils_read_file_offset_safe(file_path, offset_start, offset_end, &out_buf, &out_size);
+    }
     if (ret == -1) {
         flb_plg_error(ctx->ins, "cannot read file part %s", file_path);
 
@@ -5226,6 +5231,12 @@ static int cb_s3_exit(void *data, struct flb_config *config)
 
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_BOOL, "follow_symlinks", "true",
+     0, FLB_TRUE, offsetof(struct flb_s3, follow_symlinks),
+     "Follow symbolic links when accessing files. Set false to reject symbolic links "
+     "and Windows reparse points in file paths."
+    },
     {
      FLB_CONFIG_MAP_STR, "format", "json_lines",
      0, FLB_FALSE, 0,

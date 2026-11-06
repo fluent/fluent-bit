@@ -125,6 +125,7 @@ struct multipart_upload {
 };
 
 struct flb_s3 {
+    int follow_symlinks;
     char *bucket;
     char *region;
     char *s3_key_format;
