@@ -3,6 +3,10 @@
 #include <fluent-bit.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_sds.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 #include "flb_tests_runtime.h"
 
 struct test_ctx {
@@ -539,6 +543,174 @@ void flb_test_key_val_eq_not_matched()
     test_ctx_destroy(ctx);
 }
 
+static char *read_file_to_string(const char *path)
+{
+    FILE *fp;
+    long file_size;
+    char *buf;
+
+    fp = fopen(path, "r");
+    if (!fp) {
+        return NULL;
+    }
+
+    if (fseek(fp, 0, SEEK_END) != 0) {
+        fclose(fp);
+        return NULL;
+    }
+
+    file_size = ftell(fp);
+    if (file_size < 0) {
+        fclose(fp);
+        return NULL;
+    }
+
+    if (fseek(fp, 0, SEEK_SET) != 0) {
+        fclose(fp);
+        return NULL;
+    }
+
+    buf = flb_malloc(file_size + 1);
+    if (!buf) {
+        fclose(fp);
+        return NULL;
+    }
+
+    if (fread(buf, 1, file_size, fp) != (size_t) file_size) {
+        flb_free(buf);
+        fclose(fp);
+        return NULL;
+    }
+
+    buf[file_size] = '\0';
+    fclose(fp);
+
+    return buf;
+}
+
+static void run_redaction_case(const char *rule_name, const char *rule_value,
+                               char *input, const char **hidden,
+                               const char **shown)
+{
+    flb_ctx_t *flb;
+    int i_ffd;
+    int f_ffd;
+    int o_ffd;
+    int i;
+    int len;
+    int ret;
+    int bytes;
+    int log_fd;
+    char *log_content;
+    char log_path[] = "/tmp/flb_expect_redact_test_XXXXXX";
+
+    log_fd = mkstemp(log_path);
+    if (!TEST_CHECK(log_fd >= 0)) {
+        TEST_MSG("mkstemp failed");
+        return;
+    }
+    close(log_fd);
+
+    flb = flb_create();
+    if (!TEST_CHECK(flb != NULL)) {
+        unlink(log_path);
+        return;
+    }
+
+    flb_service_set(flb,
+                    "Flush", "0.200000000",
+                    "Grace", "1",
+                    "Log_Level", "error",
+                    "Log_File", log_path,
+                    NULL);
+
+    i_ffd = flb_input(flb, (char *) "lib", NULL);
+    TEST_CHECK(i_ffd >= 0);
+    flb_input_set(flb, i_ffd, "tag", "test", NULL);
+
+    f_ffd = flb_filter(flb, (char *) "expect", NULL);
+    TEST_CHECK(f_ffd >= 0);
+    flb_filter_set(flb, f_ffd,
+                   "match", "*",
+                   "action", "warn",
+                   rule_name, rule_value,
+                   NULL);
+
+    o_ffd = flb_output(flb, (char *) "null", NULL);
+    TEST_CHECK(o_ffd >= 0);
+    flb_output_set(flb, o_ffd, "match", "test", NULL);
+
+    ret = flb_start(flb);
+    TEST_CHECK(ret == 0);
+
+    len = strlen(input);
+    bytes = flb_lib_push(flb, i_ffd, input, len);
+    TEST_CHECK(bytes == len);
+    flb_time_msleep(500);
+
+    flb_stop(flb);
+    flb_destroy(flb);
+
+    log_content = read_file_to_string(log_path);
+    if (!TEST_CHECK(log_content != NULL)) {
+        TEST_MSG("failed to read log file");
+        unlink(log_path);
+        return;
+    }
+
+    for (i = 0; hidden[i] != NULL; i++) {
+        if (!TEST_CHECK(strstr(log_content, hidden[i]) == NULL)) {
+            TEST_MSG("sensitive value '%s' leaked in expect error log", hidden[i]);
+        }
+    }
+    if (!TEST_CHECK(strstr(log_content, "[REDACTED]") != NULL)) {
+        TEST_MSG("expected redacted marker in expect error log");
+    }
+    for (i = 0; shown[i] != NULL; i++) {
+        if (!TEST_CHECK(strstr(log_content, shown[i]) != NULL)) {
+            TEST_MSG("expected '%s' in expect error log", shown[i]);
+        }
+    }
+
+    flb_free(log_content);
+    unlink(log_path);
+}
+
+void flb_test_mismatch_redacts_sensitive_fields()
+{
+    const char *hidden[] = {"super-secret-token", NULL};
+    const char *shown[] = {"visible", NULL};
+
+    run_redaction_case("key_exists", "missing_key",
+                       "[0, {\"field1\":\"visible\", "
+                       "\"api_token\":\"super-secret-token\"}]",
+                       hidden, shown);
+}
+
+/* a NUL inside the key must not hide the sensitive part after it */
+void flb_test_mismatch_redacts_key_with_embedded_nul()
+{
+    const char *hidden[] = {"super-secret-token", NULL};
+    const char *shown[] = {"visible", NULL};
+
+    run_redaction_case("key_exists", "missing_key",
+                       "[0, {\"field1\":\"visible\", "
+                       "\"prefix\\u0000api_token\":\"super-secret-token\"}]",
+                       hidden, shown);
+}
+
+/* key_val_eq on a sensitive key must hide the expected value too */
+void flb_test_key_val_eq_redacts_expected_value()
+{
+    const char *hidden[] = {"expected-secret", "actual-secret", NULL};
+    const char *shown[] = {"visible", NULL};
+
+    run_redaction_case("key_val_eq", "api_token expected-secret",
+                       "[0, {\"field1\":\"visible\", "
+                       "\"api_token\":\"actual-secret\"}]",
+                       hidden, shown);
+}
+
 
 TEST_LIST = {
     {"key_exists_matched", flb_test_key_exists_matched},
@@ -551,5 +723,8 @@ TEST_LIST = {
     {"key_val_is_not_null_not_matched", flb_test_key_val_is_not_null_not_matched},
     {"key_val_eq_matched", flb_test_key_val_eq_matched},
     {"key_val_eq_not_matched", flb_test_key_val_eq_not_matched},
+    {"mismatch_redacts_sensitive_fields", flb_test_mismatch_redacts_sensitive_fields},
+    {"mismatch_redacts_key_with_embedded_nul", flb_test_mismatch_redacts_key_with_embedded_nul},
+    {"key_val_eq_redacts_expected_value", flb_test_key_val_eq_redacts_expected_value},
     {NULL, NULL}
 };
