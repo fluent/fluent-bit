@@ -384,6 +384,11 @@ int flb_engine_dispatch(uint64_t id, struct flb_input_instance *in,
             continue;
         }
 
+        /* keep appending the rest of an open group to this chunk */
+        if (flb_input_chunk_holds_open_group(ic) == FLB_TRUE) {
+            continue;
+        }
+
         if (flb_task_map_get_task_id(config) == -1) {
             /*
              * There isn't a task available, no more chunks can have a task

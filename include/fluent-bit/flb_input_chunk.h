@@ -42,6 +42,14 @@ struct cio_chunk;
  */
 #define FLB_INPUT_CHUNK_FS_MAX_SIZE   2048000  /* 2MB */
 
+/*
+ * A log chunk that ends inside a group is not flushed or closed for size until
+ * the group ends, so the start and end markers of a group stay in the same
+ * chunk. These limits bound the wait for senders that never end the group.
+ */
+#define FLB_INPUT_CHUNK_GROUP_HOLD_SEC     5.0
+#define FLB_INPUT_CHUNK_GROUP_MAX_SIZE     (FLB_INPUT_CHUNK_FS_MAX_SIZE * 2)
+
 /* Number of bytes reserved for Metadata Header on Chunks */
 #define FLB_INPUT_CHUNK_META_HEADER   4
 
@@ -103,12 +111,15 @@ struct flb_input_chunk {
 #endif /* FLB_HAVE_CHUNK_TRACE */
     double create_time;           /* chunk creation time in seconds with fractional precision) */
     flb_route_mask_element *routes_mask; /* track the output plugins the chunk routes to */
+    int group_open;               /* log chunk ends inside a group */
+    double group_open_time;       /* when the open group started */
     struct mk_list _head;
 };
 
 struct flb_input_chunk *flb_input_chunk_create(struct flb_input_instance *in, int event_type,
                                                const char *tag, int tag_len);
 int flb_input_chunk_destroy(struct flb_input_chunk *ic, int del);
+int flb_input_chunk_holds_open_group(struct flb_input_chunk *ic);
 void flb_input_chunk_destroy_all(struct flb_input_instance *in);
 int flb_input_chunk_destroy_corrupted(struct flb_input_chunk *ic,
                                       const char *tag_buf, int tag_len,
