@@ -81,6 +81,8 @@ struct azure_blob_file *azure_blob_store_file_get(struct flb_azure_blob *ctx, co
         if (fsf->data == NULL) {
             flb_plg_warn(ctx->ins, "BAD: found flb_fstore_file with NULL data reference, tag=%s, file=%s, will try to delete", tag, fsf->name);
             flb_fstore_file_delete(ctx->fs, fsf);
+            fsf = NULL;
+            continue;
         }
 
         if (fsf->meta_size != tag_len) {
