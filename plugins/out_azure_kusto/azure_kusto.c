@@ -569,6 +569,24 @@ static int ingest_all_chunks(struct flb_azure_kusto *ctx, struct flb_config *con
     return 0;
 }
 
+/*
+ * Wait without blocking other workers from buffering. The caller holds
+ * buffer_mutex, and the file stays locked until this callback finishes with it.
+ * Return a refreshed list cursor because other files may have been removed
+ * while the mutex was released.
+ */
+static struct mk_list *azure_kusto_retry_wait(struct flb_azure_kusto *ctx,
+                                   struct azure_kusto_file *file,
+                                   unsigned int delay)
+{
+    azure_kusto_store_file_lock(file);
+    pthread_mutex_unlock(&ctx->buffer_mutex);
+    sleep(delay);
+    pthread_mutex_lock(&ctx->buffer_mutex);
+
+    return file->fsf->_head.next;
+}
+
 /**
  * cb_azure_kusto_ingest - Callback function for ingesting data to Azure Kusto.
  *
@@ -656,7 +674,7 @@ static void cb_azure_kusto_ingest(struct flb_config *config, void *data)
                 retry_count++;
                 /* Add jitter: random value between 0 and backoff_time */
                 int jitter = rand() % backoff_time;
-                sleep(backoff_time + jitter); /* Exponential backoff with jitter */
+                tmp = azure_kusto_retry_wait(ctx, file, backoff_time + jitter);
                 backoff_time = (backoff_time * 2 < max_backoff_time) ? backoff_time * 2 : max_backoff_time; /* Double the backoff time, but cap it */
                 continue; /* Retry on failure */
             }
@@ -681,7 +699,7 @@ static void cb_azure_kusto_ingest(struct flb_config *config, void *data)
                     int jitter = rand() % backoff_time;
                     flb_plg_warn(ctx->ins, "scheduler_kusto_ingest :: failed while compressing payload :: Retrying in %d seconds (attempt %d of %d) with jitter %d for file %s",
                                  backoff_time + jitter, retry_count, ctx->scheduler_max_retries, jitter, file->fsf->name);
-                    sleep(backoff_time + jitter); /* Exponential backoff with jitter */
+                    tmp = azure_kusto_retry_wait(ctx, file, backoff_time + jitter);
                     backoff_time = (backoff_time * 2 < max_backoff_time) ? backoff_time * 2 : max_backoff_time; /* Double the backoff time, but cap it */
                     continue; /* Retry on failure */
                 }
@@ -719,7 +737,7 @@ static void cb_azure_kusto_ingest(struct flb_config *config, void *data)
                 int jitter = rand() % backoff_time;
                 flb_plg_warn(ctx->ins, "scheduler_kusto_ingest :: error loading ingestion resources :: Retrying in %d seconds (attempt %d of %d) with jitter %d for file %s",
                              backoff_time + jitter, retry_count, ctx->scheduler_max_retries, jitter, file->fsf->name);
-                sleep(backoff_time + jitter); /* Exponential backoff with jitter */
+                tmp = azure_kusto_retry_wait(ctx, file, backoff_time + jitter);
                 backoff_time = (backoff_time * 2 < max_backoff_time) ? backoff_time * 2 : max_backoff_time; /* Double the backoff time, but cap it */
                 continue; /* Retry on failure */
             }
@@ -748,7 +766,7 @@ static void cb_azure_kusto_ingest(struct flb_config *config, void *data)
                 int jitter = rand() % backoff_time;
                 flb_plg_warn(ctx->ins, "scheduler_kusto_ingest :: error while ingesting to kusto :: Retrying in %d seconds (attempt %d of %d) with jitter %d for file %s",
                              backoff_time + jitter, retry_count, ctx->scheduler_max_retries, jitter, file->fsf->name);
-                sleep(backoff_time + jitter); /* Exponential backoff with jitter */
+                tmp = azure_kusto_retry_wait(ctx, file, backoff_time + jitter);
                 backoff_time = (backoff_time * 2 < max_backoff_time) ? backoff_time * 2 : max_backoff_time; /* Double the backoff time, but cap it */
                 continue; /* Retry on failure */
             }
