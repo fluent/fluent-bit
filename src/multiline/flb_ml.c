@@ -266,7 +266,8 @@ static int package_content(struct flb_ml_stream *mst,
     }
     if (type == FLB_ML_REGEX) {
         ret = flb_ml_rule_process(parser, mst,
-                                  stream_group, full_map, buf, size, tm,
+                                  stream_group, metadata, full_map,
+                                  buf, size, tm,
                                   val_content, val_pattern);
         if (ret == -1) {
             return -1;
@@ -274,10 +275,6 @@ static int package_content(struct flb_ml_stream *mst,
 
         if (ret == FLB_MULTILINE_TRUNCATED) {
             truncated = FLB_TRUE;
-        }
-
-        if (!truncated && stream_group->mp_sbuf.size == 0) {
-            flb_ml_register_context(stream_group, tm, full_map);
         }
 
         processed = FLB_TRUE;
@@ -381,7 +378,8 @@ static int package_content(struct flb_ml_stream *mst,
         processed = FLB_TRUE;
     }
 
-    if (!truncated && processed && metadata != NULL) {
+    /* regex: metadata was attached by flb_ml_rule_process() before any flush */
+    if (!truncated && processed && metadata != NULL && type != FLB_ML_REGEX) {
         flb_ml_stream_group_add_metadata(stream_group, metadata);
     }
 
