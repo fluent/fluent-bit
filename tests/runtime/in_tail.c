@@ -41,6 +41,9 @@ Approach for this tests is basing on filter_kubernetes tests
 #include "../../plugins/in_tail/win32/interface.h"
 #endif
 #include "flb_tests_runtime.h"
+#ifdef __linux__
+#include "../../plugins/in_tail/tail_file.h"
+#endif
 
 #ifdef _WIN32
 #define fsync _commit
@@ -3136,7 +3139,65 @@ void flb_test_db_compare_filename()
 #endif /* FLB_HAVE_SQLDB */
 
 /* Test list */
+#ifdef __linux__
+static void flb_test_file_name_truncated(void)
+{
+    char directory[] = "/tmp/flb-tail-name-XXXXXX";
+    char component[241];
+    int directories[19];
+    int i;
+    size_t remaining;
+    size_t depth;
+    char *name;
+    struct flb_tail_file file = {0};
+
+    TEST_ASSERT(mkdtemp(directory) != NULL);
+    directories[0] = open(directory, O_RDONLY | O_DIRECTORY);
+    TEST_ASSERT(directories[0] >= 0);
+    memset(component, 'a', sizeof(component) - 1);
+    component[sizeof(component) - 1] = '\0';
+    for (i = 1; i < 19; i++) {
+        TEST_ASSERT(mkdirat(directories[i - 1], component, 0700) == 0);
+        directories[i] = openat(directories[i - 1], component, O_RDONLY | O_DIRECTORY);
+        TEST_ASSERT(directories[i] >= 0);
+    }
+    file.fd = openat(directories[18], "log", O_CREAT | O_RDWR, 0600);
+    TEST_ASSERT(file.fd >= 0);
+    name = flb_tail_file_name(&file);
+    TEST_CHECK(name == NULL);
+    flb_free(name);
+    close(file.fd);
+    TEST_CHECK(unlinkat(directories[18], "log", 0) == 0);
+
+    /* Leave exactly one byte for the pathname terminator. */
+    remaining = PATH_MAX - 2 - strlen(directory);
+    depth = remaining / sizeof(component);
+    TEST_ASSERT(depth < sizeof(directories) / sizeof(directories[0]));
+    remaining %= sizeof(component);
+    TEST_ASSERT(remaining > 0);
+    component[remaining] = '\0';
+    file.fd = openat(directories[depth], component, O_CREAT | O_RDWR, 0600);
+    TEST_ASSERT(file.fd >= 0);
+    name = flb_tail_file_name(&file);
+    TEST_CHECK(name != NULL && strlen(name) == PATH_MAX - 1);
+    flb_free(name);
+    close(file.fd);
+    TEST_CHECK(unlinkat(directories[depth], component, 0) == 0);
+    component[remaining] = 'a';
+
+    for (i = 18; i > 0; i--) {
+        close(directories[i]);
+        TEST_CHECK(unlinkat(directories[i - 1], component, AT_REMOVEDIR) == 0);
+    }
+    close(directories[0]);
+    TEST_CHECK(rmdir(directory) == 0);
+}
+#endif
+
 TEST_LIST = {
+#ifdef __linux__
+    {"file_name_truncated", flb_test_file_name_truncated},
+#endif
     {"issue_3943", flb_test_in_tail_issue_3943},
     /* Properties */
     {"skip_long_lines", flb_test_in_tail_skip_long_lines},
