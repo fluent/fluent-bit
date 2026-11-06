@@ -51,7 +51,8 @@
 
 
 /* Declarations */
-static int http_credentials_request(struct flb_aws_provider_http
+static int http_credentials_request(struct flb_aws_provider *provider,
+                                    struct flb_aws_provider_http
                                     *implementation);
 
 
@@ -87,27 +88,36 @@ struct flb_aws_credentials *get_credentials_fn_http(struct flb_aws_provider
                                                     *provider)
 {
     struct flb_aws_credentials *creds = NULL;
+    time_t next_refresh;
     int refresh = FLB_FALSE;
     struct flb_aws_provider_http *implementation = provider->implementation;
 
     flb_debug("[aws_credentials] Retrieving credentials from the "
               "HTTP provider..");
 
+    next_refresh = flb_aws_cache_get_refresh_time(provider,
+                                                  &implementation->next_refresh);
+
     /* a negative next_refresh means that auto-refresh is disabled */
-    if (implementation->next_refresh > 0
-        && time(NULL) > implementation->next_refresh) {
+    if (next_refresh > 0 && time(NULL) > next_refresh) {
         refresh = FLB_TRUE;
     }
-    if (!implementation->creds || refresh == FLB_TRUE) {
+
+    creds = flb_aws_cache_get_credentials(provider, &implementation->creds);
+    if (!creds || refresh == FLB_TRUE) {
         if (try_lock_provider(provider)) {
-            http_credentials_request(implementation);
+            http_credentials_request(provider, implementation);
             unlock_provider(provider);
+
+            flb_aws_credentials_destroy(creds);
+            creds = flb_aws_cache_get_credentials(provider,
+                                                  &implementation->creds);
         } else {
             flb_error("try_lock_provider failed");
         }
     }
 
-    if (!implementation->creds) {
+    if (!creds) {
         /*
          * We failed to lock the provider and creds are unset. This means that
          * another co-routine is performing the refresh.
@@ -119,42 +129,7 @@ struct flb_aws_credentials *get_credentials_fn_http(struct flb_aws_provider
         return NULL;
     }
 
-    creds = flb_calloc(1, sizeof(struct flb_aws_credentials));
-    if (!creds) {
-        flb_errno();
-        goto error;
-    }
-
-    creds->access_key_id = flb_sds_create(implementation->creds->access_key_id);
-    if (!creds->access_key_id) {
-        flb_errno();
-        goto error;
-    }
-
-    creds->secret_access_key = flb_sds_create(implementation->creds->
-                                              secret_access_key);
-    if (!creds->secret_access_key) {
-        flb_errno();
-        goto error;
-    }
-
-    if (implementation->creds->session_token) {
-        creds->session_token = flb_sds_create(implementation->creds->
-                                              session_token);
-        if (!creds->session_token) {
-            flb_errno();
-            goto error;
-        }
-
-    } else {
-        creds->session_token = NULL;
-    }
-
     return creds;
-
-error:
-    flb_aws_credentials_destroy(creds);
-    return NULL;
 }
 
 int refresh_fn_http(struct flb_aws_provider *provider) {
@@ -163,7 +138,7 @@ int refresh_fn_http(struct flb_aws_provider *provider) {
     flb_debug("[aws_credentials] Refresh called on the http provider");
 
     if (try_lock_provider(provider)) {
-        ret = http_credentials_request(implementation);
+        ret = http_credentials_request(provider, implementation);
         unlock_provider(provider);
     }
     return ret;
@@ -177,7 +152,7 @@ int init_fn_http(struct flb_aws_provider *provider) {
     implementation->client->debug_only = FLB_TRUE;
 
     if (try_lock_provider(provider)) {
-        ret = http_credentials_request(implementation);
+        ret = http_credentials_request(provider, implementation);
         unlock_provider(provider);
     }
 
@@ -274,6 +249,7 @@ struct flb_aws_provider *flb_endpoint_provider_create(struct flb_config *config,
     }
 
     pthread_mutex_init(&provider->lock, NULL);
+    pthread_mutex_init(&provider->cache_lock, NULL);
 
     implementation = flb_calloc(1, sizeof(struct flb_aws_provider_http));
 
@@ -411,7 +387,8 @@ static void trim_newline(char *token)
     }
 }
 
-static int http_credentials_request(struct flb_aws_provider_http
+static int http_credentials_request(struct flb_aws_provider *provider,
+                                    struct flb_aws_provider_http
                                     *implementation)
 {
     char *response = NULL;
@@ -499,12 +476,10 @@ static int http_credentials_request(struct flb_aws_provider_http
         return -1;
     }
 
-    /* destroy existing credentials */
-    flb_aws_credentials_destroy(implementation->creds);
-    implementation->creds = NULL;
-
-    implementation->creds = creds;
-    implementation->next_refresh = expiration - FLB_AWS_REFRESH_WINDOW;
+    /* publish the new credentials; the old ones are freed for us */
+    flb_aws_cache_set_credentials(provider, &implementation->creds, creds,
+                                  &implementation->next_refresh,
+                                  expiration - FLB_AWS_REFRESH_WINDOW);
     flb_http_client_destroy(c);
 
     return 0;
