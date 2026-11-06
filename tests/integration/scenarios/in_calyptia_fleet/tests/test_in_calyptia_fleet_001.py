@@ -1,11 +1,15 @@
+import pytest
+import os
 import base64
 import json
 import threading
+from email.utils import parsedate_to_datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
 from utils.data_utils import read_file
+from utils.filesystem import make_link
 from utils.network import find_available_port, wait_for_port_to_be_free
 from utils.test_service import FluentBitTestService
 
@@ -58,6 +62,10 @@ class FleetAPIHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == f"/v1/fleets/{FLEET_ID}/files":
+            if self.server.file_failures > 0:
+                self.server.file_failures -= 1
+                self._send_response(503, "temporary failure", "text/plain")
+                return
             self._send_response(
                 200,
                 json.dumps(self.server.fleet_files),
@@ -92,6 +100,7 @@ class FleetAPIServer:
         self.httpd.fleet_files = fleet_files or []
         self.httpd.last_modified = LAST_MODIFIED
         self.httpd.requests = []
+        self.httpd.file_failures = 0
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
 
     def __enter__(self):
@@ -723,3 +732,185 @@ def test_fleet_startup_keeps_flat_ref_when_migration_target_is_blocked(tmp_path)
     assert paths["timestamp_blocker"].is_file()
     assert _read_ref_path(paths["ref_file"]) == paths["flat_config"]
     assert marker in log_text
+
+
+@pytest.mark.parametrize("follow_symlinks", [None, True, False], ids=["default", "follow", "harden"])
+def test_fleet_attachment_symlink_policy(tmp_path, follow_symlinks):
+    api_port = find_available_port()
+    cache_dir = tmp_path / "fleet-cache"
+    timestamp = int(parsedate_to_datetime(LAST_MODIFIED).timestamp())
+    attachment_dir = _fleet_base_dir(cache_dir) / str(timestamp)
+    attachment_dir.mkdir(parents=True)
+    victim = tmp_path / "victim"
+    victim.write_text("untouched\n")
+    make_link(attachment_dir / PARSER_FILE, victim)
+    config_path = _write_bootstrap_config(tmp_path, cache_dir, api_port)
+    if follow_symlinks is not None:
+        config_path.write_text(config_path.read_text().replace(
+            "    fleet.config_dir:",
+            f"    fleet.follow_symlinks: {str(follow_symlinks).lower()}\n    fleet.config_dir:",
+        ))
+    config = _fleet_config(cache_dir, api_port, "symlink-policy-reload")
+    with FleetAPIServer(api_port, config, _fleet_files_payload()):
+        service = FluentBitTestService(str(config_path), extra_env={"TZ": "UTC"})
+        try:
+            service.start()
+            _wait_for_log_contains(service, "unable to write fleet files safely"
+                                   if follow_symlinks is False else "symlink-policy-reload")
+        finally:
+            service.stop()
+    assert victim.read_text() == ("untouched\n" if follow_symlinks is False else PARSER_CONFIG)
+
+
+def test_fleet_attachment_rejects_parent_traversal(tmp_path):
+    api_port = find_available_port()
+    cache_dir = tmp_path / "fleet-cache"
+    config_path = _write_bootstrap_config(tmp_path, cache_dir, api_port)
+    config = _fleet_config(cache_dir, api_port, "must-not-reload")
+    payload = [{"name": "../escaped", "contents": base64.b64encode(b"escape").decode()}]
+    with FleetAPIServer(api_port, config, payload):
+        service = FluentBitTestService(str(config_path))
+        try:
+            service.start()
+            _wait_for_log_contains(service, "unable to write fleet files safely")
+        finally:
+            service.stop()
+    assert not (_fleet_base_dir(cache_dir) / "escaped").exists()
+
+
+def _set_follow_symlinks(config_path, follow_symlinks):
+    config_path.write_text(config_path.read_text().replace(
+        "    fleet.config_dir:",
+        f"    fleet.follow_symlinks: {str(follow_symlinks).lower()}\n    fleet.config_dir:",
+    ))
+
+
+@pytest.mark.parametrize("cached", [False, True], ids=["bootstrap", "update"])
+@pytest.mark.parametrize("follow_symlinks", [True, False], ids=["follow", "harden"])
+def test_fleet_retries_failed_attachments(tmp_path, cached, follow_symlinks):
+    api_port = find_available_port()
+    cache_dir = tmp_path / "fleet-cache"
+    marker = "retried-revision-applied"
+    config_path = _write_bootstrap_config(tmp_path, cache_dir, api_port, interval_sec="2")
+    _set_follow_symlinks(config_path, follow_symlinks)
+    victim = tmp_path / "outside" / "keep"
+    victim.parent.mkdir()
+    victim.write_text("untouched")
+    old_directory = None
+    if cached:
+        paths = _write_nested_cache(cache_dir, api_port, "cur", "old-revision")
+        old_directory = paths["nested_config"].parent
+        paths["nested_config"].write_text(paths["nested_config"].read_text().replace(
+            'fleet.interval_sec: "3600"', 'fleet.interval_sec: "2"'))
+        _set_follow_symlinks(paths["nested_config"], follow_symlinks)
+        if not follow_symlinks:
+            make_link(old_directory / "external", victim.parent, directory=True)
+            if os.name != "nt":
+                make_link(old_directory / "dangling", tmp_path / "missing")
+            (old_directory / ".hidden").write_text("remove me")
+    config = _fleet_config(cache_dir, api_port, marker)
+    with FleetAPIServer(api_port, config, _fleet_files_payload()) as api:
+        api.httpd.file_failures = 1
+        service = FluentBitTestService(str(config_path), extra_env={"TZ": "UTC"})
+        try:
+            service.start()
+            _wait_for_log_contains(service, "unable to write fleet files safely", timeout=45)
+            _wait_for_log_contains(service, marker, timeout=45)
+            if old_directory is not None:
+                service.wait_for_condition(lambda: not old_directory.exists(), timeout=45,
+                                           interval=0.5, description="old revision cleanup")
+        finally:
+            service.stop()
+        assert sum(r["path"].endswith("/files") for r in api.requests) >= 2
+    assert victim.read_text() == "untouched"
+
+
+def test_fleet_rejects_header_symlink_before_download(tmp_path):
+    api_port = find_available_port()
+    cache_dir = tmp_path / "fleet-cache"
+    config_path = _write_bootstrap_config(tmp_path, cache_dir, api_port)
+    _set_follow_symlinks(config_path, False)
+    base_dir = _fleet_base_dir(cache_dir)
+    base_dir.mkdir(parents=True)
+    victim = tmp_path / "header-victim"
+    victim.write_text("untouched")
+    make_link(base_dir / "header.yaml", victim)
+    with FleetAPIServer(api_port, _fleet_config(cache_dir, api_port, "must-not-reload")) as api:
+        service = FluentBitTestService(str(config_path))
+        try:
+            service.start()
+            _wait_for_log_contains(service, "unable to create fleet header safely")
+        finally:
+            service.stop()
+        assert not any(r["path"].endswith("/config") for r in api.requests)
+    assert victim.read_text() == "untouched"
+    assert not (base_dir / "new.ref").exists()
+
+
+def test_fleet_failed_attachment_cleanup_preserves_link_target(tmp_path):
+    api_port = find_available_port()
+    cache_dir = tmp_path / "fleet-cache"
+    marker = "retried-after-blocked-attachment"
+    config_path = _write_bootstrap_config(tmp_path, cache_dir, api_port, interval_sec="2")
+    timestamp = int(parsedate_to_datetime(LAST_MODIFIED).timestamp())
+    staged = _fleet_base_dir(cache_dir) / str(timestamp)
+    staged.mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    victim = outside / "keep"
+    victim.write_text("untouched")
+    make_link(staged / PARSER_FILE, outside, directory=True)
+
+    with FleetAPIServer(api_port, _fleet_config(cache_dir, api_port, marker),
+                       _fleet_files_payload()) as api:
+        service = FluentBitTestService(str(config_path), extra_env={"TZ": "UTC"})
+        try:
+            service.start()
+            _wait_for_log_contains(service, "unable to write fleet files safely", timeout=45)
+            _wait_for_log_contains(service, marker, timeout=45)
+        finally:
+            service.stop()
+        assert sum(r["path"].endswith("/files") for r in api.requests) >= 2
+    assert victim.read_text() == "untouched"
+    assert (staged / PARSER_FILE).is_file()
+
+
+def test_fleet_hardened_migration_rejects_linked_destination_parent(tmp_path):
+    api_port = find_available_port()
+    cache_dir = tmp_path / "fleet-cache"
+    paths = _write_old_cache(cache_dir, api_port, "cur", "migration-must-not-reload")
+    outside = tmp_path / "outside"
+    destination = paths["nested_config"]
+    destination.parent.rename(outside)
+    (outside / destination.name).write_text(paths["flat_config"].read_text())
+    make_link(destination.parent, outside, directory=True)
+    config_path = _write_bootstrap_config(tmp_path, cache_dir, api_port)
+    _set_follow_symlinks(config_path, False)
+    service = FluentBitTestService(str(config_path))
+    try:
+        service.start()
+        _wait_for_log_contains(service, "unable to open migrated config safely")
+    finally:
+        service.stop()
+    assert paths["flat_config"].is_file()
+
+
+@pytest.mark.parametrize("follow_symlinks", [True, False], ids=["follow", "harden"])
+def test_fleet_migration_source_symlink_policy(tmp_path, follow_symlinks):
+    api_port = find_available_port()
+    cache_dir = tmp_path / "fleet-cache"
+    marker = "migration-source-config"
+    paths = _write_old_cache(cache_dir, api_port, "cur", marker)
+    source = tmp_path / "external.yaml"
+    paths["flat_config"].rename(source)
+    make_link(paths["flat_config"], source)
+    config_path = _write_bootstrap_config(tmp_path, cache_dir, api_port)
+    _set_follow_symlinks(config_path, follow_symlinks)
+    service = FluentBitTestService(str(config_path))
+    try:
+        service.start()
+        _wait_for_log_contains(service, marker if follow_symlinks else "unable to read file for migration")
+    finally:
+        service.stop()
+    assert paths["nested_config"].exists() == follow_symlinks
+    assert source.is_file()
