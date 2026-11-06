@@ -1527,7 +1527,6 @@ static int process_blob_chunk(struct flb_azure_blob *ctx, struct flb_event_chunk
         if (path_prefix) {
             flb_sds_destroy(path_prefix);
         }
-        cfl_sds_destroy(file_path);
         cfl_sds_destroy(source);
 
         /* generate the parts by using the newest id created (ret) */
@@ -1536,11 +1535,14 @@ static int process_blob_chunk(struct flb_azure_blob *ctx, struct flb_event_chunk
         if (ret == -1) {
             flb_plg_error(ctx->ins, "cannot register blob file '%s 'parts into database",
                             file_path);
+            cfl_sds_destroy(file_path);
+            flb_log_event_decoder_destroy(&log_decoder);
             return -1;
         }
 
         flb_plg_debug(ctx->ins, "blob file '%s' (id=%zu) registered with %zu parts",
                       file_path, file_id, ret);
+        cfl_sds_destroy(file_path);
     }
 
     flb_log_event_decoder_destroy(&log_decoder);
