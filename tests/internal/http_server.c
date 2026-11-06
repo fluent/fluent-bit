@@ -1035,6 +1035,15 @@ void test_http1_rejects_invalid_partial_request_line(void)
         {"GET /bad\n", HTTP_SERVER_PROVIDER_ERROR},
         {"GET /query?q=x\n", HTTP_SERVER_PROVIDER_ERROR},
         {"GET /good", HTTP_SERVER_SUCCESS},
+        {"GET /good HTTP/1", HTTP_SERVER_SUCCESS},
+        {"GET /good HTTP/1.", HTTP_SERVER_SUCCESS},
+        {"GET /good HTTP/1.0\r\n", HTTP_SERVER_SUCCESS},
+        {"GET /good X", HTTP_SERVER_SUCCESS},
+        {"GET /good XXXXXX", HTTP_SERVER_SUCCESS},
+        {"GET /good XXXXXXX", HTTP_SERVER_PROVIDER_ERROR},
+        {"GET /good http/1.", HTTP_SERVER_PROVIDER_ERROR},
+        {"GET /good HTTP/2.", HTTP_SERVER_PROVIDER_ERROR},
+        {"GET /query?q=x HTTP/2.", HTTP_SERVER_PROVIDER_ERROR},
         {"GET /good HTTP/1.1\r\n", HTTP_SERVER_SUCCESS},
         {"GET /good HTTP/1.1\r\nHost: localhost\r\n", HTTP_SERVER_SUCCESS}
     };
@@ -1063,6 +1072,9 @@ void test_http1_rejects_invalid_partial_request_line(void)
                 }
             }
             TEST_CHECK_(result == cases[index].expected, "request line: %s", cases[index].data);
+            if (result == HTTP_SERVER_PROVIDER_ERROR) {
+                TEST_CHECK(session->http1.stream.status == HTTP_STREAM_STATUS_ERROR);
+            }
             flb_http_server_session_destroy(session);
         }
     }
