@@ -17,6 +17,7 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_file.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -2189,12 +2190,8 @@ int flb_utils_uuid_v4_gen(char *buf)
 }
 #endif
 
-int flb_utils_read_file(char *path, char **out_buf, size_t *out_size)
-{
-    return flb_utils_read_file_offset(path, 0, 0, out_buf, out_size);
-}
-
-int flb_utils_read_file_offset(char *path, off_t offset_start, off_t offset_end, char **out_buf, size_t *out_size)
+static int read_file_offset(char *path, off_t offset_start, off_t offset_end,
+                            char **out_buf, size_t *out_size, int nofollow)
 {
     int fd;
     int ret;
@@ -2205,7 +2202,12 @@ int flb_utils_read_file_offset(char *path, off_t offset_start, off_t offset_end,
     flb_sds_t buf;
     FILE *fp;
 
-    fp = fopen(path, "rb");
+    if (nofollow) {
+        fp = flb_file_fopen_safe(NULL, path, "rb", 0);
+    }
+    else {
+        fp = fopen(path, "rb");
+    }
     if (!fp) {
         return -1;
     }
@@ -2267,6 +2269,24 @@ int flb_utils_read_file_offset(char *path, off_t offset_start, off_t offset_end,
     *out_size = total_bytes_read;
 
     return 0;
+}
+
+int flb_utils_read_file(char *path, char **out_buf, size_t *out_size)
+{
+    return read_file_offset(path, 0, 0, out_buf, out_size, FLB_FALSE);
+}
+
+int flb_utils_read_file_offset(char *path, off_t offset_start, off_t offset_end,
+                               char **out_buf, size_t *out_size)
+{
+    return read_file_offset(path, offset_start, offset_end, out_buf, out_size, FLB_FALSE);
+}
+
+/* Enforce containment when blob consumers reopen files, including on retries. */
+int flb_utils_read_file_offset_safe(char *path, off_t offset_start, off_t offset_end,
+                                    char **out_buf, size_t *out_size)
+{
+    return read_file_offset(path, offset_start, offset_end, out_buf, out_size, FLB_TRUE);
 }
 
 static int machine_id_read_and_sanitize(char *path,
