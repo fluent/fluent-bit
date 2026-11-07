@@ -284,7 +284,51 @@ void test_downstream_event_callback_runs_on_parent_stack()
     flb_coro_destroy(coro);
 }
 
+/* Verify that a blocking send to a stalled peer is bounded by its timeout. */
+#ifndef FLB_SYSTEM_WINDOWS
+static void test_blocking_send_timeout(void)
+{
+    int ret;
+    int pair[2];
+    int buffer_size = 4096;
+    char data[4096] = {0};
+    struct flb_time start;
+    struct flb_time end;
+    double elapsed;
+
+    ret = socketpair(AF_UNIX, SOCK_STREAM, 0, pair);
+    if (!TEST_CHECK(ret == 0)) {
+        return;
+    }
+
+    ret = setsockopt(pair[0], SOL_SOCKET, SO_SNDBUF, &buffer_size, sizeof(buffer_size));
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(flb_net_socket_nonblocking(pair[0]) == 0);
+    do {
+        ret = send(pair[0], data, sizeof(data), 0);
+    } while (ret > 0);
+    TEST_CHECK(errno == EAGAIN || errno == EWOULDBLOCK);
+
+    TEST_CHECK(flb_net_socket_blocking(pair[0]) == 0);
+    TEST_CHECK(flb_net_socket_set_sndtimeout(pair[0], 1) == 0);
+    flb_time_get(&start);
+    ret = send(pair[0], data, sizeof(data), 0);
+    flb_time_get(&end);
+    TEST_CHECK(ret == -1);
+    TEST_CHECK(errno == EAGAIN || errno == EWOULDBLOCK);
+    elapsed = flb_time_to_double(&end) - flb_time_to_double(&start);
+    TEST_CHECK(elapsed >= 0.5 && elapsed < 5.0);
+    TEST_MSG("blocked send returned after %.3f seconds", elapsed);
+
+    flb_socket_close(pair[0]);
+    flb_socket_close(pair[1]);
+}
+#endif
+
 TEST_LIST = {
+#ifndef FLB_SYSTEM_WINDOWS
+    { "blocking_send_timeout", test_blocking_send_timeout },
+#endif
     { "ipv4_client_server", test_ipv4_client_server},
     { "ipv6_client_server", test_ipv6_client_server},
     { "ipv6_bracketed_listen", test_ipv6_bracketed_listen},
