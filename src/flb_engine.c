@@ -1879,6 +1879,52 @@ int flb_engine_start(struct flb_config *config)
     }
 }
 
+/* The shutdown deadline can leave unstarted dispatches in the engine channel. */
+static void flb_engine_cancel_pending_dispatches(struct flb_config *config)
+{
+    struct flb_output_dispatch *dispatch;
+    ssize_t bytes;
+    size_t received;
+
+    if (!(config->event_thread_init.status & MK_EVENT_REGISTERED)) {
+        return;
+    }
+    if (flb_pipe_set_nonblocking(config->ch_self_events[0]) == -1) {
+        flb_pipe_error();
+        return;
+    }
+
+    received = 0;
+    while (1) {
+        bytes = flb_pipe_r(config->ch_self_events[0],
+                           (char *) &dispatch + received, sizeof(dispatch) - received);
+        if (bytes <= 0) {
+            if (bytes == -1 &&
+#ifdef _WIN32
+                WSAGetLastError() == WSAEINTR) {
+#else
+                errno == EINTR) {
+#endif
+                continue;
+            }
+            break;
+        }
+        received += bytes;
+        if (received != sizeof(dispatch)) {
+            continue;
+        }
+        received = 0;
+
+        if (dispatch != NULL) {
+            if (flb_task_route_unqueue(dispatch->task, dispatch->out) == 0) {
+                flb_task_users_dec(dispatch->task, FLB_FALSE);
+            }
+            flb_output_dispatch_destroy(dispatch);
+            config->flush_in_flight--;
+        }
+    }
+}
+
 /* Release all resources associated to the engine */
 int flb_engine_shutdown(struct flb_config *config)
 {
@@ -1923,6 +1969,7 @@ int flb_engine_shutdown(struct flb_config *config)
     }
 
     /* cleanup plugins */
+    flb_engine_cancel_pending_dispatches(config);
     flb_filter_exit(config);
     flb_output_exit(config);
     flb_custom_exit(config);
