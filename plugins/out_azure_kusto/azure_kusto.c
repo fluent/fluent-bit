@@ -938,6 +938,10 @@ static int ingest_to_kusto(void *out_context, flb_sds_t new_data,
  *
  * @return 0 on success, -1 on failure.
  */
+/*
+ * Initialize authentication and the buffered store shared by output workers.
+ * Create buffer_mutex before exposing the context to flush callbacks.
+ */
 static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_config *config,
                                void *data)
 {
@@ -1635,6 +1639,10 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
  * Returns:
  * - 0 on successful cleanup.
  * - -1 if the context is invalid or if an error occurs during cleanup.
+ */
+/*
+ * Send remaining buffered data after all workers have joined, then release
+ * the store, authentication resources, and buffer_mutex.
  */
 static int cb_azure_kusto_exit(void *data, struct flb_config *config)
 {
