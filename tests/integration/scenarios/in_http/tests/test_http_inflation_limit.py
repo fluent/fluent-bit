@@ -115,16 +115,17 @@ def test_http_inflation_budget(tmp_path, codec, decoded_limit):
         assert len(payload) < WIRE_LIMIT
         with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
             results = list(pool.map(lambda _: post(port, payload, encoding), range(8)))
-        assert results == ([None] * 8 if decoded_limit == LIMIT else [201] * 8)
-        assert post(port, payload[:len(payload) // 2], encoding) is None
+        assert results == ([413] * 8 if decoded_limit == LIMIT else [201] * 8)
+        # Truncated headers may advertise an over-budget decoded size.
+        assert post(port, payload[:len(payload) // 2], encoding) in (400, 413)
         if codec == "gzip":
             # A forged small ISIZE must not bypass the incremental output budget.
-            assert post(port, payload[:-4] + (1).to_bytes(4, "little"), encoding) is None
+            assert post(port, payload[:-4] + (1).to_bytes(4, "little"), encoding) == 400
         if codec == "snappy":
             # Reject an attacker-controlled allocation size before decoding.
-            assert post(port, varint(0xffffffff), encoding) is None
+            assert post(port, varint(0xffffffff), encoding) == 413
         for unsupported in ("zlib", "deflate", "gzip, snappy", "gzip-invalid"):
-            assert post(port, payload, unsupported) is None
+            assert post(port, payload, unsupported) == 400
         assert post(port, encode(prefix + b" " * 128, codec), encoding) == 201
     finally:
         service.stop()
@@ -171,6 +172,6 @@ def test_plain_http_body_uses_wire_limit(tmp_path):
         service.start()
         assert post(service.flb_listener_port, payload, "identity") == 201
         assert post(service.flb_listener_port, payload, None) == 201
-        assert post(service.flb_listener_port, gzip.compress(payload), "gzip") is None
+        assert post(service.flb_listener_port, gzip.compress(payload), "gzip") == 413
     finally:
         service.stop()

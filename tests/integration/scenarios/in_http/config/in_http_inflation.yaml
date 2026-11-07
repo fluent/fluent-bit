@@ -9,6 +9,7 @@ pipeline:
     - name: http
       port: ${FLUENT_BIT_TEST_LISTENER_PORT}
       http_server.buffer_max_size: 8192
+      http_server.max_decoded_body_size: 8192
       http_server.buffer_chunk_size: 1024
   outputs:
     - name: null
