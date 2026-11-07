@@ -2,6 +2,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_pipe.h>
+#include <monkey/mk_core/mk_event.h>
 #ifdef FLB_SYSTEM_WINDOWS
 #include <fluent-bit/flb_compat.h>
 #endif
@@ -83,7 +84,52 @@ static void test_pipe_usage()
 #endif
 }
 
+static void test_event_channel_usage(void)
+{
+    int ret;
+    uint64_t sent;
+    uint64_t received;
+    flb_pipefd_t channel[2];
+    struct mk_event event = {0};
+    struct mk_event_loop *loop;
+
+    channel[0] = -1;
+    channel[1] = -1;
+    sent = 42;
+    received = 0;
+    MK_EVENT_ZERO(&event);
+
+    loop = mk_event_loop_create(8);
+    if (!TEST_CHECK(loop != NULL)) {
+        return;
+    }
+
+    ret = mk_event_channel_create(loop, &channel[0], &channel[1], &event);
+    if (!TEST_CHECK(ret == 0)) {
+        mk_event_loop_destroy(loop);
+        return;
+    }
+
+    /* Channel creation must replace the entire invalid socket value. */
+    TEST_CHECK(channel[0] >= 0);
+    TEST_CHECK(channel[1] >= 0);
+    TEST_CHECK(event.fd == channel[0]);
+    ret = flb_pipe_write_all(channel[1], &sent, sizeof(sent));
+    TEST_CHECK(ret == sizeof(sent));
+    ret = mk_event_wait_2(loop, 1000);
+    if (TEST_CHECK(ret == 1)) {
+        ret = flb_pipe_read_all(event.fd, &received, sizeof(received));
+        TEST_CHECK(ret == sizeof(received));
+        TEST_CHECK(received == sent);
+    }
+
+    ret = mk_event_channel_destroy(loop, channel[0], channel[1], &event);
+    TEST_CHECK(ret == 0);
+    mk_event_loop_destroy(loop);
+}
+
 TEST_LIST = {
     { "pipe_usage", test_pipe_usage},
+    { "event_channel_usage", test_event_channel_usage},
     { 0 }
 };
