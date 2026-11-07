@@ -3567,6 +3567,7 @@ def test_in_opentelemetry_protobuf_decode_budget_multiframe():
 @pytest.mark.parametrize("compressed", [False, True])
 @pytest.mark.parametrize("limit,count", [(None, 1_100_000), ("64k", 1000)])
 def test_in_opentelemetry_protobuf_decode_budget_profiles(tmp_path, compressed, limit, count):
+    """Reject oversized profiles and accept a small export on the same listener."""
     config = tmp_path / "profiles-budget.yaml"
     config.write_text("""service:
   flush: 1
@@ -3598,9 +3599,23 @@ pipeline:
             body,
             headers=["Content-Type: application/grpc", "grpc-encoding: gzip"],
             http_mode="http2-prior-knowledge", include_headers=True,
+            extra_args=["--max-time", "60"],
         )
         assert result["status_code"] == 200
         assert "grpc-status: 8" in result["headers_raw"].lower()
+        payload = b"\x0a\x00"
+        encoded = gzip.compress(payload) if compressed else payload
+        body = bytes([int(compressed)]) + len(encoded).to_bytes(4, "big") + encoded
+        result = run_curl_request(
+            f"http://localhost:{service.flb_listener_port}/opentelemetry.proto.collector."
+            "profiles.v1development.ProfilesService/Export",
+            body,
+            headers=["Content-Type: application/grpc", "grpc-encoding: gzip"],
+            http_mode="http2-prior-knowledge", include_headers=True,
+            extra_args=["--max-time", "60"],
+        )
+        assert result["status_code"] == 200
+        assert "grpc-status: 0" in result["headers_raw"].lower()
     finally:
         service.stop()
 
@@ -3793,9 +3808,10 @@ def test_in_opentelemetry_request_size_default_json(delta, status):
     "gzip", "zstd", "zstd-unknown", "zstd-unknown-large-window",
     "snappy", "snappy-framed", "snappy-mixed",
 ])
-@pytest.mark.parametrize("workers", [1, 4])
+@pytest.mark.parametrize("workers", HTTP_WORKER_COUNTS)
 @pytest.mark.parametrize("http_mode", ["http1.1", "http2-prior-knowledge"])
 def test_in_opentelemetry_http_bounded_content_encoding(encoding, workers, http_mode):
+    """Enforce decoded boundaries for each codec, protocol, and worker mode."""
     service = Service("otlp_grpc_bounded.yaml")
     service.service.extra_env["OTLP_TEST_HTTP_WORKERS"] = workers
     content_encoding = encoding.split("-")[0]
