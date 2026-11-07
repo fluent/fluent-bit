@@ -448,4 +448,8 @@ if(TARGET flb-it-input_ingest_alloc)
   endforeach()
   target_link_options(flb-it-input_ingest_alloc PRIVATE
     "-Wl,--wrap=calloc" "-Wl,--wrap=flb_sds_create_len")
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "^riscv")
+    # LLD before 17 can corrupt wrapped symbol addresses during relaxation.
+    target_link_options(flb-it-input_ingest_alloc PRIVATE "-Wl,--no-relax")
+  endif()
 endif()
