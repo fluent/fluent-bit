@@ -219,7 +219,9 @@ int flb_http_request_compress_body(
     struct flb_http_request *request,
     char *content_encoding_header_value);
 
-/* Expanded body budget in bytes; limit failures return FLB_DECOMPRESSOR_LIMIT_EXCEEDED. */
+/* Expanded body budget in bytes. Allocation failures return
+ * FLB_DECOMPRESSOR_ALLOCATION_FAILURE; limits return FLB_DECOMPRESSOR_LIMIT_EXCEEDED.
+ */
 int flb_http_request_uncompress_body(
     struct flb_http_request *request,
     size_t                   budget);

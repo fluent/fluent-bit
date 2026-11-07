@@ -466,7 +466,7 @@ static int http_uncompress_body(cfl_sds_t body, const char *encoding,
     }
     decoder = flb_decompression_context_create(algorithm, cfl_sds_len(body));
     if (decoder == NULL) {
-        return FLB_DECOMPRESSOR_FAILURE;
+        return FLB_DECOMPRESSOR_ALLOCATION_FAILURE;
     }
     decoder->output_limit = budget;
     decoder->input_complete = FLB_TRUE;
@@ -475,7 +475,7 @@ static int http_uncompress_body(cfl_sds_t body, const char *encoding,
     inflated = cfl_sds_create_size(0);
     if (inflated == NULL) {
         flb_decompression_context_destroy(decoder);
-        return FLB_DECOMPRESSOR_FAILURE;
+        return FLB_DECOMPRESSOR_ALLOCATION_FAILURE;
     }
 
     while (decoder->input_buffer_length > 0) {
@@ -500,14 +500,14 @@ static int http_uncompress_body(cfl_sds_t body, const char *encoding,
                 }
                 resized = cfl_sds_increase(inflated, target_size - capacity);
                 if (resized == NULL) {
-                    result = FLB_DECOMPRESSOR_FAILURE;
+                    result = FLB_DECOMPRESSOR_ALLOCATION_FAILURE;
                     goto error;
                 }
                 inflated = resized;
             }
             resized = cfl_sds_cat(inflated, chunk, produced);
             if (resized == NULL) {
-                result = FLB_DECOMPRESSOR_FAILURE;
+                result = FLB_DECOMPRESSOR_ALLOCATION_FAILURE;
                 goto error;
             }
             inflated = resized;
@@ -587,6 +587,9 @@ int flb_http_request_uncompress_body(
                                              new_content_length, 0);
 
         request->content_length = output_size;
+        if (result != 0) {
+            return FLB_DECOMPRESSOR_ALLOCATION_FAILURE;
+        }
     }
 
     return result;
