@@ -712,11 +712,6 @@ static int create_blob(struct flb_azure_blob *ctx, const char *path_prefix, char
         return FLB_RETRY;
     }
 
-    if (ctx->buffering_enabled == FLB_TRUE){
-        ctx->u->base.flags &= ~(FLB_IO_ASYNC);
-        ctx->u->base.net.io_timeout = ctx->io_timeout;
-    }
-
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
@@ -913,11 +908,6 @@ static int http_send_blob(struct flb_config *config, struct flb_azure_blob *ctx,
     struct flb_connection *u_conn;
 
     flb_plg_debug(ctx->ins, "generated blob uri ::: %s", uri);
-
-    if (ctx->buffering_enabled == FLB_TRUE){
-        ctx->u->base.flags &= ~(FLB_IO_ASYNC);
-        ctx->u->base.net.io_timeout = ctx->io_timeout;
-    }
 
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
@@ -1212,11 +1202,6 @@ static int create_container(struct flb_azure_blob *ctx, char *name)
     struct flb_http_client *c;
     struct flb_connection *u_conn;
 
-    if (ctx->buffering_enabled == FLB_TRUE){
-        ctx->u->base.flags &= ~(FLB_IO_ASYNC);
-        ctx->u->base.net.io_timeout = ctx->io_timeout;
-    }
-
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
@@ -1308,11 +1293,6 @@ static int ensure_container(struct flb_azure_blob *ctx)
     if (!uri) {
         flb_plg_error(ctx->ins, "cannot create container URI");
         return FLB_FALSE;
-    }
-
-    if (ctx->buffering_enabled == FLB_TRUE){
-        ctx->u->base.flags &= ~(FLB_IO_ASYNC);
-        ctx->u->base.net.io_timeout = ctx->io_timeout;
     }
 
     /* Get upstream connection */
@@ -2704,7 +2684,7 @@ static struct flb_config_map config_map[] = {
 
     {
      FLB_CONFIG_MAP_TIME, "io_timeout", "60s",0, FLB_TRUE, offsetof(struct flb_azure_blob, io_timeout),
-     "HTTP IO timeout. Default is 60s"
+     "Buffered HTTP I/O timeout when net.io_timeout is unset. Default is 60s"
     },
 
     /* EOF */
