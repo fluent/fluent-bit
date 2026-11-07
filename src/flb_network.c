@@ -1496,7 +1496,12 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
         flb_net_socket_tcp_nodelay(fd);
 
         /* Set receive timeout and bound writes on synchronous sockets. */
-        flb_net_socket_set_rcvtimeout(fd, u_conn->net->io_timeout);
+        ret = flb_net_socket_set_rcvtimeout(fd, u_conn->net->io_timeout);
+        if (ret == -1 && is_async == FLB_FALSE) {
+            flb_socket_close(fd);
+            fd = -1;
+            continue;
+        }
         if (is_async == FLB_FALSE) {
             ret = flb_net_socket_set_sndtimeout(fd, u_conn->net->io_timeout);
             if (ret == -1) {
