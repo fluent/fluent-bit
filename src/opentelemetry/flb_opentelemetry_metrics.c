@@ -17,6 +17,7 @@
  *  limitations under the License.
  */
 
+#include <cmetrics/cmt_otlp_metadata.h>
 #include <fluent-bit/flb_opentelemetry.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_sds.h>
@@ -25,6 +26,7 @@
 
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_counter.h>
+#include <cmetrics/cmt_atomic.h>
 #include <cmetrics/cmt_decode_opentelemetry.h>
 #include <cmetrics/cmt_exp_histogram.h>
 #include <cmetrics/cmt_gauge.h>
@@ -320,26 +322,6 @@ static int set_metric_unit(struct cmt_map *map, msgpack_object_map *metric_map)
     return 0;
 }
 
-static char *map_type_to_key(int map_type)
-{
-    switch (map_type) {
-    case CMT_COUNTER:
-        return "counter";
-    case CMT_GAUGE:
-        return "gauge";
-    case CMT_UNTYPED:
-        return "untyped";
-    case CMT_SUMMARY:
-        return "summary";
-    case CMT_HISTOGRAM:
-        return "histogram";
-    case CMT_EXP_HISTOGRAM:
-        return "exp_histogram";
-    default:
-        return "unknown";
-    }
-}
-
 static struct cfl_kvlist *get_or_create_external_metadata_kvlist(
     struct cfl_kvlist *root, char *key)
 {
@@ -376,62 +358,6 @@ static struct cfl_kvlist *get_or_create_external_metadata_kvlist(
  * index of the entries created there during the request, keyed by parent
  * kvlist and lowercased key to keep the case-insensitive kvlist semantics.
  */
-static struct cfl_kvlist *get_or_create_indexed_kvlist(struct flb_hash_table *index,
-                                                       struct cfl_kvlist *root,
-                                                       char *key)
-{
-    int                 ret;
-    size_t              i;
-    size_t              out_size;
-    void               *out_buf;
-    flb_sds_t           index_key;
-    struct cfl_kvlist  *entry_kvlist;
-
-    index_key = flb_sds_create_size(strlen(key) + 32);
-    if (index_key == NULL) {
-        return NULL;
-    }
-
-    if (flb_sds_printf(&index_key, "%p:%s", (void *) root, key) == NULL) {
-        flb_sds_destroy(index_key);
-        return NULL;
-    }
-
-    for (i = 0; i < flb_sds_len(index_key); i++) {
-        index_key[i] = tolower((unsigned char) index_key[i]);
-    }
-
-    ret = flb_hash_table_get(index, index_key, flb_sds_len(index_key),
-                             &out_buf, &out_size);
-    if (ret >= 0) {
-        flb_sds_destroy(index_key);
-        return (struct cfl_kvlist *) out_buf;
-    }
-
-    entry_kvlist = cfl_kvlist_create();
-    if (entry_kvlist == NULL) {
-        flb_sds_destroy(index_key);
-        return NULL;
-    }
-
-    ret = cfl_kvlist_insert_kvlist(root, key, entry_kvlist);
-    if (ret != 0) {
-        cfl_kvlist_destroy(entry_kvlist);
-        flb_sds_destroy(index_key);
-        return NULL;
-    }
-
-    /* the kvlist is owned by root, the index only references it */
-    ret = flb_hash_table_add(index, index_key, flb_sds_len(index_key),
-                             entry_kvlist, 0);
-    flb_sds_destroy(index_key);
-    if (ret == -1) {
-        return NULL;
-    }
-
-    return entry_kvlist;
-}
-
 static uint64_t compute_metric_hash(struct cmt_map *map, struct cmt_metric *sample)
 {
     struct cfl_list      *head;
@@ -465,31 +391,10 @@ static struct cfl_kvlist *get_or_create_metric_metadata_context(struct cmt *cmt,
                                                                  struct flb_hash_table *kvlist_index,
                                                                  struct cmt_map *map)
 {
-    struct cfl_kvlist *otlp_root;
-    struct cfl_kvlist *metrics_root;
-    struct cfl_kvlist *type_root;
-
-    if (cmt == NULL || map == NULL || map->opts == NULL || map->opts->fqname == NULL) {
-        return NULL;
+    if (!map->otlp_metadata) {
+        map->otlp_metadata = cfl_kvlist_create();
     }
-
-    otlp_root = get_or_create_indexed_kvlist(kvlist_index, cmt->external_metadata, "otlp");
-    if (otlp_root == NULL) {
-        return NULL;
-    }
-
-    metrics_root = get_or_create_indexed_kvlist(kvlist_index, otlp_root, "metrics");
-    if (metrics_root == NULL) {
-        return NULL;
-    }
-
-    type_root = get_or_create_indexed_kvlist(kvlist_index, metrics_root,
-                                             map_type_to_key(map->type));
-    if (type_root == NULL) {
-        return NULL;
-    }
-
-    return get_or_create_indexed_kvlist(kvlist_index, type_root, map->opts->fqname);
+    return map->otlp_metadata;
 }
 
 static struct cfl_kvlist *get_or_create_data_point_metadata_context(
@@ -499,30 +404,81 @@ static struct cfl_kvlist *get_or_create_data_point_metadata_context(
                                                 struct cmt_metric *sample,
                                                 uint64_t timestamp)
 {
-    char                key[128];
-    struct cfl_kvlist  *metric_context;
-    struct cfl_kvlist  *datapoints_context;
-
-    if (sample != NULL && sample->hash == 0 && cfl_list_size(&sample->labels) > 0) {
+    if (sample == NULL) {
+        return NULL;
+    }
+    if (sample->hash == 0 && cfl_list_size(&sample->labels) > 0) {
         sample->hash = compute_metric_hash(map, sample);
     }
+    if (sample->otlp_metadata == NULL) {
+        sample->otlp_metadata = cfl_kvlist_create();
+        if (sample->otlp_metadata && cmt_otlp_capture_labels(map, sample) != 0) {
+            return NULL;
+        }
+    }
+    return sample->otlp_metadata;
+}
 
-    metric_context = get_or_create_metric_metadata_context(cmt, kvlist_index, map);
-    if (metric_context == NULL) {
+/*
+ * Release the per-sample storage owned by the static (label-less) sample of a
+ * map and mark it unset. The static sample is embedded in the map, it must
+ * never be released with cmt_map_metric_destroy().
+ */
+static void reset_static_otlp_sample(struct cmt_map *map)
+{
+    struct cmt_metric *sample;
+
+    sample = &map->metric;
+
+    free(sample->hist_buckets);
+    free(sample->exp_hist_positive_buckets);
+    free(sample->exp_hist_negative_buckets);
+    free(sample->sum_quantiles);
+    cfl_kvlist_destroy(sample->otlp_metadata);
+
+    sample->hist_buckets = NULL;
+    sample->exp_hist_positive_buckets = NULL;
+    sample->exp_hist_negative_buckets = NULL;
+    sample->sum_quantiles = NULL;
+    sample->sum_quantiles_count = 0;
+    sample->otlp_metadata = NULL;
+
+    map->metric_static_set = CMT_FALSE;
+}
+
+/*
+ * Get (or create) the sample for the given label values. Repeated data points
+ * of the same series within one request update the same sample, the last data
+ * point wins. The typed OTLP metadata of the sample is rebuilt so it always
+ * describes the last data point written to it.
+ */
+static struct cmt_metric *get_otlp_sample(struct cmt_map *map, int count, char **values)
+{
+    struct cmt_metric *sample;
+
+    sample = cmt_map_metric_get(map->opts, map, count, values, CMT_TRUE);
+    if (sample == NULL) {
         return NULL;
     }
 
-    datapoints_context = get_or_create_indexed_kvlist(kvlist_index, metric_context,
-                                                      "datapoints");
-    if (datapoints_context == NULL) {
+    if (sample->otlp_metadata != NULL) {
+        cfl_kvlist_destroy(sample->otlp_metadata);
+        sample->otlp_metadata = NULL;
+    }
+
+    sample->otlp_metadata = cfl_kvlist_create();
+    if (sample->otlp_metadata == NULL ||
+        cmt_otlp_capture_labels(map, sample) != 0) {
+        if (sample == &map->metric) {
+            reset_static_otlp_sample(map);
+        }
+        else {
+            cmt_map_metric_destroy(sample);
+        }
         return NULL;
     }
 
-    snprintf(key, sizeof(key) - 1, "%llx:%llu",
-             (unsigned long long) (sample != NULL ? sample->hash : 0),
-             (unsigned long long) timestamp);
-
-    return get_or_create_indexed_kvlist(kvlist_index, datapoints_context, key);
+    return sample;
 }
 
 static int object_to_sds(msgpack_object *obj, flb_sds_t *out)
@@ -1123,12 +1079,23 @@ static void append_common_datapoint_metadata(struct cfl_kvlist *point_metadata,
                                              msgpack_object_map *point_map)
 {
     int             result;
+    struct cfl_kvlist *attributes;
     uint64_t        start_time_unix_nano;
     uint64_t        flags;
     msgpack_object *exemplars_object;
 
     if (point_metadata == NULL || point_map == NULL) {
         return;
+    }
+
+    result = flb_otel_utils_find_map_entry_by_key(point_map, "attributes", 0, FLB_TRUE);
+    attributes = cfl_kvlist_create();
+    if (attributes != NULL) {
+        if ((result >= 0 && flb_otel_utils_clone_kvlist_from_otlp_json_array(
+                              attributes, &point_map->ptr[result].val) != 0) ||
+            cfl_kvlist_insert_kvlist(point_metadata, "attributes", attributes) != 0) {
+            cfl_kvlist_destroy(attributes);
+        }
     }
 
     result = parse_optional_datapoint_u64(point_map,
@@ -1577,6 +1544,7 @@ static int process_metric_gauge_data_points(struct cmt *context,
                 return result;
             }
 
+            gauge->map->metric_static_set = CMT_FALSE;
             metric_initialized = FLB_TRUE;
         }
         else {
@@ -1591,11 +1559,8 @@ static int process_metric_gauge_data_points(struct cmt *context,
             }
         }
 
-        sample = cmt_map_metric_get(&gauge->opts,
-                                    gauge->map,
-                                    point_label_count,
-                                    (char **) point_label_values,
-                                    CMT_TRUE);
+        sample = get_otlp_sample(gauge->map, point_label_count,
+                                 (char **) point_label_values);
         if (sample != NULL) {
             if (number_value_case == CMT_METRIC_VALUE_INT64) {
                 cmt_metric_set_int64(sample, timestamp, int_value);
@@ -1771,6 +1736,7 @@ static int process_metric_sum_data_points(struct cmt *context,
             }
 
             counter->aggregation_type = aggregation_type;
+            counter->map->metric_static_set = CMT_FALSE;
             metric_initialized = FLB_TRUE;
         }
         else {
@@ -1785,11 +1751,8 @@ static int process_metric_sum_data_points(struct cmt *context,
             }
         }
 
-        sample = cmt_map_metric_get(&counter->opts,
-                                    counter->map,
-                                    point_label_count,
-                                    (char **) point_label_values,
-                                    CMT_TRUE);
+        sample = get_otlp_sample(counter->map, point_label_count,
+                                 (char **) point_label_values);
         if (sample != NULL) {
             if (number_value_case == CMT_METRIC_VALUE_INT64) {
                 if (allow_reset == FLB_FALSE && int_value < 0) {
@@ -2176,6 +2139,7 @@ static int process_metric_histogram_data_points(struct cmt *context,
     uint64_t                timestamp;
     uint64_t                count;
     size_t                  bucket_counts_count;
+    size_t                  bucket_index;
     size_t                  metric_bound_count;
     size_t                  point_bound_count;
     double                  sum;
@@ -2466,6 +2430,7 @@ static int process_metric_histogram_data_points(struct cmt *context,
             }
 
             histogram->aggregation_type = aggregation_type;
+            histogram->map->metric_static_set = CMT_FALSE;
             metric_initialized = FLB_TRUE;
         }
         else {
@@ -2492,19 +2457,21 @@ static int process_metric_histogram_data_points(struct cmt *context,
             }
         }
 
-        cmt_histogram_set_default(histogram,
-                                  timestamp,
-                                  bucket_counts,
-                                  sum,
-                                  count,
-                                  point_label_count,
-                                  (char **) point_label_values);
+        sample = get_otlp_sample(histogram->map, point_label_count,
+                                 (char **) point_label_values);
+        if (sample != NULL) {
+            /* CMetrics stores cumulative buckets, including +Inf. */
+            for (bucket_index = 1; bucket_index < bucket_counts_count; bucket_index++) {
+                bucket_counts[bucket_index] += bucket_counts[bucket_index - 1];
+            }
+            /* a repeated series replaces the buckets of the previous point */
+            free(sample->hist_buckets);
+            sample->hist_buckets = bucket_counts;
+            bucket_counts = NULL;
+            cmt_metric_hist_sum_set(sample, timestamp, sum);
+            cmt_metric_hist_count_set(sample, timestamp, count);
+        }
 
-        sample = cmt_map_metric_get(&histogram->opts,
-                                    histogram->map,
-                                    point_label_count,
-                                    (char **) point_label_values,
-                                    CMT_FALSE);
         if (sample != NULL) {
             point_metadata = get_or_create_data_point_metadata_context(context,
                                                                        kvlist_index,
@@ -2544,6 +2511,7 @@ static int process_metric_summary_data_points(struct cmt *context,
                                               msgpack_object *name_object,
                                               msgpack_object_array *data_points)
 {
+    int quantile_index;
     int                 index;
     int                 result;
     int                 metric_initialized;
@@ -2758,6 +2726,7 @@ static int process_metric_summary_data_points(struct cmt *context,
                 return result;
             }
 
+            summary->map->metric_static_set = CMT_FALSE;
             metric_initialized = FLB_TRUE;
         }
         else {
@@ -2784,19 +2753,36 @@ static int process_metric_summary_data_points(struct cmt *context,
             }
         }
 
-        cmt_summary_set_default(summary,
-                                timestamp,
-                                point_quantile_values,
-                                sum,
-                                count,
-                                point_label_count,
-                                (char **) point_label_values);
+        sample = get_otlp_sample(summary->map, point_label_count,
+                                 (char **) point_label_values);
+        if (sample != NULL) {
+            /* a repeated series reuses the quantile storage of the sample */
+            if (sample->sum_quantiles != NULL &&
+                sample->sum_quantiles_count != summary->quantiles_count) {
+                free(sample->sum_quantiles);
+                sample->sum_quantiles = NULL;
+            }
+            if (sample->sum_quantiles == NULL) {
+                sample->sum_quantiles = calloc(summary->quantiles_count ?
+                                               summary->quantiles_count : 1,
+                                               sizeof(uint64_t));
+            }
+            if (sample->sum_quantiles == NULL) {
+                destroy_label_arrays(point_label_count, NULL, point_label_values);
+                flb_free(point_quantile_values);
+                destroy_label_arrays(metric_label_count, metric_label_keys, NULL);
+                flb_free(metric_quantiles);
+                return CMT_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
+            }
+            sample->sum_quantiles_count = summary->quantiles_count;
+            cmt_atomic_store(&sample->sum_quantiles_set, CMT_TRUE);
+            for (quantile_index = 0; quantile_index < (int) summary->quantiles_count; quantile_index++) {
+                cmt_summary_quantile_set(sample, timestamp, quantile_index, point_quantile_values[quantile_index]);
+            }
+            cmt_summary_sum_set(sample, timestamp, sum);
+            cmt_summary_count_set(sample, timestamp, count);
+        }
 
-        sample = cmt_map_metric_get(&summary->opts,
-                                    summary->map,
-                                    point_label_count,
-                                    (char **) point_label_values,
-                                    CMT_FALSE);
         if (sample != NULL) {
             point_metadata = get_or_create_data_point_metadata_context(context,
                                                                        kvlist_index,
@@ -3144,6 +3130,7 @@ static int process_metric_exponential_histogram_data_points(
             }
 
             exp_histogram->aggregation_type = aggregation_type;
+            exp_histogram->map->metric_static_set = CMT_FALSE;
             metric_initialized = FLB_TRUE;
         }
         else {
@@ -3163,34 +3150,28 @@ static int process_metric_exponential_histogram_data_points(
             }
         }
 
-        result = cmt_exp_histogram_set_default(exp_histogram,
-                                               timestamp,
-                                               scale,
-                                               zero_count,
-                                               zero_threshold,
-                                               positive_offset,
-                                               positive_count,
-                                               positive_counts,
-                                               negative_offset,
-                                               negative_count,
-                                               negative_counts,
-                                               sum_set,
-                                               sum,
-                                               count,
-                                               point_label_count,
-                                               (char **) point_label_values);
-        if (result != 0) {
-            destroy_label_arrays(point_label_count, NULL, point_label_values);
-            flb_free(positive_counts);
-            flb_free(negative_counts);
-            return CMT_DECODE_OPENTELEMETRY_ALLOCATION_ERROR;
+        sample = get_otlp_sample(exp_histogram->map, point_label_count,
+                                 (char **) point_label_values);
+        if (sample != NULL) {
+            sample->exp_hist_scale = scale;
+            sample->exp_hist_zero_count = zero_count;
+            sample->exp_hist_zero_threshold = zero_threshold;
+            sample->exp_hist_positive_offset = positive_offset;
+            sample->exp_hist_negative_offset = negative_offset;
+            sample->exp_hist_positive_count = positive_count;
+            sample->exp_hist_negative_count = negative_count;
+            /* a repeated series replaces the buckets of the previous point */
+            free(sample->exp_hist_positive_buckets);
+            free(sample->exp_hist_negative_buckets);
+            sample->exp_hist_positive_buckets = positive_counts;
+            sample->exp_hist_negative_buckets = negative_counts;
+            positive_counts = NULL;
+            negative_counts = NULL;
+            cmt_metric_set_exp_hist_count(sample, count);
+            cmt_metric_set_exp_hist_sum(sample, sum_set, sum);
+            cmt_metric_set_timestamp(sample, timestamp);
         }
 
-        sample = cmt_map_metric_get(&exp_histogram->opts,
-                                    exp_histogram->map,
-                                    point_label_count,
-                                    (char **) point_label_values,
-                                    CMT_FALSE);
         if (sample != NULL) {
             point_metadata = get_or_create_data_point_metadata_context(context,
                                                                        kvlist_index,

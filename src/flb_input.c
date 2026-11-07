@@ -23,6 +23,7 @@
 #include <string.h>
 
 #include <monkey/mk_core.h>
+#include <fluent-bit/flb_socket.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
@@ -396,6 +397,9 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
             flb_errno();
             return NULL;
         }
+
+        instance->ch_events[0] = FLB_UNINITIALIZED_SOCKET;
+        instance->ch_events[1] = FLB_UNINITIALIZED_SOCKET;
 
         instance->http_server_config = flb_calloc(1, sizeof(struct flb_http_server_config));
         if (!instance->http_server_config) {
@@ -1155,6 +1159,10 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
     struct mk_list *head;
     struct flb_input_collector *collector;
 
+    /* Threaded owners already stopped their processors before joining. */
+    if (!flb_input_is_threaded(ins)) {
+        flb_processor_input_stop(ins->processor);
+    }
     flb_input_ingress_destroy(ins);
 
 #ifdef FLB_HAVE_METRICS
@@ -1310,18 +1318,22 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
 
     if (ins->ch_events[0] > 0) {
         mk_event_closesocket(ins->ch_events[0]);
+        ins->ch_events[0] = FLB_UNINITIALIZED_SOCKET;
     }
 
     if (ins->ch_events[1] > 0) {
         mk_event_closesocket(ins->ch_events[1]);
+        ins->ch_events[1] = FLB_UNINITIALIZED_SOCKET;
     }
 
     if (ins->ingress_queue_channels[0] > 0) {
         mk_event_closesocket(ins->ingress_queue_channels[0]);
+        ins->ingress_queue_channels[0] = FLB_UNINITIALIZED_SOCKET;
     }
 
     if (ins->ingress_queue_channels[1] > 0) {
         mk_event_closesocket(ins->ingress_queue_channels[1]);
+        ins->ingress_queue_channels[1] = FLB_UNINITIALIZED_SOCKET;
     }
 
     /* Collectors */
@@ -1505,6 +1517,7 @@ int flb_input_plugin_property_check(struct flb_input_instance *ins,
 int flb_input_oauth2_jwt_property_check(struct flb_input_instance *ins,
                                         struct flb_config *config)
 {
+#ifdef FLB_HAVE_TLS
     int ret = 0;
 
     /* Get OAuth2 JWT configmap */
@@ -1532,6 +1545,10 @@ int flb_input_oauth2_jwt_property_check(struct flb_input_instance *ins,
     }
 
     return 0;
+#else
+    flb_error("OAuth2 JWT requires TLS support");
+    return -1;
+#endif
 }
 
 static int flb_input_http_server_property_check(struct flb_input_instance *ins,
@@ -1570,6 +1587,11 @@ int flb_input_instance_init(struct flb_input_instance *ins,
     struct flb_config *ctx = ins->config;
     struct flb_input_plugin *p = ins->p;
     int tls_session_mode;
+
+    /* Private inputs can be initialized while another input initializes. */
+    if (ins->initialized == FLB_TRUE) {
+        return 0;
+    }
 
     if (ins->log_level == -1 && config->log != NULL) {
         ins->log_level = config->log->level;
@@ -1966,6 +1988,14 @@ int flb_input_instance_init(struct flb_input_instance *ins,
         return -1;
     }
 
+#ifdef __EMSCRIPTEN__
+    /* Dedicated input threads are not supported by the browser runtime. */
+    if (flb_input_is_threaded(ins)) {
+        flb_plg_error(ins, "threaded inputs are unsupported in the browser; set threaded: false");
+        return -1;
+    }
+#endif
+
     /* Initialize the input */
     if (p->cb_init) {
         flb_plg_info(ins, "initializing");
@@ -2027,12 +2057,16 @@ int flb_input_instance_init(struct flb_input_instance *ins,
             if (ret == -1) {
                 flb_error("failed initialize processors for input %s",
                           ins->name);
+                /* cb_init succeeded; release plugin-owned resources before
+                 * the caller destroys the input instance on this failure. */
                 flb_input_instance_exit(ins, config);
+                ins->context = NULL;
                 return -1;
             }
         }
     }
 
+    ins->initialized = FLB_TRUE;
     return 0;
 }
 
@@ -2083,6 +2117,7 @@ int flb_input_init_all(struct flb_config *config)
             return -1;
         }
 
+#ifdef FLB_HAVE_TLS
         if (ins->tls_min_version != NULL || ins->tls_max_version != NULL) {
             ret = flb_tls_set_minmax_proto(ins->tls, ins->tls_min_version, ins->tls_max_version);
             if (ret != 0) {
@@ -2102,6 +2137,7 @@ int flb_input_init_all(struct flb_config *config)
                 return -1;
             }
         }
+#endif
     }
 
     return 0;
@@ -2136,6 +2172,7 @@ void flb_input_instance_exit(struct flb_input_instance *ins,
         return;
     }
 
+    flb_processor_input_stop(ins->processor);
     p = ins->p;
     if (p->cb_exit && ins->context) {
         /* Multi-threaded input plugins use the same function signature for exit callbacks. */
@@ -3016,6 +3053,9 @@ int flb_input_test_pause_resume(struct flb_input_instance *ins, int sleep_second
 
 static void flb_input_ingestion_paused(struct flb_input_instance *ins)
 {
+    if (ins->ingress_queue_enabled == FLB_TRUE && ins->ingress_queue_collector_id >= 0) {
+        flb_input_collector_pause(ins->ingress_queue_collector_id, ins);
+    }
     if (ins->cmt_ingestion_paused != NULL) {
         /* cmetrics */
         cmt_gauge_set(ins->cmt_ingestion_paused, cfl_time_now(), 1,
@@ -3025,6 +3065,9 @@ static void flb_input_ingestion_paused(struct flb_input_instance *ins)
 
 static void flb_input_ingestion_resumed(struct flb_input_instance *ins)
 {
+    if (ins->ingress_queue_enabled == FLB_TRUE && ins->ingress_queue_collector_id >= 0) {
+        flb_input_collector_resume(ins->ingress_queue_collector_id, ins);
+    }
     if (ins->cmt_ingestion_paused != NULL) {
         /* cmetrics */
         cmt_gauge_set(ins->cmt_ingestion_paused, cfl_time_now(), 0,
@@ -3038,10 +3081,10 @@ int flb_input_plugin_pause(struct flb_input_instance *ins)
 
     ret = 0;
 
-    if (ins->p->cb_pause_checked != NULL) {
+    if (ins->context != NULL && ins->p->cb_pause_checked != NULL) {
         ret = ins->p->cb_pause_checked(ins->context, ins->config);
     }
-    else if (ins->p->cb_pause != NULL) {
+    else if (ins->context != NULL && ins->p->cb_pause != NULL) {
         ins->p->cb_pause(ins->context, ins->config);
     }
 
@@ -3058,10 +3101,10 @@ int flb_input_plugin_resume(struct flb_input_instance *ins)
 
     ret = 0;
 
-    if (ins->p->cb_resume_checked != NULL) {
+    if (ins->context != NULL && ins->p->cb_resume_checked != NULL) {
         ret = ins->p->cb_resume_checked(ins->context, ins->config);
     }
-    else if (ins->p->cb_resume != NULL) {
+    else if (ins->context != NULL && ins->p->cb_resume != NULL) {
         ins->p->cb_resume(ins->context, ins->config);
     }
 
@@ -3079,6 +3122,10 @@ int flb_input_pause(struct flb_input_instance *ins)
         (ins->config == NULL || ins->config->is_shutting_down == FLB_FALSE ||
          (ins->flags & FLB_INPUT_SHUTDOWN_FLUSH) == 0)) {
         return -1;
+    }
+
+    if (ins->ingress_queue_enabled == FLB_TRUE && flb_input_is_threaded(ins)) {
+        return flb_input_thread_instance_pause(ins);
     }
 
     /* Pause only if a callback is set and a local context exists */
@@ -3100,6 +3147,9 @@ int flb_input_pause(struct flb_input_instance *ins)
 
 int flb_input_resume(struct flb_input_instance *ins)
 {
+    if (ins->ingress_queue_enabled == FLB_TRUE && flb_input_is_threaded(ins)) {
+        return flb_input_thread_instance_resume(ins);
+    }
     if ((ins->p->cb_resume || ins->p->cb_resume_checked) && ins->context) {
         if (flb_input_is_threaded(ins)) {
             /* signal the thread event loop about the 'resume' operation */

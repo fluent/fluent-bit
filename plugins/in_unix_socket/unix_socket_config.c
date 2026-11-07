@@ -132,6 +132,8 @@ struct flb_in_unix_socket_config *unix_socket_config_init(struct flb_input_insta
 
 int unix_socket_config_destroy(struct flb_in_unix_socket_config *ctx)
 {
+    struct stat current;
+
     if (ctx->log_encoder != NULL) {
         flb_log_event_encoder_destroy(ctx->log_encoder);
     }
@@ -144,6 +146,12 @@ int unix_socket_config_destroy(struct flb_in_unix_socket_config *ctx)
 
     if (ctx->downstream != NULL) {
         flb_downstream_destroy(ctx->downstream);
+    }
+
+    if (ctx->socket_published && lstat(ctx->listen, &current) == 0 &&
+        S_ISSOCK(current.st_mode) && current.st_dev == ctx->socket_stat.st_dev &&
+        current.st_ino == ctx->socket_stat.st_ino) {
+        unlink(ctx->listen);
     }
 
     flb_sds_destroy(ctx->separator);

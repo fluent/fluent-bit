@@ -1988,10 +1988,17 @@ static int send_loki_payload(struct flb_loki *ctx,
     }
 
     if (tenant_id != NULL) {
-        flb_http_add_header(c,
+        ret = flb_http_add_header(c,
                             FLB_LOKI_HEADER_SCOPE, sizeof(FLB_LOKI_HEADER_SCOPE) - 1,
                             tenant_id,
                             flb_sds_len(tenant_id));
+        if (ret != 0) {
+            flb_plg_error(ctx->ins, "invalid tenant header; dropping tenant group");
+            payload_release(out_buf, compressed);
+            flb_http_client_destroy(c);
+            flb_upstream_conn_release(u_conn);
+            return FLB_ERROR;
+        }
     }
 
     /* Send HTTP request */

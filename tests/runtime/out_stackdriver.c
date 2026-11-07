@@ -51,6 +51,7 @@
 
 #define STACKDRIVER_TEST_WAIT_STEP_MS  10
 #define STACKDRIVER_TEST_TIMEOUT_MS  2000
+#define STACKDRIVER_TEST_STOP_TIMEOUT_MS  10000
 
 typedef void (*stackdriver_test_callback)(void *, int, int, void *, size_t, void *);
 
@@ -122,7 +123,33 @@ static void stackdriver_wait_for_formatter(void)
     }
 }
 
+#if defined(FLB_SYSTEM_MACOS)
+static int stackdriver_stop_engine(flb_ctx_t *ctx)
+{
+    int ret;
+    int trys;
+
+    ret = flb_engine_exit(ctx->config);
+    TEST_CHECK_(ret >= 0, "requesting graceful engine shutdown");
+
+    for (trys = 0;
+         trys < STACKDRIVER_TEST_STOP_TIMEOUT_MS / STACKDRIVER_TEST_WAIT_STEP_MS &&
+         ctx->status == FLB_LIB_OK;
+         trys++) {
+        flb_time_msleep(STACKDRIVER_TEST_WAIT_STEP_MS);
+    }
+
+    TEST_CHECK_(ctx->status != FLB_LIB_OK, "engine did not stop within %d ms",
+                STACKDRIVER_TEST_STOP_TIMEOUT_MS);
+
+    return flb_stop(ctx);
+}
+#endif
+
 #define flb_output_set_test stackdriver_output_set_test
+#if defined(FLB_SYSTEM_MACOS)
+#define flb_stop stackdriver_stop_engine
+#endif
 
 /*
  * Fluent Bit Stackdriver plugin, always set as payload a JSON strings contained in a
@@ -1988,6 +2015,25 @@ static void cb_check_http_request_common_case(void *ctx, int ffd,
     /* check `httpRequest` has been removed from jsonPayload */
     ret = mp_kv_exists(res_data, res_size, "$entries[0]['jsonPayload']['logging.googleapis.com/http_request']");
     TEST_CHECK(ret == FLB_FALSE);
+
+    flb_sds_destroy(res_data);
+}
+
+static void cb_check_http_request_cache_miss(void *ctx, int ffd,
+                                             int res_ret, void *res_data, size_t res_size,
+                                             void *data)
+{
+    int ret;
+
+    /* a cache lookup that missed: cacheHit must not mirror cacheLookup */
+    ret = mp_kv_cmp_boolean(res_data, res_size, "$entries[0]['httpRequest']['cacheLookup']", true);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp_boolean(res_data, res_size, "$entries[0]['httpRequest']['cacheHit']", false);
+    TEST_CHECK(ret == FLB_TRUE);
+
+    ret = mp_kv_cmp_boolean(res_data, res_size, "$entries[0]['httpRequest']['cacheValidatedWithOriginServer']", false);
+    TEST_CHECK(ret == FLB_TRUE);
 
     flb_sds_destroy(res_data);
 }
@@ -5931,6 +5977,46 @@ void flb_test_http_request_common_case()
     flb_destroy(ctx);
 }
 
+void flb_test_http_request_cache_miss()
+{
+    int ret;
+    int size = sizeof(HTTPREQUEST_CACHE_MISS) - 1;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    /* Create context, flush every 200 milliseconds (some checks omitted here) */
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "0.2", "grace", "1", NULL);
+
+    /* Lib input mode */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* Stackdriver output */
+    out_ffd = flb_output(ctx, (char *) "stackdriver", NULL);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "resource", "gce_instance",
+                   NULL);
+
+    /* Enable test mode */
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_http_request_cache_miss,
+                              NULL, NULL);
+
+    /* Start */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data sample */
+    flb_lib_push(ctx, in_ffd, (char *) HTTPREQUEST_CACHE_MISS, size);
+
+    stackdriver_wait_for_formatter();
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 void flb_test_empty_http_request()
 {
     int ret;
@@ -6896,6 +6982,7 @@ TEST_LIST = {
 
     /* test httpRequest */
     {"httpRequest_common_case", flb_test_http_request_common_case},
+    {"httpRequest_cache_miss", flb_test_http_request_cache_miss},
     {"empty_httpRequest", flb_test_empty_http_request},
     {"httpRequest_not_a_map", flb_test_http_request_in_string},
     {"httpRequest_partial_subfields", flb_test_http_request_partial_subfields},

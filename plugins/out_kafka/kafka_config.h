@@ -82,6 +82,9 @@ struct flb_kafka_topic {
 
 struct flb_out_kafka {
     struct flb_kafka kafka;
+#ifdef FLB_HAVE_METRICS
+    struct cmt_counter *cmt_rejected_records;
+#endif
     /* Config Parameters */
     int format;
     flb_sds_t format_str;

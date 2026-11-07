@@ -81,6 +81,7 @@ class FluentBitTestService:
         self.flb = FluentBitManager(self.config_path, shutdown_timeout=self.shutdown_timeout)
         self.flb_listener_port = self._allocate_port()
         self.test_suite_http_port = self._allocate_port()
+        self.flb.http_monitoring_port = str(self._allocate_port())
         self._set_env("FLUENT_BIT_TEST_LISTENER_PORT", str(self.flb_listener_port))
         self._set_env("TEST_SUITE_HTTP_PORT", str(self.test_suite_http_port))
 
@@ -93,6 +94,9 @@ class FluentBitTestService:
             if self.pre_start:
                 self.pre_start(self)
 
+            # The monitoring listener must not reuse any source/server port
+            # allocated by this service before native listeners are started.
+            self.flb.excluded_ports.update(self._allocated_ports)
             self.flb.start()
         except Exception:
             self.stop()

@@ -52,6 +52,7 @@ int64_t flb_utils_size_to_bytes(const char *size);
 int64_t flb_utils_size_to_binary_bytes(const char *size);
 int64_t flb_utils_hex2int(char *hex, int len);
 int flb_utils_time_to_seconds(const char *time);
+int flb_utils_time_to_seconds_strict(const char *time, int *seconds);
 int flb_utils_pipe_byte_consume(flb_pipefd_t fd);
 int flb_utils_bool(const char *val);
 void flb_utils_bytes_to_human_readable_size(size_t bytes,
@@ -69,6 +70,8 @@ int flb_utils_proxy_url_split(const char *in_url, char **out_protocol,
                               char **out_host, char **out_port);
 int flb_utils_read_file(char *path, char **out_buf, size_t *out_size);
 int flb_utils_read_file_offset(char *path, off_t offset_start, off_t offset_end, char **out_buf, size_t *out_size);
+const char *flb_utils_resolve_config_path(const char *path, const char *conf_path,
+                                          char *buf, size_t size);
 char *flb_utils_get_os_name();
 int flb_utils_uuid_v4_gen(char *buf);
 int flb_utils_get_machine_id(char **out_id, size_t *out_size);

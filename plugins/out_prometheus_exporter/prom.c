@@ -142,26 +142,122 @@ static int hash_store(struct prom_exporter *ctx, struct flb_input_instance *ins,
     return 0;
 }
 
+/* Group the canonical family blocks produced by cmt_encode_prometheus_create. */
+static int group_metric_families(struct flb_hash_table *families, const char *text, size_t size)
+{
+    int ret;
+    int name_len;
+    size_t header_size;
+    size_t previous_size;
+    void *previous;
+    const char *name;
+    const char *name_end;
+    const char *help_end;
+    const char *samples;
+    const char *next;
+    const char *end = text + size;
+    flb_sds_t family;
+
+    while (text < end) {
+        if (strncmp(text, "# HELP ", 7) != 0) {
+            return -1;
+        }
+        name = text + 7;
+        name_end = name + strcspn(name, " \n");
+        help_end = strchr(name, '\n');
+        if (help_end == NULL || name_end == name || name_end > help_end ||
+            strncmp(help_end + 1, "# TYPE ", 7) != 0) {
+            return -1;
+        }
+        samples = strchr(help_end + 1, '\n');
+        if (samples == NULL) {
+            return -1;
+        }
+        samples++;
+        next = strstr(samples, "\n# HELP ");
+        if (strncmp(samples, "# HELP ", 7) == 0) {
+            next = samples;
+        }
+        else if (next != NULL) {
+            next++;
+        }
+        else {
+            next = end;
+        }
+
+        name_len = name_end - name;
+        header_size = samples - text;
+        ret = flb_hash_table_get(families, name, name_len, &previous, &previous_size);
+        if (ret >= 0) {
+            /* Conflicting family definitions cannot form a valid exposition. */
+            if (previous_size < header_size || memcmp(previous, text, header_size) != 0) {
+                return -1;
+            }
+            family = flb_sds_create_len(previous, previous_size);
+            if (family == NULL) {
+                return -1;
+            }
+            ret = flb_sds_cat_safe(&family, samples, next - samples);
+            if (ret != 0) {
+                flb_sds_destroy(family);
+                return -1;
+            }
+        }
+        else {
+            family = flb_sds_create_len(text, next - text);
+            if (family == NULL) {
+                return -1;
+            }
+        }
+        ret = flb_hash_table_add(families, name, name_len, family, flb_sds_len(family));
+        flb_sds_destroy(family);
+        if (ret < 0) {
+            return -1;
+        }
+        text = next;
+    }
+    return 0;
+}
+
 static flb_sds_t hash_format_metrics(struct prom_exporter *ctx)
 {
-    int size = 2048;
+    int ret;
     flb_sds_t buf;
-
+    struct flb_hash_table *families;
     struct mk_list *head;
     struct flb_hash_table_entry *entry;
 
-
-    buf = flb_sds_create_size(size);
+    buf = flb_sds_create_size(2048);
     if (!buf) {
         return NULL;
     }
-
-    /* Take every hash entry and compose one buffer with the whole content */
-    mk_list_foreach(head, &ctx->ht_metrics->entries) {
-        entry = mk_list_entry(head, struct flb_hash_table_entry, _head_parent);
-        flb_sds_cat_safe(&buf, entry->val, entry->val_size);
+    families = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 32, 0);
+    if (families == NULL) {
+        flb_sds_destroy(buf);
+        return NULL;
     }
 
+    /* Preserve each sample's labels while emitting metadata only once per family. */
+    mk_list_foreach(head, &ctx->ht_metrics->entries) {
+        entry = mk_list_entry(head, struct flb_hash_table_entry, _head_parent);
+        ret = group_metric_families(families, entry->val, entry->val_size);
+        if (ret != 0) {
+            flb_hash_table_destroy(families);
+            flb_sds_destroy(buf);
+            return NULL;
+        }
+    }
+    mk_list_foreach(head, &families->entries) {
+        entry = mk_list_entry(head, struct flb_hash_table_entry, _head_parent);
+        ret = flb_sds_cat_safe(&buf, entry->val, entry->val_size);
+        if (ret != 0) {
+            flb_hash_table_destroy(families);
+            flb_sds_destroy(buf);
+            return NULL;
+        }
+    }
+
+    flb_hash_table_destroy(families);
     return buf;
 }
 

@@ -5,11 +5,15 @@
 #include <stdint.h>
 
 #include <cfl/cfl_arena.h>
+#include <cfl/cfl_array.h>
+#include <cfl/cfl_kvlist.h>
+#include <cfl/cfl_variant.h>
 
 #include "cfl_arena_internal.h"
 
 #define CFL_ARENA_DEFAULT_CHUNK_SIZE 8192
-#define CFL_ARENA_SDS_CLASS_COUNT 6
+#define CFL_ARENA_SDS_SMALL_PAYLOAD 128
+#define CFL_ARENA_SDS_MEDIUM_CLASS_COUNT 10
 #define CFL_ARENA_EXTERNAL_CLASS_COUNT 24
 #define CFL_ARENA_EXTERNAL_EXACT_CLASS UINT8_MAX
 
@@ -24,6 +28,72 @@ struct cfl_arena_alignment_probe {
     union cfl_arena_max_align value;
 };
 
+/*
+ * CFL objects only hold pointers, sizes, integers and doubles, so they are
+ * packed with the strictest of those alignments instead of the raw allocation
+ * alignment, which can be larger because of long double.
+ */
+union cfl_arena_object_align {
+    void *pointer_value;
+    size_t size_value;
+    uint64_t uint64_value;
+    double double_value;
+};
+
+struct cfl_arena_object_alignment_probe {
+    char byte;
+    union cfl_arena_object_align value;
+};
+
+#define CFL_ARENA_MAX_ALIGNMENT \
+    offsetof(struct cfl_arena_alignment_probe, value)
+#define CFL_ARENA_OBJECT_ALIGNMENT \
+    offsetof(struct cfl_arena_object_alignment_probe, value)
+
+/* small SDS classes cover payloads below 128 bytes in alignment steps */
+#define CFL_ARENA_SDS_SMALL_CLASS_COUNT \
+    (CFL_ARENA_SDS_SMALL_PAYLOAD / CFL_ARENA_OBJECT_ALIGNMENT)
+#define CFL_ARENA_SDS_CLASS_COUNT \
+    (CFL_ARENA_SDS_SMALL_CLASS_COUNT + CFL_ARENA_SDS_MEDIUM_CLASS_COUNT)
+
+struct cfl_arena_variant_probe {
+    char byte;
+    struct cfl_variant value;
+};
+
+struct cfl_arena_kvpair_probe {
+    char byte;
+    struct cfl_kvpair value;
+};
+
+struct cfl_arena_kvlist_probe {
+    char byte;
+    struct cfl_kvlist value;
+};
+
+struct cfl_arena_array_probe {
+    char byte;
+    struct cfl_array value;
+};
+
+/* compile time checks: every object type fits the object alignment */
+typedef char cfl_arena_check_object_alignment[
+    (CFL_ARENA_MAX_ALIGNMENT % CFL_ARENA_OBJECT_ALIGNMENT == 0 &&
+     (CFL_ARENA_OBJECT_ALIGNMENT & (CFL_ARENA_OBJECT_ALIGNMENT - 1)) == 0 &&
+     CFL_ARENA_SDS_CLASS_COUNT < UINT8_MAX) ? 1 : -1];
+typedef char cfl_arena_check_variant_alignment[
+    (CFL_ARENA_OBJECT_ALIGNMENT %
+     offsetof(struct cfl_arena_variant_probe, value) == 0) ? 1 : -1];
+typedef char cfl_arena_check_kvpair_alignment[
+    (CFL_ARENA_OBJECT_ALIGNMENT %
+     offsetof(struct cfl_arena_kvpair_probe, value) == 0) ? 1 : -1];
+typedef char cfl_arena_check_kvlist_alignment[
+    (CFL_ARENA_OBJECT_ALIGNMENT %
+     offsetof(struct cfl_arena_kvlist_probe, value) == 0) ? 1 : -1];
+typedef char cfl_arena_check_array_alignment[
+    (CFL_ARENA_OBJECT_ALIGNMENT %
+     offsetof(struct cfl_arena_array_probe, value) == 0) ? 1 : -1];
+
 struct cfl_arena_chunk {
     struct cfl_arena_chunk *next;
     size_t capacity;
@@ -37,6 +107,7 @@ struct cfl_arena_external {
     struct cfl_arena_external *previous;
     size_t size;
     uint8_t allocation_class;
+    union cfl_arena_max_align alignment;
     unsigned char data[];
 };
 
@@ -276,24 +347,20 @@ void cfl_arena_reset(struct cfl_arena *arena)
     memset(arena->free_sds, 0, sizeof(arena->free_sds));
 }
 
-void *cfl_arena_malloc(struct cfl_arena *arena, size_t size)
+/* walks the remaining chunks, then reserves a new one */
+static void *arena_allocate_slow(struct cfl_arena *arena, size_t size,
+                                 size_t alignment)
 {
     struct cfl_arena_chunk *chunk;
-    size_t alignment;
     size_t offset;
     size_t remainder;
     size_t capacity;
     void *result;
 
-    if (arena == NULL || size == 0) {
-        return NULL;
-    }
-
-    alignment = offsetof(struct cfl_arena_alignment_probe, value);
     chunk = arena->current;
     while (chunk != NULL) {
         offset = chunk->used;
-        remainder = offset % alignment;
+        remainder = offset & (alignment - 1);
         if (remainder != 0) {
             if (offset > SIZE_MAX - (alignment - remainder)) {
                 return NULL;
@@ -344,6 +411,62 @@ void *cfl_arena_malloc(struct cfl_arena *arena, size_t size)
     }
 
     return chunk->data;
+}
+
+/* bump allocation from the current chunk, the common case */
+static inline void *arena_allocate(struct cfl_arena *arena, size_t size,
+                                   size_t alignment)
+{
+    struct cfl_arena_chunk *chunk;
+    size_t offset;
+    void *result;
+
+    if (arena == NULL || size == 0) {
+        return NULL;
+    }
+
+    chunk = arena->current;
+    if (chunk != NULL) {
+        offset = (chunk->used + alignment - 1) & ~(alignment - 1);
+        if (offset >= chunk->used && offset <= chunk->capacity &&
+            size <= chunk->capacity - offset) {
+            result = &chunk->data[offset];
+            chunk->used = offset + size;
+            arena->bytes_used += size;
+            return result;
+        }
+    }
+
+    return arena_allocate_slow(arena, size, alignment);
+}
+
+void *cfl_arena_malloc(struct cfl_arena *arena, size_t size)
+{
+    return arena_allocate(arena, size, CFL_ARENA_MAX_ALIGNMENT);
+}
+
+void *cfl_arena_alloc_object(struct cfl_arena *arena, size_t size)
+{
+    return arena_allocate(arena, size, CFL_ARENA_OBJECT_ALIGNMENT);
+}
+
+void *cfl_arena_calloc_object(struct cfl_arena *arena,
+                              size_t count, size_t size)
+{
+    void *result;
+    size_t total;
+
+    if (count != 0 && size > SIZE_MAX / count) {
+        return NULL;
+    }
+
+    total = count * size;
+    result = arena_allocate(arena, total, CFL_ARENA_OBJECT_ALIGNMENT);
+    if (result != NULL) {
+        memset(result, 0, total);
+    }
+
+    return result;
 }
 
 void *cfl_arena_alloc(struct cfl_arena *arena, size_t size)
@@ -604,7 +727,7 @@ void cfl_arena_free_external(struct cfl_arena *arena,
 }
 
 static void *arena_reusable_alloc(struct cfl_arena *arena,
-                                  void **free_list, size_t size)
+                                  void **free_list, size_t size, int zero)
 {
     void *result;
 
@@ -616,11 +739,19 @@ static void *arena_reusable_alloc(struct cfl_arena *arena,
         result = *free_list;
         *free_list = *((void **) result);
         arena->bytes_used += size;
-        memset(result, 0, size);
-        return result;
+    }
+    else {
+        result = arena_allocate(arena, size, CFL_ARENA_OBJECT_ALIGNMENT);
+        if (result == NULL) {
+            return NULL;
+        }
     }
 
-    return cfl_arena_calloc(arena, 1, size);
+    if (zero) {
+        memset(result, 0, size);
+    }
+
+    return result;
 }
 
 static void arena_reusable_free(struct cfl_arena *arena,
@@ -638,7 +769,7 @@ static void arena_reusable_free(struct cfl_arena *arena,
 void *cfl_arena_alloc_variant(struct cfl_arena *arena,
                               size_t size)
 {
-    return arena_reusable_alloc(arena, &arena->free_variants, size);
+    return arena_reusable_alloc(arena, &arena->free_variants, size, CFL_TRUE);
 }
 
 void cfl_arena_free_variant(struct cfl_arena *arena,
@@ -650,7 +781,7 @@ void cfl_arena_free_variant(struct cfl_arena *arena,
 void *cfl_arena_alloc_kvpair(struct cfl_arena *arena,
                              size_t size)
 {
-    return arena_reusable_alloc(arena, &arena->free_kvpairs, size);
+    return arena_reusable_alloc(arena, &arena->free_kvpairs, size, CFL_TRUE);
 }
 
 void cfl_arena_free_kvpair(struct cfl_arena *arena,
@@ -659,32 +790,80 @@ void cfl_arena_free_kvpair(struct cfl_arena *arena,
     arena_reusable_free(arena, &arena->free_kvpairs, pointer, size);
 }
 
+/*
+ * Owned SDS strings are recycled through size classes. Small classes grow in
+ * object alignment steps of the complete allocation up to about 128 bytes of
+ * payload, so short strings such as map keys waste less than one alignment
+ * unit. Medium classes grow by roughly 25 percent up to the largest pooled
+ * payload.
+ */
+static int arena_sds_class(size_t payload_size, size_t overhead_size,
+                           size_t *index, size_t *payload_capacity)
+{
+    static const size_t medium_payloads[CFL_ARENA_SDS_MEDIUM_CLASS_COUNT] = {
+        160, 200, 248, 312, 392, 488, 608, 760, 952, CFL_ARENA_SDS_MAX_PAYLOAD
+    };
+    size_t alignment;
+    size_t smallest;
+    size_t total;
+    size_t class_index;
+
+    alignment = CFL_ARENA_OBJECT_ALIGNMENT;
+    if (payload_size > CFL_ARENA_SDS_MAX_PAYLOAD ||
+        overhead_size > SIZE_MAX - CFL_ARENA_SDS_MAX_PAYLOAD - 1 - alignment) {
+        return -1;
+    }
+
+    /* smallest allocation holds the overhead, the terminator and one byte */
+    smallest = (overhead_size + 2 + alignment - 1) & ~(alignment - 1);
+    total = (overhead_size + payload_size + 1 + alignment - 1) &
+            ~(alignment - 1);
+    if (total < smallest) {
+        total = smallest;
+    }
+
+    if (total <= smallest + (CFL_ARENA_SDS_SMALL_CLASS_COUNT - 1) * alignment) {
+        *index = (total - smallest) / alignment;
+        *payload_capacity = total - overhead_size - 1;
+        return 0;
+    }
+
+    for (class_index = 0; class_index < CFL_ARENA_SDS_MEDIUM_CLASS_COUNT;
+         class_index++) {
+        total = (overhead_size + medium_payloads[class_index] + 1 +
+                 alignment - 1) & ~(alignment - 1);
+        if (payload_size <= total - overhead_size - 1) {
+            *index = CFL_ARENA_SDS_SMALL_CLASS_COUNT + class_index;
+            *payload_capacity = total - overhead_size - 1;
+            return 0;
+        }
+    }
+
+    return -1;
+}
+
 void *cfl_arena_alloc_sds(struct cfl_arena *arena,
                           size_t payload_size, size_t overhead_size,
                           uint8_t *allocation_class,
                           size_t *payload_capacity)
 {
-    static const size_t class_sizes[CFL_ARENA_SDS_CLASS_COUNT] = {
-        32, 64, 128, 256, 512, 1024
-    };
     size_t index;
 
     if (arena == NULL || allocation_class == NULL || payload_capacity == NULL) {
         return NULL;
     }
 
-    for (index = 0; index < CFL_ARENA_SDS_CLASS_COUNT; index++) {
-        if (payload_size <= class_sizes[index]) {
-            *allocation_class = (uint8_t) (index + 1);
-            *payload_capacity = class_sizes[index];
-            return arena_reusable_alloc(arena, &arena->free_sds[index],
-                                        overhead_size + class_sizes[index] + 1);
-        }
+    if (arena_sds_class(payload_size, overhead_size, &index,
+                        payload_capacity) != 0) {
+        *allocation_class = 0;
+        *payload_capacity = payload_size;
+        return NULL;
     }
 
-    *allocation_class = 0;
-    *payload_capacity = payload_size;
-    return NULL;
+    /* the SDS layer initializes the headers and the payload it uses */
+    *allocation_class = (uint8_t) (index + 1);
+    return arena_reusable_alloc(arena, &arena->free_sds[index],
+                                overhead_size + *payload_capacity + 1, CFL_FALSE);
 }
 
 void cfl_arena_free_sds(struct cfl_arena *arena,

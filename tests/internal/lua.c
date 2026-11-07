@@ -144,6 +144,66 @@ static void test_pushmpack()
     lua_close(l);
 }
 
+/* malformed or too deeply nested input is rejected without pushing values */
+static void test_pushmpack_invalid()
+{
+    int i;
+    int top;
+    char *nested;
+    size_t size;
+    mpack_reader_t reader;
+    lua_State *l = lua_setup(NULL);
+    /* str8 declaring 200 bytes with 3 present */
+    const char truncated_str[] = "\xd9\xc8" "abc";
+    /* array of 3 with a single element */
+    const char truncated_array[] = "\x93\x01";
+    /* bin8 declaring 10 bytes inside a map value */
+    const char truncated_bin[] = "\x81\xa1k\xc4\x0a" "xy";
+
+    top = lua_gettop(l);
+
+    mpack_reader_init_data(&reader, truncated_str, sizeof(truncated_str) - 1);
+    TEST_CHECK(flb_lua_pushmpack(l, &reader) == -1);
+    TEST_CHECK(lua_gettop(l) == top);
+
+    mpack_reader_init_data(&reader, truncated_array, sizeof(truncated_array) - 1);
+    TEST_CHECK(flb_lua_pushmpack(l, &reader) == -1);
+    TEST_CHECK(lua_gettop(l) == top);
+
+    mpack_reader_init_data(&reader, truncated_bin, sizeof(truncated_bin) - 1);
+    TEST_CHECK(flb_lua_pushmpack(l, &reader) == -1);
+    TEST_CHECK(lua_gettop(l) == top);
+
+    /* nesting: 512 nested arrays are accepted, 513 are rejected */
+    size = 514;
+    nested = flb_malloc(size);
+    TEST_ASSERT(nested != NULL);
+
+    memset(nested, 0x91, 512);
+    nested[512] = 0x01;
+    mpack_reader_init_data(&reader, nested, 513);
+    TEST_CHECK(flb_lua_pushmpack(l, &reader) == 0);
+    TEST_CHECK(lua_gettop(l) == top + 1);
+    lua_settop(l, top);
+
+    memset(nested, 0x91, 513);
+    nested[513] = 0x01;
+    mpack_reader_init_data(&reader, nested, 514);
+    TEST_CHECK(flb_lua_pushmpack(l, &reader) == -1);
+    TEST_CHECK(lua_gettop(l) == top);
+
+    /* a valid value still decodes after rejected ones */
+    for (i = 0; i < 2; i++) {
+        mpack_reader_init_data(&reader, "\x92\x01\xa2ok", 5);
+        TEST_CHECK(flb_lua_pushmpack(l, &reader) == 0);
+        check_equals(l, "{ [1] = 1 [2] = ok }");
+        lua_settop(l, top);
+    }
+
+    flb_free(nested);
+    lua_close(l);
+}
+
 static void test_tomsgpack()
 {
     const char expected[] = "[{\"key\"=>\"value\"}, \"msgpack-str\", 4]";
@@ -311,11 +371,88 @@ static void test_lua_arraylength_for_array_contains_nil()
 }
 
 
+static void test_lua_sparse_arraylength(void)
+{
+    lua_State *l;
+    int top;
+
+    l = luaL_newstate();
+    if (!TEST_CHECK(l != NULL)) {
+        return;
+    }
+    luaL_openlibs(l);
+    TEST_CHECK(luaL_dostring(l, "return {[1] = 'first', [3] = 'third'}") == 0);
+    lua_pushinteger(l, 42);
+    top = lua_gettop(l);
+    TEST_CHECK(flb_lua_arraylength(l, -2) == 3);
+    TEST_CHECK(lua_gettop(l) == top);
+    lua_pop(l, 2);
+    TEST_CHECK(luaL_dostring(l, "return {[3] = 'third'}") == 0);
+    TEST_CHECK(flb_lua_arraylength(l, -1) == -1);
+    TEST_CHECK(lua_gettop(l) == 1);
+    lua_pop(l, 1);
+    TEST_CHECK(luaL_dostring(l, "return {[500] = 7}") == 0);
+    TEST_CHECK(flb_lua_arraylength(l, -1) == -1);
+    TEST_CHECK(lua_gettop(l) == 1);
+    lua_pop(l, 1);
+    TEST_CHECK(luaL_dostring(l, "return {[1000000000] = 7}") == 0);
+    TEST_CHECK(flb_lua_arraylength(l, -1) == -1);
+    TEST_CHECK(lua_gettop(l) == 1);
+    lua_close(l);
+}
+
+#if LUA_VERSION_NUM >= 503
+static void test_lua_integer_precision(void)
+{
+    lua_State *l;
+    msgpack_object object;
+    mpack_reader_t reader;
+    const char encoded_uint64[] = "\xcf\xff\xff\xff\xff\xff\xff\xff\xff";
+
+    l = luaL_newstate();
+    if (!TEST_CHECK(l != NULL)) {
+        return;
+    }
+    object.type = MSGPACK_OBJECT_POSITIVE_INTEGER;
+    object.via.u64 = INT64_MAX;
+    flb_lua_pushmsgpack(l, &object);
+    TEST_CHECK(lua_isinteger(l, -1));
+    TEST_CHECK(lua_tointeger(l, -1) == INT64_MAX);
+    lua_pop(l, 1);
+
+    object.type = MSGPACK_OBJECT_NEGATIVE_INTEGER;
+    object.via.i64 = -INT64_C(9007199254740993);
+    flb_lua_pushmsgpack(l, &object);
+    TEST_CHECK(lua_isinteger(l, -1));
+    TEST_CHECK(lua_tointeger(l, -1) == object.via.i64);
+    lua_pop(l, 1);
+
+    object.type = MSGPACK_OBJECT_POSITIVE_INTEGER;
+    object.via.u64 = UINT64_MAX;
+    flb_lua_pushmsgpack(l, &object);
+    TEST_CHECK(lua_isnumber(l, -1));
+    TEST_CHECK(lua_tonumber(l, -1) > 0);
+    lua_pop(l, 1);
+
+    mpack_reader_init_data(&reader, encoded_uint64, sizeof(encoded_uint64) - 1);
+    TEST_CHECK(flb_lua_pushmpack(l, &reader) == 0);
+    TEST_CHECK(lua_isnumber(l, -1));
+    TEST_CHECK(lua_tonumber(l, -1) > 0);
+    TEST_CHECK(mpack_reader_destroy(&reader) == mpack_ok);
+    lua_close(l);
+}
+#endif
+
 TEST_LIST = {
+    { "lua_sparse_arraylength", test_lua_sparse_arraylength },
+#if LUA_VERSION_NUM >= 503
+    { "lua_integer_precision", test_lua_integer_precision },
+#endif
     { "lua_is_valid_func" , test_is_valid_func},
     { "lua_pushtimetable" , test_pushtimetable},
     { "lua_pushmsgpack" , test_pushmsgpack },
     { "lua_pushmpack" , test_pushmpack },
+    { "lua_pushmpack_invalid" , test_pushmpack_invalid },
     { "lua_tomsgpack" , test_tomsgpack },
     { "lua_tompack" , test_tompack },
     { "lua_arraylength" , test_lua_arraylength },

@@ -36,9 +36,13 @@ void flb_test_file_dynamic_unsafe_fallback(void);
 void flb_test_file_dynamic_windows_unsafe_fallback(void);
 void flb_test_file_dynamic_path_traversal_fallback(void);
 void flb_test_file_dynamic_limit_fallback(void);
+void flb_test_file_tag_limit_fallback(void);
+
+void flb_test_file_tag_escape(void);
 
 /* Test list */
 TEST_LIST = {
+    {"tag_escape", flb_test_file_tag_escape},
     {"path",            flb_test_file_path},
     {"path_file",       flb_test_file_path_file},
     {"mkdir",           flb_test_file_mkdir},
@@ -52,6 +56,7 @@ TEST_LIST = {
     {"dynamic_windows_unsafe_fallback", flb_test_file_dynamic_windows_unsafe_fallback},
     {"dynamic_path_traversal_fallback", flb_test_file_dynamic_path_traversal_fallback},
     {"dynamic_limit_fallback", flb_test_file_dynamic_limit_fallback},
+    {"tag_limit_fallback", flb_test_file_tag_limit_fallback},
     {"template",        flb_test_file_template},
     {"delimiter_ltsv",  flb_test_file_delim_ltsv},
     {"delimiter_csv",   flb_test_file_delim_csv},
@@ -1017,6 +1022,70 @@ void flb_test_file_dynamic_limit_fallback(void)
     flb_test_rmdir(TEST_LOGPATH);
 }
 
+void flb_test_file_tag_limit_fallback(void)
+{
+    int ret;
+    int bytes;
+    int first_input;
+    int second_input;
+    int out_ffd;
+    char first[256];
+    char second[256];
+    char overflow[256];
+    flb_ctx_t *ctx;
+
+    snprintf(first, sizeof(first), "%s/first", TEST_LOGPATH);
+    snprintf(second, sizeof(second), "%s/second", TEST_LOGPATH);
+    snprintf(overflow, sizeof(overflow), "%s/overflow.log", TEST_LOGPATH);
+    remove(first);
+    remove(second);
+    remove(overflow);
+    flb_test_rmdir(TEST_LOGPATH);
+
+    ctx = flb_create();
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL);
+
+    first_input = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(first_input >= 0);
+    flb_input_set(ctx, first_input, "tag", "first", NULL);
+    second_input = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(second_input >= 0);
+    flb_input_set(ctx, second_input, "tag", "second", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "file", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "path", TEST_LOGPATH, NULL);
+    flb_output_set(ctx, out_ffd, "max_dynamic_files", "1", NULL);
+    flb_output_set(ctx, out_ffd, "on_limit_reached", "fallback", NULL);
+    flb_output_set(ctx, out_ffd, "fallback_path", TEST_LOGPATH, NULL);
+    flb_output_set(ctx, out_ffd, "fallback_file", "overflow.log", NULL);
+    flb_output_set(ctx, out_ffd, "mkdir", "true", NULL);
+    flb_output_set(ctx, out_ffd, "rotate", "true", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    bytes = flb_lib_push(ctx, first_input, JSON_SMALL, strlen(JSON_SMALL));
+    TEST_CHECK(bytes == strlen(JSON_SMALL));
+    ret = wait_for_file(first, 1, TEST_TIMEOUT);
+    TEST_CHECK(ret == 0);
+
+    bytes = flb_lib_push(ctx, second_input, JSON_SMALL, strlen(JSON_SMALL));
+    TEST_CHECK(bytes == strlen(JSON_SMALL));
+    ret = wait_for_file(overflow, 1, TEST_TIMEOUT);
+    TEST_CHECK(ret == 0);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    TEST_CHECK(access(second, F_OK) != 0);
+    remove(first);
+    remove(second);
+    remove(overflow);
+    flb_test_rmdir(TEST_LOGPATH);
+}
+
 void flb_test_file_dynamic_path_traversal_fallback(void)
 {
     int ret;
@@ -1364,4 +1433,41 @@ void flb_test_file_mkdir(void)
     flb_sds_destroy(path);
     flb_sds_destroy(file);
     flb_test_rmdir(TEST_LOGPATH);
+}
+
+void flb_test_file_tag_escape(void)
+{
+    flb_ctx_t *ctx;
+    int input;
+    int output;
+    int mode;
+    FILE *fp;
+    char line[512];
+    char *record = "[1700000000, {\"name\":\"escaped\"}]";
+    char *path = "escaped.log";
+
+    for (mode = 0; mode < 2; mode++) {
+        remove(path);
+        ctx = flb_create();
+        flb_service_set(ctx, "Flush", "0.1", "Grace", "1", "Log_Level", "error", NULL);
+        input = flb_input(ctx, "lib", NULL);
+        flb_input_set(ctx, input, "tag", "app.\r\nforged\t %0A\x7f", NULL);
+        output = flb_output(ctx, "file", NULL);
+        flb_output_set(ctx, output, "match", "*", "format", "out_file",
+                       "file", mode ? "$name.log" : path, "fallback_file", "fallback.log", NULL);
+        TEST_CHECK(flb_start(ctx) == 0);
+        TEST_CHECK(flb_lib_push(ctx, input, record, strlen(record)) == strlen(record));
+        TEST_CHECK(wait_for_file(path, 1, TEST_TIMEOUT) == 0);
+        flb_stop(ctx);
+        flb_destroy(ctx);
+        fp = fopen(path, "r");
+        TEST_CHECK(fp != NULL);
+        if (fp) {
+            TEST_CHECK(fgets(line, sizeof(line), fp) != NULL);
+            TEST_CHECK(strstr(line, "app.%0D%0Aforged%09%20%250A%7F: [1700000000.") == line);
+            TEST_CHECK(fgets(line, sizeof(line), fp) == NULL);
+            fclose(fp);
+        }
+        remove(path);
+    }
 }

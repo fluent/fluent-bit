@@ -1372,7 +1372,9 @@ static int flush_message_mode(struct flb_forward *ctx,
 
             /* Sucessful delivery, now get message 'chunk' and wait for it */
             root = result.data;
-            options = root.via.array.ptr[3];
+            /* Dynamic tags use Message mode for ordinary records and Forward
+             * array mode for grouped records. Options are last in both. */
+            options = root.via.array.ptr[root.via.array.size - 1];
             chunk = options.via.map.ptr[0].val;
 
             /* Read ACK */

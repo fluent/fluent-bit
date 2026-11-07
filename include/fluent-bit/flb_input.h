@@ -257,6 +257,7 @@ struct flb_input_instance {
      * as the tags will be composed used the file name being watched.
      */
     int flags;
+    int initialized;                     /* successful instance initialization */
 
     int id;                              /* instance id                  */
 #ifdef FLB_HAVE_CHUNK_TRACE
@@ -944,6 +945,18 @@ int flb_input_downstream_set(struct flb_downstream *stream,
                              struct flb_input_instance *ins);
 void flb_input_ingress_destroy(struct flb_input_instance *ins);
 int flb_input_ingress_enable(struct flb_input_instance *ins);
+/* Nonblocking resume: success transfers *buf and clears it. Every failure
+ * preserves caller ownership. Call only while the input instance is alive. */
+int flb_input_ingress_try_resume_log(struct flb_input_instance *ins,
+                                     size_t starting_stage,
+                                     const char *tag, size_t tag_len,
+                                     void **buf, size_t buf_size, size_t records);
+/* Metrics counterpart: acceptance alone adopts *context and clears it.
+ * BUSY/error preserve both the pointer and its original list membership. */
+int flb_input_ingress_try_resume_metrics(struct flb_input_instance *ins,
+                                         size_t starting_stage,
+                                         const char *tag, size_t tag_len,
+                                         struct cmt **context, size_t payload_size);
 int flb_input_ingress_queue_log(struct flb_input_instance *ins,
                                 const char *tag, size_t tag_len,
                                 const void *buf, size_t buf_size);
@@ -953,6 +966,12 @@ int flb_input_ingress_queue_log_take(struct flb_input_instance *ins,
                                      void *buf, size_t buf_size,
                                      size_t allocation_size);
 int flb_input_ingress_queue_log_take_records(struct flb_input_instance *ins,
+                                             size_t records,
+                                             const char *tag, size_t tag_len,
+                                             void *buf, size_t buf_size,
+                                             size_t allocation_size);
+int flb_input_ingress_queue_log_processed_take_records(
+                                             struct flb_input_instance *ins,
                                              size_t records,
                                              const char *tag, size_t tag_len,
                                              void *buf, size_t buf_size,

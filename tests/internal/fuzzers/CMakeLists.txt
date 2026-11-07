@@ -24,11 +24,13 @@ set(UNIT_TESTS_FILES
   multiline_fuzzer.c
   pack_json_state_fuzzer.c
   http_fuzzer.c
+  http_retry_after_fuzzer.c
   strp_fuzzer.c
   utils_fuzzer.c
   config_map_fuzzer.c
   record_ac_fuzzer.c
   config_yaml_fuzzer.c
+  opentelemetry_logs_fuzzer.c
   )
 
 # Prepare list of unit tests

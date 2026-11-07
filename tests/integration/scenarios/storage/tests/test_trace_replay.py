@@ -44,6 +44,8 @@ def trace_payload(codes, batch=0):
 
 def start_sink(release, received, lock):
     class Sink(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
         def do_POST(self):
             body = self.rfile.read(int(self.headers["Content-Length"]))
             if release.is_set():
@@ -318,6 +320,8 @@ def test_trace_shutdown_aborts_inflight_requests_and_replays(tmp_path, transport
         return True
 
     class HttpSink(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
         def do_POST(self):
             body = self.rfile.read(int(self.headers["Content-Length"]))
             if not capture(self.path, self.headers, body):

@@ -370,10 +370,31 @@ next_record:
     context->record_length = 0;
 
     previous_offset = context->offset;
-    result = msgpack_unpack_next(&context->unpacked_event,
-                                 context->buffer,
-                                 context->length,
-                                 &context->offset);
+
+    /*
+     * Reuse one zone across records. Clearing keeps its first chunk, whereas
+     * msgpack_unpack_next() frees and recreates the zone for every record. A
+     * group start takes the zone over, so a new one is created on the next call.
+     */
+    if (context->unpacked_event.zone == NULL) {
+        context->unpacked_event.zone = msgpack_zone_new(MSGPACK_ZONE_CHUNK_SIZE);
+        if (context->unpacked_event.zone == NULL) {
+            context->last_result = FLB_EVENT_DECODER_ERROR_DESERIALIZATION_FAILURE;
+            return context->last_result;
+        }
+    }
+    else {
+        msgpack_zone_clear(context->unpacked_event.zone);
+    }
+
+    memset(&context->unpacked_event.data, 0, sizeof(msgpack_object));
+    result = msgpack_unpack(context->buffer, context->length, &context->offset,
+                            context->unpacked_event.zone, &context->unpacked_event.data);
+
+    /* remaining bytes belong to the next records */
+    if (result == MSGPACK_UNPACK_EXTRA_BYTES) {
+        result = MSGPACK_UNPACK_SUCCESS;
+    }
 
     if (result == MSGPACK_UNPACK_CONTINUE) {
         context->last_result = FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA;
@@ -460,9 +481,8 @@ next_record:
 
             if (context->read_groups != FLB_TRUE) {
                 /*
-                 * Skip group markers and move to the next record.
-                 * msgpack_unpack_next will properly destroy and reinitialize
-                 * unpacked_event, so no explicit cleanup needed here.
+                 * Skip group markers and move to the next record. The next
+                 * iteration clears or recreates the unpacked_event zone.
                  */
                 memset(event, 0, sizeof(struct flb_log_event));
                 goto next_record;

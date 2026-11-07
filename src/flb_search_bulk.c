@@ -505,6 +505,7 @@ int flb_search_bulk_process_response(const char *response,
                                      int acknowledge_all_conflicts,
                                      int drop_unrecoverable_records,
                                      struct flb_search_bulk_stats *stats,
+                                     int *out_throttled,
                                      struct flb_search_bulk_retry **out_retry)
 {
     int index;
@@ -531,6 +532,9 @@ int flb_search_bulk_process_response(const char *response,
     *out_retry = NULL;
     if (stats != NULL) {
         memset(stats, 0, sizeof(struct flb_search_bulk_stats));
+    }
+    if (out_throttled != NULL) {
+        *out_throttled = FLB_FALSE;
     }
     packed_response = NULL;
     retry = NULL;
@@ -653,6 +657,9 @@ int flb_search_bulk_process_response(const char *response,
         if (item_result == FLB_SEARCH_BULK_ITEM_RETRYABLE ||
             (item_result == FLB_SEARCH_BULK_ITEM_UNRECOVERABLE &&
              drop_unrecoverable_records == FLB_FALSE)) {
+            if (status == 429 && out_throttled != NULL) {
+                *out_throttled = FLB_TRUE;
+            }
             memcpy(retry->payload + retry->size,
                    payload + entry_start, entry_size);
             retry->size += entry_size;
@@ -674,6 +681,9 @@ int flb_search_bulk_process_response(const char *response,
     result = FLB_SEARCH_BULK_RETRY;
 
  done:
+    if (result != FLB_SEARCH_BULK_RETRY && out_throttled != NULL) {
+        *out_throttled = FLB_FALSE;
+    }
     flb_search_bulk_retry_destroy(retry);
     msgpack_unpacked_destroy(&unpacked);
     flb_free(packed_response);

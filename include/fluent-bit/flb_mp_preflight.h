@@ -37,5 +37,8 @@ int flb_mp_preflight_scan(struct flb_mp_preflight *scan, const char *data,
  * bounds decoders that retain earlier objects (for example log group markers).
  * SIZE_MAX preserves structural validation without a practical zone budget. */
 int flb_mp_preflight_sequence(const char *data, size_t len, size_t limit);
+/* Cap cumulative roots, array elements, and map entries across the sequence. */
+int flb_mp_preflight_sequence_limited(const char *data, size_t len, size_t limit,
+                                      size_t object_limit);
 
 #endif

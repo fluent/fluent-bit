@@ -1,0 +1,27 @@
+{
+  "base_source": "ad9867358257123c34b529860fe984e92a69844c",
+  "special_worktree": "ad9867358257123c34b529860fe984e92a69844c",
+  "binaries": [
+    {
+      "name": "default54",
+      "binary": "/tmp/flb-jemalloc-rollback-20261031/build54/bin/fluent-bit",
+      "bytes": 23527112,
+      "sha256": "820f28e719a86a82812abec09634207c1834dafe1926ef87f2e35738217ebfcc"
+    },
+    {
+      "name": "old53",
+      "binary": "/tmp/flb-jemalloc-rollback-20261031/build53/bin/fluent-bit",
+      "bytes": 23290600,
+      "sha256": "f8baf78754a02c229942e0ce08eabbe86633135b4e9c8fbe3a4f576410b91f1b"
+    },
+    {
+      "name": "special54",
+      "binary": "/tmp/flb-jemalloc54-special-20261101/build/bin/fluent-bit",
+      "bytes": 23527136,
+      "sha256": "c4e1f252ce6608523247a604a7cc03540c95300350fb919ab18341edf7fe0aa0"
+    }
+  ],
+  "architecture": "x86_64",
+  "page_bytes": "4096",
+  "root_head": "2213a2b69a889cba11f6d78b1ce8f3f2d66c7303"
+}

@@ -259,8 +259,19 @@ Setting the limit to zero disables external-buffer caching. Reducing the limit
 immediately trims the cache. A larger limit can improve throughput for repeated
 large payloads but may increase retained memory and RSS.
 
-The arena also maintains size classes for commonly-sized owned SDS values.
-Callers do not need to select a class.
+The arena also maintains size classes for owned SDS values up to 1 KiB.
+Callers do not need to select a class. Classes below 128 bytes grow in
+alignment-sized steps of the complete allocation, so short strings such as map
+keys use at most one alignment unit more than they need; larger classes grow
+by about 25 percent. A released string is recycled for the next string of the
+same class. `cfl_sds_alloc()` reports the class capacity, which can exceed the
+requested length.
+
+Variants, kvpairs, key/value lists, arrays, and SDS headers are aligned for the
+pointers, sizes, 64-bit integers, and doubles they contain. This can be less
+strict than the raw allocation alignment, which also covers `long double`, so
+CFL objects pack more densely in arena chunks. Raw allocations keep the public
+alignment guarantee.
 
 ## Memory statistics
 

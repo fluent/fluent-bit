@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_hash_table.h>
+#include <fluent-bit/flb_lock.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_record_accessor.h>
 #include <msgpack.h>
@@ -88,12 +89,14 @@ struct flb_file_conf {
     int missing_field_action;
     int limit_reached_action;
     int dynamic_destination;
+    int limit_tag_files;
     int enable_strftime;
     int time_path;
     int time_file;
     struct flb_record_accessor *ra_path;
     struct flb_record_accessor *ra_file;
     struct flb_hash_table *dynamic_files;
+    flb_lock_t destination_lock;
     struct flb_output_instance *ins;
 };
 
@@ -225,6 +228,7 @@ static void file_conf_destroy(struct flb_file_conf *ctx)
     }
 
     file_rotate_destroy(ctx->rotation);
+    flb_lock_destroy(&ctx->destination_lock);
 
     flb_free(ctx);
 }
@@ -384,18 +388,57 @@ static int apply_destination_action(struct flb_file_conf *ctx,
     return -1;
 }
 
+/* Reserve destinations before rotation or filesystem changes, including failed opens. */
+static int reserve_destination(struct flb_file_conf *ctx,
+                               char *output, size_t output_size)
+{
+    int ret;
+    int limit_reached = FLB_FALSE;
+    void *stored_value;
+    size_t stored_size;
+
+    if (ctx->dynamic_files == NULL) {
+        return 0;
+    }
+
+    if (flb_lock_acquire(&ctx->destination_lock, FLB_LOCK_DEFAULT_RETRY_LIMIT,
+                         FLB_LOCK_DEFAULT_RETRY_DELAY) != 0) {
+        flb_plg_error(ctx->ins, "could not acquire destination lock");
+        return -1;
+    }
+
+    ret = flb_hash_table_get(ctx->dynamic_files, output, strlen(output),
+                             &stored_value, &stored_size);
+    if (ret < 0) {
+        if (ctx->dynamic_files->total_count >= ctx->max_dynamic_files) {
+            limit_reached = FLB_TRUE;
+        }
+        else {
+            ret = flb_hash_table_add(ctx->dynamic_files, output, strlen(output), "", 0);
+        }
+    }
+
+    flb_lock_release(&ctx->destination_lock, FLB_LOCK_DEFAULT_RETRY_LIMIT,
+                     FLB_LOCK_DEFAULT_RETRY_DELAY);
+
+    if (limit_reached == FLB_TRUE) {
+        return apply_destination_action(ctx, ctx->limit_reached_action,
+                                        "max_dynamic_files limit reached",
+                                        output, output_size);
+    }
+
+    return ret < 0 ? -1 : 0;
+}
+
 static int resolve_dynamic_destination(struct flb_file_conf *ctx,
                                        const char *tag,
                                        msgpack_object map,
                                        const struct flb_time *timestamp,
                                        char *output,
-                                       size_t output_size,
-                                       int *new_destination)
+                                       size_t output_size)
 {
     int ret;
     char sanitized_tag[PATH_MAX];
-    void *stored_value;
-    size_t stored_size;
     flb_sds_t dynamic_path = NULL;
     flb_sds_t dynamic_file = NULL;
     flb_sds_t timestamp_path = NULL;
@@ -407,7 +450,6 @@ static int resolve_dynamic_destination(struct flb_file_conf *ctx,
     const char *path;
     const char *file;
 
-    *new_destination = FLB_FALSE;
     path = ctx->out_path;
     file = ctx->out_file;
 
@@ -522,24 +564,7 @@ static int resolve_dynamic_destination(struct flb_file_conf *ctx,
         return -1;
     }
 
-    if (ctx->dynamic_files == NULL) {
-        return 0;
-    }
-
-    ret = flb_hash_table_get(ctx->dynamic_files, output, strlen(output),
-                             &stored_value, &stored_size);
-    if (ret >= 0) {
-        return 0;
-    }
-
-    if (ctx->dynamic_files->total_count >= ctx->max_dynamic_files) {
-        return apply_destination_action(ctx, ctx->limit_reached_action,
-                                        "max_dynamic_files limit reached",
-                                        output, output_size);
-    }
-
-    *new_destination = FLB_TRUE;
-    return 0;
+    return reserve_destination(ctx, output, output_size);
 }
 
 
@@ -562,6 +587,10 @@ static int cb_file_init(struct flb_output_instance *ins,
         return -1;
     }
     ctx->ins = ins;
+    if (flb_lock_init(&ctx->destination_lock) != 0) {
+        flb_free(ctx);
+        return -1;
+    }
     ctx->format = FLB_OUT_FILE_FMT_JSON; /* default */
     ctx->delimiter = NULL;
     ctx->label_delimiter = NULL;
@@ -573,6 +602,9 @@ static int cb_file_init(struct flb_output_instance *ins,
         file_conf_destroy(ctx);
         return -1;
     }
+
+    /* Preserve existing tag behavior unless the limit was explicitly configured. */
+    ctx->limit_tag_files = flb_output_get_property("max_dynamic_files", ins) != NULL;
 
     ctx->missing_field_action = parse_dynamic_action(ctx, "on_missing_field",
                                                      ctx->on_missing_field);
@@ -639,7 +671,9 @@ static int cb_file_init(struct flb_output_instance *ins,
         return -1;
     }
 
-    if (ctx->dynamic_destination == FLB_TRUE && ctx->max_dynamic_files > 0) {
+    if ((ctx->dynamic_destination == FLB_TRUE ||
+         (ctx->limit_tag_files == FLB_TRUE && ctx->out_file == NULL)) &&
+        ctx->max_dynamic_files > 0) {
         table_size = ctx->max_dynamic_files;
         if (table_size > 128) {
             table_size = 128;
@@ -716,6 +750,94 @@ static int cb_file_init(struct flb_output_instance *ins,
     return 0;
 }
 
+/* Emit MessagePack's text representation inside a quoted CSV field. */
+static void csv_field_content(FILE *fp, msgpack_object obj, int nested)
+{
+    size_t i;
+    const char *value;
+    size_t length;
+
+    switch (obj.type) {
+    case MSGPACK_OBJECT_STR:
+    case MSGPACK_OBJECT_BIN:
+        if (obj.type == MSGPACK_OBJECT_STR) {
+            value = obj.via.str.ptr;
+            length = obj.via.str.size;
+        }
+        else {
+            value = obj.via.bin.ptr;
+            length = obj.via.bin.size;
+        }
+        if (nested) {
+            fputs("\"\"", fp);
+        }
+        for (i = 0; i < length; i++) {
+            if (obj.type == MSGPACK_OBJECT_BIN &&
+                ((unsigned char) value[i] < 0x20 || (unsigned char) value[i] >= 0x7f)) {
+                fprintf(fp, "\\x%02x", (unsigned char) value[i]);
+                continue;
+            }
+            if (value[i] == '"') {
+                fputc('"', fp);
+            }
+            fputc((unsigned char) value[i], fp);
+        }
+        if (nested) {
+            fputs("\"\"", fp);
+        }
+        break;
+    case MSGPACK_OBJECT_ARRAY:
+        fputc('[', fp);
+        for (i = 0; i < obj.via.array.size; i++) {
+            if (i > 0) {
+                fputs(", ", fp);
+            }
+            csv_field_content(fp, obj.via.array.ptr[i], FLB_TRUE);
+        }
+        fputc(']', fp);
+        break;
+    case MSGPACK_OBJECT_MAP:
+        fputc('{', fp);
+        for (i = 0; i < obj.via.map.size; i++) {
+            if (i > 0) {
+                fputs(", ", fp);
+            }
+            csv_field_content(fp, obj.via.map.ptr[i].key, FLB_TRUE);
+            fputs("=>", fp);
+            csv_field_content(fp, obj.via.map.ptr[i].val, FLB_TRUE);
+        }
+        fputc('}', fp);
+        break;
+    case MSGPACK_OBJECT_EXT:
+        fprintf(fp, "(ext: %d)", (int) obj.via.ext.type);
+        fputs("\"\"", fp);
+        for (i = 0; i < obj.via.ext.size; i++) {
+            fprintf(fp, "\\x%02x", (unsigned char) obj.via.ext.ptr[i]);
+        }
+        fputs("\"\"", fp);
+        break;
+    default:
+        msgpack_object_print(fp, obj);
+        break;
+    }
+}
+
+static void csv_field(FILE *fp, msgpack_object obj)
+{
+    int quote;
+
+    quote = obj.type == MSGPACK_OBJECT_STR || obj.type == MSGPACK_OBJECT_BIN ||
+            obj.type == MSGPACK_OBJECT_EXT || obj.type == MSGPACK_OBJECT_ARRAY ||
+            obj.type == MSGPACK_OBJECT_MAP;
+    if (quote) {
+        fputc('"', fp);
+    }
+    csv_field_content(fp, obj, FLB_FALSE);
+    if (quote) {
+        fputc('"', fp);
+    }
+}
+
 static int csv_output(FILE *fp, int column_names,
                       struct flb_time *tm, msgpack_object *obj,
                       struct flb_file_conf *ctx)
@@ -731,7 +853,7 @@ static int csv_output(FILE *fp, int column_names,
         if (column_names == FLB_TRUE) {
             fprintf(fp, "timestamp%s", ctx->delimiter);
             for (i = 0; i < map_size; i++) {
-                msgpack_object_print(fp, (kv+i)->key);
+                csv_field(fp, (kv+i)->key);
                 if (i + 1 < map_size) {
                     fprintf(fp, "%s", ctx->delimiter);
                 }
@@ -743,14 +865,99 @@ static int csv_output(FILE *fp, int column_names,
                 (long long) tm->tm.tv_sec, tm->tm.tv_nsec, ctx->delimiter);
 
         for (i = 0; i < map_size - 1; i++) {
-            msgpack_object_print(fp, (kv+i)->val);
+            csv_field(fp, (kv+i)->val);
             fprintf(fp, "%s", ctx->delimiter);
         }
 
-        msgpack_object_print(fp, (kv+(map_size-1))->val);
+        csv_field(fp, (kv+(map_size-1))->val);
         fprintf(fp, NEWLINE);
     }
     return 0;
+}
+
+/* Percent-encode separators and controls; encode percent to avoid ambiguity. */
+static void ltsv_bytes(FILE *fp, const char *value, size_t length,
+                       struct flb_file_conf *ctx)
+{
+    size_t i;
+    unsigned char c;
+
+    for (i = 0; i < length; i++) {
+        c = (unsigned char) value[i];
+        if (c < 0x20 || c == 0x7f || c == '%' ||
+            strchr(ctx->delimiter, c) != NULL ||
+            strchr(ctx->label_delimiter, c) != NULL) {
+            fprintf(fp, "%%%02X", (unsigned int) c);
+        }
+        else {
+            fputc(c, fp);
+        }
+    }
+}
+
+static void ltsv_field(FILE *fp, msgpack_object obj, struct flb_file_conf *ctx)
+{
+    size_t i;
+    int length;
+    char number[512];
+
+    switch (obj.type) {
+    case MSGPACK_OBJECT_STR:
+    case MSGPACK_OBJECT_BIN:
+        ltsv_bytes(fp, "\"", 1, ctx);
+        if (obj.type == MSGPACK_OBJECT_STR) {
+            ltsv_bytes(fp, obj.via.str.ptr, obj.via.str.size, ctx);
+        }
+        else {
+            for (i = 0; i < obj.via.bin.size; i++) {
+                if ((unsigned char) obj.via.bin.ptr[i] >= 0x80) {
+                    fprintf(fp, "%%%02X", (unsigned char) obj.via.bin.ptr[i]);
+                }
+                else {
+                    ltsv_bytes(fp, obj.via.bin.ptr + i, 1, ctx);
+                }
+            }
+        }
+        ltsv_bytes(fp, "\"", 1, ctx);
+        break;
+    case MSGPACK_OBJECT_ARRAY:
+        ltsv_bytes(fp, "[", 1, ctx);
+        for (i = 0; i < obj.via.array.size; i++) {
+            if (i > 0) {
+                ltsv_bytes(fp, ", ", 2, ctx);
+            }
+            ltsv_field(fp, obj.via.array.ptr[i], ctx);
+        }
+        ltsv_bytes(fp, "]", 1, ctx);
+        break;
+    case MSGPACK_OBJECT_MAP:
+        ltsv_bytes(fp, "{", 1, ctx);
+        for (i = 0; i < obj.via.map.size; i++) {
+            if (i > 0) {
+                ltsv_bytes(fp, ", ", 2, ctx);
+            }
+            ltsv_field(fp, obj.via.map.ptr[i].key, ctx);
+            ltsv_bytes(fp, "=>", 2, ctx);
+            ltsv_field(fp, obj.via.map.ptr[i].val, ctx);
+        }
+        ltsv_bytes(fp, "}", 1, ctx);
+        break;
+    case MSGPACK_OBJECT_EXT:
+        length = snprintf(number, sizeof(number), "(ext: %d)\"", (int) obj.via.ext.type);
+        ltsv_bytes(fp, number, length, ctx);
+        for (i = 0; i < obj.via.ext.size; i++) {
+            length = snprintf(number, sizeof(number), "\\x%02x", (unsigned char) obj.via.ext.ptr[i]);
+            ltsv_bytes(fp, number, length, ctx);
+        }
+        ltsv_bytes(fp, "\"", 1, ctx);
+        break;
+    default:
+        length = msgpack_object_print_buffer(number, sizeof(number), obj);
+        if (length > 0) {
+            ltsv_bytes(fp, number, length, ctx);
+        }
+        break;
+    }
 }
 
 static int ltsv_output(FILE *fp, struct flb_time *tm, msgpack_object *obj,
@@ -769,15 +976,15 @@ static int ltsv_output(FILE *fp, struct flb_time *tm, msgpack_object *obj,
                 ctx->delimiter);
 
         for (i = 0; i < map_size - 1; i++) {
-            msgpack_object_print(fp, (kv+i)->key);
+            ltsv_field(fp, (kv+i)->key, ctx);
             fprintf(fp, "%s", ctx->label_delimiter);
-            msgpack_object_print(fp, (kv+i)->val);
+            ltsv_field(fp, (kv+i)->val, ctx);
             fprintf(fp, "%s", ctx->delimiter);
         }
 
-        msgpack_object_print(fp, (kv+(map_size-1))->key);
+        ltsv_field(fp, (kv+(map_size-1))->key, ctx);
         fprintf(fp, "%s", ctx->label_delimiter);
-        msgpack_object_print(fp, (kv+(map_size-1))->val);
+        ltsv_field(fp, (kv+(map_size-1))->val, ctx);
         fprintf(fp, NEWLINE);
     }
     return 0;
@@ -1078,6 +1285,21 @@ static void close_output_file(FILE *fp, struct file_rotate_entry *entry)
     file_rotate_release(entry);
 }
 
+/* Keep tags in one unambiguous, whitespace-free field in text records. */
+static void write_record_tag(FILE *fp, const char *tag)
+{
+    const unsigned char *cursor;
+
+    for (cursor = (const unsigned char *) tag; *cursor; cursor++) {
+        if (*cursor <= 0x20 || *cursor == 0x7f || *cursor == '%') {
+            fprintf(fp, "%%%02X", (unsigned int) *cursor);
+        }
+        else {
+            fputc(*cursor, fp);
+        }
+    }
+}
+
 static int write_log_record(FILE *fp,
                             long *file_pos,
                             struct flb_event_chunk *event_chunk,
@@ -1096,8 +1318,8 @@ static int write_log_record(FILE *fp,
             return FLB_RETRY;
         }
 
-        fprintf(fp, "%s: [%"PRIu64".%09lu, %s]" NEWLINE,
-                event_chunk->tag,
+        write_record_tag(fp, event_chunk->tag);
+        fprintf(fp, ": [%"PRIu64".%09lu, %s]" NEWLINE,
                 (uint64_t) log_event->timestamp.tm.tv_sec,
                 log_event->timestamp.tm.tv_nsec,
                 buf);
@@ -1136,7 +1358,6 @@ static int flush_dynamic_logs(struct flb_event_chunk *event_chunk,
                               struct flb_log_event *log_event)
 {
     int ret;
-    int new_destination;
     FILE *fp;
     long file_pos;
     struct file_rotate_entry *rot_entry = NULL;
@@ -1153,7 +1374,7 @@ static int flush_dynamic_logs(struct flb_event_chunk *event_chunk,
                                               log_event)) == FLB_EVENT_DECODER_SUCCESS) {
         ret = resolve_dynamic_destination(ctx, event_chunk->tag, *log_event->body,
                                           &log_event->timestamp,
-                                          output, output_size, &new_destination);
+                                          output, output_size);
         if (ret == 1) {
             continue;
         }
@@ -1174,15 +1395,6 @@ static int flush_dynamic_logs(struct flb_event_chunk *event_chunk,
             file_rotate_release(rot_entry);
             flb_log_event_decoder_destroy(log_decoder);
             return FLB_ERROR;
-        }
-
-        if (new_destination == FLB_TRUE) {
-            ret = flb_hash_table_add(ctx->dynamic_files, output, strlen(output), "", 0);
-            if (ret < 0) {
-                close_output_file(fp, rot_entry);
-                flb_log_event_decoder_destroy(log_decoder);
-                return FLB_ERROR;
-            }
         }
 
         file_pos = ftell(fp);
@@ -1284,6 +1496,14 @@ static void cb_file_flush(struct flb_event_chunk *event_chunk,
         }
     }
 
+    if (ctx->limit_tag_files == FLB_TRUE && ctx->dynamic_destination == FLB_FALSE &&
+        ctx->out_file == NULL) {
+        ret = reserve_destination(ctx, out_file, sizeof(out_file));
+        if (ret != 0) {
+            FLB_OUTPUT_RETURN(ret == 1 ? FLB_OK : FLB_ERROR);
+        }
+    }
+
     if (file_rotate_acquire(ctx->rotation, out_file, &rot_entry) != 0) {
         FLB_OUTPUT_RETURN(FLB_ERROR);
     }
@@ -1376,8 +1596,8 @@ static void cb_file_flush(struct flb_event_chunk *event_chunk,
             buf = flb_msgpack_to_json_str(alloc_size, log_event.body,
                                           config->json_escape_unicode);
             if (buf) {
-                fprintf(fp, "%s: [%"PRIu64".%09lu, %s]" NEWLINE,
-                        event_chunk->tag,
+                write_record_tag(fp, event_chunk->tag);
+                fprintf(fp, ": [%"PRIu64".%09lu, %s]" NEWLINE,
                         (uint64_t) log_event.timestamp.tm.tv_sec, log_event.timestamp.tm.tv_nsec,
                         buf);
                 flb_free(buf);
@@ -1465,7 +1685,9 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_INT, "max_dynamic_files", "1024",
      0, FLB_TRUE, offsetof(struct flb_file_conf, max_dynamic_files),
-     "Maximum number of distinct record-accessor destinations. Set to 0 for unlimited"
+     "Maximum number of distinct dynamic destinations. Also limits tag-derived "
+     "filenames when explicitly configured. Failed open attempts also count. "
+     "Set to 0 for unlimited"
     },
 
     {

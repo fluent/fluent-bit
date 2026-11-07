@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_conditionals.h>
 
 #include <cfl/cfl_kvlist.h>
+#include <cfl/cfl_arena.h>
 
 #include <string.h>
 
@@ -553,7 +554,195 @@ cleanup:
 }
 
 
+static void bounded_record_pool_preserves_moved_records(void)
+{
+    struct flb_log_event_encoder *encoder;
+    struct flb_log_event_decoder decoder = {0};
+    struct flb_mp_chunk_cobj *source;
+    struct flb_mp_chunk_cobj *destination;
+    struct flb_mp_chunk_record *records[1024];
+    int moved[] = {0, 511, 512, 1023};
+    size_t index;
+    size_t pooled = 0;
+
+    encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+    TEST_ASSERT(encoder != NULL);
+    source = flb_mp_chunk_cobj_create(encoder, &decoder);
+    destination = flb_mp_chunk_cobj_create(encoder, &decoder);
+    TEST_ASSERT(source != NULL && destination != NULL);
+    source->record_pool_enabled = FLB_TRUE;
+    for (index = 0; index < 1024; index++) {
+        records[index] = flb_mp_chunk_record_create(source);
+        TEST_ASSERT(records[index] != NULL);
+        TEST_CHECK(records[index]->cobj_record == NULL);
+        TEST_CHECK(records[index]->owns_group_attributes == FLB_FALSE);
+        pooled += records[index]->storage_block != NULL;
+        records[index]->modified = index;
+        cfl_list_add(&records[index]->_head, &source->records);
+    }
+    TEST_CHECK(pooled == 512);
+    TEST_CHECK(source->record_pool_blocks == 8);
+    for (index = 0; index < sizeof(moved) / sizeof(moved[0]); index++) {
+        cfl_list_del(&records[moved[index]]->_head);
+        cfl_list_add(&records[moved[index]]->_head, &destination->records);
+    }
+    TEST_CHECK(flb_mp_chunk_cobj_destroy(source) == 0);
+    for (index = 0; index < sizeof(moved) / sizeof(moved[0]); index++) {
+        TEST_CHECK(records[moved[index]]->modified == moved[index]);
+    }
+    TEST_CHECK(flb_mp_chunk_cobj_destroy(destination) == 0);
+    flb_log_event_encoder_destroy(encoder);
+}
+
+static void scratch_encode_preserves_field_boundaries(void)
+{
+    struct flb_log_event_encoder *builder;
+    struct flb_log_event_encoder *encoder;
+    struct flb_log_event_decoder decoder;
+    struct flb_log_event_decoder verify;
+    struct flb_log_event event;
+    struct flb_mp_chunk_cobj *chunk;
+    struct flb_mp_chunk_record *record;
+    struct flb_time timestamp;
+    char payload[9000];
+    size_t lengths[] = {0, 1, sizeof(payload), 2};
+    size_t length;
+    size_t index;
+    char *output;
+    size_t output_size;
+    int ret;
+
+    memset(payload, 0xff, sizeof(payload));
+    payload[1] = '\0';
+    builder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+    encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+    TEST_ASSERT(builder != NULL && encoder != NULL);
+    flb_time_set(&timestamp, 1, 0);
+    for (index = 0; index < 16; index++) {
+        length = lengths[index % 4];
+        TEST_ASSERT(flb_log_event_encoder_begin_record(builder) == 0);
+        TEST_ASSERT(flb_log_event_encoder_set_timestamp(builder, &timestamp) == 0);
+        if (index % 2) {
+            ret = flb_log_event_encoder_append_metadata_values(builder,
+                FLB_LOG_EVENT_CSTRING_VALUE("text"), FLB_LOG_EVENT_STRING_VALUE(payload, length));
+            TEST_ASSERT(ret == 0);
+        }
+        ret = flb_log_event_encoder_append_body_values(builder,
+            FLB_LOG_EVENT_CSTRING_VALUE("binary"), FLB_LOG_EVENT_BINARY_VALUE(payload, length));
+        TEST_ASSERT(ret == 0);
+        TEST_ASSERT(flb_log_event_encoder_commit_record(builder) == 0);
+    }
+    TEST_ASSERT(flb_log_event_decoder_init(&decoder, builder->output_buffer,
+                                          builder->output_length) == 0);
+    chunk = flb_mp_chunk_cobj_create(encoder, &decoder);
+    TEST_ASSERT(chunk != NULL);
+    flb_mp_chunk_cobj_value_pool_enable(chunk);
+    TEST_ASSERT(chunk->value_pool != NULL);
+    while ((ret = flb_mp_chunk_cobj_record_next(chunk, &record)) == FLB_MP_CHUNK_RECORD_OK) {
+        TEST_CHECK(record->cobj_record->variant->arena == chunk->value_pool);
+    }
+    TEST_ASSERT(ret == FLB_MP_CHUNK_RECORD_EOF);
+    TEST_ASSERT(flb_mp_chunk_cobj_encode(chunk, &output, &output_size) == 0);
+    TEST_ASSERT(flb_log_event_decoder_init(&verify, output, output_size) == 0);
+    index = 0;
+    while (flb_log_event_decoder_next(&verify, &event) == FLB_EVENT_DECODER_SUCCESS) {
+        length = lengths[index % 4];
+        TEST_ASSERT(event.body->type == MSGPACK_OBJECT_MAP && event.body->via.map.size == 1);
+        TEST_ASSERT(event.body->via.map.ptr[0].val.type == MSGPACK_OBJECT_BIN);
+        TEST_CHECK(event.body->via.map.ptr[0].val.via.bin.size == length);
+        TEST_CHECK(memcmp(event.body->via.map.ptr[0].val.via.bin.ptr, payload, length) == 0);
+        TEST_ASSERT(event.metadata->type == MSGPACK_OBJECT_MAP);
+        TEST_CHECK(event.metadata->via.map.size == index % 2);
+        if (index % 2) {
+            TEST_ASSERT(event.metadata->via.map.ptr[0].val.type == MSGPACK_OBJECT_STR);
+            TEST_CHECK(event.metadata->via.map.ptr[0].val.via.str.size == length);
+            TEST_CHECK(memcmp(event.metadata->via.map.ptr[0].val.via.str.ptr, payload, length) == 0);
+        }
+        index++;
+    }
+    TEST_CHECK(index == 16);
+    flb_log_event_decoder_destroy(&verify);
+    flb_mp_chunk_cobj_destroy(chunk);
+    flb_log_event_decoder_destroy(&decoder);
+    flb_log_event_encoder_destroy(builder);
+    flb_log_event_encoder_destroy(encoder);
+    flb_free(output);
+}
+
+static void scratch_encode_failure_releases_storage(void)
+{
+    struct flb_log_event_encoder *encoder;
+    struct flb_log_event_decoder decoder = {0};
+    struct flb_mp_chunk_cobj *chunk;
+    struct flb_mp_chunk_record *record;
+    char *output = NULL;
+    size_t output_size = 0;
+
+    encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+    TEST_ASSERT(encoder != NULL);
+    chunk = flb_mp_chunk_cobj_create(encoder, &decoder);
+    TEST_ASSERT(chunk != NULL);
+    record = flb_mp_chunk_record_create(chunk);
+    TEST_ASSERT(record != NULL);
+    record->cobj_record = cfl_object_create();
+    TEST_ASSERT(record->cobj_record != NULL);
+    cfl_list_add(&record->_head, &chunk->records);
+    TEST_CHECK(flb_mp_chunk_cobj_encode(chunk, &output, &output_size) == -1);
+    TEST_CHECK(output == NULL && output_size == 0);
+    flb_mp_chunk_cobj_destroy(chunk);
+    flb_log_event_encoder_destroy(encoder);
+}
+
+static void exhausted_value_pool_falls_back_to_heap(void)
+{
+    struct flb_log_event_encoder *builder;
+    struct flb_log_event_encoder *encoder;
+    struct flb_log_event_decoder decoder;
+    struct flb_mp_chunk_cobj *chunk;
+    struct flb_mp_chunk_record *record;
+    struct flb_time timestamp;
+    size_t blocks = 0;
+    int ret;
+
+    builder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+    encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+    TEST_ASSERT(builder != NULL && encoder != NULL);
+    flb_time_set(&timestamp, 1, 0);
+    TEST_ASSERT(flb_log_event_encoder_begin_record(builder) == 0);
+    TEST_ASSERT(flb_log_event_encoder_set_timestamp(builder, &timestamp) == 0);
+    ret = flb_log_event_encoder_append_body_values(builder,
+        FLB_LOG_EVENT_CSTRING_VALUE("message"), FLB_LOG_EVENT_CSTRING_VALUE("preserved"));
+    TEST_ASSERT(ret == 0);
+    TEST_ASSERT(flb_log_event_encoder_commit_record(builder) == 0);
+    TEST_ASSERT(flb_log_event_decoder_init(&decoder, builder->output_buffer,
+                                          builder->output_length) == 0);
+    chunk = flb_mp_chunk_cobj_create(encoder, &decoder);
+    TEST_ASSERT(chunk != NULL);
+    flb_mp_chunk_cobj_value_pool_enable(chunk);
+    TEST_ASSERT(chunk->value_pool != NULL);
+    TEST_CHECK(flb_mp_chunk_cobj_value_pool_get(chunk, SIZE_MAX) == NULL);
+    /* Trees already in the pool can grow past the budget; new trees cannot */
+    while (blocks < 80 && cfl_arena_malloc(chunk->value_pool, 16384) != NULL) {
+        blocks++;
+    }
+    TEST_CHECK(blocks == 80);
+    TEST_CHECK(chunk->value_pool_bytes > 1024 * 1024);
+    TEST_CHECK(flb_mp_chunk_cobj_value_pool_get(chunk, 512) == NULL);
+    TEST_ASSERT(flb_mp_chunk_cobj_record_next(chunk, &record) == FLB_MP_CHUNK_RECORD_OK);
+    TEST_CHECK(record->cobj_record->variant->arena == NULL);
+    TEST_CHECK(record->cobj_metadata->variant->arena == NULL);
+    TEST_CHECK(cfl_kvlist_contains(record->cobj_record->variant->data.as_kvlist, "message") == 1);
+    flb_mp_chunk_cobj_destroy(chunk);
+    flb_log_event_decoder_destroy(&decoder);
+    flb_log_event_encoder_destroy(builder);
+    flb_log_event_encoder_destroy(encoder);
+}
+
 TEST_LIST = {
+    { "exhausted_value_pool_heap_fallback", exhausted_value_pool_falls_back_to_heap },
+    { "bounded_record_pool_moved_lifetime", bounded_record_pool_preserves_moved_records },
+    { "scratch_encode_field_boundaries", scratch_encode_preserves_field_boundaries },
+    { "scratch_encode_failure_cleanup", scratch_encode_failure_releases_storage },
     { "decoder_groups_cobj", decoder_groups_cobj },
     { "record_next_condition_filter", record_next_condition_filter },
     { 0 }

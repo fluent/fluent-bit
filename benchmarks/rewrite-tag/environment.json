@@ -1,0 +1,35 @@
+{
+  "base_commit": "05048e35d7106890006b7b593531bd51a16dfc93",
+  "kernel": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+  "cpu_model": "AMD Ryzen 9 7940HS w/ Radeon 780M Graphics",
+  "affinity_cpu": 0,
+  "compiler": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+  "build_directory": "build-bench-otel",
+  "cmake_build_type": "Release",
+  "baseline_sha256": "9c6bcacc17091369bc69ea7e5ace6e147ed8d47c8ba6a42a79989b0953ef9110",
+  "poc_sha256": "d43413b227b106ed360b6b7de17dab3092138932f7a8b2442cc3abddbaff32c2",
+  "primary_records": 500000,
+  "primary_repetitions": 5,
+  "primary_tags": [
+    1,
+    16
+  ],
+  "input": "tail, JSON parser, cached file, 128KiB read buffers",
+  "downstream": "two native content_modifier processors",
+  "output": "counter with verified total record count before shutdown",
+  "timing": "GNU time user+system CPU seconds, peak RSS KiB, wall time includes startup and shutdown",
+  "high_cardinality_records": 50000,
+  "high_cardinality_repetitions": 3,
+  "high_cardinality_tags": [
+    1024
+  ],
+  "control_repetitions": 3,
+  "no_match_records": 500000,
+  "keep_records": 250000,
+  "keep_tags": [
+    1,
+    16
+  ],
+  "verified_samples": 88,
+  "verified_input_records": 32600000
+}

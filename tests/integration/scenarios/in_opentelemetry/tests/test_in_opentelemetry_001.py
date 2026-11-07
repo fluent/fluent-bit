@@ -20,6 +20,7 @@ import logging
 import time
 import base64
 import gzip
+import http.client
 from concurrent.futures import ThreadPoolExecutor
 import grpc
 import requests
@@ -36,7 +37,9 @@ from google.protobuf import json_format
 
 # local imports
 from utils.data_utils import read_json_file
-from utils.http_matrix import PROTOCOL_CASES, run_curl_request
+from utils.fluent_bit_manager import FluentBitStartupError
+from utils.http_matrix import PROTOCOL_CASES, curl_supports_http2, run_curl_request
+from utils.oauth2 import duplicate_header_token, track_jwks_requests
 from utils.input_pause_resume import (
     assert_pause_resume_cycles,
     assert_shutdown_while_paused,
@@ -48,6 +51,10 @@ from server.http_server import http_server_run
 from server.otlp_server import configure_otlp_response, otlp_server_run, data_storage
 
 logger = logging.getLogger(__name__)
+requires_shared_listener = pytest.mark.skipif(
+    os.name == "nt", reason="HTTP shared listener ports are unavailable on Windows"
+)
+HTTP_WORKER_COUNTS = [1, pytest.param(4, marks=requires_shared_listener)]
 MOCK_VALID_JWT = (
     "eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3QiLCJ0eXAiOiJKV1QifQ."
     "eyJleHAiOjE4OTM0NTYwMDAsImlzcyI6Imlzc3VlciIsImF1ZCI6ImF1ZGllbmNlIiwiYXpwIjoiY2xpZW50MSJ9."
@@ -71,6 +78,8 @@ IN_OPENTELEMETRY_WORKER_PROTOCOL_CONFIGS = {
 IN_OPENTELEMETRY_TINY_INGRESS_QUEUE_CONFIG = "otlp_http1_cleartext_workers_tiny_ingress_queue.yaml"
 IN_OPENTELEMETRY_TINY_INGRESS_QUEUE_BYTE_LIMIT_CONFIG = \
     "otlp_http1_cleartext_workers_tiny_ingress_queue_byte_limit.yaml"
+IN_OPENTELEMETRY_TINY_INGRESS_QUEUE_BYTE_LIMIT_PROCESSORS_CONFIG = \
+    "otlp_http1_cleartext_workers_tiny_ingress_queue_byte_limit_processors.yaml"
 
 IN_OPENTELEMETRY_OAUTH2_PROTOCOL_CONFIGS = {
     "http1_cleartext": "otlp_http1_cleartext_oauth2.yaml",
@@ -174,7 +183,7 @@ def iter_spans(output):
                 }
 
 
-def read_stdout_otlp_json(service, root_key, timeout=10, interval=0.25):
+def read_stdout_otlp_json(service, root_key, timeout=10, interval=0.25, min_entries=None):
     deadline = time.time() + timeout
     decoder = json.JSONDecoder()
 
@@ -198,7 +207,11 @@ def read_stdout_otlp_json(service, root_key, timeout=10, interval=0.25):
                     matches.append(payload)
 
             if matches:
-                return matches[-1]
+                if min_entries is None:
+                    return matches[-1]
+                entries = [entry for match in matches for entry in match[root_key]]
+                if len(entries) >= min_entries:
+                    return {root_key: entries}
 
         time.sleep(interval)
 
@@ -463,6 +476,160 @@ def build_histogram_json_payload(explicit_bounds, name="histogram_bounds"):
     return json.dumps(payload).encode("utf-8")
 
 
+def generated_limit_payload(attributes, scopes, records=1, resources=1):
+    request = ExportLogsServiceRequest()
+    for _ in range(resources):
+        resource = request.resource_logs.add()
+        for index in range(attributes):
+            attribute = resource.resource.attributes.add(key=f"key{index:04d}")
+            attribute.value.string_value = "v" * 64
+        for _ in range(scopes):
+            scope = resource.scope_logs.add()
+            for _ in range(records):
+                scope.log_records.add().body.string_value = "generated-limit"
+    return request
+
+
+def generated_limit_service(tmp_path, workers, limit="16k"):
+    config = tmp_path / "generated-limit.yaml"
+    limit_option = f"logs_max_size: {limit}" if limit else ""
+    config.write_text(f"""
+service:
+  flush: 0.2
+  grace: 1
+  log_level: info
+  http_server: on
+  http_port: ${{FLUENT_BIT_HTTP_MONITORING_PORT}}
+pipeline:
+  inputs:
+    - name: opentelemetry
+      port: ${{FLUENT_BIT_TEST_LISTENER_PORT}}
+      http2: on
+      http_server.workers: {workers}
+      {limit_option}
+  outputs:
+    - name: opentelemetry
+      match: '*'
+      host: 127.0.0.1
+      port: ${{TEST_SUITE_HTTP_PORT}}
+""", encoding="utf-8")
+    return Service(str(config))
+
+
+@pytest.mark.parametrize("workers", [1, pytest.param(2, marks=requires_shared_listener)])
+@pytest.mark.parametrize("encoding", ["json", "protobuf"])
+@pytest.mark.parametrize("attributes,scopes,records,resources,accepted", [
+    (1, 32, 1, 1, True),
+    (64, 1, 1, 1, True),
+    (64, 32, 1, 1, False),
+    (32, 64, 1, 1, False),
+    (64, 2, 1, 2, False),
+    (1, 1, 512, 1, False),
+    # scopes without records produce nothing, the request is accepted
+    (64, 1000, 0, 1, True),
+])
+def test_in_opentelemetry_generated_limit(tmp_path, workers, encoding, attributes,
+                                         scopes, records, resources, accepted):
+    service = generated_limit_service(tmp_path, workers)
+    request = generated_limit_payload(attributes, scopes, records, resources)
+    if encoding == "json":
+        payload = json_format.MessageToJson(request).encode()
+        content_type = "application/json"
+    else:
+        payload = request.SerializeToString()
+        content_type = "application/x-protobuf"
+    # All requests fit the wire limit; rejection must be due to generated bytes.
+    assert len(payload) < 4_000_000
+    try:
+        service.start()
+        response = service.send_raw_request("/v1/logs", payload, content_type)
+        assert response.status_code == (201 if accepted else 400)
+        # Exercise cleanup and ensure a rejected request never appends its prefix.
+        small = generated_limit_payload(1, 1)
+        small.resource_logs[0].scope_logs[0].log_records[0].body.string_value = "recovery"
+        response = service.send_raw_request("/v1/logs", small.SerializeToString())
+        assert response.status_code == 201
+
+        def received_records():
+            return [record for request in data_storage["logs"]
+                    for resource in request.resource_logs
+                    for scope in resource.scope_logs for record in scope.log_records]
+
+        expected = scopes * records * resources if accepted else 0
+        service.service.wait_for_condition(
+            lambda: len(received_records()) >= expected + 1,
+            timeout=20, interval=0.1, description="recovery after generated byte limit")
+        actual = received_records()
+        assert len(actual) == expected + 1
+        assert sum(record.body.string_value == "recovery" for record in actual) == 1
+        assert sum(record.body.string_value == "generated-limit" for record in actual) == expected
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("encoding", ["json", "protobuf"])
+@pytest.mark.parametrize("attributes,scopes,expected_status", [
+    (64, 1000, 201),
+    (512, 3000, 400),
+])
+def test_in_opentelemetry_generated_limit_default(tmp_path, encoding, attributes,
+                                                 scopes, expected_status):
+    service = generated_limit_service(tmp_path, 1, limit=None)
+    request = generated_limit_payload(attributes, scopes)
+    if encoding == "json":
+        payload = json_format.MessageToJson(request).encode()
+        content_type = "application/json"
+    else:
+        payload = request.SerializeToString()
+        content_type = "application/x-protobuf"
+    assert len(payload) < 4_000_000
+    # Count only repeated key/value bytes: MessagePack headers add more bytes.
+    generated_lower_bound = attributes * scopes * (len("key0000") + 64)
+    assert generated_lower_bound > 4_000_000
+    if expected_status == 400:
+        assert generated_lower_bound > 100_000_000
+    try:
+        service.start()
+        # Expanding over 100 MB of generated data needs more time under Valgrind.
+        assert service.send_raw_request("/v1/logs", payload, content_type,
+                                        timeout=60).status_code == expected_status
+        # Large conversion buffers must be cleaned up without poisoning later requests.
+        small = generated_limit_payload(1, 1).SerializeToString()
+        assert service.send_raw_request("/v1/logs", small).status_code == 201
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("limit", ["invalid", "-1", "-2M", "0"])
+def test_in_opentelemetry_generated_limit_invalid_config(tmp_path, limit):
+    service = generated_limit_service(tmp_path, 1, limit=limit)
+    try:
+        with pytest.raises(FluentBitStartupError):
+            service.start()
+        with open(service.service.flb.log_file, encoding="utf-8", errors="replace") as log:
+            assert "logs_max_size must be a valid positive size" in log.read()
+    finally:
+        service.stop()
+
+
+def test_in_opentelemetry_generated_limit_grpc_request_budget(tmp_path):
+    service = generated_limit_service(tmp_path, 1)
+    payload = generated_limit_payload(64, 2).SerializeToString()
+    endpoint = "/opentelemetry.proto.collector.logs.v1.LogsService/Export"
+    try:
+        service.start()
+        with grpc.insecure_channel(f"127.0.0.1:{service.flb_listener_port}") as channel:
+            export = channel.stream_unary(endpoint)
+            # Each message fits alone; two exceed the shared HTTP request budget.
+            export(iter([payload]), timeout=10)
+            with pytest.raises(grpc.RpcError) as rejected:
+                export(iter([payload, payload]), timeout=10)
+            assert rejected.value.code() == grpc.StatusCode.UNKNOWN
+            export(iter([payload]), timeout=10)
+    finally:
+        service.stop()
+
+
 class Service:
     def __init__(self, config_file, *, use_auth_server=False):
         # Compose the absolute path for the Fluent Bit configuration file
@@ -551,10 +718,10 @@ class Service:
         print(f'Response text: {response.text}')
         return response
 
-    def send_raw_request(self, endpoint, payload, content_type='application/x-protobuf'):
+    def send_raw_request(self, endpoint, payload, content_type='application/x-protobuf', *, timeout=5):
         url = f'http://localhost:{self.flb_listener_port}{endpoint}'
         headers = {'Content-Type': content_type}
-        return requests.post(url, data=payload, headers=headers, timeout=5)
+        return requests.post(url, data=payload, headers=headers, timeout=timeout)
 
     def send_json_as_otel_protobuf(self, json_input, signal_type):
         base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../tests', 'data_files'))
@@ -641,6 +808,9 @@ class Service:
     def scrape_prometheus_metrics(self):
         url = f"http://127.0.0.1:{self.flb.http_monitoring_port}/api/v2/metrics/prometheus"
         response = requests.get(url, timeout=5)
+        if response.status_code in (404, 503):
+            # Health readiness can precede the first v2 metrics snapshot.
+            return ""
         response.raise_for_status()
         return response.text
 
@@ -764,6 +934,7 @@ def test_in_opentelemetry_large_protobuf_logs():
     assert received_record_count == expected_record_count
 
 
+@requires_shared_listener
 def test_in_opentelemetry_batched_protobuf_logs_with_workers():
     service = Service(IN_OPENTELEMETRY_WORKER_PROTOCOL_CONFIGS["http1_cleartext"])
     source = ExportLogsServiceRequest()
@@ -1156,7 +1327,8 @@ def test_in_opentelemetry_stdout_otlp_json_logs_preserve_resources_across_reques
     )
     assert 200 <= response.status_code < 300
 
-    output = read_stdout_otlp_json(service, "resourceLogs", timeout=10)
+    # The requests may land on opposite sides of a flush boundary.
+    output = read_stdout_otlp_json(service, "resourceLogs", timeout=10, min_entries=2)
     service.stop()
 
     records = list(iter_log_records(output))
@@ -1198,7 +1370,7 @@ def test_in_opentelemetry_stdout_otlp_json_logs_preserve_resource_schema_urls(
     )
     assert 200 <= response.status_code < 300
 
-    output = read_stdout_otlp_json(service, "resourceLogs", timeout=10)
+    output = read_stdout_otlp_json(service, "resourceLogs", timeout=10, min_entries=2)
     service.stop()
 
     body_to_schema_url = {
@@ -1479,7 +1651,8 @@ def test_in_opentelemetry_stdout_otlp_json_pretty_traces():
 
 
 @pytest.mark.parametrize("case", PROTOCOL_CASES, ids=[case["id"] for case in PROTOCOL_CASES])
-def test_in_opentelemetry_oauth2_requires_bearer_token(case):
+@pytest.mark.parametrize("compressed", [False, True])
+def test_in_opentelemetry_oauth2_requires_bearer_token(case, compressed):
     service = Service(
         IN_OPENTELEMETRY_OAUTH2_PROTOCOL_CONFIGS[case["config_key"]],
         use_auth_server=True,
@@ -1488,10 +1661,15 @@ def test_in_opentelemetry_oauth2_requires_bearer_token(case):
 
     scheme = "https" if case["use_tls"] else "http"
     payload = service.build_otel_payload("test_logs_001.in.json", "logs")
+    headers = ["Content-Type: application/x-protobuf"]
+    if compressed:
+        # Invalid compressed data would return 400 if inflation preceded authentication.
+        payload = b"invalid gzip"
+        headers.append("Content-Encoding: gzip")
     result = run_curl_request(
         f"{scheme}://localhost:{service.flb_listener_port}/v1/logs",
         payload,
-        headers=["Content-Type: application/x-protobuf"],
+        headers=headers,
         http_mode=case["http_mode"],
         ca_cert_path=service.tls_crt_file if case["use_tls"] else None,
     )
@@ -1584,6 +1762,78 @@ def test_in_opentelemetry_grpc_oauth2_accepts_valid_jwt(case):
     assert len(response_payload["resourceLogs"]) > 0
 
 
+@pytest.mark.parametrize("field", ["kid", "alg"])
+@pytest.mark.parametrize("case", PROTOCOL_CASES, ids=[case["id"] for case in PROTOCOL_CASES])
+def test_in_opentelemetry_oauth2_rejects_duplicate_header(monkeypatch, case, field):
+    jwks_requests = track_jwks_requests(monkeypatch)
+    token = duplicate_header_token(MOCK_VALID_JWT, field)
+    service = Service(
+        IN_OPENTELEMETRY_OAUTH2_PROTOCOL_CONFIGS[case["config_key"]],
+        use_auth_server=True,
+    )
+    service.start()
+    try:
+        scheme = "https" if case["use_tls"] else "http"
+        payload = service.build_otel_payload("test_logs_001.in.json", "logs")
+        for _ in range(8):
+            result = run_curl_request(
+                f"{scheme}://localhost:{service.flb_listener_port}/v1/logs",
+                payload,
+                headers=["Content-Type: application/x-protobuf", f"Authorization: Bearer {token}"],
+                http_mode=case["http_mode"],
+                ca_cert_path=service.tls_crt_file if case["use_tls"] else None,
+            )
+            assert result["status_code"] == 401
+        assert jwks_requests == []
+        assert data_storage["logs"] == []
+
+        result = run_curl_request(
+            f"{scheme}://localhost:{service.flb_listener_port}/v1/logs",
+            payload,
+            headers=["Content-Type: application/x-protobuf", f"Authorization: Bearer {MOCK_VALID_JWT}"],
+            http_mode=case["http_mode"],
+            ca_cert_path=service.tls_crt_file if case["use_tls"] else None,
+        )
+        assert result["status_code"] == 201
+        assert service.read_response("logs")["resourceLogs"]
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("field", ["kid", "alg"])
+@pytest.mark.parametrize(
+    "case", IN_OPENTELEMETRY_GRPC_OAUTH2_CASES,
+    ids=[case["id"] for case in IN_OPENTELEMETRY_GRPC_OAUTH2_CASES],
+)
+def test_in_opentelemetry_grpc_oauth2_rejects_duplicate_header(monkeypatch, case, field):
+    jwks_requests = track_jwks_requests(monkeypatch)
+    token = duplicate_header_token(MOCK_VALID_JWT, field)
+    service = Service(case["config_file"], use_auth_server=True)
+    service.start()
+    try:
+        payload = json_format.Parse(
+            json.dumps(read_json_file(os.path.join(
+                os.path.dirname(__file__), "data_files/test_logs_001.in.json"
+            ))),
+            ExportLogsServiceRequest(),
+        )
+        for _ in range(8):
+            with pytest.raises(grpc.RpcError) as exc_info:
+                service.send_grpc_request(
+                    "logs", payload, authorization=f"Bearer {token}", use_tls=case["use_tls"],
+                )
+            assert exc_info.value.code() == grpc.StatusCode.UNAUTHENTICATED
+        assert jwks_requests == []
+        assert data_storage["logs"] == []
+
+        service.send_grpc_request(
+            "logs", payload, authorization=f"Bearer {MOCK_VALID_JWT}", use_tls=case["use_tls"],
+        )
+        assert service.read_response("logs")["resourceLogs"]
+    finally:
+        service.stop()
+
+
 def test_out_opentelemetry_receiver_error_is_observable():
     service = Service("001-fluent-bit.yaml")
     service.start()
@@ -1667,6 +1917,7 @@ def test_in_opentelemetry_http2_invalid_endpoint_returns_404():
     {"id": "http1_tls", "config_key": "http1_tls", "http_mode": "http1.1", "use_tls": True},
     {"id": "http2_tls_alpn", "config_key": "http2_tls", "http_mode": "http2", "use_tls": True},
 ], ids=lambda case: case["id"])
+@requires_shared_listener
 def test_in_opentelemetry_http_workers_mixed_signal_matrix(case):
     request_plan = [
         ("logs", "test_logs_001.in.json", "/v1/logs"),
@@ -1753,6 +2004,8 @@ def test_in_opentelemetry_http_workers_mixed_signal_matrix(case):
     ],
 )
 def test_in_opentelemetry_pause_resume(config_file, signal_type, json_input, endpoint):
+    if os.name == "nt" and config_file == "otlp_pause_resume_workers.yaml":
+        pytest.skip("HTTP shared listener ports are unavailable on Windows")
     service = Service(config_file)
 
     try:
@@ -1791,6 +2044,8 @@ def test_in_opentelemetry_pause_resume(config_file, signal_type, json_input, end
     ids=["single_listener", "workers_4"],
 )
 def test_in_opentelemetry_shutdown_while_paused(config_file):
+    if os.name == "nt" and config_file == "otlp_pause_resume_workers.yaml":
+        pytest.skip("HTTP shared listener ports are unavailable on Windows")
     service = Service(config_file)
 
     try:
@@ -1814,6 +2069,7 @@ def test_in_opentelemetry_shutdown_while_paused(config_file):
         service.stop()
 
 
+@requires_shared_listener
 def test_in_opentelemetry_http_workers_export_ingress_queue_metrics():
     service = Service(IN_OPENTELEMETRY_WORKER_PROTOCOL_CONFIGS["http1_cleartext"])
     service.start()
@@ -1861,6 +2117,7 @@ def test_in_opentelemetry_http_workers_export_ingress_queue_metrics():
     ) == 0
 
 
+@requires_shared_listener
 def test_in_opentelemetry_http_workers_respect_tiny_ingress_queue_limits():
     service = Service(IN_OPENTELEMETRY_TINY_INGRESS_QUEUE_CONFIG)
     service.start()
@@ -1911,8 +2168,17 @@ def test_in_opentelemetry_http_workers_respect_tiny_ingress_queue_limits():
     ) == 0
 
 
-def test_in_opentelemetry_http_workers_respect_ingress_queue_byte_limit():
-    service = Service(IN_OPENTELEMETRY_TINY_INGRESS_QUEUE_BYTE_LIMIT_CONFIG)
+@requires_shared_listener
+@pytest.mark.parametrize(
+    "config_file",
+    [
+        IN_OPENTELEMETRY_TINY_INGRESS_QUEUE_BYTE_LIMIT_CONFIG,
+        IN_OPENTELEMETRY_TINY_INGRESS_QUEUE_BYTE_LIMIT_PROCESSORS_CONFIG,
+    ],
+    ids=["no_processors", "worker_processors"],
+)
+def test_in_opentelemetry_http_workers_respect_ingress_queue_byte_limit(config_file):
+    service = Service(config_file)
     small_payload = service.build_otel_payload("test_logs_001.in.json", "logs")
 
     small_request = ExportLogsServiceRequest()
@@ -1923,6 +2189,7 @@ def test_in_opentelemetry_http_workers_respect_ingress_queue_byte_limit():
     large_request.resource_logs.extend(small_request.resource_logs)
 
     large_payload = large_request.SerializeToString()
+    large_json_payload = json_format.MessageToJson(large_request).encode()
 
     assert len(small_payload) < len(large_payload)
 
@@ -1937,6 +2204,12 @@ def test_in_opentelemetry_http_workers_respect_ingress_queue_byte_limit():
     service.wait_for_signal_count("logs", logs_before + 1, timeout=10)
 
     failure_response = service.send_raw_request("/v1/logs", large_payload)
+    assert failure_response.status_code == 503
+    assert "deferred ingress queue is full" in failure_response.text
+
+    failure_response = service.send_raw_request(
+        "/v1/logs", large_json_payload, content_type="application/json"
+    )
     assert failure_response.status_code == 503
     assert "deferred ingress queue is full" in failure_response.text
 
@@ -1977,6 +2250,7 @@ def test_in_opentelemetry_http_workers_respect_ingress_queue_byte_limit():
     ) == 0
 
 
+@requires_shared_listener
 def test_in_opentelemetry_http_workers_account_metrics_payload_bytes():
     service = Service(IN_OPENTELEMETRY_TINY_INGRESS_QUEUE_BYTE_LIMIT_CONFIG)
     small_payload = service.build_otel_payload("test_metrics_001.in.json", "metrics")
@@ -2279,7 +2553,7 @@ def received_grpc_log_records():
     "gzip", "zstd", "zstd-unknown", "zstd-unknown-large-window",
     "snappy", "snappy-framed", "snappy-mixed",
 ])
-@pytest.mark.parametrize("workers", [1, 4])
+@pytest.mark.parametrize("workers", HTTP_WORKER_COUNTS)
 def test_in_opentelemetry_grpc_bounded_codecs(encoding, workers):
     service = Service("otlp_grpc_bounded.yaml")
     service.service.extra_env["OTLP_TEST_HTTP_WORKERS"] = workers
@@ -2291,6 +2565,12 @@ def test_in_opentelemetry_grpc_bounded_codecs(encoding, workers):
                                 ([4096, 1024], 8)]:
             frames = [(grpc_limit_payload(service, size), True) for size in sizes]
             assert send_grpc_limit_frames(service, frames, encoding=encoding) == expected
+        # Wait for delivery before stopping: Windows terminates the process
+        # without the final flush performed by a POSIX SIGTERM shutdown.
+        service.service.wait_for_condition(
+            lambda: len(received_grpc_log_records()) >= 16, timeout=30,
+            description="all records from accepted gRPC requests",
+        )
     finally:
         service.stop()
     # Every fixture has four records. Only the three accepted requests may ingest.
@@ -2302,9 +2582,10 @@ def test_in_opentelemetry_grpc_bounded_codecs(encoding, workers):
     "snappy", "snappy-framed", "snappy-mixed",
 ])
 @pytest.mark.parametrize("first_compressed", [False, True])
-def test_in_opentelemetry_grpc_rejected_request_is_not_ingested(encoding, first_compressed):
+@pytest.mark.parametrize("workers", HTTP_WORKER_COUNTS)
+def test_in_opentelemetry_grpc_rejected_request_is_not_ingested(encoding, first_compressed, workers):
     service = Service("otlp_grpc_bounded.yaml")
-    service.service.extra_env["OTLP_TEST_HTTP_WORKERS"] = 4
+    service.service.extra_env["OTLP_TEST_HTTP_WORKERS"] = workers
     try:
         service.start()
         first = grpc_limit_payload(service, 1024)
@@ -2322,9 +2603,24 @@ def test_in_opentelemetry_grpc_rejected_request_is_not_ingested(encoding, first_
         assert send_grpc_limit_frames(
             service, [(first, True)], encoding=encoding, suffix=b"\x01\x00\x00\x00\x01\xff"
         ) == 13
+        # An accepted marker ensures output has flushed before shutdown. This
+        # keeps an abrupt Windows stop from hiding partially ingested requests.
+        marker = ExportLogsServiceRequest()
+        scope = marker.resource_logs.add().scope_logs.add()
+        scope.log_records.add().body.string_value = "gRPC rejection verification marker"
+        assert send_grpc_limit_frames(
+            service, [(marker.SerializeToString(), False)], encoding=encoding
+        ) == 0
+        service.service.wait_for_condition(
+            lambda: any(record.body.string_value == "gRPC rejection verification marker"
+                        for record in received_grpc_log_records()),
+            timeout=30, description="accepted marker after rejected gRPC requests",
+        )
     finally:
         service.stop()
-    assert received_grpc_log_records() == []
+    records = received_grpc_log_records()
+    assert len(records) == 1
+    assert records[0].body.string_value == "gRPC rejection verification marker"
 
 
 @pytest.mark.parametrize("encoding,payload", [
@@ -2359,8 +2655,10 @@ def test_in_opentelemetry_grpc_rejects_advertised_size_before_decode(encoding, p
     "gzip", "zstd", "zstd-unknown", "zstd-unknown-large-window",
     "snappy", "snappy-framed", "snappy-mixed",
 ])
-def test_in_opentelemetry_grpc_preserves_groups_across_chunks(encoding):
+@pytest.mark.parametrize("workers", HTTP_WORKER_COUNTS)
+def test_in_opentelemetry_grpc_preserves_groups_across_chunks(encoding, workers):
     service = Service("otlp_grpc_grouped.yaml")
+    service.service.extra_env["OTLP_TEST_HTTP_WORKERS"] = workers
     frames = []
     expected = []
     for frame_index in range(2):
@@ -2405,3 +2703,809 @@ def test_in_opentelemetry_grpc_preserves_groups_across_chunks(encoding):
                                scope.scope.version, scope.schema_url, scope_id, record.body.string_value)
                               for record in scope.log_records)
     assert sorted(actual) == sorted(expected)
+
+
+@pytest.mark.parametrize("case", PROTOCOL_CASES[:2], ids=[case["id"] for case in PROTOCOL_CASES[:2]])
+@pytest.mark.parametrize("encoding", ["snappy", "snappy-framed", "snappy-mixed"])
+def test_in_opentelemetry_http_snappy_content_encoding(case, encoding):
+    if case["http_mode"] == "http2-prior-knowledge" and not curl_supports_http2():
+        pytest.skip("Installed curl lacks HTTP/2 support")
+    service = Service(IN_OPENTELEMETRY_PROTOCOL_CONFIGS[case["config_key"]])
+    try:
+        service.start()
+        payload = ExportLogsServiceRequest()
+        scope = payload.resource_logs.add().scope_logs.add()
+        expected = "snappy HTTP checksum regression " + "x" * 4096
+        scope.log_records.add().body.string_value = expected
+        encoded = encode_grpc_limit_payload(payload.SerializeToString(), encoding)
+        result = run_curl_request(
+            f"http://localhost:{service.flb_listener_port}/v1/logs",
+            encoded,
+            headers=["Content-Type: application/x-protobuf", "Content-Encoding: snappy"],
+            http_mode=case["http_mode"],
+        )
+        assert result["status_code"] == 201
+        records = service.service.wait_for_condition(
+            received_grpc_log_records, timeout=20, interval=0.25,
+            description="Snappy Content-Encoding log delivery",
+        )
+        assert [record.body.string_value for record in records] == [expected]
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("frame_type", [0, 1])
+def test_in_opentelemetry_http_snappy_invalid_checksum(frame_type):
+    service = Service("otlp_http1_cleartext.yaml")
+    try:
+        service.start()
+        payload = service.build_otel_payload("test_logs_001.in.json", "logs")
+        encoded = payload if frame_type else encode_grpc_limit_payload(payload, "snappy")
+        checksum = snappy_test_crc32c(payload) ^ 1
+        framed = (b"\xff\x06\x00\x00sNaPpY" + bytes([frame_type])
+                  + (len(encoded) + 4).to_bytes(3, "little")
+                  + checksum.to_bytes(4, "little") + encoded)
+        url = f"http://localhost:{service.flb_listener_port}/v1/logs"
+        # Invalid compressed bodies must not produce log records.
+        for invalid in [framed, framed[:-1],
+                        b"\xff\x06\x00\x00sNaPpY\x01\x04\x00\x00\x00\x00\x00\x00"]:
+            response = requests.post(url, data=invalid, timeout=5, headers={
+                "Content-Type": "application/x-protobuf", "Content-Encoding": "snappy",
+            })
+            assert response.status_code == 400
+        assert not received_grpc_log_records()
+        # The listener must remain usable after malformed compressed requests.
+        response = service.send_raw_request("/v1/logs", payload)
+        assert response.status_code == 201
+        service.wait_for_signal_count("logs", 1)
+    finally:
+        service.stop()
+
+
+# Processor chains used to compare the msgpack and the direct CFL logs paths.
+# The direct path is only taken when the chain starts with a native processor,
+# the filter first chain covers the fallback to the msgpack path.
+#
+# The msgpack reference runs the same chain behind a filter that keeps every
+# record: a filter unit makes the input take the established msgpack path.
+MSGPACK_REFERENCE_FILTER = {"name": "grep", "exclude": "msgpack_reference ^never$"}
+
+DIRECT_CFL_PROCESSOR_CHAINS = {
+    "content_modifier": [
+        {"name": "content_modifier", "context": "otel_resource_attributes",
+         "action": "upsert", "key": "aaa", "value": "bbb"},
+        {"name": "content_modifier", "context": "otel_resource_attributes",
+         "action": "delete", "key": "service.name"},
+        {"name": "content_modifier", "context": "otel_scope_name",
+         "action": "upsert", "value": "new scope name"},
+        {"name": "content_modifier", "context": "attributes",
+         "action": "upsert", "key": "added", "value": "yes"},
+    ],
+    "sql_drop": [
+        {"name": "sql", "query": "SELECT * FROM STREAM WHERE keep = 'yes';"},
+        {"name": "content_modifier", "context": "otel_scope_version",
+         "action": "upsert", "value": "3.1.0"},
+    ],
+    "native_then_filter": [
+        {"name": "content_modifier", "context": "otel_scope_attributes",
+         "action": "upsert", "key": "scope_new", "value": "123"},
+        {"name": "grep", "regex": "keep ^yes$"},
+    ],
+    "filter_first": [
+        {"name": "grep", "regex": "keep ^yes$"},
+        {"name": "content_modifier", "context": "otel_resource_attributes",
+         "action": "upsert", "key": "aaa", "value": "bbb"},
+    ],
+    "hash_once": [
+        {"name": "content_modifier", "context": "attributes",
+         "action": "hash", "key": "marker"},
+    ],
+    "rename": [
+        {"name": "content_modifier", "context": "body",
+         "action": "rename", "key": "marker", "value": "renamed_marker"},
+    ],
+    "hash_then_sql": [
+        {"name": "content_modifier", "context": "attributes",
+         "action": "hash", "key": "marker"},
+        {"name": "sql", "query": "SELECT * FROM STREAM WHERE keep = 'yes';"},
+    ],
+    "conditional_safe": [
+        {"name": "content_modifier", "context": "attributes",
+         "action": "upsert", "key": "condition_matched", "value": "yes",
+         "condition": {"op": "and", "rules": [
+             {"field": "$keep", "op": "eq", "value": "yes"}
+         ]}},
+        {"name": "content_modifier", "context": "attributes",
+         "action": "upsert", "key": "always", "value": "yes"},
+    ],
+    "hash_then_filter": [
+        {"name": "content_modifier", "context": "attributes",
+         "action": "hash", "key": "marker"},
+        {"name": "grep", "regex": "keep ^yes$"},
+    ],
+    "hash_then_unflagged": [
+        {"name": "content_modifier", "context": "attributes",
+         "action": "hash", "key": "marker"},
+        {"name": "opentelemetry_envelope"},
+    ],
+    "unflagged_then_hash": [
+        {"name": "opentelemetry_envelope"},
+        {"name": "content_modifier", "context": "attributes",
+         "action": "hash", "key": "marker"},
+    ],
+}
+
+
+def add_any_value_attributes(attributes):
+    attributes.add(key="str").value.string_value = "value"
+    attributes.add(key="int_negative").value.int_value = -(2**40)
+    attributes.add(key="int_positive").value.int_value = 2**62
+    attributes.add(key="double").value.double_value = 3.25
+    attributes.add(key="bool").value.bool_value = True
+    attributes.add(key="bytes").value.bytes_value = b"\x00\x01binary\xff"
+    attributes.add(key="empty")
+    array = attributes.add(key="array").value.array_value
+    array.values.add().string_value = "one"
+    array.values.add().int_value = 2
+    array.values.add()
+    nested = array.values.add().kvlist_value
+    nested.values.add(key="inner").value.bool_value = False
+    kvlist = attributes.add(key="kvlist").value.kvlist_value
+    kvlist.values.add(key="name").value.string_value = "nested"
+    kvlist.values.add(key="list").value.array_value.values.add().double_value = -1.5
+
+
+def add_kvlist_body(record, keep, marker):
+    body = record.body.kvlist_value
+    body.values.add(key="keep").value.string_value = keep
+    body.values.add(key="marker").value.string_value = marker
+    body.values.add(key="count").value.int_value = -5
+    add_any_value_attributes(body.values.add(key="nested").value.kvlist_value.values)
+
+
+def build_direct_cfl_logs_payload():
+    request = ExportLogsServiceRequest()
+    timestamp = 1789516800123456789
+
+    resource_logs = request.resource_logs.add(schema_url="https://example.com/resource")
+    resource_logs.resource.attributes.add(key="service.name").value.string_value = "direct"
+    add_any_value_attributes(resource_logs.resource.attributes)
+    resource_logs.resource.dropped_attributes_count = 2
+
+    scope_logs = resource_logs.scope_logs.add(schema_url="https://example.com/scope")
+    scope_logs.scope.name = "direct-cfl"
+    scope_logs.scope.version = "1.0.0"
+    scope_logs.scope.dropped_attributes_count = 1
+    add_any_value_attributes(scope_logs.scope.attributes)
+
+    record = scope_logs.log_records.add(time_unix_nano=timestamp,
+                                        observed_time_unix_nano=timestamp + 1,
+                                        severity_number=9, severity_text="INFO",
+                                        dropped_attributes_count=3, flags=0x101,
+                                        trace_id=bytes(range(16)), span_id=bytes(range(8)))
+    add_kvlist_body(record, "yes", "kvlist")
+    add_any_value_attributes(record.attributes)
+
+    scope_logs.log_records.add(time_unix_nano=timestamp + 2).body.string_value = "plain"
+    scope_logs.log_records.add(observed_time_unix_nano=timestamp + 3).body.int_value = -7
+    scope_logs.log_records.add(time_unix_nano=timestamp + 4,
+                               severity_number=24).body.bytes_value = b"\xde\xad"
+    array = scope_logs.log_records.add(time_unix_nano=timestamp + 5).body.array_value
+    array.values.add().double_value = 0.5
+    array.values.add().bool_value = False
+    scope_logs.log_records.add(time_unix_nano=timestamp + 6, severity_number=99)
+
+    # scopes without records produce no group
+    resource_logs.scope_logs.add().scope.name = "empty"
+
+    # resources and scopes without content
+    second = request.resource_logs.add()
+    second_scope = second.scope_logs.add()
+    add_kvlist_body(second_scope.log_records.add(time_unix_nano=timestamp + 7), "yes", "bare")
+    add_kvlist_body(second_scope.log_records.add(time_unix_nano=timestamp + 8), "no", "bare")
+    second.scope_logs.add(schema_url="https://example.com/only-schema")
+    add_kvlist_body(second.scope_logs[1].log_records.add(time_unix_nano=timestamp + 9),
+                    "yes", "schema-only")
+
+    return request
+
+
+def build_direct_cfl_sentinel_payload(keep="yes"):
+    request = ExportLogsServiceRequest()
+    record = request.resource_logs.add().scope_logs.add().log_records.add(
+        time_unix_nano=1789516800000000000)
+    add_kvlist_body(record, keep, "sentinel")
+    return request
+
+
+def direct_cfl_service(tmp_path, direct, processors, *, body_key=None, workers=1,
+                       logs_max_size=None, threaded=False, conditional_routes=False):
+    name = f"direct-cfl-{'on' if direct else 'off'}.yaml"
+    if not direct:
+        processors = [MSGPACK_REFERENCE_FILTER] + (processors or [])
+    options = [f"http_server.workers: {workers}"]
+    if body_key:
+        options.append(f"logs_body_key: {body_key}")
+    if logs_max_size:
+        options.append(f"logs_max_size: {logs_max_size}")
+    if threaded:
+        options.append("threaded: true")
+    option_lines = "\n".join(f"      {option}" for option in options)
+    processor_lines = ""
+    if processors is not None:
+        processor_lines = f"      processors: {json.dumps({'logs': processors})}\n"
+    route_lines = ""
+    output_match = "      match: '*'"
+    if conditional_routes:
+        route_lines = """      routes:
+        logs:
+          - name: direct_cfl_default
+            condition:
+              default: true
+            to:
+              outputs:
+                - direct_cfl_output
+"""
+        output_match = ""
+    config = tmp_path / name
+    config.write_text(f"""
+service:
+  flush: 0.2
+  grace: 1
+  log_level: info
+  http_server: on
+  http_port: ${{FLUENT_BIT_HTTP_MONITORING_PORT}}
+pipeline:
+  inputs:
+    - name: opentelemetry
+      port: ${{FLUENT_BIT_TEST_LISTENER_PORT}}
+      http2: on
+{option_lines}
+{processor_lines}{route_lines}  outputs:
+    - name: opentelemetry
+      alias: direct_cfl_output
+{output_match}
+      host: 127.0.0.1
+      port: ${{TEST_SUITE_HTTP_PORT}}
+""", encoding="utf-8")
+    return Service(str(config))
+
+
+def flatten_received_logs(requests_received):
+    records = []
+    for request in requests_received:
+        for resource_logs in request.resource_logs:
+            resource = json_format.MessageToDict(resource_logs.resource)
+            for scope_logs in resource_logs.scope_logs:
+                scope = json_format.MessageToDict(scope_logs.scope)
+                for record in scope_logs.log_records:
+                    records.append(json.dumps({
+                        "resource": resource,
+                        "resource_schema_url": resource_logs.schema_url,
+                        "scope": scope,
+                        "scope_schema_url": scope_logs.schema_url,
+                        "record": json_format.MessageToDict(record),
+                    }, sort_keys=True))
+    return sorted(records)
+
+
+def is_sentinel(record):
+    return '"stringValue": "sentinel"' in record
+
+
+def run_direct_cfl_case(tmp_path, direct, processors, transport, *, body_key=None,
+                        workers=1, sentinel_keep="yes", threaded=False,
+                        conditional_routes=False, encoding="protobuf"):
+    service = direct_cfl_service(tmp_path, direct, processors, body_key=body_key,
+                                 workers=workers, threaded=threaded,
+                                 conditional_routes=conditional_routes)
+    service.start()
+    try:
+        before = len(data_storage["logs"])
+        payloads = [build_direct_cfl_logs_payload(),
+                    build_direct_cfl_sentinel_payload(sentinel_keep)]
+        for payload in payloads:
+            if transport == "grpc":
+                service.send_grpc_request("logs", payload)
+            elif encoding == "json":
+                # protobuf's generic JSON formatter represents bytes as base64,
+                # while OTLP/JSON requires trace and span IDs in hexadecimal.
+                for resource_logs in payload.resource_logs:
+                    for scope_logs in resource_logs.scope_logs:
+                        for record in scope_logs.log_records:
+                            record.trace_id = b""
+                            record.span_id = b""
+                json_payload = json_format.MessageToJson(payload).encode("utf-8")
+                response = service.send_raw_request(
+                    "/v1/logs", json_payload, content_type="application/json")
+                assert response.status_code == 201
+            else:
+                response = service.send_raw_request("/v1/logs", payload.SerializeToString())
+                assert response.status_code == 201
+
+        # The sentinel goes in its own request, after the payload being compared.
+        def received():
+            records = flatten_received_logs(data_storage["logs"][before:])
+            return records if any(is_sentinel(record) for record in records) else None
+
+        return service.service.wait_for_condition(received, timeout=20, interval=0.1,
+                                                  description="direct CFL sentinel")
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("transport", ["http", "grpc"])
+@pytest.mark.parametrize("chain", sorted(DIRECT_CFL_PROCESSOR_CHAINS))
+def test_in_opentelemetry_logs_direct_cfl_parity(tmp_path, chain, transport):
+    processors = DIRECT_CFL_PROCESSOR_CHAINS[chain]
+    msgpack_records = run_direct_cfl_case(tmp_path, False, processors, transport)
+    direct_records = run_direct_cfl_case(tmp_path, True, processors, transport)
+
+    # more than the sentinel must reach the output for the comparison to matter
+    assert len(msgpack_records) > 1
+    assert direct_records == msgpack_records
+
+
+@pytest.mark.parametrize("chain", sorted(DIRECT_CFL_PROCESSOR_CHAINS))
+def test_in_opentelemetry_logs_direct_cfl_json_parity(tmp_path, chain):
+    processors = DIRECT_CFL_PROCESSOR_CHAINS[chain]
+    msgpack_records = run_direct_cfl_case(
+        tmp_path, False, processors, "http", encoding="json")
+    direct_records = run_direct_cfl_case(
+        tmp_path, True, processors, "http", encoding="json")
+
+    assert len(msgpack_records) > 1
+    assert direct_records == msgpack_records
+
+
+@pytest.mark.parametrize("workers", [1, pytest.param(
+    4, marks=pytest.mark.skipif(os.name == "nt",
+                                reason="HTTP shared listener ports are unavailable on Windows"))])
+def test_in_opentelemetry_logs_direct_cfl_json_without_processors(tmp_path, workers):
+    # Without processors JSON uses the single-pass CFL decoder and is encoded
+    # once, the records must match the msgpack reference.
+    msgpack_records = run_direct_cfl_case(
+        tmp_path, False, None, "http", encoding="json", workers=workers)
+    direct_records = run_direct_cfl_case(
+        tmp_path, True, None, "http", encoding="json", workers=workers)
+
+    assert len(msgpack_records) > 1
+    assert direct_records == msgpack_records
+
+
+@pytest.mark.parametrize("processors", [None, "content_modifier"])
+def test_in_opentelemetry_logs_direct_cfl_json_edge_parity(tmp_path, processors):
+    if processors is not None:
+        processors = DIRECT_CFL_PROCESSOR_CHAINS[processors]
+    payload = {
+        "resourceLogs": [{
+            "resource": {"attributes": [
+                {"key": "missing"},
+                {"key": "unset", "value": {}},
+                {"key": "nested", "value": {
+                    "customValue": {"child": [1, True, None]}
+                }},
+            ]},
+            "scopeLogs": [{"logRecords": [
+                {"timeUnixNano": "1789516800123456789",
+                 "body": {"arrayValue": {"values": [
+                    {}, {"stringValue": "value"}
+                ]}}},
+                {"timeUnixNano": "1789516800123456790", "body": {}},
+            ]}],
+        }]
+    }
+    results = []
+
+    for direct in [False, True]:
+        service = direct_cfl_service(tmp_path, direct, processors)
+        try:
+            service.start()
+            before = len(data_storage["logs"])
+            response = service.send_raw_request(
+                "/v1/logs", json.dumps(payload).encode("utf-8"),
+                content_type="application/json")
+            assert response.status_code == 201
+
+            def received_records():
+                records = flatten_received_logs(data_storage["logs"][before:])
+                return records if len(records) == 2 else None
+
+            received = service.service.wait_for_condition(
+                received_records,
+                timeout=20, interval=0.1, description="direct CFL JSON edge records")
+            results.append(received)
+        finally:
+            service.stop()
+
+    assert results[1] == results[0]
+
+
+@pytest.mark.parametrize("encoding", ["protobuf", "json"])
+def test_in_opentelemetry_logs_direct_cfl_empty_request(tmp_path, encoding):
+    # A request without log records is valid and accepted on every path.
+    if encoding == "json":
+        payload = b'{"resourceLogs":[{"scopeLogs":[{"logRecords":[]}]}]}'
+        content_type = "application/json"
+    else:
+        request = ExportLogsServiceRequest()
+        request.resource_logs.add().scope_logs.add()
+        payload = request.SerializeToString()
+        content_type = "application/x-protobuf"
+
+    for direct in [False, True]:
+        service = direct_cfl_service(tmp_path, direct,
+                                     DIRECT_CFL_PROCESSOR_CHAINS["content_modifier"])
+        try:
+            service.start()
+            response = service.send_raw_request("/v1/logs", payload,
+                                                content_type=content_type)
+            assert response.status_code == 201
+        finally:
+            service.stop()
+
+
+@pytest.mark.parametrize("processors", [None, "content_modifier"])
+def test_in_opentelemetry_logs_direct_cfl_json_unsupported_key(tmp_path, processors):
+    # CFL maps only hold string keys. A wrapped attribute key is unwrapped,
+    # a numeric one makes the request take the msgpack path.
+    if processors is not None:
+        processors = DIRECT_CFL_PROCESSOR_CHAINS[processors]
+    payload = {"resourceLogs": [{"scopeLogs": [{"logRecords": [
+        {"timeUnixNano": "1789516800000000000", "body": {"stringValue": "wrapped"},
+         "attributes": [{"key": {"stringValue": "name"}, "value": {"intValue": "1"}}]},
+        {"timeUnixNano": "1789516800000000001", "body": {"stringValue": "numeric"},
+         "attributes": [{"key": 5, "value": {"boolValue": True}}]},
+    ]}]}]}
+    sentinel = build_direct_cfl_sentinel_payload().SerializeToString()
+    results = []
+
+    for direct in [False, True]:
+        service = direct_cfl_service(tmp_path, direct, processors)
+        try:
+            service.start()
+            before = len(data_storage["logs"])
+            response = service.send_raw_request(
+                "/v1/logs", json.dumps(payload).encode("utf-8"),
+                content_type="application/json")
+            assert response.status_code == 201
+            response = service.send_raw_request("/v1/logs", sentinel)
+            assert response.status_code == 201
+
+            def received():
+                records = flatten_received_logs(data_storage["logs"][before:])
+                return records if any(is_sentinel(record) for record in records) else None
+
+            results.append(service.service.wait_for_condition(
+                received, timeout=20, interval=0.1, description="sentinel after key test"))
+        finally:
+            service.stop()
+
+    assert results[1] == results[0]
+
+
+@pytest.mark.parametrize("encoding", ["protobuf", "json"])
+def test_in_opentelemetry_logs_direct_cfl_body_key(tmp_path, encoding):
+    processors = DIRECT_CFL_PROCESSOR_CHAINS["content_modifier"]
+    msgpack_records = run_direct_cfl_case(tmp_path, False, processors, "http",
+                                          body_key="message", encoding=encoding)
+    direct_records = run_direct_cfl_case(tmp_path, True, processors, "http",
+                                         body_key="message", encoding=encoding)
+
+    assert len(msgpack_records) > 1
+    assert direct_records == msgpack_records
+
+
+@pytest.mark.skipif(os.name == "nt", reason="HTTP shared listener ports are unavailable on Windows")
+@pytest.mark.parametrize("encoding", ["protobuf", "json"])
+def test_in_opentelemetry_http_workers_balance_keepalive_connections(tmp_path, encoding):
+    # Every accepted socket may be handed to another worker. Many concurrent
+    # keep-alive connections must all be served and every record delivered.
+    connections = 24
+    requests_per_connection = 10
+    service = direct_cfl_service(tmp_path, True, DIRECT_CFL_PROCESSOR_CHAINS["hash_once"],
+                                 workers=4, threaded=True)
+    service.start()
+    try:
+        before = len(data_storage["logs"])
+        payload = build_direct_cfl_sentinel_payload("keep")
+        if encoding == "json":
+            body = json_format.MessageToJson(payload).encode("utf-8")
+            content_type = "application/json"
+        else:
+            body = payload.SerializeToString()
+            content_type = "application/x-protobuf"
+
+        def client():
+            connection = http.client.HTTPConnection("127.0.0.1", service.flb_listener_port,
+                                                    timeout=10)
+            try:
+                for _ in range(requests_per_connection):
+                    connection.request("POST", "/v1/logs", body,
+                                       {"Content-Type": content_type})
+                    response = connection.getresponse()
+                    response.read()
+                    assert response.status == 201
+            finally:
+                connection.close()
+
+        with ThreadPoolExecutor(max_workers=connections) as pool:
+            for future in [pool.submit(client) for _ in range(connections)]:
+                future.result()
+
+        expected = connections * requests_per_connection
+
+        def delivered():
+            records = flatten_received_logs(data_storage["logs"][before:])
+            return records if len(records) >= expected else None
+
+        records = service.service.wait_for_condition(delivered, timeout=30, interval=0.2,
+                                                     description="balanced connections")
+        assert len(records) == expected
+    finally:
+        service.stop()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="HTTP shared listener ports are unavailable on Windows")
+def test_in_opentelemetry_logs_direct_cfl_workers(tmp_path):
+    # Hashing makes accidental processing in both the worker and collector
+    # observable: a double pass would hash the first digest again.
+    processors = DIRECT_CFL_PROCESSOR_CHAINS["hash_once"]
+    msgpack_records = run_direct_cfl_case(tmp_path, False, processors, "http", workers=4)
+    direct_records = run_direct_cfl_case(tmp_path, True, processors, "http", workers=4)
+
+    assert len(msgpack_records) > 1
+    assert direct_records == msgpack_records
+
+
+@pytest.mark.skipif(os.name == "nt", reason="HTTP shared listener ports are unavailable on Windows")
+@pytest.mark.parametrize("conditional_routes", [False, True])
+def test_in_opentelemetry_logs_direct_cfl_threaded_workers(tmp_path, conditional_routes):
+    processors = DIRECT_CFL_PROCESSOR_CHAINS["hash_once"]
+    msgpack_records = run_direct_cfl_case(
+        tmp_path, False, processors, "http", workers=4, threaded=True,
+        conditional_routes=conditional_routes)
+    direct_records = run_direct_cfl_case(
+        tmp_path, True, processors, "http", workers=4, threaded=True,
+        conditional_routes=conditional_routes)
+
+    assert len(msgpack_records) > 1
+    assert direct_records == msgpack_records
+
+
+@pytest.mark.skipif(os.name == "nt", reason="HTTP shared listener ports are unavailable on Windows")
+@pytest.mark.parametrize("encoding", ["protobuf", "json"])
+@pytest.mark.parametrize("conditional_routes", [False, True])
+def test_in_opentelemetry_logs_worker_processing(tmp_path, encoding, conditional_routes):
+    # Worker-safe chains run in the HTTP workers, the msgpack reference runs
+    # them in the input collector.
+    processors = DIRECT_CFL_PROCESSOR_CHAINS["hash_once"]
+    collector_records = run_direct_cfl_case(
+        tmp_path, False, processors, "http", workers=4, threaded=True,
+        conditional_routes=conditional_routes, encoding=encoding)
+    worker_records = run_direct_cfl_case(
+        tmp_path, True, processors, "http", workers=4, threaded=True,
+        conditional_routes=conditional_routes, encoding=encoding)
+
+    assert len(collector_records) > 1
+    assert worker_records == collector_records
+
+
+@pytest.mark.skipif(os.name == "nt", reason="HTTP shared listener ports are unavailable on Windows")
+@pytest.mark.parametrize("chain", ["hash_then_filter", "hash_then_unflagged",
+                                    "unflagged_then_hash"])
+def test_in_opentelemetry_logs_worker_processing_fallback(tmp_path, chain):
+    processors = DIRECT_CFL_PROCESSOR_CHAINS[chain]
+    collector_records = run_direct_cfl_case(
+        tmp_path, False, processors, "http", workers=4, threaded=True,
+        conditional_routes=True)
+    fallback_records = run_direct_cfl_case(
+        tmp_path, True, processors, "http", workers=4, threaded=True,
+        conditional_routes=True)
+
+    assert len(collector_records) > 1
+    assert fallback_records == collector_records
+
+
+@pytest.mark.skipif(os.name == "nt", reason="HTTP shared listener ports are unavailable on Windows")
+@pytest.mark.parametrize("direct", [False, True])
+def test_in_opentelemetry_logs_direct_cfl_threaded_stress(tmp_path, direct):
+    request_count = 200
+    processors = DIRECT_CFL_PROCESSOR_CHAINS["hash_once"]
+    service = direct_cfl_service(
+        tmp_path, direct, processors, workers=4, threaded=True,
+        conditional_routes=True)
+    payload = build_direct_cfl_sentinel_payload().SerializeToString()
+
+    try:
+        service.start()
+        before = len(data_storage["logs"])
+
+        def send_request(_):
+            return service.send_raw_request("/v1/logs", payload).status_code
+
+        with ThreadPoolExecutor(max_workers=16) as executor:
+            statuses = list(executor.map(send_request, range(request_count)))
+
+        assert statuses == [201] * request_count
+
+        def received_records():
+            records = flatten_received_logs(data_storage["logs"][before:])
+            return records if len(records) >= request_count else None
+
+        records = service.service.wait_for_condition(
+            received_records, timeout=30, interval=0.1,
+            description="threaded direct-CFL stress records")
+        assert len(records) == request_count
+    finally:
+        service.stop()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="HTTP shared listener ports are unavailable on Windows")
+@pytest.mark.parametrize("chain", ["hash_then_filter", "filter_first",
+                                    "hash_then_unflagged", "unflagged_then_hash"])
+def test_in_opentelemetry_logs_direct_cfl_workers_fallback(tmp_path, chain):
+    # Hashing is intentionally non-idempotent. If an eligible prefix ran in a
+    # worker before the whole chain fell back, direct-on parity would fail.
+    processors = DIRECT_CFL_PROCESSOR_CHAINS[chain]
+    msgpack_records = run_direct_cfl_case(tmp_path, False, processors, "http", workers=4)
+    direct_records = run_direct_cfl_case(tmp_path, True, processors, "http", workers=4)
+
+    assert len(msgpack_records) > 1
+    assert direct_records == msgpack_records
+
+
+@pytest.mark.skipif(os.name == "nt", reason="HTTP shared listener ports are unavailable on Windows")
+@pytest.mark.parametrize("encoding", ["protobuf", "json"])
+@pytest.mark.parametrize("chain", ["content_modifier", "sql_drop", "hash_then_sql",
+                                    "conditional_safe"])
+def test_in_opentelemetry_logs_direct_cfl_threaded_worker_safe_chain(tmp_path, chain,
+                                                                    encoding):
+    processors = DIRECT_CFL_PROCESSOR_CHAINS[chain]
+    msgpack_records = run_direct_cfl_case(
+        tmp_path, False, processors, "http", workers=4, threaded=True,
+        encoding=encoding)
+    direct_records = run_direct_cfl_case(
+        tmp_path, True, processors, "http", workers=4, threaded=True,
+        encoding=encoding)
+
+    assert len(msgpack_records) > 1
+    assert direct_records == msgpack_records
+
+
+@pytest.mark.parametrize("direct", [False, True])
+def test_in_opentelemetry_logs_direct_cfl_drop_all(tmp_path, direct):
+    # Every record of the payload is dropped, only the sentinel matches.
+    processors = [{"name": "sql", "query": "SELECT * FROM STREAM WHERE keep = 'last';"}]
+    records = run_direct_cfl_case(tmp_path, direct, processors, "http", sentinel_keep="last")
+
+    assert len(records) == 1
+    assert is_sentinel(records[0])
+
+
+@pytest.mark.parametrize("attributes,scopes,records,resources,accepted", [
+    (1, 32, 1, 1, True),
+    (64, 1, 1, 1, True),
+    (64, 32, 1, 1, False),
+    (1, 1, 512, 1, False),
+    # scopes without records produce nothing, the request is accepted
+    (64, 1000, 0, 1, True),
+])
+def test_in_opentelemetry_logs_direct_cfl_generated_limit(tmp_path, attributes, scopes,
+                                                          records, resources, accepted):
+    processors = DIRECT_CFL_PROCESSOR_CHAINS["content_modifier"]
+    service = direct_cfl_service(tmp_path, True, processors, logs_max_size="16k")
+    request = generated_limit_payload(attributes, scopes, records, resources)
+    try:
+        service.start()
+        response = service.send_raw_request("/v1/logs", request.SerializeToString())
+        assert response.status_code == (201 if accepted else 400)
+
+        # A rejected request never appends a prefix of its records.
+        small = generated_limit_payload(1, 1)
+        small.resource_logs[0].scope_logs[0].log_records[0].body.string_value = "recovery"
+        response = service.send_raw_request("/v1/logs", small.SerializeToString())
+        assert response.status_code == 201
+
+        def received_records():
+            return [record for request in data_storage["logs"]
+                    for resource in request.resource_logs
+                    for scope in resource.scope_logs for record in scope.log_records]
+
+        expected = scopes * records * resources if accepted else 0
+        service.service.wait_for_condition(
+            lambda: len(received_records()) >= expected + 1,
+            timeout=20, interval=0.1, description="recovery after direct CFL byte limit")
+        actual = received_records()
+        assert sum(record.body.string_value == "recovery" for record in actual) == 1
+        assert sum(record.body.string_value == "generated-limit" for record in actual) == expected
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("encoding", ["protobuf", "json"])
+@pytest.mark.parametrize("limit", [512, 1024, 2048, 4096, 8192, 16384])
+def test_in_opentelemetry_logs_direct_cfl_limit_parity(tmp_path, limit, encoding):
+    processors = DIRECT_CFL_PROCESSOR_CHAINS["content_modifier"]
+    request = build_direct_cfl_logs_payload()
+    if encoding == "json":
+        for resource_logs in request.resource_logs:
+            for scope_logs in resource_logs.scope_logs:
+                for record in scope_logs.log_records:
+                    record.trace_id = b""
+                    record.span_id = b""
+        payload = json_format.MessageToJson(request).encode("utf-8")
+        content_type = "application/json"
+    else:
+        payload = request.SerializeToString()
+        content_type = "application/x-protobuf"
+    statuses = []
+
+    for direct in [False, True]:
+        service = direct_cfl_service(tmp_path, direct, processors,
+                                     logs_max_size=str(limit))
+        try:
+            service.start()
+            response = service.send_raw_request(
+                "/v1/logs", payload, content_type=content_type)
+            statuses.append(response.status_code)
+        finally:
+            service.stop()
+
+    assert statuses[1] == statuses[0]
+
+
+@pytest.mark.parametrize(
+    "config_file",
+    [
+        "otlp_http1_cleartext_workers.yaml",
+        "otlp_http1_cleartext.yaml",
+        IN_OPENTELEMETRY_TINY_INGRESS_QUEUE_BYTE_LIMIT_PROCESSORS_CONFIG,
+    ],
+    ids=["no_processors", "processors", "worker_processors"],
+)
+def test_in_opentelemetry_json_logs_replace_invalid_unicode(config_file):
+    service = Service(config_file)
+    cases = [
+        (b"bad \\uD800 surrogate", "bad \ufffd surrogate"),
+        (b"\\uD800\\u0041", "\ufffd"),
+        (b"\\uA_CD", r"\uACD"),
+        (b"\\uD800\\uXXXX", "\ufffdXXXX"),
+        (b"\\uD83D\\uDE00", "\U0001f600"),
+        (b"\\u", r"\u"),
+    ]
+    records = [
+        b'{"body":{"stringValue":"' + value + b'"},"attributes":['
+        b'{"key":"\\uA_CD","value":{"stringValue":"key preserved"}}]}'
+        for value, _ in cases
+    ]
+    midpoint_below = "1000000000000000090253369016319"
+    zeros = 800 - len(midpoint_below)
+    number = midpoint_below + "9" * zeros + f".9e-{zeros}"
+    records.append(b'{"body":{"doubleValue":' + number.encode("ascii") + b"}}")
+    payload = (b'{"resourceLogs":[{"scopeLogs":[{"logRecords":['
+               + b",".join(records) + b"]}]}]}")
+
+    service.start()
+    try:
+        logs_before = len(data_storage["logs"])
+        response = service.send_raw_request(
+            "/v1/logs", payload, content_type="application/json"
+        )
+        assert response.status_code == 201
+        service.wait_for_signal_count("logs", logs_before + 1, timeout=10)
+        actual = [record
+                  for request in data_storage["logs"][logs_before:]
+                  for resource in request.resource_logs
+                  for scope in resource.scope_logs
+                  for record in scope.log_records]
+        assert len(actual) == len(cases) + 1
+        assert [record.body.string_value for record in actual[:-1]] == [
+            expected for _, expected in cases
+        ]
+        assert actual[-1].body.double_value == 1e30
+        for record in actual[:-1]:
+            attributes = {attr.key: attr.value.string_value for attr in record.attributes}
+            assert attributes[r"\uACD"] == "key preserved"
+    finally:
+        service.stop()

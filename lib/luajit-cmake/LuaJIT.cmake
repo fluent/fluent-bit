@@ -433,7 +433,16 @@ execute_process(
   OUTPUT_STRIP_TRAILING_WHITESPACE
 )
 
-if ((GIT_EXISTENCE EQUAL 0) AND (GIT_IN_REPOSITORY EQUAL 0))
+set(LUAJIT_RELVER "")
+if(EXISTS "${LUAJIT_DIR}/.relver")
+  file(READ "${LUAJIT_DIR}/.relver" LUAJIT_RELVER)
+  string(STRIP "${LUAJIT_RELVER}" LUAJIT_RELVER)
+endif()
+
+if(LUAJIT_RELVER MATCHES "^[0-9]+$")
+  configure_file("${LUAJIT_DIR}/.relver"
+    "${CMAKE_CURRENT_BINARY_DIR}/luajit_relver.txt" COPYONLY)
+elseif ((GIT_EXISTENCE EQUAL 0) AND (GIT_IN_REPOSITORY EQUAL 0))
   message(STATUS "Using Git: ${GIT_VERSION}")
   add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/luajit_relver.txt
     COMMAND git -c log.showSignature=false show -s --format=${GIT_FORMAT} > ${CMAKE_CURRENT_BINARY_DIR}/luajit_relver.txt
@@ -466,7 +475,11 @@ add_custom_target(buildvm_arch_h ALL
   DEPENDS ${BUILDVM_ARCH_H}
 )
 
-# Build the buildvm for host platform
+# Build the buildvm for host platform. Its library definitions must match the VM.
+if(LUAJIT_ENABLE_LUA52COMPAT)
+  set(LJ_DEFINITIONS ${LJ_DEFINITIONS} -DLUAJIT_ENABLE_LUA52COMPAT)
+  set(TARGET_ARCH ${TARGET_ARCH} -DLUAJIT_ENABLE_LUA52COMPAT)
+endif()
 set(BUILDVM_COMPILER_FLAGS "${TARGET_ARCH}")
 
 set(BUILDVM_COMPILER_FLAGS_PATH
@@ -623,10 +636,6 @@ if(LIBDL_LIBRARIES)
   target_link_libraries(libluajit ${LIBDL_LIBRARIES})
 endif()
 
-if(LUAJIT_ENABLE_LUA52COMPAT)
-  set(LJ_DEFINITIONS ${LJ_DEFINITIONS} -DLUAJIT_ENABLE_LUA52COMPAT)
-endif()
-
 set(LJ_DEFINITIONS ${LJ_DEFINITIONS} -DLUA_MULTILIB="${LUA_MULTILIB}")
 target_compile_definitions(libluajit PRIVATE ${LJ_DEFINITIONS})
 if(IOS)
@@ -703,4 +712,6 @@ target_include_directories(luajit-header INTERFACE ${LJ_DIR})
 
 add_library(luajit::lib ALIAS libluajit)
 add_library(luajit::header ALIAS luajit-header)
-add_executable(luajit::lua ALIAS luajit)
+if(LUAJIT_BUILD_EXE)
+  add_executable(luajit::lua ALIAS luajit)
+endif()

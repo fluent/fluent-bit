@@ -9,9 +9,11 @@ import time
 
 import pytest
 import requests
+from flask import Response
 
-from server.http_server import data_storage, http_server_run
+from server.http_server import MOCK_JWKS_BODY, app, data_storage, http_server_run
 from utils.http_matrix import PROTOCOL_CASES, run_curl_request
+from utils.oauth2 import duplicate_header_token, duplicate_jwks_body, track_jwks_requests
 from utils.input_pause_resume import (
     assert_connection_closed,
     assert_pause_resume_cycles,
@@ -753,6 +755,178 @@ def test_in_http_oauth2_accepts_valid_jwt():
     assert forwarded_payloads[0][0]["message"] == "Este es un mensaje de prueba"
 
 
+@pytest.mark.parametrize(
+    "config_file, certificate_size, expected_status",
+    [
+        ("in_http_oauth2.yaml", 6000, 201),
+        ("in_http_oauth2_jwks_8k.yaml", 6000, 201),
+        ("in_http_oauth2_jwks_8k.yaml", 12000, 401),
+    ],
+)
+def test_in_http_oauth2_jwks_response_limit(monkeypatch, config_file, certificate_size,
+                                           expected_status):
+    jwks_body = {"keys": [{**MOCK_JWKS_BODY["keys"][0], "x5c": ["A" * certificate_size]}]}
+    jwks_requests = track_jwks_requests(monkeypatch, json.dumps(jwks_body))
+    service = Service(config_file)
+    service.start()
+    try:
+        result = run_curl_request(
+            f"http://localhost:{service.flb_listener_port}/",
+            create_payload("sample_data.json"),
+            headers=["Content-Type: application/json", f"Authorization: Bearer {MOCK_VALID_JWT}"],
+            http_mode="http1.1",
+        )
+        assert result["status_code"] == expected_status
+        assert jwks_requests
+        if expected_status == 201:
+            assert len(service.read_forwarded_payloads()) == 1
+        else:
+            service.assert_no_forwarded_payloads_for()
+    finally:
+        service.stop()
+
+    if expected_status == 401:
+        assert "JWKS HTTP response exceeded oauth2.jwks_buffer_max_size=8000 bytes" in (
+            read_fluent_bit_log(service.service)
+        )
+
+
+@pytest.mark.parametrize("response_size, expected_status", [(7999, 201), (8000, 201), (8001, 401)])
+def test_in_http_oauth2_jwks_response_limit_boundary(monkeypatch, response_size, expected_status):
+    jwks_body = [""]
+    jwks_requests = []
+
+    def jwks():
+        jwks_requests.append(True)
+        return jwks_body[0], 200, {"Content-Type": "application/json"}
+
+    def get_raw_jwks(port):
+        response = bytearray()
+        with socket.create_connection(("127.0.0.1", port), timeout=3) as conn:
+            conn.sendall(b"GET /jwks HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+            while True:
+                part = conn.recv(16384)
+                if not part:
+                    break
+                response.extend(part)
+        return bytes(response)
+
+    monkeypatch.setitem(app.view_functions, "jwks", jwks)
+    service = Service("in_http_oauth2_jwks_8k.yaml")
+    service.start()
+    try:
+        key = {**MOCK_JWKS_BODY["keys"][0], "x5c": [""]}
+        jwks_body[0] = json.dumps({"keys": [key]})
+        raw_response = get_raw_jwks(service.test_suite_http_port)
+        padding = response_size - len(raw_response)
+        key["x5c"][0] = "A" * padding
+        jwks_body[0] = json.dumps({"keys": [key]})
+        raw_response = get_raw_jwks(service.test_suite_http_port)
+        padding += response_size - len(raw_response)
+        key["x5c"][0] = "A" * padding
+        jwks_body[0] = json.dumps({"keys": [key]})
+        assert len(get_raw_jwks(service.test_suite_http_port)) == response_size
+
+        result = run_curl_request(
+            f"http://localhost:{service.flb_listener_port}/",
+            create_payload("sample_data.json"),
+            headers=["Content-Type: application/json", f"Authorization: Bearer {MOCK_VALID_JWT}"],
+            http_mode="http1.1",
+        )
+        assert result["status_code"] == expected_status
+        assert len(jwks_requests) >= 4
+        if expected_status == 201:
+            assert len(service.read_forwarded_payloads()) == 1
+        else:
+            service.assert_no_forwarded_payloads_for()
+    finally:
+        service.stop()
+
+    if expected_status == 401:
+        assert "JWKS HTTP response exceeded oauth2.jwks_buffer_max_size=8000 bytes" in (
+            read_fluent_bit_log(service.service)
+        )
+
+
+def test_in_http_oauth2_jwks_chunked_response_timeout(monkeypatch):
+    def jwks():
+        def chunks():
+            for _ in range(30):
+                yield b" "
+                time.sleep(0.2)
+
+        return Response(chunks(), content_type="application/json")
+
+    monkeypatch.setitem(app.view_functions, "jwks", jwks)
+    service = Service("in_http_oauth2_jwks_timeout.yaml")
+    service.start()
+    try:
+        result = run_curl_request(
+            f"http://localhost:{service.flb_listener_port}/",
+            create_payload("sample_data.json"),
+            headers=["Content-Type: application/json", f"Authorization: Bearer {MOCK_VALID_JWT}"],
+            http_mode="http1.1",
+        )
+        assert result["status_code"] == 401
+        service.assert_no_forwarded_payloads_for()
+    finally:
+        service.stop()
+
+    assert "[http_client] response timeout reached" in read_fluent_bit_log(service.service)
+
+
+@pytest.mark.parametrize("field", ["kid", "alg"])
+def test_in_http_oauth2_rejects_duplicate_header(monkeypatch, field):
+    jwks_requests = track_jwks_requests(monkeypatch)
+    token = duplicate_header_token(MOCK_VALID_JWT, field)
+    service = Service("in_http_oauth2.yaml")
+    service.start()
+    try:
+        for _ in range(8):
+            result = run_curl_request(
+                f"http://localhost:{service.flb_listener_port}/",
+                create_payload("sample_data.json"),
+                headers=["Content-Type: application/json", f"Authorization: Bearer {token}"],
+                http_mode="http1.1",
+            )
+            assert result["status_code"] == 401
+        # Rejection must happen during parsing, before fetching a verification key.
+        assert jwks_requests == []
+        assert data_storage["payloads"] == []
+
+        result = run_curl_request(
+            f"http://localhost:{service.flb_listener_port}/",
+            create_payload("sample_data.json"),
+            headers=["Content-Type: application/json", f"Authorization: Bearer {MOCK_VALID_JWT}"],
+            http_mode="http1.1",
+        )
+        assert result["status_code"] == 201
+        assert len(service.read_forwarded_payloads()) == 1
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("field", ["kid", "n", "e"])
+@pytest.mark.parametrize("first_value", ["earlier-value", "", None, []])
+def test_in_http_oauth2_rejects_duplicate_jwks(monkeypatch, field, first_value):
+    jwks_requests = track_jwks_requests(monkeypatch, duplicate_jwks_body(field, first_value))
+    service = Service("in_http_oauth2.yaml")
+    service.start()
+    try:
+        for _ in range(3):
+            result = run_curl_request(
+                f"http://localhost:{service.flb_listener_port}/",
+                create_payload("sample_data.json"),
+                headers=["Content-Type: application/json", f"Authorization: Bearer {MOCK_VALID_JWT}"],
+                http_mode="http1.1",
+            )
+            assert result["status_code"] == 401
+        assert jwks_requests
+        assert data_storage["payloads"] == []
+    finally:
+        service.stop()
+
+
 class Service:
     def __init__(self, config_file, extra_env=None):
         self.config_file = os.path.abspath(os.path.join(os.path.dirname(__file__), '../config/', config_file))
@@ -820,3 +994,105 @@ class Service:
 
     def stop(self):
         self.service.stop()
+
+
+@pytest.mark.parametrize("size,status", [(8191, 201), (8192, 201), (8193, 413)])
+def test_in_http_inflation_size_boundary(size, status):
+    import gzip
+    import random
+    import string
+
+    # Moderate compression keeps the wire body below the 8192-byte request limit.
+    rng = random.Random(42)
+    payload = json.dumps({"message": "".join(rng.choices(string.ascii_letters, k=size - 15))}).encode()
+    assert len(payload) == size
+    service = Service("in_http_inflation.yaml")
+    service.start()
+    try:
+        connection = create_connection("127.0.0.1", service.flb_listener_port)
+        connection.request("POST", "/", gzip.compress(payload),
+                           {"Content-Type": "application/json", "Content-Encoding": "gzip"})
+        response = connection.getresponse()
+        response.read()
+        assert response.status == status
+        # A rejected request must not poison a keep-alive connection.
+        post_json(connection, "still alive")
+        connection.close()
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("size,status", [(4000, 201), (8192, 201), (8193, 413)])
+@pytest.mark.parametrize("oauth", [False, True])
+def test_in_http_inflation_high_compression_and_auth(size, status, oauth):
+    import gzip
+
+    service = Service("in_http_oauth2.yaml" if oauth else "in_http_inflation.yaml")
+    service.start()
+    try:
+        connection = create_connection("127.0.0.1", service.flb_listener_port)
+        body = json.dumps({"message": "x" * (size - 15)}).encode()
+        assert len(body) == size
+        payload = gzip.compress(body)
+        assert len(body) > len(payload) * 8
+        if oauth:
+            status = 401
+        connection.request("POST", "/", payload,
+                           {"Content-Type": "application/json", "Content-Encoding": "gzip"})
+        response = connection.getresponse()
+        response.read()
+        assert response.status == status
+        connection.close()
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("encoding,body,status", [
+    ("gzip", b"invalid gzip", 400),
+    ("snappy", b"\x80\x80\x80\x80\x01", 413),
+    # A valid zstd RLE frame declaring a 64K output, with only one data byte.
+    ("zstd", b"\x28\xb5\x2f\xfd\xa0\x00\x00\x01\x00\x03\x00\x08x", 413),
+])
+@pytest.mark.parametrize("http_mode", ["http1.1", "http2-prior-knowledge"])
+@pytest.mark.parametrize("oauth", [False, True])
+def test_in_http_inflation_rejection(encoding, body, status, http_mode, oauth):
+    service = Service("in_http_oauth2.yaml" if oauth else "in_http_inflation.yaml")
+    if oauth:
+        status = 401
+    service.start()
+    try:
+        if http_mode == "http1.1":
+            result = run_curl_request(
+                f"http://localhost:{service.flb_listener_port}/", body,
+                headers=["Content-Type: application/json", f"Content-Encoding: {encoding}"],
+                http_mode=http_mode,
+            )
+            assert result["status_code"] == status
+        else:
+            import h2.config
+            import h2.connection
+            import h2.events
+
+            client = h2.connection.H2Connection(
+                config=h2.config.H2Configuration(client_side=True, header_encoding="ascii")
+            )
+            with socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=5) as conn:
+                client.initiate_connection()
+                client.send_headers(1, [
+                    (":method", "POST"), (":scheme", "http"),
+                    (":authority", "localhost"), (":path", "/"),
+                    ("content-type", "application/json"), ("content-encoding", encoding),
+                ])
+                client.send_data(1, body, end_stream=True)
+                conn.sendall(client.data_to_send())
+                response_status = None
+                while response_status is None:
+                    data = conn.recv(65535)
+                    assert data, "HTTP/2 connection closed before the response"
+                    for event in client.receive_data(data):
+                        if isinstance(event, h2.events.ResponseReceived):
+                            response_status = int(dict(event.headers)[":status"])
+                    conn.sendall(client.data_to_send())
+                assert response_status == status
+    finally:
+        service.stop()

@@ -59,7 +59,7 @@ struct cfl_variant *cm_otel_get_or_create_attributes(struct cfl_kvlist *kvlist)
     }
 
     /* create an empty kvlist as the value of attributes */
-    kvlist_tmp = cfl_kvlist_create();
+    kvlist_tmp = cfl_kvlist_create_like(kvlist);
     if (!kvlist_tmp) {
         return NULL;
     }
@@ -106,7 +106,7 @@ static struct cfl_variant *otel_get_or_create_attributes(struct cfl_kvlist *kvli
     }
 
     /* create an empty kvlist as the value of attributes */
-    kvlist_tmp = cfl_kvlist_create();
+    kvlist_tmp = cfl_kvlist_create_like(kvlist);
     if (!kvlist_tmp) {
         return NULL;
     }
@@ -188,7 +188,7 @@ static struct cfl_variant *otel_get_or_create_scope_metadata(int telemetry_type,
     }
 
     /* metadata don't exists, create it */
-    kvlist_tmp = cfl_kvlist_create();
+    kvlist_tmp = cfl_kvlist_create_like(kvlist);
     if (!kvlist_tmp) {
         return NULL;
     }
@@ -237,7 +237,7 @@ struct cfl_variant *cm_otel_get_scope_metadata(int telemetry_type, struct cfl_kv
     }
     else {
         /* create "scope" inside kvlist */
-        kvlist_tmp = cfl_kvlist_create();
+        kvlist_tmp = cfl_kvlist_create_like(kvlist);
         if (!kvlist_tmp) {
             return NULL;
         }

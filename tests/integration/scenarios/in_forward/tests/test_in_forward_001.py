@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import socket
+import stat
 import ssl
 import struct
 import subprocess
@@ -84,6 +85,7 @@ class Service:
                 socket_dir, f"flb-fw-{uuid.uuid4().hex[:12]}.sock"
             )
             extra_env["FORWARD_UNIX_PATH"] = self.socket_path
+            extra_env["FORWARD_UNIX_PERM"] = "0600"
 
         self.service = FluentBitTestService(
             self.config_file,
@@ -581,6 +583,14 @@ def _send_tls_payload(port, payload, cafile):
     with socket.create_connection(("127.0.0.1", port), timeout=20) as raw_sock:
         with context.wrap_socket(raw_sock, server_hostname="localhost") as tls_sock:
             tls_sock.sendall(payload)
+            # Complete TLS shutdown before closing the socket. In particular,
+            # Windows can reset a connection with unread TLS session tickets.
+            try:
+                tls_sock.unwrap().close()
+            except (ConnectionResetError, ssl.SSLEOFError):
+                # Pause tests deliberately make the server drop this connection;
+                # callers still verify ingestion or the expected pause state.
+                pass
 
 
 def _create_tls_memory_bio_client(port, cafile):
@@ -800,7 +810,8 @@ def _secure_forward_handshake(sock, *, username, password, shared_key, hostname=
     return _recv_msgpack_value(sock)
 
 
-def _preflight_config(tmp_path, memory_limit, wire_limit="6M", *, output="http"):
+def _preflight_config(tmp_path, memory_limit, wire_limit="6M", *, output="http",
+                      signal_limit=None):
     template = "in_forward.yaml" if output == "http" else "in_forward_multi_metrics_stdout.yaml"
     source = Path(__file__).resolve().parent.parent / "config" / template
     config = source.read_text().replace(
@@ -808,6 +819,11 @@ def _preflight_config(tmp_path, memory_limit, wire_limit="6M", *, output="http")
         f"    - name: forward\n      msgpack_memory_limit: {memory_limit}\n"
         f"      buffer_max_size: {wire_limit}\n      buffer_chunk_size: 512\n",
     )
+    if signal_limit is not None:
+        config = config.replace(
+            "      msgpack_memory_limit:",
+            f"      signal_object_memory_limit: {signal_limit}\n      msgpack_memory_limit:",
+        )
     target = tmp_path / "preflight.yaml"
     target.write_text(config)
     return str(target)
@@ -847,9 +863,23 @@ def test_in_forward_preflight_auto_budget(tmp_path, memory_limit, wire_limit, ex
 def test_in_forward_preflight_invalid_budget(tmp_path, memory_limit, wire_limit, error):
     config = _preflight_config(tmp_path, memory_limit, wire_limit)
     service = FluentBitTestService(config)
-    with pytest.raises(FluentBitStartupError):
+    with pytest.raises(FluentBitStartupError, match="exited early"):
         service.start()
     assert error in read_file(service.flb.log_file)
+
+
+@pytest.mark.parametrize("signal_limit,error", [
+    ("0", "must be at least 1024 bytes"),
+    ("-1", "must be a positive size"),
+    ("-1K", "must be a positive size"),
+    ("bogus", "must be a positive size"),
+])
+def test_in_forward_invalid_signal_object_memory_limit(tmp_path, signal_limit, error):
+    config = _preflight_config(tmp_path, "16K", signal_limit=signal_limit)
+    service = FluentBitTestService(config)
+    with pytest.raises(FluentBitStartupError):
+        service.start()
+    assert f"signal_object_memory_limit {error}" in read_file(service.flb.log_file)
 
 
 @pytest.mark.parametrize("memory_limit,accepted", [("64K", False), ("128K", True)])
@@ -935,6 +965,41 @@ def test_in_forward_preflight_mpack_signal_not_zone_limited(tmp_path, signal):
                 assert sock.recv(1) == b""
             except ConnectionResetError:
                 pass
+    finally:
+        receiver.stop()
+
+
+@pytest.mark.parametrize("compressed", [False, True])
+@pytest.mark.parametrize("signal_limit,spans,accepted", [
+    (None, 8, True), (None, 102401, False),
+    ("1M", 1200, False), ("3M", 1200, True),
+])
+def test_in_forward_trace_object_budget(tmp_path, signal_limit, spans, accepted, compressed):
+    config = _preflight_config(tmp_path, "16K", output="stdout", signal_limit=signal_limit)
+    receiver = FluentBitTestService(config, extra_env={"FORWARD_INPUT_WORKERS": 1})
+    packed = _pack_obj({"resourceSpans": [
+        {"scope_spans": [{"spans": [{"name": "budget-span"} for _ in range(spans)]}]}
+    ]})
+    options = {"fluent_signal": 2, "chunk": "budget"}
+    if compressed:
+        packed = gzip.compress(packed)
+        options["compressed"] = "gzip"
+    receiver.start()
+    try:
+        with socket.create_connection(("127.0.0.1", receiver.flb_listener_port), timeout=10) as sock:
+            sock.sendall(_pack_obj([TEST_TAG, packed, options]))
+            if accepted:
+                assert _recv_msgpack_value(sock) == {"ack": "budget"}
+                receiver.wait_for_condition(
+                    lambda: "[span #0 'budget-span']" in read_file(receiver.flb.log_file),
+                    timeout=10,
+                    description="accepted trace at stdout output",
+                )
+            else:
+                try:
+                    assert sock.recv(1) == b""
+                except ConnectionResetError:
+                    pass
     finally:
         receiver.stop()
 
@@ -1387,6 +1452,7 @@ def test_in_forward_forced_input_tag_overrides_incoming_tag():
     assert records[0]["message"] == "forced-tag"
 
 
+@pytest.mark.skipif(not hasattr(socket, "AF_UNIX"), reason="Python requires Unix-domain socket support")
 def test_in_forward_unix_socket_message_mode():
     service = Service("in_forward_unix.yaml", use_unix_socket=True)
     service.start()
@@ -1407,6 +1473,7 @@ def test_in_forward_unix_socket_message_mode():
     assert records[0]["message"] == "unix-socket"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Unix socket permissions require POSIX")
 def test_in_forward_unix_socket_permissions():
     service = Service("in_forward_unix_perm.yaml", use_unix_socket=True)
     service.start()
@@ -1418,11 +1485,31 @@ def test_in_forward_unix_socket_permissions():
             interval=0.2,
             description="forward unix socket with permissions",
         )
-        mode = os.stat(service.socket_path).st_mode & 0o777
+        socket_stat = os.lstat(service.socket_path)
+        assert stat.S_ISSOCK(socket_stat.st_mode)
+        mode = socket_stat.st_mode & 0o777
     finally:
         service.stop()
 
     assert mode == 0o600
+
+
+def test_in_forward_unix_socket_rejects_symlink():
+    service = Service("in_forward_unix_perm.yaml", use_unix_socket=True)
+    service.service.extra_env["FORWARD_UNIX_PERM"] = "0666"
+    with tempfile.TemporaryDirectory() as directory:
+        victim = os.path.join(directory, "victim")
+        with open(victim, "w", encoding="utf-8") as output:
+            output.write("secret")
+        os.chmod(victim, 0o600)
+        os.symlink(victim, service.socket_path)
+
+        with pytest.raises(FluentBitStartupError):
+            service.start()
+
+        with open(service.service.flb.log_file, encoding="utf-8") as log:
+            assert "exists and it is not a unix socket" in log.read()
+        assert os.stat(victim).st_mode & 0o777 == 0o600
 
 
 def test_in_forward_tls_message_mode():
@@ -1564,6 +1651,7 @@ def test_in_forward_downstream_coro_eof_and_error_keep_listener_responsive(
     assert records[0]["message"] == "after-io-errors"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Checks POSIX errno diagnostics; Windows uses Winsock errors")
 def test_in_forward_tls_syscall_error_preserves_errno():
     service = Service("in_forward_tls.yaml")
     service.start()
@@ -1810,12 +1898,9 @@ def test_in_forward_tls_idle_connection_timeout_churn(monkeypatch):
                     pass
 
         # The listener must still accept a fresh connection and ingest data
-        context = ssl.create_default_context(cafile=cafile)
-        context.check_hostname = False
-        context.verify_mode = ssl.CERT_NONE
-        raw = socket.create_connection(("127.0.0.1", port), timeout=5)
-        with context.wrap_socket(raw, server_hostname="localhost") as tls:
-            tls.sendall(_message_mode_payload(TEST_TAG, {"message": "after-churn"}))
+        _send_tls_payload(
+            port, _message_mode_payload(TEST_TAG, {"message": "after-churn"}), cafile
+        )
 
         records = service.wait_for_record_count(1, timeout=15)
     finally:
@@ -1930,6 +2015,35 @@ def test_in_forward_secure_forward_auth_failure():
     assert pong[0] == "PONG"
     assert pong[1] is False
     assert "username/password mismatch" in pong[2]
+
+
+@pytest.mark.parametrize("header", [b"\xdd\xff\xff\xff\xff", b"\xdf\xff\xff\xff\xff"])
+def test_in_forward_secure_forward_rejects_large_ping_container(header):
+    service = Service("in_forward_secure.yaml")
+    service.start()
+
+    try:
+        with socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=5) as sock:
+            _recv_msgpack_value(sock)
+            sock.sendall(header)
+            try:
+                assert sock.recv(1) == b""
+            except ConnectionResetError:
+                pass
+
+        service.wait_for_log_contains("invalid PING frame or MessagePack allocation budget exceeded")
+
+        with socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=5) as sock:
+            pong = _secure_forward_handshake(
+                sock,
+                username=SECURE_USERNAME,
+                password=SECURE_PASSWORD,
+                shared_key=SECURE_SHARED_KEY,
+            )
+        assert pong[0] == "PONG"
+        assert pong[1] is True
+    finally:
+        service.stop()
 
 
 def test_in_forward_e2e_forward_receiver_preserves_metadata_and_signal_options():
@@ -2087,7 +2201,8 @@ def test_out_forward_metrics_signal_e2e_with_forward_receiver():
     assert record_payload["metrics"][0]["values"][0]["value_int64"] == 42
 
 
-def test_in_forward_ingests_all_metrics_contexts_from_single_payload():
+@pytest.mark.parametrize("input_workers", [1, 2])
+def test_in_forward_ingests_all_metrics_contexts_from_single_payload(input_workers):
     expected_names = {"forward_metric_a", "forward_metric_b"}
     timeout = 30 if memory_check_enabled() else 10
     metrics_payload = b"".join(_forward_metric_contexts(expected_names))
@@ -2100,35 +2215,34 @@ def test_in_forward_ingests_all_metrics_contexts_from_single_payload():
     )
     payload = _pack_obj(["test", metrics_payload, {"fluent_signal": 1}])
 
-    for input_workers in (1, 2):
-        receiver = FluentBitTestService(
-            receiver_config,
-            extra_env={"FORWARD_INPUT_WORKERS": input_workers},
-        )
-        receiver.start()
-        try:
-            with socket.create_connection(
-                ("127.0.0.1", receiver.flb_listener_port), timeout=5
-            ) as sock:
-                sock.sendall(payload)
+    receiver = FluentBitTestService(
+        receiver_config,
+        extra_env={"FORWARD_INPUT_WORKERS": input_workers},
+    )
+    receiver.start()
+    try:
+        with socket.create_connection(
+            ("127.0.0.1", receiver.flb_listener_port), timeout=5
+        ) as sock:
+            sock.sendall(payload)
 
-            output = receiver.wait_for_condition(
-                lambda: read_file(receiver.flb.log_file)
-                if all(
-                    metric_name in read_file(receiver.flb.log_file)
-                    for metric_name in expected_names
-                )
-                else None,
-                timeout=timeout,
-                interval=0.2,
-                description=(
-                    f"both forwarded cmetrics contexts with {input_workers} workers"
-                ),
+        output = receiver.wait_for_condition(
+            lambda: read_file(receiver.flb.log_file)
+            if all(
+                metric_name in read_file(receiver.flb.log_file)
+                for metric_name in expected_names
             )
-        finally:
-            receiver.stop()
+            else None,
+            timeout=timeout,
+            interval=0.2,
+            description=(
+                f"both forwarded cmetrics contexts with {input_workers} workers"
+            ),
+        )
+    finally:
+        receiver.stop()
 
-        assert all(metric_name in output for metric_name in expected_names)
+    assert all(metric_name in output for metric_name in expected_names)
 
 
 def test_in_forward_metrics_payload_append_is_atomic():

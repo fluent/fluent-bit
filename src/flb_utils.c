@@ -22,9 +22,13 @@
 #include <string.h>
 #include <time.h>
 #include <ctype.h>
+#include <math.h>
+#include <errno.h>
+#include <limits.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <errno.h>
 #include <msgpack.h>
 
 #include <monkey/mk_core.h>
@@ -65,6 +69,37 @@ extern struct flb_aws_error_reporter *error_reporter;
  * E0 since U+E0CE = U+<FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR><HEX_FRAGMENT>
  */
 #define FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR 0xE0
+
+/* Prefer a file beside the main configuration over a same-named file in CWD. */
+const char *flb_utils_resolve_config_path(const char *path, const char *conf_path,
+                                          char *buf, size_t size)
+{
+    int ret;
+    size_t len;
+    struct stat st;
+
+    if (!path || !conf_path || path[0] == '/') {
+        return path;
+    }
+#ifdef _WIN32
+    if (path[0] == '\\' || (path[0] && path[1] == ':')) {
+        return path;
+    }
+#endif
+
+    len = strlen(conf_path);
+    ret = snprintf(buf, size, "%s%s%s", conf_path,
+                   len > 0 && conf_path[len - 1] == '/' ? "" : "/", path);
+    if (ret < 0 || (size_t) ret >= size) {
+        return NULL;
+    }
+
+    if (stat(buf, &st) == 0 || errno != ENOENT) {
+        return buf;
+    }
+
+    return path;
+}
 
 void flb_utils_error(int err)
 {
@@ -632,7 +667,7 @@ int64_t flb_utils_size_to_binary_bytes(const char *size)
     len = strlen(size);
     val = atof(size);
 
-    if (len == 0) {
+    if (len == 0 || !isfinite(val)) {
         return -1;
     }
 
@@ -646,6 +681,10 @@ int64_t flb_utils_size_to_binary_bytes(const char *size)
     }
 
     if (plen == 0) {
+        /* INT64_MAX rounds to 2^63 as a double, so the upper bound is exclusive. */
+        if (val < -9223372036854775808.0 || val >= 9223372036854775808.0) {
+            return -1;
+        }
         return (int64_t)val;
     }
     else if (plen > 3) {
@@ -755,6 +794,41 @@ int flb_utils_time_to_seconds(const char *time)
     }
 
     return val;
+}
+
+int flb_utils_time_to_seconds_strict(const char *time, int *seconds)
+{
+    int result;
+    char *end;
+    long checked_value;
+    const unsigned char *cursor;
+
+    if (time == NULL || seconds == NULL || time[0] == '\0') {
+        return -1;
+    }
+
+    cursor = (const unsigned char *) time;
+    while (*cursor != '\0') {
+        if (isdigit(*cursor) == 0) {
+            return -1;
+        }
+        cursor++;
+    }
+
+    errno = 0;
+    checked_value = strtol(time, &end, 10);
+    if (errno == ERANGE || end == time || *end != '\0' ||
+        checked_value <= 0 || checked_value > INT_MAX) {
+        return -1;
+    }
+
+    result = flb_utils_time_to_seconds(time);
+    if (result <= 0 || result != checked_value) {
+        return -1;
+    }
+
+    *seconds = result;
+    return 0;
 }
 
 int flb_utils_bool(const char *val)

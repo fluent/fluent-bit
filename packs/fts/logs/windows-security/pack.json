@@ -1,0 +1,22 @@
+{
+  "pack_version": 1,
+  "fts_api_version": 1,
+  "id": "org.fluentbit.policy.windows-security",
+  "version": "1.0.0",
+  "title": "Windows security authentication normalization",
+  "description": "Declared decoded contract: ProviderName string and EventID integer, authentication events 4624/4625 only. Preserve all unknown events and source fields. XML, classic Message strings and alternate input field names require upstream parsing/mapping. Linux fixture replay does not certify a live Windows collector.",
+  "blocks": [
+    {
+      "name": "apply",
+      "signals": [
+        "logs"
+      ],
+      "source": "blocks/apply.lua",
+      "parameters": {},
+      "privacy": false
+    }
+  ],
+  "fixtures": [
+    "tests/policy.yaml"
+  ]
+}

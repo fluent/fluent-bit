@@ -1,6 +1,9 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
 #include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_compression.h>
+#include <fluent-bit/flb_snappy.h>
+#include <fluent-bit/flb_zstd.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_http_common.h>
 #include <fluent-bit/flb_io.h>
@@ -9,6 +12,8 @@
 #include <fluent-bit/flb_socket.h>
 #include <fluent-bit/http_server/flb_http_server.h>
 #include <fluent-bit/http_server/flb_http_server_config_map.h>
+#include <fluent-bit/http_server/flb_hs.h>
+#include <msgpack.h>
 
 #include <string.h>
 #include <cfl/cfl_atomic.h>
@@ -180,13 +185,28 @@ void test_http_server_options_defaults()
     TEST_CHECK(options.reuse_port == FLB_FALSE);
     TEST_CHECK(options.idle_timeout == HTTP_SERVER_DEFAULT_IDLE_TIMEOUT);
     TEST_CHECK(options.buffer_max_size == HTTP_SERVER_MAXIMUM_BUFFER_SIZE);
+    TEST_CHECK(options.max_decoded_body_size == HTTP_SERVER_DEFAULT_MAX_DECODED_BODY_SIZE);
+    TEST_CHECK(options.http1_max_header_size == HTTP_SERVER_DEFAULT_HTTP1_MAX_HEADER_SIZE);
     TEST_CHECK(options.max_connections == 0);
     TEST_CHECK(config.http2 == FLB_TRUE);
     TEST_CHECK(config.idle_timeout == HTTP_SERVER_DEFAULT_IDLE_TIMEOUT);
     TEST_CHECK(config.buffer_max_size == HTTP_SERVER_MAXIMUM_BUFFER_SIZE);
+    TEST_CHECK(config.max_decoded_body_size == HTTP_SERVER_DEFAULT_MAX_DECODED_BODY_SIZE);
+    TEST_CHECK(strcmp(config.http1_max_header_size, "32KiB") == 0);
     TEST_CHECK(config.max_connections == 0);
     TEST_CHECK(flb_http_server_property_is_allowed("http_server.idle_timeout") == FLB_TRUE);
     TEST_CHECK(flb_http_server_property_is_allowed("idle_timeout") == FLB_FALSE);
+}
+
+void test_http_server_rejects_invalid_decoded_body_limit()
+{
+    struct flb_http_server server;
+    struct flb_http_server_options options;
+
+    flb_http_server_options_init(&options);
+    options.max_decoded_body_size = SIZE_MAX;
+
+    TEST_CHECK(flb_http_server_init_with_options(&server, &options) == -1);
 }
 
 void test_http_server_options_multi_worker_magic()
@@ -905,7 +925,390 @@ void test_http_server_session_destroy_is_reentrant_safe()
     flb_free(session);
 }
 
+static void prepare_hs_pack_metrics_payload(msgpack_sbuffer *sbuf, int value)
+{
+    msgpack_packer pck;
+
+    msgpack_sbuffer_init(sbuf);
+    msgpack_packer_init(&pck, sbuf, msgpack_sbuffer_write);
+    msgpack_pack_map(&pck, 1);
+    msgpack_pack_str(&pck, 5);
+    msgpack_pack_str_body(&pck, "value", 5);
+    msgpack_pack_int(&pck, value);
+}
+
+void test_http_server_hs_buf_push_during_read_keeps_payload()
+{
+    int ret;
+    struct flb_config *config;
+    struct flb_hs *hs;
+    msgpack_sbuffer sbuf;
+
+    config = flb_config_init();
+    if (!TEST_CHECK(config != NULL)) {
+        return;
+    }
+
+    hs = flb_hs_create(TEST_HTTP_SERVER_HOST, "2020", config);
+    if (!TEST_CHECK(hs != NULL)) {
+        flb_config_exit(config);
+        return;
+    }
+
+    prepare_hs_pack_metrics_payload(&sbuf, 1);
+    ret = flb_hs_push_pipeline_metrics(hs, sbuf.data, sbuf.size);
+    msgpack_sbuffer_destroy(&sbuf);
+    TEST_CHECK(ret == 0);
+
+    /* a request is reading the payload while the next push arrives */
+    ret = flb_hs_buf_acquire(&hs->metrics, FLB_TRUE, FLB_TRUE);
+    TEST_CHECK(ret == 0);
+
+    prepare_hs_pack_metrics_payload(&sbuf, 2);
+    flb_hs_push_pipeline_metrics(hs, sbuf.data, sbuf.size);
+    msgpack_sbuffer_destroy(&sbuf);
+
+    flb_hs_buf_release(&hs->metrics, NULL);
+
+    /* the previous payload must still be served after the reader is done */
+    ret = flb_hs_buf_acquire(&hs->metrics, FLB_TRUE, FLB_TRUE);
+    TEST_CHECK(ret == 0);
+    if (ret == 0) {
+        TEST_CHECK(hs->metrics.data != NULL &&
+                   strstr(hs->metrics.data, "\"value\":1") != NULL);
+        flb_hs_buf_release(&hs->metrics, NULL);
+    }
+
+    /* with no readers left the next push replaces it */
+    prepare_hs_pack_metrics_payload(&sbuf, 3);
+    ret = flb_hs_push_pipeline_metrics(hs, sbuf.data, sbuf.size);
+    msgpack_sbuffer_destroy(&sbuf);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(hs->metrics.data != NULL &&
+               strstr(hs->metrics.data, "\"value\":3") != NULL);
+
+    flb_hs_destroy(hs);
+    flb_config_exit(config);
+}
+
+void test_http1_header_limit_binary_units(void)
+{
+    struct flb_config config;
+    struct flb_input_instance input;
+    struct flb_http_server_config server_config;
+    struct flb_http_server_options options;
+    struct {
+        char *value;
+        size_t expected;
+    } cases[] = {
+        {"32KiB", 32768},
+        {"64KiB", 65536},
+        {"64kib", 65536},
+        {"1.5KiB", 1536},
+        {"1MiB", 1024 * 1024},
+        {"1GiB", 1024 * 1024 * 1024},
+        {"65536", 65536},
+        {"0", 32768}
+    };
+    char *invalid_values[] = {
+        "invalid", "-1", "bogus123", "64KiB5", "32KiBgarbage", "64 KiB", "",
+        "NaN", "Infinity", "1e999", "9223372036854775808"
+    };
+    size_t index;
+    int result;
+
+    memset(&config, 0, sizeof(config));
+    memset(&input, 0, sizeof(input));
+    flb_http_server_config_init(&server_config);
+    input.config = &config;
+    input.http_server_config = &server_config;
+
+    for (index = 0; index < sizeof(cases) / sizeof(cases[0]); index++) {
+        server_config.http1_max_header_size = cases[index].value;
+        result = flb_input_http_server_options_init(&options, &input, 0, NULL, NULL);
+        TEST_CHECK(result == 0);
+        TEST_CHECK(options.http1_max_header_size == cases[index].expected);
+    }
+
+    for (index = 0; index < sizeof(invalid_values) / sizeof(invalid_values[0]); index++) {
+        server_config.http1_max_header_size = invalid_values[index];
+        TEST_CHECK_(flb_input_http_server_options_init(&options, &input, 0, NULL, NULL) == -1,
+                    "accepted invalid header limit: %s", invalid_values[index]);
+    }
+}
+
+void test_http1_rejects_invalid_partial_request_line(void)
+{
+    struct flb_http_server server;
+    struct flb_http_server_session *session;
+    struct {
+        char *data;
+        int expected;
+    } cases[] = {
+        {"ABCDEFGHIJK", HTTP_SERVER_SUCCESS},
+        {"ABCDEFGHIJKL", HTTP_SERVER_PROVIDER_ERROR},
+        {"GET /bad\r", HTTP_SERVER_PROVIDER_ERROR},
+        {"GET /bad\n", HTTP_SERVER_PROVIDER_ERROR},
+        {"GET /query?q=x\n", HTTP_SERVER_PROVIDER_ERROR},
+        {"GET /good", HTTP_SERVER_SUCCESS},
+        {"GET /good HTTP/1", HTTP_SERVER_SUCCESS},
+        {"GET /good HTTP/1.", HTTP_SERVER_SUCCESS},
+        {"GET /good HTTP/1.0\r\n", HTTP_SERVER_SUCCESS},
+        {"GET /good X", HTTP_SERVER_SUCCESS},
+        {"GET /good XXXXXX", HTTP_SERVER_SUCCESS},
+        {"GET /good XXXXXXX", HTTP_SERVER_PROVIDER_ERROR},
+        {"GET /good http/1.", HTTP_SERVER_PROVIDER_ERROR},
+        {"GET /good HTTP/2.", HTTP_SERVER_PROVIDER_ERROR},
+        {"GET /query?q=x HTTP/2.", HTTP_SERVER_PROVIDER_ERROR},
+        {"GET /good HTTP/1.1\r\n", HTTP_SERVER_SUCCESS},
+        {"GET /good HTTP/1.1\r\nHost: localhost\r\n", HTTP_SERVER_SUCCESS}
+    };
+    size_t index;
+    size_t offset;
+    size_t length;
+    int fragmented;
+    int result;
+
+    memset(&server, 0, sizeof(server));
+    server.buffer_max_size = HTTP_SERVER_MAXIMUM_BUFFER_SIZE;
+    for (index = 0; index < sizeof(cases) / sizeof(cases[0]); index++) {
+        length = strlen(cases[index].data);
+        for (fragmented = 0; fragmented <= 1; fragmented++) {
+            session = flb_http_server_session_create(HTTP_PROTOCOL_VERSION_11);
+            if (!TEST_CHECK(session != NULL)) {
+                return;
+            }
+            session->parent = &server;
+            for (offset = 0; offset < length; offset += fragmented ? 1 : length) {
+                result = flb_http_server_session_ingest(session,
+                             (unsigned char *) cases[index].data + offset,
+                             fragmented ? 1 : length);
+                if (fragmented && offset + 1 < length) {
+                    TEST_CHECK(result == HTTP_SERVER_SUCCESS);
+                }
+            }
+            TEST_CHECK_(result == cases[index].expected, "request line: %s", cases[index].data);
+            if (result == HTTP_SERVER_PROVIDER_ERROR) {
+                TEST_CHECK(session->http1.stream.status == HTTP_STREAM_STATUS_ERROR);
+            }
+            flb_http_server_session_destroy(session);
+        }
+    }
+}
+
+/* Exercise every delimiter split and SDS growth without timing assertions. */
+static void check_http1_fragmented_header_limit(size_t header_limit)
+{
+    struct flb_http_server server;
+    struct flb_http_server_session *session;
+    unsigned char *request;
+    const char *prefix = "GET /health HTTP/1.1\r\nHost: localhost\r\nX-Pad: ";
+    size_t fragments[] = {1, 1024, header_limit};
+    size_t index;
+    size_t offset;
+    size_t length;
+    int result;
+    int over;
+
+    memset(&server, 0, sizeof(server));
+    server.buffer_max_size = 64 * 1024 * 1024;
+    server.http1_max_header_size = header_limit;
+    request = flb_malloc(header_limit + 1);
+    if (!TEST_CHECK(request != NULL)) {
+        return;
+    }
+
+    for (over = 0; over <= 1; over++) {
+        memset(request, 'a', header_limit + 1);
+        memcpy(request, prefix, strlen(prefix));
+        memcpy(request + header_limit - 4 + over, "\r\n\r\n", 4);
+
+        for (index = 0; index < sizeof(fragments) / sizeof(fragments[0]); index++) {
+            session = flb_http_server_session_create(HTTP_PROTOCOL_VERSION_11);
+            if (!TEST_CHECK(session != NULL)) {
+                flb_free(request);
+                return;
+            }
+            session->parent = &server;
+
+            for (offset = 0; offset < header_limit; offset += length) {
+                length = fragments[index];
+                if (length > header_limit - offset) {
+                    length = header_limit - offset;
+                }
+                result = flb_http_server_session_ingest(session, request + offset, length);
+                if (offset + length < header_limit) {
+                    TEST_CHECK(result == HTTP_SERVER_SUCCESS);
+                    TEST_CHECK(session->http1.header_scan_offset == offset + length);
+                    TEST_CHECK(session->http1.headers_complete == FLB_FALSE);
+                    TEST_CHECK(cfl_list_is_empty(&session->request_queue));
+                }
+            }
+
+            if (over) {
+                TEST_CHECK(result == HTTP_SERVER_PROVIDER_ERROR);
+                TEST_CHECK(session->http1.stream.status == HTTP_STREAM_STATUS_ERROR);
+            }
+            else {
+                TEST_CHECK(result == HTTP_SERVER_SUCCESS);
+                TEST_CHECK(session->http1.stream.status == HTTP_STREAM_STATUS_READY);
+                TEST_CHECK(session->http1.header_scan_offset == 0);
+                TEST_CHECK(session->http1.headers_complete == FLB_FALSE);
+            }
+            flb_http_server_session_destroy(session);
+        }
+    }
+    flb_free(request);
+}
+
+void test_http1_fragmented_header_limit(void)
+{
+    check_http1_fragmented_header_limit(HTTP_SERVER_DEFAULT_HTTP1_MAX_HEADER_SIZE);
+    check_http1_fragmented_header_limit(64 * 1024);
+    check_http1_fragmented_header_limit(8 * 1024);
+}
+
+static void test_http_body_inflation_budget(void)
+{
+    struct flb_http_request request = {0};
+    struct flb_http_response response = {0};
+    struct flb_http_stream stream = {0};
+    struct flb_http_server_session session = {0};
+    const char *encodings[] = {"gzip", "zstd", "snappy"};
+    char original[32769];
+    char *compressed;
+    cfl_sds_t saved;
+    size_t compressed_size;
+    size_t budget;
+    int index;
+    int result;
+
+    session.version = HTTP_PROTOCOL_VERSION_11;
+    stream.role = HTTP_STREAM_ROLE_SERVER;
+    stream.parent = &session;
+    memset(original, 'x', sizeof(original));
+    for (index = 0; index < 3; index++) {
+        if (index == 0) {
+            result = flb_gzip_compress(original, sizeof(original),
+                                       (void **) &compressed, &compressed_size);
+        }
+        else if (index == 1) {
+            result = flb_zstd_compress(original, sizeof(original),
+                                       (void **) &compressed, &compressed_size);
+        }
+        else {
+            result = flb_snappy_compress(original, sizeof(original),
+                                         &compressed, &compressed_size);
+        }
+        TEST_ASSERT(result == 0);
+        for (budget = sizeof(original) - 1; budget <= sizeof(original) + 1; budget++) {
+            TEST_ASSERT(flb_http_request_init(&request) == 0);
+            request.body = cfl_sds_create_len(compressed, compressed_size);
+            saved = request.body;
+            request.content_length = compressed_size;
+            flb_http_request_set_header(&request, "Content-Encoding", 0, encodings[index], 0);
+            result = flb_http_request_uncompress_body(&request, budget);
+            if (budget < sizeof(original)) {
+                TEST_CHECK(result == FLB_DECOMPRESSOR_LIMIT_EXCEEDED);
+                TEST_CHECK(request.body == saved);
+                TEST_CHECK(request.content_length == compressed_size);
+                TEST_CHECK(flb_http_request_get_header(&request, "Content-Encoding") != NULL);
+            }
+            else {
+                TEST_CHECK(result == 0);
+                TEST_CHECK(request.content_length == sizeof(original));
+                TEST_CHECK(cfl_sds_len(request.body) == sizeof(original));
+                TEST_CHECK(memcmp(request.body, original, sizeof(original)) == 0);
+                TEST_CHECK(flb_http_request_get_header(&request, "Content-Encoding") == NULL);
+            }
+            flb_http_request_destroy(&request);
+        }
+        TEST_ASSERT(flb_http_response_init(&response) == 0);
+        response.stream = &stream;
+        response.body = cfl_sds_create_len(compressed, compressed_size);
+        flb_http_response_set_header(&response, "Content-Encoding", 0, encodings[index], 0);
+        TEST_CHECK(flb_http_response_uncompress_body(&response, 0) ==
+                   FLB_DECOMPRESSOR_LIMIT_EXCEEDED);
+        TEST_CHECK(flb_http_response_uncompress_body(&response, sizeof(original)) == 0);
+        TEST_CHECK(cfl_sds_len(response.body) == sizeof(original));
+        flb_http_response_destroy(&response);
+        flb_free(compressed);
+    }
+
+    TEST_ASSERT(flb_http_request_init(&request) == 0);
+    request.body = cfl_sds_create("broken");
+    flb_http_request_set_header(&request, "Content-Encoding", 0, "gzip", 0);
+    TEST_CHECK(flb_http_request_uncompress_body(&request, 1024) < 0);
+    TEST_CHECK(strcmp(request.body, "broken") == 0);
+    flb_http_request_destroy(&request);
+}
+
+static void test_http_body_inflation_limit(void)
+{
+    struct flb_http_request request;
+    char input[32768];
+    char *encoded;
+    char *encodings[] = {"gzip", "zstd", "snappy"};
+    size_t encoded_size;
+    size_t limits[] = {sizeof(input) - 1, sizeof(input), sizeof(input) + 1};
+    size_t i;
+    size_t j;
+    int ret;
+
+    memset(input, 'a', sizeof(input));
+    for (i = 0; i < 3; i++) {
+        encoded = NULL;
+        if (i == 0) {
+            ret = flb_gzip_compress(input, sizeof(input), (void **) &encoded, &encoded_size);
+        }
+        else if (i == 1) {
+            ret = flb_zstd_compress(input, sizeof(input), (void **) &encoded, &encoded_size);
+        }
+        else {
+            ret = flb_snappy_compress(input, sizeof(input), &encoded, &encoded_size);
+        }
+        TEST_ASSERT(ret == 0);
+        for (j = 0; j < 3; j++) {
+            memset(&request, 0, sizeof(request));
+            TEST_ASSERT(flb_http_request_init(&request) == 0);
+            request.body = cfl_sds_create_len(encoded, encoded_size);
+            TEST_ASSERT(request.body != NULL);
+            TEST_ASSERT(flb_http_request_set_header(&request, "Content-Encoding", 0,
+                                                    encodings[i], 0) == 0);
+            ret = flb_http_request_uncompress_body(&request, limits[j]);
+            if (j == 0) {
+                TEST_CHECK(ret == FLB_DECOMPRESSOR_LIMIT_EXCEEDED);
+                TEST_CHECK(cfl_sds_len(request.body) == encoded_size);
+                TEST_CHECK(memcmp(request.body, encoded, encoded_size) == 0);
+            }
+            else {
+                TEST_CHECK(ret == 0);
+                TEST_CHECK(request.content_length == sizeof(input));
+                TEST_CHECK(cfl_sds_len(request.body) == sizeof(input));
+                TEST_CHECK(memcmp(request.body, input, sizeof(input)) == 0);
+                TEST_CHECK(flb_http_request_get_header(&request, "Content-Encoding") == NULL);
+            }
+            flb_http_request_destroy(&request);
+        }
+        /* A failed decoder must not dispatch the original compressed body. */
+        memset(&request, 0, sizeof(request));
+        TEST_ASSERT(flb_http_request_init(&request) == 0);
+        request.body = cfl_sds_create_len(encoded, encoded_size / 2);
+        flb_http_request_set_header(&request, "Content-Encoding", 0, encodings[i], 0);
+        TEST_CHECK(flb_http_request_uncompress_body(&request, sizeof(input)) != 0);
+        flb_http_request_destroy(&request);
+        flb_free(encoded);
+    }
+}
+
 TEST_LIST = {
+    { "http_server_rejects_invalid_decoded_body_limit",
+      test_http_server_rejects_invalid_decoded_body_limit },
+    { "http_body_inflation_limit", test_http_body_inflation_limit },
+    { "http_body_inflation_budget", test_http_body_inflation_budget },
+    { "http1_rejects_invalid_partial_request_line", test_http1_rejects_invalid_partial_request_line },
+    { "http1_header_limit_binary_units", test_http1_header_limit_binary_units },
+    { "http1_fragmented_header_limit", test_http1_fragmented_header_limit },
     { "http_server_accept_reaps_stale_sessions_with_limit",
       test_http_server_accept_reaps_stale_sessions_with_limit },
     { "http_server_managed_accept_defers_uncapped_reaping",
@@ -935,5 +1338,7 @@ TEST_LIST = {
       test_http_server_session_destroy_clears_drop_pending },
     { "http_server_session_destroy_is_reentrant_safe",
       test_http_server_session_destroy_is_reentrant_safe },
+    { "http_server_hs_buf_push_during_read_keeps_payload",
+      test_http_server_hs_buf_push_during_read_keeps_payload },
     { 0 }
 };

@@ -53,8 +53,10 @@ struct flb_ne {
     flb_sds_t path_sysfs;
     flb_sds_t path_textfile;
     int scrape_interval;
+    int scrape_on_start;
 
     int coll_fd;                                      /* collector fd     */
+    int coll_fd_start;                                /* start collector  */
     struct cmt *cmt;                                  /* cmetrics context */
     struct flb_input_instance *ins;                   /* input instance   */
     struct mk_list *metrics;                          /* enabled metrics */

@@ -37,6 +37,8 @@ struct flb_opentelemetry *opentelemetry_config_create(struct flb_input_instance 
     }
     ctx->ins = ins;
     ctx->oauth2_cfg.jwks_refresh_interval = 300;
+    ctx->oauth2_cfg.jwks_buffer_max_size = 1000000;
+    ctx->oauth2_cfg.jwks_response_timeout = 30;
 
     /* Load the config map */
     ret = flb_input_config_map_set(ins, (void *) ctx);

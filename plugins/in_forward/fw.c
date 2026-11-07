@@ -29,6 +29,8 @@
 #include <msgpack.h>
 
 #ifdef FLB_HAVE_UNIX_SOCKET
+#include <fcntl.h>
+#include <unistd.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/stat.h>
@@ -51,7 +53,7 @@ static int remove_existing_socket_file(char *socket_path)
     struct stat file_data;
     int         result;
 
-    result = stat(socket_path, &file_data);
+    result = lstat(socket_path, &file_data);
 
     if (result == -1) {
         if (errno == ENOENT) {
@@ -79,6 +81,18 @@ static int remove_existing_socket_file(char *socket_path)
 static int fw_unix_create(struct flb_in_fw_config *ctx)
 {
     int ret;
+    char staging_dir[sizeof(((struct sockaddr_un *) 0)->sun_path) + sizeof(".fb-XXXXXX/s")];
+    char staging_path[sizeof(((struct sockaddr_un *) 0)->sun_path) + sizeof(".fb-XXXXXX/s")];
+    const char *separator;
+    size_t parent_length;
+    const char *bind_path;
+    int staging_fd;
+    struct stat staging_stat;
+
+    if (strlen(ctx->unix_path) >= sizeof(((struct sockaddr_un *) 0)->sun_path)) {
+        flb_plg_error(ctx->ins, "configured unix socket path is too long: '%s'", ctx->unix_path);
+        return -1;
+    }
 
     ret = remove_existing_socket_file(ctx->unix_path);
 
@@ -97,30 +111,114 @@ static int fw_unix_create(struct flb_in_fw_config *ctx)
         return -1;
     }
 
+    /* A socket descriptor's mode is not the mode of its filesystem entry. */
+    bind_path = ctx->unix_path;
+    staging_fd = -1;
+    if (ctx->unix_perm_str) {
+        separator = strrchr(ctx->unix_path, '/');
+        parent_length = separator == NULL ? 0 : separator - ctx->unix_path + 1;
+        ret = snprintf(staging_dir, sizeof(staging_dir), "%.*s.fb-XXXXXX",
+                       (int) parent_length, ctx->unix_path);
+        if (ret < 0) {
+            flb_plg_error(ctx->ins, "could not format staging directory for unix socket '%s'",
+                          ctx->unix_path);
+            return -1;
+        }
+        if ((size_t) ret >= sizeof(staging_dir)) {
+            flb_plg_error(ctx->ins, "staging directory path is too long for unix socket '%s'",
+                          ctx->unix_path);
+            return -1;
+        }
+        if (mkdtemp(staging_dir) == NULL) {
+            flb_errno();
+            flb_plg_error(ctx->ins, "could not create staging directory '%s' for unix socket '%s'",
+                          staging_dir, ctx->unix_path);
+            return -1;
+        }
+        staging_fd = open(staging_dir, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+        if (staging_fd < 0) {
+            flb_errno();
+            flb_plg_error(ctx->ins, "could not open staging directory '%s' for unix socket '%s'",
+                          staging_dir, ctx->unix_path);
+            goto staging_setup_error;
+        }
+        if (fstat(staging_fd, &staging_stat) != 0) {
+            flb_errno();
+            flb_plg_error(ctx->ins, "could not stat staging directory '%s' for unix socket '%s'",
+                          staging_dir, ctx->unix_path);
+            goto staging_setup_error;
+        }
+        if (staging_stat.st_uid != geteuid()) {
+            flb_plg_error(ctx->ins, "staging directory '%s' has the wrong owner for unix socket '%s'",
+                          staging_dir, ctx->unix_path);
+            goto staging_setup_error;
+        }
+        if (fchmod(staging_fd, 0700) != 0 || fstat(staging_fd, &staging_stat) != 0) {
+            flb_errno();
+            flb_plg_error(ctx->ins, "could not normalize staging directory '%s'", staging_dir);
+            goto staging_setup_error;
+        }
+        if ((staging_stat.st_mode & 0777) != 0700) {
+            flb_plg_error(ctx->ins, "staging directory '%s' has unsafe mode for unix socket '%s'",
+                          staging_dir, ctx->unix_path);
+            goto staging_setup_error;
+        }
+        ret = snprintf(staging_path, sizeof(staging_path), "%s/s", staging_dir);
+        if (ret < 0) {
+            flb_plg_error(ctx->ins, "could not format staging socket path in '%s' for '%s'",
+                          staging_dir, ctx->unix_path);
+            goto staging_setup_error;
+        }
+        if ((size_t) ret >= sizeof(staging_path)) {
+            flb_plg_error(ctx->ins, "staging socket path in '%s' is too long for '%s'",
+                          staging_dir, ctx->unix_path);
+            goto staging_setup_error;
+        }
+        bind_path = staging_path;
+    }
+
     ctx->downstream = flb_downstream_create(FLB_TRANSPORT_UNIX_STREAM,
                                             ctx->ins->flags,
-                                            ctx->unix_path,
+                                            bind_path,
                                             0,
                                             ctx->ins->tls,
                                             ctx->ins->config,
                                             &ctx->ins->net_setup);
 
     if (ctx->downstream == NULL) {
+        if (ctx->unix_perm_str) {
+            unlinkat(staging_fd, "s", 0);
+            close(staging_fd);
+            rmdir(staging_dir);
+        }
         return -1;
     }
 
     if (ctx->unix_perm_str) {
-        if (chmod(ctx->unix_path, ctx->unix_perm)) {
+        if (fchmodat(staging_fd, "s", ctx->unix_perm, 0) ||
+            renameat(staging_fd, "s", AT_FDCWD, ctx->unix_path)) {
             flb_errno();
 
             flb_plg_error(ctx->ins, "cannot set permission on '%s' to %04o",
                           ctx->unix_path, ctx->unix_perm);
 
+            unlinkat(staging_fd, "s", 0);
+            close(staging_fd);
+            rmdir(staging_dir);
             return -1;
         }
+        close(staging_fd);
+        rmdir(staging_dir);
     }
 
     return 0;
+
+staging_setup_error:
+    if (staging_fd >= 0) {
+        close(staging_fd);
+    }
+    rmdir(staging_dir);
+    return -1;
 }
 #endif
 
@@ -835,6 +933,14 @@ static struct flb_config_map config_map[] = {
     "bytes and 16 times buffer_max_size; an explicit size overrides this budget. "
     "Includes the outer frame and cumulative PackedForward log entry zones, "
     "including retained group records and zone overhead."
+   },
+   {
+    FLB_CONFIG_MAP_SIZE, "signal_object_memory_limit", "100M",
+    0, FLB_TRUE, offsetof(struct flb_in_fw_config, signal_object_memory_limit),
+    "Maximum estimated decoded object memory for a PackedForward metrics or traces "
+    "payload. Each MessagePack root, array element, and map entry is charged "
+    "1024 bytes. This is independent of msgpack_memory_limit and is not an "
+    "exact heap limit."
    },
    {
     FLB_CONFIG_MAP_BOOL, "empty_shared_key", "false",

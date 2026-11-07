@@ -225,6 +225,31 @@ int flb_tail_file_offset_marker_matches(struct flb_tail_file *file)
     return FLB_TRUE;
 }
 
+int flb_tail_file_read_offset_is_valid(struct flb_tail_file *file)
+{
+    int ret;
+    uint64_t marker;
+    size_t marker_size;
+
+    /*
+     * The saved marker covers the resumable offset, not buffered bytes.
+     * Probe through the raw read offset even when no saved marker exists.
+     * This distinguishes stale size metadata from EOF without replacing
+     * the persisted resumable-offset marker.
+     */
+    ret = compute_offset_marker(file, file->offset, &marker, &marker_size);
+    if (ret != 0) {
+        return FLB_FALSE;
+    }
+
+    if (file->db_offset_marker_size > 0 &&
+        flb_tail_file_offset_marker_matches(file) != FLB_TRUE) {
+        return FLB_FALSE;
+    }
+
+    return FLB_TRUE;
+}
+
 static void update_resumable_offset_state(struct flb_tail_file *file)
 {
 #ifdef FLB_HAVE_SQLDB
@@ -1766,6 +1791,10 @@ void flb_tail_file_remove(struct flb_tail_file *file)
     flb_plg_debug(ctx->ins, "inode=%"PRIu64" removing file name %s",
                   file->inode, file->name);
 
+    if (file->read_retry_pending) {
+        mk_list_del(&file->_retry_head);
+    }
+
     if (file->decompression_context != NULL) {
         flb_decompression_context_destroy(file->decompression_context);
     }
@@ -1863,6 +1892,7 @@ int flb_tail_file_remove_all(struct flb_tail_config *ctx)
 static int adjust_counters(struct flb_tail_config *ctx, struct flb_tail_file *file)
 {
     int ret;
+    int64_t size_delta;
     struct stat st;
 
     (void) ctx;
@@ -1873,13 +1903,15 @@ static int adjust_counters(struct flb_tail_config *ctx, struct flb_tail_file *fi
         return FLB_TAIL_ERROR;
     }
 
-    int64_t size_delta = st.st_size - file->size;
+    size_delta = st.st_size - file->size;
     if (size_delta != 0) {
         file->size = st.st_size;
     }
 
-    /* Check if the file was truncated by comparing current size with previous size */
-    if (size_delta < 0) {
+    /* Confirm a size/offset discrepancy through the raw read position. */
+    if (size_delta < 0 ||
+        (st.st_size < file->offset &&
+         flb_tail_file_read_offset_is_valid(file) != FLB_TRUE)) {
         if (flb_tail_file_reset_on_truncate(file, size_delta,
                                             "adjust_counters") == -1) {
             return FLB_TAIL_ERROR;
@@ -1914,6 +1946,10 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
 
     if (flb_input_buf_paused(ctx->ins) == FLB_TRUE) {
         return FLB_TAIL_BUSY;
+    }
+
+    if (file->read_retry_pending) {
+        return FLB_TAIL_RETRY;
     }
 
     file_buffer_capacity = (file->buf_size - file->buf_len) - 1;
@@ -2093,7 +2129,9 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
                                &file->buf_data[file->buf_len],
                                read_size);
 
-        stream_data_length = (size_t) raw_data_length;
+        if (raw_data_length > 0) {
+            stream_data_length = (size_t) raw_data_length;
+        }
     }
 
     if (stream_data_length > 0 || raw_data_length > 0) {
@@ -2142,7 +2180,17 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
         }
     }
     else {
-        /* error */
+        /* Preserve the buffer and offsets so transient failures can be retried. */
+        if (errno == EAGAIN || errno == EINTR
+#ifdef FLB_SYSTEM_WINDOWS
+            || errno == EACCES
+#endif
+           ) {
+            file->read_retry_pending = FLB_TRUE;
+            mk_list_add(&file->_retry_head, &ctx->files_retry);
+            return FLB_TAIL_RETRY;
+        }
+
         flb_errno();
         flb_plg_error(ctx->ins, "error reading %s", file->name);
         return FLB_TAIL_ERROR;

@@ -1,0 +1,42 @@
+fixture_version: 1
+signal: logs
+processor:
+  name: fts
+  packs:
+  - ../pack.json
+  recipe_version: 1
+  error_mode: drop
+  recipe:
+  - id: policy
+    use: org.fluentbit.observability/dedupe_log
+    with:
+      keys:
+      - root: body
+        path:
+        - id
+      ttl_ms: 60000
+  state_commit: local
+cases:
+- name: dedupe-log
+  input:
+  - body:
+      id: a
+      message: first
+  - body:
+      id: a
+      message: second
+  - body:
+      id: b
+      message: control
+  expected:
+    records:
+    - body:
+        id: a
+        message: first
+    - body:
+        id: b
+        message: control
+    outcomes:
+      kept: 2
+      dropped: 1
+      errors: 0

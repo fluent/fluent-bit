@@ -398,10 +398,11 @@ static inline int unpack_cfl_kvlist_depth(mpack_reader_t *reader,
         key_value = NULL;
     }
 
-    mpack_done_map(reader);
-
-    if (mpack_reader_error(reader) != mpack_ok) {
-        result = -9;
+    if (result == 0) {
+        mpack_done_map(reader);
+        if (mpack_reader_error(reader) != mpack_ok) {
+            result = -9;
+        }
     }
 
     if (result != 0) {
@@ -477,6 +478,7 @@ static inline int unpack_cfl_variant_string(mpack_reader_t *reader,
     }
 
     (*value)->type = CFL_VARIANT_STRING;
+    (*value)->size = value_length;
 
     return 0;
 }
@@ -528,6 +530,7 @@ static inline int unpack_cfl_variant_binary(mpack_reader_t *reader,
     }
 
     (*value)->type = CFL_VARIANT_BYTES;
+    (*value)->size = value_length;
 
     return 0;
 }

@@ -23,11 +23,14 @@
 #include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_log_event_encoder.h>
+#include <fluent-bit/flb_random.h>
+
 #include <string.h>
 
 #include "vivo.h"
 #include "vivo_http.h"
 #include "vivo_stream.h"
+#include "vivo_otlp.h"
 
 static msgpack_object *find_map_value(msgpack_object *map,
                                       const char *key, size_t key_len)
@@ -52,37 +55,22 @@ static msgpack_object *find_map_value(msgpack_object *map,
     return NULL;
 }
 
-/* Serialize a group opener as [METADATA, BODY] into the given buffer */
-static void pack_group(msgpack_sbuffer *sbuf, struct flb_log_event *event)
-{
-    msgpack_packer pck;
-
-    msgpack_sbuffer_clear(sbuf);
-    msgpack_packer_init(&pck, sbuf, msgpack_sbuffer_write);
-
-    msgpack_pack_array(&pck, 2);
-    msgpack_pack_object(&pck, *event->metadata);
-    msgpack_pack_object(&pck, *event->body);
-}
-
 static flb_sds_t format_logs(struct flb_input_instance *src_ins,
                              struct flb_event_chunk *event_chunk, struct flb_config *config)
 {
     int len;
-    int ret;
     int result;
-    int32_t record_type;
     char *name;
-    size_t off = 0;
     flb_sds_t out_js;
     flb_sds_t out_buf = NULL;
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
     msgpack_sbuffer group_sbuf;
-    msgpack_sbuffer cmp_sbuf;
-    msgpack_unpacked group_result;
-    int group_found = FLB_FALSE;
-    int in_group = FLB_FALSE;
+    msgpack_packer group_pck;
+    msgpack_unpacked saved_group;
+    msgpack_object nil = {.type = MSGPACK_OBJECT_NIL};
+    size_t group_offset = 0;
+    int group_saved = FLB_FALSE;
     int group_mismatch = FLB_FALSE;
     int is_otlp = FLB_FALSE;
     struct flb_log_event log_event;
@@ -105,32 +93,19 @@ static flb_sds_t format_logs(struct flb_input_instance *src_ins,
         return NULL;
     }
 
-    /*
-     * The decoder releases the group record as soon as it reads the group
-     * closer, so the group metadata and body cannot be referenced after the
-     * decoding loop. Read the group markers explicitly and keep a private
-     * copy of the group in 'group_sbuf' instead.
-     */
-    result = flb_log_event_decoder_read_groups(&log_decoder, FLB_TRUE);
-    if (result != 0) {
-        flb_log_event_decoder_destroy(&log_decoder);
-        return NULL;
-    }
-
     out_buf = flb_sds_create_size((event_chunk->size * 2) / 4);
     if (!out_buf) {
         flb_errno();
+        flb_log_event_decoder_destroy(&log_decoder);
         return NULL;
     }
 
     /* Create temporary msgpack buffer */
     msgpack_sbuffer_init(&tmp_sbuf);
     msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
-
-    /* Buffers for the group copy and for comparing further groups against it */
     msgpack_sbuffer_init(&group_sbuf);
-    msgpack_sbuffer_init(&cmp_sbuf);
-    msgpack_unpacked_init(&group_result);
+    msgpack_packer_init(&group_pck, &group_sbuf, msgpack_sbuffer_write);
+    msgpack_unpacked_init(&saved_group);
 
     /*
      * Here is an example of the packaging done for Logs
@@ -198,37 +173,30 @@ static flb_sds_t format_logs(struct flb_input_instance *src_ins,
                         &log_decoder,
                         &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
 
-        ret = flb_log_event_decoder_get_record_type(&log_event, &record_type);
-        if (ret != 0) {
-            continue;
-        }
-
-        if (record_type == FLB_LOG_EVENT_GROUP_START) {
-            /*
-             * Keep a copy of the first group; any further group with a
-             * different content means the chunk has mixed groups.
-             */
-            if (group_found == FLB_FALSE) {
-                pack_group(&group_sbuf, &log_event);
-                group_found = FLB_TRUE;
+        /* Decoder group storage is released at group boundaries. Keep an owned
+         * snapshot for the legacy single-group fields and compare by value. */
+        if (!group_saved) {
+            if (msgpack_pack_array(&group_pck, 2) != 0 ||
+                msgpack_pack_object(&group_pck, log_event.group_metadata ?
+                                     *log_event.group_metadata : nil) != 0 ||
+                msgpack_pack_object(&group_pck, log_event.group_attributes ?
+                                     *log_event.group_attributes : nil) != 0 ||
+                msgpack_unpack_next(&saved_group, group_sbuf.data, group_sbuf.size,
+                                     &group_offset) != MSGPACK_UNPACK_SUCCESS) {
+                goto format_error;
             }
-            else if (group_mismatch == FLB_FALSE) {
-                pack_group(&cmp_sbuf, &log_event);
-                if (cmp_sbuf.size != group_sbuf.size ||
-                    memcmp(cmp_sbuf.data, group_sbuf.data, group_sbuf.size) != 0) {
-                    group_mismatch = FLB_TRUE;
-                }
+            group_saved = FLB_TRUE;
+            if (saved_group.data.via.array.ptr[0].type != MSGPACK_OBJECT_NIL) {
+                group_metadata = &saved_group.data.via.array.ptr[0];
             }
-            in_group = FLB_TRUE;
-            continue;
+            if (saved_group.data.via.array.ptr[1].type != MSGPACK_OBJECT_NIL) {
+                group_attributes = &saved_group.data.via.array.ptr[1];
+            }
         }
-        else if (record_type == FLB_LOG_EVENT_GROUP_END) {
-            in_group = FLB_FALSE;
-            continue;
-        }
-
-        /* the chunk group only applies when every record belongs to a group */
-        if (in_group == FLB_FALSE) {
+        else if (!msgpack_object_equal(saved_group.data.via.array.ptr[0],
+                                        log_event.group_metadata ? *log_event.group_metadata : nil) ||
+                 !msgpack_object_equal(saved_group.data.via.array.ptr[1],
+                                        log_event.group_attributes ? *log_event.group_attributes : nil)) {
             group_mismatch = FLB_TRUE;
         }
 
@@ -248,19 +216,11 @@ static flb_sds_t format_logs(struct flb_input_instance *src_ins,
         msgpack_pack_object(&tmp_pck, *log_event.body);
     }
 
-    flb_mp_array_header_end(&mh);
-
-    /* Unpack our own copy of the group: [METADATA, BODY] */
-    if (group_found == FLB_TRUE && group_mismatch == FLB_FALSE) {
-        ret = msgpack_unpack_next(&group_result, group_sbuf.data,
-                                  group_sbuf.size, &off);
-        if (ret == MSGPACK_UNPACK_SUCCESS &&
-            group_result.data.type == MSGPACK_OBJECT_ARRAY &&
-            group_result.data.via.array.size == 2) {
-            group_metadata = &group_result.data.via.array.ptr[0];
-            group_attributes = &group_result.data.via.array.ptr[1];
-        }
+    if (flb_log_event_decoder_get_last_result(&log_decoder) != FLB_EVENT_DECODER_SUCCESS) {
+        goto format_error;
     }
+
+    flb_mp_array_header_end(&mh);
 
     if (group_mismatch == FLB_FALSE &&
         (group_metadata != NULL || group_attributes != NULL)) {
@@ -332,16 +292,48 @@ static flb_sds_t format_logs(struct flb_input_instance *src_ins,
         }
     }
 
+    /* Parallel to records: preserve exact group identity for every record, including
+     * mixed-resource chunks. The legacy single-group convenience fields remain. */
+    flb_mp_map_header_append(&root_map);
+    msgpack_pack_str(&tmp_pck, 13);
+    msgpack_pack_str_body(&tmp_pck, "record_groups", 13);
+    flb_mp_array_header_init(&mh, &tmp_pck);
+    flb_log_event_decoder_reset(&log_decoder, (char *) event_chunk->data, event_chunk->size);
+    while (flb_log_event_decoder_next(&log_decoder, &log_event) == FLB_EVENT_DECODER_SUCCESS) {
+        flb_mp_array_header_append(&mh);
+        msgpack_pack_map(&tmp_pck, 2);
+        msgpack_pack_str(&tmp_pck, 8);
+        msgpack_pack_str_body(&tmp_pck, "metadata", 8);
+        if (log_event.group_metadata) {
+            msgpack_pack_object(&tmp_pck, *log_event.group_metadata);
+        }
+        else {
+            msgpack_pack_nil(&tmp_pck);
+        }
+        msgpack_pack_str(&tmp_pck, 10);
+        msgpack_pack_str_body(&tmp_pck, "attributes", 10);
+        if (log_event.group_attributes) {
+            msgpack_pack_object(&tmp_pck, *log_event.group_attributes);
+        }
+        else {
+            msgpack_pack_nil(&tmp_pck);
+        }
+    }
+
+    if (flb_log_event_decoder_get_last_result(&log_decoder) != FLB_EVENT_DECODER_SUCCESS) {
+        goto format_error;
+    }
+
+    flb_mp_array_header_end(&mh);
     flb_mp_map_header_end(&root_map);
 
-    /* Release the group copy and the unpacker */
-    msgpack_unpacked_destroy(&group_result);
-    msgpack_sbuffer_destroy(&cmp_sbuf);
-    msgpack_sbuffer_destroy(&group_sbuf);
+    /* Release the unpacker and the independent legacy group snapshot. */
     flb_log_event_decoder_destroy(&log_decoder);
+    msgpack_unpacked_destroy(&saved_group);
+    msgpack_sbuffer_destroy(&group_sbuf);
 
     /* Convert the complete msgpack structure to JSON */
-    out_js = flb_msgpack_raw_to_json_sds(tmp_sbuf.data, tmp_sbuf.size,
+    out_js = vivo_json(tmp_sbuf.data, tmp_sbuf.size,
                                          config->json_escape_unicode);
 
     msgpack_sbuffer_destroy(&tmp_sbuf);
@@ -361,69 +353,224 @@ static flb_sds_t format_logs(struct flb_input_instance *src_ins,
     /* Replace out_buf with the complete JSON */
     flb_sds_destroy(out_buf);
     return out_js;
+
+format_error:
+    flb_log_event_decoder_destroy(&log_decoder);
+    msgpack_unpacked_destroy(&saved_group);
+    msgpack_sbuffer_destroy(&group_sbuf);
+    msgpack_sbuffer_destroy(&tmp_sbuf);
+    flb_sds_destroy(out_buf);
+    return NULL;
 }
 
-static int logs_event_chunk_append(struct vivo_exporter *ctx,
-                                   struct flb_input_instance *src_ins,
-                                   struct flb_event_chunk *event_chunk,
-                                   struct flb_config *config)
+static flb_sds_t format_metrics_traces(struct flb_event_chunk *event_chunk,
+                                        struct flb_config *config)
 {
-    size_t len;
+    size_t offset = 0;
+    size_t previous;
+    msgpack_unpacked unpacked;
     flb_sds_t json;
-    struct vivo_stream_entry *entry;
+    flb_sds_t part;
 
-    json = format_logs(src_ins, event_chunk, config);
+    json = flb_sds_create_size(event_chunk->size);
     if (!json) {
-        flb_plg_error(ctx->ins, "cannot convert logs chunk to JSON");
-        return -1;
+        return NULL;
     }
+    msgpack_unpacked_init(&unpacked);
+    while (offset < event_chunk->size) {
+        previous = offset;
+        if (msgpack_unpack_next(&unpacked, event_chunk->data, event_chunk->size,
+                               &offset) != MSGPACK_UNPACK_SUCCESS) {
+            goto conversion_error;
+        }
+        part = vivo_json((char *) event_chunk->data + previous,
+                         offset - previous, config->json_escape_unicode);
+        if (!part) {
+            goto conversion_error;
+        }
+        if (flb_sds_cat_safe(&json, part, flb_sds_len(part)) < 0) {
+            flb_sds_destroy(part);
+            goto conversion_error;
+        }
+        flb_sds_destroy(part);
+        if (flb_sds_cat_safe(&json, "\n", 1) < 0) {
+            goto conversion_error;
+        }
+    }
+    msgpack_unpacked_destroy(&unpacked);
+    return json;
 
-    /* append content to the stream */
-    len = flb_sds_len(json);
-    entry = vivo_stream_append(ctx->stream_logs, json, len);
-
+conversion_error:
+    msgpack_unpacked_destroy(&unpacked);
     flb_sds_destroy(json);
-
-    if (!entry) {
-        flb_plg_error(ctx->ins, "cannot append JSON log to stream");
-        return -1;
-    }
-
-    return 0;
+    return NULL;
 }
 
-static int metrics_traces_event_chunk_append(struct vivo_exporter *ctx,
-                                             struct vivo_stream *vs,
-                                             struct flb_event_chunk *event_chunk,
-                                             struct flb_config *config)
+/* Recreate group markers around records so both halves own complete groups. */
+static int split_logs(struct flb_event_chunk *chunk, flb_sds_t halves[2])
 {
-    size_t len;
-    flb_sds_t json;
-    struct vivo_stream_entry *entry;
+    struct flb_log_event_decoder decoder;
+    struct flb_log_event_encoder encoders[2];
+    struct flb_log_event_encoder *encoder;
+    struct flb_log_event event;
+    size_t count = 0;
+    size_t index = 0;
+    int ret = -1;
+    int side;
+    int initialized = 0;
 
-    /* Convert msgpack to readable JSON format */
-    json = flb_msgpack_raw_to_json_sds(event_chunk->data, event_chunk->size,
-                                       config->json_escape_unicode);
-    if (!json) {
-        flb_plg_error(ctx->ins, "cannot convert metrics chunk to JSON");
+    if (flb_log_event_decoder_init(&decoder, (char *) chunk->data, chunk->size) != 0) {
         return -1;
     }
-
-    flb_sds_cat_safe(&json, "\n", 1);
-
-    /* append content to the stream */
-    len = flb_sds_len(json);
-    entry = vivo_stream_append(vs, json, len);
-
-    flb_sds_destroy(json);
-
-    if (!entry) {
-        flb_plg_error(ctx->ins, "cannot append JSON log to stream");
-        return -1;
+    while (flb_log_event_decoder_next(&decoder, &event) == 0) {
+        count++;
     }
+    if (flb_log_event_decoder_get_last_result(&decoder) != 0) {
+        goto done;
+    }
+    if (count < 2) {
+        ret = -2;
+        goto done;
+    }
+    for (side = 0; side < 2; side++) {
+        if (flb_log_event_encoder_init(&encoders[side], FLB_LOG_EVENT_FORMAT_DEFAULT) != 0) {
+            goto done;
+        }
+        initialized++;
+    }
+    flb_log_event_decoder_reset(&decoder, (char *) chunk->data, chunk->size);
+    while (flb_log_event_decoder_next(&decoder, &event) == 0) {
+        encoder = &encoders[index++ < count / 2 ? 0 : 1];
+        if (event.group_metadata || event.group_attributes) {
+            if (flb_log_event_encoder_group_init(encoder) != 0 ||
+                (event.group_metadata &&
+                 flb_log_event_encoder_set_metadata_from_msgpack_object(
+                     encoder, event.group_metadata) != 0) ||
+                (event.group_attributes &&
+                 flb_log_event_encoder_set_body_from_msgpack_object(
+                     encoder, event.group_attributes) != 0) ||
+                flb_log_event_encoder_group_header_end(encoder) != 0) {
+                goto done;
+            }
+        }
+        if (flb_log_event_encoder_emit_raw_record(encoder, decoder.record_base,
+                                                  decoder.record_length) != 0) {
+            goto done;
+        }
+        if ((event.group_metadata || event.group_attributes) &&
+            flb_log_event_encoder_group_end(encoder) != 0) {
+            goto done;
+        }
+    }
+    if (flb_log_event_decoder_get_last_result(&decoder) != 0) {
+        goto done;
+    }
+    for (side = 0; side < 2; side++) {
+        halves[side] = flb_sds_create_len(encoders[side].output_buffer,
+                                        encoders[side].output_length);
+        if (!halves[side]) {
+            goto done;
+        }
+    }
+    ret = 0;
 
-    return 0;
+done:
+    for (side = 0; side < initialized; side++) {
+        flb_log_event_encoder_destroy(&encoders[side]);
+    }
+    flb_log_event_decoder_destroy(&decoder);
+    return ret;
 }
+
+/* Metrics and traces may contain concatenated independently encoded contexts. */
+static int split_contexts(struct flb_event_chunk *chunk, flb_sds_t halves[2])
+{
+    msgpack_unpacked unpacked;
+    size_t offset = 0;
+    size_t count = 0;
+    size_t index;
+    int ret = -1;
+
+    msgpack_unpacked_init(&unpacked);
+    while (offset < chunk->size) {
+        if (msgpack_unpack_next(&unpacked, chunk->data, chunk->size, &offset) !=
+            MSGPACK_UNPACK_SUCCESS) {
+            goto done;
+        }
+        count++;
+    }
+    if (count < 2) {
+        ret = -2;
+        goto done;
+    }
+    offset = 0;
+    for (index = 0; index < count / 2; index++) {
+        if (msgpack_unpack_next(&unpacked, chunk->data, chunk->size, &offset) !=
+            MSGPACK_UNPACK_SUCCESS) {
+            goto done;
+        }
+    }
+    halves[0] = flb_sds_create_len(chunk->data, offset);
+    halves[1] = flb_sds_create_len((char *) chunk->data + offset, chunk->size - offset);
+    if (halves[0] && halves[1]) {
+        ret = 0;
+    }
+
+done:
+    msgpack_unpacked_destroy(&unpacked);
+    return ret;
+}
+
+/* Bisect only oversized batches. No entry becomes visible until all parts succeed. */
+static int stage_chunk(struct vivo_stream *stream, struct flb_input_instance *source,
+                       struct flb_event_chunk *chunk, struct flb_config *config,
+                       struct mk_list *entries)
+{
+    flb_sds_t json;
+    flb_sds_t otlp;
+    flb_sds_t halves[2] = {NULL, NULL};
+    struct flb_event_chunk part;
+    struct vivo_stream_entry *entry;
+    int ret;
+    int side;
+
+    json = chunk->type == FLB_EVENT_TYPE_LOGS ? format_logs(source, chunk, config) :
+                                              format_metrics_traces(chunk, config);
+    if (!json) {
+        return -1;
+    }
+    otlp = vivo_otlp_chunk(source, chunk);
+    if (!otlp) {
+        flb_sds_destroy(json);
+        return -1;
+    }
+    if (vivo_stream_entry_fits(stream, flb_sds_len(json), flb_sds_len(otlp))) {
+        entry = vivo_stream_entry_create(stream, json, flb_sds_len(json), otlp);
+        flb_sds_destroy(json);
+        flb_sds_destroy(otlp);
+        if (!entry) {
+            return -1;
+        }
+        mk_list_add(&entry->_head, entries);
+        return 0;
+    }
+    flb_sds_destroy(json);
+    flb_sds_destroy(otlp);
+
+    ret = chunk->type == FLB_EVENT_TYPE_LOGS ? split_logs(chunk, halves) :
+                                             split_contexts(chunk, halves);
+    for (side = 0; ret == 0 && side < 2; side++) {
+        part = *chunk;
+        part.data = halves[side];
+        part.size = flb_sds_len(halves[side]);
+        ret = stage_chunk(stream, source, &part, config, entries);
+    }
+    flb_sds_destroy(halves[0]);
+    flb_sds_destroy(halves[1]);
+    return ret;
+}
+
+static int cb_vivo_exit(void *data, struct flb_config *config);
 
 static int cb_vivo_init(struct flb_output_instance *ins,
                         struct flb_config *config,
@@ -431,8 +578,10 @@ static int cb_vivo_init(struct flb_output_instance *ins,
 {
     int ret;
     struct vivo_exporter *ctx;
+    unsigned char generation[18];
+    size_t index;
 
-    flb_output_net_default("0.0.0.0", 2025 , ins);
+    flb_output_net_default("127.0.0.1", 2025, ins);
 
     ctx = flb_calloc(1, sizeof(struct vivo_exporter));
     if (!ctx) {
@@ -447,42 +596,68 @@ static int cb_vivo_init(struct flb_output_instance *ins,
     /* Load config map */
     ret = flb_output_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
-        return -1;
+        goto error;
+    }
+
+    if (ctx->stream_queue_size == 0 || ctx->empty_stream_on_read) {
+        flb_plg_error(ins, "stream_queue_size must be positive; empty_stream_on_read is unsupported");
+        goto error;
+    }
+    if (ins->http_server_config && ins->http_server_config->workers != 1) {
+        flb_plg_error(ins, "only one HTTP listener worker is supported");
+        goto error;
+    }
+
+    if (ctx->stream_page_size < 1024) {
+        flb_plg_error(ins, "stream_page_size must be at least 1024 bytes");
+        goto error;
+    }
+    if (flb_random_bytes(generation, sizeof(generation)) != 0) {
+        goto error;
+    }
+
+    for (index = 0; index < sizeof(generation); index++) {
+        snprintf(ctx->generation + index * 2, 3, "%02x", generation[index]);
     }
 
     /* Create Streams */
     ctx->stream_logs = vivo_stream_create(ctx);
     if (!ctx->stream_logs) {
-        return -1;
+        goto error;
     }
 
     ctx->stream_metrics = vivo_stream_create(ctx);
     if (!ctx->stream_metrics) {
-        return -1;
+        goto error;
     }
 
     ctx->stream_traces = vivo_stream_create(ctx);
     if (!ctx->stream_traces) {
-        return -1;
+        goto error;
     }
 
     /* HTTP Server context */
     ctx->http = vivo_http_server_create(ctx, config);
     if (!ctx->http) {
         flb_plg_error(ctx->ins, "could not initialize HTTP server, aborting");
-        return -1;
+        goto error;
     }
 
     /* Start HTTP Server */
     ret = vivo_http_server_start(ctx->http);
     if (ret == -1) {
-        return -1;
+        goto error;
     }
 
     flb_plg_info(ctx->ins, "listening iface=%s tcp_port=%d",
                  ins->host.name, ins->host.port);
 
     return 0;
+
+error:
+    cb_vivo_exit(ctx, config);
+    flb_output_set_context(ins, NULL);
+    return -1;
 }
 
 static void cb_vivo_flush(struct flb_event_chunk *event_chunk,
@@ -490,25 +665,44 @@ static void cb_vivo_flush(struct flb_event_chunk *event_chunk,
                           struct flb_input_instance *ins, void *out_context,
                           struct flb_config *config)
 {
-    int ret = -1;
+    int ret;
     struct vivo_exporter *ctx = out_context;
+    struct vivo_stream *stream;
+    struct mk_list entries;
 
-#ifdef FLB_HAVE_METRICS
-    if (event_chunk->type == FLB_EVENT_TYPE_METRICS) {
-        ret = metrics_traces_event_chunk_append(ctx, ctx->stream_metrics, event_chunk, config);
-    }
-#endif
     if (event_chunk->type == FLB_EVENT_TYPE_LOGS) {
-        ret = logs_event_chunk_append(ctx, ins, event_chunk, config);
+        stream = ctx->stream_logs;
+    }
+    else if (event_chunk->type == FLB_EVENT_TYPE_METRICS) {
+        stream = ctx->stream_metrics;
     }
     else if (event_chunk->type == FLB_EVENT_TYPE_TRACES) {
-        ret = metrics_traces_event_chunk_append(ctx, ctx->stream_traces, event_chunk, config);
+        stream = ctx->stream_traces;
+    }
+    else {
+        FLB_OUTPUT_RETURN(FLB_ERROR);
+    }
+
+    mk_list_init(&entries);
+    ret = stage_chunk(stream, ins, event_chunk, config, &entries);
+    if (ret == 0) {
+        vivo_stream_append_entries(stream, &entries);
+    }
+    else {
+        vivo_stream_entries_destroy(&entries);
+        if (ret == -2) {
+            vivo_stream_reject(stream);
+            flb_plg_error(ctx->ins, "single record/context exceeds stream queue/page limits");
+        }
     }
 
     if (ret == 0) {
         FLB_OUTPUT_RETURN(FLB_OK);
     }
 
+    if (ret == -1) {
+        FLB_OUTPUT_RETURN(FLB_RETRY);
+    }
     FLB_OUTPUT_RETURN(FLB_ERROR);
 }
 
@@ -539,8 +733,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_BOOL, "empty_stream_on_read", "off",
      0, FLB_TRUE, offsetof(struct vivo_exporter, empty_stream_on_read),
-     "If enabled, when an HTTP client consumes the data from a stream, the queue "
-     "content will be removed"
+     "Deprecated. Must be off: shared inspection streams cannot be consumed by reads."
     },
 
     {
@@ -554,6 +747,18 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "http_cors_allow_origin", NULL,
      0, FLB_TRUE, offsetof(struct vivo_exporter, http_cors_allow_origin),
      "Specify the value for the HTTP Access-Control-Allow-Origin header (CORS)"
+    },
+
+    {
+     FLB_CONFIG_MAP_SIZE, "stream_page_size", "1M",
+     0, FLB_TRUE, offsetof(struct vivo_exporter, stream_page_size),
+     "Maximum retained entry and response payload size in bytes."
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "compress", "on",
+     0, FLB_TRUE, offsetof(struct vivo_exporter, compress),
+     "Compress HTTP response bodies with gzip when accepted by the client."
     },
 
     /* EOF */

@@ -43,6 +43,11 @@
 #include <time.h>
 #include <fluent-bit/flb_compat.h>
 
+#define OAUTH2_JWKS_BUFFER_DEFAULT_SIZE 1000000
+#define OAUTH2_JWKS_BUFFER_LIMIT_SIZE   16000000
+#define OAUTH2_JWKS_BUFFER_OVERHEAD     2
+#define OAUTH2_JWKS_TIMEOUT_DEFAULT     30
+#define OAUTH2_JWKS_TIMEOUT_LIMIT       300
 
 struct flb_oauth2_jwks_key {
     flb_sds_t kid;
@@ -390,9 +395,8 @@ static int oauth2_jwt_parse_header(const char *json, size_t json_len,
     size_t i;
     size_t map_size;
     size_t key_len;
-    size_t val_len;
     const char *key_str;
-    const char *val_str;
+    flb_sds_t *field;
 
     /* Convert JSON to msgpack */
     ret = flb_pack_json(json, json_len, &mp_buf, &mp_size,
@@ -429,23 +433,41 @@ static int oauth2_jwt_parse_header(const char *json, size_t json_len,
             continue;
         }
 
-        if (v->type == MSGPACK_OBJECT_STR) {
-            key_len = k->via.str.size;
-            val_len = v->via.str.size;
-            key_str = (const char *) k->via.str.ptr;
-            val_str = (const char *) v->via.str.ptr;
+        key_len = k->via.str.size;
+        key_str = k->via.str.ptr;
 
-            if (key_len == 3 && strncmp(key_str, "kid", 3) == 0) {
-                claims->kid = flb_sds_create_len(val_str, val_len);
-            }
-            else if (key_len == 3 && strncmp(key_str, "alg", 3) == 0) {
-                claims->alg = flb_sds_create_len(val_str, val_len);
-            }
+        if (key_len == 3 && strncmp(key_str, "kid", 3) == 0) {
+            field = &claims->kid;
+        }
+        else if (key_len == 3 && strncmp(key_str, "alg", 3) == 0) {
+            field = &claims->alg;
+        }
+        else {
+            continue;
+        }
+
+        /* Reject duplicates before overwriting an owned value. */
+        if (*field || v->type != MSGPACK_OBJECT_STR) {
+            ret = FLB_OAUTH2_JWT_ERR_JSON_HEADER;
+            goto cleanup;
+        }
+
+        *field = flb_sds_create_len(v->via.str.ptr, v->via.str.size);
+        if (!*field) {
+            ret = FLB_OAUTH2_JWT_ERR_INVALID_ARGUMENT;
+            goto cleanup;
         }
     }
 
+    ret = FLB_OAUTH2_JWT_OK;
+
+cleanup:
     flb_free(mp_buf);
     msgpack_unpacked_destroy(&result);
+
+    if (ret != FLB_OAUTH2_JWT_OK) {
+        return ret;
+    }
 
     if (!claims->kid) {
         return FLB_OAUTH2_JWT_ERR_MISSING_KID;
@@ -727,6 +749,7 @@ static int oauth2_jwks_parse_key(msgpack_object *key_obj,
     flb_sds_t kid = NULL;
     flb_sds_t n = NULL;
     flb_sds_t e = NULL;
+    flb_sds_t *field;
     msgpack_object *k;
     msgpack_object *v;
     size_t i;
@@ -764,58 +787,44 @@ static int oauth2_jwks_parse_key(msgpack_object *key_obj,
                 }
                 else {
                     /* Not an RSA key */
-                    if (kid) {
-                        flb_sds_destroy(kid);
-                    }
-                    if (n) {
-                        flb_sds_destroy(n);
-                    }
-                    if (e) {
-                        flb_sds_destroy(e);
-                    }
-                    return -1;
+                    goto error;
                 }
             }
+            continue;
         }
         else if (key_len == 3 && strncmp(key_str, "kid", 3) == 0) {
-            if (v->type == MSGPACK_OBJECT_STR) {
-                kid = flb_sds_create_len((const char *) v->via.str.ptr,
-                                         v->via.str.size);
-            }
+            field = &kid;
         }
         else if (key_len == 1 && strncmp(key_str, "n", 1) == 0) {
-            if (v->type == MSGPACK_OBJECT_STR) {
-                n = flb_sds_create_len((const char *) v->via.str.ptr, v->via.str.size);
-            }
+            field = &n;
         }
         else if (key_len == 1 && strncmp(key_str, "e", 1) == 0) {
-            if (v->type == MSGPACK_OBJECT_STR) {
-                e = flb_sds_create_len((const char *) v->via.str.ptr, v->via.str.size);
-            }
+            field = &e;
         }
-        /* Ignore other fields (e.g. x5c array) - msgpack handles nested structures automatically */
+        else {
+            /* Ignore other fields (e.g. x5c arrays). */
+            continue;
+        }
+
+        /* Reject duplicates and invalid types without losing prior allocations. */
+        if (*field || v->type != MSGPACK_OBJECT_STR) {
+            goto error;
+        }
+
+        *field = flb_sds_create_len(v->via.str.ptr, v->via.str.size);
+        if (!*field) {
+            goto error;
+        }
     }
 
     if (!kid || !n || !e) {
-        if (kid) {
-            flb_sds_destroy(kid);
-        }
-        if (n) {
-            flb_sds_destroy(n);
-        }
-        if (e) {
-            flb_sds_destroy(e);
-        }
-        return -1;
+        goto error;
     }
 
     key = flb_calloc(1, sizeof(struct flb_oauth2_jwks_key));
     if (!key) {
         flb_errno();
-        flb_sds_destroy(kid);
-        flb_sds_destroy(n);
-        flb_sds_destroy(e);
-        return -1;
+        goto error;
     }
 
     key->kid = kid;
@@ -825,6 +834,12 @@ static int oauth2_jwks_parse_key(msgpack_object *key_obj,
 
     *key_out = key;
     return 0;
+
+error:
+    flb_sds_destroy(kid);
+    flb_sds_destroy(n);
+    flb_sds_destroy(e);
+    return -1;
 }
 
 static int oauth2_jwks_parse_json(flb_sds_t jwks_json, struct flb_oauth2_jwks_cache *cache)
@@ -985,6 +1000,7 @@ static int oauth2_jwks_fetch_keys(struct flb_oauth2_jwt_ctx *ctx)
     int ret_code = -1;
     int port;
     size_t b_sent;
+    size_t response_buffer_size;
     char *protocol = NULL;
     char *host = NULL;
     char *port_str = NULL;
@@ -1070,9 +1086,34 @@ static int oauth2_jwks_fetch_keys(struct flb_oauth2_jwt_ctx *ctx)
         goto cleanup;
     }
 
+    /* The HTTP client needs a terminator and one readable byte of headroom. */
+    response_buffer_size = ctx->cfg.jwks_buffer_max_size + OAUTH2_JWKS_BUFFER_OVERHEAD;
+    ret = flb_http_buffer_size(c, response_buffer_size);
+    if (ret != 0) {
+        flb_error("[oauth2_jwt] failed to set JWKS HTTP response buffer limit");
+        goto cleanup;
+    }
+
+    flb_http_set_response_timeout(c, ctx->cfg.jwks_response_timeout);
+
     ret = flb_http_do(c, &b_sent);
     if (ret != 0) {
-        flb_error("[oauth2_jwt] HTTP request failed");
+        if (c->resp.data_size == response_buffer_size &&
+            c->resp.data_len >= ctx->cfg.jwks_buffer_max_size) {
+            flb_error("[oauth2_jwt] JWKS HTTP response exceeded "
+                      "oauth2.jwks_buffer_max_size=%zu bytes (headers and body)",
+                      ctx->cfg.jwks_buffer_max_size);
+        }
+        else {
+            flb_error("[oauth2_jwt] HTTP request failed");
+        }
+        goto cleanup;
+    }
+
+    if (c->resp.data_len > ctx->cfg.jwks_buffer_max_size) {
+        flb_error("[oauth2_jwt] JWKS HTTP response exceeded "
+                  "oauth2.jwks_buffer_max_size=%zu bytes (headers and body)",
+                  ctx->cfg.jwks_buffer_max_size);
         goto cleanup;
     }
 
@@ -1268,6 +1309,23 @@ struct flb_oauth2_jwt_ctx *flb_oauth2_jwt_context_create(struct flb_config *conf
         /* Initialize with defaults when cfg is NULL */
         memset(&ctx->cfg, 0, sizeof(struct flb_oauth2_jwt_cfg));
         ctx->cfg.jwks_refresh_interval = 300; /* Default from config map */
+        ctx->cfg.jwks_buffer_max_size = OAUTH2_JWKS_BUFFER_DEFAULT_SIZE;
+        ctx->cfg.jwks_response_timeout = OAUTH2_JWKS_TIMEOUT_DEFAULT;
+    }
+
+    if (ctx->cfg.jwks_buffer_max_size < FLB_HTTP_DATA_SIZE_MAX ||
+        ctx->cfg.jwks_buffer_max_size > OAUTH2_JWKS_BUFFER_LIMIT_SIZE) {
+        flb_error("[oauth2_jwt] oauth2.jwks_buffer_max_size must be between "
+                  "4096 bytes and 16M");
+        flb_free(ctx);
+        return NULL;
+    }
+
+    if (ctx->cfg.jwks_response_timeout <= 0 ||
+        ctx->cfg.jwks_response_timeout > OAUTH2_JWKS_TIMEOUT_LIMIT) {
+        flb_error("[oauth2_jwt] oauth2.jwks_response_timeout must be between 1s and 300s");
+        flb_free(ctx);
+        return NULL;
     }
 
     if (oauth2_jwks_cache_init(&ctx->jwks_cache,
@@ -1529,6 +1587,16 @@ static struct flb_config_map oauth2_jwt_config_map[] = {
      FLB_CONFIG_MAP_INT, "oauth2.jwks_refresh_interval", "300",
      0, FLB_TRUE, offsetof(struct flb_oauth2_jwt_cfg, jwks_refresh_interval),
      "JWKS cache refresh interval in seconds for OAuth2 JWT validation"
+    },
+    {
+     FLB_CONFIG_MAP_SIZE, "oauth2.jwks_buffer_max_size", "1M",
+     0, FLB_TRUE, offsetof(struct flb_oauth2_jwt_cfg, jwks_buffer_max_size),
+     "Maximum JWKS HTTP response size, including headers and body (4096 bytes to 16M)"
+    },
+    {
+     FLB_CONFIG_MAP_TIME, "oauth2.jwks_response_timeout", "30s",
+     0, FLB_TRUE, offsetof(struct flb_oauth2_jwt_cfg, jwks_response_timeout),
+     "Maximum total time to receive a JWKS HTTP response (1s to 300s)"
     },
 
     /* EOF */

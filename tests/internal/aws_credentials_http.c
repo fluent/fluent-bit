@@ -10,14 +10,29 @@
 
 #include <monkey/mk_core.h>
 #include <string.h>
+#ifndef FLB_SYSTEM_WINDOWS
 #include <unistd.h>
+#endif
 
 #include "flb_tests_internal.h"
 
 #include "../include/aws_client_mock.h"
 #include "../include/aws_client_mock.c"
 
-#include "aws_credentials_test_internal.h"
+#define AWS_TEST_DATA_PATH(FILE_PATH) FLB_TESTS_DATA_PATH "data/aws_credentials/" FILE_PATH
+
+#ifdef FLB_SYSTEM_WINDOWS
+static int flb_test_setenv(const char *name, const char *value, int overwrite)
+{
+    if (overwrite == 0 && getenv(name) != NULL) {
+        return 0;
+    }
+
+    return _putenv_s(name, value);
+}
+#else
+#define flb_test_setenv(name, value, overwrite) setenv(name, value, overwrite)
+#endif
 
 #define ACCESS_KEY_HTTP "http_akid"
 #define SECRET_KEY_HTTP "http_skid"
@@ -25,7 +40,7 @@
 
 #define HTTP_CREDENTIALS_RESPONSE "{\n\
     \"AccessKeyId\": \"http_akid\",\n\
-    \"Expiration\": \"2025-10-24T23:00:23Z\",\n\
+    \"Expiration\": \"2099-10-24T23:00:23Z\",\n\
     \"RoleArn\": \"TASK_ROLE_ARN\",\n\
     \"SecretAccessKey\": \"http_skid\",\n\
     \"Token\": \"http_token\"\n\
@@ -186,6 +201,8 @@ static void test_http_provider()
     int ret;
     struct flb_config *config;
 
+    flb_test_setenv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "/happy-case", 1);
+
     g_request_count = 0;
 
     config = flb_config_init();
@@ -196,11 +213,7 @@ static void test_http_provider()
 
     provider = flb_http_provider_create(config, generator_in_test());
 
-    if (!provider) {
-        flb_errno();
-        flb_config_exit(config);
-        return;
-    }
+    TEST_ASSERT(provider != NULL);
 
     /* repeated calls to get credentials should return the same set */
     creds = provider->provider_vtable->get_credentials(provider);
@@ -249,6 +262,8 @@ static void test_http_provider_error_case()
     int ret;
     struct flb_config *config;
 
+    flb_test_setenv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "/error-case", 1);
+
     g_request_count = 0;
 
     config = flb_config_init();
@@ -258,11 +273,7 @@ static void test_http_provider_error_case()
     }
 
     provider = flb_http_provider_create(config, generator_in_test());
-    if (!provider) {
-        flb_errno();
-        flb_config_exit(config);
-        return;
-    }
+    TEST_ASSERT(provider != NULL);
 
     /* get_credentials will fail */
     creds = provider->provider_vtable->get_credentials(provider);
@@ -294,6 +305,8 @@ static void test_http_provider_malformed_response()
     int ret;
     struct flb_config *config;
 
+    flb_test_setenv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "/malformed", 1);
+
     g_request_count = 0;
 
     config = flb_config_init();
@@ -306,11 +319,7 @@ static void test_http_provider_malformed_response()
 
     provider = flb_http_provider_create(config, generator_in_test());
 
-    if (!provider) {
-        flb_errno();
-        flb_config_exit(config);
-        return;
-    }
+    TEST_ASSERT(provider != NULL);
 
     /* get_credentials will fail */
     creds = provider->provider_vtable->get_credentials(provider);
@@ -377,7 +386,7 @@ static void test_http_provider_ecs_case()
     struct flb_config *config;
     int ret;
 
-    setenv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "/iam_credentials/pod1", 1);
+    flb_test_setenv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "/iam_credentials/pod1", 1);
 
     setup_test(FLB_AWS_CLIENT_MOCK(
         response(
@@ -388,7 +397,7 @@ static void test_http_provider_ecs_case()
             set(PAYLOAD, "{\n  \"Code\" : \"Success\",\n  \"LastUpdated\" : \"2021-09-16T18:29:09Z\",\n"
                 "  \"Type\" : \"AWS-HMAC\",\n  \"AccessKeyId\" : \"XACCESSEKSXXX\",\n  \"SecretAccessKey\""
                 " : \"XSECRETEKSXXXXXXXXXXXXXX\",\n  \"Token\" : \"XTOKENEKSXXXXXXXXXXXXXXX==\",\n"
-                "  \"Expiration\" : \"3021-09-17T00:41:00Z\"\n}"),
+                "  \"Expiration\" : \"2099-09-17T00:41:00Z\"\n}"),
             set(PAYLOAD_SIZE, 257)
         ),
         response(
@@ -398,7 +407,7 @@ static void test_http_provider_ecs_case()
             set(PAYLOAD, "{\n  \"Code\" : \"Success\",\n  \"LastUpdated\" : \"2021-09-16T18:29:09Z\",\n"
                 "  \"Type\" : \"AWS-HMAC\",\n  \"AccessKeyId\" : \"YACCESSEKSXXX\",\n  \"SecretAccessKey\""
                 " : \"YSECRETEKSXXXXXXXXXXXXXX\",\n  \"Token\" : \"YTOKENEKSXXXXXXXXXXXXXXX==\",\n"
-                "  \"Expiration\" : \"3021-09-17T00:41:00Z\"\n}"), // Expires Year 3021
+                "  \"Expiration\" : \"2099-09-17T00:41:00Z\"\n}"), /* Expires in 2099. */
             set(PAYLOAD_SIZE, 257)
         )
     ), &provider, &config);
@@ -449,8 +458,8 @@ static void test_http_provider_eks_with_token()
     struct flb_config *config;
     int ret;
 
-    setenv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "/iam_credentials/pod1", 1);
-    setenv("AWS_CONTAINER_AUTHORIZATION_TOKEN", "password", 1);
+    flb_test_setenv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "/iam_credentials/pod1", 1);
+    flb_test_setenv("AWS_CONTAINER_AUTHORIZATION_TOKEN", "password", 1);
 
     setup_test(FLB_AWS_CLIENT_MOCK(
         response(
@@ -461,7 +470,7 @@ static void test_http_provider_eks_with_token()
             set(PAYLOAD, "{\n  \"Code\" : \"Success\",\n  \"LastUpdated\" : \"2021-09-16T18:29:09Z\",\n"
                 "  \"Type\" : \"AWS-HMAC\",\n  \"AccessKeyId\" : \"XACCESSEKSXXX\",\n  \"SecretAccessKey\""
                 " : \"XSECRETEKSXXXXXXXXXXXXXX\",\n  \"Token\" : \"XTOKENEKSXXXXXXXXXXXXXXX==\",\n"
-                "  \"Expiration\" : \"3021-09-17T00:41:00Z\"\n}"),
+                "  \"Expiration\" : \"2099-09-17T00:41:00Z\"\n}"),
             set(PAYLOAD_SIZE, 257)
         ),
         response(
@@ -472,7 +481,7 @@ static void test_http_provider_eks_with_token()
             set(PAYLOAD, "{\n  \"Code\" : \"Success\",\n  \"LastUpdated\" : \"2021-09-16T18:29:09Z\",\n"
                 "  \"Type\" : \"AWS-HMAC\",\n  \"AccessKeyId\" : \"YACCESSEKSXXX\",\n  \"SecretAccessKey\""
                 " : \"YSECRETEKSXXXXXXXXXXXXXX\",\n  \"Token\" : \"YTOKENEKSXXXXXXXXXXXXXXX==\",\n"
-                "  \"Expiration\" : \"3021-09-17T00:41:00Z\"\n}"),
+                "  \"Expiration\" : \"2099-09-17T00:41:00Z\"\n}"),
             set(PAYLOAD_SIZE, 257)
         )
     ), &provider, &config);
@@ -524,8 +533,8 @@ static void test_http_provider_eks_with_token_file()
     int ret;
 
     /* tests validation of valid non-default  local loopback IP */
-    setenv("AWS_CONTAINER_CREDENTIALS_FULL_URI", "http://127.0.0.7:80/iam_credentials/pod1", 1);
-    setenv("AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE", TEST_AUTHORIZATION_TOKEN_FILE, 1);
+    flb_test_setenv("AWS_CONTAINER_CREDENTIALS_FULL_URI", "http://127.0.0.7:80/iam_credentials/pod1", 1);
+    flb_test_setenv("AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE", TEST_AUTHORIZATION_TOKEN_FILE, 1);
 
     setup_test(FLB_AWS_CLIENT_MOCK(
         response(
@@ -536,7 +545,7 @@ static void test_http_provider_eks_with_token_file()
             set(PAYLOAD, "{\n  \"Code\" : \"Success\",\n  \"LastUpdated\" : \"2021-09-16T18:29:09Z\",\n"
                 "  \"Type\" : \"AWS-HMAC\",\n  \"AccessKeyId\" : \"XACCESSEKSXXX\",\n  \"SecretAccessKey\""
                 " : \"XSECRETEKSXXXXXXXXXXXXXX\",\n  \"Token\" : \"XTOKENEKSXXXXXXXXXXXXXXX==\",\n"
-                "  \"Expiration\" : \"3021-09-17T00:41:00Z\"\n}"),
+                "  \"Expiration\" : \"2099-09-17T00:41:00Z\"\n}"),
             set(PAYLOAD_SIZE, 257)
         ),
         response(
@@ -547,7 +556,7 @@ static void test_http_provider_eks_with_token_file()
             set(PAYLOAD, "{\n  \"Code\" : \"Success\",\n  \"LastUpdated\" : \"2021-09-16T18:29:09Z\",\n"
                 "  \"Type\" : \"AWS-HMAC\",\n  \"AccessKeyId\" : \"YACCESSEKSXXX\",\n  \"SecretAccessKey\""
                 " : \"YSECRETEKSXXXXXXXXXXXXXX\",\n  \"Token\" : \"YTOKENEKSXXXXXXXXXXXXXXX==\",\n"
-                "  \"Expiration\" : \"3021-09-17T00:41:00Z\"\n}"),
+                "  \"Expiration\" : \"2099-09-17T00:41:00Z\"\n}"),
             set(PAYLOAD_SIZE, 257)
         )
     ), &provider, &config);
@@ -599,8 +608,8 @@ static void test_http_provider_https_endpoint()
     struct flb_config *config;
     int ret;
 
-    setenv("AWS_CONTAINER_CREDENTIALS_FULL_URI", "https://customers-vpc-credential-vending-server/iam_credentials/pod1", 1);
-    setenv("AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE", TEST_AUTHORIZATION_TOKEN_FILE, 1);
+    flb_test_setenv("AWS_CONTAINER_CREDENTIALS_FULL_URI", "https://customers-vpc-credential-vending-server/iam_credentials/pod1", 1);
+    flb_test_setenv("AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE", TEST_AUTHORIZATION_TOKEN_FILE, 1);
 
     setup_test(FLB_AWS_CLIENT_MOCK(
         response(
@@ -611,7 +620,7 @@ static void test_http_provider_https_endpoint()
             set(PAYLOAD, "{\n  \"Code\" : \"Success\",\n  \"LastUpdated\" : \"2021-09-16T18:29:09Z\",\n"
                 "  \"Type\" : \"AWS-HMAC\",\n  \"AccessKeyId\" : \"XACCESSEKSXXX\",\n  \"SecretAccessKey\""
                 " : \"XSECRETEKSXXXXXXXXXXXXXX\",\n  \"Token\" : \"XTOKENEKSXXXXXXXXXXXXXXX==\",\n"
-                "  \"Expiration\" : \"3021-09-17T00:41:00Z\"\n}"),
+                "  \"Expiration\" : \"2099-09-17T00:41:00Z\"\n}"),
             set(PAYLOAD_SIZE, 257)
         ),
         response(
@@ -622,7 +631,7 @@ static void test_http_provider_https_endpoint()
             set(PAYLOAD, "{\n  \"Code\" : \"Success\",\n  \"LastUpdated\" : \"2021-09-16T18:29:09Z\",\n"
                 "  \"Type\" : \"AWS-HMAC\",\n  \"AccessKeyId\" : \"YACCESSEKSXXX\",\n  \"SecretAccessKey\""
                 " : \"YSECRETEKSXXXXXXXXXXXXXX\",\n  \"Token\" : \"YTOKENEKSXXXXXXXXXXXXXXX==\",\n"
-                "  \"Expiration\" : \"3021-09-17T00:41:00Z\"\n}"),
+                "  \"Expiration\" : \"2099-09-17T00:41:00Z\"\n}"),
             set(PAYLOAD_SIZE, 257)
         )
     ), &provider, &config);
@@ -673,8 +682,8 @@ static void test_http_provider_server_failure()
     struct flb_config *config;
     int ret;
 
-    setenv("AWS_CONTAINER_CREDENTIALS_FULL_URI", "https://customers-vpc-credential-vending-server/iam_credentials/pod1", 1);
-    setenv("AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE", TEST_AUTHORIZATION_TOKEN_FILE, 1);
+    flb_test_setenv("AWS_CONTAINER_CREDENTIALS_FULL_URI", "https://customers-vpc-credential-vending-server/iam_credentials/pod1", 1);
+    flb_test_setenv("AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE", TEST_AUTHORIZATION_TOKEN_FILE, 1);
 
     setup_test(FLB_AWS_CLIENT_MOCK(
         response(
@@ -716,8 +725,8 @@ static void test_http_validator_invalid_host()
     struct flb_aws_provider *provider;
     struct flb_config *config;
 
-    setenv("AWS_CONTAINER_CREDENTIALS_FULL_URI", "http://104.156.107.142:80/iam_credentials/pod1", 1);
-    setenv("AWS_CONTAINER_AUTHORIZATION_TOKEN", "password", 1);
+    flb_test_setenv("AWS_CONTAINER_CREDENTIALS_FULL_URI", "http://104.156.107.142:80/iam_credentials/pod1", 1);
+    flb_test_setenv("AWS_CONTAINER_AUTHORIZATION_TOKEN", "password", 1);
 
     flb_aws_client_mock_configure_generator(NULL);
 
@@ -733,13 +742,80 @@ static void test_http_validator_invalid_host()
     flb_free(config);
 }
 
+static void test_http_validator_rejects_host_lookalikes()
+{
+    const char *uris[] = {
+        "http://127.attacker.example/credentials",
+        "http://127.1.attacker.example/credentials",
+        "http://169.254.170.2.attacker.example/credentials",
+        "http://169.254.170.23.attacker.example/credentials",
+        "http://localhost.attacker.example/2016-11-01/credentialprovider/",
+        "http://169.254.170.20/credentials",
+        "http://[::1:2]/credentials",
+        "http://[fd00:ec2::23:1]/credentials",
+        "http://[::ffff:127.0.0.1]/credentials",
+        "http://[2001:db8:fe80::1]/credentials",
+        "httpx://127.0.0.1/credentials",
+        NULL
+    };
+    struct flb_aws_provider *provider;
+    struct flb_config *config;
+    int index;
+
+    flb_aws_client_mock_configure_generator(NULL);
+
+    config = flb_calloc(1, sizeof(struct flb_config));
+    TEST_ASSERT(config != NULL);
+    mk_list_init(&config->upstreams);
+
+    for (index = 0; uris[index] != NULL; index++) {
+        flb_test_setenv("AWS_CONTAINER_CREDENTIALS_FULL_URI", uris[index], 1);
+        provider = flb_http_provider_create(config, flb_aws_client_get_mock_generator());
+        TEST_CHECK(provider == NULL);
+        if (provider != NULL) {
+            flb_aws_provider_destroy(provider);
+        }
+    }
+
+    flb_aws_client_mock_destroy_generator();
+    flb_free(config);
+}
+
+static void test_http_validator_accepts_allowed_addresses()
+{
+    const char *uris[] = {
+        "http://127.0.0.7/credentials",
+        "http://169.254.170.2/credentials",
+        "http://169.254.170.23/credentials",
+        "http://[::1]/credentials",
+        "http://[fd00:ec2::23]/credentials",
+        "http://[fe80::1]/credentials",
+        NULL
+    };
+    struct flb_aws_provider *provider;
+    struct flb_config *config;
+    int index;
+
+    config = flb_config_init();
+    TEST_ASSERT(config != NULL);
+
+    for (index = 0; uris[index] != NULL; index++) {
+        flb_test_setenv("AWS_CONTAINER_CREDENTIALS_FULL_URI", uris[index], 1);
+        provider = flb_http_provider_create(config, generator_in_test());
+        TEST_ASSERT(provider != NULL);
+        flb_aws_provider_destroy(provider);
+    }
+
+    flb_config_exit(config);
+}
+
 static void test_http_validator_invalid_port()
 {
     struct flb_aws_provider *provider;
     struct flb_config *config;
 
-    setenv("AWS_CONTAINER_CREDENTIALS_FULL_URI", "http://104.156.107.142:AA/iam_credentials/pod1", 1);
-    setenv("AWS_CONTAINER_AUTHORIZATION_TOKEN", "password", 1);
+    flb_test_setenv("AWS_CONTAINER_CREDENTIALS_FULL_URI", "http://104.156.107.142:AA/iam_credentials/pod1", 1);
+    flb_test_setenv("AWS_CONTAINER_AUTHORIZATION_TOKEN", "password", 1);
 
     flb_aws_client_mock_configure_generator(NULL);
 
@@ -760,12 +836,13 @@ static void test_http_validator_invalid_port()
 static void test_http_validator_greengrass_valid()
 {
     struct flb_aws_provider *provider;
+    struct flb_aws_provider_http *implementation;
     struct flb_aws_credentials *creds;
     struct flb_config *config;
 
     /* Test valid Greengrass URL with localhost and correct path */
-    setenv("AWS_CONTAINER_CREDENTIALS_FULL_URI", "http://localhost:8080/2016-11-01/credentialprovider/", 1);
-    setenv("AWS_CONTAINER_AUTHORIZATION_TOKEN", "greengrass-token", 1);
+    flb_test_setenv("AWS_CONTAINER_CREDENTIALS_FULL_URI", "http://localhost:8080/2016-11-01/credentialprovider/", 1);
+    flb_test_setenv("AWS_CONTAINER_AUTHORIZATION_TOKEN", "greengrass-token", 1);
 
     setup_test(FLB_AWS_CLIENT_MOCK(
         response(
@@ -776,10 +853,13 @@ static void test_http_validator_greengrass_valid()
             set(PAYLOAD, "{\n  \"Code\" : \"Success\",\n  \"LastUpdated\" : \"2021-09-16T18:29:09Z\",\n"
                 "  \"Type\" : \"AWS-HMAC\",\n  \"AccessKeyId\" : \"GREENGRASSACCESSKEY\",\n  \"SecretAccessKey\""
                 " : \"GREENGRASSSECRETKEY\",\n  \"Token\" : \"GREENGRASSTOKEN\",\n"
-                "  \"Expiration\" : \"3021-09-17T00:41:00Z\"\n}"),
+                "  \"Expiration\" : \"2099-09-17T00:41:00Z\"\n}"),
             set(PAYLOAD_SIZE, 257)
         )
     ), &provider, &config);
+
+    implementation = provider->implementation;
+    TEST_CHECK(strcmp(implementation->host, "127.0.0.1") == 0);
 
     flb_time_msleep(1000);
 
@@ -804,8 +884,8 @@ static void test_http_validator_greengrass_invalid_host()
     struct flb_config *config;
 
     /* Test invalid Greengrass URL - correct path but wrong host */
-    setenv("AWS_CONTAINER_CREDENTIALS_FULL_URI", "http://example.com:8080/2016-11-01/credentialprovider/", 1);
-    setenv("AWS_CONTAINER_AUTHORIZATION_TOKEN", "greengrass-token", 1);
+    flb_test_setenv("AWS_CONTAINER_CREDENTIALS_FULL_URI", "http://example.com:8080/2016-11-01/credentialprovider/", 1);
+    flb_test_setenv("AWS_CONTAINER_AUTHORIZATION_TOKEN", "greengrass-token", 1);
 
     flb_aws_client_mock_configure_generator(NULL);
 
@@ -827,8 +907,8 @@ static void test_http_validator_greengrass_invalid_path()
     struct flb_config *config;
 
     /* Test invalid Greengrass URL - localhost but wrong path */
-    setenv("AWS_CONTAINER_CREDENTIALS_FULL_URI", "http://localhost:8080/invalid/path", 1);
-    setenv("AWS_CONTAINER_AUTHORIZATION_TOKEN", "greengrass-token", 1);
+    flb_test_setenv("AWS_CONTAINER_CREDENTIALS_FULL_URI", "http://localhost:8080/invalid/path", 1);
+    flb_test_setenv("AWS_CONTAINER_AUTHORIZATION_TOKEN", "greengrass-token", 1);
 
     flb_aws_client_mock_configure_generator(NULL);
 
@@ -850,8 +930,8 @@ static void test_http_validator_greengrass_invalid_path_prefix()
     struct flb_config *config;
 
     /* Test invalid Greengrass URL - localhost but path has Greengrass pattern in middle, not at start */
-    setenv("AWS_CONTAINER_CREDENTIALS_FULL_URI", "http://localhost:8080/prefix/2016-11-01/credentialprovider/", 1);
-    setenv("AWS_CONTAINER_AUTHORIZATION_TOKEN", "greengrass-token", 1);
+    flb_test_setenv("AWS_CONTAINER_CREDENTIALS_FULL_URI", "http://localhost:8080/prefix/2016-11-01/credentialprovider/", 1);
+    flb_test_setenv("AWS_CONTAINER_AUTHORIZATION_TOKEN", "greengrass-token", 1);
 
     flb_aws_client_mock_configure_generator(NULL);
 
@@ -916,7 +996,30 @@ static void test_http_provider_upstream_set_keeps_use_tls()
     unsetenv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI");
 }
 
+static void test_http_mock_optional_values()
+{
+    struct flb_aws_client_mock_request_chain *chain;
+
+    TEST_CHECK(FLB_AWS_CLIENT_MOCK_COUNT64() == 0);
+    TEST_CHECK(FLB_AWS_CLIENT_MOCK_COUNT64("one") == 1);
+    TEST_CHECK(FLB_AWS_CLIENT_MOCK_COUNT64("one", "two") == 2);
+
+    chain = FLB_AWS_CLIENT_MOCK(
+        response(expect(METHOD, FLB_HTTP_GET), set(STATUS, 200)),
+        response(expect(HEADER, "Authorization", "test-token"))
+    );
+
+    TEST_CHECK(chain->length == 2);
+    TEST_CHECK(chain->responses[0].length == 2);
+    TEST_CHECK(chain->responses[1].length == 1);
+    TEST_CHECK(chain->responses[0].config_parameters[0].config_value_2 == NULL);
+    TEST_CHECK(chain->responses[0].config_parameters[1].config_value_2 == NULL);
+    TEST_CHECK(strcmp(chain->responses[1].config_parameters[0].config_value_2,
+                      "test-token") == 0);
+}
+
 TEST_LIST = {
+    { "test_http_mock_optional_values", test_http_mock_optional_values},
     { "test_http_provider", test_http_provider},
     { "test_http_provider_error_case", test_http_provider_error_case},
     { "test_http_provider_malformed_response",test_http_provider_malformed_response},
@@ -926,6 +1029,8 @@ TEST_LIST = {
     { "test_http_provider_https_endpoint", test_http_provider_https_endpoint},
     { "test_http_provider_server_failure", test_http_provider_server_failure},
     { "test_http_validator_invalid_host", test_http_validator_invalid_host},
+    { "test_http_validator_rejects_host_lookalikes", test_http_validator_rejects_host_lookalikes},
+    { "test_http_validator_accepts_allowed_addresses", test_http_validator_accepts_allowed_addresses},
     { "test_http_validator_invalid_port", test_http_validator_invalid_port},
     { "test_http_validator_greengrass_valid", test_http_validator_greengrass_valid},
     { "test_http_validator_greengrass_invalid_host", test_http_validator_greengrass_invalid_host},

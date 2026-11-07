@@ -320,11 +320,17 @@ static inline int selector_metrics_process_fqname(struct cmt *cmt, struct cmt *o
         found = FLB_TRUE;
     }
     else if (ret != 0) {
-        flb_plg_debug(ctx->ins, "not matched for rule = \"%s\"", ctx->selector_pattern);
+        flb_plg_error(ctx->ins, "could not filter metrics");
+        cmt_destroy(filtered);
+        return SELECTOR_FAILURE;
     }
 
-    cmt_cat(out_cmt, filtered);
+    ret = cmt_cat(out_cmt, filtered);
     cmt_destroy(filtered);
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "could not merge filtered metrics");
+        return SELECTOR_FAILURE;
+    }
 
     if (ctx->action_type == SELECTOR_INCLUDE) {
         return found ? SELECTOR_RET_KEEP : SELECTOR_RET_EXCLUDE;
@@ -356,12 +362,17 @@ static inline int selector_metrics_process_delete_label_value(struct cmt *cmt, s
         removed = FLB_TRUE;
     }
     else if (ret != 0) {
-        flb_plg_debug(ctx->ins, "not matched for a key-value pair: \"%s\",\"%s\"",
-                      ctx->label_key, ctx->label_value);
+        flb_plg_error(ctx->ins, "could not filter metrics by label pair");
+        cmt_destroy(filtered);
+        return SELECTOR_FAILURE;
     }
 
-    cmt_cat(out_cmt, filtered);
+    ret = cmt_cat(out_cmt, filtered);
     cmt_destroy(filtered);
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "could not merge filtered metrics");
+        return SELECTOR_FAILURE;
+    }
 
     return removed ? SELECTOR_RET_EXCLUDE : SELECTOR_RET_KEEP;
 }
@@ -391,6 +402,7 @@ static int process_metrics(struct flb_processor_instance *processor_instance,
     struct cmt *out_cmt;
 
     ctx = (struct selector_ctx *) processor_instance->context;
+    *out_context = NULL;
 
     out_cmt = cmt_create();
     if (out_cmt == NULL) {

@@ -1,0 +1,11 @@
+--- a/benchmarks/compare_fluent_bit_otelcol.py
++++ b/benchmarks/compare_fluent_bit_otelcol.py
+@@ -220,7 +220,7 @@
+             ]},
+             "scopeLogs": [{
+                 "scope": {"name": "benchmark", "version": "1.0"},
+-                "logRecords": [log_record] * batch_records,
++                "logRecords": [dict(log_record, body={"stringValue": "x" * ([64] * 70 + [512] * 20 + [4096] * 9 + [65536])[index % 100]}) for index in range(batch_records)],
+             }],
+         }]
+     }

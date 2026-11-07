@@ -30,6 +30,8 @@ typedef char preflight_zone_alignment_check[
 struct preflight_budget {
     size_t limit;
     size_t used;
+    size_t object_limit;
+    size_t objects;
     size_t free_bytes;
     int has_zone;
 };
@@ -216,11 +218,19 @@ static int preflight_map(struct preflight_budget *budget, unsigned int count, in
 
 static int preflight_array_item(struct preflight_budget *budget, int *container, int object)
 {
+    if (budget->objects >= budget->object_limit) {
+        return -1;
+    }
+    budget->objects++;
     return 0;
 }
 
 static int preflight_map_item(struct preflight_budget *budget, int *container, int key, int value)
 {
+    if (budget->objects >= budget->object_limit) {
+        return -1;
+    }
+    budget->objects++;
     return 0;
 }
 
@@ -242,6 +252,7 @@ void flb_mp_preflight_reset(struct flb_mp_preflight *scan, size_t limit, size_t 
 {
     memset(scan, 0, sizeof(*scan));
     scan->parser.user.limit = limit;
+    scan->parser.user.object_limit = SIZE_MAX;
     scan->wire_limit = wire_limit;
     preflight_init(&scan->parser);
 }
@@ -290,7 +301,8 @@ int flb_mp_preflight_scan(struct flb_mp_preflight *scan, const char *data,
     return ret;
 }
 
-int flb_mp_preflight_sequence(const char *data, size_t len, size_t limit)
+int flb_mp_preflight_sequence_limited(const char *data, size_t len, size_t limit,
+                                      size_t object_limit)
 {
     struct flb_mp_preflight scan;
     size_t offset;
@@ -300,7 +312,12 @@ int flb_mp_preflight_sequence(const char *data, size_t len, size_t limit)
 
     offset = 0;
     while (offset < len) {
+        if (object_limit == 0) {
+            return -1;
+        }
+        object_limit--;
         flb_mp_preflight_reset(&scan, limit, len - offset);
+        scan.parser.user.object_limit = object_limit;
         ret = flb_mp_preflight_scan(&scan, data + offset, len - offset, &consumed, &cost);
         if (ret != 1 || consumed == 0) {
             return -1;
@@ -308,6 +325,12 @@ int flb_mp_preflight_sequence(const char *data, size_t len, size_t limit)
         offset += consumed;
         /* A decoder may retain a group-start zone across subsequent events. */
         limit -= cost;
+        object_limit -= scan.parser.user.objects;
     }
     return 0;
+}
+
+int flb_mp_preflight_sequence(const char *data, size_t len, size_t limit)
+{
+    return flb_mp_preflight_sequence_limited(data, len, limit, SIZE_MAX);
 }

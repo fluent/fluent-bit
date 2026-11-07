@@ -129,7 +129,9 @@ static inline struct flb_filter_instance *filter_instance_get(flb_ctx_t *ctx,
 
 void flb_init_env()
 {
+#ifdef FLB_HAVE_TLS
     flb_tls_init();
+#endif
     flb_coro_init();
     flb_upstream_init();
     flb_downstream_init();
@@ -708,27 +710,12 @@ int flb_lib_config_file(struct flb_lib_ctx *ctx, const char *path)
     char *cfg = NULL;
     char *end;
     char *real_path;
-    struct stat st;
 
-    /* Check if file exists and resolve path */
-    ret = stat(path, &st);
-    if (ret == -1 && errno == ENOENT) {
-        /* Try to resolve the real path (if exists) */
-        if (path[0] == '/') {
-            fprintf(stderr, "Error: configuration file not found: %s\n", path);
-            return -1;
-        }
-
-        if (ctx->config->conf_path) {
-            snprintf(tmp, PATH_MAX, "%s%s", ctx->config->conf_path, path);
-            cfg = tmp;
-        }
-        else {
-            cfg = (char *) path;
-        }
-    }
-    else {
-        cfg = (char *) path;
+    cfg = (char *) flb_utils_resolve_config_path(path, ctx->config->conf_path,
+                                                 tmp, sizeof(tmp));
+    if (!cfg) {
+        fprintf(stderr, "Error: configuration file path is too long: %s\n", path);
+        return -1;
     }
 
     if (access(cfg, R_OK) != 0) {
@@ -993,9 +980,6 @@ int static do_start(flb_ctx_t *ctx)
         }
         else if (val == FLB_ENGINE_FAILED) {
             flb_debug("[lib] backend failed");
-#if defined(FLB_SYSTEM_MACOS)
-            pthread_cancel(tid);
-#endif
             pthread_join(tid, NULL);
             ctx->status = FLB_LIB_ERROR;
             return -1;
@@ -1052,9 +1036,6 @@ int flb_stop(flb_ctx_t *ctx)
          * the service exited for some reason (plugin action). Always
          * wait and double check that the child thread is not running.
          */
-#if defined(FLB_SYSTEM_MACOS)
-        pthread_cancel(tid);
-#endif
         pthread_join(tid, NULL);
         return 0;
     }
@@ -1071,9 +1052,7 @@ int flb_stop(flb_ctx_t *ctx)
     flb_debug("[lib] sending STOP signal to the engine");
 
     flb_engine_exit(ctx->config);
-#if defined(FLB_SYSTEM_MACOS)
-    pthread_cancel(tid);
-#endif
+    /* Let engine cleanup join output workers before releasing their state. */
     ret = pthread_join(tid, NULL);
     if (ret != 0) {
         flb_errno();

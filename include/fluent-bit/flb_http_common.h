@@ -23,7 +23,10 @@
 #include <fluent-bit/flb_hash_table.h>
 
 #include <monkey/mk_core.h>
+#include <monkey/mk_http_protocol.h>
+#ifdef FLB_HAVE_HTTP_SERVER
 #include <monkey/mk_http.h>
+#endif
 
 #include <cfl/cfl_list.h>
 #include <cfl/cfl_sds.h>
@@ -95,6 +98,7 @@ struct flb_http_request {
     cfl_sds_t                         host;
     uint16_t                          port;
     cfl_sds_t                         query_string;
+    int                              invalid_header;
     struct flb_hash_table            *headers;
     struct flb_hash_table           *trailer_headers;
     cfl_sds_t                         user_agent;
@@ -131,6 +135,9 @@ struct flb_http_stream {
     int                             role;
     int                             status;
 
+    size_t                          incoming_header_size;
+    size_t                          incoming_header_count;
+
     struct flb_http_request         request;
     struct flb_http_response        response;
 
@@ -145,6 +152,9 @@ struct flb_aws_provider;
 struct flb_connection;
 
 /* HTTP REQUEST */
+
+int flb_http_header_validate(const char *name, size_t name_length,
+                             const char *value, size_t value_length);
 
 int flb_http_request_init(struct flb_http_request *request);
 
@@ -209,8 +219,10 @@ int flb_http_request_compress_body(
     struct flb_http_request *request,
     char *content_encoding_header_value);
 
+/* Expanded body budget in bytes; limit failures return FLB_DECOMPRESSOR_LIMIT_EXCEEDED. */
 int flb_http_request_uncompress_body(
-    struct flb_http_request *request);
+    struct flb_http_request *request,
+    size_t                   budget);
 
 int flb_http_request_perform_signv4_signature(
         struct flb_http_request *request,
@@ -263,7 +275,8 @@ int flb_http_response_compress_body(
     char *content_encoding_header_value);
 
 int flb_http_response_uncompress_body(
-    struct flb_http_response *response);
+    struct flb_http_response *response,
+    size_t                    budget);
 
 
 /* HTTP STREAM */

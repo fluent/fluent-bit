@@ -270,6 +270,10 @@ endif()
 # Test Source
 
 if(ONIGMO_CTESTS)
+  add_executable(test_match_operation_limit test_match_operation_limit.c)
+  target_link_libraries(test_match_operation_limit onigmo-static)
+  add_test(NAME test_match_operation_limit COMMAND test_match_operation_limit)
+  set_tests_properties(test_match_operation_limit PROPERTIES TIMEOUT 10)
   enable_testing()
   if(ONIGMO_SYSTEM_WINDOWS)
     add_executable(testc win32/testc.c)
@@ -296,6 +300,10 @@ if(ONIGMO_CTESTS)
   add_executable(test_enc_utf8 test_enc_utf8.c)
   add_test(NAME test_enc_utf8 COMMAND test_enc_utf8)
   target_link_libraries(test_enc_utf8 onigmo-static)
+
+  add_executable(test_repeat_id_overflow test_repeat_id_overflow.c)
+  add_test(NAME test_repeat_id_overflow COMMAND test_repeat_id_overflow)
+  target_link_libraries(test_repeat_id_overflow onigmo-static)
 endif()
 
 if(ONIGMO_CTESTS_SAMPLE)

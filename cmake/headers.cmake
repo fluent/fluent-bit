@@ -36,7 +36,6 @@ include_directories(
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_CTRACES}/include
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_CPROFILES}/include
   ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_RING_BUFFER}/lwrb/src/include
-  ${FLB_PATH_ROOT_BINARY_DIR}/${FLB_PATH_LIB_JANSSON}/include
   ${FLB_PATH_ROOT_BINARY_DIR}/lib/cmetrics
   ${FLB_PATH_ROOT_BINARY_DIR}/lib/cprofiles/include
   ${FLB_PATH_ROOT_BINARY_DIR}/include
@@ -44,6 +43,11 @@ include_directories(
   ${FLB_PATH_ROOT_BINARY_DIR}/lib/monkey/include/
   ${FLB_PATH_ROOT_BINARY_DIR}/lib/monkey/include/monkey/
   )
+
+if(NOT FLB_HTTP_SERVER)
+  # mk_core is configured directly under the Fluent Bit project in this mode.
+  include_directories(${FLB_PATH_ROOT_BINARY_DIR}/include/monkey)
+endif()
 
 if(FLB_YYJSON)
   include_directories(${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_YYJSON}/src)
@@ -59,4 +63,8 @@ if(CMAKE_SYSTEM_NAME MATCHES "Windows")
     lib/monkey/mk_core/deps/libevent/include
     ${PROJECT_BINARY_DIR}/lib/monkey/mk_core/deps/libevent/include
     )
+endif()
+
+if(FLB_AVRO_ENCODER OR FLB_PROTOBUF_ENCODER)
+  include_directories(${FLB_PATH_ROOT_BINARY_DIR}/${FLB_PATH_LIB_JANSSON}/include)
 endif()

@@ -33,7 +33,7 @@ extern "C" {
 struct flb_kafka_protobuf;
 
 /* No C++ exceptions may escape this interface. Fallible operations catch exceptions
- * and return NULL or -1. Free and destroy are non-throwing cleanup operations.
+ * and return NULL or a negative status. Free and destroy are non-throwing cleanup operations.
  * All returned payloads use malloc; release with flb_kafka_protobuf_free().
  */
 struct flb_kafka_protobuf *flb_kafka_protobuf_create(void) FLB_KAFKA_PROTOBUF_NOEXCEPT;
@@ -41,6 +41,7 @@ int flb_kafka_protobuf_add(struct flb_kafka_protobuf *ctx, const char *name,
                          const char *schema, size_t size) FLB_KAFKA_PROTOBUF_NOEXCEPT;
 int flb_kafka_protobuf_compile(struct flb_kafka_protobuf *ctx, const char *message,
                              char *error, size_t error_size) FLB_KAFKA_PROTOBUF_NOEXCEPT;
+/* Encode returns 0 on success, -1 for invalid data/state, -2 for resource failure. */
 int flb_kafka_protobuf_encode(struct flb_kafka_protobuf *ctx, int32_t schema_id,
                             const char *json, size_t json_size,
                             char **out, size_t *out_size, char *error, size_t error_size)

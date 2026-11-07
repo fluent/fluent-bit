@@ -125,6 +125,78 @@ static void test_diskstats(void)
 
 #ifdef FLB_SYSTEM_LINUX
 
+/*
+ * Run with a scrape_interval far longer than the test, so any record that
+ * reaches the output within the wait can only come from scrape_on_start.
+ */
+static int count_first_scrape(char *scrape_on_start)
+{
+    int ret;
+    int input_fd;
+    int output_fd;
+    int count;
+    flb_ctx_t *ctx;
+    struct flb_lib_out_cb callback;
+
+    output_count = 0;
+    callback.cb = cb_count_output;
+    callback.data = NULL;
+
+    ctx = flb_create();
+    TEST_CHECK(ctx != NULL);
+
+    ret = flb_service_set(ctx,
+                          "Flush", "0.2",
+                          "Grace", "1",
+                          "Log_Level", "error",
+                          NULL);
+    TEST_CHECK(ret == 0);
+
+    input_fd = flb_input(ctx, (char *) "node_exporter_metrics", NULL);
+    TEST_CHECK(input_fd >= 0);
+
+    ret = flb_input_set(ctx, input_fd,
+                        "metrics", "loadavg",
+                        "scrape_interval", "3600",
+                        "scrape_on_start", scrape_on_start,
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    output_fd = flb_output(ctx, (char *) "lib", &callback);
+    TEST_CHECK(output_fd >= 0);
+
+    ret = flb_output_set(ctx, output_fd,
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* the start collector fires 5 seconds after startup */
+    flb_time_msleep(8000);
+    count = get_output_count();
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    return count;
+}
+
+static void test_scrape_on_start(void)
+{
+    TEST_CHECK(count_first_scrape("on") > 0);
+}
+
+static void test_no_scrape_on_start(void)
+{
+    TEST_CHECK(count_first_scrape("off") == 0);
+}
+
+#endif
+
+#ifdef FLB_SYSTEM_LINUX
+
 #define NETDEV_HEADER                                                        \
     "Inter-|   Receive                                                |"     \
     "  Transmit\n"                                                        \
@@ -312,6 +384,8 @@ TEST_LIST = {
     {"diskstats", test_diskstats},
 #ifdef FLB_SYSTEM_LINUX
     {"netdev_removes_stale_devices", test_netdev_removes_stale_devices},
+    {"scrape_on_start", test_scrape_on_start},
+    {"no_scrape_on_start", test_no_scrape_on_start},
 #endif
     {NULL, NULL}
 };

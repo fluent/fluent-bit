@@ -1,6 +1,13 @@
 cmake_minimum_required(VERSION 3.12)
 project(fluent-bit C)
 
+option(FLB_WASM_BROWSER "Enable the experimental Emscripten browser build profile" OFF)
+if(FLB_WASM_BROWSER)
+  include(cmake/wasm-browser.cmake)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+  message(FATAL_ERROR "Emscripten builds require -DFLB_WASM_BROWSER=ON")
+endif()
+
 include(CheckCCompilerFlag)
 
 # CMP0069 ensures that LTO is enabled for all compilers
@@ -9,12 +16,18 @@ set(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
 
 # Fluent Bit Version
 set(FLB_VERSION_MAJOR  5)
-set(FLB_VERSION_MINOR  1)
-set(FLB_VERSION_PATCH  5)
+set(FLB_VERSION_MINOR  2)
+set(FLB_VERSION_PATCH  0)
 set(FLB_VERSION_STR "${FLB_VERSION_MAJOR}.${FLB_VERSION_MINOR}.${FLB_VERSION_PATCH}")
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# Allow static libraries to compile without waiting for link-only dependencies.
+# CMake preserves explicit dependencies and generated-source ordering.
+if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.19" AND NOT DEFINED CMAKE_OPTIMIZE_DEPENDENCIES)
+  set(CMAKE_OPTIMIZE_DEPENDENCIES ON)
+endif()
 
 # Define macro to identify Windows system (without Cygwin)
 if(CMAKE_SYSTEM_NAME MATCHES "Windows")
@@ -130,12 +143,55 @@ endif()
 INCLUDE(TestBigEndian)
 include(GNUInstallDirs)
 include(ExternalProject)
-include(cmake/FindJournald.cmake)
+if(NOT FLB_WASM_BROWSER)
+  include(cmake/FindJournald.cmake)
+endif()
 include(cmake/FindMonkey.cmake)
 include(cmake/macros.cmake)
+if(FLB_WASM_BROWSER)
+  include(cmake/wasm-openssl.cmake)
+  include(cmake/wasm-filesystem.cmake)
+endif()
 include(cmake/platform_feature_checks.cmake)
 set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/sanitizers-cmake/cmake" ${CMAKE_MODULE_PATH})
+
+# The FLB-prefixed options are aliases; direct SANITIZE_* options remain supported.
+option(FLB_SANITIZE_MEMORY "Enable MemorySanitizer through SANITIZE_MEMORY" Off)
+option(FLB_SANITIZE_THREAD "Enable ThreadSanitizer through SANITIZE_THREAD" Off)
+option(SANITIZE_MEMORY "Enable MemorySanitizer for sanitized targets." Off)
+option(SANITIZE_THREAD "Enable ThreadSanitizer for sanitized targets." Off)
+# Keep overrides out of the cache so disabling an alias restores the direct option.
+if(FLB_SANITIZE_MEMORY)
+  set(SANITIZE_MEMORY On)
+endif()
+if(FLB_SANITIZE_THREAD)
+  set(SANITIZE_THREAD On)
+endif()
 find_package(Sanitizers)
+
+# Never let an explicitly requested alias silently produce an unsanitized build.
+if(FLB_SANITIZE_MEMORY AND
+   (NOT SANITIZE_MEMORY OR NOT MSan_${CMAKE_C_COMPILER_ID}_FLAGS))
+  message(FATAL_ERROR
+    "FLB_SANITIZE_MEMORY requires a compiler with MemorySanitizer support on 64-bit Linux")
+endif()
+if(FLB_SANITIZE_THREAD AND
+   (NOT SANITIZE_THREAD OR NOT TSan_${CMAKE_C_COMPILER_ID}_FLAGS))
+  message(FATAL_ERROR
+    "FLB_SANITIZE_THREAD requires a compiler with ThreadSanitizer support on 64-bit Linux or macOS")
+endif()
+
+# MemorySanitizer also needs dependency writes to update shadow memory. Target-only
+# instrumentation reports uninitialized data returned by unsanitized bundled libraries.
+if(SANITIZE_MEMORY AND MSan_${CMAKE_C_COMPILER_ID}_FLAGS)
+  add_compile_options(-fsanitize=memory)
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=memory")
+  set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fsanitize=memory")
+  # Use intercepted clock_gettime() in the bundled telemetry libraries as well.
+  set(CMT_HAVE_TIMESPEC_GET Off)
+  set(CTR_HAVE_TIMESPEC_GET Off)
+  set(CPROF_HAVE_TIMESPEC_GET Off)
+endif()
 
 # Check for CXX support
 include(CheckLanguage)
@@ -204,6 +260,10 @@ option(FLB_SQLDB               "Enable SQL embedded DB"       Yes)
 option(FLB_HTTP_SERVER         "Enable HTTP Server"           Yes)
 option(FLB_BACKTRACE           "Enable stacktrace support"    Yes)
 option(FLB_LUAJIT              "Enable Lua Scripting support" Yes)
+option(FLB_WASM_LUA            "Enable portable Lua in the browser build" No)
+if(FLB_WASM_LUA AND NOT FLB_WASM_BROWSER)
+  message(FATAL_ERROR "FLB_WASM_LUA requires FLB_WASM_BROWSER=ON")
+endif()
 option(FLB_RECORD_ACCESSOR     "Enable record accessor"       Yes)
 option(FLB_SIGNV4              "Enable AWS Signv4 support"    Yes)
 option(FLB_AWS                 "Enable AWS support"           Yes)
@@ -1011,6 +1071,13 @@ if(FLB_SQLDB)
     include(cmake/sqlite.cmake)
   endif()
   FLB_DEFINITION(FLB_HAVE_SQLDB)
+else()
+  foreach(flb_sqlite_plugin FLB_IN_BLOB FLB_OUT_AZURE_BLOB FLB_OUT_S3 FLB_FILTER_CHECKLIST)
+    if(${flb_sqlite_plugin})
+      message(STATUS "Disabling ${flb_sqlite_plugin}: SQL database support is disabled")
+      set(${flb_sqlite_plugin} Off)
+    endif()
+  endforeach()
 endif()
 
 if(FLB_TRACE)
@@ -1114,7 +1181,8 @@ check_c_source_compiles("
      struct tm tm;
      return timespec_get(&tm, TIME_UTC);
   }" FLB_HAVE_TIMESPEC_GET)
-if(FLB_HAVE_TIMESPEC_GET)
+# Use the intercepted clock_gettime() path for MemorySanitizer builds.
+if(FLB_HAVE_TIMESPEC_GET AND NOT SANITIZE_MEMORY)
   FLB_DEFINITION(FLB_HAVE_TIMESPEC_GET)
 endif()
 
@@ -1183,7 +1251,15 @@ else()
 endif ()
 
 # Configuration file YAML format support
-if(FLB_CONFIG_YAML)
+#
+# FLB_LIBYAML_LINK is the library linked by targets; the direct-discovery
+# fallback below replaces it with the full path of the library it found.
+set(FLB_LIBYAML_LINK yaml)
+if(FLB_CONFIG_YAML AND FLB_WASM_BROWSER)
+  include(cmake/wasm-libyaml.cmake)
+  set(FLB_HAVE_LIBYAML 1)
+  FLB_DEFINITION(FLB_HAVE_LIBYAML)
+elseif(FLB_CONFIG_YAML)
   find_package(PkgConfig)
   # libyaml's corresponding pkg-config file is yaml-0.1.pc.
   # We should search it first.
@@ -1209,13 +1285,70 @@ if(FLB_CONFIG_YAML)
       include_directories(${LIBYAML_INCLUDEDIR})
       link_directories(${LIBYAML_LIBRARY_DIRS})
     else ()
-      # Requires libyaml support
+      # pkg-config is not available or has no yaml-0.1.pc: look for the
+      # header and library directly, including common package manager
+      # prefixes that are not part of the default compiler search paths
+      # (e.g. Homebrew on Apple Silicon uses /opt/homebrew). On MSVC,
+      # libyaml must be given through FLB_LIBYAML_DIR.
+      set(FLB_LIBYAML_HINTS "")
+      if (APPLE)
+        find_program(FLB_BREW_EXECUTABLE brew)
+        if (FLB_BREW_EXECUTABLE)
+          execute_process(
+            COMMAND ${FLB_BREW_EXECUTABLE} --prefix libyaml
+            OUTPUT_VARIABLE FLB_BREW_LIBYAML_PREFIX
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET
+          )
+          if (FLB_BREW_LIBYAML_PREFIX)
+            list(APPEND FLB_LIBYAML_HINTS "${FLB_BREW_LIBYAML_PREFIX}")
+          endif ()
+        endif ()
+        list(APPEND FLB_LIBYAML_HINTS /opt/homebrew /usr/local /opt/local)
+      endif ()
+
+      if (NOT MSVC)
+        find_path(FLB_LIBYAML_INCLUDE_DIR
+          NAMES yaml.h
+          HINTS ${FLB_LIBYAML_HINTS}
+          PATH_SUFFIXES include
+        )
+        find_library(FLB_LIBYAML_LIBRARY
+          NAMES yaml
+          HINTS ${FLB_LIBYAML_HINTS}
+          PATH_SUFFIXES lib
+        )
+      endif ()
+
+      if (FLB_LIBYAML_INCLUDE_DIR AND FLB_LIBYAML_LIBRARY)
+        get_filename_component(LIBYAML_LIBRARY_DIRS
+          "${FLB_LIBYAML_LIBRARY}" DIRECTORY)
+        set(FLB_LIBYAML_LINK "${FLB_LIBYAML_LIBRARY}")
+        set(LIBYAML_INCLUDEDIR "${FLB_LIBYAML_INCLUDE_DIR}")
+        include_directories(${LIBYAML_INCLUDEDIR})
+        link_directories(${LIBYAML_LIBRARY_DIRS})
+        set(CMAKE_REQUIRED_INCLUDES_SAVE "${CMAKE_REQUIRED_INCLUDES}")
+        set(FLB_LIBYAML_RESTORE_INCLUDES ON)
+        list(APPEND CMAKE_REQUIRED_INCLUDES "${LIBYAML_INCLUDEDIR}")
+        message(STATUS "Found libyaml without pkg-config: "
+                       "${FLB_LIBYAML_LIBRARY}")
+      endif ()
+
+      # Requires libyaml support. Drop any cached result so a previous
+      # failed configure does not hide a libyaml installed afterwards.
+      unset(FLB_HAVE_LIBYAML CACHE)
       check_c_source_compiles("
       #include <yaml.h>
       int main() {
         yaml_parser_t parser;
         return 0;
       }" FLB_HAVE_LIBYAML)
+
+      if (FLB_LIBYAML_RESTORE_INCLUDES)
+        set(CMAKE_REQUIRED_INCLUDES "${CMAKE_REQUIRED_INCLUDES_SAVE}")
+        unset(CMAKE_REQUIRED_INCLUDES_SAVE)
+        unset(FLB_LIBYAML_RESTORE_INCLUDES)
+      endif ()
 
       if(NOT FLB_HAVE_LIBYAML)
         message(FATAL_ERROR
@@ -1362,6 +1495,12 @@ if(FLB_REGEX)
     FLB_DEFINITION_VAL(ONIG_EXTERN "extern")
   endif()
   add_subdirectory(${FLB_PATH_LIB_ONIGMO} EXCLUDE_FROM_ALL)
+  # Establish the budget before any search, without per-context global writes.
+  foreach(onigmo_target onigmo-static onigmo-shared test_match_operation_limit)
+    if(TARGET ${onigmo_target})
+      target_compile_definitions(${onigmo_target} PRIVATE DEFAULT_MATCH_OPERATION_LIMIT=10000000UL)
+    endif()
+  endforeach()
   target_include_directories(onigmo-static INTERFACE ${FLB_PATH_ROOT_SOURCE}/${FLB_PATH_LIB_ONIGMO})
 endif()
 
@@ -1404,6 +1543,10 @@ if(FLB_LUAJIT)
     include(cmake/luajit.cmake)
   endif()
   FLB_DEFINITION(FLB_HAVE_LUAJIT)
+  FLB_DEFINITION(FLB_HAVE_LUA)
+elseif(FLB_WASM_LUA)
+  include(cmake/wasm-lua.cmake)
+  FLB_DEFINITION(FLB_HAVE_LUA)
 endif()
 
 # PostgreSQL
@@ -1603,6 +1746,12 @@ endif()
 if(FLB_TESTS_INTERNAL)
   enable_testing()
   add_subdirectory(tests/internal/)
+endif()
+
+if(FLB_WASM_BROWSER)
+  enable_testing()
+  include(cmake/wasm-sdk.cmake)
+  add_subdirectory(tests/wasm)
 endif()
 
 # Installer Generation (Cpack)

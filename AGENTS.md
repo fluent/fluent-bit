@@ -36,6 +36,24 @@ Fluent Bit is a C/C++ monorepo built with CMake.
 
 Keep changes scoped: plugin logic in its plugin directory, shared behavior in `src/` or `lib/`.
 
+## FTS API Definitions
+- Whenever touching FTS, including `plugins/processor_fts/`, `packs/fts/`,
+  `tools/fts/`, or FTS tests, agents must check `docs/fts/fluentbit.d.lua` against the affected
+  implementation. Update declarations and `docs/fts/README.md` when exported
+  functions, constants, methods, record fields, callback contracts, argument or
+  return types, nil-safety, error behavior, or signal/pack availability change.
+- Verify exports in the C bindings and embedded Lua helpers; do not infer API
+  availability solely from the declarations. Keep private `_` helpers excluded.
+- Regenerate the API manifest and verify the exporter from the checkout root:
+  `python3 tools/fts/export_api_schema.py`
+  `python3 tools/fts/export_api_schema.py --check`
+  `python3 -m unittest discover -s tools/fts/tests -v`
+  Keep generated `build/fts_api.json` out of commits.
+- Run `tests/integration/scenarios/processor_fts/tests/test_fts_api_definitions.py`
+  against a binary built from the matching source, normally and with the platform
+  memory checker as required below. Add focused contract coverage when necessary.
+  Report any verification blocker and whether definitions needed an update.
+
 ## Bundled Library Changes
 - Treat `lib/` as bundled third-party or separately maintained code unless the
   specific path is clearly Fluent Bit-owned.

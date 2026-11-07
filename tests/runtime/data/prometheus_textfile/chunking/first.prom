@@ -1,0 +1,3 @@
+# HELP file_marker Identifies a file in the scrape.
+# TYPE file_marker gauge
+file_marker{file="first"} 1

@@ -714,11 +714,21 @@ void test_json_pack_surrogate_pairs_with_replacement()
         "{\"text\":\"\\fddd,\"}",
         "{\"text\":\"\\udee1,\"}",
         "{\"text\":\"\\ud83e,|,\"}",
+#ifdef FLB_HAVE_YYJSON
+        "{\"text\":\"\\uD800\\u0041\"}",
+        "{\"text\":\"\\uA_CD\"}",
+        "{\"text\":\"\\uD800\\uXXXX\"}",
+#endif
     };
     char *data_unescaped[] = {
         "\fddd,",
         "�,",
         "�,|,",
+#ifdef FLB_HAVE_YYJSON
+        "\xef\xbf\xbd",
+        "\\uACD",
+        "\xef\xbf\xbd" "XXXX",
+#endif
     };
     msgpack_unpacked result;
     msgpack_object root;

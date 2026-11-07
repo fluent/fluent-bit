@@ -18,51 +18,23 @@
  */
 
 #include <fluent-bit/flb_mem.h>
+#include <ctype.h>
+#include <fluent-bit/flb_compression.h>
 
+#ifndef __EMSCRIPTEN__
 #include <fluent-bit/http_server/flb_http_server.h>
+#endif
+#include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_http_common.h>
 #include <fluent-bit/flb_signv4_ng.h>
 #include <fluent-bit/flb_snappy.h>
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_zstd.h>
+#ifdef __EMSCRIPTEN__
+#include <fluent-bit/wasm/flb_wasm_http.h>
+#endif
 
 /* PRIVATE */
-
-static \
-int uncompress_zlib(char **output_buffer,
-                    size_t *output_size,
-                    char *input_buffer,
-                    size_t input_size);
-
-static \
-int uncompress_zstd(char **output_buffer,
-                    size_t *output_size,
-                    char *input_buffer,
-                    size_t input_size);
-
-static \
-int uncompress_deflate(char **output_buffer,
-                       size_t *output_size,
-                       char *input_buffer,
-                       size_t input_size);
-
-static \
-int uncompress_snappy(char **output_buffer,
-                      size_t *output_size,
-                      char *input_buffer,
-                      size_t input_size);
-
-static \
-int uncompress_gzip(char **output_buffer,
-                    size_t *output_size,
-                    char *input_buffer,
-                    size_t input_size);
-
-static \
-int uncompress_zstd(char **output_buffer,
-                    size_t *output_size,
-                    char *input_buffer,
-                    size_t input_size);
 
 static \
 int compress_zlib(char **output_buffer,
@@ -102,6 +74,7 @@ int compress_zstd(char **output_buffer,
 
 /* HTTP REQUEST */
 
+#ifndef __EMSCRIPTEN__
 static int flb_http_request_get_version(struct flb_http_request *request)
 {
     int version;
@@ -115,6 +88,7 @@ static int flb_http_request_get_version(struct flb_http_request *request)
 
     return version;
 }
+#endif
 
 int flb_http_request_init(struct flb_http_request *request)
 {
@@ -216,7 +190,15 @@ void flb_http_request_destroy(struct flb_http_request *request)
 
 int flb_http_request_commit(struct flb_http_request *request)
 {
+#ifdef __EMSCRIPTEN__
+    /* Complete browser requests are submitted by the shared client adapter. */
+    return -1;
+#else
     int version;
+
+    if (request->invalid_header) {
+        return -1;
+    }
 
     version = flb_http_request_get_version(request);
 
@@ -225,6 +207,7 @@ int flb_http_request_commit(struct flb_http_request *request)
     }
 
     return flb_http1_request_commit(request);
+#endif
 }
 
 char *flb_http_request_get_header(struct flb_http_request *request,
@@ -258,6 +241,9 @@ char *flb_http_request_get_header(struct flb_http_request *request,
 
 const char *flb_http_request_get_remote_address(struct flb_http_request *request)
 {
+#ifdef __EMSCRIPTEN__
+    return NULL;
+#else
     struct flb_http_server_session *server_session;
 
     if (request == NULL || request->stream == NULL) {
@@ -276,43 +262,72 @@ const char *flb_http_request_get_remote_address(struct flb_http_request *request
     }
 
     return flb_connection_get_remote_address(server_session->connection);
+#endif
+}
+
+/* RFC 9110 field names are tokens; values exclude controls except HTAB. */
+int flb_http_header_validate(const char *name, size_t name_length,
+                             const char *value, size_t value_length)
+{
+    size_t index;
+    unsigned char byte;
+
+    if (name == NULL || name_length == 0 || value == NULL) {
+        return -1;
+    }
+
+    for (index = 0; index < name_length; index++) {
+        byte = (unsigned char) name[index];
+        if ((byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z') ||
+            (byte >= '0' && byte <= '9')) {
+            continue;
+        }
+        if (byte == 0 || strchr("!#$%&'*+-.^_`|~", byte) == NULL) {
+            return -1;
+        }
+    }
+
+    for (index = 0; index < value_length; index++) {
+        byte = (unsigned char) value[index];
+        if ((byte < 0x20 && byte != '\t') || byte == 0x7f) {
+            return -1;
+        }
+    }
+
+    return 0;
 }
 
 int flb_http_request_set_header(struct flb_http_request *request,
                                 char *name, size_t name_length,
                                 char *value, size_t value_length)
 {
-    char  *lowercase_name;
-    int    result;
+    int result;
+    size_t name_offset = 0;
 
-    if (name_length == 0) {
+    if (name != NULL && name_length == 0) {
         name_length = strlen(name);
     }
+    if (value != NULL && value_length == 0) {
+        value_length = strlen(value);
+    }
 
-    lowercase_name = flb_http_server_convert_string_to_lowercase(
-                        name, name_length);
+    /* The HTTP/2 server also stores pseudo-headers validated by nghttp2. */
+    if (name != NULL && name_length > 1 && name[0] == ':' &&
+        request->stream != NULL && request->stream->role == HTTP_STREAM_ROLE_SERVER &&
+        request->protocol_version == HTTP_PROTOCOL_VERSION_20) {
+        name_offset = 1;
+    }
 
-    if (lowercase_name == NULL) {
+    if (flb_http_header_validate(name == NULL ? NULL : name + name_offset,
+                                 name_length - name_offset, value, value_length) != 0) {
+        /* Callers may ignore errors: never send a request missing this field. */
+        request->invalid_header = FLB_TRUE;
         return -1;
     }
 
-    if (value_length == 0) {
-        if (value[0] == '\0') {
-            value_length = 1;
-        }
-        else {
-            value_length = strlen(value);
-        }
-    }
-
-    result = flb_hash_table_add(request->headers,
-                                (const char *) name,
-                                name_length,
-                                (void *) value,
-                                value_length);
-
-    flb_free(lowercase_name);
-
+    /* Zero-sized hash values are borrowed: use static storage for empty fields. */
+    result = flb_hash_table_add(request->headers, name, name_length,
+                               value_length == 0 ? "" : value, value_length);
     if (result == -1) {
         return -1;
     }
@@ -414,13 +429,95 @@ int flb_http_request_compress_body(
     return 0;
 }
 
+/* Decode into the final SDS, retaining the original body on failure. */
+static int http_uncompress_body(cfl_sds_t body, const char *encoding,
+                                size_t budget, cfl_sds_t *output)
+{
+    struct flb_decompression_context *decoder;
+    cfl_sds_t inflated;
+    cfl_sds_t resized;
+    char chunk[16384];
+    size_t produced;
+    size_t previous_input;
+    int previous_state;
+    int algorithm;
+    int result;
+
+    *output = NULL;
+    if (strcasecmp(encoding, "gzip") == 0) {
+        algorithm = FLB_COMPRESSION_ALGORITHM_GZIP;
+    }
+    else if (strcasecmp(encoding, "zstd") == 0) {
+        algorithm = FLB_COMPRESSION_ALGORITHM_ZSTD;
+    }
+    else if (strcasecmp(encoding, "snappy") == 0) {
+        algorithm = FLB_COMPRESSION_ALGORITHM_SNAPPY;
+    }
+    else {
+        /* Other encodings are not implemented by the automatic inflater. */
+        return 0;
+    }
+
+    if (cfl_sds_len(body) == 0) {
+        return FLB_DECOMPRESSOR_FAILURE;
+    }
+    decoder = flb_decompression_context_create(algorithm, cfl_sds_len(body));
+    if (decoder == NULL) {
+        return FLB_DECOMPRESSOR_FAILURE;
+    }
+    decoder->output_limit = budget;
+    decoder->input_complete = FLB_TRUE;
+    memcpy(decoder->input_buffer, body, cfl_sds_len(body));
+    decoder->input_buffer_length = cfl_sds_len(body);
+    inflated = cfl_sds_create_size(0);
+    if (inflated == NULL) {
+        flb_decompression_context_destroy(decoder);
+        return FLB_DECOMPRESSOR_FAILURE;
+    }
+
+    while (decoder->input_buffer_length > 0) {
+        previous_input = decoder->input_buffer_length;
+        previous_state = decoder->state;
+        produced = sizeof(chunk);
+        result = flb_decompress(decoder, chunk, &produced);
+        if (result != FLB_DECOMPRESSOR_SUCCESS) {
+            goto error;
+        }
+        if (produced > 0) {
+            resized = cfl_sds_cat(inflated, chunk, produced);
+            if (resized == NULL) {
+                result = FLB_DECOMPRESSOR_FAILURE;
+                goto error;
+            }
+            inflated = resized;
+        }
+        if (produced == 0 && previous_input == decoder->input_buffer_length &&
+            previous_state == decoder->state) {
+            result = FLB_DECOMPRESSOR_FAILURE;
+            goto error;
+        }
+    }
+    if (algorithm == FLB_COMPRESSION_ALGORITHM_GZIP &&
+        decoder->state != FLB_DECOMPRESSOR_STATE_EXPECTING_HEADER) {
+        result = FLB_DECOMPRESSOR_FAILURE;
+        goto error;
+    }
+    flb_decompression_context_destroy(decoder);
+    *output = inflated;
+    return 1;
+
+error:
+    cfl_sds_destroy(inflated);
+    flb_decompression_context_destroy(decoder);
+    return result;
+}
+
 int flb_http_request_uncompress_body(
-    struct flb_http_request *request)
+    struct flb_http_request *request, size_t budget)
 {
     char      *content_encoding_header_value;
     char       new_content_length[21];
     cfl_sds_t  inflated_body;
-    char      *output_buffer;
     size_t     output_size;
     int        result;
 
@@ -434,49 +531,25 @@ int flb_http_request_uncompress_body(
                                         request,
                                         "Content-Encoding");
 
-    if (content_encoding_header_value == NULL) {
+    if (content_encoding_header_value == NULL ||
+        strcasecmp(content_encoding_header_value, "identity") == 0) {
         return 0;
     }
 
-    if (strncasecmp(content_encoding_header_value, "gzip", 4) == 0) {
-        result = uncompress_gzip(&output_buffer,
-                                    &output_size,
-                                    request->body,
-                                    cfl_sds_len(request->body));
-    }
-    else if (strncasecmp(content_encoding_header_value, "zlib", 4) == 0) {
-        result = uncompress_zlib(&output_buffer,
-                                    &output_size,
-                                    request->body,
-                                    cfl_sds_len(request->body));
-    }
-    else if (strncasecmp(content_encoding_header_value, "zstd", 4) == 0) {
-        result = uncompress_zstd(&output_buffer,
-                                    &output_size,
-                                    request->body,
-                                    cfl_sds_len(request->body));
-    }
-    else if (strncasecmp(content_encoding_header_value, "snappy", 6) == 0) {
-        result = uncompress_snappy(&output_buffer,
-                                    &output_size,
-                                    request->body,
-                                    cfl_sds_len(request->body));
-    }
-    else if (strncasecmp(content_encoding_header_value, "deflate", 7) == 0) {
-        result = uncompress_deflate(&output_buffer,
-                                    &output_size,
-                                    request->body,
-                                    cfl_sds_len(request->body));
+    if (strcasecmp(content_encoding_header_value, "gzip") != 0 &&
+        strcasecmp(content_encoding_header_value, "zstd") != 0 &&
+        strcasecmp(content_encoding_header_value, "snappy") != 0) {
+        /* Do not pass unsupported or stacked encodings to ingestion callbacks. */
+        return FLB_DECOMPRESSOR_FAILURE;
     }
 
+    result = http_uncompress_body(request->body, content_encoding_header_value,
+                                  budget, &inflated_body);
+    if (result < 0) {
+        return result;
+    }
     if (result == 1) {
-        inflated_body = cfl_sds_create_len(output_buffer, output_size);
-
-        flb_free(output_buffer);
-
-        if (inflated_body == NULL) {
-            return -1;
-        }
+        output_size = cfl_sds_len(inflated_body);
 
         cfl_sds_destroy(request->body);
 
@@ -488,14 +561,14 @@ int flb_http_request_uncompress_body(
                  output_size);
 
         flb_http_request_unset_header(request, "Content-Encoding");
-        flb_http_request_set_header(request,
-                                    "Content-Length", 0,
-                                    new_content_length, 0);
+        result = flb_http_request_set_header(request,
+                                             "Content-Length", 0,
+                                             new_content_length, 0);
 
         request->content_length = output_size;
     }
 
-    return 0;
+    return result;
 }
 
 
@@ -542,6 +615,11 @@ int flb_http_request_set_url(struct flb_http_request *request,
     int        result;
     uint16_t   port;
 
+#ifdef __EMSCRIPTEN__
+    if (flb_wasm_http_validate(url) != 0) {
+        return -1;
+    }
+#endif
     local_url = cfl_sds_create(url);
 
     if (local_url == NULL) {
@@ -777,9 +855,13 @@ int flb_http_request_set_body(struct flb_http_request *request,
     uint64_t flags;
 
     if (request->stream->role == HTTP_STREAM_ROLE_SERVER) {
+#ifndef __EMSCRIPTEN__
         flags = ((struct flb_http_server_session *) request->stream->parent)->parent->flags;
 
         compress = flags & FLB_HTTP_SERVER_FLAG_AUTO_DEFLATE;
+#else
+        return -1;
+#endif
     }
     else {
         flags = ((struct flb_http_client_session *) request->stream->parent)->parent->flags;
@@ -856,6 +938,10 @@ int flb_http_request_perform_signv4_signature(
 {
     flb_sds_t signature;
 
+#ifdef __EMSCRIPTEN__
+    flb_error("[http_client] browser AWS signing is not supported");
+    return -1;
+#endif
 #ifdef FLB_HAVE_SIGNV4
 #ifdef FLB_HAVE_AWS
     flb_debug("signing request with AWS Sigv4");
@@ -884,6 +970,7 @@ int flb_http_request_perform_signv4_signature(
 
 /* HTTP RESPONSE */
 
+#ifndef __EMSCRIPTEN__
 static int flb_http_response_get_version(struct flb_http_response *response)
 {
     int version;
@@ -897,6 +984,7 @@ static int flb_http_response_get_version(struct flb_http_response *response)
 
     return version;
 }
+#endif
 
 int flb_http_response_init(struct flb_http_response *response)
 {
@@ -982,16 +1070,23 @@ struct flb_http_response *flb_http_response_begin(
                                 struct flb_http_server_session *session,
                                 void *stream)
 {
+#ifdef __EMSCRIPTEN__
+    return NULL;
+#else
     if (session->version == HTTP_PROTOCOL_VERSION_20) {
         return flb_http2_response_begin(&session->http2, stream);
     }
     else {
         return flb_http1_response_begin(&session->http1, stream);
     }
+#endif
 }
 
 int flb_http_response_commit(struct flb_http_response *response)
 {
+#ifdef __EMSCRIPTEN__
+    return -1;
+#else
     int len;
     char tmp[64];
     int version;
@@ -1039,6 +1134,7 @@ int flb_http_response_commit(struct flb_http_response *response)
     }
 
     return flb_http1_response_commit(response);
+#endif
 }
 
 char *flb_http_response_get_header(struct flb_http_response *response,
@@ -1075,7 +1171,9 @@ int flb_http_response_set_header(struct flb_http_response *response,
                              char *value, size_t value_length)
 {
     char *lowercase_name;
+#ifndef __EMSCRIPTEN__
     int   version;
+#endif
     int   result;
 
     if (name_length == 0) {
@@ -1098,6 +1196,10 @@ int flb_http_response_set_header(struct flb_http_response *response,
         }
     }
 
+#ifdef __EMSCRIPTEN__
+    result = flb_hash_table_add(response->headers, lowercase_name, name_length,
+                               value, value_length) < 0 ? -1 : 0;
+#else
     version = flb_http_response_get_version(response);
 
     if (version == HTTP_PROTOCOL_VERSION_20) {
@@ -1110,6 +1212,7 @@ int flb_http_response_set_header(struct flb_http_response *response,
                                                lowercase_name, name_length,
                                                value, value_length);
     }
+#endif
 
     flb_free(lowercase_name);
 
@@ -1186,6 +1289,10 @@ int flb_http_response_set_trailer_header(struct flb_http_response *response,
 int flb_http_response_set_status(struct flb_http_response *response,
                              int status)
 {
+#ifdef __EMSCRIPTEN__
+    response->status = status;
+    return 0;
+#else
     int version;
 
     version = flb_http_response_get_version(response);
@@ -1197,6 +1304,7 @@ int flb_http_response_set_status(struct flb_http_response *response,
     }
 
     return flb_http1_response_set_status(response, status);
+#endif
 }
 
 int flb_http_response_set_message(struct flb_http_response *response,
@@ -1341,12 +1449,11 @@ int flb_http_response_compress_body(
 }
 
 int flb_http_response_uncompress_body(
-    struct flb_http_response *response)
+    struct flb_http_response *response, size_t budget)
 {
     char      *content_encoding_header_value;
     char       new_content_length[21];
     cfl_sds_t  inflated_body;
-    char      *output_buffer;
     size_t     output_size;
     int        result;
 
@@ -1364,45 +1471,13 @@ int flb_http_response_uncompress_body(
         return 0;
     }
 
-    if (strncasecmp(content_encoding_header_value, "gzip", 4) == 0) {
-        result = uncompress_gzip(&output_buffer,
-                                    &output_size,
-                                    response->body,
-                                    cfl_sds_len(response->body));
+    result = http_uncompress_body(response->body, content_encoding_header_value,
+                                  budget, &inflated_body);
+    if (result < 0) {
+        return result;
     }
-    else if (strncasecmp(content_encoding_header_value, "zlib", 4) == 0) {
-        result = uncompress_zlib(&output_buffer,
-                                    &output_size,
-                                    response->body,
-                                    cfl_sds_len(response->body));
-    }
-    else if (strncasecmp(content_encoding_header_value, "zstd", 4) == 0) {
-        result = uncompress_zstd(&output_buffer,
-                                    &output_size,
-                                    response->body,
-                                    cfl_sds_len(response->body));
-    }
-    else if (strncasecmp(content_encoding_header_value, "snappy", 6) == 0) {
-        result = uncompress_snappy(&output_buffer,
-                                    &output_size,
-                                    response->body,
-                                    cfl_sds_len(response->body));
-    }
-    else if (strncasecmp(content_encoding_header_value, "deflate", 4) == 0) {
-        result = uncompress_deflate(&output_buffer,
-                                    &output_size,
-                                    response->body,
-                                    cfl_sds_len(response->body));
-    }
-
     if (result == 1) {
-        inflated_body = cfl_sds_create_len(output_buffer, output_size);
-
-        flb_free(output_buffer);
-
-        if (inflated_body == NULL) {
-            return -1;
-        }
+        output_size = cfl_sds_len(inflated_body);
 
         cfl_sds_destroy(response->body);
 
@@ -1436,6 +1511,8 @@ int flb_http_stream_init(struct flb_http_stream *stream,
     int result;
 
     stream->id = stream_id;
+    stream->incoming_header_size = 0;
+    stream->incoming_header_count = 0;
 
     if (role == HTTP_STREAM_ROLE_SERVER) {
         stream->status = HTTP_STREAM_STATUS_RECEIVING_HEADERS;
@@ -1486,6 +1563,7 @@ struct flb_http_stream *flb_http_stream_create(void *parent,
 
     if (result != 0) {
         flb_http_stream_destroy(stream);
+        return NULL;
     }
 
     return stream;
@@ -1579,88 +1657,6 @@ int flb_http_server_strncasecmp(const uint8_t *first_buffer,
 }
 
 /* PRIVATE */
-
-static \
-int uncompress_zlib(char **output_buffer,
-                    size_t *output_size,
-                    char *input_buffer,
-                    size_t input_size)
-{
-    return 0;
-}
-
-static \
-int uncompress_zstd(char **output_buffer,
-                    size_t *output_size,
-                    char *input_buffer,
-                    size_t input_size)
-{
-    int ret;
-
-    ret = flb_zstd_uncompress(input_buffer,
-                              input_size,
-                              (void **) output_buffer,
-                              output_size);
-
-    if (ret != 0) {
-        flb_error("[http zstd] decompression failed");
-        return -1;
-    }
-
-    return 1;
-}
-
-static \
-int uncompress_deflate(char **output_buffer,
-                       size_t *output_size,
-                       char *input_buffer,
-                       size_t input_size)
-{
-    return 0;
-}
-
-static \
-int uncompress_snappy(char **output_buffer,
-                      size_t *output_size,
-                      char *input_buffer,
-                      size_t input_size)
-{
-    int ret;
-
-    ret = flb_snappy_uncompress_framed_data(input_buffer,
-                                            input_size,
-                                            output_buffer,
-                                            output_size);
-
-    if (ret != 0) {
-        flb_error("[http snappy] decompression failed");
-        return -1;
-    }
-
-    return 1;
-}
-
-static \
-int uncompress_gzip(char **output_buffer,
-                    size_t *output_size,
-                    char *input_buffer,
-                    size_t input_size)
-{
-    int ret;
-
-    ret = flb_gzip_uncompress(input_buffer,
-                              input_size,
-                              (void **) output_buffer,
-                              output_size);
-
-    if (ret == -1) {
-        flb_error("[http gzip] decompression failed");
-        return -1;
-    }
-
-    return 1;
-}
-
 
 static \
 int compress_zlib(char **output_buffer,
