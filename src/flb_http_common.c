@@ -437,6 +437,9 @@ static int http_uncompress_body(cfl_sds_t body, const char *encoding,
     cfl_sds_t inflated;
     cfl_sds_t resized;
     char chunk[16384];
+    size_t capacity;
+    size_t required_size;
+    size_t target_size;
     size_t produced;
     size_t previous_input;
     int previous_state;
@@ -484,6 +487,24 @@ static int http_uncompress_body(cfl_sds_t body, const char *encoding,
             goto error;
         }
         if (produced > 0) {
+            if (produced > budget - cfl_sds_len(inflated)) {
+                result = FLB_DECOMPRESSOR_LIMIT_EXCEEDED;
+                goto error;
+            }
+            if (cfl_sds_avail(inflated) < produced) {
+                capacity = cfl_sds_alloc(inflated);
+                required_size = cfl_sds_len(inflated) + produced;
+                target_size = capacity > budget / 2 ? budget : capacity * 2;
+                if (target_size < required_size) {
+                    target_size = required_size;
+                }
+                resized = cfl_sds_increase(inflated, target_size - capacity);
+                if (resized == NULL) {
+                    result = FLB_DECOMPRESSOR_FAILURE;
+                    goto error;
+                }
+                inflated = resized;
+            }
             resized = cfl_sds_cat(inflated, chunk, produced);
             if (resized == NULL) {
                 result = FLB_DECOMPRESSOR_FAILURE;
