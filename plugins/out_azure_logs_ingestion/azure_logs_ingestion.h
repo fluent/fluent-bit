@@ -38,6 +38,10 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_sds.h>
 
+#ifdef FLB_HAVE_METRICS
+#include <cmetrics/cmt_histogram.h>
+#endif
+
 /* Context structure for Azure Logs Ingestion API */
 struct flb_az_li {
     /* log ingestion account setup */
@@ -66,6 +70,11 @@ struct flb_az_li {
     /* upstream connection to the data collection endpoint */
     struct flb_upstream *u_dce;
     flb_sds_t dce_u_url;
+
+#ifdef FLB_HAVE_METRICS
+    struct cmt_histogram *cmt_uncompressed_payload_size;
+    struct cmt_histogram *cmt_http_payload_size;
+#endif
 
     /* plugin output and config instance reference */
     struct flb_output_instance *ins;
