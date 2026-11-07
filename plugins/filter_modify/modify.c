@@ -348,6 +348,14 @@ static int setup(struct filter_modify_ctx *ctx,
             ctx->conditions_cnt++;
         }
         else {
+            /* Rules accept at most two arguments; only conditions accept three. */
+            if (list_size > 2) {
+                flb_plg_error(ctx->ins, "Invalid config for %s: expected one or two arguments; "
+                              "quote values containing spaces", kv->key);
+                teardown(ctx);
+                flb_utils_split_free(split);
+                return -1;
+            }
 
             //
             // Build a rule
