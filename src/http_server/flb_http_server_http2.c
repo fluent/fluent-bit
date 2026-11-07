@@ -891,6 +891,11 @@ static int http2_data_chunk_recv_callback(nghttp2_session *inner_session,
 {
     cfl_sds_t                        resized_buffer;
     struct flb_http_stream          *stream;
+    struct flb_http_server_session  *parent_session;
+    size_t                          capacity;
+    size_t                          required_size;
+    size_t                          maximum_size;
+    size_t                          target_size;
 
     stream = nghttp2_session_get_stream_user_data(inner_session, stream_id);
 
@@ -929,6 +934,24 @@ static int http2_data_chunk_recv_callback(nghttp2_session *inner_session,
         cfl_sds_set_len(stream->request.body, len);
     }
     else {
+        if (cfl_sds_avail(stream->request.body) < len) {
+            parent_session = stream->parent;
+            maximum_size = flb_http_server_get_buffer_max_size(parent_session->parent);
+            capacity = cfl_sds_alloc(stream->request.body);
+            required_size = cfl_sds_len(stream->request.body) + len;
+
+            /* Grow with received data, without reserving an untrusted Content-Length. */
+            target_size = capacity > maximum_size / 2 ? maximum_size : capacity * 2;
+            if (target_size < required_size) {
+                target_size = required_size;
+            }
+            resized_buffer = cfl_sds_increase(stream->request.body, target_size - capacity);
+            if (resized_buffer == NULL) {
+                stream->status = HTTP_STREAM_STATUS_ERROR;
+                return -1;
+            }
+            stream->request.body = resized_buffer;
+        }
         resized_buffer = cfl_sds_cat(stream->request.body, 
                                      (const char *) data, 
                                      len);

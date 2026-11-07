@@ -864,7 +864,8 @@ static int flb_gzip_decompressor_process_optional_headers(
     if (status != MZ_OK) {
         context->state = FLB_DECOMPRESSOR_STATE_FAILED;
 
-        return FLB_DECOMPRESSOR_FAILURE;
+        return status == MZ_MEM_ERROR ? FLB_DECOMPRESSOR_ALLOCATION_FAILURE :
+                                        FLB_DECOMPRESSOR_FAILURE;
     }
 
     inner_context->body_crc = MZ_CRC32_INIT;
@@ -904,7 +905,8 @@ static int flb_gzip_decompressor_process_body_chunk(
 
         *output_length = 0;
 
-        return FLB_DECOMPRESSOR_FAILURE;
+        return status == MZ_MEM_ERROR ? FLB_DECOMPRESSOR_ALLOCATION_FAILURE :
+                                        FLB_DECOMPRESSOR_FAILURE;
     }
 
     processed_bytes  = context->input_buffer_length;

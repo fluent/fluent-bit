@@ -39,17 +39,38 @@
 #define OTEL_PROTOBUF_ARENA_INITIAL_CHUNK_SIZE 4096
 #define OTEL_PROTOBUF_ARENA_MAX_CHUNK_SIZE 65536
 
+struct protobuf_arena_budget {
+    size_t remaining;
+    size_t allocations;
+};
+
 static void *protobuf_arena_chunk_malloc(void *context, size_t size)
 {
-    (void) context;
+    struct protobuf_arena_budget *budget;
+    void *pointer;
 
-    return flb_malloc(size);
+    budget = context;
+    if (size > budget->remaining) {
+        return NULL;
+    }
+    pointer = flb_malloc(size);
+    if (pointer != NULL) {
+        budget->remaining -= size;
+        budget->allocations++;
+    }
+    return pointer;
 }
+
 static void protobuf_arena_chunk_free(void *context, void *pointer)
 {
-    (void) context;
+    struct protobuf_arena_budget *budget;
 
+    budget = context;
     flb_free(pointer);
+    budget->allocations--;
+    if (budget->allocations == 0) {
+        flb_free(budget);
+    }
 }
 
 static void *protobuf_arena_alloc(void *allocator_data, size_t size)
@@ -70,25 +91,39 @@ static void protobuf_arena_free(void *allocator_data, void *pointer)
     (void) pointer;
 }
 
-static struct cfl_arena *protobuf_arena_create(void)
+static struct cfl_arena *protobuf_arena_create(size_t limit)
 {
     struct cfl_arena_options options;
+    struct protobuf_arena_budget *budget;
+    struct cfl_arena *arena;
 
+    budget = flb_calloc(1, sizeof(*budget));
+    if (budget == NULL) {
+        return NULL;
+    }
+    budget->remaining = limit;
     cfl_arena_options_init(&options);
     options.chunk_size = OTEL_PROTOBUF_ARENA_INITIAL_CHUNK_SIZE;
     options.maximum_chunk_size = OTEL_PROTOBUF_ARENA_MAX_CHUNK_SIZE;
     options.malloc_fn = protobuf_arena_chunk_malloc;
     options.free_fn = protobuf_arena_chunk_free;
+    options.allocator_context = budget;
 
-    return cfl_arena_create_with_options(&options);
+    /* Bound cumulative allocation, including merge copies retained by the arena. */
+    arena = cfl_arena_create_with_options(&options);
+    if (arena == NULL) {
+        flb_free(budget);
+    }
+    return arena;
 }
 
 static Opentelemetry__Proto__Collector__Logs__V1__ExportLogsServiceRequest *
-protobuf_logs_unpack(ProtobufCAllocator *allocator, size_t size, const uint8_t *data)
+protobuf_logs_unpack(ProtobufCAllocator *allocator, size_t size, const uint8_t *data,
+                     size_t limit)
 {
-    if (flb_opentelemetry_protobuf_validate(
+    if (flb_opentelemetry_protobuf_validate_with_budget(
             &opentelemetry__proto__collector__logs__v1__export_logs_service_request__descriptor,
-            data, size) != 0) {
+            data, size, &limit) != 0) {
         return NULL;
     }
     return opentelemetry__proto__collector__logs__v1__export_logs_service_request__unpack(
@@ -113,25 +148,29 @@ static void protobuf_logs_free(
 
 /* Unpack a logs request, using an arena for realistic batched payloads */
 static Opentelemetry__Proto__Collector__Logs__V1__ExportLogsServiceRequest *
-protobuf_logs_decode(uint8_t *in_buf, size_t in_size,
+protobuf_logs_decode(uint8_t *in_buf, size_t in_size, size_t limit,
                      struct cfl_arena **protobuf_arena,
                      ProtobufCAllocator *arena_allocator,
                      ProtobufCAllocator **protobuf_allocator)
 {
+    if (limit == 0) {
+        limit = FLB_OTEL_PROTOBUF_DECODE_BUDGET;
+    }
     *protobuf_arena = NULL;
     *protobuf_allocator = NULL;
 
     if (in_size >= OTEL_PROTOBUF_ARENA_MIN_PAYLOAD_SIZE) {
-        *protobuf_arena = protobuf_arena_create();
-        if (*protobuf_arena != NULL) {
-            arena_allocator->alloc = protobuf_arena_alloc;
-            arena_allocator->free = protobuf_arena_free;
-            arena_allocator->allocator_data = *protobuf_arena;
-            *protobuf_allocator = arena_allocator;
+        *protobuf_arena = protobuf_arena_create(limit);
+        if (*protobuf_arena == NULL) {
+            return NULL;
         }
+        arena_allocator->alloc = protobuf_arena_alloc;
+        arena_allocator->free = protobuf_arena_free;
+        arena_allocator->allocator_data = *protobuf_arena;
+        *protobuf_allocator = arena_allocator;
     }
 
-    return protobuf_logs_unpack(*protobuf_allocator, in_size, in_buf);
+    return protobuf_logs_unpack(*protobuf_allocator, in_size, in_buf, limit);
 }
 
 /*
@@ -464,7 +503,8 @@ int flb_opentelemetry_logs_protobuf_to_msgpack(
         return -1;
     }
 
-    input_logs = protobuf_logs_decode((uint8_t *) payload, payload_size, &protobuf_arena,
+    input_logs = protobuf_logs_decode((uint8_t *) payload, payload_size,
+                                      options->protobuf_decode_max_size, &protobuf_arena,
                                       &arena_allocator, &protobuf_allocator);
     if (input_logs == NULL) {
         flb_warn("[opentelemetry] failed to unpack protobuf logs payload");
@@ -1607,7 +1647,7 @@ int flb_opentelemetry_logs_protobuf_to_cfl(
 
     result->input_logs = protobuf_logs_decode(
                              (uint8_t *) payload, payload_size,
-                             &result->protobuf_arena,
+                             options->protobuf_decode_max_size, &result->protobuf_arena,
                              &result->arena_allocator,
                              &result->protobuf_allocator);
     if (result->input_logs == NULL) {

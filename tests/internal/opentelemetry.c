@@ -1736,6 +1736,7 @@ static int json_cfl_encode(struct flb_log_event_encoder *encoder,
     struct flb_opentelemetry_logs_decode_options options;
 
     result = NULL;
+    memset(&options, 0, sizeof(options));
     options.metadata_key = "otlp";
     options.body_key = NULL;
     options.output_limit = limit;
@@ -2065,6 +2066,7 @@ static void protobuf_cfl_check_parity(const char *name, const char *payload, siz
     struct flb_log_event_encoder enc;
     struct flb_log_event_encoder cfl_enc;
 
+    memset(&options, 0, sizeof(options));
     options.metadata_key = "otlp";
     options.body_key = NULL;
     options.output_limit = limit;
@@ -2120,6 +2122,7 @@ void test_opentelemetry_protobuf_cfl_parity_corpus()
         return;
     }
 
+    memset(&options, 0, sizeof(options));
     options.metadata_key = "otlp";
     options.body_key = NULL;
     options.output_limit = SIZE_MAX;

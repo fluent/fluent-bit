@@ -2412,6 +2412,7 @@ def send_grpc_limit_frames(service, frames, signal_type="logs", encoding="gzip",
         headers=["Content-Type: application/grpc", f"grpc-encoding: {encoding.split('-')[0]}"],
         http_mode="http2-prior-knowledge",
         include_headers=True,
+        extra_args=["--max-time", "60"],
     )
     assert result["status_code"] == 200
     headers = dict(
@@ -2426,7 +2427,7 @@ def test_in_opentelemetry_grpc_expanded_message_limit(size_delta, expected_statu
     service = Service("otlp_grpc_expanded_limit.yaml")
     try:
         service.start()
-        payload = grpc_limit_payload(service, 16 * 1024 * 1024 + size_delta)
+        payload = grpc_limit_payload(service, 8 * 1024 * 1024 + size_delta)
         assert send_grpc_limit_frames(service, [(payload, True)]) == expected_status
         # A rejected allocation must not poison subsequent requests.
         small = service.build_otel_payload("test_logs_001.in.json", "logs")
@@ -2438,11 +2439,11 @@ def test_in_opentelemetry_grpc_expanded_message_limit(size_delta, expected_statu
 @pytest.mark.parametrize("signal_type", ["logs", "metrics", "traces"])
 @pytest.mark.parametrize("size_delta,expected_status", [(-1, 0), (0, 0), (1, 8)])
 def test_in_opentelemetry_grpc_expanded_http_limit(signal_type, size_delta, expected_status):
-    # The listener's default 4M limit uses decimal bytes.
+    # The OTLP default is exactly 64 MiB, independent of decimal size suffixes.
     service = Service("otlp_http2_cleartext.yaml")
     try:
         service.start()
-        payload = grpc_limit_payload(service, 4_000_000 + size_delta, signal_type)
+        payload = grpc_limit_payload(service, 64 * 1024 * 1024 + size_delta, signal_type)
         assert send_grpc_limit_frames(service, [(payload, True)], signal_type) == expected_status
     finally:
         service.stop()
@@ -2455,7 +2456,7 @@ def test_in_opentelemetry_grpc_expanded_request_budget(first_compressed, size_de
     try:
         service.start()
         first = grpc_limit_payload(service, 1024)
-        second = grpc_limit_payload(service, 4_000_000 - len(first) + size_delta)
+        second = grpc_limit_payload(service, 64 * 1024 * 1024 - len(first) + size_delta)
         assert send_grpc_limit_frames(
             service, [(first, first_compressed), (second, True)]
         ) == expected_status
@@ -2675,7 +2676,7 @@ def test_in_opentelemetry_grpc_preserves_groups_across_chunks(encoding, workers)
                 scope.scope.version = "1.2.3"
                 scope.schema_url = f"https://example.com/scope/{scope_index}"
                 scope.scope.attributes.add(key="scope.id").value.int_value = scope_index
-                body = f"{resource_id}-scope-{scope_index}:" + "x" * 300_000
+                body = f"{resource_id}-scope-{scope_index}:" + "x" * 1_100_000
                 scope.log_records.add(time_unix_nano=1789516800123456789).body.string_value = body
                 expected.append((resource_id, resource.schema_url, scope.scope.name,
                                  scope.scope.version, scope.schema_url, scope_index, body))
@@ -2919,7 +2920,8 @@ def build_direct_cfl_sentinel_payload(keep="yes"):
 
 
 def direct_cfl_service(tmp_path, direct, processors, *, body_key=None, workers=1,
-                       logs_max_size=None, threaded=False, conditional_routes=False):
+                       logs_max_size=None, threaded=False, conditional_routes=False,
+                       protobuf_decode_max_size=None):
     name = f"direct-cfl-{'on' if direct else 'off'}.yaml"
     if not direct:
         processors = [MSGPACK_REFERENCE_FILTER] + (processors or [])
@@ -2928,6 +2930,8 @@ def direct_cfl_service(tmp_path, direct, processors, *, body_key=None, workers=1
         options.append(f"logs_body_key: {body_key}")
     if logs_max_size:
         options.append(f"logs_max_size: {logs_max_size}")
+    if protobuf_decode_max_size is not None:
+        options.append(f"protobuf_decode_max_size: {protobuf_decode_max_size}")
     if threaded:
         options.append("threaded: true")
     option_lines = "\n".join(f"      {option}" for option in options)
@@ -3507,5 +3511,345 @@ def test_in_opentelemetry_json_logs_replace_invalid_unicode(config_file):
         for record in actual[:-1]:
             attributes = {attr.key: attr.value.string_value for attr in record.attributes}
             assert attributes[r"\uACD"] == "key preserved"
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("signal_type", ["logs", "metrics", "traces"])
+@pytest.mark.parametrize("transport", ["http", "grpc", "grpc-gzip"])
+@pytest.mark.parametrize("shape", ["messages", "unknown", "duplicate", "nested"])
+def test_in_opentelemetry_protobuf_decode_budget(signal_type, transport, shape):
+    # Under 3 MB on the wire, but over a million allocations without
+    # preflight accounting. Unknown and duplicate singular fields also cost memory.
+    if shape == "messages":
+        payload = b"\x0a\x00" * 1_100_000
+    elif shape == "unknown":
+        payload = b"\x78\x00" * 1_100_000
+    elif shape == "nested":
+        leaves = b"\x12\x00" * 1_100_000
+        scope = b"\x12" + encode_test_varint(len(leaves)) + leaves
+        payload = b"\x0a" + encode_test_varint(len(scope)) + scope
+    else:
+        resource = b"\x0a\x00" * 1_100_000
+        payload = b"\x0a" + encode_test_varint(len(resource)) + resource
+    service = Service("otlp_http2_cleartext.yaml")
+    try:
+        service.start()
+        small = service.build_otel_payload(f"test_{signal_type}_001.in.json", signal_type)
+        if transport == "http":
+            response = service.send_raw_request(
+                f"/v1/{signal_type}", payload, content_type="application/x-protobuf")
+            assert response.status_code == 413
+            response = service.send_raw_request(
+                f"/v1/{signal_type}", small, content_type="application/x-protobuf")
+            assert response.status_code == 201
+        else:
+            compressed = transport == "grpc-gzip"
+            assert send_grpc_limit_frames(service, [(payload, compressed)], signal_type) == 8
+            assert send_grpc_limit_frames(service, [(small, compressed)], signal_type) == 0
+    finally:
+        service.stop()
+
+
+def test_in_opentelemetry_protobuf_decode_budget_multiframe():
+    service = Service("otlp_http2_cleartext.yaml")
+    # Each frame fits independently; the request as a whole exceeds the budget.
+    payload = b"\x0a\x00" * 500_000
+    try:
+        service.start()
+        assert send_grpc_limit_frames(service, [(payload, True), (payload, True)]) == 8
+        small = service.build_otel_payload("test_logs_001.in.json", "logs")
+        assert send_grpc_limit_frames(service, [(small, False)]) == 0
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("compressed", [False, True])
+@pytest.mark.parametrize("limit,count", [(None, 1_100_000), ("64k", 1000)])
+def test_in_opentelemetry_protobuf_decode_budget_profiles(tmp_path, compressed, limit, count):
+    """Reject oversized profiles and accept a small export on the same listener."""
+    config = tmp_path / "profiles-budget.yaml"
+    config.write_text("""service:
+  flush: 1
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+pipeline:
+  inputs:
+    - name: opentelemetry
+      port: ${FLUENT_BIT_TEST_LISTENER_PORT}
+      profiles_support: true
+      http2: on
+  outputs:
+    - name: null
+      match: '*'
+""")
+    if limit is not None:
+        config.write_text(config.read_text().replace(
+            "      profiles_support: true",
+            f"      profiles_support: true\n      protobuf_decode_max_size: {limit}"))
+    service = Service(str(config))
+    payload = b"\x0a\x00" * count
+    encoded = gzip.compress(payload) if compressed else payload
+    body = bytes([int(compressed)]) + len(encoded).to_bytes(4, "big") + encoded
+    try:
+        service.start()
+        result = run_curl_request(
+            f"http://localhost:{service.flb_listener_port}/opentelemetry.proto.collector."
+            "profiles.v1development.ProfilesService/Export",
+            body,
+            headers=["Content-Type: application/grpc", "grpc-encoding: gzip"],
+            http_mode="http2-prior-knowledge", include_headers=True,
+            extra_args=["--max-time", "60"],
+        )
+        assert result["status_code"] == 200
+        assert "grpc-status: 8" in result["headers_raw"].lower()
+        payload = b"\x0a\x00"
+        encoded = gzip.compress(payload) if compressed else payload
+        body = bytes([int(compressed)]) + len(encoded).to_bytes(4, "big") + encoded
+        result = run_curl_request(
+            f"http://localhost:{service.flb_listener_port}/opentelemetry.proto.collector."
+            "profiles.v1development.ProfilesService/Export",
+            body,
+            headers=["Content-Type: application/grpc", "grpc-encoding: gzip"],
+            http_mode="http2-prior-knowledge", include_headers=True,
+            extra_args=["--max-time", "60"],
+        )
+        assert result["status_code"] == 200
+        assert "grpc-status: 0" in result["headers_raw"].lower()
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("direct", [False, True])
+def test_in_opentelemetry_protobuf_decode_budget_arena_merge(tmp_path, direct):
+    # Each duplicate Resource contributes one empty attribute. protobuf-c merges
+    # the repeated attributes by allocating a larger array on each occurrence.
+    # The wire estimate is small, but the arena retains the intermediate arrays.
+    resource = b"\x0a\x02\x0a\x00" * 10_000
+    payload = b"\x0a" + encode_test_varint(len(resource)) + resource
+    service = direct_cfl_service(tmp_path, direct,
+                                 DIRECT_CFL_PROCESSOR_CHAINS["content_modifier"])
+    try:
+        service.start()
+        response = service.send_raw_request("/v1/logs", payload)
+        assert response.status_code == 400
+        small = service.build_otel_payload("test_logs_001.in.json", "logs")
+        assert service.send_raw_request("/v1/logs", small).status_code == 201
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("signal_type", ["logs", "metrics", "traces"])
+@pytest.mark.parametrize("transport", ["http", "grpc"])
+@pytest.mark.parametrize("limit,accepted", [("64k", False), ("256k", True)])
+def test_in_opentelemetry_configurable_decode_budget(tmp_path, signal_type, transport,
+                                                    limit, accepted):
+    service = direct_cfl_service(tmp_path, True, None, protobuf_decode_max_size=limit)
+    try:
+        service.start()
+        small = service.build_otel_payload(f"test_{signal_type}_001.in.json", signal_type)
+        payload = small + b"\x78\x00" * 1000
+        if transport == "http":
+            assert service.send_raw_request(f"/v1/{signal_type}", payload).status_code == (
+                201 if accepted else 413)
+            assert service.send_raw_request(f"/v1/{signal_type}", small).status_code == 201
+        else:
+            assert send_grpc_limit_frames(service, [(payload, True)], signal_type) == (
+                0 if accepted else 8)
+            assert send_grpc_limit_frames(service, [(small, False)], signal_type) == 0
+    finally:
+        service.stop()
+
+
+def test_in_opentelemetry_configurable_decode_budget_above_default(tmp_path):
+    service = direct_cfl_service(tmp_path, True, None, protobuf_decode_max_size="256M")
+    try:
+        service.start()
+        # Exceeds the default preflight budget; both listener and shared logs
+        # decoder must honor the larger configured value.
+        payload = b"\x78\x00" * 1_100_000
+        assert service.send_raw_request("/v1/logs", payload, timeout=60).status_code == 201
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("direct", [False, True])
+@pytest.mark.parametrize("limit,accepted", [("1M", False), ("16M", True)])
+def test_in_opentelemetry_configurable_decode_budget_arena(tmp_path, direct, limit, accepted):
+    from opentelemetry.proto.resource.v1.resource_pb2 import Resource
+
+    resource = Resource()
+    resource.attributes.add(key="a").value.string_value = "b"
+    wire = resource.SerializeToString()
+    resources = (b"\x0a" + encode_test_varint(len(wire)) + wire) * 1000
+    payload = b"\x0a" + encode_test_varint(len(resources)) + resources
+    service = direct_cfl_service(tmp_path, direct,
+                                 DIRECT_CFL_PROCESSOR_CHAINS["content_modifier"],
+                                 protobuf_decode_max_size=limit)
+    try:
+        service.start()
+        # Preflight fits either budget; cumulative merge allocations exceed 1M.
+        assert service.send_raw_request("/v1/logs", payload).status_code == (
+            201 if accepted else 400)
+        small = service.build_otel_payload("test_logs_001.in.json", "logs")
+        assert service.send_raw_request("/v1/logs", small).status_code == 201
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("limit", ["0", "-1", "-2M", "invalid", "false"])
+def test_in_opentelemetry_configurable_decode_budget_invalid(tmp_path, limit):
+    service = direct_cfl_service(tmp_path, True, None, protobuf_decode_max_size=limit)
+    try:
+        with pytest.raises(FluentBitStartupError):
+            service.start()
+        with open(service.service.flb.log_file, encoding="utf-8", errors="replace") as log:
+            assert "protobuf_decode_max_size must be a valid positive size" in log.read()
+    finally:
+        service.stop()
+
+
+def test_in_opentelemetry_configurable_decode_budget_json(tmp_path):
+    service = direct_cfl_service(tmp_path, True, None, protobuf_decode_max_size="1")
+    try:
+        service.start()
+        assert service.send_raw_request("/v1/logs", b'{"resourceLogs":[]}',
+                                        content_type="application/json").status_code == 201
+        assert service.send_raw_request("/v1/logs", b"\x0a\x00").status_code == 413
+    finally:
+        service.stop()
+
+
+def test_in_opentelemetry_configurable_decode_budget_multiframe(tmp_path):
+    service = direct_cfl_service(tmp_path, True, None, protobuf_decode_max_size="200k")
+    payload = b"\x78\x00" * 1000
+    try:
+        service.start()
+        assert send_grpc_limit_frames(service, [(payload, True)]) == 0
+        assert send_grpc_limit_frames(service, [(payload, True), (payload, False)]) == 8
+        assert send_grpc_limit_frames(service, [(payload, False)]) == 0
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("http_mode", ["http1.1", "http2-prior-knowledge"])
+@pytest.mark.parametrize("compressed", [False, True])
+@pytest.mark.parametrize("delta,status", [(-1, 201), (0, 201), (1, 413)])
+def test_in_opentelemetry_request_size_default_http(http_mode, compressed, delta, status):
+    service = Service("otlp_http2_cleartext.yaml")
+    try:
+        service.start()
+        payload = grpc_limit_payload(service, 64 * 1024 * 1024 + delta)
+        headers = ["Content-Type: application/x-protobuf"]
+        if compressed:
+            payload = gzip.compress(payload)
+            headers.append("Content-Encoding: gzip")
+        result = run_curl_request(
+            f"http://localhost:{service.flb_listener_port}/v1/logs", payload,
+            headers=headers, http_mode=http_mode, extra_args=["--max-time", "60"],
+        )
+        assert result["status_code"] == status
+        small = service.build_otel_payload("test_logs_001.in.json", "logs")
+        assert service.send_raw_request("/v1/logs", small).status_code == 201
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("delta,status", [(-1, 0), (0, 0), (1, 8)])
+def test_in_opentelemetry_request_size_default_grpc_raw(delta, status):
+    service = Service("otlp_http2_cleartext.yaml")
+    try:
+        service.start()
+        payload = grpc_limit_payload(service, 64 * 1024 * 1024 + delta)
+        assert send_grpc_limit_frames(service, [(payload, False)]) == status
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("option", ["http_server.buffer_max_size", "buffer_max_size"])
+@pytest.mark.parametrize("transport", ["http", "grpc"])
+def test_in_opentelemetry_request_size_override(tmp_path, option, transport):
+    service = direct_cfl_service(tmp_path, True, None)
+    config = tmp_path / "direct-cfl-on.yaml"
+    config.write_text(config.read_text().replace(
+        "      http2: on", f"      http2: on\n      {option}: 16k"))
+    try:
+        service.start()
+        for delta in [-1, 0, 1]:
+            payload = grpc_limit_payload(service, 16000 + delta)
+            if transport == "http":
+                assert service.send_raw_request("/v1/logs", payload).status_code == (
+                    201 if delta <= 0 else 413)
+            else:
+                assert send_grpc_limit_frames(service, [(payload, True)]) == (
+                    0 if delta <= 0 else 8)
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("delta,status", [(-1, 201), (0, 201), (1, 413)])
+def test_in_opentelemetry_request_size_default_json(delta, status):
+    service = Service("otlp_http2_cleartext.yaml")
+    prefix = b'{"resourceLogs":[]}'
+    payload = prefix + b" " * (64 * 1024 * 1024 + delta - len(prefix))
+    try:
+        service.start()
+        result = run_curl_request(
+            f"http://localhost:{service.flb_listener_port}/v1/logs", gzip.compress(payload),
+            headers=["Content-Type: application/json", "Content-Encoding: gzip"],
+            http_mode="http1.1", extra_args=["--max-time", "60"],
+        )
+        assert result["status_code"] == status
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("encoding", [
+    "gzip", "zstd", "zstd-unknown", "zstd-unknown-large-window",
+    "snappy", "snappy-framed", "snappy-mixed",
+])
+@pytest.mark.parametrize("workers", HTTP_WORKER_COUNTS)
+@pytest.mark.parametrize("http_mode", ["http1.1", "http2-prior-knowledge"])
+def test_in_opentelemetry_http_bounded_content_encoding(encoding, workers, http_mode):
+    """Enforce decoded boundaries for each codec, protocol, and worker mode."""
+    service = Service("otlp_grpc_bounded.yaml")
+    service.service.extra_env["OTLP_TEST_HTTP_WORKERS"] = workers
+    content_encoding = encoding.split("-")[0]
+    try:
+        service.start()
+        for size, expected in [(4095, 201), (4096, 201), (4097, 413),
+                               (128 * 1024, 413), (1024, 201)]:
+            payload = encode_grpc_limit_payload(grpc_limit_payload(service, size), encoding)
+            result = run_curl_request(
+                f"http://localhost:{service.flb_listener_port}/v1/logs", payload,
+                headers=["Content-Type: application/x-protobuf",
+                         f"Content-Encoding: {content_encoding}"],
+                http_mode=http_mode,
+            )
+            assert result["status_code"] == expected
+    finally:
+        service.stop()
+    # Only accepted requests may reach ingestion; each fixture has four records.
+    assert len(received_grpc_log_records()) == 12
+
+
+@pytest.mark.parametrize("limit", ["1000", "2k"])
+def test_in_opentelemetry_request_size_decoded_override(tmp_path, limit):
+    """Preserve an explicit shared decoded-body limit below the wire limit."""
+    service = direct_cfl_service(tmp_path, True, None)
+    config = tmp_path / "direct-cfl-on.yaml"
+    config.write_text(config.read_text().replace(
+        "      http2: on", f"      http2: on\n      http_server.max_decoded_body_size: {limit}"))
+    boundary = 1000 if limit == "1000" else 2000
+    try:
+        service.start()
+        for size in (boundary - 1, boundary, boundary + 1, boundary - 1):
+            payload = gzip.compress(grpc_limit_payload(service, size))
+            result = run_curl_request(
+                f"http://localhost:{service.flb_listener_port}/v1/logs", payload,
+                headers=["Content-Type: application/x-protobuf", "Content-Encoding: gzip"],
+                http_mode="http2-prior-knowledge",
+            )
+            assert result["status_code"] == (413 if size > boundary else 201)
     finally:
         service.stop()

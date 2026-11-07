@@ -125,6 +125,8 @@ struct flb_opentelemetry_logs_decode_options {
     const char *metadata_key;
     const char *body_key;
     size_t output_limit;
+    /* Zero selects FLB_OTEL_PROTOBUF_DECODE_BUDGET. Ignored for JSON. */
+    size_t protobuf_decode_max_size;
 };
 
 struct flb_mp_chunk_cobj;
@@ -238,6 +240,18 @@ size_t flb_opentelemetry_logs_json_cfl_get_encoded_size(
 
 void flb_opentelemetry_logs_json_cfl_destroy(
         struct flb_opentelemetry_logs_json_cfl *result);
+
+/*
+ * Preflight allocation estimate, shared across all messages in a request.
+ * Leave allocation headroom above the OTLP input's 64 MiB wire limit while
+ * independently bounding message-tree amplification.
+ */
+#define FLB_OTEL_PROTOBUF_DECODE_BUDGET (128 * 1024 * 1024)
+#define FLB_OTEL_PROTOBUF_LIMIT_EXCEEDED -2
+
+int flb_opentelemetry_protobuf_validate_with_budget(
+        const ProtobufCMessageDescriptor *descriptor,
+        const void *data, size_t size, size_t *remaining);
 
 int flb_opentelemetry_protobuf_validate(
         const ProtobufCMessageDescriptor *descriptor,

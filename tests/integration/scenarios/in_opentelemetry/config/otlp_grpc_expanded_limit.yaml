@@ -9,7 +9,7 @@ pipeline:
     - name: opentelemetry
       port: ${FLUENT_BIT_TEST_LISTENER_PORT}
       http2: on
-      http_server.buffer_max_size: 32M
+      http_server.buffer_max_size: 8388608
 
   outputs:
     - name: null

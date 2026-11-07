@@ -27,7 +27,10 @@
 
 #include <fluent-bit/http_server/flb_http_server.h>
 
-#define HTTP_BUFFER_MAX_SIZE    "4M"
+/* OTLP recommends a 64 MiB default request limit after decompression. */
+#define FLB_OTEL_REQUEST_MAX_SIZE (64 * 1024 * 1024)
+/* Allow HTTP headers and gRPC framing in addition to the payload budget. */
+#define FLB_OTEL_HTTP_OVERHEAD_SIZE (64 * 1024)
 #define HTTP_BUFFER_CHUNK_SIZE  "512K"
 
 struct flb_opentelemetry {
@@ -40,6 +43,8 @@ struct flb_opentelemetry {
     flb_sds_t logs_metadata_key;
     flb_sds_t logs_body_key;
     size_t logs_max_size;
+    size_t protobuf_decode_max_size;
+    size_t request_max_size;
     int profile_support_enabled;
     int encode_profiles_as_log;
     struct flb_oauth2_jwt_cfg oauth2_cfg;
