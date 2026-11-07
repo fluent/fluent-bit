@@ -1359,6 +1359,9 @@ static int ensure_container(struct flb_azure_blob *ctx)
     return FLB_FALSE;
 }
 
+/*
+ * Create the output context, buffered store, and mutex shared by workers.
+ */
 static int cb_azure_blob_init(struct flb_output_instance *ins,
                               struct flb_config *config, void *data)
 {
@@ -2140,6 +2143,10 @@ static int ingest_all_chunks(struct flb_azure_blob *ctx, struct flb_config *conf
     return 0;
 }
 
+/*
+ * Drain startup buffers and create the upload timer under buffer_mutex.
+ * Return -1 on failure so the caller can unlock and request an engine retry.
+ */
 static int flush_init(void *out_context, struct flb_config *config)
 {
     int ret;
@@ -2194,6 +2201,10 @@ static int flush_init(void *out_context, struct flb_config *config)
     return 0;
 }
 
+/*
+ * Flush a chunk to Azure or serialize its local buffering with buffer_mutex.
+ * Release the mutex on every buffered success and retry path.
+ */
 static void cb_azure_blob_flush(struct flb_event_chunk *event_chunk,
                                 struct flb_output_flush *out_flush,
                                 struct flb_input_instance *i_ins,
@@ -2396,6 +2407,10 @@ static void cb_azure_blob_flush(struct flb_event_chunk *event_chunk,
     FLB_OUTPUT_RETURN(ret);
 }
 
+/*
+ * Upload remaining buffers after workers have joined, then destroy the store
+ * and its mutex. A NULL context requires no cleanup.
+ */
 static int cb_azure_blob_exit(void *data, struct flb_config *config)
 {
     struct flb_azure_blob *ctx = data;
