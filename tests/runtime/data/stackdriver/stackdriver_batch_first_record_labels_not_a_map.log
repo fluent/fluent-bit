@@ -1,0 +1,2 @@
+{"message":"bad first record", "logging.googleapis.com/labels": "not_a_map"}
+{"message":"valid second record"}
