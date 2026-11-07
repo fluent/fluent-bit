@@ -2822,6 +2822,7 @@ void flb_test_db_delete_stale_file()
     int unused;
 
     unlink(db);
+    unlink(move_file[1]);
 
     clear_output_num();
 
@@ -2831,7 +2832,7 @@ void flb_test_db_delete_stale_file()
     ctx = test_tail_ctx_create(&cb_data,
                                &org_file[0],
                                sizeof(org_file)/sizeof(char *),
-                               FLB_FALSE);
+                               FLB_TRUE);
     if (!TEST_CHECK(ctx != NULL)) {
         TEST_MSG("test_ctx_create failed");
         exit(EXIT_FAILURE);
