@@ -35,6 +35,8 @@ def test_http_inflation_allocation_failure(tmp_path, allocation_preload, allocat
     marker = tmp_path / "fail-next-allocation"
     environment = {
         "LD_PRELOAD": str(allocation_preload),
+        # Instrument libc allocations without replacing the fault injector itself.
+        "VALGRIND_OPTS": "--soname-synonyms=somalloc=libc.so.6",
         "INFLATION_FAILURE_MARKER": str(marker),
     }
     if allocation == "input":
