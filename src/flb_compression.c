@@ -112,7 +112,7 @@ int flb_decompression_context_resize_buffer(
                                          new_size);
 
         if (new_buffer_address == NULL) {
-            return FLB_DECOMPRESSOR_FAILURE;
+            return FLB_DECOMPRESSOR_ALLOCATION_FAILURE;
         }
 
         if (new_buffer_address != context->input_buffer) {
@@ -366,9 +366,14 @@ int flb_decompress_buffer(int algorithm, void *input, size_t input_size,
     if (chunk_size == 0) {
         chunk_size = 1;
     }
+    if (algorithm != FLB_COMPRESSION_ALGORITHM_GZIP &&
+        algorithm != FLB_COMPRESSION_ALGORITHM_ZSTD &&
+        algorithm != FLB_COMPRESSION_ALGORITHM_SNAPPY) {
+        return FLB_DECOMPRESSOR_FAILURE;
+    }
     decoder = flb_decompression_context_create(algorithm, input_size);
     if (decoder == NULL) {
-        return FLB_DECOMPRESSOR_FAILURE;
+        return FLB_DECOMPRESSOR_ALLOCATION_FAILURE;
     }
     decoder->output_limit = limit;
     decoder->input_complete = FLB_TRUE;
@@ -377,7 +382,7 @@ int flb_decompress_buffer(int algorithm, void *input, size_t input_size,
     chunk = flb_malloc(chunk_size);
     if (chunk == NULL) {
         flb_decompression_context_destroy(decoder);
-        return FLB_DECOMPRESSOR_FAILURE;
+        return FLB_DECOMPRESSOR_ALLOCATION_FAILURE;
     }
     while (decoder->input_buffer_length > 0) {
         previous_input = decoder->input_buffer_length;
@@ -390,7 +395,7 @@ int flb_decompress_buffer(int algorithm, void *input, size_t input_size,
         if (produced > 0) {
             resized = flb_realloc(buffer, total + produced);
             if (resized == NULL) {
-                ret = FLB_DECOMPRESSOR_FAILURE;
+                ret = FLB_DECOMPRESSOR_ALLOCATION_FAILURE;
                 goto error;
             }
             buffer = resized;

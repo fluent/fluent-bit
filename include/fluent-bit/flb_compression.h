@@ -35,6 +35,7 @@
 #define FLB_DECOMPRESSOR_STATE_EXPECTING_BODY             2
 #define FLB_DECOMPRESSOR_STATE_EXPECTING_FOOTER           3
 
+#define FLB_DECOMPRESSOR_ALLOCATION_FAILURE              -5
 #define FLB_DECOMPRESSOR_LIMIT_EXCEEDED                  -4
 #define FLB_DECOMPRESSOR_FAILURE                         -1
 #define FLB_DECOMPRESSOR_CORRUPTED_HEADER                -2
