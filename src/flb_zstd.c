@@ -237,7 +237,8 @@ int flb_zstd_decompressor_dispatch(struct flb_decompression_context *context,
             return FLB_DECOMPRESSOR_LIMIT_EXCEEDED;
         }
         context->state = FLB_DECOMPRESSOR_STATE_FAILED;
-        return FLB_DECOMPRESSOR_FAILURE;
+        return ZSTD_getErrorCode(ret) == ZSTD_error_memory_allocation ?
+               FLB_DECOMPRESSOR_ALLOCATION_FAILURE : FLB_DECOMPRESSOR_FAILURE;
     }
     zstd_ctx->input_offset = input.pos;
     *output_length = output.pos;
