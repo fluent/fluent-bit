@@ -185,6 +185,8 @@ void fts_runtime_destroy(struct fts_runtime *ctx)
 
     if (ctx->vm) {
         flb_luajit_destroy(ctx->vm);
+        /* Finalizer errors can also unwind through LuaJIT's assembly frames. */
+        fts_sanitizer_forget_unwound_frames();
         ctx->vm = NULL;
     }
     fts_crypto_destroy(ctx);
