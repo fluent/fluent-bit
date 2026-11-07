@@ -34,6 +34,10 @@
 #define MQTT_PUBREC       5
 #define MQTT_PUBREL       6
 #define MQTT_PUBCOMP      7
+#define MQTT_SUBSCRIBE    8
+#define MQTT_SUBACK       9
+#define MQTT_UNSUBSCRIBE 10
+#define MQTT_UNSUBACK    11
 #define MQTT_PINGREQ     12
 #define MQTT_PINGRESP    13
 #define MQTT_DISCONNECT  14
@@ -45,6 +49,12 @@
 #define MQTT_CONN_REFUSED_SERVER   3
 #define MQTT_CONN_REFUSED_BADCRED  4
 #define MQTT_CONN_REFUSED_NOAUTH   5
+
+/* SUBACK return code for a refused subscription */
+#define MQTT_SUBACK_FAILURE        0x80
+
+/* One bit per Packet Identifier (16 bits) */
+#define MQTT_QOS2_BITMAP_SIZE      8192
 
 /* QOS Flag status */
 #define MQTT_QOS_LEV0              0  /* no reply      */
