@@ -439,6 +439,13 @@ if(TEST flb-rt-output_throttle_runtime)
   set_tests_properties(flb-rt-output_throttle_runtime PROPERTIES TIMEOUT 120)
 endif()
 
+# These executables run many cases with flush, retry, and shutdown waits.
+foreach(test_name flb-rt-in_tail flb-rt-out_s3 flb-rt-out_gcs)
+  if(TEST ${test_name})
+    set_tests_properties(${test_name} PROPERTIES TIMEOUT 600)
+  endif()
+endforeach()
+
 function(flb_runtime_lock_tests resource_name)
   foreach(test_name ${ARGN})
     if (TEST ${test_name})
