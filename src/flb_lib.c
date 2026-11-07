@@ -930,7 +930,7 @@ double flb_time_now()
 
 int static do_start(flb_ctx_t *ctx)
 {
-    int fd;
+    flb_pipefd_t fd;
     int bytes;
     int ret;
     uint64_t val;
