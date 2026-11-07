@@ -24,8 +24,8 @@
 #include <stddef.h>
 #include "mk_macros.h"
 
-#ifdef _WIN32
-/* Windows */
+#if defined(_WIN32) && !defined(__MINGW32__)
+/* Windows (MSVC): PCHAR/ULONG_PTR come from the Windows SDK headers */
 #define container_of(address, type, field) ((type *)(                   \
                                                      (PCHAR)(address) - \
                                                      (ULONG_PTR)(&((type *)0)->field)))
