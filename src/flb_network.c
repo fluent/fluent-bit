@@ -330,6 +330,28 @@ int flb_net_socket_set_rcvtimeout(flb_sockfd_t fd, int timeout_in_seconds)
     return 0;
 }
 
+/* Bound blocking sends using the same seconds-based timeout as receives. */
+int flb_net_socket_set_sndtimeout(flb_sockfd_t fd, int timeout_in_seconds)
+{
+#ifdef FLB_SYSTEM_WINDOWS
+    /* WINDOWS */
+    DWORD timeout = timeout_in_seconds * 1000;
+    if (setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, (const char*)&timeout, sizeof timeout)
+        == -1) {
+#else
+    /* LINUX and MAC OS X */
+    struct timeval tv;
+    tv.tv_sec = timeout_in_seconds;
+    tv.tv_usec = 0;
+    if (setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, (const char*)&tv, sizeof tv) == -1) {
+#endif
+        flb_errno();
+        return -1;
+    }
+
+    return 0;
+}
+
 /*
  * Enable the TCP_FASTOPEN feature for server side implemented in Linux Kernel >= 3.7,
  * for more details read here:
@@ -1473,8 +1495,16 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
         /* Disable Nagle's algorithm */
         flb_net_socket_tcp_nodelay(fd);
 
-        /* Set receive timeout */
+        /* Set receive timeout and bound writes on synchronous sockets. */
         flb_net_socket_set_rcvtimeout(fd, u_conn->net->io_timeout);
+        if (is_async == FLB_FALSE) {
+            ret = flb_net_socket_set_sndtimeout(fd, u_conn->net->io_timeout);
+            if (ret == -1) {
+                flb_socket_close(fd);
+                fd = -1;
+                continue;
+            }
+        }
 
         if (u_conn) {
             u_conn->fd = fd;
