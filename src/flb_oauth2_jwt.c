@@ -1072,6 +1072,12 @@ static int oauth2_jwks_fetch_keys(struct flb_oauth2_jwt_ctx *ctx)
         goto cleanup;
     }
 
+    /*
+     * Bound synchronous JWKS I/O before acquiring a connection. TLS uses the
+     * upstream connect deadline; the HTTP client applies its separate response
+     * deadline after sending the request.
+     */
+    u->base.net.io_timeout = ctx->cfg.jwks_response_timeout;
     flb_stream_disable_async_mode(&u->base);
 
     u_conn = flb_upstream_conn_get(u);
