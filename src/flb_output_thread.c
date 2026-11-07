@@ -150,7 +150,7 @@ static void cb_thread_sched_timer(struct flb_config *ctx, void *data)
 }
 
 static inline int handle_output_event(struct flb_config *config,
-                                      int ch_parent, flb_pipefd_t fd)
+                                      flb_pipefd_t ch_parent, flb_pipefd_t fd)
 {
     int ret;
     int bytes;
