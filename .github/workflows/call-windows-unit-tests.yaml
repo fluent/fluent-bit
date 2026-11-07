@@ -253,6 +253,18 @@ jobs:
           dumpbin /dependents .\bin\fluent-bit.exe
         working-directory: build
 
+      - name: Check event channels and runtime startup
+        run: |
+            ctest --output-on-failure --no-tests=error --timeout 60 -R '^flb-it-pipe$'
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            if ('${{ matrix.config.runtime_tests }}' -eq 'On') {
+              ctest --output-on-failure --no-tests=error --timeout 60 `
+                -R '^flb-rt-filter_modify/(op_set_append|invalid_wildcard)$'
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            }
+        shell: pwsh
+        working-directory: build
+
       - name: Run unit tests for Fluent Bit packages (x86, x64, and ARM64)
         run: |
             $nparallel = 1
