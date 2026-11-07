@@ -3831,3 +3831,25 @@ def test_in_opentelemetry_http_bounded_content_encoding(encoding, workers, http_
         service.stop()
     # Only accepted requests may reach ingestion; each fixture has four records.
     assert len(received_grpc_log_records()) == 12
+
+
+@pytest.mark.parametrize("limit", ["1000", "2k"])
+def test_in_opentelemetry_request_size_decoded_override(tmp_path, limit):
+    """Preserve an explicit shared decoded-body limit below the wire limit."""
+    service = direct_cfl_service(tmp_path, True, None)
+    config = tmp_path / "direct-cfl-on.yaml"
+    config.write_text(config.read_text().replace(
+        "      http2: on", f"      http2: on\n      http_server.max_decoded_body_size: {limit}"))
+    boundary = 1000 if limit == "1000" else 2000
+    try:
+        service.start()
+        for size in (boundary - 1, boundary, boundary + 1, 100):
+            payload = gzip.compress(grpc_limit_payload(service, size))
+            result = run_curl_request(
+                f"http://localhost:{service.flb_listener_port}/v1/logs", payload,
+                headers=["Content-Type: application/x-protobuf", "Content-Encoding: gzip"],
+                http_mode="http2-prior-knowledge",
+            )
+            assert result["status_code"] == (413 if size > boundary else 201)
+    finally:
+        service.stop()
