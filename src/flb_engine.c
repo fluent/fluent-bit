@@ -1294,13 +1294,13 @@ int flb_engine_start(struct flb_config *config)
      *  - FLB engine uses 'ch_self_events[1]' to dispatch tasks to self
      *  - Self to receive message on ch_parent_events[0]
      *
-     * The mk_event_channel_create() will attach the pipe read end ch_self_events[0]
+     * The flb_pipe_event_channel_create() will attach the pipe read end ch_self_events[0]
      * to the local event loop 'evl'.
      */
-    ret = mk_event_channel_create(config->evl,
-                                  &config->ch_self_events[0],
-                                  &config->ch_self_events[1],
-                                  &config->event_thread_init);
+    ret = flb_pipe_event_channel_create(config->evl,
+                                        &config->ch_self_events[0],
+                                        &config->ch_self_events[1],
+                                        &config->event_thread_init);
     if (ret == -1) {
         flb_error("[engine] could not create engine thread channel");
         return -1;
@@ -1366,19 +1366,19 @@ int flb_engine_start(struct flb_config *config)
      * signal the Engine event loop. It's useful to stop the event loop
      * or to instruct anything else without break.
      */
-    ret = mk_event_channel_create(config->evl,
-                                  &config->ch_manager[0],
-                                  &config->ch_manager[1],
-                                  &config->ch_event);
+    ret = flb_pipe_event_channel_create(config->evl,
+                                        &config->ch_manager[0],
+                                        &config->ch_manager[1],
+                                        &config->ch_event);
     if (ret != 0) {
         flb_error("[engine] could not create manager channels");
         return -1;
     }
 
-    ret = mk_event_channel_create(config->evl,
-                                  &config->notification_channels[0],
-                                  &config->notification_channels[1],
-                                  &config->notification_event);
+    ret = flb_pipe_event_channel_create(config->evl,
+                                        &config->notification_channels[0],
+                                        &config->notification_channels[1],
+                                        &config->notification_event);
     if (ret == -1) {
         flb_error("could not create main notification channel");
 
