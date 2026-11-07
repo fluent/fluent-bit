@@ -72,10 +72,14 @@ def run_pipeline(tmp_path, processors, expected, *, location="input", storage="m
         "port": "${FLUENT_BIT_TEST_LISTENER_PORT}", "tag": "test",
         "storage.type": storage, "workers": input_workers, "threaded": input_threaded,
     }
+    # Instrumented processor work can delay connection completion beyond the
+    # default 10 seconds. Retries would rerun processors and invalidate the
+    # exact accounting assertions even when every record is delivered.
     outputs = [{
         "name": "http", "match": "*", "host": "127.0.0.1",
         "port": sink.server_port, "uri": f"/{route}", "format": "json",
         "json_date_key": False, "workers": output_workers,
+        "net.connect_timeout": 60,
     } for route in range(2)]
     if location == "input":
         input_config["processors"] = {"logs": processors}
