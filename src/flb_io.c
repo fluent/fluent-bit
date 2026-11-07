@@ -265,6 +265,7 @@ static void net_io_propagate_critical_error(
 {
     switch (errno) {
     case EBADF:
+    case ETIMEDOUT:
     case ECONNRESET:
     case EDESTADDRREQ:
     case ENOTCONN:
@@ -343,7 +344,11 @@ static int fd_io_write(int fd, struct sockaddr_storage *address,
 #ifndef FLB_SYSTEM_WINDOWS
                 /* EAGAIN on a blocking socket means its send timeout expired. */
                 flags = fcntl(fd, F_GETFL, 0);
-                if (flags == -1 || (flags & O_NONBLOCK) == 0) {
+                if (flags == -1) {
+                    return -1;
+                }
+                if ((flags & O_NONBLOCK) == 0) {
+                    errno = ETIMEDOUT;
                     return -1;
                 }
 #endif
