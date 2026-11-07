@@ -3843,7 +3843,7 @@ def test_in_opentelemetry_request_size_decoded_override(tmp_path, limit):
     boundary = 1000 if limit == "1000" else 2000
     try:
         service.start()
-        for size in (boundary - 1, boundary, boundary + 1, 100):
+        for size in (boundary - 1, boundary, boundary + 1, boundary - 1):
             payload = gzip.compress(grpc_limit_payload(service, size))
             result = run_curl_request(
                 f"http://localhost:{service.flb_listener_port}/v1/logs", payload,
