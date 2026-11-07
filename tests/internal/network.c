@@ -5,12 +5,16 @@
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_error.h>
 #include <fluent-bit/flb_network.h>
+#include <fluent-bit/flb_io.h>
 #include <fluent-bit/flb_socket.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_coro.h>
 #include <fluent-bit/flb_downstream.h>
 
 #include <time.h>
+#ifndef FLB_SYSTEM_WINDOWS
+#include <pthread.h>
+#endif
 #include "flb_tests_internal.h"
 
 #define TEST_HOSTv4           "127.0.0.1"
@@ -284,7 +288,150 @@ void test_downstream_event_callback_runs_on_parent_stack()
     flb_coro_destroy(coro);
 }
 
+/* Verify that a blocking send to a stalled peer is bounded by its timeout. */
+#ifndef FLB_SYSTEM_WINDOWS
+static void test_blocking_send_timeout(void)
+{
+    int ret;
+    int pair[2];
+    int buffer_size = 4096;
+    size_t written = 99;
+    char data[4096] = {0};
+    struct flb_time start;
+    struct flb_time end;
+    double elapsed;
+
+    ret = socketpair(AF_UNIX, SOCK_STREAM, 0, pair);
+    if (!TEST_CHECK(ret == 0)) {
+        return;
+    }
+
+    ret = setsockopt(pair[0], SOL_SOCKET, SO_SNDBUF, &buffer_size, sizeof(buffer_size));
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(flb_net_socket_nonblocking(pair[0]) == 0);
+    do {
+        ret = send(pair[0], data, sizeof(data), 0);
+    } while (ret > 0);
+    TEST_CHECK(errno == EAGAIN || errno == EWOULDBLOCK);
+
+    TEST_CHECK(flb_net_socket_blocking(pair[0]) == 0);
+    TEST_CHECK(flb_net_socket_set_sndtimeout(pair[0], 1) == 0);
+    flb_time_get(&start);
+    ret = flb_io_fd_write(pair[0], data, sizeof(data), &written);
+    flb_time_get(&end);
+    TEST_CHECK(ret == -1);
+    TEST_CHECK(written == 0);
+    TEST_CHECK(errno == ETIMEDOUT);
+    elapsed = flb_time_to_double(&end) - flb_time_to_double(&start);
+    TEST_CHECK(elapsed >= 0.5 && elapsed < 5.0);
+    TEST_MSG("blocked send returned after %.3f seconds", elapsed);
+
+    flb_socket_close(pair[0]);
+    flb_socket_close(pair[1]);
+}
+
+/* A timed-out write must report bytes sent before the peer stopped reading. */
+static void test_blocking_send_timeout_partial(void)
+{
+    int ret;
+    int pair[2];
+    int buffer_size = 4096;
+    char data[65536] = {0};
+    size_t written = 0;
+    struct flb_time start;
+    struct flb_time end;
+    double elapsed;
+    struct flb_stream stream = {0};
+    struct flb_connection connection = {0};
+
+    ret = socketpair(AF_UNIX, SOCK_STREAM, 0, pair);
+    if (!TEST_CHECK(ret == 0)) {
+        return;
+    }
+
+    TEST_CHECK(setsockopt(pair[0], SOL_SOCKET, SO_SNDBUF,
+                         &buffer_size, sizeof(buffer_size)) == 0);
+    TEST_CHECK(flb_net_socket_set_sndtimeout(pair[0], 1) == 0);
+    connection.fd = pair[0];
+    connection.stream = &stream;
+    connection.net_error = -1;
+    flb_time_get(&start);
+    ret = flb_io_net_write(&connection, data, sizeof(data), &written);
+    flb_time_get(&end);
+    TEST_CHECK(ret == -1);
+    TEST_CHECK(connection.net_error == ETIMEDOUT);
+    TEST_CHECK(written > 0 && written < sizeof(data));
+    elapsed = flb_time_to_double(&end) - flb_time_to_double(&start);
+    TEST_CHECK(elapsed >= 0.5 && elapsed < 5.0);
+    TEST_MSG("partial write of %zu bytes returned after %.3f seconds", written, elapsed);
+
+    flb_socket_close(pair[0]);
+    flb_socket_close(pair[1]);
+}
+
+/* Drain the initial backlog after the writer encounters nonblocking EAGAIN. */
+static void *drain_nonblocking_peer(void *data)
+{
+    int fd = *(int *) data;
+    char buffer[4096];
+
+    flb_time_msleep(100);
+    while (recv(fd, buffer, sizeof(buffer), 0) > 0) {
+    }
+
+    return NULL;
+}
+
+/* Transient nonblocking backpressure must still retry and deliver the payload. */
+static void test_nonblocking_send_retry(void)
+{
+    int ret;
+    int pair[2];
+    int buffer_size = 4096;
+    char filler[4096] = {0};
+    char payload[] = "retry";
+    char received[sizeof(payload)] = {0};
+    size_t written = 0;
+    pthread_t reader;
+
+    ret = socketpair(AF_UNIX, SOCK_STREAM, 0, pair);
+    if (!TEST_CHECK(ret == 0)) {
+        return;
+    }
+
+    TEST_CHECK(setsockopt(pair[0], SOL_SOCKET, SO_SNDBUF,
+                         &buffer_size, sizeof(buffer_size)) == 0);
+    TEST_CHECK(flb_net_socket_nonblocking(pair[0]) == 0);
+    TEST_CHECK(flb_net_socket_nonblocking(pair[1]) == 0);
+    TEST_CHECK(flb_net_socket_set_sndtimeout(pair[0], 1) == 0);
+    do {
+        ret = send(pair[0], filler, sizeof(filler), 0);
+    } while (ret > 0);
+    TEST_CHECK(ret == -1 && (errno == EAGAIN || errno == EWOULDBLOCK));
+
+    ret = pthread_create(&reader, NULL, drain_nonblocking_peer, &pair[1]);
+    if (TEST_CHECK(ret == 0)) {
+        ret = flb_io_fd_write(pair[0], payload, sizeof(payload), &written);
+        TEST_CHECK(ret == sizeof(payload));
+        TEST_CHECK(written == sizeof(payload));
+        pthread_join(reader, NULL);
+        ret = recv(pair[1], received, sizeof(received), 0);
+        TEST_CHECK(ret == sizeof(payload));
+        TEST_CHECK(memcmp(received, payload, sizeof(payload)) == 0);
+    }
+
+    flb_socket_close(pair[0]);
+    flb_socket_close(pair[1]);
+}
+
+#endif
+
 TEST_LIST = {
+#ifndef FLB_SYSTEM_WINDOWS
+    { "blocking_send_timeout", test_blocking_send_timeout },
+    { "blocking_send_timeout_partial", test_blocking_send_timeout_partial },
+    { "nonblocking_send_retry", test_nonblocking_send_retry },
+#endif
     { "ipv4_client_server", test_ipv4_client_server},
     { "ipv6_client_server", test_ipv6_client_server},
     { "ipv6_bracketed_listen", test_ipv6_bracketed_listen},

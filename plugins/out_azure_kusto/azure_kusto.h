@@ -148,6 +148,7 @@ struct flb_azure_kusto {
 
     pthread_mutex_t blob_mutex;
 
+    /* Protect buffered files shared by flush workers and the upload timer. */
     pthread_mutex_t buffer_mutex;
 
     int buffering_enabled;
