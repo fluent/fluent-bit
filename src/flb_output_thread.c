@@ -913,6 +913,10 @@ int flb_output_thread_pool_coros_size(struct flb_output_instance *ins)
     return size;
 }
 
+/*
+ * Close dispatch queues, request shutdown, and join every running worker
+ * before releasing its state. Retry interrupted wakeups without skipping joins.
+ */
 void flb_output_thread_pool_destroy(struct flb_output_instance *ins)
 {
     int n;
