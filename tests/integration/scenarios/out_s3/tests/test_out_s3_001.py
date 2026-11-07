@@ -663,3 +663,223 @@ def test_out_s3_format_arrow_compression_gzip_is_rejected():
     with pytest.raises(FluentBitStartupError):
         service.start()
     service.stop()
+
+
+def _schema_config(tmp_path, format_name, fields, record):
+    schema_file = tmp_path / "schema.json"
+    schema_file.write_text(json.dumps({"fields": fields}))
+    source = Path(__file__).parent / "../config/out_s3_parquet.yaml"
+    config = yaml.safe_load(source.read_text())
+    config["pipeline"]["inputs"][0]["dummy"] = json.dumps(record)
+    output = config["pipeline"]["outputs"][0]
+    output.update({"format": format_name, "parquet.schema_file": str(schema_file),
+                   "store_dir": str(tmp_path / "store")})
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text(yaml.safe_dump(config))
+    return config_file, config
+
+
+def _arrow_field(name, type_name, nullable=True, **type_options):
+    return {"name": name, "nullable": nullable,
+            "type": {"name": type_name, **type_options}, "children": []}
+
+
+@pytest.mark.parametrize("format_name", ["arrow", "parquet"])
+def test_out_s3_schema_typed_values(tmp_path, format_name):
+    pa = pytest.importorskip("pyarrow")
+    import pyarrow.feather as feather
+    import pyarrow.parquet as parquet
+
+    fields = [_arrow_field("text", "utf8"), _arrow_field("nested", "utf8"),
+              _arrow_field("flag", "bool", False),
+              _arrow_field("signed", "int", False, bitWidth=64, isSigned=True),
+              _arrow_field("unsigned", "int", False, bitWidth=64, isSigned=False),
+              _arrow_field("number", "floatingpoint", precision="DOUBLE"),
+              _arrow_field("missing", "utf8"), _arrow_field("nil", "utf8")]
+    record = {"text": 'quotes " slash \\ newline\n日本語\u0000end', "nested": {"x": [1, True]},
+              "flag": True, "signed": -9223372036854775808,
+              "unsigned": 18446744073709551615, "number": 1.25, "nil": None,
+              "ignored": "extra field"}
+    for width in (8, 16, 32):
+        for signed in (True, False):
+            name = f"{'int' if signed else 'uint'}{width}"
+            fields.append(_arrow_field(name, "int", False, bitWidth=width, isSigned=signed))
+            record[name] = -(2 ** (width - 1)) if signed else 2 ** width - 1
+    fields.append(_arrow_field("single", "floatingpoint", precision="SINGLE"))
+    record["single"] = 1.5
+    config_file, _ = _schema_config(tmp_path, format_name, fields, record)
+    service = Service(str(config_file))
+    _start_or_skip_unsupported_columnar_format(service, f"requires {format_name}-glib")
+    try:
+        request = service.wait_for_request()
+    finally:
+        service.stop()
+    reader = feather.read_table if format_name == "arrow" else parquet.read_table
+    table = reader(pa.BufferReader(request["body"]))
+    assert table.column_names == [field["name"] for field in fields]
+    assert table.schema.field("signed").type == pa.int64()
+    assert table.schema.field("unsigned").type == pa.uint64()
+    assert not table.schema.field("flag").nullable
+    for width in (8, 16, 32):
+        for prefix in ("int", "uint"):
+            name = f"{prefix}{width}"
+            assert table.schema.field(name).type == getattr(pa, name)()
+    assert table.schema.field("single").type == pa.float32()
+    rows = table.to_pylist()
+    assert len(rows) == 1
+    expected = {key: value for key, value in record.items() if key != "ignored"}
+    expected["missing"] = None
+    nested = rows[0].pop("nested")
+    assert json.loads(nested) == expected.pop("nested")
+    assert rows[0] == expected
+    assert "Content-Encoding" not in request["headers"]
+
+
+@pytest.mark.parametrize("record", [{"x": 128}, {"x": "wrong"}, {}, {"x": None}])
+def test_out_s3_schema_mismatch_never_uploads_raw_data(tmp_path, record):
+    fields = [_arrow_field("x", "int", False, bitWidth=8, isSigned=True)]
+    config_file, config = _schema_config(tmp_path, "arrow", fields, record)
+    config["pipeline"]["outputs"][0]["retry_limit"] = "no_limits"
+    config_file.write_text(yaml.safe_dump(config))
+    service = Service(str(config_file))
+    _start_or_skip_unsupported_columnar_format(service, "requires arrow-glib")
+    try:
+        service.service.wait_for_condition(
+            lambda: "value does not match column" in Path(service.service.flb.log_file).read_text(),
+            timeout=15, interval=0.2, description="schema mismatch")
+    finally:
+        service.stop()
+    assert data_storage["requests"] == []
+    assert any(path.is_file() for path in (tmp_path / "store").glob("**/msgpack/**/*"))
+
+
+@pytest.mark.parametrize("schema_change", ["whitespace", "nullable_column", "incompatible"])
+def test_out_s3_schema_restart_replays_messagepack(tmp_path, schema_change):
+    pa = pytest.importorskip("pyarrow")
+    import pyarrow.feather as feather
+
+    fields = [_arrow_field("x", "int", False, bitWidth=32, isSigned=True)]
+    config_file, config = _schema_config(tmp_path, "arrow", fields, {"x": 42})
+    config["pipeline"]["outputs"][0]["retry_limit"] = "no_limits"
+    config_file.write_text(yaml.safe_dump(config))
+    service = Service(str(config_file), put_status=503)
+    _start_or_skip_unsupported_columnar_format(service, "requires arrow-glib")
+    try:
+        service.wait_for_request()
+    finally:
+        service.stop()
+    pending = {p: p.read_bytes() for p in (tmp_path / "store").glob("**/msgpack/**/*")
+               if p.is_file()}
+    assert pending
+
+    # No new records on restart: all uploaded rows must come from disk.
+    config["pipeline"]["inputs"][0] = {"name": "dummy", "tag": "out_s3", "interval_sec": 3600}
+    config_file.write_text(yaml.safe_dump(config))
+    schema_file = tmp_path / "schema.json"
+    original_schema = schema_file.read_text()
+    if schema_change == "incompatible":
+        schema_file.write_text(json.dumps({"fields": [_arrow_field("x", "utf8")]}))
+        service = Service(str(config_file))
+        service.start()
+        try:
+            log = Path(service.service.flb.log_file).read_text()
+            assert "value does not match column 'x'" in log
+            assert "retaining buffered MessagePack" in log
+        finally:
+            service.stop()
+        assert data_storage["requests"] == []
+        assert all(path.read_bytes() == content for path, content in pending.items())
+        schema_file.write_text(original_schema)
+    elif schema_change == "whitespace":
+        schema_file.write_text(json.dumps(json.loads(original_schema), indent=4) + "\n")
+    else:
+        fields.append(_arrow_field("added", "utf8"))
+        schema_file.write_text(json.dumps({"fields": fields}))
+
+    service = Service(str(config_file))
+    service.start()
+    try:
+        request = service.wait_for_request()
+    finally:
+        service.stop()
+    table = feather.read_table(pa.BufferReader(request["body"]))
+    expected = {"x": 42}
+    if schema_change == "nullable_column":
+        expected["added"] = None
+    assert table.to_pylist() == [expected]
+
+
+@pytest.mark.parametrize("schema_contents", ["{", '{"fields":[]}', None])
+def test_out_s3_schema_invalid_file_rejects_startup(tmp_path, schema_contents):
+    config_file, _ = _schema_config(tmp_path, "arrow", [], {})
+    schema_file = tmp_path / "schema.json"
+    if schema_contents is None:
+        schema_file.unlink()
+    else:
+        schema_file.write_text(schema_contents)
+    service = Service(str(config_file))
+    try:
+        with pytest.raises(FluentBitStartupError):
+            _start_or_skip_unsupported_columnar_format(service, "requires arrow-glib")
+        log = Path(service.service.flb.log_file).read_text()
+        assert "invalid or unsupported Arrow JSON schema" in log or "cannot read schema file" in log
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("schema_mode", [True, False])
+def test_out_s3_schema_warns_about_other_buffer_mode(tmp_path, schema_mode):
+    fields = [_arrow_field("x", "int", False, bitWidth=32, isSigned=True)]
+    config_file, config = _schema_config(tmp_path, "arrow", fields, {"x": 42})
+    output = config["pipeline"]["outputs"][0]
+    schema_file = output["parquet.schema_file"]
+    if not schema_mode:
+        del output["parquet.schema_file"]
+    config_file.write_text(yaml.safe_dump(config))
+    service = Service(str(config_file), put_status=503)
+    _start_or_skip_unsupported_columnar_format(service, "requires arrow-glib")
+    try:
+        service.wait_for_request()
+    finally:
+        service.stop()
+    pending = {p: p.read_bytes() for p in (tmp_path / "store").rglob("*") if p.is_file()}
+    assert pending
+
+    if schema_mode:
+        del output["parquet.schema_file"]
+    else:
+        output["parquet.schema_file"] = schema_file
+    config["pipeline"]["inputs"][0] = {"name": "dummy", "tag": "out_s3", "interval_sec": 3600}
+    config_file.write_text(yaml.safe_dump(config))
+    service = Service(str(config_file))
+    service.start()
+    try:
+        log = Path(service.service.flb.log_file).read_text()
+        mode = "MessagePack" if schema_mode else "JSON-lines"
+        assert f"{mode} buffer directory exists" in log
+    finally:
+        service.stop()
+    assert data_storage["requests"] == []
+    assert all(path.read_bytes() == content for path, content in pending.items())
+
+
+@pytest.mark.parametrize("metadata", [None, [], [{"key": "custom", "value": "value"}]])
+def test_out_s3_schema_accepts_arrow_metadata(tmp_path, metadata):
+    pa = pytest.importorskip("pyarrow")
+    import pyarrow.feather as feather
+
+    field = _arrow_field("x", "bool")
+    field["metadata"] = metadata
+    config_file, _ = _schema_config(tmp_path, "arrow", [field], {"x": True})
+    schema_file = tmp_path / "schema.json"
+    schema_file.write_text(json.dumps({"fields": [field], "metadata": metadata}))
+    service = Service(str(config_file))
+    _start_or_skip_unsupported_columnar_format(service, "requires arrow-glib")
+    try:
+        request = service.wait_for_request()
+    finally:
+        service.stop()
+    table = feather.read_table(pa.BufferReader(request["body"]))
+    assert table.to_pylist() == [{"x": True}]
+    assert not table.schema.metadata
+    assert not table.schema.field("x").metadata
