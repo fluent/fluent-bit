@@ -208,10 +208,10 @@ flb_ctx_t *flb_create()
 
     MK_EVENT_ZERO(ctx->event_channel);
 
-    ret = mk_event_channel_create(config->ch_evl,
-                                  &config->ch_notif[0],
-                                  &config->ch_notif[1],
-                                  ctx->event_channel);
+    ret = flb_pipe_event_channel_create(config->ch_evl,
+                                        &config->ch_notif[0],
+                                        &config->ch_notif[1],
+                                        ctx->event_channel);
     if (ret != 0) {
         flb_error("[lib] could not create notification channels");
         flb_stop(ctx);
