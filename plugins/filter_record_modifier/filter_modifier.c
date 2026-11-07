@@ -466,8 +466,7 @@ static int cb_modifier_filter(const void *data, size_t bytes,
         flb_free(bool_map);
     }
 
-    if (is_modified &&
-        log_encoder.output_length > 0) {
+    if (is_modified) {
         *out_buf  = log_encoder.output_buffer;
         *out_size = log_encoder.output_length;
 
