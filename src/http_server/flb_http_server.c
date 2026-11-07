@@ -469,13 +469,20 @@ static int flb_http_server_inflate_request(struct flb_http_request *request,
     struct flb_http_server_session *session;
     size_t budget;
     int result;
+    int status;
 
     session = request->stream->parent;
     budget = session->parent->max_decoded_body_size;
     result = flb_http_request_uncompress_body(request, budget);
     if (result != 0) {
-        flb_http_response_set_status(response,
-            result == FLB_DECOMPRESSOR_LIMIT_EXCEEDED ? 413 : 400);
+        status = 400;
+        if (result == FLB_DECOMPRESSOR_LIMIT_EXCEEDED) {
+            status = 413;
+        }
+        else if (result == FLB_DECOMPRESSOR_ALLOCATION_FAILURE) {
+            status = 503;
+        }
+        flb_http_response_set_status(response, status);
         flb_http_response_commit(response);
     }
     return result;
