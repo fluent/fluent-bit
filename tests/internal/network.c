@@ -321,7 +321,7 @@ static void test_blocking_send_timeout(void)
     flb_time_get(&end);
     TEST_CHECK(ret == -1);
     TEST_CHECK(written == 0);
-    TEST_CHECK(errno == EAGAIN || errno == EWOULDBLOCK);
+    TEST_CHECK(errno == ETIMEDOUT);
     elapsed = flb_time_to_double(&end) - flb_time_to_double(&start);
     TEST_CHECK(elapsed >= 0.5 && elapsed < 5.0);
     TEST_MSG("blocked send returned after %.3f seconds", elapsed);
@@ -341,6 +341,8 @@ static void test_blocking_send_timeout_partial(void)
     struct flb_time start;
     struct flb_time end;
     double elapsed;
+    struct flb_stream stream = {0};
+    struct flb_connection connection = {0};
 
     ret = socketpair(AF_UNIX, SOCK_STREAM, 0, pair);
     if (!TEST_CHECK(ret == 0)) {
@@ -350,10 +352,14 @@ static void test_blocking_send_timeout_partial(void)
     TEST_CHECK(setsockopt(pair[0], SOL_SOCKET, SO_SNDBUF,
                          &buffer_size, sizeof(buffer_size)) == 0);
     TEST_CHECK(flb_net_socket_set_sndtimeout(pair[0], 1) == 0);
+    connection.fd = pair[0];
+    connection.stream = &stream;
+    connection.net_error = -1;
     flb_time_get(&start);
-    ret = flb_io_fd_write(pair[0], data, sizeof(data), &written);
+    ret = flb_io_net_write(&connection, data, sizeof(data), &written);
     flb_time_get(&end);
     TEST_CHECK(ret == -1);
+    TEST_CHECK(connection.net_error == ETIMEDOUT);
     TEST_CHECK(written > 0 && written < sizeof(data));
     elapsed = flb_time_to_double(&end) - flb_time_to_double(&start);
     TEST_CHECK(elapsed >= 0.5 && elapsed < 5.0);
