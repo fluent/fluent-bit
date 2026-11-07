@@ -475,10 +475,10 @@ static void output_thread(void *data)
     memset(&event_local, 0, sizeof(struct mk_event));
 
     /* Channel used by flush callbacks to notify it return status */
-    ret = mk_event_channel_create(th_ins->evl,
-                                  &th_ins->ch_thread_events[0],
-                                  &th_ins->ch_thread_events[1],
-                                  &event_local);
+    ret = flb_pipe_event_channel_create(th_ins->evl,
+                                        &th_ins->ch_thread_events[0],
+                                        &th_ins->ch_thread_events[1],
+                                        &event_local);
     if (ret == -1) {
         flb_plg_error(th_ins->ins, "could not create thread channel");
         goto cleanup;
@@ -777,13 +777,13 @@ int flb_output_thread_pool_create(struct flb_config *config,
          *  - FLB engine uses 'ch_parent_events[1]' to dispatch tasks to this thread
          *  - Thread receive message on ch_parent_events[0]
          *
-         * The mk_event_channel_create() will attach the pipe read end ch_parent_events[0]
+         * The flb_pipe_event_channel_create() will attach the pipe read end ch_parent_events[0]
          * to the local event loop 'evl'.
          */
-        ret = mk_event_channel_create(th_ins->evl,
-                                      &th_ins->ch_parent_events[0],
-                                      &th_ins->ch_parent_events[1],
-                                      th_ins);
+        ret = flb_pipe_event_channel_create(th_ins->evl,
+                                            &th_ins->ch_parent_events[0],
+                                            &th_ins->ch_parent_events[1],
+                                            th_ins);
         if (ret == -1) {
             flb_plg_error(th_ins->ins, "could not create thread channel");
             mk_event_loop_destroy(th_ins->evl);
@@ -829,10 +829,10 @@ int flb_output_thread_pool_create(struct flb_config *config,
         th_ins->event.priority = FLB_ENGINE_PRIORITY_THREAD;
 
         if (i == 0) {
-            ret = mk_event_channel_create(th_ins->evl,
-                                        &th_ins->notification_channels[0],
-                                        &th_ins->notification_channels[1],
-                                        &th_ins->notification_event);
+            ret = flb_pipe_event_channel_create(th_ins->evl,
+                                                &th_ins->notification_channels[0],
+                                                &th_ins->notification_channels[1],
+                                                &th_ins->notification_event);
             if (ret == -1) {
                 flb_plg_error(th_ins->ins, "could not create notification channel");
 
