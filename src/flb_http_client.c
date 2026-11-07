@@ -2012,6 +2012,8 @@ int flb_http_get_response_data(struct flb_http_client *c, size_t bytes_consumed)
     ssize_t available;
     size_t out_size;
     time_t now;
+    int timeout;
+    int remaining;
 
 #ifdef __EMSCRIPTEN__
     flb_error("[http_client] browser streaming responses are unsupported; use flb_http_do");
@@ -2066,6 +2068,27 @@ int flb_http_get_response_data(struct flb_http_client *c, size_t bytes_consumed)
         }
 
         if (http_client_read_idle_timeout_reached(c, now) == FLB_TRUE) {
+            return FLB_HTTP_ERROR;
+        }
+
+        /* Each blocking read shares the remaining total response budget. */
+        timeout = c->original_net_setup != NULL ? c->original_net_setup->io_timeout :
+                  c->request_net_setup.io_timeout;
+        if (c->response_timeout > 0) {
+            remaining = c->response_timeout - (int) (now - c->ts_start);
+            if (timeout <= 0 || remaining < timeout) {
+                timeout = remaining;
+            }
+        }
+        if (c->read_idle_timeout > 0) {
+            remaining = c->read_idle_timeout - (int) (now - c->last_read_ts);
+            if (timeout <= 0 || remaining < timeout) {
+                timeout = remaining;
+            }
+        }
+        c->request_net_setup.io_timeout = timeout;
+        if (flb_net_socket_set_rcvtimeout(c->u_conn->fd, timeout) != 0) {
+            flb_upstream_conn_recycle(c->u_conn, FLB_FALSE);
             return FLB_HTTP_ERROR;
         }
 
