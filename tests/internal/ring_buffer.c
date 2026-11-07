@@ -135,7 +135,8 @@ static void test_smart_flush()
     ret = flb_ring_buffer_write(rb, (void *) &tmp, sizeof(tmp));
     TEST_CHECK(ret == 0);
 
-    n_events = mk_event_wait_2(evl, 0);
+    /* Socket-backed notifications may become readable after the write returns. */
+    n_events = mk_event_wait_2(evl, 1000);
     TEST_CHECK(n_events == 1);
 
     flush_event_detected = FLB_FALSE;
@@ -160,20 +161,8 @@ static void test_smart_flush()
 
     /* A partial drain must request another pass without another write. */
     flb_ring_buffer_mark_flushed(rb);
-    TEST_CHECK(mk_event_wait_2(evl, 0) == 1);
+    TEST_CHECK(mk_event_wait_2(evl, 1000) == 1);
     flb_pipe_r(rb->signal_channels[0], signal_buffer, sizeof(signal_buffer));
-
-    /* A full notification pipe already provides a wakeup; do not wait for room. */
-    do {
-        ret = flb_pipe_w(rb->signal_channels[1], ".", 1);
-    } while (ret == 1);
-    TEST_ASSERT(ret == -1);
-    TEST_ASSERT(FLB_PIPE_WOULDBLOCK());
-    flb_ring_buffer_mark_flushed(rb);
-    TEST_CHECK(rb->flush_pending == FLB_TRUE);
-    TEST_CHECK(mk_event_wait_2(evl, 0) == 1);
-    while (flb_pipe_r(rb->signal_channels[0], signal_buffer, sizeof(signal_buffer)) > 0) {
-    }
 
     while (flb_ring_buffer_read(rb, &tmp, sizeof(tmp)) == 0) {
     }
@@ -189,7 +178,20 @@ static void test_smart_flush()
     TEST_CHECK(rb->flush_pending == FLB_FALSE);
     TEST_CHECK(mk_event_wait_2(evl, 0) == 0);
     TEST_CHECK(flb_ring_buffer_write(rb, &tmp, sizeof(tmp)) == 0);
-    TEST_CHECK(mk_event_wait_2(evl, 0) == 1);
+    TEST_CHECK(mk_event_wait_2(evl, 1000) == 1);
+
+    /* Saturate the channel last: TCP backpressure may outlive a receiver drain. */
+    /* A full notification pipe already provides a wakeup; do not wait for room. */
+    do {
+        ret = flb_pipe_w(rb->signal_channels[1], ".", 1);
+    } while (ret == 1);
+    TEST_ASSERT(ret == -1);
+    TEST_ASSERT(FLB_PIPE_WOULDBLOCK());
+    flb_ring_buffer_mark_flushed(rb);
+    TEST_CHECK(rb->flush_pending == FLB_TRUE);
+    TEST_CHECK(mk_event_wait_2(evl, 1000) == 1);
+    while (flb_pipe_r(rb->signal_channels[0], signal_buffer, sizeof(signal_buffer)) > 0) {
+    }
 
     flb_ring_buffer_destroy(rb);
     flb_bucket_queue_destroy(bktq);
