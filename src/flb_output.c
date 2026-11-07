@@ -2087,10 +2087,10 @@ int flb_output_init_all(struct flb_config *config)
         p = ins->p;
 
         /* Output Events Channel */
-        ret = mk_event_channel_create(config->evl,
-                                      &ins->ch_events[0],
-                                      &ins->ch_events[1],
-                                      ins);
+        ret = flb_pipe_event_channel_create(config->evl,
+                                            &ins->ch_events[0],
+                                            &ins->ch_events[1],
+                                            ins);
         if (ret != 0) {
             flb_error("could not create events channels for '%s'",
                       flb_output_name(ins));
@@ -2102,7 +2102,7 @@ int flb_output_init_all(struct flb_config *config)
                   ins->ch_events[0], ins->ch_events[1]);
 
         /*
-         * Note: mk_event_channel_create() sets a type = MK_EVENT_NOTIFICATION by
+         * Note: flb_pipe_event_channel_create() sets a type = MK_EVENT_NOTIFICATION by
          * default, we need to overwrite this value so we can do a clean check
          * into the Engine when the event is triggered.
          */
