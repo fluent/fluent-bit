@@ -552,6 +552,11 @@ static int flb_azure_blob_apply_remote_configuration(struct flb_azure_blob *cont
     return 0;
 }
 
+/*
+ * Build the Azure endpoint and authentication context from output settings.
+ * Buffered requests use synchronous I/O and prefer explicit net.io_timeout
+ * over the plugin io_timeout fallback.
+ */
 struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *ins,
                                                   struct flb_config *config)
 {
