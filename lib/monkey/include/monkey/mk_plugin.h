@@ -182,10 +182,10 @@ struct plugin_api
     /* core events mechanism */
     struct mk_event_loop *(*ev_loop_create) (int);
     struct mk_event_fdt *(*ev_get_fdt) ();
-    int (*ev_add) (struct mk_event_loop *, int, int, uint32_t, void *);
+    int (*ev_add) (struct mk_event_loop *, mk_event_fd_t, int, uint32_t, void *);
     int (*ev_del) (struct mk_event_loop *, struct mk_event *);
     int (*ev_timeout_create) (struct mk_event_loop *, time_t, long, void *);
-    int (*ev_channel_create) (struct mk_event_loop *, int *, int *, void *);
+    int (*ev_channel_create) (struct mk_event_loop *, mk_event_fd_t *, mk_event_fd_t *, void *);
     int (*ev_wait) (struct mk_event_loop *);
     char *(*ev_backend) ();
 

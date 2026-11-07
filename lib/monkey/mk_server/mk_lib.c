@@ -180,7 +180,7 @@ static void mk_lib_worker(void *data)
 
 int mk_start(mk_ctx_t *ctx)
 {
-    int fd;
+    mk_event_fd_t fd;
     int bytes;
     int ret;
     uint64_t val;

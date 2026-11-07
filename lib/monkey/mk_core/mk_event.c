@@ -96,7 +96,7 @@ void mk_event_loop_destroy(struct mk_event_loop *loop)
 }
 
 /* Register or modify an event */
-int mk_event_add(struct mk_event_loop *loop, int fd,
+int mk_event_add(struct mk_event_loop *loop, mk_event_fd_t fd,
                  int type, uint32_t mask, void *data)
 {
     int ret;
@@ -179,7 +179,7 @@ int mk_event_timeout_destroy(struct mk_event_loop *loop, void *data)
 
 /* Create a new channel to distribute signals */
 int mk_event_channel_create(struct mk_event_loop *loop,
-                            int *r_fd, int *w_fd,
+                            mk_event_fd_t *r_fd, mk_event_fd_t *w_fd,
                             void *data)
 {
     struct mk_event_ctx *ctx;
@@ -191,7 +191,7 @@ int mk_event_channel_create(struct mk_event_loop *loop,
 
 /* Destroy channel created to distribute signals */
 int mk_event_channel_destroy(struct mk_event_loop *loop,
-                            int r_fd, int w_fd,
+                            mk_event_fd_t r_fd, mk_event_fd_t w_fd,
                             void *data)
 {
     struct mk_event_ctx *ctx;

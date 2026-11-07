@@ -94,14 +94,16 @@
 #endif
 
 #if defined(_WIN32)
+    typedef evutil_socket_t mk_event_fd_t;
     #define mk_event_closesocket(s) evutil_closesocket(s)
 #else
+    typedef int mk_event_fd_t;
     #define mk_event_closesocket(s) close(s)
 #endif
 
 /* Event reported by the event loop */
 struct mk_event {
-    int      fd;       /* monitored file descriptor */
+    mk_event_fd_t fd;  /* monitored file descriptor */
     int      type;     /* event type  */
     uint32_t mask;     /* events mask */
     uint8_t  status;   /* internal status */
@@ -121,7 +123,7 @@ struct mk_event_loop {
     void *data;                /* mk_event_ctx_t from backend */
 };
 
-static inline void MK_EVENT_INIT(struct mk_event *ev, int fd, void *data,
+static inline void MK_EVENT_INIT(struct mk_event *ev, mk_event_fd_t fd, void *data,
                                  int (*callback)(void *))
 {
     ev->fd      = fd;
@@ -147,7 +149,7 @@ int mk_event_init();
 int mk_event_initialize();
 struct mk_event_loop *mk_event_loop_create(int size);
 void mk_event_loop_destroy(struct mk_event_loop *loop);
-int mk_event_add(struct mk_event_loop *loop, int fd,
+int mk_event_add(struct mk_event_loop *loop, mk_event_fd_t fd,
                  int type, uint32_t mask, void *data);
 int mk_event_del(struct mk_event_loop *loop, struct mk_event *event);
 int mk_event_inject(struct mk_event_loop *loop, struct mk_event *event,
@@ -157,9 +159,9 @@ int mk_event_timeout_create(struct mk_event_loop *loop,
 int mk_event_timeout_disable(struct mk_event_loop *loop, void *data);
 int mk_event_timeout_destroy(struct mk_event_loop *loop, void *data);
 int mk_event_channel_create(struct mk_event_loop *loop,
-                            int *r_fd, int *w_fd, void *data);
+                            mk_event_fd_t *r_fd, mk_event_fd_t *w_fd, void *data);
 int mk_event_channel_destroy(struct mk_event_loop *loop,
-                             int r_fd, int w_fd, void *data);
+                             mk_event_fd_t r_fd, mk_event_fd_t w_fd, void *data);
 int mk_event_wait(struct mk_event_loop *loop);
 int mk_event_wait_2(struct mk_event_loop *loop, int timeout);
 int mk_event_translate(struct mk_event_loop *loop);

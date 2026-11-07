@@ -99,8 +99,8 @@ struct mk_sched_worker
      * just available because of ULONG_MAX bug described
      * on mk_scheduler.c .
      */
-    int signal_channel_r;
-    int signal_channel_w;
+    mk_event_fd_t signal_channel_r;
+    mk_event_fd_t signal_channel_w;
 
     /* If using REUSEPORT, this points to the list of listeners */
     struct mk_list *listeners;

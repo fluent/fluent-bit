@@ -37,17 +37,17 @@ struct test_worker_ctx {
     mk_ctx_t* srv_ctx;
     test_cb_t test_cb;
     int8_t result;
-    int evl_w_fd;
+    mk_event_fd_t evl_w_fd;
 };
 
 struct test_timeout_ctx {
     int timeout_sec;
-    int evl_w_fd;
+    mk_event_fd_t evl_w_fd;
 };
 
 struct test_worker_ctx *test_worker_ctx_init(mk_ctx_t *srv_ctx,
                                              test_cb_t test_cb,
-                                             int evl_w_fd)
+                                             mk_event_fd_t evl_w_fd)
 {
     struct test_worker_ctx *ctx = mk_mem_alloc_z(sizeof(struct test_worker_ctx));
     ctx->srv_ctx = srv_ctx;
@@ -63,7 +63,7 @@ void test_worker_ctx_free(struct test_worker_ctx *ctx)
 }
 
 struct test_timeout_ctx *test_timeout_ctx_init(int timeout_sec,
-                                               int evl_w_fd)
+                                               mk_event_fd_t evl_w_fd)
 {
     struct test_timeout_ctx *ctx = mk_mem_alloc_z(sizeof(struct test_timeout_ctx));
     ctx->timeout_sec = timeout_sec;
@@ -76,7 +76,7 @@ void test_timeout_ctx_free(struct test_timeout_ctx *ctx)
     mk_mem_free(ctx);
 }
 
-int fd_write_signal(int fd, uint64_t val) 
+int fd_write_signal(mk_event_fd_t fd, uint64_t val)
 {
 #ifdef _WIN32
     return send(fd, &val, sizeof(uint64_t), 0);
@@ -85,7 +85,7 @@ int fd_write_signal(int fd, uint64_t val)
 #endif
 }
 
-int fd_read_signal(int fd, uint64_t *val) 
+int fd_read_signal(mk_event_fd_t fd, uint64_t *val)
 {
 #ifdef _WIN32
     return recv(fd, val, sizeof(uint64_t), MSG_WAITALL);
@@ -144,13 +144,14 @@ static void timeout_worker(void *data)
 
 uint8_t run_server_test(mk_ctx_t *srv, int timeout_sec, test_cb_t cb) 
 {
-    int ret, bytes, fd;
+    int ret, bytes;
+    mk_event_fd_t fd;
     pthread_t timeout_tid, test_tid;
     int8_t timeout, result;
     struct test_timeout_ctx *timeout_ctx;
     struct test_worker_ctx *test_ctx;
     struct mk_event_loop *complete_evl;
-    int complete_ch[2];
+    mk_event_fd_t complete_ch[2];
     struct mk_event complete_ch_event;
     struct mk_event* worker_event;
     uint64_t worker_signal;
