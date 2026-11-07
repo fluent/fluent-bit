@@ -1989,9 +1989,12 @@ static void cb_azure_blob_ingest(struct flb_config *config, void *data) {
             tag_sds = flb_sds_create(fsf->meta_buf);
             flb_plg_debug(ctx->ins, "cb_azure_blob_ingest ::: tag of the file %s", tag_sds);
 
-            /* Attempt to send blob */
+            /* Keep the file owned while other workers buffer during the upload. */
+            pthread_mutex_unlock(&ctx->buffer_mutex);
             ret = send_blob(config, NULL, ctx, FLB_EVENT_TYPE_LOGS,ctx->btype , (char *) tag_sds,0, (char *) tag_sds,
                             flb_sds_len(tag_sds), NULL, payload, flb_sds_len(payload));
+            pthread_mutex_lock(&ctx->buffer_mutex);
+            tmp = fsf->_head.next;
 
             /* Handle blob send failure */
             if (ret != FLB_OK) {
