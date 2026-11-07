@@ -269,10 +269,10 @@ static struct flb_input_thread_instance *input_thread_instance_create(struct flb
     }
 
     /* channel to receive parent (engine) notifications */
-    ret = mk_event_channel_create(thi->evl,
-                                  &thi->ch_parent_events[0],
-                                  &thi->ch_parent_events[1],
-                                  &thi->event);
+    ret = flb_pipe_event_channel_create(thi->evl,
+                                        &thi->ch_parent_events[0],
+                                        &thi->ch_parent_events[1],
+                                        &thi->event);
     if (ret == -1) {
         flb_error("could not initialize parent channels for %s",
                   flb_input_name(ins));
@@ -282,10 +282,10 @@ static struct flb_input_thread_instance *input_thread_instance_create(struct flb
     thi->event.type = FLB_ENGINE_EV_INPUT;
 
     /* channel to send messages to local event loop */
-    ret = mk_event_channel_create(thi->evl,
-                                  &thi->ch_thread_events[0],
-                                  &thi->ch_thread_events[1],
-                                  &thi->event_local);
+    ret = flb_pipe_event_channel_create(thi->evl,
+                                        &thi->ch_thread_events[0],
+                                        &thi->ch_thread_events[1],
+                                        &thi->event_local);
     if (ret == -1) {
         flb_error("could not initialize parent channels for %s",
                   flb_input_name(ins));
@@ -294,10 +294,10 @@ static struct flb_input_thread_instance *input_thread_instance_create(struct flb
     }
     thi->event_local.type = FLB_ENGINE_EV_THREAD_INPUT;
 
-    ret = mk_event_channel_create(thi->evl,
-                                  &thi->notification_channels[0],
-                                  &thi->notification_channels[1],
-                                  &thi->notification_event);
+    ret = flb_pipe_event_channel_create(thi->evl,
+                                        &thi->notification_channels[0],
+                                        &thi->notification_channels[1],
+                                        &thi->notification_event);
     if (ret == -1) {
         flb_error("could not create notification channel for %s",
                   flb_input_name(ins));
