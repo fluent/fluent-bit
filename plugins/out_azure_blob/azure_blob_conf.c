@@ -795,7 +795,10 @@ struct flb_azure_blob *flb_azure_blob_conf_create(struct flb_output_instance *in
 
     if (ctx->buffering_enabled == FLB_TRUE) {
         flb_stream_disable_flags(&ctx->u->base, FLB_IO_ASYNC);
-        ctx->u->base.net.io_timeout = ctx->io_timeout;
+        /* Explicit net.io_timeout wins, including zero (no timeout). */
+        if (flb_config_prop_get("net.io_timeout", &ins->net_properties) == NULL) {
+            ctx->u->base.net.io_timeout = ctx->io_timeout;
+        }
     }
 
     pthread_mutex_init(&ctx->file_upload_commit_file_parts, NULL);
