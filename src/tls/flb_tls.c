@@ -23,6 +23,14 @@
 #include <fluent-bit/flb_mem.h>
 
 #include <sys/stat.h>
+#include <limits.h>
+
+#ifdef FLB_SYSTEM_WINDOWS
+#define flb_tls_poll WSAPoll
+#else
+#include <poll.h>
+#define flb_tls_poll poll
+#endif
 
 #include "openssl.c"
 
@@ -718,42 +726,88 @@ int flb_tls_set_client_thumbprints(struct flb_tls *tls, const char *thumbprints)
 }
 #endif
 
-int flb_tls_net_read(struct flb_tls_session *session, void *buf, size_t len)
+/* Wait without resetting the deadline after a TLS retry or an interrupted poll. */
+static int tls_net_wait(struct flb_tls_session *session, int operation, time_t deadline)
 {
-    time_t          timeout_timestamp;
-    time_t          current_timestamp;
-    struct flb_tls *tls;
-    int             ret;
+    struct pollfd event;
+    time_t remaining;
+    int timeout;
+    int ret;
 
-    tls = session->tls;
+    event.fd = session->connection->fd;
+    event.events = operation == FLB_TLS_WANT_WRITE ? POLLOUT : POLLIN;
 
-    if (session->connection->net->io_timeout > 0) {
-        timeout_timestamp = time(NULL) + session->connection->net->io_timeout;
-    }
-    else {
-        timeout_timestamp = 0;
-    }
-
- retry_read:
-    ret = tls->api->net_read(session, buf, len);
-
-    current_timestamp = time(NULL);
-
-    if (ret == FLB_TLS_WANT_READ) {
-        if (timeout_timestamp > 0 &&
-            timeout_timestamp <= current_timestamp) {
-            return ret;
+    while (1) {
+        timeout = -1;
+        if (deadline > 0) {
+            remaining = deadline - time(NULL);
+            if (remaining <= 0) {
+                session->connection->net_error = ETIMEDOUT;
+                return -1;
+            }
+            timeout = remaining > INT_MAX / 1000 ? INT_MAX : (int) remaining * 1000;
         }
 
-        goto retry_read;
+        event.revents = 0;
+        ret = flb_tls_poll(&event, 1, timeout);
+        if (ret > 0) {
+            return 0;
+        }
+        if (ret == 0) {
+            session->connection->net_error = ETIMEDOUT;
+            return -1;
+        }
+#ifdef FLB_SYSTEM_WINDOWS
+        if (WSAGetLastError() != WSAEINTR) {
+#else
+        if (errno != EINTR) {
+#endif
+            return -1;
+        }
     }
-    else if (ret == FLB_TLS_WANT_WRITE) {
-        goto retry_read;
+}
+
+int flb_tls_net_read(struct flb_tls_session *session, void *buf, size_t len)
+{
+    time_t timeout_timestamp;
+    struct flb_tls *tls;
+    int ret;
+    int bounded;
+
+    tls = session->tls;
+    bounded = session->connection->net->io_timeout > 0;
+    timeout_timestamp = 0;
+
+    if (bounded) {
+        timeout_timestamp = time(NULL) + session->connection->net->io_timeout;
+        /* A partial TLS record must not hide the deadline inside SSL_read. */
+        if (flb_net_socket_nonblocking(session->connection->fd) != 0) {
+            return -1;
+        }
     }
-    else if (ret < 0) {
-        return -1;
+
+    while (1) {
+        if (bounded && time(NULL) >= timeout_timestamp) {
+            session->connection->net_error = ETIMEDOUT;
+            ret = -1;
+            break;
+        }
+
+        ret = tls->api->net_read(session, buf, len);
+        if (ret != FLB_TLS_WANT_READ && ret != FLB_TLS_WANT_WRITE) {
+            if (ret == 0) {
+                ret = -1;
+            }
+            break;
+        }
+
+        if (bounded && tls_net_wait(session, ret, timeout_timestamp) != 0) {
+            ret = -1;
+            break;
+        }
     }
-    else if (ret == 0) {
+
+    if (bounded && flb_net_socket_blocking(session->connection->fd) != 0) {
         return -1;
     }
 
@@ -1043,6 +1097,7 @@ int flb_tls_session_create(struct flb_tls *tls,
     int                     result;
     char                   *vhost;
     int                     flag;
+    int                     restore_blocking;
 
     flb_tls_reload_if_needed(tls);
 
@@ -1131,6 +1186,13 @@ int flb_tls_session_create(struct flb_tls *tls,
 
     io_tls_backup_event(session->connection, &event_backup);
 
+    restore_blocking = connection->type == FLB_UPSTREAM_CONNECTION &&
+                       !flb_upstream_is_async(connection->upstream);
+    if (restore_blocking && flb_net_socket_nonblocking(connection->fd) != 0) {
+        result = -1;
+        goto cleanup;
+    }
+
  retry_handshake:
     result = tls->api->net_handshake(tls, vhost, session->ptr);
 
@@ -1152,8 +1214,8 @@ int flb_tls_session_create(struct flb_tls *tls,
 
         /*
          * If there are no coroutine thread context (th == NULL) it means this
-         * TLS handshake is happening from a blocking code. Just sleep a bit
-         * and retry.
+         * TLS handshake is happening from synchronous code. Wait for socket
+         * readiness without blocking inside the TLS backend.
          *
          * In the other case for an async socket 'th' is NOT NULL so the code
          * is under a coroutine context and it can yield.
@@ -1163,22 +1225,19 @@ int flb_tls_session_create(struct flb_tls *tls,
                       connection->fd,
                       flb_connection_get_remote_address(connection));
 
-            /* Connect timeout */
-            if (connection->net->connect_timeout > 0 &&
-                connection->ts_connect_timeout > 0 &&
-                connection->ts_connect_timeout <= time(NULL)) {
-                flb_error("[io_tls] handshake connection #%i to %s timed out after "
-                          "%i seconds",
-                          connection->fd,
-                          flb_connection_get_remote_address(connection),
-                          connection->net->connect_timeout);
+            result = tls_net_wait(session, result, connection->ts_connect_timeout);
+            if (result != 0) {
+                if (connection->net_error == ETIMEDOUT) {
+                    flb_error("[io_tls] handshake connection #%i to %s timed out after "
+                              "%i seconds", connection->fd,
+                              flb_connection_get_remote_address(connection),
+                              connection->net->connect_timeout);
+                }
 
                 result = -1;
 
                 goto cleanup;
             }
-
-            flb_time_msleep(500);
 
             goto retry_handshake;
         }
@@ -1223,6 +1282,10 @@ int flb_tls_session_create(struct flb_tls *tls,
     }
 
 cleanup:
+    if (restore_blocking && flb_net_socket_blocking(connection->fd) != 0) {
+        result = -1;
+    }
+
     if (event_restore_needed) {
         /* If we enter here it means we registered this connection
          * in the event loop, in which case we need to unregister it
