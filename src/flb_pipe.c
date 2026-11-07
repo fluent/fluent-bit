@@ -133,7 +133,7 @@ int flb_pipe_set_nonblocking(flb_pipefd_t fd)
 #endif
 
 /* Blocking read until receive 'count' bytes */
-ssize_t flb_pipe_read_all(int fd, void *buf, size_t count)
+ssize_t flb_pipe_read_all(flb_pipefd_t fd, void *buf, size_t count)
 {
     ssize_t bytes;
     size_t total = 0;
@@ -165,7 +165,7 @@ ssize_t flb_pipe_read_all(int fd, void *buf, size_t count)
 }
 
 /* Blocking write until send 'count bytes */
-ssize_t flb_pipe_write_all(int fd, const void *buf, size_t count)
+ssize_t flb_pipe_write_all(flb_pipefd_t fd, const void *buf, size_t count)
 {
     ssize_t bytes;
     size_t total = 0;
