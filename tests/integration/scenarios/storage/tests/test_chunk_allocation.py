@@ -75,6 +75,7 @@ def test_filter_expansion_respects_quota(storage_pipeline):
     assert len(chunks) == 1
     assert not first.intersection(chunks), "The oldest chunk must make room for expanded data"
     assert sum(p.stat().st_size for p in chunks) <= 10 * mmap.PAGESIZE
+    manager.stop()
     assert "evicted" in Path(manager.log_file).read_text()
 
 
@@ -109,4 +110,5 @@ def test_reused_chunk_budgets_adaptive_growth(storage_pipeline):
     chunks = set(storage.glob("*/*.flb"))
     assert chunks == {target}
     assert target.stat().st_size == 384 * 1024
+    manager.stop()
     assert "evicted" in Path(manager.log_file).read_text()
