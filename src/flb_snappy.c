@@ -123,6 +123,7 @@ int flb_snappy_uncompress_bounded(char **output_buffer, size_t *output_size,
     size_t total = 0;
     size_t output_offset = 0;
     int pass;
+    int ret;
     unsigned char type;
     unsigned char *frame;
     uint32_t checksum;
@@ -146,8 +147,11 @@ int flb_snappy_uncompress_bounded(char **output_buffer, size_t *output_size,
         if (expanded > limit) {
             return FLB_DECOMPRESSOR_LIMIT_EXCEEDED;
         }
-        return flb_snappy_uncompress(input_buffer, input_size, output_buffer, output_size) == 0 ?
-               0 : FLB_DECOMPRESSOR_FAILURE;
+        ret = flb_snappy_uncompress(input_buffer, input_size, output_buffer, output_size);
+        if (ret == -2) {
+            return FLB_DECOMPRESSOR_ALLOCATION_FAILURE;
+        }
+        return ret == 0 ? FLB_DECOMPRESSOR_SUCCESS : FLB_DECOMPRESSOR_FAILURE;
     }
 
     /* Inspect every framed chunk before allocating a single bounded output. */
@@ -213,7 +217,7 @@ int flb_snappy_uncompress_bounded(char **output_buffer, size_t *output_size,
         if (pass == 0) {
             buffer = flb_malloc(total == 0 ? 1 : total);
             if (buffer == NULL) {
-                return FLB_DECOMPRESSOR_FAILURE;
+                return FLB_DECOMPRESSOR_ALLOCATION_FAILURE;
             }
         }
     }
