@@ -8,6 +8,7 @@ import time
 
 import pytest
 
+from utils.network import find_available_port
 from utils.fluent_bit_manager import FluentBitManager
 from utils.fluent_bit_manager import fluent_bit_input_supports_config_property
 
@@ -23,9 +24,7 @@ def wait_for(predicate, timeout=30):
 
 @contextlib.contextmanager
 def daemon(tmp_path, mode):
-    with socket.socket() as listener:
-        listener.bind(("127.0.0.1", 0))
-        port = listener.getsockname()[1]
+    port = find_available_port()
     plugin = mode.split("-")[0]
     if plugin == "mqtt" and not fluent_bit_input_supports_config_property("mqtt", "payload_key"):
         pytest.skip("This Fluent Bit build does not include the MQTT input")
