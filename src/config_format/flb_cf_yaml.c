@@ -17,6 +17,10 @@
  *  limitations under the License.
  */
 
+#if defined(FLB_SYSTEM_LINUX) && !defined(_LARGEFILE64_SOURCE)
+#define _LARGEFILE64_SOURCE
+#endif
+
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_config_format.h>
 #include <fluent-bit/flb_sds.h>
@@ -42,13 +46,16 @@
 #include <glob.h>
 #endif
 
-#ifdef _WIN32
+#ifdef FLB_SYSTEM_WINDOWS
 #include <Windows.h>
+#include <io.h>
 #include <strsafe.h>
 #define PATH_MAX MAX_PATH
 #endif
 
 #include <stdio.h>
+
+#define FLB_CF_YAML_MAX_INCLUDE_DEPTH 256
 
 enum section {
     SECTION_ENV,
@@ -90,10 +97,24 @@ static char *section_names[] = {
     "other"
 };
 
+struct file_identity {
+    uint64_t device;
+    uint64_t inode;
+#ifdef FLB_SYSTEM_WINDOWS
+    FILE_ID_INFO windows_identity;
+    int has_windows_identity;
+#endif
+};
+
 struct file_state {
-    /* file */
-    flb_sds_t name;                /* file name */
-    flb_sds_t path;           /* file root path */
+    flb_sds_t name;                /* borrowed file name */
+    flb_sds_t path;                /* borrowed include directory */
+
+    /* Relative includes make the containing directory part of the parse identity. */
+    struct file_identity identity;
+    struct file_identity directory_identity;
+    char *directory_context;       /* path preserves mount and junction context */
+    struct file_state *include_parent;
 
     /* parent file state */
     struct file_state *parent;
@@ -485,7 +506,7 @@ static int is_file_included(struct local_ctx *ctx, const char *path)
     mk_list_foreach(head, &ctx->includes) {
         entry = mk_list_entry(head, struct flb_slist_entry, _head);
 
-#ifdef _WIN32
+#ifdef FLB_SYSTEM_WINDOWS
         if (strcasecmp(entry->str, path) == 0) {
 #else
         if (strcmp(entry->str, path) == 0) {
@@ -497,7 +518,7 @@ static int is_file_included(struct local_ctx *ctx, const char *path)
     return FLB_FALSE;
 }
 
-#ifndef _WIN32
+#ifndef FLB_SYSTEM_WINDOWS
 static int read_glob(struct flb_cf *conf, struct local_ctx *ctx,
                      struct parser_state *state, const char *path)
 {
@@ -661,7 +682,11 @@ static int read_glob(struct flb_cf *conf, struct local_ctx *ctx,
         }
 
         if (strchr(p1, '*')) {
-            read_glob(conf, ctx, state, buf); /* recursive */
+            ret = read_glob(conf, ctx, state, buf);
+            if (ret < 0) {
+                FindClose(hnd);
+                return -1;
+            }
             continue;
         }
 
@@ -670,6 +695,7 @@ static int read_glob(struct flb_cf *conf, struct local_ctx *ctx,
         if (ret == 0 && (st.st_mode & S_IFMT) == S_IFREG) {
 
             if (read_config(conf, ctx, state->file, buf) < 0) {
+                FindClose(hnd);
                 return -1;
             }
         }
@@ -3129,12 +3155,139 @@ static struct parser_state *state_create(struct file_state *parent, struct file_
 
 #else
 
-    state->file->name = flb_sds_create("***static***");
-    state->file->path = flb_sds_create("***static***");
+    state->file->name = "***static***";
+    state->file->path = "***static***";
 
 #endif
 
     return state;
+}
+
+#ifdef FLB_SYSTEM_WINDOWS
+static int get_handle_identity(HANDLE handle, struct file_identity *state)
+{
+    BY_HANDLE_FILE_INFORMATION identity;
+
+    if (handle == INVALID_HANDLE_VALUE) {
+        return -1;
+    }
+    state->has_windows_identity = GetFileInformationByHandleEx(handle, FileIdInfo,
+                                                               &state->windows_identity,
+                                                               sizeof(FILE_ID_INFO));
+    if (state->has_windows_identity) {
+        return 0;
+    }
+    if (!GetFileInformationByHandle(handle, &identity)) {
+        return -1;
+    }
+    state->device = identity.dwVolumeSerialNumber;
+    state->inode = ((uint64_t) identity.nFileIndexHigh << 32) | identity.nFileIndexLow;
+    return 0;
+}
+#endif
+
+/* Capture identities once, independently of path aliases or replacements. */
+static int get_file_identity(FILE *file, struct file_identity *state)
+{
+#ifdef FLB_SYSTEM_WINDOWS
+    return get_handle_identity((HANDLE) _get_osfhandle(_fileno(file)), state);
+#else
+#ifdef FLB_SYSTEM_LINUX
+    struct stat64 identity;
+
+    if (fstat64(fileno(file), &identity) != 0) {
+#else
+    struct stat identity;
+
+    if (fstat(fileno(file), &identity) != 0) {
+#endif
+        return -1;
+    }
+    state->device = identity.st_dev;
+    state->inode = identity.st_ino;
+    return 0;
+#endif
+}
+
+static int get_directory_identity(const char *path, struct file_identity *state)
+{
+#ifdef FLB_SYSTEM_WINDOWS
+    HANDLE handle;
+    int ret;
+    char drive_root[4];
+
+    if (path[0] != '\0' && path[1] == ':' && path[2] == '\0') {
+        drive_root[0] = path[0];
+        drive_root[1] = ':';
+        drive_root[2] = '\\';
+        drive_root[3] = '\0';
+        path = drive_root;
+    }
+
+    handle = CreateFileA(path, 0,
+                         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                         NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    if (handle == INVALID_HANDLE_VALUE) {
+        return -1;
+    }
+    ret = get_handle_identity(handle, state);
+    CloseHandle(handle);
+    return ret;
+#else
+#ifdef FLB_SYSTEM_LINUX
+    struct stat64 identity;
+
+    if (stat64(path, &identity) != 0) {
+#else
+    struct stat identity;
+
+    if (stat(path, &identity) != 0) {
+#endif
+        return -1;
+    }
+    state->device = identity.st_dev;
+    state->inode = identity.st_ino;
+    return 0;
+#endif
+}
+
+static int file_identity_equal(struct file_identity *left, struct file_identity *right)
+{
+#ifdef FLB_SYSTEM_WINDOWS
+    const FILE_ID_INFO *left_identity;
+    const FILE_ID_INFO *right_identity;
+
+    if (left->has_windows_identity || right->has_windows_identity) {
+        if (!left->has_windows_identity || !right->has_windows_identity) {
+            return FLB_FALSE;
+        }
+
+        left_identity = &left->windows_identity;
+        right_identity = &right->windows_identity;
+        if (left_identity->VolumeSerialNumber != right_identity->VolumeSerialNumber) {
+            return FLB_FALSE;
+        }
+
+        return memcmp(left_identity->FileId.Identifier, right_identity->FileId.Identifier,
+                      sizeof(left_identity->FileId.Identifier)) == 0;
+    }
+#endif
+    return left->device == right->device && left->inode == right->inode;
+}
+
+static int file_context_equal(struct file_state *left, struct file_state *right)
+{
+    if (!file_identity_equal(&left->identity, &right->identity) ||
+        !file_identity_equal(&left->directory_identity, &right->directory_identity)) {
+        return FLB_FALSE;
+    }
+    if (left->directory_context == NULL && right->directory_context == NULL) {
+        return FLB_TRUE;
+    }
+    if (left->directory_context == NULL || right->directory_context == NULL) {
+        return FLB_FALSE;
+    }
+    return strcmp(left->directory_context, right->directory_context) == 0;
 }
 
 static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
@@ -3144,6 +3297,7 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
     int status;
     int code = 0;
     int path_is_absolute;
+    int include_depth;
     struct stat st;
     struct parser_state *state;
     flb_sds_t include_dir = NULL;
@@ -3152,12 +3306,22 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
     yaml_event_t event;
     FILE *fh;
     struct file_state fstate;
-#ifdef _WIN32
+    struct file_state *ancestor;
+#ifdef FLB_SYSTEM_WINDOWS
     char *full_path;
 #endif
 
+    memset(&fstate, 0, sizeof(fstate));
+    include_depth = 0;
+    for (ancestor = parent; ancestor != NULL; ancestor = ancestor->include_parent) {
+        if (++include_depth >= FLB_CF_YAML_MAX_INCLUDE_DEPTH) {
+            flb_error("[config] maximum YAML include depth (%d) exceeded at '%s'",
+                      FLB_CF_YAML_MAX_INCLUDE_DEPTH, cfg_file);
+            return -1;
+        }
+    }
     path_is_absolute = cfg_file[0] == '/';
-#ifdef _WIN32
+#ifdef FLB_SYSTEM_WINDOWS
     path_is_absolute = path_is_absolute || cfg_file[0] == '\\' ||
                        (isalpha((unsigned char) cfg_file[0]) && cfg_file[1] == ':' &&
                         (cfg_file[2] == '/' || cfg_file[2] == '\\'));
@@ -3172,7 +3336,7 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
             return -1;
         }
 
-#ifdef _WIN32
+#ifdef FLB_SYSTEM_WINDOWS
 #define PATH_CONCAT_TEMPLATE "%s\\%s"
 #else
 #define PATH_CONCAT_TEMPLATE "%s/%s"
@@ -3204,7 +3368,7 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
         }
     }
 
-#ifdef _WIN32
+#ifdef FLB_SYSTEM_WINDOWS
     /* Use the same absolute identity for direct and wildcard includes. */
     full_path = realpath(include_dir, NULL);
     if (full_path == NULL) {
@@ -3231,15 +3395,7 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
     fstate.path = dirname(include_dir);
 
     fstate.parent = parent;
-
-    state = state_start(ctx, &fstate);
-
-    if (!state) {
-        flb_error("unable to push initial include file state: %s", cfg_file);
-        flb_sds_destroy(include_dir);
-        flb_sds_destroy(include_file);
-        return -1;
-    }
+    fstate.include_parent = parent;
 
     /* check if this file has been included before */
     ret = is_file_included(ctx, include_file);
@@ -3261,12 +3417,54 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
         return -1;
     }
 
+    ret = get_file_identity(fh, &fstate.identity);
+    if (ret == 0) {
+        ret = get_directory_identity(fstate.path, &fstate.directory_identity);
+    }
+    if (ret == 0) {
+        fstate.directory_context = realpath(fstate.path, NULL);
+        if (fstate.directory_context == NULL) {
+            ret = -1;
+        }
+    }
+    if (ret != 0) {
+        flb_error("[config] could not identify file '%s'", cfg_file);
+        fclose(fh);
+        flb_free(fstate.directory_context);
+        flb_sds_destroy(include_dir);
+        flb_sds_destroy(include_file);
+        return -1;
+    }
+
+    /* A linked template in another directory can have different relative children. */
+    for (ancestor = parent; ancestor != NULL; ancestor = ancestor->include_parent) {
+        if (file_context_equal(&fstate, ancestor)) {
+            flb_error("[config] file '%s' is already included", cfg_file);
+            fclose(fh);
+            flb_free(fstate.directory_context);
+            flb_sds_destroy(include_dir);
+            flb_sds_destroy(include_file);
+            return -1;
+        }
+    }
+
+    state = state_start(ctx, &fstate);
+    if (!state) {
+        flb_error("unable to push initial include file state: %s", cfg_file);
+        fclose(fh);
+        flb_free(fstate.directory_context);
+        flb_sds_destroy(include_dir);
+        flb_sds_destroy(include_file);
+        return -1;
+    }
+
     /* add file to the list of included files */
     ret = flb_slist_add(&ctx->includes, include_file);
 
     if (ret == -1) {
         flb_error("[config] could not register file %s", cfg_file);
         fclose(fh);
+        flb_free(fstate.directory_context);
         flb_sds_destroy(include_dir);
         flb_sds_destroy(include_file);
         return -1;
@@ -3341,6 +3539,7 @@ done:
     ctx->level--;
 
     flb_sds_destroy(include_file);
+    flb_free(fstate.directory_context);
     flb_sds_destroy(include_dir);
 
     return code;
