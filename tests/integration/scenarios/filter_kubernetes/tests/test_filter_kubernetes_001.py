@@ -318,7 +318,7 @@ def _write_config(tmp_path, name, script_file, kube_api_port):
     return config_file
 
 
-def _write_pod_association_config(tmp_path, servers, cert_file, key_file):
+def _write_pod_association_config(tmp_path, servers, cert_file, key_file, instances_per_host):
     config_lines = [
         "[SERVICE]",
         "    Flush 1",
@@ -339,7 +339,7 @@ def _write_pod_association_config(tmp_path, servers, cert_file, key_file):
         "",
     ]
 
-    for match, server in zip(("application.*", "dataplane.*"), servers):
+    for match, server in list(zip(("application.*", "dataplane.*"), servers)) * instances_per_host:
         config_lines.extend(
             [
                 "[FILTER]",
@@ -405,7 +405,8 @@ def test_filter_kubernetes_token_command_rejects_multiline_output_over_limit(tmp
     assert "kube token command test" in log_text
 
 
-def test_filter_kubernetes_pod_association_is_independent_per_instance(tmp_path):
+@pytest.mark.parametrize("instances_per_host", [1, 8])
+def test_filter_kubernetes_pod_association_is_independent_per_instance(tmp_path, instances_per_host):
     cert_dir = os.path.abspath(
         os.path.join(os.path.dirname(__file__), "../../in_splunk/certificate")
     )
@@ -416,21 +417,21 @@ def test_filter_kubernetes_pod_association_is_independent_per_instance(tmp_path)
             _run_pod_association_server(cert_file, key_file) as dataplane_server:
         servers = (application_server, dataplane_server)
         config_file = _write_pod_association_config(
-            tmp_path, servers, cert_file, key_file
+            tmp_path, servers, cert_file, key_file, instances_per_host
         )
         service = Service(str(config_file))
         service.start()
         try:
             service.service.wait_for_condition(
-                lambda: all(server.request_count >= 2 for server in servers),
+                lambda: all(server.request_count >= 3 * instances_per_host for server in servers),
                 timeout=20,
                 interval=0.25,
-                description="two refreshes from each pod association filter",
+                description="repeated refreshes from concurrent pod association filters",
             )
         finally:
             service.stop()
 
-    assert all(server.request_count >= 2 for server in servers)
+    assert all(server.request_count >= 3 * instances_per_host for server in servers)
 
 
 @pytest.mark.parametrize("custom_parser", [False, True])
