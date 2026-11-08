@@ -18,6 +18,8 @@ import yaml
 from utils.fluent_bit_manager import FluentBitManager
 from utils.network import find_available_port
 
+from fts_test_utils import read_log
+
 
 # (name, record policy, inherited-context policy, expected target, values for A/B)
 POLICIES = [
@@ -419,7 +421,7 @@ def test_log_policy_matrix(runner, policy):
     name, _, _, target, expected = policy
     original, resources = runner.run(name)
     if name.startswith("bad_"):
-        assert "edits rolled back" in Path(runner.manager.log_file).read_text()
+        assert "edits rolled back" in read_log(runner.manager.log_file, "edits rolled back")
     pairs = [(resource, scope, log) for resource in resources for scope in resource["scopeLogs"]
              for log in scope["logRecords"]]
     logs = [log for _, _, log in pairs]

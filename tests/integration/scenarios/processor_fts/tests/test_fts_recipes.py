@@ -11,6 +11,8 @@ import yaml
 from test_fts_records import send, rows
 from utils.test_service import FluentBitTestService
 
+from fts_test_utils import read_log
+
 
 def redact(**params):
     return {"id": "privacy", "use": "shared.redact_keys", "with": {
@@ -115,7 +117,7 @@ def test_recipe_error_drops_mutated_item_and_sanitizes_diagnostics(tmp_path, pla
         assert len(result) == 1
         assert result[0]["control"] == "ok"
         assert result[0]["password"] == "[REDACTED]"
-        log = Path(service.flb.log_file).read_text()
+        log = read_log(service.flb.log_file, "step=privacy class=wrong_type")
         assert "step=privacy class=wrong_type" in log
         assert "synthetic-error-secret" not in log
         assert "synthetic-private" not in log
@@ -265,7 +267,7 @@ def test_recipe_reports_metric_error_class(tmp_path, placement, fault, expected)
         target = next(item for _, _, item in result if item["name"] == "probe")
         assert target["unit"] == "ms"
         assert int(target["gauge"]["dataPoints"][0]["asInt"]) == 8
-        diagnostics = Path(manager.log_file).read_text()
+        diagnostics = read_log(manager.log_file, f"step=scale class={expected}")
         assert f"step=scale class={expected}" in diagnostics
         assert "synthetic-unit-secret" not in diagnostics
     finally:
@@ -283,7 +285,7 @@ def test_recipe_budget_error_is_not_swallowed_by_wrapper(tmp_path):
         result = service.wait_for_condition(lambda: rows(service), timeout=30)
         assert len(result) == 1 and result[0]["control"] == "ok"
         assert result[0]["password"] == "[REDACTED]"
-        assert "class=budget_exceeded" in Path(service.flb.log_file).read_text()
+        assert "class=budget_exceeded" in read_log(service.flb.log_file, "class=budget_exceeded")
     finally:
         service.stop()
 

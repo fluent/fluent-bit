@@ -9,6 +9,8 @@ from test_fts_recipes import config_file, rejected_startup
 from test_fts_records import send, rows
 from utils.test_service import FluentBitTestService
 
+from fts_test_utils import read_log
+
 
 ROOT = Path(__file__).resolve().parents[5]
 PACK = ROOT / "packs/fts/multisignal/observability-basics"
@@ -121,7 +123,7 @@ def test_author_runtime_error_rolls_back_edits_and_preserves_control(tmp_path):
         for record in result:
             record.pop("date", None)
         assert result == [{"fail": "synthetic", "control": 1}, {"control": 2}]
-        assert "step=privacy class=wrong_type" in Path(service.flb.log_file).read_text()
+        assert "step=privacy class=wrong_type" in read_log(service.flb.log_file, "step=privacy class=wrong_type")
     finally:
         service.stop()
 
@@ -264,7 +266,8 @@ def test_author_invalid_return_obeys_error_mode_and_rolls_back(tmp_path, returne
         for record in result:
             record.pop("date", None)
         assert result == ([bad, good] if error_mode == "keep" else [good])
-        assert "step=privacy class=invalid_parameter" in Path(service.flb.log_file).read_text()
+        expected = "step=privacy class=invalid_parameter"
+        assert expected in read_log(service.flb.log_file, expected)
     finally:
         service.stop()
 

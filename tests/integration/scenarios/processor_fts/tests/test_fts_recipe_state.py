@@ -72,7 +72,7 @@ def test_failed_item_does_not_admit_key(tmp_path, error_mode):
                        {"key": "a", "valid": True}])
         wait_rows(service, 2 if error_mode == "keep" else 1)
         assert rows(service)[-1]["valid"] is True
-        assert "class=validation_failed" in log_text(service)
+        assert "class=validation_failed" in log_text(service, "class=validation_failed")
         service.wait_for_condition(lambda: metrics(service).get("fluentbit_fts_dropped_by_policy_total") == 1, timeout=30)
     finally:
         service.stop()
@@ -149,9 +149,9 @@ def test_missing_and_invalid_key(tmp_path, on_missing):
         service.start()
         send(service, [{"missing": True}, {"key": {}}, {"key": "control"}])
         wait_rows(service, 2 if on_missing == "keep" else 1)
-        assert "class=wrong_type" in log_text(service)
+        assert "class=wrong_type" in log_text(service, "class=wrong_type")
         if on_missing == "error":
-            assert "class=missing_field" in log_text(service)
+            assert "class=missing_field" in log_text(service, "class=missing_field")
     finally:
         service.stop()
 

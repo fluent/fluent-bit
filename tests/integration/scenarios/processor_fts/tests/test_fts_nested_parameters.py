@@ -11,6 +11,8 @@ from test_fts_recipe_preflight import dry_run
 from test_fts_records import send, rows
 from utils.test_service import FluentBitTestService
 
+from fts_test_utils import read_log
+
 
 SPEC = {"config": {"type": "object", "default": {}, "fields": {
     "label": {"type": "string", "default": "default"},
@@ -190,7 +192,7 @@ def test_public_literal_helper_rolls_back_runtime_range_error(tmp_path):
         service.start()
         send(service, [{"fail": True}, {"control": True}])
         assert clean_rows(service, 2) == [{"fail": True}, {"control": True}]
-        assert "class=invalid_parameter" in Path(service.flb.log_file).read_text()
+        assert "class=invalid_parameter" in read_log(service.flb.log_file, "class=invalid_parameter")
     finally:
         service.stop()
 

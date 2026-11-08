@@ -70,7 +70,8 @@ def test_parse_failure_class(tmp_path, placement, memory):
         result = output(service, [{"message": message}, {"message": '{"value":true}'}])
         assert result[0] == {"message": message}
         assert result[1]["parsed"] == {"value": True}
-        assert "class=" + ("budget_exceeded" if memory else "invalid_json") in log_text(service)
+        expected = "class=" + ("budget_exceeded" if memory else "invalid_json")
+        assert expected in log_text(service, expected)
 
 
 def test_literal_map_sorted(tmp_path):
@@ -94,7 +95,7 @@ def test_timestamp_native_and_rollback(tmp_path, placement):
         assert abs(actual[0]["date"] - 2147483648.123456789) < 0.000001
         assert actual[1]["date"] == 0
         assert actual[2]["time"] == inputs[2]["time"]
-        assert "class=invalid_timestamp" in log_text(service)
+        assert "class=invalid_timestamp" in log_text(service, "class=invalid_timestamp")
 
 
 @pytest.mark.parametrize("placement", ["input", "output"])
@@ -135,7 +136,7 @@ def test_validation_null_enum_types_and_rollback(tmp_path, placement, error_mode
     expected = [dict(inputs[0], marked=True), *([] if error_mode == "drop" else inputs[1:4]), dict(inputs[4], marked=True)]
     with logs(tmp_path, steps, placement, error_mode=error_mode) as service:
         assert output(service, inputs * 2) == expected * 2
-        assert "class=validation_failed" in log_text(service)
+        assert "class=validation_failed" in log_text(service, "class=validation_failed")
 
 
 @pytest.mark.parametrize("placement", ["input", "output"])
@@ -160,7 +161,8 @@ def test_truncate_collision_and_wrong_type_rollback(tmp_path, placement):
     inputs = [{"text": "long", "cut": False}, {"text": 42}, {"text": "ok"}]
     with logs(tmp_path, [step], placement, error_mode="keep") as service:
         assert output(service, inputs) == inputs
-        assert "class=collision" in log_text(service) and "class=wrong_type" in log_text(service)
+        diagnostics = log_text(service, "class=collision", "class=wrong_type")
+        assert "class=collision" in diagnostics and "class=wrong_type" in diagnostics
 
 
 @pytest.mark.parametrize("placement", ["input", "output"])
@@ -258,7 +260,7 @@ def test_invalid_utf8_rejected_before_truncation(tmp_path, placement):
     with logs(tmp_path, [step], placement) as service:
         result = output(service, [{"text": Raw(b"\xa3ok\xff")}, {"text": "x"}])
         assert result == [{"text": "x"}]
-        assert "class=invalid_utf8" in log_text(service)
+        assert "class=invalid_utf8" in log_text(service, "class=invalid_utf8")
 
 
 @pytest.mark.parametrize("placement", ["input", "output"])
@@ -277,7 +279,7 @@ def test_lua_allocation_failure_class_and_recovery(tmp_path, placement):
     with logs(tmp_path, [step], placement, memory_limit="1M", error_mode="keep") as service:
         result = output(service, [{"level": large}, {"level": "notice"}])
         assert result == [{"level": large}, {"level": "INFO"}]
-        assert "class=budget_exceeded" in log_text(service)
+        assert "class=budget_exceeded" in log_text(service, "class=budget_exceeded")
 
 
 @pytest.mark.parametrize("placement", ["input", "output"])
@@ -302,7 +304,7 @@ def test_timestamp_invalid_boundaries(tmp_path, placement):
     with logs(tmp_path, [block("logs.parse_timestamp", source=sel("time"), on_missing="skip")],
               placement, error_mode="keep") as service:
         assert output(service, inputs) == inputs
-        assert "class=invalid_timestamp" in log_text(service)
+        assert "class=invalid_timestamp" in log_text(service, "class=invalid_timestamp")
 
 
 @pytest.mark.parametrize("placement", ["input", "output"])

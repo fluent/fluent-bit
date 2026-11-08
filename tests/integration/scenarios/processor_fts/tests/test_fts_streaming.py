@@ -10,6 +10,8 @@ import yaml
 
 from utils.test_service import FluentBitTestService
 
+from fts_test_utils import read_log
+
 
 def start_service(tmp_path, code, placement, *, following=None, **options):
     processors = [{"name": "fts", "code": code, **options}]
@@ -27,8 +29,8 @@ def start_service(tmp_path, code, placement, *, following=None, **options):
     return service
 
 
-def log_text(service):
-    return Path(service.flb.log_file).read_text()
+def log_text(service, *expected):
+    return read_log(service.flb.log_file, *expected)
 
 
 def rows(service):
@@ -138,7 +140,7 @@ def test_streaming_commits_and_retained_views(tmp_path, placement, chain, error_
                 assert row["empty"] == []
             if chain == "native":
                 assert row["following"] == "native"
-        diagnostics = log_text(service)
+        diagnostics = log_text(service, "expected item failure")
         assert "cannot construct" not in diagnostics
         assert diagnostics.count("log policy failed:") == 1
         assert "expected item failure" in diagnostics
@@ -230,7 +232,7 @@ def test_streaming_depth_error_is_item_local(tmp_path, placement, error_mode):
             assert "deep" not in row
             assert row["password"] == ("secret" if row["index"] == 1 else "[REDACTED]")
             assert ("edited" in row) == (row["index"] != 1)
-        diagnostics = log_text(service)
+        diagnostics = log_text(service, "log policy failed:")
         assert "cannot construct policy output" not in diagnostics
         assert diagnostics.count("log policy failed:") == 1
     finally:
@@ -260,7 +262,7 @@ def test_failed_records_do_not_poison_later_redactions(tmp_path, placement):
         output = service.wait_for_condition(ready, timeout=120)
         assert [row["index"] for row in output] == list(range(99, 2000, 100))
         assert all(row["password"] == "[REDACTED]" and "temporary" not in row for row in output)
-        diagnostics = log_text(service)
+        diagnostics = log_text(service, "expected rejection")
         assert "cannot construct" not in diagnostics
         assert "memory limit" not in diagnostics
         assert "expected rejection" in diagnostics

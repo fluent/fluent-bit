@@ -80,7 +80,8 @@ def test_hold_release_busy_discard_and_underflow(tmp_path, hold_dso, threaded, s
         assert counts["accounting_errors_total"] == 2
         send(service, {"action": "release"})
         wait_counts(service, 10, 7, 3, 0, 5)
-        assert "hold_probe_retry ret=-2 intact=1 inventory=2" in log_text(service)
+        expected = "hold_probe_retry ret=-2 intact=1 inventory=2"
+        assert expected in log_text(service, expected)
         send(service, [{"action": "hold"}] * 2)
         wait_counts(service, 12, 7, 3, 2, 7)
         send(service, {"action": "stop"})
@@ -89,10 +90,11 @@ def test_hold_release_busy_discard_and_underflow(tmp_path, hold_dso, threaded, s
         wait_counts(service, 14, 8, 6, 0, 7)
         service.wait_for_condition(lambda: len(rows(service)) == 8, timeout=30)
         assert all(row["visits"] == 1 for row in rows(service))
-        assert log_text(service).count("invalid retention accounting operation") == 1
+        diagnostic = "invalid retention accounting operation"
+        assert log_text(service, diagnostic).count(diagnostic) == 1
     finally:
         service.stop()
-    assert "hold_probe_exit inventory=0" in log_text(service)
+    assert "hold_probe_exit inventory=0" in log_text(service, "hold_probe_exit inventory=0")
 
 
 @pytest.mark.parametrize("threaded", [False, True])

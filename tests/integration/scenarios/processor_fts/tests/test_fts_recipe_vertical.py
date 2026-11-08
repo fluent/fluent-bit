@@ -17,6 +17,8 @@ from utils.fluent_bit_manager import FluentBitManager
 from utils.network import find_available_port
 from utils.test_service import FluentBitTestService
 
+from fts_test_utils import read_log
+
 ROOT = Path(__file__).resolve().parents[5]
 
 
@@ -172,7 +174,7 @@ def test_rename_rejects_existing_family_target(tmp_path, placement):
     with signal_recipe(tmp_path, "metrics", processor, placement) as runner:
         _, result = runner.run("probe")
         assert sorted(item["name"] for _, _, item in result) == ["control", "probe"]
-    assert "class=collision" in Path(runner.manager.log_file).read_text()
+    assert "class=collision" in read_log(runner.manager.log_file, "class=collision")
 
 
 @pytest.mark.parametrize("signal,step,reason", [
@@ -361,6 +363,6 @@ def test_failed_earlier_rename_does_not_hide_surviving_names(tmp_path, placement
     with signal_recipe(tmp_path, "metrics", proc, placement) as runner:
         _, result = runner.run("probe", custom_items=items)
         assert sorted(item["name"] for _, _, item in result) == ["control", "probe", "third"]
-    text = Path(runner.manager.log_file).read_text()
+    text = read_log(runner.manager.log_file, "step=first class=collision", "step=second class=collision")
     assert "step=first class=collision" in text
     assert "step=second class=collision" in text
