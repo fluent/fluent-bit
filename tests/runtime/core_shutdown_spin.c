@@ -20,6 +20,8 @@
 #include <fluent-bit.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_notification.h>
+#include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_time.h>
 #include <signal.h>
@@ -38,9 +40,23 @@ struct shutdown_observer {
     int worker_exit_on_pipeline_thread;
     int exit_after_worker_exit;
     int exit_on_worker_thread;
+    int notification_enqueued;
+    int notification_destroyed;
     pthread_t caller_thread;
     pthread_t worker_thread;
 };
+
+struct shutdown_notification {
+    struct flb_notification base;
+    struct shutdown_observer *observer;
+};
+
+static void shutdown_notification_destroy(void *data)
+{
+    struct shutdown_notification *notification = data;
+
+    notification->observer->notification_destroyed++;
+}
 
 static int shutdown_observer_init(struct flb_output_instance *ins,
                                   struct flb_config *config, void *data)
@@ -68,8 +84,22 @@ static void shutdown_observer_flush(struct flb_event_chunk *event_chunk,
 static int shutdown_observer_worker_exit(void *data, struct flb_config *config)
 {
     struct shutdown_observer *observer = data;
+    struct shutdown_notification *notification;
 
-    (void) config;
+    /* The main event loop has stopped before output workers exit. */
+    notification = flb_calloc(1, sizeof(struct shutdown_notification));
+    if (notification != NULL) {
+        notification->base.dynamically_allocated = FLB_TRUE;
+        notification->base.destructor = shutdown_notification_destroy;
+        notification->observer = observer;
+        if (flb_notification_enqueue(FLB_PLUGIN_INPUT, "lib.0",
+                                     &notification->base, config) == 0) {
+            observer->notification_enqueued++;
+        }
+        else {
+            flb_notification_cleanup(&notification->base);
+        }
+    }
 
     observer->worker_exit_called++;
     observer->worker_thread = pthread_self();
@@ -311,6 +341,8 @@ void flb_test_stop_waits_for_cleanup(void)
     alarm(0);
     TEST_CHECK_(ret == 0, "flb_stop returned %d", ret);
     TEST_CHECK(observer.worker_exit_called == 1);
+    TEST_CHECK(observer.notification_enqueued == 1);
+    TEST_CHECK(observer.notification_destroyed == 1);
     TEST_CHECK(observer.exit_called == 1);
     TEST_CHECK(observer.worker_exit_on_pipeline_thread != 0);
     TEST_CHECK(observer.exit_after_worker_exit != 0);
