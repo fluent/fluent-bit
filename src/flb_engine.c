@@ -1928,6 +1928,8 @@ static void flb_engine_cancel_pending_dispatches(struct flb_config *config)
 /* Release all resources associated to the engine */
 int flb_engine_shutdown(struct flb_config *config)
 {
+    int ret;
+    struct flb_notification *notification;
     struct flb_sched_timer_coro_cb_params *sched_params;
 #ifdef __EMSCRIPTEN__
     struct mk_list *head;
@@ -2005,6 +2007,20 @@ int flb_engine_shutdown(struct flb_config *config)
     }
 
     if (config->notification_channels_initialized == FLB_TRUE) {
+        /* Workers can enqueue notifications after the event loop stops.
+         * All producers and plugin contexts are now gone: release queued
+         * notifications without delivering them to destroyed instances.
+         */
+        ret = flb_pipe_set_nonblocking(config->notification_channels[0]);
+        if (ret == 0) {
+            while (flb_pipe_r(config->notification_channels[0], &notification,
+                              sizeof(notification)) == sizeof(notification)) {
+                flb_notification_cleanup(notification);
+            }
+        }
+        else {
+            flb_errno();
+        }
         mk_event_channel_destroy(config->evl,
                                  config->notification_channels[0],
                                  config->notification_channels[1],
