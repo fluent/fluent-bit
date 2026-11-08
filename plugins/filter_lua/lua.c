@@ -431,6 +431,7 @@ static int pack_result(struct lua_filter *ctx, struct flb_time *ts,
     return FLB_FALSE;
 }
 
+/* Apply callbacks in record order; protected errors drop only the failing record. */
 static int cb_lua_filter(const void *data, size_t bytes,
                          const char *tag, int tag_len,
                          void **out_buf, size_t *out_bytes,
@@ -441,6 +442,7 @@ static int cb_lua_filter(const void *data, size_t bytes,
 {
     int ret;
     int record_type;
+    const char *error_message;
     double ts = 0;
     struct flb_time t_orig;
     struct flb_time t;
@@ -577,15 +579,16 @@ static int cb_lua_filter(const void *data, size_t bytes,
                             ctx->cb_expected_returns,
                             0);
             if (ret != 0) {
-                flb_plg_error(ctx->ins, "error code %d: %s",
-                              ret, lua_tostring(ctx->lua->state, -1));
+                error_message = lua_tostring(ctx->lua->state, -1);
+                if (error_message == NULL) {
+                    error_message = "(non-string error)";
+                }
+                flb_plg_error(ctx->ins, "error code %d, dropping record: %s",
+                              ret, error_message);
                 lua_pop(ctx->lua->state, 1);
 
                 msgpack_sbuffer_destroy(&data_sbuf);
-                flb_log_event_decoder_destroy(&log_decoder);
-                flb_log_event_encoder_destroy(&log_encoder);
-
-                return FLB_FILTER_NOTOUCH;
+                continue;
             }
         }
         else {
@@ -802,7 +805,8 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "protected_mode", "true",
      0, FLB_TRUE, offsetof(struct lua_filter, protected_mode),
      "If enabled, Lua script will be executed in protected mode. "
-     "It prevents to crash when invalid Lua script is executed."
+     "It prevents to crash when invalid Lua script is executed. "
+     "Records that raise a Lua error are dropped; other records continue to be processed."
     },
     {
      FLB_CONFIG_MAP_BOOL, "time_as_table", "false",
