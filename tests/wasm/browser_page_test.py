@@ -43,14 +43,15 @@ def click_test(page, name, expected="passed"):
     return output
 
 
-def demo_records(output):
+def demo_records(output, require_message=True):
+    """Read emitted JSON objects, optionally restricting them to demo messages."""
     records = []
     for line in output.splitlines():
         try:
             value = json.loads(line)
         except ValueError:
             continue
-        if isinstance(value, dict) and "message" in value:
+        if isinstance(value, dict) and (not require_message or "message" in value):
             records.append(value)
     return records
 
@@ -211,7 +212,7 @@ def check_lua(page):
     page.locator('#demo-config').fill(example.replace('record.total = 0', 'error("lua-protected-test")'))
     output = click_test(page, '#start-demo')
     assert 'lua-protected-test' in output and 'dropping record' in output, output
-    assert not demo_records(output), output
+    assert not demo_records(output, require_message=False), output
     page.locator('#demo-config').fill(example.replace('function enrich(', 'function broken!('))
     click_test(page, '#start-demo', 'failed')
     page.locator('#demo-config').fill(example.replace('call: enrich', 'call: missing'))
