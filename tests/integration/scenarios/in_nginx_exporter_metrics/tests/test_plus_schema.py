@@ -124,7 +124,7 @@ def invalid_tables(endpoint):
 
 @pytest.fixture
 def plus_endpoint(tmp_path, request):
-    endpoint = request.param
+    endpoint, api_version = request.param if isinstance(request.param, tuple) else (request.param, 5)
     state = {"payload": valid_response(endpoint), "requests": 0}
     lock = threading.Lock()
 
@@ -134,12 +134,12 @@ def plus_endpoint(tmp_path, request):
         def do_GET(self):
             with lock:
                 if self.path == "/status/":
-                    payload = [5]
-                elif self.path == f"/status/5/{endpoint}":
+                    payload = list(range(1, api_version + 1))
+                elif self.path == f"/status/{api_version}/{endpoint}":
                     payload = state["payload"]
                     state["requests"] += 1
                 else:
-                    payload = valid_response(self.path.removeprefix("/status/5/"))
+                    payload = valid_response(self.path.removeprefix(f"/status/{api_version}/"))
                 body = json.dumps(payload).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -262,3 +262,81 @@ def test_plus_unsigned_scalar_boundaries(plus_endpoint):
             r"^nginxplus_\w+(?:\{[^\n]*\})? ([^\s]+)", metrics, re.MULTILINE
         )]
         assert float(value) in values
+
+
+@pytest.mark.parametrize("plus_endpoint", ["http/server_zones"], indirect=True)
+def test_plus_metric_families_and_response_labels(plus_endpoint):
+    """Keep Plus metric families distinct and response labels associated with their values."""
+    endpoint, exchange = plus_endpoint
+    metrics = exchange(valid_response(endpoint))
+    for name, label in [
+        ("nginxplus_server_zone_discarded", "server_zone"),
+        ("nginxplus_location_zone_discarded", "location_zone"),
+        ("nginxplus_server_zone_sent", "server_zone"),
+        ("nginxplus_stream_server_zone_sent", "server_zone"),
+    ]:
+        assert re.search(rf'^{name}\{{{label}="zone"\}} 7(?: |$)', metrics, re.MULTILINE)
+        assert len(re.findall(rf"^# HELP {name} ", metrics, re.MULTILINE)) == 1
+        assert len(re.findall(rf"^# TYPE {name} counter$", metrics, re.MULTILINE)) == 1
+    assert re.search(
+        r'^nginxplus_upstream_server_responses\{upstream="zone",'
+        r'server="127.0.0.1:80",code="2xx"\} 3(?: |$)', metrics, re.MULTILINE
+    )
+
+
+@pytest.mark.parametrize("plus_endpoint", [
+    (endpoint, version) for endpoint in PEER_FIELDS for version in [4, 5, 7, 10]
+], indirect=True)
+def test_plus_public_upstream_schema_preserves_gauges(plus_endpoint):
+    """Accept documented max_conns and preserve timings regardless of JSON key order."""
+    endpoint, exchange = plus_endpoint
+    payload = valid_response(endpoint)
+    peer = payload["zone"]["peers"][0]
+    del peer["limit"]
+    peer["max_conns"] = 20
+    peer["response_time"] = 36
+    timings = {"response_time": 36}
+    if endpoint.startswith("http/"):
+        peer["header_time"] = 19
+        peer["responses"]["codes"] = {"200": 3}
+        peer["response_time_hist"] = {"count": 1, "sum": 36, "buckets": {"50": 1}}
+        timings["header_time"] = 19
+    else:
+        peer["connect_time"] = 13
+        peer["first_byte_time"] = 17
+        timings.update(connect_time=13, first_byte_time=17)
+    peer["ssl"] = {"handshakes": 1, "verify_failures": {"other": 0}}
+    prefix = "nginxplus_stream" if endpoint.startswith("stream/") else "nginxplus"
+    expected = {"limit": 20, **timings}
+
+    def gauges_match(metrics):
+        return all(re.search(
+            rf'^{prefix}_upstream_server_{field}\{{upstream="zone",'
+            rf'server="127.0.0.1:80"\}} {value}(?: |$)', metrics, re.MULTILINE
+        ) for field, value in expected.items())
+
+    for reverse in [False, True]:
+        payload["zone"]["peers"] = [dict(reversed(list(peer.items()))) if reverse else peer]
+        exchange(payload, check=gauges_match)
+    exchange(replace_field(payload, ("zone", "peers", 0, "max_conns"), "20"), up=0)
+    exchange(payload, check=gauges_match)
+
+
+@pytest.mark.parametrize("plus_endpoint", list(FLAT_FIELDS) + TABLES, indirect=True)
+def test_plus_ignores_unknown_key_prefixes(plus_endpoint):
+    """Future API fields must not be parsed as prefixes of existing scalar fields."""
+    endpoint, exchange = plus_endpoint
+    payload = valid_response(endpoint)
+    if endpoint in PEER_FIELDS:
+        target = payload["zone"]["peers"][0]
+    elif endpoint in ZONE_FIELDS:
+        target = payload["zone"]
+    else:
+        target = payload
+    target.update({"": {}, "re": {"future": True}, "s": [], "a": False})
+    field = ("active" if endpoint in PEER_FIELDS else ZONE_FIELDS[endpoint][0]
+             if endpoint in ZONE_FIELDS else FLAT_FIELDS[endpoint][0])
+    target[field] = 19
+    exchange(payload, check=lambda text: re.search(
+        r"^nginxplus_\w+(?:\{[^\n]*\})? 19(?: |$)", text, re.MULTILINE
+    ))
