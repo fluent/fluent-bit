@@ -62,11 +62,13 @@ Test aliases, existing/partial severity, wrong types and native-tail behavior.
 ```yaml
 with:
   source: {root: body, path: [timestamp]}
-  on_missing: preserve
+  on_missing: skip
 ```
 
-RFC3339 source selector and missing policy; preserve observed time. No inferred
-epoch units or wall-clock fallback. Current helper requires calendar years
+RFC3339 source selector and missing policy (`skip` or `error`, default `error`).
+With `skip`, a missing source leaves the event timestamp unchanged. The OTel
+observed timestamp is preserved. No inferred epoch units or wall-clock fallback.
+Current helper requires calendar years
 1969–2107 AND normalized seconds 0..4294967293, seconds below 60 and at most nine
 fractional digits. It does not accept arbitrary pre-epoch dates. Test offset
 boundary crossings, precision, invalid dates and overflow on native/OTel logs.
