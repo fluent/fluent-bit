@@ -1,0 +1,91 @@
+name: Config and NGINX integration regressions
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - '.github/workflows/config-nginx-regressions.yaml'
+      - 'src/config_format/**'
+      - 'src/flb_upstream.c'
+      - 'src/flb_input.c'
+      - 'include/fluent-bit/flb_upstream.h'
+      - 'include/fluent-bit/flb_input.h'
+      - 'plugins/in_nginx_exporter_metrics/**'
+      - 'plugins/in_prometheus_textfile/**'
+      - 'plugins/filter_kubernetes/**'
+      - 'tests/integration/scenarios/hot_reload_watch/**'
+      - 'tests/integration/scenarios/in_nginx_exporter_metrics/**'
+      - 'tests/integration/scenarios/in_prometheus_textfile/**'
+      - 'tests/integration/scenarios/filter_kubernetes/**'
+      - 'tests/internal/thread_storage.c'
+      - 'tests/integration/src/**'
+      - 'tests/integration/requirements.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: config-nginx-regressions-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  focused-linux:
+    name: YAML, NGINX, textfile and Kubernetes with strict Valgrind
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bison build-essential cmake flex \
+            libbpf-dev libssl-dev libsystemd-dev libyaml-dev nginx python3-venv valgrind
+      - name: Configure and build
+        run: |
+          tests/integration/setup-venv.sh
+          cmake -S . -B build -DFLB_TESTS_RUNTIME=On -DFLB_TESTS_INTERNAL=On
+          cmake --build build -j8
+      - name: Check integration harness
+        run: |
+          ctest --test-dir build -R '^flb-it-thread_storage$' --output-on-failure
+          tests/integration/.venv/bin/python -m pytest -q \
+            tests/integration/tests/test_network.py \
+            tests/integration/tests/test_fluent_bit_manager.py \
+            tests/integration/test_fluent_bit_manager_startup.py
+      - name: Run integration regressions
+        env:
+          NGINX_BINARY: /usr/sbin/nginx
+        run: |
+          tests/integration/.venv/bin/python -m pytest -q -n 4 \
+            tests/integration/scenarios/hot_reload_watch/tests/test_include_identity.py \
+            tests/integration/scenarios/in_nginx_exporter_metrics \
+            tests/integration/scenarios/in_prometheus_textfile \
+            tests/integration/scenarios/filter_kubernetes \
+            --junitxml=tests/integration/regressions-normal.xml
+      - name: Run integration regressions with strict Valgrind
+        env:
+          NGINX_BINARY: /usr/sbin/nginx
+          VALGRIND: 1
+          VALGRIND_STRICT: 1
+        run: |
+          valgrind --error-exitcode=99 --leak-check=full \
+            --errors-for-leak-kinds=definite,indirect build/bin/flb-it-thread_storage
+          tests/integration/.venv/bin/python -m pytest -q -n 4 \
+            tests/integration/scenarios/hot_reload_watch/tests/test_include_identity.py \
+            tests/integration/scenarios/in_nginx_exporter_metrics \
+            tests/integration/scenarios/in_prometheus_textfile \
+            tests/integration/scenarios/filter_kubernetes \
+            --junitxml=tests/integration/regressions-valgrind.xml
+      - name: Upload regression reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: config-nginx-kubernetes-regressions
+          path: |
+            tests/integration/regressions-*.xml
+            tests/integration/results/
+          if-no-files-found: ignore
+          retention-days: 7
