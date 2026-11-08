@@ -265,6 +265,22 @@ jobs:
         shell: pwsh
         working-directory: build
 
+      - name: Set up Python for YAML include regressions
+        if: matrix.config.arch == 'x64'
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Check Windows YAML include identities and junction contexts
+        if: matrix.config.arch == 'x64'
+        shell: pwsh
+        run: |
+          python -m pip install pytest==8.2.2 requests==2.32.3 PyYAML==6.0.1 psutil==7.2.2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $env:FLUENT_BIT_BINARY = "$PWD/build/bin/fluent-bit.exe"
+          python -m pytest -q tests/integration/scenarios/hot_reload_watch/tests/test_include_identity.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Run unit tests for Fluent Bit packages (x86, x64, and ARM64)
         run: |
             $nparallel = 1
