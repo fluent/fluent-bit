@@ -199,6 +199,15 @@ conn_error:
 }
 
 
+/* API field names must match completely; unknown fields are ignored. */
+static int nginx_key_equals(const msgpack_object_str *key, const char *name)
+{
+    size_t length;
+
+    length = strlen(name);
+    return key->size == length && memcmp(key->ptr, name, length) == 0;
+}
+
 /* Match the state values exported by the NGINX Prometheus exporter. */
 static int nginx_parse_upstream_state(const msgpack_object *value, double *state)
 {
@@ -239,7 +248,7 @@ int process_connections(void *ctx, uint64_t ts, char *buf, size_t size)
                 cur = &result.data.via.map.ptr[i];
                 key = &cur->key.via.str;
 
-                if (strncmp(key->ptr, "accepted", key->size) == 0) {
+                if (nginx_key_equals(key, "accepted")) {
                     if (cur->val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                         msgpack_unpacked_destroy(&result);
                         return -1;
@@ -247,7 +256,7 @@ int process_connections(void *ctx, uint64_t ts, char *buf, size_t size)
                     cmt_counter_set(plus->connections_accepted, ts,
                                     (double)cur->val.via.u64, 0, NULL);
                 }
-                else if (strncmp(key->ptr, "dropped", key->size) == 0) {
+                else if (nginx_key_equals(key, "dropped")) {
                     if (cur->val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                         msgpack_unpacked_destroy(&result);
                         return -1;
@@ -255,7 +264,7 @@ int process_connections(void *ctx, uint64_t ts, char *buf, size_t size)
                     cmt_counter_set(plus->connections_dropped, ts,
                                     (double)cur->val.via.u64, 0, NULL);
                 }
-                else if (strncmp(key->ptr, "active", key->size) == 0) {
+                else if (nginx_key_equals(key, "active")) {
                     if (cur->val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                         msgpack_unpacked_destroy(&result);
                         return -1;
@@ -263,7 +272,7 @@ int process_connections(void *ctx, uint64_t ts, char *buf, size_t size)
                     cmt_counter_set(plus->connections_active, ts,
                                     (double)cur->val.via.u64, 0, NULL);
                 }
-                else if (strncmp(key->ptr, "idle", key->size) == 0) {
+                else if (nginx_key_equals(key, "idle")) {
                     if (cur->val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                         msgpack_unpacked_destroy(&result);
                         return -1;
@@ -297,7 +306,7 @@ int process_ssl(void *ctx, uint64_t ts, char *buf, size_t size)
             for (i = 0; i < result.data.via.map.size; i++) {
                 cur = &result.data.via.map.ptr[i];
                 key = &cur->key.via.str;
-                if (strncmp(key->ptr, "handshakes", key->size) == 0) {
+                if (nginx_key_equals(key, "handshakes")) {
                     if (cur->val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                         msgpack_unpacked_destroy(&result);
                         return -1;
@@ -305,7 +314,7 @@ int process_ssl(void *ctx, uint64_t ts, char *buf, size_t size)
                     cmt_counter_set(plus->handshakes, ts,
                                     (double)cur->val.via.u64, 0, NULL);
                 }
-                else if (strncmp(key->ptr, "handshakes_failed", key->size) == 0) {
+                else if (nginx_key_equals(key, "handshakes_failed")) {
                     if (cur->val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                         msgpack_unpacked_destroy(&result);
                         return -1;
@@ -313,7 +322,7 @@ int process_ssl(void *ctx, uint64_t ts, char *buf, size_t size)
                     cmt_counter_set(plus->handshakes_failed, ts,
                                     (double)cur->val.via.u64, 0, NULL);
                 }
-                else if (strncmp(key->ptr, "session_reuses", key->size) == 0) {
+                else if (nginx_key_equals(key, "session_reuses")) {
                     if (cur->val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                         msgpack_unpacked_destroy(&result);
                         return -1;
@@ -347,7 +356,7 @@ int process_http_requests(void *ctx, uint64_t ts, char *buf, size_t size)
             for (i = 0; i < result.data.via.map.size; i++) {
                 cur = &result.data.via.map.ptr[i];
                 key = &cur->key.via.str;
-                if (strncmp(key->ptr, "total", key->size) == 0) {
+                if (nginx_key_equals(key, "total")) {
                     if (cur->val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                         msgpack_unpacked_destroy(&result);
                         return -1;
@@ -355,7 +364,7 @@ int process_http_requests(void *ctx, uint64_t ts, char *buf, size_t size)
                     cmt_counter_set(plus->total, ts,
                                     (double)cur->val.via.u64, 0, NULL);
                 }
-                else if (strncmp(key->ptr, "current", key->size) == 0) {
+                else if (nginx_key_equals(key, "current")) {
                     if (cur->val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                         msgpack_unpacked_destroy(&result);
                         return -1;
@@ -608,42 +617,42 @@ void *process_server_zone(struct nginx_ctx *ctx, char *zone, uint64_t ts,
     for (i = 0; i < map->size; i++) {
         cur = &map->ptr[i];
         key = &cur->key.via.str;
-        if (strncmp(key->ptr, "processing", key->size) == 0) {
+        if (nginx_key_equals(key, "processing")) {
             if (map->ptr[i].val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                 return NULL;
             }
             cmt_counter_set(ctx->server_zones->processing, ts,
                             (double)map->ptr[i].val.via.u64, 1, (char *[]){zone});
         }
-        else if (strncmp(key->ptr, "requests", key->size) == 0) {
+        else if (nginx_key_equals(key, "requests")) {
             if (map->ptr[i].val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                 return NULL;
             }
             cmt_counter_set(ctx->server_zones->requests, ts,
                             (double)map->ptr[i].val.via.u64, 1, (char *[]){zone});
         }
-        else if (strncmp(key->ptr, "discarded", key->size) == 0) {
+        else if (nginx_key_equals(key, "discarded")) {
             if (map->ptr[i].val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                 return NULL;
             }
             cmt_counter_set(ctx->server_zones->discarded, ts,
                             (double)map->ptr[i].val.via.u64, 1, (char *[]){zone});
         }
-        else if (strncmp(key->ptr, "received", key->size) == 0) {
+        else if (nginx_key_equals(key, "received")) {
             if (map->ptr[i].val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                 return NULL;
             }
             cmt_counter_set(ctx->server_zones->received, ts,
                             (double)map->ptr[i].val.via.u64, 1, (char *[]){zone});
         }
-        else if (strncmp(key->ptr, "sent", key->size) == 0) {
+        else if (nginx_key_equals(key, "sent")) {
             if (map->ptr[i].val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                 return NULL;
             }
             cmt_counter_set(ctx->server_zones->sent, ts,
                             (double)map->ptr[i].val.via.u64, 1, (char *[]){zone});
         }
-        else if (strncmp(key->ptr, "responses", key->size) == 0) {
+        else if (nginx_key_equals(key, "responses")) {
             if (map->ptr[i].val.type != MSGPACK_OBJECT_MAP) {
                 return NULL;
             }
@@ -679,35 +688,35 @@ void *process_location_zone(struct nginx_ctx *ctx, char *zone, uint64_t ts,
         
         str = &map->ptr[i].key.via.str;
 
-        if (strncmp(str->ptr, "requests", str->size) == 0) {
+        if (nginx_key_equals(str, "requests")) {
             if (map->ptr[i].val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                 return NULL;
             }
             cmt_counter_set(ctx->location_zones->requests, ts,
                             (double)map->ptr[i].val.via.u64, 1, (char *[]){zone});
         }
-        else if (strncmp(str->ptr, "discarded", str->size) == 0) {
+        else if (nginx_key_equals(str, "discarded")) {
             if (map->ptr[i].val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                 return NULL;
             }
             cmt_counter_set(ctx->location_zones->discarded, ts,
                             (double)map->ptr[i].val.via.u64, 1, (char *[]){zone});
         }
-        else if (strncmp(str->ptr, "received", str->size) == 0) {
+        else if (nginx_key_equals(str, "received")) {
             if (map->ptr[i].val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                 return NULL;
             }
             cmt_counter_set(ctx->location_zones->received, ts,
                             (double)map->ptr[i].val.via.u64, 1, (char *[]){zone});
         }
-        else if (strncmp(str->ptr, "sent", str->size) == 0) {
+        else if (nginx_key_equals(str, "sent")) {
             if (map->ptr[i].val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                 return NULL;
             }
             cmt_counter_set(ctx->location_zones->sent, ts,
                             (double)map->ptr[i].val.via.u64, 1, (char *[]){zone});
         }
-        else if (strncmp(str->ptr, "responses", str->size) == 0) {
+        else if (nginx_key_equals(str, "responses")) {
             if (map->ptr[i].val.type != MSGPACK_OBJECT_MAP) {
                 return NULL;
             }
@@ -745,42 +754,42 @@ void *process_stream_server_zone(struct nginx_ctx *ctx, char *zone, uint64_t ts,
         
         str = &map->ptr[i].key.via.str;
 
-        if (strncmp(str->ptr, "connections", str->size) == 0) {
+        if (nginx_key_equals(str, "connections")) {
             if (map->ptr[i].val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                 return NULL;
             }
             cmt_counter_set(ctx->streams->connections, ts,
                             (double)map->ptr[i].val.via.u64, 1, (char *[]){zone});
         }
-        if (strncmp(str->ptr, "processing", str->size) == 0) {
+        if (nginx_key_equals(str, "processing")) {
             if (map->ptr[i].val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                 return NULL;
             }
             cmt_counter_set(ctx->streams->processing, ts,
                             (double)map->ptr[i].val.via.u64, 1, (char *[]){zone});
         }
-        else if (strncmp(str->ptr, "discarded", str->size) == 0) {
+        else if (nginx_key_equals(str, "discarded")) {
             if (map->ptr[i].val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                 return NULL;
             }
             cmt_counter_set(ctx->streams->discarded, ts,
                             (double)map->ptr[i].val.via.u64, 1, (char *[]){zone});
         }
-        else if (strncmp(str->ptr, "received", str->size) == 0) {
+        else if (nginx_key_equals(str, "received")) {
             if (map->ptr[i].val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                 return NULL;
             }
             cmt_counter_set(ctx->streams->received, ts,
                             (double)map->ptr[i].val.via.u64, 1, (char *[]){zone});
         }
-        else if (strncmp(str->ptr, "sent", str->size) == 0) {
+        else if (nginx_key_equals(str, "sent")) {
             if (map->ptr[i].val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                 return NULL;
             }
             cmt_counter_set(ctx->streams->sent, ts,
                             (double)map->ptr[i].val.via.u64, 1, (char *[]){zone});
         }
-        else if (strncmp(str->ptr, "sessions", str->size) == 0) {
+        else if (nginx_key_equals(str, "sessions")) {
             if (map->ptr[i].val.type != MSGPACK_OBJECT_MAP) {
                 return NULL;
             }
@@ -827,7 +836,7 @@ static int process_upstream_peers(struct nginx_ctx *ctx, char *backend, uint64_t
         for (p = 0, server = NULL; p < map->size; p++) {
             key = &map->ptr[p].key.via.str;
             kv = &map->ptr[p].val;
-            if (strncmp(key->ptr, "server", key->size) == 0) {
+            if (nginx_key_equals(key, "server")) {
                 if (kv->type != MSGPACK_OBJECT_STR) {
                     return -1;
                 }
@@ -844,18 +853,16 @@ static int process_upstream_peers(struct nginx_ctx *ctx, char *backend, uint64_t
             flb_plg_warn(ctx->ins, "no server for upstream");
             return -1;
         }
+        /* Optional gauges default once per peer, before parsing any fields. */
+        cmt_gauge_set(ctx->upstreams->limit, ts, 0.0, 2,
+                      (char *[]){backend, server});
+        cmt_gauge_set(ctx->upstreams->header_time, ts, 0.0, 2,
+                      (char *[]){backend, server});
+        cmt_gauge_set(ctx->upstreams->response_time, ts, 0.0, 2,
+                      (char *[]){backend, server});
         for (p = 0; p < map->size; p++) {
             key = &map->ptr[p].key.via.str;
-            // initialize to zero for now to respond
-            // how the official exporter does...
-            cmt_gauge_set(ctx->upstreams->limit, ts, (double)0.0, 2,
-                          (char *[]){backend, server});
-            cmt_gauge_set(ctx->upstreams->header_time, ts, (double)0.0, 2,
-                          (char *[]){backend, server});
-            cmt_gauge_set(ctx->upstreams->response_time, ts, (double)0.0, 2, 
-                          (char *[]){backend, server});
-
-            if (strncmp(key->ptr, "active", key->size) == 0) {
+            if (nginx_key_equals(key, "active")) {
                 if (map->ptr[p].val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                     flb_free(server);
                     return -1;
@@ -864,7 +871,7 @@ static int process_upstream_peers(struct nginx_ctx *ctx, char *backend, uint64_t
                               (double)map->ptr[p].val.via.u64, 2,
                               (char *[]){backend, server});
             }
-            else if (strncmp(key->ptr, "fails", key->size) == 0) {
+            else if (nginx_key_equals(key, "fails")) {
                 if (map->ptr[p].val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                     flb_free(server);
                     return -1;
@@ -873,7 +880,7 @@ static int process_upstream_peers(struct nginx_ctx *ctx, char *backend, uint64_t
                                 (double)map->ptr[p].val.via.u64, 2,
                                 (char *[]){backend, server});
             }
-            else if (strncmp(key->ptr, "header_time", key->size) == 0) {
+            else if (nginx_key_equals(key, "header_time")) {
                 if (map->ptr[p].val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                     flb_free(server);
                     return -1;
@@ -882,7 +889,7 @@ static int process_upstream_peers(struct nginx_ctx *ctx, char *backend, uint64_t
                               (double)map->ptr[p].val.via.u64, 2,
                               (char *[]){backend, server});
             }
-            else if (strncmp(key->ptr, "limit", key->size) == 0) {
+            else if (nginx_key_equals(key, "max_conns") || nginx_key_equals(key, "limit")) {
                 if (map->ptr[p].val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                     flb_free(server);
                     return -1;
@@ -891,7 +898,7 @@ static int process_upstream_peers(struct nginx_ctx *ctx, char *backend, uint64_t
                               (double)map->ptr[p].val.via.u64, 2,
                               (char *[]){backend, server});
             }
-            else if (strncmp(key->ptr, "received", key->size) == 0) {
+            else if (nginx_key_equals(key, "received")) {
                 if (map->ptr[p].val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                     flb_free(server);
                     return -1;
@@ -900,7 +907,7 @@ static int process_upstream_peers(struct nginx_ctx *ctx, char *backend, uint64_t
                                 (double)map->ptr[p].val.via.u64, 2,
                                 (char *[]){backend, server});
             }
-            else if (strncmp(key->ptr, "requests", key->size) == 0) {
+            else if (nginx_key_equals(key, "requests")) {
                 if (map->ptr[p].val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                     flb_free(server);
                     return -1;
@@ -909,7 +916,7 @@ static int process_upstream_peers(struct nginx_ctx *ctx, char *backend, uint64_t
                                 (double)map->ptr[p].val.via.u64, 2,
                                 (char *[]){backend, server});
             }
-            else if (strncmp(key->ptr, "responses", key->size) == 0) {
+            else if (nginx_key_equals(key, "responses")) {
                 if (map->ptr[p].val.type != MSGPACK_OBJECT_MAP) {
                     flb_free(server);
                     return -1;
@@ -930,7 +937,7 @@ static int process_upstream_peers(struct nginx_ctx *ctx, char *backend, uint64_t
                     }
                 }
             }
-            else if (strncmp(key->ptr, "response_time", key->size) == 0) {
+            else if (nginx_key_equals(key, "response_time")) {
                 if (map->ptr[p].val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                     flb_free(server);
                     return -1;
@@ -939,7 +946,7 @@ static int process_upstream_peers(struct nginx_ctx *ctx, char *backend, uint64_t
                               (double)map->ptr[p].val.via.u64, 2,
                               (char *[]){backend, server});
             }
-            else if (strncmp(key->ptr, "sent", key->size) == 0) {
+            else if (nginx_key_equals(key, "sent")) {
                 if (map->ptr[p].val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                     flb_free(server);
                     return -1;
@@ -948,7 +955,7 @@ static int process_upstream_peers(struct nginx_ctx *ctx, char *backend, uint64_t
                                 (double)map->ptr[p].val.via.u64, 2,
                                 (char *[]){backend, server});
             }
-            else if (strncmp(key->ptr, "state", key->size) == 0) {
+            else if (nginx_key_equals(key, "state")) {
                 if (nginx_parse_upstream_state(&map->ptr[p].val, &state) != 0) {
                     flb_free(server);
                     return -1;
@@ -957,7 +964,7 @@ static int process_upstream_peers(struct nginx_ctx *ctx, char *backend, uint64_t
                               state, 2,
                               (char *[]){backend, server});
             }
-            else if (strncmp(key->ptr, "unavail", key->size) == 0) {
+            else if (nginx_key_equals(key, "unavail")) {
                 if (map->ptr[p].val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                     flb_free(server);
                     return -1;
@@ -980,14 +987,14 @@ void *process_upstreams(struct nginx_ctx *ctx, char *backend, uint64_t ts,
 
     for (i = 0; i < map->size; i++) {
         key = &map->ptr[i].key.via.str;
-        if (strncmp(key->ptr, "keepalives", key->size) == 0) {
+        if (nginx_key_equals(key, "keepalives")) {
             if (map->ptr[i].val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                 return NULL;
             }
             cmt_gauge_set(ctx->upstreams->keepalives, ts,
                             (double)map->ptr[i].val.via.u64, 1, (char *[]){backend});
         }
-        else if (strncmp(key->ptr, "zombies", key->size) == 0) {
+        else if (nginx_key_equals(key, "zombies")) {
             if (map->ptr[i].val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                 return NULL;
             }
@@ -995,7 +1002,7 @@ void *process_upstreams(struct nginx_ctx *ctx, char *backend, uint64_t ts,
                             (double)map->ptr[i].val.via.u64, 1, (char *[]){backend});
         }
         // go into the peer...
-        else if (strncmp(key->ptr, "peers", key->size) == 0) {
+        else if (nginx_key_equals(key, "peers")) {
             if (map->ptr[i].val.type != MSGPACK_OBJECT_ARRAY) {
                 return NULL;
             }
@@ -1026,7 +1033,7 @@ static int process_stream_upstream_peers(struct nginx_ctx *ctx, char *backend,
         map = &peers->ptr[i].via.map;
         for (p = 0, server = NULL; p < map->size; p++) {
             key = &map->ptr[p].key.via.str;
-            if (strncmp(key->ptr, "server", key->size) == 0) {
+            if (nginx_key_equals(key, "server")) {
                 if (map->ptr[p].val.type != MSGPACK_OBJECT_STR) {
                     return -1;
                 }
@@ -1043,20 +1050,18 @@ static int process_stream_upstream_peers(struct nginx_ctx *ctx, char *backend,
             flb_plg_warn(ctx->ins, "no server for stream upstream");
             return -1;
         }
+        /* Optional gauges default once per peer, before parsing any fields. */
+        cmt_gauge_set(ctx->stream_upstreams->limit, ts, 0.0, 2,
+                      (char *[]){backend, server});
+        cmt_gauge_set(ctx->stream_upstreams->response_time, ts, 0.0, 2,
+                      (char *[]){backend, server});
+        cmt_gauge_set(ctx->stream_upstreams->connect_time, ts, 0.0, 2,
+                      (char *[]){backend, server});
+        cmt_gauge_set(ctx->stream_upstreams->first_byte_time, ts, 0.0, 2,
+                      (char *[]){backend, server});
         for (p = 0; p < map->size; p++) {
-            // initialize to zero for now to respond
-            // how the official exporter does...
-            cmt_gauge_set(ctx->stream_upstreams->limit, ts, (double)0.0, 2,
-                          (char *[]){backend, server});
-            cmt_gauge_set(ctx->stream_upstreams->response_time, ts, (double)0.0, 2,
-                          (char *[]){backend, server});
-            cmt_gauge_set(ctx->stream_upstreams->connect_time, ts, (double)0.0, 2,
-                          (char *[]){backend, server});
-            cmt_gauge_set(ctx->stream_upstreams->first_byte_time, ts, (double)0.0, 2,
-                          (char *[]){backend, server});
-            
             key = &map->ptr[p].key.via.str;
-            if (strncmp(key->ptr, "active", key->size) == 0) {
+            if (nginx_key_equals(key, "active")) {
                 if (map->ptr[p].val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                     flb_free(server);
                     return -1;
@@ -1065,7 +1070,7 @@ static int process_stream_upstream_peers(struct nginx_ctx *ctx, char *backend,
                               (double)map->ptr[p].val.via.u64, 2,
                               (char *[]){backend, server});
             }
-            else if (strncmp(key->ptr, "fails", key->size) == 0) {
+            else if (nginx_key_equals(key, "fails")) {
                 if (map->ptr[p].val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                     flb_free(server);
                     return -1;
@@ -1074,7 +1079,7 @@ static int process_stream_upstream_peers(struct nginx_ctx *ctx, char *backend,
                                 (double)map->ptr[p].val.via.u64, 2,
                                 (char *[]){backend, server});
             }
-            else if (strncmp(key->ptr, "limit", key->size) == 0) {
+            else if (nginx_key_equals(key, "max_conns") || nginx_key_equals(key, "limit")) {
                 if (map->ptr[p].val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                     flb_free(server);
                     return -1;
@@ -1083,7 +1088,7 @@ static int process_stream_upstream_peers(struct nginx_ctx *ctx, char *backend,
                               (double)map->ptr[p].val.via.u64, 2,
                               (char *[]){backend, server});
             }
-            else if (strncmp(key->ptr, "received", key->size) == 0) {
+            else if (nginx_key_equals(key, "received")) {
                 if (map->ptr[p].val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                     flb_free(server);
                     return -1;
@@ -1092,7 +1097,7 @@ static int process_stream_upstream_peers(struct nginx_ctx *ctx, char *backend,
                                 (double)map->ptr[p].val.via.u64, 2,
                                 (char *[]){backend, server});
             }
-            else if (strncmp(key->ptr, "connect_time", key->size) == 0) {
+            else if (nginx_key_equals(key, "connect_time")) {
                 if (map->ptr[p].val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                     flb_free(server);
                     return -1;
@@ -1101,7 +1106,7 @@ static int process_stream_upstream_peers(struct nginx_ctx *ctx, char *backend,
                               (double)map->ptr[p].val.via.u64, 2,
                               (char *[]){backend, server});
             }
-            else if (strncmp(key->ptr, "first_byte_time", key->size) == 0) {
+            else if (nginx_key_equals(key, "first_byte_time")) {
                 if (map->ptr[p].val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                     flb_free(server);
                     return -1;
@@ -1110,7 +1115,7 @@ static int process_stream_upstream_peers(struct nginx_ctx *ctx, char *backend,
                               (double)map->ptr[p].val.via.u64, 2,
                               (char *[]){backend, server});
             }
-            else if (strncmp(key->ptr, "connections", key->size) == 0) {
+            else if (nginx_key_equals(key, "connections")) {
                 if (map->ptr[p].val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                     flb_free(server);
                     return -1;
@@ -1119,7 +1124,7 @@ static int process_stream_upstream_peers(struct nginx_ctx *ctx, char *backend,
                                 (double)map->ptr[p].val.via.u64, 2,
                                 (char *[]){backend, server});
             }
-            else if (strncmp(key->ptr, "response_time", key->size) == 0) {
+            else if (nginx_key_equals(key, "response_time")) {
                 if (map->ptr[p].val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                     flb_free(server);
                     return -1;
@@ -1128,7 +1133,7 @@ static int process_stream_upstream_peers(struct nginx_ctx *ctx, char *backend,
                               (double)map->ptr[p].val.via.u64, 2,
                               (char *[]){backend, server});
             }
-            else if (strncmp(key->ptr, "sent", key->size) == 0) {
+            else if (nginx_key_equals(key, "sent")) {
                 if (map->ptr[p].val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                     flb_free(server);
                     return -1;
@@ -1137,7 +1142,7 @@ static int process_stream_upstream_peers(struct nginx_ctx *ctx, char *backend,
                                 (double)map->ptr[p].val.via.u64, 2,
                                 (char *[]){backend, server});
             }
-            else if (strncmp(key->ptr, "state", key->size) == 0) {
+            else if (nginx_key_equals(key, "state")) {
                 if (nginx_parse_upstream_state(&map->ptr[p].val, &state) != 0) {
                     flb_free(server);
                     return -1;
@@ -1146,7 +1151,7 @@ static int process_stream_upstream_peers(struct nginx_ctx *ctx, char *backend,
                               state, 2,
                               (char *[]){backend, server});
             }
-            else if (strncmp(key->ptr, "unavail", key->size) == 0) {
+            else if (nginx_key_equals(key, "unavail")) {
                 if (map->ptr[p].val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                     flb_free(server);
                     return -1;
@@ -1169,7 +1174,7 @@ void *process_stream_upstreams(struct nginx_ctx *ctx, char *backend, uint64_t ts
 
     for (i = 0; i < map->size; i++) {
         key = &map->ptr[i].key.via.str;
-        if (strncmp(key->ptr, "zombies", key->size) == 0) {
+        if (nginx_key_equals(key, "zombies")) {
             if (map->ptr[i].val.type != MSGPACK_OBJECT_POSITIVE_INTEGER) {
                 return NULL;
             }
@@ -1177,7 +1182,7 @@ void *process_stream_upstreams(struct nginx_ctx *ctx, char *backend, uint64_t ts
                             (double)map->ptr[i].val.via.u64, 1, (char *[]){backend});
         }
         // go into the peer...
-        else if (strncmp(key->ptr, "peers", key->size) == 0) {
+        else if (nginx_key_equals(key, "peers")) {
             if (map->ptr[i].val.type != MSGPACK_OBJECT_ARRAY) {
                 return NULL;
             }
@@ -2117,9 +2122,9 @@ static int nginx_init(struct flb_input_instance *ins,
 
         c = cmt_counter_create(ctx->cmt,
                                "nginxplus",
-                               "server_zone",
+                               "location_zone",
                                "discarded",
-                               "NGINX Server Zone discarded",
+                               "NGINX Location Zone discarded",
                                1, (char *[]){"location_zone"});
         if (c == NULL) {
             goto nginx_init_end;
@@ -2267,11 +2272,11 @@ static int nginx_init(struct flb_input_instance *ins,
         ctx->upstreams->requests = c;
         
         c = cmt_counter_create(ctx->cmt,
-                              "nginxplus",
-                              "upstream_server",
-                              "responses",
-                              "NGINX Upstream Responses",
-                              3, (char *[]){"code", "upstream","server"});
+                               "nginxplus",
+                               "upstream_server",
+                               "responses",
+                               "NGINX Upstream Responses",
+                               3, (char *[]){"upstream", "server", "code"});
         if (c == NULL) {
             goto nginx_init_end;
         }
@@ -2375,7 +2380,7 @@ static int nginx_init(struct flb_input_instance *ins,
 
         c = cmt_counter_create(ctx->cmt,
                                "nginxplus",
-                               "server_zone",
+                               "stream_server_zone",
                                "sent",
                                "NGINX Stream Server Zone sent",
                                1, (char *[]){"server_zone"});
