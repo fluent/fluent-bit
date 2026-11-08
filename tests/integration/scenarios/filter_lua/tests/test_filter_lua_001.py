@@ -15,6 +15,7 @@ from utils.test_service import FluentBitTestService
     "modify3", "modify5", "sparse", "sparse_large", "drop", "runtime_error", "syntax_error", "missing_call", "init_error"
 ])
 def test_lua_callbacks(tmp_path, context, mode):
+    """Check callback results and startup failures in both pipeline contexts."""
     args = "tag, timestamp, record"
     result = "2, timestamp, record"
     if mode == "modify5":
@@ -82,8 +83,8 @@ end
             assert not records()
         elif mode == "runtime_error":
             service.wait_for_condition(lambda: "lua-protected-test" in log_text(), timeout=20)
-            output = service.wait_for_condition(records, timeout=20)
-            assert output[0]["message"] == "lua-test"
+            service.stop()
+            assert not records()
         else:
             output = service.wait_for_condition(records, timeout=20)
             values = ["first", None, "third"] if mode == "sparse" else [1, 2, 3]

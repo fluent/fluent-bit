@@ -37,6 +37,7 @@ end
 @pytest.mark.parametrize("context", ["filter", "processor"])
 @pytest.mark.parametrize("mode", ["hot_loop", "runtime_error", "syntax_error", "init_error"])
 def test_luajit_callbacks(tmp_path, context, mode):
+    """Verify JIT execution and isolate protected callback failures."""
     code = SCRIPT
     if mode == "runtime_error":
         code = code.replace("record.total = calculate()", 'error("callback-error")')
@@ -81,11 +82,12 @@ def test_luajit_callbacks(tmp_path, context, mode):
 
     try:
         service.start()
-        output = service.wait_for_condition(records, timeout=30)
         if mode == "runtime_error":
-            assert "callback-error" in log_text()
-            assert all(record == {"message": "lua-test"} for record in output)
+            service.wait_for_condition(lambda: "callback-error" in log_text(), timeout=30)
+            service.stop()
+            assert not records()
         else:
+            output = service.wait_for_condition(records, timeout=30)
             assert all(record == {"message": "lua-test café", "total": 980000,
                                   "jit_enabled": True, "trace_compiled": True,
                                   "unpacked": "abc", "packed_count": 3, "error_caught": True}
