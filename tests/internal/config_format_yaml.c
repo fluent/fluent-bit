@@ -13,7 +13,11 @@
 
 #include "flb_tests_internal.h"
 
-#ifdef _WIN32
+#ifdef FLB_SYSTEM_WINDOWS
+#include <Windows.h>
+#endif
+
+#ifdef FLB_SYSTEM_WINDOWS
 #define FLB_TESTS_CONF_PATH FLB_TESTS_DATA_PATH "\\data\\config_format\\yaml"
 #else
 #define FLB_TESTS_CONF_PATH FLB_TESTS_DATA_PATH "/data/config_format/yaml"
@@ -23,7 +27,7 @@
 #define FLB_001 FLB_TESTS_CONF_PATH "/issue_7559.yaml"
 #define FLB_002 FLB_TESTS_CONF_PATH "/processors.yaml"
 
-#ifdef _WIN32
+#ifdef FLB_SYSTEM_WINDOWS
 #define FLB_003 FLB_TESTS_CONF_PATH "\\parsers_and_multiline_parsers.yaml"
 #else
 #define FLB_003 FLB_TESTS_CONF_PATH "/parsers_and_multiline_parsers.yaml"
@@ -40,7 +44,7 @@
 #define FLB_BROKEN_PLUGIN_VARIANT FLB_TESTS_CONF_PATH "/broken_plugin_variant.yaml"
 #define FLB_CLUSTERFUZZ_VARIANT_MISSING_KEY FLB_TESTS_CONF_PATH "/clusterfuzz_variant_missing_key.yaml"
 
-#ifdef _WIN32
+#ifdef FLB_SYSTEM_WINDOWS
 #define FLB_BASIC FLB_000_WIN
 #else
 #define FLB_BASIC FLB_000
@@ -1005,7 +1009,91 @@ static void test_caller_owned_error()
     flb_cf_destroy(cf);
 }
 
+#ifdef FLB_SYSTEM_WINDOWS
+/* Exercise native file identities in the Windows internal-test matrix. */
+static void test_include_hardlink_cycle()
+{
+    char directory[MAX_PATH];
+    char main_file[MAX_PATH];
+    char alias_file[MAX_PATH];
+    char pattern[MAX_PATH];
+    DWORD length;
+    DWORD handles_before;
+    DWORD handles_after;
+    int i;
+    int ret;
+    FILE *file;
+    struct flb_cf *cf;
+
+    length = GetTempPathA(sizeof(directory), directory);
+    if (!TEST_CHECK(length > 0 && length < sizeof(directory))) {
+        return;
+    }
+    if (!TEST_CHECK(GetTempFileNameA(directory, "fby", 0, main_file) != 0)) {
+        return;
+    }
+    ret = snprintf(alias_file, sizeof(alias_file), "%s.link.yaml", main_file);
+    if (!TEST_CHECK(ret > 0 && (size_t) ret < sizeof(alias_file))) {
+        DeleteFileA(main_file);
+        return;
+    }
+    file = fopen(main_file, "w");
+    if (!TEST_CHECK(file != NULL)) {
+        DeleteFileA(main_file);
+        return;
+    }
+    fprintf(file, "includes:\n  - '%s'\n", alias_file);
+    fclose(file);
+    if (!TEST_CHECK(CreateHardLinkA(alias_file, main_file, NULL) != 0)) {
+        DeleteFileA(main_file);
+        return;
+    }
+
+    cf = flb_cf_yaml_create(NULL, main_file, NULL, 0);
+    TEST_CHECK(cf == NULL);
+    if (cf != NULL) {
+        flb_cf_destroy(cf);
+    }
+
+    /* Failed wildcard includes must release their Windows search handles. */
+    ret = snprintf(pattern, sizeof(pattern), "%s.link*.yaml", main_file);
+    if (!TEST_CHECK(ret > 0 && (size_t) ret < sizeof(pattern))) {
+        DeleteFileA(alias_file);
+        DeleteFileA(main_file);
+        return;
+    }
+    file = fopen(main_file, "w");
+    if (!TEST_CHECK(file != NULL)) {
+        DeleteFileA(alias_file);
+        DeleteFileA(main_file);
+        return;
+    }
+    fprintf(file, "includes:\n  - '%s'\n", pattern);
+    fclose(file);
+    if (!TEST_CHECK(GetProcessHandleCount(GetCurrentProcess(), &handles_before) != 0)) {
+        DeleteFileA(alias_file);
+        DeleteFileA(main_file);
+        return;
+    }
+    for (i = 0; i < 8; i++) {
+        cf = flb_cf_yaml_create(NULL, main_file, NULL, 0);
+        TEST_CHECK(cf == NULL);
+        if (cf != NULL) {
+            flb_cf_destroy(cf);
+        }
+    }
+    if (TEST_CHECK(GetProcessHandleCount(GetCurrentProcess(), &handles_after) != 0)) {
+        TEST_CHECK(handles_after == handles_before);
+    }
+    TEST_CHECK(DeleteFileA(alias_file) != 0);
+    TEST_CHECK(DeleteFileA(main_file) != 0);
+}
+#endif
+
 TEST_LIST = {
+#ifdef FLB_SYSTEM_WINDOWS
+    { "include_hardlink_cycle", test_include_hardlink_cycle},
+#endif
     { "basic"    , test_basic},
     { "customs section", test_customs_section},
     { "broken_plugin_variant_yaml", test_broken_plugin_variant_yaml},
