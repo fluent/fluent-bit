@@ -179,6 +179,7 @@ def check_demo(page):
 
 
 def check_lua(page):
+    """Verify browser Lua callbacks, record drops, protected errors and recovery."""
     page.wait_for_function("!document.getElementById('load-lua-demo').disabled")
     page.locator('#load-lua-demo').click()
     example = page.locator('#demo-config').input_value()
@@ -206,10 +207,11 @@ def check_lua(page):
     assert demo_records(click_test(page, '#start-demo'))
     page.locator('#demo-config').fill(example.replace('return 2, timestamp, record', 'return -1, timestamp, record'))
     assert not demo_records(click_test(page, '#start-demo'))
-    # Protected Lua errors must not terminate the engine or corrupt the input.
+    # Protected Lua errors drop the failing records and keep the engine running.
     page.locator('#demo-config').fill(example.replace('record.total = 0', 'error("lua-protected-test")'))
     output = click_test(page, '#start-demo')
-    assert 'lua-protected-test' in output and demo_records(output), output
+    assert 'lua-protected-test' in output and 'dropping record' in output, output
+    assert not demo_records(output), output
     page.locator('#demo-config').fill(example.replace('function enrich(', 'function broken!('))
     click_test(page, '#start-demo', 'failed')
     page.locator('#demo-config').fill(example.replace('call: enrich', 'call: missing'))
