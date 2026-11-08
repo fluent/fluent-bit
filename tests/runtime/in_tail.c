@@ -2608,8 +2608,8 @@ void flb_test_parser()
         exit(EXIT_FAILURE);
     }
 
-    /* waiting to flush */
-    flb_time_msleep(500);
+    /* Wait for collection and output on slower runners. */
+    wait_num_with_timeout(5000, &num);
 
     num = get_output_num();
     if (!TEST_CHECK(num > 0))  {
