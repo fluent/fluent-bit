@@ -12,6 +12,7 @@ import tempfile
 import pytest
 
 from test_unix_socket_decode_status import wait_for
+from utils.valgrind import assert_valgrind_clean
 
 
 def command_for(tmp_path, plugin, address, permissions=True):
@@ -31,8 +32,10 @@ def command_for(tmp_path, plugin, address, permissions=True):
         command += ["-p", f"mode={mode}", "-p", "parser=json"]
     command += ["-o", "stdout", "-m", "*", "-p", "format=json_lines"]
     if os.environ.get("VALGRIND") == "1":
+        # A forked bind helper inherits live parent allocations and exits without cleanup.
+        # Preserve its exit status and check the parent report strictly after shutdown.
         command = ["valgrind", "--leak-check=full", "--show-leak-kinds=all",
-                   "--errors-for-leak-kinds=definite,indirect", "--error-exitcode=99",
+                   "--errors-for-leak-kinds=definite,indirect,possible",
                    "--child-silent-after-fork=yes", f"--log-file={tmp_path / 'memory.log'}"] + command
     return command
 
@@ -41,6 +44,7 @@ def check_memory(tmp_path):
     if os.environ.get("VALGRIND") == "1":
         log = (tmp_path / "memory.log").read_text()
         assert "ERROR SUMMARY: 0 errors" in log, log
+        assert_valgrind_clean(tmp_path / "memory.log")
 
 
 @contextlib.contextmanager
