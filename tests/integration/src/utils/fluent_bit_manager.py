@@ -29,6 +29,7 @@ import time
 
 import requests
 import pytest
+import psutil
 
 from utils.network import find_available_port, wait_for_port_to_be_free
 from utils.leaks import assert_leaks_clean
@@ -210,6 +211,54 @@ class FluentBitManager:
 
     def start(self, *, wait_for_ready=True):
         """Launch with the selected checker; optionally wait for HTTP readiness."""
+        for attempt in range(3):
+            try:
+                return self._start(wait_for_ready=wait_for_ready)
+            except FluentBitStartupError:
+                if attempt == 2 or not self._monitoring_port_conflict():
+                    failed_process = self.process
+                    self.stop()
+                    # Callers inspect the completed child's exit status on failure.
+                    self.process = failed_process
+                    raise
+                # The probe socket cannot stay open while Fluent Bit binds it.
+                # Check the failed process before selecting another test port.
+                self.http_monitoring_port = None
+                self.stop()
+
+    def _monitoring_port_conflict(self):
+        if self.process is None or self.process.poll() is None or not self.log_file:
+            return False
+        try:
+            with open(self.log_file, encoding="utf-8", errors="replace") as log:
+                text = log.read()
+        except FileNotFoundError:
+            return False
+        return re.search(
+            rf"\[downstream\] could not bind address \S+:{re.escape(str(self.http_monitoring_port))}\. Aborting",
+            text,
+        ) is not None
+
+    def _owns_monitoring_listener(self):
+        if self.process is None:
+            return False
+        pid = self.target_pid or self.process.pid
+        try:
+            connections = psutil.Process(pid).net_connections(kind="tcp")
+        except psutil.NoSuchProcess:
+            return False
+        except psutil.AccessDenied as error:
+            # Linux can deny /proc/PID/fd access while an exited child awaits reaping.
+            if self.process.poll() is not None:
+                return False
+            raise FluentBitStartupError(
+                f"Cannot verify monitoring listener ownership for PID {pid}: {error}"
+            ) from error
+        return any(connection.status == psutil.CONN_LISTEN and connection.laddr
+                   and connection.laddr.port == int(self.http_monitoring_port)
+                   for connection in connections)
+
+    def _start(self, *, wait_for_ready):
         if not self.config_path or not os.path.exists(self.config_path):
             raise FileNotFoundError(f"Config file {self.config_path} does not exist")
         if not os.path.isfile(self.binary_absolute_path):
@@ -499,6 +548,7 @@ finally:
             timeout = 30 if memory_check_enabled() else 10
         url = f"http://127.0.0.1:{self.http_monitoring_port}/api/v1/uptime"
         start_time = time.time()
+        ownership_error = None
         while time.time() - start_time < timeout:
             if self.process and self.process.poll() is not None:
                 if platform.system() == "Windows":
@@ -519,14 +569,25 @@ finally:
                 if response.status_code == 200:
                     uptime = response.json().get('uptime_sec', 0)
                     if uptime > 1:
-                        logger.info("Fluent Bit is running, health check OK")
-                        return True
+                        try:
+                            owns_listener = self._owns_monitoring_listener()
+                            ownership_error = None
+                        except FluentBitStartupError as error:
+                            # An exiting main thread can lose /proc access before
+                            # the remaining workers finish and poll() reports exit.
+                            ownership_error = error
+                            owns_listener = False
+                        if owns_listener:
+                            logger.info("Fluent Bit is running, health check OK")
+                            return True
             except (requests.ConnectionError, requests.Timeout):
                 # Startup can temporarily delay responses, especially under Valgrind.
                 pass
 
             time.sleep(1)
 
+        if ownership_error is not None:
+            raise ownership_error
         raise FluentBitStartupError(
             f"Fluent Bit did not start within {timeout} seconds. See log file {self.log_file}"
         )

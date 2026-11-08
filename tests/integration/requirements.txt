@@ -30,6 +30,7 @@ ordered-set==4.1.0
 packaging==24.1
 pluggy==1.5.0
 protobuf==4.25.3
+psutil==7.2.2
 pytest==8.2.2
 pytest-xdist==3.8.0
 PyYAML==6.0.1

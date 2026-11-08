@@ -1,13 +1,15 @@
 import os
 import socket
+import json
+import subprocess
+import sys
 
 import pytest
 
 from utils.network import find_available_port, wait_for_port_to_be_free
 
 
-@pytest.mark.skipif(os.name != "nt", reason="Windows port allocation regression")
-def test_windows_port_allocations_are_distinct():
+def test_port_allocations_are_distinct():
     ports = [find_available_port() for _ in range(100)]
     assert len(set(ports)) == len(ports)
 
@@ -34,3 +36,30 @@ def test_available_port_excludes_active_reusable_client():
             assert find_available_port(client_port) != client_port
         finally:
             connection.close()
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux ephemeral-port allocation")
+def test_linux_workers_allocate_distinct_non_ephemeral_ports():
+    with open("/proc/sys/net/ipv4/ip_local_port_range", encoding="ascii") as source:
+        low, high = (int(value) for value in source.read().split())
+    command = [sys.executable, "-c", "import json; from utils.network import find_available_port; "
+               "print(json.dumps([find_available_port() for _ in range(20)]))"]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.path.abspath(os.path.join(os.path.dirname(__file__), "../src"))
+    workers = []
+    ports = []
+    try:
+        for _ in range(8):
+            workers.append(subprocess.Popen(command, env=env, stdout=subprocess.PIPE,
+                                            stderr=subprocess.PIPE, text=True))
+        for worker in workers:
+            output, errors = worker.communicate(timeout=20)
+            assert worker.returncode == 0, errors
+            ports.extend(json.loads(output))
+    finally:
+        for worker in workers:
+            if worker.poll() is None:
+                worker.kill()
+            worker.communicate()
+    assert len(ports) == len(set(ports))
+    assert all(not low <= port <= high for port in ports)

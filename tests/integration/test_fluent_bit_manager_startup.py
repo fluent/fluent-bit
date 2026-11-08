@@ -12,6 +12,7 @@ def prepare_manager(monkeypatch):
     manager.process = None
     manager.http_monitoring_port = 12345
     manager.log_file = 'startup-test.log'
+    monkeypatch.setattr(manager, '_owns_monitoring_listener', lambda: True)
     clock = [0]
     monkeypatch.setattr(manager_module, 'time', SimpleNamespace(
         time=lambda: clock[0], sleep=lambda seconds: clock.__setitem__(0, clock[0] + seconds)))
@@ -62,3 +63,21 @@ def test_startup_does_not_hide_unexpected_errors(monkeypatch):
     monkeypatch.setattr(manager_module.requests, 'get', get)
     with pytest.raises(RuntimeError, match='unexpected'):
         manager.wait_for_fluent_bit(timeout=3)
+
+
+@pytest.mark.parametrize('exits', [True, False])
+def test_startup_bounds_listener_inspection_failure(monkeypatch, exits):
+    manager, clock = prepare_manager(monkeypatch)
+    manager.process = SimpleNamespace(
+        poll=lambda: 1 if exits and clock[0] >= 1 else None, returncode=1)
+    monkeypatch.setattr(manager_module.requests, 'get', lambda *args, **kwargs:
+                        SimpleNamespace(status_code=200, json=lambda: {'uptime_sec': 100}))
+
+    def denied():
+        raise FluentBitStartupError('Cannot verify monitoring listener ownership')
+
+    monkeypatch.setattr(manager, '_owns_monitoring_listener', denied)
+    expected = 'exited early' if exits else 'Cannot verify monitoring listener ownership'
+    with pytest.raises(FluentBitStartupError, match=expected):
+        manager.wait_for_fluent_bit(timeout=3)
+    assert clock[0] == (1 if exits else 3)

@@ -286,6 +286,7 @@ def test_start_uses_unique_valgrind_log_path(monkeypatch, tmp_path):
     monkeypatch.setattr(manager_module.subprocess, "Popen", fake_popen)
 
     manager = FluentBitManager(str(config_path), "/usr/bin/fluent-bit")
+    monkeypatch.setattr(manager, "_owns_monitoring_listener", lambda: True)
     manager.start()
 
     assert manager.results_dir == str(tmp_path / "run-1")
@@ -349,6 +350,7 @@ def test_startup_health_check_retries_transient_errors(monkeypatch, error):
     get = Mock(side_effect=[error("not ready"), response])
     monkeypatch.setattr(manager_module.requests, "get", get)
     monkeypatch.setattr(manager_module.time, "sleep", lambda _: None)
+    monkeypatch.setattr(manager, "_owns_monitoring_listener", lambda: True)
 
     assert manager.wait_for_fluent_bit(timeout=5) is True
     assert get.call_count == 2
@@ -549,3 +551,106 @@ def test_windows_shutdown_helper_timeout_reaches_cleanup(monkeypatch, exited):
     assert manager.target_pid is None
     assert manager.output_handle is None
     handle.close.assert_called_once()
+
+
+@pytest.mark.parametrize("log_level", ["info", "off"])
+def test_start_recovers_monitoring_bind_race(tmp_path, monkeypatch, log_level):
+    """A port occupied after probing must not hide other startup or checker failures."""
+    import json
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    class OtherProcessHealth(BaseHTTPRequestHandler):
+        def do_GET(self):
+            body = json.dumps({"uptime_sec": 100}).encode()
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    monkeypatch.setenv("FLB_LOG_LEVEL", log_level)
+    config = tmp_path / "monitoring-bind.yaml"
+    config.write_text(
+        f"service:\n  log_level: {log_level}\n  http_server: on\n  http_listen: 127.0.0.1\n"
+        "  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}\n  grace: 1\n"
+        "pipeline:\n  inputs:\n    - name: dummy\n      samples: 1\n"
+        "  outputs:\n    - name: null\n      match: '*'\n"
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), OtherProcessHealth)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    occupied_port = server.server_port
+    manager = FluentBitManager(str(config))
+    manager.http_monitoring_port = str(occupied_port)
+    try:
+        manager.start()
+        assert int(manager.http_monitoring_port) != occupied_port
+        assert manager.process.poll() is None
+    finally:
+        try:
+            manager.stop()
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+
+
+@pytest.mark.parametrize("own_port,engine_error,exited,expected", [
+    (12345, True, True, True),
+    (12346, True, True, False),
+    (12345, False, True, True),
+    (12345, True, False, False),
+])
+def test_monitoring_bind_retry_requires_own_port_and_process_exit(
+        tmp_path, own_port, engine_error, exited, expected):
+    manager = FluentBitManager("unused.yaml")
+    manager.http_monitoring_port = "12345"
+    manager.log_file = str(tmp_path / "startup.log")
+    log = f"[downstream] could not bind address 127.0.0.1:{own_port}. Aborting\n"
+    if engine_error:
+        log += "[engine] could not start HTTP server\n"
+    (tmp_path / "startup.log").write_text(log)
+    manager.process = SimpleNamespace(poll=lambda: 1 if exited else None)
+    assert manager._monitoring_port_conflict() == expected
+
+
+def test_monitoring_bind_retry_is_bounded(monkeypatch):
+    manager = FluentBitManager("unused.yaml")
+    attempts = []
+
+    def fail(**kwargs):
+        attempts.append(kwargs)
+        raise manager_module.FluentBitStartupError("monitoring bind failed")
+
+    monkeypatch.setattr(manager, "_start", fail)
+    monkeypatch.setattr(manager, "_monitoring_port_conflict", lambda: True)
+    stop = Mock()
+    monkeypatch.setattr(manager, "stop", stop)
+    with pytest.raises(manager_module.FluentBitStartupError, match="monitoring bind failed"):
+        manager.start()
+    assert len(attempts) == 3
+    assert stop.call_count == 3
+
+
+def test_monitoring_bind_retry_preserves_missing_target_log(tmp_path):
+    manager = FluentBitManager("unused.yaml")
+    manager.log_file = str(tmp_path / "missing.log")
+    manager.process = SimpleNamespace(poll=lambda: 1)
+    assert not manager._monitoring_port_conflict()
+
+
+@pytest.mark.parametrize("exit_code", [None, 1])
+def test_listener_access_denied_distinguishes_exited_child(monkeypatch, exit_code):
+    manager = FluentBitManager("unused.yaml")
+    manager.process = SimpleNamespace(pid=1234, poll=lambda: exit_code)
+    process = Mock()
+    process.net_connections.side_effect = manager_module.psutil.AccessDenied(1234)
+    monkeypatch.setattr(manager_module.psutil, "Process", lambda pid: process)
+    if exit_code is None:
+        with pytest.raises(manager_module.FluentBitStartupError, match="Cannot verify"):
+            manager._owns_monitoring_listener()
+    else:
+        assert not manager._owns_monitoring_listener()
