@@ -8,7 +8,8 @@ pipeline:
   inputs:
     - name: opentelemetry
       port: ${FLUENT_BIT_TEST_LISTENER_PORT}
-      http_server.buffer_max_size: 4M
+      # Two frames contain eight 1.1 MB records after decompression.
+      http_server.buffer_max_size: 16M
       http_server.workers: ${OTLP_TEST_HTTP_WORKERS}
 
   outputs:
