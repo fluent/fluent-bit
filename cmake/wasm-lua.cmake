@@ -1,11 +1,18 @@
 # A portable interpreter, not LuaJIT: do not link host libraries or patch lib/.
 set(FLB_WASM_LUA_PREFIX "${CMAKE_BINARY_DIR}/wasm-lua")
 file(MAKE_DIRECTORY "${FLB_WASM_LUA_PREFIX}/include")
+set(FLB_WASM_LUA_DOWNLOAD_TIMEOUT 60 CACHE STRING "Lua download timeout in seconds (0 disables)")
+set(FLB_WASM_LUA_DOWNLOAD_INACTIVITY_TIMEOUT 30 CACHE STRING
+    "Lua download inactivity timeout in seconds (0 disables)")
 
 ExternalProject_Add(flb-wasm-lua-source
   EXCLUDE_FROM_ALL TRUE
-  URL https://www.lua.org/ftp/lua-5.4.9.tar.gz
+  URL
+    https://www.lua.org/ftp/lua-5.4.9.tar.gz
+    https://sources.buildroot.net/lua/lua-5.4.9.tar.gz
   URL_HASH SHA256=2335b6c582a52654f94612bf10d2f4672805d05329aa6568b1d8cd9e5c6fb8e6
+  TIMEOUT ${FLB_WASM_LUA_DOWNLOAD_TIMEOUT}
+  INACTIVITY_TIMEOUT ${FLB_WASM_LUA_DOWNLOAD_INACTIVITY_TIMEOUT}
   PREFIX "${CMAKE_BINARY_DIR}/wasm-lua-source"
   CONFIGURE_COMMAND ${CMAKE_COMMAND}
     -S "${CMAKE_CURRENT_LIST_DIR}/wasm-lua-source" -B <BINARY_DIR>
