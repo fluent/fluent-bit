@@ -10,6 +10,7 @@
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_pthread.h>
 #include <fluent-bit/flb_socket.h>
+#include <fluent-bit/flb_utils.h>
 #include <fluent-bit/http_server/flb_http_server.h>
 #include <fluent-bit/http_server/flb_http_server_config_map.h>
 #include <fluent-bit/http_server/flb_hs.h>
@@ -205,6 +206,17 @@ void test_http_server_rejects_invalid_decoded_body_limit()
 
     flb_http_server_options_init(&options);
     options.max_decoded_body_size = SIZE_MAX;
+
+    TEST_CHECK(flb_http_server_init_with_options(&server, &options) == -1);
+}
+
+void test_http_server_rejects_negative_decoded_body_limit()
+{
+    struct flb_http_server server;
+    struct flb_http_server_options options;
+
+    flb_http_server_options_init(&options);
+    options.max_decoded_body_size = (size_t) flb_utils_size_to_bytes("-5M");
 
     TEST_CHECK(flb_http_server_init_with_options(&server, &options) == -1);
 }
@@ -1328,6 +1340,8 @@ TEST_LIST = {
     { "http_request_compression_roundtrip", test_http_request_compression_roundtrip },
     { "http_server_rejects_invalid_decoded_body_limit",
       test_http_server_rejects_invalid_decoded_body_limit },
+    { "http_server_rejects_negative_decoded_body_limit",
+      test_http_server_rejects_negative_decoded_body_limit },
     { "http_body_inflation_limit", test_http_body_inflation_limit },
     { "http_body_inflation_budget", test_http_body_inflation_budget },
     { "http1_rejects_invalid_partial_request_line", test_http1_rejects_invalid_partial_request_line },
