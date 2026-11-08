@@ -2285,17 +2285,16 @@ int flb_kube_pod_association_init(struct flb_kube *ctx, struct flb_config *confi
         return -1;
     }
     flb_tls_set_verify_hostname(ctx->aws_pod_association_tls, ctx->tls_verify_hostname);
-    ctx->aws_pod_association_upstream = flb_upstream_create(config,
-                                                        ctx->aws_pod_association_host,
-                                                        ctx->aws_pod_association_port,
-                                                        FLB_IO_TLS, ctx->aws_pod_association_tls);
+    ctx->aws_pod_association_upstream =
+        flb_upstream_create_thread_safe(config, ctx->aws_pod_association_host,
+                                        ctx->aws_pod_association_port, FLB_IO_TLS,
+                                        ctx->aws_pod_association_tls);
     if (!ctx->aws_pod_association_upstream) {
         flb_plg_error(ctx->ins, "kube network init create pod association upstream failed");
         flb_tls_destroy(ctx->aws_pod_association_tls);
         ctx->aws_pod_association_tls = NULL;
         return -1;
     }
-    flb_upstream_thread_safe(ctx->aws_pod_association_upstream);
     return 0;
 }
 
