@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from utils.fluent_bit_manager import FluentBitStartupError
+from utils.fluent_bit_manager import FluentBitManager, FluentBitStartupError
 from utils.test_service import FluentBitTestService
 
 
@@ -144,12 +144,14 @@ def test_pending_emitter_records_drain_at_eof(tmp_path, chain):
     }
     config_path = tmp_path / "eof.yaml"
     config_path.write_text(yaml.safe_dump(config))
-    service = FluentBitTestService(str(config_path))
-    # EOF intentionally stops this finite input before the health check completes.
-    with pytest.raises(FluentBitStartupError, match="exited early with code 0"):
-        service.start()
+    manager = FluentBitManager(str(config_path))
+    try:
+        manager.start(wait_for_ready=False)
+        assert manager.process.wait(timeout=30) == 0
+    finally:
+        manager.stop()
     delivered = 0
-    for line in Path(service.flb.log_file).read_text().splitlines():
+    for line in Path(manager.log_file).read_text().splitlines():
         try:
             delivered += json.loads(line).get("log_records", 0)
         except (ValueError, AttributeError):
