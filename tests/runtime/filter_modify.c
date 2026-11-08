@@ -1629,6 +1629,50 @@ static void flb_test_issue_7368()
     }
 }
 
+static void flb_test_unclosed_quote(const char *key, const char *val)
+{
+    int ret;
+    struct flb_lib_out_cb cb_data;
+    struct filter_test *ctx;
+
+    /* Create test context */
+    ctx = filter_test_create((void *) &cb_data);
+    if (!ctx) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* Configure filter with a value missing its closing quote */
+    ret = flb_filter_set(ctx->flb, ctx->f_ffd,
+                         key, val,
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    cb_data.cb = cb_check_result;
+    cb_data.data = "\"k\":\"sample\"";
+
+    /* Start the engine: filter init must fail instead of crashing */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret != 0);
+
+    if (ret == 0) {
+        filter_test_destroy(ctx);
+    }
+    else {
+        flb_destroy(ctx->flb);
+        flb_free(ctx);
+    }
+}
+
+static void flb_test_rule_unclosed_quote()
+{
+    flb_test_unclosed_quote("set", "message \"hello");
+}
+
+static void flb_test_condition_unclosed_quote()
+{
+    flb_test_unclosed_quote("condition", "key_exists \"message");
+}
+
 TEST_LIST = {
     /* Operations / Commands */
     {"op_set_append"            , flb_test_op_set_append },
@@ -1675,6 +1719,8 @@ TEST_LIST = {
     {"Key_value_matches and value is bool type", flb_test_issue_7075},
     {"operation_with_whitespace", flb_test_issue_1225 },
     {"invalid_wildcard", flb_test_issue_7368 },
+    {"rule_unclosed_quote", flb_test_rule_unclosed_quote },
+    {"condition_unclosed_quote", flb_test_condition_unclosed_quote },
 
     {NULL, NULL}
 };
