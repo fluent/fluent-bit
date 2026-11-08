@@ -169,6 +169,11 @@ static int setup(struct filter_modify_ctx *ctx,
         kv = mk_list_entry(head, struct flb_kv, _head);
 
         split = flb_utils_split_quoted(kv->val, ' ', 3);
+        if (split == NULL) {
+            flb_plg_error(ctx->ins, "Invalid config for %s", kv->key);
+            teardown(ctx);
+            return -1;
+        }
         list_size = mk_list_size(split);
 
         // Conditions are,
