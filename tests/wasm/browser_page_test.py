@@ -213,20 +213,22 @@ def check_lua(page):
     output = click_test(page, '#start-demo')
     assert 'lua-protected-test' in output and 'dropping record' in output, output
     assert not demo_records(output, require_message=False), output
-    # Preserve transformations before an error and keep processing the same batch.
-    mixed = example.replace('rate: 1', 'rate: 1\n      samples: 1\n      copies: 3')
-    mixed = mixed.replace('function enrich(', 'local index = 0\n              function enrich(')
-    mixed = mixed.replace('record.total = 0',
-                          'index = index + 1\n                record.index = index\n'
-                          '                if index == 2 then error("lua-mixed-error") end\n'
-                          '                record.total = 0')
-    page.locator('#demo-config').fill(mixed)
-    output = click_test(page, '#start-demo')
-    records = demo_records(output, require_message=False)
-    assert [record['index'] for record in records] == [1, 3], output
-    assert all(record['message'] == 'Hello from Lua in the browser' and
-               record['runtime'] == 'Lua 5.4' and record['total'] == 6 for record in records), output
-    assert output.count('dropping record') == 1 and 'lua-mixed-error' in output, output
+    # Preserve explicit drops and transformations across an error in the same batch.
+    for base in (example, extended, ordinary):
+        mixed = base.replace('name: dummy', 'name: dummy\n      samples: 1\n      copies: 4')
+        mixed = mixed.replace('function enrich(', 'local index = 0; function enrich(')
+        drop = 'return -1, timestamp, metadata, record' if base == extended else 'return -1, timestamp, record'
+        mixed = mixed.replace('record.total = 0',
+                              'index = index + 1; record.index = index; '
+                              f'if index == 1 then {drop} end; '
+                              'if index == 3 then error("lua-mixed-error") end; record.total = 0')
+        page.locator('#demo-config').fill(mixed)
+        output = click_test(page, '#start-demo')
+        records = demo_records(output, require_message=False)
+        assert [record['index'] for record in records] == [2, 4], output
+        assert all(record['message'].endswith(' in the browser') and
+                   record['runtime'] == 'Lua 5.4' and record['total'] == 6 for record in records), output
+        assert output.count('dropping record') == 1 and 'lua-mixed-error' in output, output
     page.locator('#demo-config').fill(example.replace('function enrich(', 'function broken!('))
     click_test(page, '#start-demo', 'failed')
     page.locator('#demo-config').fill(example.replace('call: enrich', 'call: missing'))
