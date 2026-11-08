@@ -635,6 +635,7 @@ struct flb_libco_in_params {
 
 extern pthread_key_t libco_in_param_key;
 extern struct flb_libco_in_params libco_in_param;
+int flb_input_coro_params_init();
 void flb_input_coro_prepare_destroy(struct flb_input_coro *input_coro);
 
 static FLB_INLINE void input_params_set(struct flb_coro *coro,
@@ -690,13 +691,6 @@ static FLB_INLINE void flb_input_coro_resume(struct flb_input_coro *input_coro)
     flb_coro_resume(input_coro->coro);
 }
 
-static void libco_in_param_key_destroy(void *data)
-{
-    struct flb_libco_inparams *params = (struct flb_libco_inparams*)data;
-
-    flb_free(params);
-}
-
 static FLB_INLINE
 struct flb_input_coro *flb_input_coro_collect(struct flb_input_collector *coll,
                                               struct flb_config *config)
@@ -705,12 +699,15 @@ struct flb_input_coro *flb_input_coro_collect(struct flb_input_collector *coll,
     struct flb_coro *coro;
     struct flb_input_coro *input_coro;
 
+    if (flb_input_coro_params_init() != 0) {
+        flb_error("[input] could not initialize coroutine parameter storage");
+        return NULL;
+    }
+
     input_coro = flb_input_coro_create(coll->instance, config);
     if (!input_coro) {
         return NULL;
     }
-
-    pthread_key_create(&libco_in_param_key, libco_in_param_key_destroy);
 
     coro = input_coro->coro;
     if (!coro) {

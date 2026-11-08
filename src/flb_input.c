@@ -66,6 +66,30 @@ static void flb_input_rate_gate_timer_cancel(struct flb_input_instance *ins);
 
 struct flb_libco_in_params libco_in_param;
 pthread_key_t libco_in_param_key;
+static pthread_once_t libco_in_param_once = PTHREAD_ONCE_INIT;
+static int libco_in_param_init_result = -1;
+
+static void libco_in_param_key_destroy(void *data)
+{
+    flb_free(data);
+}
+
+static void libco_in_param_key_create()
+{
+    libco_in_param_init_result = pthread_key_create(&libco_in_param_key,
+                                                    libco_in_param_key_destroy);
+}
+
+int flb_input_coro_params_init()
+{
+    int ret;
+
+    ret = pthread_once(&libco_in_param_once, libco_in_param_key_create);
+    if (ret != 0 || libco_in_param_init_result != 0) {
+        return -1;
+    }
+    return 0;
+}
 
 #define protcmp(a, b)  strncasecmp(a, b, strlen(a))
 
