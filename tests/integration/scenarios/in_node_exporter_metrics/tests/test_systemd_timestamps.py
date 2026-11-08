@@ -224,13 +224,18 @@ def test_systemd_expires_unobserved_series(systemd_service, change):
 
 
 def test_systemd_failed_scan_does_not_expire_series(systemd_service):
+    """Keep retained unit timestamps stable across consecutive failed scans."""
     service, manager = systemd_service
     first = wait_snapshot(service)
     manager.fail_list = True
     manager.units = ()
-    second = wait_snapshot(service, after=time.time_ns(), metric="node_systemd_version")
-    assert first.keys() == second.keys()
-    for key, old in first.items():
+    # A successful scan may already be queued when the failure flag changes.
+    failed = wait_snapshot(service, after=time.time_ns(), metric="node_systemd_version")
+    failed_timestamp = max(point.time_unix_nano
+                           for point in named(failed, "node_systemd_version").values())
+    second = wait_snapshot(service, after=failed_timestamp, metric="node_systemd_version")
+    assert first.keys() == failed.keys() == second.keys()
+    for key, old in failed.items():
         if "name" in dict(key[1]):
             assert second[key].time_unix_nano == old.time_unix_nano
 
