@@ -12,6 +12,46 @@ import yaml
 from utils.test_service import FluentBitTestService
 
 
+@pytest.mark.parametrize("collectors", [2, 16])
+def test_concurrent_coroutine_collectors_keep_scraping(tmp_path, collectors):
+    (tmp_path / "probe.prom").write_text("# TYPE collector_probe gauge\ncollector_probe 1\n",
+                                         encoding="utf-8")
+    config = {
+        "service": {"flush": 0.1, "grace": 1, "http_server": "on",
+                    "http_port": "${FLUENT_BIT_HTTP_MONITORING_PORT}"},
+        "pipeline": {
+            "inputs": [{"name": "prometheus_textfile", "path": str(tmp_path / "*.prom"),
+                        "scrape_interval": "1s"} for _ in range(collectors)],
+            "outputs": [{"name": "prometheus_exporter", "match": "*", "host": "127.0.0.1",
+                         "port": "${EXPORTER_PORT}", "add_timestamp": True}],
+        },
+    }
+    config_path = tmp_path / "collectors.yaml"
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+    service = FluentBitTestService(
+        str(config_path), pre_start=lambda instance: instance.allocate_port_env("EXPORTER_PORT"))
+    seen = {f"prometheus_textfile.{index}": set() for index in range(collectors)}
+    try:
+        service.start()
+        url = f"http://127.0.0.1:{os.environ['EXPORTER_PORT']}/metrics"
+
+        def advanced():
+            assert service.flb.process.poll() is None, "concurrent collectors crashed Fluent Bit"
+            response = requests.get(url, timeout=5)
+            response.raise_for_status()
+            for name, stamp in re.findall(
+                    r'^fluentbit_textfile_scrape_error\{input="([^"]+)"\} 0 (\d+)$',
+                    response.text, re.MULTILINE):
+                if name in seen:
+                    seen[name].add(stamp)
+            return all(len(stamps) >= 8 for stamps in seen.values())
+
+        service.wait_for_condition(advanced, timeout=60, interval=0.1,
+                                   description="eight fresh scrapes from every coroutine collector")
+    finally:
+        service.stop()
+
+
 def test_scrape_preserves_all_files_and_removes_deleted_series(tmp_path):
     metrics_dir = tmp_path / "metrics"
     metrics_dir.mkdir()
@@ -78,7 +118,8 @@ def test_scrape_preserves_all_files_and_removes_deleted_series(tmp_path):
         for directive in ("HELP", "TYPE"):
             names = re.findall(rf"^# {directive} (\S+)", response.text, re.MULTILINE)
             assert len(names) == len(set(names)), f"Repeated {directive} directives"
-        assert re.search(r"^other_input_marker 1(?: \d+)?$", response.text, re.MULTILINE)
+        stable_present = bool(re.search(r"^other_input_marker 1(?: \d+)?$",
+                                        response.text, re.MULTILINE))
         markers = re.findall(r'^file_marker\{file="([^"]+)"\} 1(?: \d+)?$',
                              response.text, re.MULTILINE)
         assert len(markers) == len(set(markers))
@@ -88,11 +129,11 @@ def test_scrape_preserves_all_files_and_removes_deleted_series(tmp_path):
         )
         errors = {name: int(value) for name, value in error_samples}
         assert len(errors) == len(error_samples)
-        return set(markers), errors
+        return set(markers), errors, stable_present
 
     def wait_for_snapshot(wanted, scrape_error=1):
         expected_snapshot = (wanted, {"prometheus_textfile.0": scrape_error,
-                                      "prometheus_textfile.1": 0})
+                                      "prometheus_textfile.1": 0}, True)
         service.wait_for_condition(
             lambda: snapshot() == expected_snapshot,
             timeout=30,
