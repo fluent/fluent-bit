@@ -53,21 +53,27 @@ end
                     "http_port": "${FLUENT_BIT_HTTP_MONITORING_PORT}"},
         "pipeline": pipeline,
     }))
+    expected = [{"date": 1700000000.0, "card": "[REDACTED]", "index": index}
+                for index in range(1, 7) if index not in errors and index != 2]
     service = FluentBitTestService(str(config))
+
+    def batch_finished():
+        """Wait for every callback error and all surviving records to reach the log."""
+        text = Path(service.flb.log_file).read_text()
+        records = [json.loads(line) for line in text.splitlines() if line.startswith("{")]
+        return text.count("dropping record") == len(errors) and records == expected
+
     try:
         service.start()
         service.wait_for_condition(
-            lambda: "dropping record" in Path(service.flb.log_file).read_text(),
-            timeout=30,
+            batch_finished, timeout=30, description="complete Lua batch output",
         )
     finally:
         service.stop()
 
     text = Path(service.flb.log_file).read_text()
     records = [json.loads(line) for line in text.splitlines() if line.startswith("{")]
-    expected = [{"date": 1700000000.0, "card": "[REDACTED]", "index": index}
-                for index in range(1, 7) if index not in errors and index != 2]
     assert records == expected
-    assert "dropping record" in text
+    assert text.count("dropping record") == len(errors)
     if error_value != '"record-redaction-error"':
         assert "(non-string error)" in text
