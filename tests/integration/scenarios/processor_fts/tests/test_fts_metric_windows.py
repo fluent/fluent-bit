@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from fts_test_utils import read_log
+
 ROOT = Path(__file__).resolve().parents[5]
 spec = importlib.util.spec_from_file_location("fts_window_fixture", ROOT / "tools/fts/fts_fixture.py")
 runner = importlib.util.module_from_spec(spec)
@@ -136,7 +138,8 @@ def test_pending_families_reported_at_stop_or_reload(tmp_path, threaded, reload)
             service.wait_for_condition(lambda: family_counts(service).get("pending") == 0, timeout=30)
         else:
             service.stop()
-        assert "1 retained metric families discarded at input stop" in Path(service.flb.log_file).read_text()
+        expected = "1 retained metric families discarded at input stop"
+        assert expected in read_log(service.flb.log_file, expected)
     finally:
         service.stop()
 

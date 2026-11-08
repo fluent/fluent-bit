@@ -152,7 +152,8 @@ def test_reload_discards_pending_old_window(tmp_path, threaded):
         service.flb.wait_for_hot_reload_count(1, timeout=30)
         wait_count(service, "fluentbit_processor_items_held_current", 0)
         assert rows(service) == []
-        assert "1 retained log records discarded at input stop" in log_text(service)
+        expected = "1 retained log records discarded at input stop"
+        assert expected in log_text(service, expected)
     finally:
         service.stop()
 
@@ -290,7 +291,8 @@ def test_shutdown_discards_pending_and_counts_loss(tmp_path, threaded):
     finally:
         service.stop()
     assert rows(service) == []
-    assert "1 retained log records discarded at input stop" in log_text(service)
+    expected = "1 retained log records discarded at input stop"
+    assert expected in log_text(service, expected)
 
 
 @pytest.mark.parametrize("threaded", [False, True])

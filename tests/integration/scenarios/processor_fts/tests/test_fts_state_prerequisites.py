@@ -71,7 +71,7 @@ def test_dso_old_and_extended_descriptors(tmp_path, processor_dso, placement):
         service.start()
         actual = service.wait_for_condition(lambda: rows(service), timeout=30)
         assert actual[0]["message"] == "legacy"
-        assert "legacy_dso_initialized" in log_text(service)
+        assert "legacy_dso_initialized" in log_text(service, "legacy_dso_initialized")
     finally:
         service.stop()
     assert log_text(service).count("new_dso_input_stop") == (1 if extended in ("stop", "both") and placement == "input" else 0)

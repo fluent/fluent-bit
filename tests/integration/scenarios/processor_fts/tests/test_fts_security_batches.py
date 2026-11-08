@@ -19,6 +19,8 @@ from utils.network import find_available_port
 from test_fts_signals import attr, metric, span
 from test_fts_policies import attributes, scalar
 
+from fts_test_utils import read_log
+
 POLICY = '''
 local fb = require("fluentbit")
 if type(getmetatable("")) ~= "string" then error("string metatable exposed") end
@@ -106,8 +108,8 @@ class BatchRunner:
         raise AssertionError(Path(self.manager.log_file).read_text()[-5000:])
 
 
-    def recent_log(self):
-        return Path(self.manager.log_file).read_text()[self.log_offset:]
+    def recent_log(self, *expected):
+        return read_log(self.manager.log_file, *expected, offset=self.log_offset)
 
 
 @pytest.fixture(scope="module", params=[(s, p) for s in ("logs", "metrics", "traces")
@@ -173,7 +175,7 @@ def test_validation_is_private_and_item_local(batch_runner):
         assert rows[0]["severityNumber"] == 2
         assert scalar(rows[0]["body"])["secret"] == "sensitive"
         assert scalar(rows[1]["body"])["secret"] == "[REDACTED]"
-    log = batch_runner.recent_log()
+    log = batch_runner.recent_log("edits rolled back")
     assert "edits rolled back" in log and "cannot construct FTS" not in log
 
 
@@ -233,7 +235,7 @@ def test_snapshot_limit_is_item_local(batch_runner):
     assert len(rows) == 2
     assert attributes(rows[0]["attributes"])["secret"] == "sensitive"
     assert attributes(rows[1]["attributes"])["secret"] == "[REDACTED]"
-    text = batch_runner.recent_log()
+    text = batch_runner.recent_log("snapshot limits")
     assert "snapshot limits" in text and "cannot construct FTS" not in text
 
 

@@ -295,7 +295,7 @@ def test_pooled_batch_commit_rollback_and_retained_values(tmp_path, placement, r
                        for body in bodies)
             assert all(("edited" not in body) if rollback else body["edited"] is True
                        for body in bodies)
-            diagnostics = runner.recent_log()
+            diagnostics = runner.recent_log(*(["cannot construct policy output"] if rollback else []))
             assert "policy failed" not in diagnostics
             assert ("cannot construct policy output" in diagnostics) is rollback
     finally:

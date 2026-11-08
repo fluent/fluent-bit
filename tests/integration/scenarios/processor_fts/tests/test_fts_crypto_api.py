@@ -88,7 +88,7 @@ def test_crypto_errors_rollback_edits_and_keep_control(tmp_path, expression, err
         for record in result:
             record.pop("date", None)
         assert result == [{"fail": 1}, {"control": 1}]
-        assert f"class={error}" in log_text(service)
+        assert f"class={error}" in log_text(service, f"class={error}")
     finally:
         service.stop()
 
@@ -138,6 +138,6 @@ def test_native_hash_work_cannot_bypass_instruction_budget(tmp_path, monkeypatch
         for record in result:
             record.pop("date", None)
         assert result == [{"fail": 1}, {"control": 1}]
-        assert "class=budget_exceeded" in log_text(service)
+        assert "class=budget_exceeded" in log_text(service, "class=budget_exceeded")
     finally:
         service.stop()

@@ -13,6 +13,8 @@ from test_fts_signals import SignalRunner, metric
 from utils.fluent_bit_manager import FluentBitManager
 from utils.network import find_available_port
 
+from fts_test_utils import read_log
+
 
 @pytest.mark.parametrize("placement", ["input", "output"])
 @pytest.mark.parametrize("hazard", ["caught_error", "helper_override"])
@@ -81,7 +83,7 @@ def test_histogram_nine_ms_composition(tmp_path, placement, order):
         if order == "scale_first":
             assert actual["explicitBounds"] == [9.0, 10.0]
             assert [int(v) for v in actual["bucketCounts"]] == [1, 1, 1]
-            assert "new bounds must be a subset" in Path(manager.log_file).read_text()
+            assert "new bounds must be a subset" in read_log(manager.log_file, "new bounds must be a subset")
         else:
             assert actual["explicitBounds"] == [9.0 * 0.001]
             assert [int(v) for v in actual["bucketCounts"]] == [1, 2]

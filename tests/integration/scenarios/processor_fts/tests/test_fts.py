@@ -11,6 +11,8 @@ import yaml
 from utils.fluent_bit_manager import FluentBitStartupError
 from utils.test_service import FluentBitTestService
 
+from fts_test_utils import read_log
+
 
 def make_service(tmp_path, code, *, grouped=False, error_mode="keep",
                  threaded=False, output_processor=False, second_processor=None, output_format="json_lines", runtime_options=None):
@@ -37,8 +39,8 @@ def make_service(tmp_path, code, *, grouped=False, error_mode="keep",
     return FluentBitTestService(str(config))
 
 
-def log_text(service):
-    return Path(service.flb.log_file).read_text(encoding="utf-8")
+def log_text(service, *expected):
+    return read_log(service.flb.log_file, *expected)
 
 
 def records(service):
@@ -210,7 +212,7 @@ end''' % ('return fb.DROP' if explicit else 'error("drop-on-error")')
         service.stop()
         assert not records(service)
         if not explicit:
-            assert "edits rolled back" in log_text(service)
+            assert "edits rolled back" in log_text(service, "edits rolled back")
     finally:
         service.stop()
 
@@ -221,7 +223,7 @@ def test_startup_failure_cleanup(tmp_path, code):
     try:
         with pytest.raises(FluentBitStartupError):
             service.start()
-        assert "FTS initialization failed" in log_text(service)
+        assert "FTS initialization failed" in log_text(service, "FTS initialization failed")
     finally:
         service.stop()
 
@@ -308,7 +310,7 @@ def test_unsupported_signals_fail_startup(tmp_path, signal):
     try:
         with pytest.raises(FluentBitStartupError):
             service.start()
-        assert "unknown processor 'profiles'" in log_text(service)
+        assert "unknown processor 'profiles'" in log_text(service, "unknown processor 'profiles'")
     finally:
         service.stop()
 
@@ -366,6 +368,6 @@ def test_jit_and_instruction_budget_cannot_be_combined(tmp_path, options):
             service.start()
         expected = ("jit requires instruction_limit=0" if options.get("jit") else
                     "instruction_limit must be between 1000 and 2147483647 with jit disabled")
-        assert expected in log_text(service)
+        assert expected in log_text(service, expected)
     finally:
         service.stop()

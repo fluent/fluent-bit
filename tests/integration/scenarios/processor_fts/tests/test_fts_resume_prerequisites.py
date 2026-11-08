@@ -40,7 +40,10 @@ def test_queue_ownership_continuation(tmp_path, resume_dso, threaded, input_name
         service.wait_for_condition(lambda: len(rows(service)) >= 2, timeout=30)
     finally:
         service.stop()
-    text = log_text(service)
+    text = log_text(
+        service, "resume_first ret=0 cleared=1", "resume_second ret=-2 intact=1",
+        "resume_retry ret=0 cleared=1 owner=1", "resume_exit calls=1 releases=1 pending=0",
+    )
     assert "resume_first ret=0 cleared=1" in text, text
     assert "resume_second ret=-2 intact=1" in text, text
     assert "resume_retry ret=0 cleared=1 owner=1" in text, text
@@ -73,7 +76,9 @@ def test_pause_preserves_queue_before_and_during_drain(tmp_path, pause_dso, thre
         service.wait_for_condition(lambda: len(rows(service)) == 3, timeout=30)
     finally:
         service.stop()
-    text = log_text(service)
+    text = log_text(
+        service, "pause_inventory stage=0 pending=3", "pause_exit stage=0 calls=1", "pause_exit stage=1 calls=3",
+    )
     assert "pause_inventory stage=0 pending=3" in text, text
     # Engine flushing may resume the input before the owner timer observes it.
     assert re.search(r"pause_inventory stage=1 pending=[0-2]\b", text), text
