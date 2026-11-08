@@ -25,4 +25,9 @@ set(src
   ne.c
   )
 
-FLB_PLUGIN(in_node_exporter_metrics "${src}" "")
+set(extra_libs)
+if(JOURNALD_FOUND AND FLB_HAVE_SYSTEMD_SDBUS)
+  list(APPEND extra_libs ${JOURNALD_LIBRARIES})
+endif()
+
+FLB_PLUGIN(in_node_exporter_metrics "${src}" "${extra_libs}")
