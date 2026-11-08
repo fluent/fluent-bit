@@ -1411,9 +1411,10 @@ int flb_http_server_init_with_options(
     if (options->max_decoded_body_size == 0) {
         options->max_decoded_body_size = HTTP_SERVER_DEFAULT_MAX_DECODED_BODY_SIZE;
     }
-    else if (options->max_decoded_body_size == SIZE_MAX ||
-             (int64_t) options->max_decoded_body_size < 0) {
-        /* negative sizes from the config map wrap around in size_t */
+    else if (options->max_decoded_body_size > (SIZE_MAX >> 1)) {
+        /* negative sizes wrap into the high half of size_t. A cast to
+         * int64_t only looks negative when size_t is 64-bit; on 32-bit
+         * it zero-extends, so compare against the sign bit instead. */
         flb_error("[http server] invalid http_server.max_decoded_body_size");
         return -1;
     }
