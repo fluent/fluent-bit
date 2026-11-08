@@ -36,12 +36,15 @@ def processor_metrics(text, scope, owner="http.0"):
 
 def run_pipeline(tmp_path, processors, expected, *, location="input", storage="memory",
                  records=None, copies=1, stage_counts=None, input_workers=1,
-                 output_workers=2, input_threaded=False, clients=4, unique_copies=False):
+                 output_workers=2, input_threaded=False, clients=4, unique_copies=False,
+                 account_for_retries=False):
     records = RECORDS if records is None else records
     total_records = len(records) * copies
     stage_counts = ([(len(records), len(records))] * len(processors)
                     if stage_counts is None else stage_counts)
     assert len(stage_counts) == len(processors)
+    if account_for_retries:
+        assert all(before == after == len(records) for before, after in stage_counts)
     route_counts = [len(expected) * copies,
                     len(expected if location == "input" else records) * copies]
     received = [[], []]
@@ -121,9 +124,18 @@ def run_pipeline(tmp_path, processors, expected, *, location="input", storage="m
                 return None
             response.raise_for_status()
             values = processor_metrics(response.text, scope)
+            retried_records = 0
+            if account_for_retries and location == "output":
+                retry_samples = re.findall(
+                    r'^fluentbit_output_retried_records_total\{name="http\.0"\} ([^\s]+)',
+                    response.text, re.MULTILINE,
+                )
+                if retry_samples:
+                    retried_records = float(retry_samples[0])
             for stage, counts in enumerate(stage_counts):
                 for metric, count in zip(["items_in_total", "items_out_total"], counts):
-                    if values.get(("fluentbit_processor_" + metric, stage), 0) != count * copies:
+                    expected_count = count * copies + retried_records
+                    if values.get(("fluentbit_processor_" + metric, stage), 0) != expected_count:
                         return None
             return values
 
@@ -365,4 +377,5 @@ def test_worker_threads_preserve_independent_batches(tmp_path, location, threade
             record["boundary"] = "yes"
     run_pipeline(tmp_path, processors, expected, location=location, storage="filesystem",
                  records=records, copies=32, clients=8, unique_copies=True,
-                 input_workers=4, output_workers=4, input_threaded=threaded)
+                 input_workers=4, output_workers=4, input_threaded=threaded,
+                 account_for_retries=True)
