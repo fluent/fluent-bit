@@ -105,6 +105,10 @@ void flb_upstream_init();
 struct flb_upstream *flb_upstream_create(struct flb_config *config,
                                          const char *host, int port, int flags,
                                          struct flb_tls *tls);
+/* Create a worker-owned upstream without accessing config->upstreams. */
+struct flb_upstream *flb_upstream_create_thread_safe(struct flb_config *config,
+                                                     const char *host, int port, int flags,
+                                                     struct flb_tls *tls);
 struct flb_upstream *flb_upstream_create_url(struct flb_config *config,
                                              const char *url, int flags,
                                              struct flb_tls *tls);

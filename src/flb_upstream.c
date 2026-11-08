@@ -287,9 +287,9 @@ void flb_upstream_init()
 }
 
 /* Creates a new upstream context */
-struct flb_upstream *flb_upstream_create(struct flb_config *config,
-                                         const char *host, int port, int flags,
-                                         struct flb_tls *tls)
+static struct flb_upstream *upstream_create(struct flb_config *config,
+                                            const char *host, int port, int flags,
+                                            struct flb_tls *tls, int thread_safe)
 {
     int ret;
     int transport;
@@ -400,9 +400,29 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
 
     flb_stream_enable_flags(&u->base, FLB_IO_ASYNC);
 
-    mk_list_add(&u->base._head, &config->upstreams);
+    if (thread_safe) {
+        /* Worker-owned upstreams must never enter the engine's shared list. */
+        flb_upstream_thread_safe(u);
+    }
+    else {
+        mk_list_add(&u->base._head, &config->upstreams);
+    }
 
     return u;
+}
+
+struct flb_upstream *flb_upstream_create(struct flb_config *config,
+                                         const char *host, int port, int flags,
+                                         struct flb_tls *tls)
+{
+    return upstream_create(config, host, port, flags, tls, FLB_FALSE);
+}
+
+struct flb_upstream *flb_upstream_create_thread_safe(struct flb_config *config,
+                                                     const char *host, int port, int flags,
+                                                     struct flb_tls *tls)
+{
+    return upstream_create(config, host, port, flags, tls, FLB_TRUE);
 }
 
 #ifdef FLB_HAVE_TLS
@@ -799,7 +819,11 @@ int flb_upstream_destroy(struct flb_upstream *u)
     if (mk_list_is_set(&u->base._head) == 0) {
         mk_list_del(&u->base._head);
     }
-    
+
+    if (flb_stream_is_thread_safe(&u->base)) {
+        pthread_mutex_destroy(&u->base.list_mutex);
+    }
+
     flb_free(u);
 
     return 0;
