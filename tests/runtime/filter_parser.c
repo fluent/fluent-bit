@@ -96,7 +96,7 @@ void flb_test_filter_parser_extract_fields()
     ctx = flb_create();
 
     /* Configure service */
-    flb_service_set(ctx, "Flush", FLUSH_INTERVAL, "Grace" "1", "Log_Level", "debug", NULL);
+    flb_service_set(ctx, "Flush", FLUSH_INTERVAL, "Grace", "1", "Log_Level", "debug", NULL);
 
     /* Input */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -183,7 +183,7 @@ void flb_test_filter_parser_record_accessor()
     ctx = flb_create();
 
     /* Configure service */
-    flb_service_set(ctx, "Flush", FLUSH_INTERVAL, "Grace" "1", "Log_Level", "debug", NULL);
+    flb_service_set(ctx, "Flush", FLUSH_INTERVAL, "Grace", "1", "Log_Level", "debug", NULL);
 
     /* Input */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -724,12 +724,12 @@ void flb_test_filter_parser_use_system_timezone()
         /* Confirm that daylight savings time is properly detected. */
         {"EST5EDT", "2023-02-14 12:00:00", "1676394000"}, /* Should be ST */
 #ifdef _WIN32
-        /* MSVCRT applies the standard offset to TZ strings and IANA names. */
-        {"EST5EDT", "2023-10-17 05:00:00", "1697536800"},
+        /* Verify the Windows runtime applies daylight saving time. */
+        {"EST5EDT", "2023-10-17 05:00:00", "1697533200"}, /* Should be DST */
 
         /* Examples from https://github.com/fluent/fluent-bit/issues/9197. */
-        {"Europe/London", "2024-01-20 10:00:00", "1705744800"},
-        {"Europe/London", "2024-08-20 11:00:00", "1724151600"},
+        {"Europe/London", "2024-01-20 10:00:00", "1705744800"}, /* Should be ST */
+        {"Europe/London", "2024-08-20 11:00:00", "1724148000"}, /* Should be DST */
 #else
         {"EST5EDT", "2023-10-17 05:00:00", "1697533200"}, /* Should be DST */
 
@@ -945,7 +945,7 @@ void flb_test_filter_parser_first_matched_when_mutilple_parser()
     ctx = flb_create();
 
     /* Configure service */
-    flb_service_set(ctx, "Flush", FLUSH_INTERVAL, "Grace" "1", "Log_Level", "debug", NULL);
+    flb_service_set(ctx, "Flush", FLUSH_INTERVAL, "Grace", "1", "Log_Level", "debug", NULL);
 
     /* Input */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -1032,7 +1032,7 @@ void flb_test_filter_parser_skip_empty_values_false()
     ctx = flb_create();
 
     /* Configure service */
-    flb_service_set(ctx, "Flush", FLUSH_INTERVAL, "Grace" "1", "Log_Level", "debug", NULL);
+    flb_service_set(ctx, "Flush", FLUSH_INTERVAL, "Grace", "1", "Log_Level", "debug", NULL);
 
     /* Input */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
