@@ -199,6 +199,10 @@ class FakeBroker:
     emulates session takeover and injects faults. Every fault option is a
     number of connections: the fault applies to the connections whose index
     is lower than the value, so later connections work normally.
+
+    Client packets are read as they arrive, delayed acknowledgements are
+    scheduled: the broker sees when the client sends something, like a real
+    broker enforcing the keep alive.
     """
 
     def __init__(
@@ -221,6 +225,10 @@ class FakeBroker:
         inject_pingresp=False,
         broker_publish=None,
         broker_publish_connections=None,
+        hold_acks_until_pubcomp=False,
+        flood=0,
+        enforce_keep_alive=False,
+        pingresp_mode="immediate",
     ):
         self.port = port
         self.connack_codes = list(connack_codes or [])
@@ -237,6 +245,12 @@ class FakeBroker:
         self.inject_pingresp = inject_pingresp
         self.broker_publish = broker_publish
         self.broker_publish_connections = broker_publish_connections
+        self.hold_acks_until_pubcomp = hold_acks_until_pubcomp
+        self.flood = flood
+        self.enforce_keep_alive = enforce_keep_alive
+        # "immediate", "with_last_ack" (sent with the last pending PUBACK) or
+        # "late" (one second after the last pending PUBACK)
+        self.pingresp_mode = pingresp_mode
 
         self.lock = threading.Lock()
         self.connects = []
@@ -245,12 +259,17 @@ class FakeBroker:
         self.client_acks = []
         self.errors = []
         self.disconnects = 0
+        self.disconnected = []
         self.pings = 0
         self.idle_closes = 0
         self.takeovers = 0
         self.active = 0
         self.max_active = 0
         self.sessions = {}
+        self.acks_sent = 0
+        self.max_outstanding = 0
+        self.flood_sent = 0
+        self.keep_alive_kicks = 0
 
         self._tls = None
         if cert_file:
@@ -302,7 +321,7 @@ class FakeBroker:
             if self._tls is not None:
                 conn.settimeout(10)
                 conn = self._tls.wrap_socket(conn, server_side=True)
-            conn.settimeout(0.3)
+            conn.settimeout(0.05)
             self._session(conn, index, state)
         except (EOFError, ConnectionError, ssl.SSLError, socket.timeout):
             pass
@@ -362,6 +381,7 @@ class FakeBroker:
             self.sessions[info["client_id"]] = conn
             state["accepted"] = True
             state["client_id"] = info["client_id"]
+            state["keep_alive"] = info["keep_alive"]
             self.active += 1
             self.max_active = max(self.max_active, self.active)
 
@@ -395,6 +415,7 @@ class FakeBroker:
             # The flush fails, the client publishes the message again
             with self.lock:
                 self.dropped.append(message)
+            state["withheld"] = True
 
             if qos == 1 and not state["fault_sent"]:
                 if index < self.malformed_header:
@@ -412,41 +433,123 @@ class FakeBroker:
         if qos != 1:
             return
 
+        with self.lock:
+            state["unacked"] += 1
+            self.max_outstanding = max(self.max_outstanding, state["unacked"])
+
         if self.reverse_acks:
             state["pending"].append(message["packet_id"])
             return
 
-        if self.ack_delay:
-            time.sleep(self.ack_delay)
+        if self.hold_acks_until_pubcomp and not state["pubcomp"]:
+            state["held"].append(message["packet_id"])
+            return
+
+        data = ack(PUBACK, message["packet_id"])
         if self.inject_pingresp:
-            conn.sendall(b"\xd0\x00")
-        conn.sendall(ack(PUBACK, message["packet_id"]))
+            data = b"\xd0\x00" + data
+
+        if self.ack_delay:
+            # Sent later by _send_due(), one acknowledgement per delay
+            due = max(time.time(), state["last_due"]) + self.ack_delay
+            state["last_due"] = due
+            state["scheduled"].append((due, data))
+            return
+
+        self._send_ack(conn, state, data)
+
+    def _send_ack(self, conn, state, data):
+        conn.sendall(data)
+        with self.lock:
+            state["unacked"] -= 1
+            self.acks_sent += 1
         state["acked"] = True
+
+    def _send_due(self, conn, state):
+        now = time.time()
+        while state["scheduled"] and state["scheduled"][0][0] <= now:
+            _, data = state["scheduled"].pop(0)
+            self._send_ack(conn, state, data)
+        while state["late"] and state["late"][0][0] <= now:
+            _, data = state["late"].pop(0)
+            conn.sendall(data)
+
+    def _pingresp(self, conn, state):
+        if self.pingresp_mode == "with_last_ack" and state["scheduled"]:
+            # Answered in order: in the same write as the last pending PUBACK
+            due, data = state["scheduled"][-1]
+            state["scheduled"][-1] = (due, data + b"\xd0\x00")
+        elif self.pingresp_mode == "late":
+            # After the client read the last pending PUBACK
+            due = max(time.time(), state["last_due"]) + 1.0
+            state["late"].append((due, b"\xd0\x00"))
+        else:
+            conn.sendall(b"\xd0\x00")
+            state["acked"] = True
+
+    def _idle(self, conn, index, state, buf, last_packet):
+        """Called when no packet arrived for a while, False ends the session."""
+        now = time.time()
+
+        if state["pending"] and now - last_packet > 0.3:
+            # Acknowledge the window in reverse order
+            for packet_id in reversed(state["pending"]):
+                self._send_ack(conn, state, ack(PUBACK, packet_id))
+            state["pending"] = []
+
+        if index < self.flood and state["withheld"] and now - state["last_flood"] >= 0.2:
+            # Unrelated traffic while an acknowledgement is withheld
+            conn.sendall(broker_publish_packet(16, 0))
+            state["last_flood"] = now
+            with self.lock:
+                self.flood_sent += 1
+
+        if (
+            self.enforce_keep_alive
+            and state["keep_alive"] > 0
+            and now - last_packet > 1.5 * state["keep_alive"]
+        ):
+            # MQTT-3.1.2-24: a client silent for 1.5 x keep alive is disconnected
+            with self.lock:
+                self.keep_alive_kicks += 1
+            return False
+
+        if (
+            index < self.close_idle_after_ack
+            and state["acked"]
+            and not buf
+            and not state["scheduled"]
+            and now - last_packet > 0.5
+        ):
+            # Close the idle session after its first acknowledged flush
+            with self.lock:
+                self.idle_closes += 1
+            return False
+
+        return True
 
     def _session(self, conn, index, state):
         buf = bytearray()
-        state["pending"] = []
+        state.update(
+            pending=[],
+            scheduled=[],
+            late=[],
+            held=[],
+            unacked=0,
+            last_due=0.0,
+            pubcomp=False,
+            keep_alive=0,
+            withheld=False,
+            last_flood=0.0,
+        )
         last_packet = time.time()
 
         while not self._stop.is_set():
+            self._send_due(conn, state)
             try:
                 packet_type, flags, body, length_bytes = read_packet(conn, buf)
             except socket.timeout:
-                if state["pending"]:
-                    # Acknowledge the window in reverse order
-                    for packet_id in reversed(state["pending"]):
-                        conn.sendall(ack(PUBACK, packet_id))
-                    state["pending"] = []
-                    state["acked"] = True
-                if (
-                    index < self.close_idle_after_ack
-                    and state["acked"]
-                    and not buf
-                    and time.time() - last_packet > 0.5
-                ):
-                    # Close the idle session after its first acknowledged flush
-                    with self.lock:
-                        self.idle_closes += 1
+                if not self._idle(conn, index, state, buf, last_packet):
                     return
                 continue
 
@@ -484,6 +587,12 @@ class FakeBroker:
                     self.client_acks.append((packet_type, packet_id, index))
                 if packet_type == PUBREC:
                     conn.sendall(ack(PUBREL, packet_id, flags=0x02))
+                elif packet_type == PUBCOMP and not state["pubcomp"]:
+                    # QoS 2 handshake complete, release the held PUBACKs
+                    state["pubcomp"] = True
+                    for held_id in state["held"]:
+                        self._send_ack(conn, state, ack(PUBACK, held_id))
+                    state["held"] = []
             elif packet_type == PINGREQ:
                 if flags != 0 or body:
                     raise MqttProtocolError("invalid PINGREQ")
@@ -491,13 +600,13 @@ class FakeBroker:
                     self.pings += 1
                 if index < self.withhold_pingresp:
                     continue
-                conn.sendall(b"\xd0\x00")
-                state["acked"] = True
+                self._pingresp(conn, state)
             elif packet_type == DISCONNECT:
                 if flags != 0 or body:
                     raise MqttProtocolError("invalid DISCONNECT")
                 with self.lock:
                     self.disconnects += 1
+                    self.disconnected.append(index)
                 return
             else:
                 raise MqttProtocolError(f"unexpected packet type {packet_type}")
@@ -689,9 +798,12 @@ def _assert_qos0_messages(broker, messages):
 def _assert_redelivered(broker, messages):
     """Every message the broker dropped was published again on a new session."""
     assert broker.dropped
+    dropped = [message["payload"] for message in broker.dropped]
+    # The records differ (their date at least), each one is matched on its own
+    assert len(set(dropped)) == len(dropped)
     delivered = {message["payload"] for message in messages}
-    for message in broker.dropped:
-        assert message["payload"] in delivered
+    for payload in dropped:
+        assert payload in delivered
     assert all(message["connection"] > broker.dropped[0]["connection"] for message in messages)
 
 
@@ -720,14 +832,23 @@ def test_out_mqtt_qos1_publish():
     assert RETRY_LOG not in log_contents
 
 
-def test_out_mqtt_qos1_out_of_order_acks():
-    service = Service("out_mqtt_qos1.yaml", reverse_acks=True)
+def test_out_mqtt_qos1_out_of_order_acks(tmp_path):
+    # The five records are created within 100 ms: a chunk holds three or more
+    config_file = write_config(
+        tmp_path,
+        {"topic": "devices/$TAG[1]/logs", "qos": 1, "max_inflight": 2},
+        [("fleet.edge01", '{"message":"hello from out_mqtt","level":"info"}', 50, 5)],
+    )
+    service = Service(config_file, reverse_acks=True)
     messages = run_until_messages(service, 5)
 
-    _assert_clean_protocol(service.broker)
+    broker = service.broker
+    _assert_clean_protocol(broker)
     _assert_qos1_messages(messages, 5)
-    assert len(service.broker.messages) == 5
-    assert service.broker.pings == 0
+    assert len(broker.messages) == 5
+    # Never more than max_inflight messages waiting for their PUBACK
+    assert broker.max_outstanding == 2
+    assert broker.pings == 0
     assert RETRY_LOG not in service.log_contents()
 
 
@@ -805,6 +926,170 @@ def test_out_mqtt_stalled_broker_without_pingresp(tmp_path):
     assert "no PINGRESP received" in service.log_contents()
 
 
+@pytest.mark.parametrize(
+    ("qos", "fault", "errors"),
+    [
+        (1, "withhold_puback", ["no PUBACK received from 127.0.0.1:", "within 2 seconds"]),
+        (0, "withhold_pingresp", ["no PINGRESP received from 127.0.0.1:"]),
+    ],
+)
+def test_out_mqtt_reply_deadline_with_broker_traffic(tmp_path, qos, fault, errors):
+    # The first session never answers (PUBACK, or the PINGRESP that confirms
+    # a QoS 0 flush) and keeps sending QoS 0 PUBLISH packets: each read
+    # renews net.io_timeout, the reply deadline still ends the wait and the
+    # chunk is published on a new session.
+    config_file = write_config(
+        tmp_path,
+        {"topic": "deadline", "qos": qos, "net.io_timeout": "2s"},
+        [("deadline", '{"message":"deadline"}', 5, 3)],
+    )
+    service = Service(config_file, flood=1, **{fault: 1})
+    messages = run_until_messages(service, 3, timeout=40)
+
+    broker = service.broker
+    _assert_clean_protocol(broker)
+    _assert_redelivered(broker, messages)
+    assert all(message["connection"] >= 1 for message in messages)
+    assert broker.flood_sent >= 3
+
+    log_contents = service.log_contents()
+    for error in errors:
+        assert error in log_contents
+    assert RETRY_LOG in log_contents
+
+
+def test_out_mqtt_keep_alive_while_waiting(tmp_path):
+    # PUBACKs arrive 1.4 seconds apart and the broker disconnects a client
+    # silent for 3 seconds (1.5 x keep_alive): a window of four messages
+    # needs PINGREQ packets to stay connected.
+    config_file = write_config(
+        tmp_path,
+        {"topic": "slow", "keep_alive": "2s", "max_inflight": 4},
+        [("slow", '{"message":"slow"}', 20, 6)],
+        log_level="debug",
+    )
+    service = Service(config_file, ack_delay=1.4, enforce_keep_alive=True)
+    service.start()
+
+    try:
+        # Every session ends with DISCONNECT (keep_alive is too short to pool)
+        service.broker.wait_for(
+            lambda b: b.acks_sent >= 6 and b.connects and b.disconnects == len(b.connects),
+            40,
+            "6 acknowledged messages",
+        )
+    finally:
+        service.stop()
+
+    broker = service.broker
+    _assert_clean_protocol(broker)
+    assert broker.keep_alive_kicks == 0
+    assert broker.pings >= 2
+    assert all(connect["keep_alive"] == 2 for connect in broker.connects)
+
+    # Published once each, no retry
+    payloads = [message["payload"] for message in broker.messages]
+    assert len(payloads) == 6
+    assert len(set(payloads)) == 6
+
+    log_contents = service.log_contents()
+    assert "sending PINGREQ to keep the session alive" in log_contents
+    assert RETRY_LOG not in log_contents
+
+
+def _keep_alive_pool_config(tmp_path, topic):
+    """
+    keep_alive 6s keeps sessions pooled (idle timeout lowered to 3 seconds),
+    a session silent for 3 seconds or more at the end of a flush is ended.
+    One dummy sample creates four records, always in the same chunk, sent in
+    one window. A later record queues behind them.
+    """
+    return write_config(
+        tmp_path,
+        {"topic": topic, "keep_alive": "6s", "max_inflight": 4},
+        [
+            (f"{topic}.burst", '{"message":"burst"}' * 4, 1, 1),
+            (f"{topic}.later", '{"message":"later"}', 1, 1),
+        ],
+        log_level="debug",
+    )
+
+
+def _run_keep_alive_pool(service, predicate=None):
+    """Run until the 5 messages are acknowledged, then stop."""
+    service.start()
+    try:
+        service.broker.wait_for(
+            lambda b: b.acks_sent >= 5 and (predicate is None or predicate(b)),
+            60,
+            "5 acknowledged messages",
+        )
+    finally:
+        service.stop()
+
+    broker = service.broker
+    _assert_clean_protocol(broker)
+    assert broker.keep_alive_kicks == 0
+    assert RETRY_LOG not in service.log_contents()
+
+    burst = {m["connection"] for m in broker.messages if b"burst" in m["payload"]}
+    assert len(burst) == 1
+    return broker, burst.pop()
+
+
+@pytest.mark.parametrize("pingresp_mode", ["immediate", "with_last_ack"])
+def test_out_mqtt_keep_alive_session_reused(tmp_path, pingresp_mode):
+    # PUBACKs 1 second apart: a keep alive PINGREQ goes out before the third
+    # or fourth one, so the flush ends at most 2 seconds after it. Its
+    # PINGRESP comes at once (counted while PUBACKs are awaited) or with the
+    # last PUBACK (read at the end of the flush): the session is pooled and
+    # serves every flush.
+    config_file = _keep_alive_pool_config(tmp_path, "pooled")
+    service = Service(
+        config_file, ack_delay=1.0, enforce_keep_alive=True, pingresp_mode=pingresp_mode
+    )
+    broker, _ = _run_keep_alive_pool(service)
+
+    assert broker.pings >= 1
+    assert len(broker.connects) == 1
+    assert broker.disconnected == []
+    assert "sending PINGREQ to keep the session alive" in service.log_contents()
+
+
+def test_out_mqtt_keep_alive_unanswered_ping(tmp_path):
+    # The PINGRESP comes one second after the last PUBACK: the flush ends
+    # with a PINGREQ not answered yet, so its session ends with DISCONNECT
+    # instead of being pooled, where the next flush would read the PINGRESP
+    config_file = _keep_alive_pool_config(tmp_path, "late")
+    service = Service(config_file, ack_delay=1.0, enforce_keep_alive=True, pingresp_mode="late")
+    broker, burst_connection = _run_keep_alive_pool(service, lambda b: b.disconnected)
+
+    assert broker.pings >= 1
+    assert burst_connection in broker.disconnected
+
+    log_contents = service.log_contents()
+    assert "PINGREQ not answered yet" in log_contents
+    assert "session silent for" not in log_contents
+
+
+def test_out_mqtt_keep_alive_silent_session_not_pooled(tmp_path):
+    # PUBACKs 3.5 seconds apart: every PINGREQ is answered, but a flush ends
+    # at least 3 seconds after the last packet written. In the pool the
+    # session could stay silent beyond 1.5 x keep_alive: it ends with
+    # DISCONNECT and the next flush opens a new session.
+    config_file = _keep_alive_pool_config(tmp_path, "silent")
+    service = Service(config_file, ack_delay=3.5, enforce_keep_alive=True)
+    broker, burst_connection = _run_keep_alive_pool(service, lambda b: len(b.disconnected) >= 2)
+
+    assert broker.pings >= 1
+    assert burst_connection in broker.disconnected
+    assert len(broker.connects) >= 2
+
+    log_contents = service.log_contents()
+    assert "session silent for" in log_contents
+    assert "PINGREQ not answered yet" not in log_contents
+
+
 def test_out_mqtt_default_io_timeout(tmp_path):
     config_file = write_config(
         tmp_path,
@@ -841,8 +1126,12 @@ def test_out_mqtt_protocol_faults(fault, error):
 
 @pytest.mark.parametrize("qos", [0, 1, 2])
 def test_out_mqtt_broker_publish(qos):
-    # Larger than the plugin receive buffer, sent right after CONNACK
-    service = Service("out_mqtt_qos1.yaml", broker_publish=(3000, qos))
+    # Larger than the plugin receive buffer, sent right after CONNACK. With
+    # QoS 2 the PUBACKs are held until the PUBCOMP: the client completes the
+    # PUBREC, PUBREL, PUBCOMP exchange while it waits for them.
+    service = Service(
+        "out_mqtt_qos1.yaml", broker_publish=(3000, qos), hold_acks_until_pubcomp=qos == 2
+    )
     messages = run_until_messages(service, 5)
 
     broker = service.broker
@@ -857,9 +1146,9 @@ def test_out_mqtt_broker_publish(qos):
     elif qos == 1:
         assert (PUBACK, BROKER_PUBLISH_ID) in acks
     else:
-        # PUBREC answers the PUBLISH. The PUBCOMP follows only when the broker
-        # PUBREL arrives while the session is in use, which depends on timing.
         assert (PUBREC, BROKER_PUBLISH_ID) in acks
+        assert (PUBCOMP, BROKER_PUBLISH_ID) in acks
+        assert acks.index((PUBREC, BROKER_PUBLISH_ID)) < acks.index((PUBCOMP, BROKER_PUBLISH_ID))
 
 
 def test_out_mqtt_broker_publish_invalid_qos():
@@ -893,13 +1182,28 @@ def test_out_mqtt_qos0_retain_msgpack():
     assert len(service.broker.messages) == 3
 
 
-def test_out_mqtt_qos0_retry_after_lost_session():
-    service = Service("out_mqtt_qos0_retain.yaml", close_on_publish=1)
+def test_out_mqtt_qos0_retry_after_lost_session(tmp_path):
+    # The date key makes every record distinct
+    config_file = write_config(
+        tmp_path,
+        {"topic": "gateway/status", "qos": 0, "retain": "on"},
+        [("status", '{"state":"online"}', 5, 3)],
+    )
+    service = Service(config_file, close_on_publish=1)
     messages = run_until_messages(service, 3, timeout=30)
 
     # Without PINGRESP the flush is not confirmed and the chunk is retried
-    _assert_qos0_messages(service.broker, messages)
-    _assert_redelivered(service.broker, messages)
+    broker = service.broker
+    _assert_clean_protocol(broker)
+    _assert_redelivered(broker, messages)
+    assert broker.pings >= 1
+    for message in messages:
+        assert message["topic"] == "gateway/status"
+        assert message["qos"] == 0
+        assert message["retain"] is True
+        payload = json.loads(message["payload"])
+        assert payload["state"] == "online"
+        assert isinstance(payload["date"], float)
 
     # Depending on timing the lost session fails the PINGREQ write or read
     log_contents = service.log_contents()
@@ -1047,31 +1351,35 @@ def test_out_mqtt_large_records(tmp_path):
     assert by_message[large]["length_bytes"] == 3
 
 
+def _wait_drop_counters(service, processed, dropped):
+    """Wait for the processed and dropped record counters of the output."""
+
+    def counters():
+        text = service.metrics()
+        if text is None:
+            return None
+        values = (
+            metric_value(text, "fluentbit_output_proc_records_total", {"name": "mqtt.0"}),
+            metric_value(text, "fluentbit_output_dropped_records_total", {"name": "mqtt.0"}),
+            metric_value(text, "fluentbit_routing_logs_drop_records_total", {"output": "mqtt.0"}),
+        )
+        return values if values[:2] == (processed, dropped) else None
+
+    return service.service.wait_for_condition(
+        counters,
+        timeout=scaled(20),
+        interval=0.5,
+        description="drop metrics",
+    )
+
+
 def test_out_mqtt_drop_metrics():
     service = Service("out_mqtt_drops.yaml")
     service.start()
 
     try:
         messages = service.broker.wait_for_messages(3)
-
-        def counters():
-            text = service.metrics()
-            if text is None:
-                return (None, None, None)
-            return (
-                metric_value(text, "fluentbit_output_proc_records_total", {"name": "mqtt.0"}),
-                metric_value(text, "fluentbit_output_dropped_records_total", {"name": "mqtt.0"}),
-                metric_value(
-                    text, "fluentbit_routing_logs_drop_records_total", {"output": "mqtt.0"}
-                ),
-            )
-
-        values = service.service.wait_for_condition(
-            lambda: (lambda v: v if v[0] == 3 and v[1] == 2 else None)(counters()),
-            timeout=scaled(20),
-            interval=0.5,
-            description="drop metrics",
-        )
+        values = _wait_drop_counters(service, 3, 2)
     finally:
         service.stop()
 
@@ -1085,6 +1393,40 @@ def test_out_mqtt_drop_metrics():
     assert processed == 3
     assert dropped == 2
     assert routing_dropped in (None, 2)
+
+
+def test_out_mqtt_drop_metrics_mixed_chunk(tmp_path):
+    # Each sample creates a record with the payload key and one without it,
+    # so every chunk mixes published and dropped records
+    config_file = write_config(
+        tmp_path,
+        {"topic": "drops", "payload_key": "body"},
+        [("drops.mixed", '{"body":{"v":1}}{"other":1}', 5, 3)],
+    )
+    service = Service(config_file)
+    service.start()
+
+    try:
+        messages = service.broker.wait_for_messages(3)
+        values = _wait_drop_counters(service, 3, 3)
+    finally:
+        service.stop()
+
+    _assert_clean_protocol(service.broker)
+    assert len(service.broker.messages) == 3
+    for message in messages:
+        assert json.loads(message["payload"]) == {"v": 1}
+
+    processed, dropped, routing_dropped = values
+    assert processed == 3
+    assert dropped == 3
+    assert routing_dropped in (None, 3)
+
+    # Reported per chunk, whatever the split of the records into chunks
+    assert re.search(
+        r"\d+ records were not published: 0 without a valid topic, \d+ without the payload key",
+        service.log_contents(),
+    )
 
 
 def test_out_mqtt_topic_and_payload_keys():
