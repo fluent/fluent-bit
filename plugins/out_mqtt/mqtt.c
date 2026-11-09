@@ -32,6 +32,7 @@
 
 #include <msgpack.h>
 
+#include <errno.h>
 #include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
@@ -50,6 +51,10 @@
 #define MQTT_RECORD_SKIP     1
 #define MQTT_RECORD_FAIL    -1
 
+/* Message composition errors: retried with the chunk, or permanent */
+#define MQTT_PACK_NOMEM     -1
+#define MQTT_PACK_INVALID   -2
+
 /* State of one flush: a single chunk published through one broker session */
 struct mqtt_flush {
     struct flb_out_mqtt *ctx;
@@ -58,6 +63,20 @@ struct mqtt_flush {
     /* Broker session, opened when the first packets are written */
     struct flb_connection *conn;
     int conn_error;
+    int session_ready;              /* CONNACK received or session reused */
+
+    /* Keep alive: time of the last packet written, PINGREQ packets */
+    time_t last_send;
+    int pings_sent;
+    int pings_answered;
+
+    /*
+     * Time limit of the broker reply being waited for (0: not waiting). The
+     * network I/O timeout is renewed by any received byte, this limit is
+     * only renewed when an awaited reply arrives.
+     */
+    time_t reply_deadline;
+    int reply_timeout;
 
     /* Formatter test: the packets are collected instead of being sent */
     int test_mode;
@@ -233,14 +252,121 @@ static void rbuf_consume(struct mqtt_flush *mf, size_t bytes)
     mf->rbuf_len -= bytes;
 }
 
+/* Write packets to the broker, the time is kept for the keep alive */
+static int session_write(struct mqtt_flush *mf, const void *data, size_t len)
+{
+    int ret;
+    size_t sent;
+
+    ret = flb_io_net_write(mf->conn, data, len, &sent);
+    if (ret == -1 || sent != len) {
+        return -1;
+    }
+    mf->last_send = time(NULL);
+
+    return 0;
+}
+
+/* Send a PINGREQ packet, the broker answers PINGREQ packets in order */
+static int ping_send(struct mqtt_flush *mf)
+{
+    int ret;
+    flb_sds_t buf;
+
+    buf = flb_sds_create_size(2);
+    if (!buf) {
+        flb_errno();
+        return -1;
+    }
+
+    ret = out_mqtt_prot_pingreq(&buf);
+    if (ret == 0) {
+        ret = session_write(mf, buf, flb_sds_len(buf));
+    }
+    flb_sds_destroy(buf);
+
+    if (ret != 0) {
+        return -1;
+    }
+    mf->pings_sent++;
+
+    return 0;
+}
+
+/* A PINGRESP the broker sent without a PINGREQ is ignored */
+static void pingresp_received(struct mqtt_flush *mf)
+{
+    if (mf->pings_answered < mf->pings_sent) {
+        mf->pings_answered++;
+    }
+}
+
+/*
+ * A client must send a packet at least every keep_alive seconds
+ * (MQTT-3.1.2-23), the broker closes a silent session after one and a half
+ * times the interval. While broker replies are awaited, a PINGREQ is sent
+ * when half of the interval passed since the last packet written.
+ */
+static int keep_alive_ping(struct mqtt_flush *mf)
+{
+    int interval;
+    struct flb_out_mqtt *ctx = mf->ctx;
+
+    if (!mf->session_ready || ctx->keep_alive <= 0) {
+        return 0;
+    }
+
+    interval = ctx->keep_alive / 2;
+    if (interval < 1) {
+        interval = 1;
+    }
+
+    if (time(NULL) - mf->last_send < interval) {
+        return 0;
+    }
+
+    flb_plg_debug(ctx->ins, "sending PINGREQ to keep the session alive while "
+                  "waiting for the broker");
+
+    return ping_send(mf);
+}
+
+/* Allow net.io_timeout seconds for the next awaited broker reply */
+static void reply_deadline_set(struct mqtt_flush *mf)
+{
+    mf->reply_deadline = time(NULL) + mf->ctx->u->base.net.io_timeout;
+}
+
+/*
+ * Read from the broker while a reply is awaited. Every byte received renews
+ * net.io_timeout, so packets the broker sends on its own could extend the
+ * wait forever: the reply deadline ends it. The read itself waits until
+ * data arrives or net.io_timeout expires, a keep alive PINGREQ is sent
+ * before it when one is due.
+ */
+static ssize_t net_read(struct mqtt_flush *mf, void *buf, size_t len)
+{
+    /* Whole seconds: at least net.io_timeout seconds are allowed */
+    if (mf->reply_deadline > 0 && time(NULL) > mf->reply_deadline) {
+        mf->reply_timeout = FLB_TRUE;
+        return -1;
+    }
+
+    if (keep_alive_ping(mf) != 0) {
+        return -1;
+    }
+
+    return flb_io_net_read(mf->conn, buf, len);
+}
+
 /* Make the next 'n' bytes of the stream available in the receive buffer */
 static int rbuf_fill(struct mqtt_flush *mf, size_t n)
 {
     ssize_t bytes;
 
     while (mf->rbuf_len < n) {
-        bytes = flb_io_net_read(mf->conn, mf->rbuf + mf->rbuf_len,
-                                sizeof(mf->rbuf) - mf->rbuf_len);
+        bytes = net_read(mf, mf->rbuf + mf->rbuf_len,
+                         sizeof(mf->rbuf) - mf->rbuf_len);
         if (bytes <= 0) {
             return -1;
         }
@@ -266,7 +392,7 @@ static int stream_skip(struct mqtt_flush *mf, size_t n)
 
     while (n > 0) {
         want = n < sizeof(mf->rbuf) ? n : sizeof(mf->rbuf);
-        bytes = flb_io_net_read(mf->conn, mf->rbuf, want);
+        bytes = net_read(mf, mf->rbuf, want);
         if (bytes <= 0) {
             return -1;
         }
@@ -279,18 +405,11 @@ static int stream_skip(struct mqtt_flush *mf, size_t n)
 /* Send a PUBACK, PUBREC or PUBCOMP packet to the broker */
 static int ack_send(struct mqtt_flush *mf, int type, uint16_t id)
 {
-    int ret;
-    size_t sent;
     unsigned char packet[4];
 
     out_mqtt_prot_ack(packet, type, id);
 
-    ret = flb_io_net_write(mf->conn, packet, sizeof(packet), &sent);
-    if (ret == -1) {
-        return -1;
-    }
-
-    return 0;
+    return session_write(mf, packet, sizeof(packet));
 }
 
 /*
@@ -358,9 +477,10 @@ static int broker_publish_discard(struct mqtt_flush *mf, int flags,
 
 /*
  * At the end of a flush, handle the complete packets the broker sent on its
- * own (PUBLISH, PUBREL) that are already in the receive buffer, so the
- * session can be reused. Nothing is read from the network: a partial or
- * unexpected packet leaves data in the buffer and the session is closed.
+ * own (PUBLISH, PUBREL) and the answers to keep alive PINGREQ packets that
+ * are already in the receive buffer, so the session can be reused. Nothing
+ * is read from the network: a partial or unexpected packet leaves data in
+ * the buffer and the session is closed.
  */
 static void rbuf_drain(struct mqtt_flush *mf)
 {
@@ -393,6 +513,11 @@ static void rbuf_drain(struct mqtt_flush *mf)
                 mf->conn_error = FLB_TRUE;
                 return;
             }
+        }
+        else if (p_type == FLB_MQTT_PINGRESP && p_flags == 0 && length == 0 &&
+                 mf->pings_answered < mf->pings_sent) {
+            rbuf_consume(mf, header_size);
+            pingresp_received(mf);
         }
         else {
             return;
@@ -471,8 +596,8 @@ static int packet_read(struct mqtt_flush *mf, int *type, int *flags,
             return -1;
         }
 
-        bytes = flb_io_net_read(mf->conn, mf->rbuf + mf->rbuf_len,
-                                sizeof(mf->rbuf) - mf->rbuf_len);
+        bytes = net_read(mf, mf->rbuf + mf->rbuf_len,
+                         sizeof(mf->rbuf) - mf->rbuf_len);
         if (bytes <= 0) {
             return -1;
         }
@@ -487,7 +612,6 @@ static int session_connect(struct mqtt_flush *mf)
     int type;
     int flags;
     unsigned int seq;
-    size_t sent;
     size_t len;
     size_t id_len;
     size_t user_len;
@@ -533,15 +657,16 @@ static int session_connect(struct mqtt_flush *mf)
         return FLB_RETRY;
     }
 
-    ret = flb_io_net_write(mf->conn, buf, flb_sds_len(buf), &sent);
+    ret = session_write(mf, buf, flb_sds_len(buf));
     flb_sds_destroy(buf);
-    if (ret == -1) {
+    if (ret != 0) {
         flb_plg_error(ctx->ins, "could not send CONNECT to %s:%i",
                       ctx->u->tcp_host, ctx->u->tcp_port);
         mf->conn_error = FLB_TRUE;
         return FLB_RETRY;
     }
 
+    reply_deadline_set(mf);
     ret = packet_read(mf, &type, &flags, body, sizeof(body), &len);
     if (ret != 0) {
         flb_plg_error(ctx->ins, "no CONNACK received from %s:%i",
@@ -570,6 +695,9 @@ static int session_connect(struct mqtt_flush *mf)
     flb_plg_debug(ctx->ins, "connected to %s:%i with client identifier '%.*s'",
                   ctx->u->tcp_host, ctx->u->tcp_port, (int) id_len, id);
 
+    mf->reply_deadline = 0;
+    mf->session_ready = FLB_TRUE;
+
     return FLB_OK;
 }
 
@@ -596,6 +724,8 @@ static int session_open(struct mqtt_flush *mf)
 
         if (connection_is_alive(conn)) {
             mf->conn = conn;
+            mf->session_ready = FLB_TRUE;
+            mf->last_send = time(NULL);
             return FLB_OK;
         }
 
@@ -612,17 +742,57 @@ static int session_open(struct mqtt_flush *mf)
 }
 
 /*
+ * Tell if a healthy session can wait in the keepalive pool for the next
+ * flush. A PINGREQ not answered yet is not allowed: the next flush would
+ * read its PINGRESP. The pool closes an idle connection after
+ * net.keepalive_idle_timeout counted from its release, checked every 1.5
+ * seconds with a one second resolution, while the broker counts the silence
+ * from the last packet written and drops the session after one and a half
+ * times keep_alive. A session already silent for a while at the end of the
+ * flush (slow acknowledgements) is not kept: whole seconds round the silence
+ * down by less than one second.
+ */
+static int session_poolable(struct mqtt_flush *mf, struct flb_connection *conn)
+{
+    time_t silence;
+    time_t budget;
+    struct flb_out_mqtt *ctx = mf->ctx;
+
+    if (mf->pings_answered != mf->pings_sent) {
+        flb_plg_debug(ctx->ins, "PINGREQ not answered yet, the session is ended "
+                      "instead of being kept for the next flush");
+        return FLB_FALSE;
+    }
+
+    if (ctx->keep_alive <= 0) {
+        return FLB_TRUE;
+    }
+
+    /* (silence + 1) + (idle timeout + 2.5) <= 1.5 x keep_alive, doubled */
+    silence = time(NULL) - mf->last_send;
+    budget = 3 * (time_t) ctx->keep_alive - 2 * (time_t) conn->net->keepalive_idle_timeout - 7;
+    if (2 * silence > budget) {
+        flb_plg_debug(ctx->ins, "session silent for %li seconds, it is ended "
+                      "instead of being kept for the next flush", (long) silence);
+        return FLB_FALSE;
+    }
+
+    return FLB_TRUE;
+}
+
+/*
  * Release the connection. A failed session is closed, and so is a session
  * with unread data: its stream position is unknown. A healthy session goes
  * back to the keepalive pool for the next flush, the pool closes it later
  * without DISCONNECT (idle timeout or shutdown), the broker sees a network
- * close and no Will message exists. A session that is not kept is ended with
- * DISCONNECT.
+ * close and no Will message exists. A healthy session that is not kept is
+ * ended with DISCONNECT.
  */
 static void session_close(struct mqtt_flush *mf, int result)
 {
+    int keep;
+    int disconnect;
     flb_sds_t buf;
-    size_t sent;
     struct flb_connection *conn;
 
     conn = mf->conn;
@@ -630,18 +800,31 @@ static void session_close(struct mqtt_flush *mf, int result)
         return;
     }
 
-    if (result == FLB_OK && !mf->conn_error && mf->rbuf_len > 0) {
+    keep = FLB_FALSE;
+    disconnect = FLB_FALSE;
+
+    if (result == FLB_OK && !mf->conn_error) {
         rbuf_drain(mf);
+
+        if (!mf->conn_error && mf->rbuf_len == 0) {
+            if (connection_will_recycle(conn) && session_poolable(mf, conn)) {
+                keep = FLB_TRUE;
+            }
+            else {
+                disconnect = FLB_TRUE;
+            }
+        }
     }
 
-    if (result != FLB_OK || mf->conn_error || mf->rbuf_len > 0) {
+    if (!keep) {
         flb_upstream_conn_recycle(conn, FLB_FALSE);
     }
-    else if (!connection_will_recycle(conn)) {
+
+    if (disconnect) {
         buf = flb_sds_create_size(2);
         if (buf) {
             if (out_mqtt_prot_disconnect(&buf) == 0) {
-                flb_io_net_write(conn, buf, flb_sds_len(buf), &sent);
+                session_write(mf, buf, flb_sds_len(buf));
             }
             flb_sds_destroy(buf);
         }
@@ -673,7 +856,11 @@ static uint16_t packet_id_next(struct mqtt_flush *mf)
     return id;
 }
 
-/* QoS 1: wait for one PUBACK per PUBLISH packet of the window */
+/*
+ * QoS 1: wait for one PUBACK per PUBLISH packet of the window. The window
+ * was just written, each PUBACK allows net.io_timeout seconds for the next
+ * one: the wait is bounded whatever else the broker sends.
+ */
 static int puback_wait(struct mqtt_flush *mf)
 {
     int ret;
@@ -686,18 +873,29 @@ static int puback_wait(struct mqtt_flush *mf)
     unsigned char body[2];
     struct flb_out_mqtt *ctx = mf->ctx;
 
+    reply_deadline_set(mf);
+
     count = 0;
     while (count < mf->window_count) {
         ret = packet_read(mf, &type, &flags, body, sizeof(body), &len);
         if (ret != 0) {
-            flb_plg_error(ctx->ins, "connection to %s:%i lost while waiting for "
-                          "%i PUBACK packets", ctx->u->tcp_host, ctx->u->tcp_port,
-                          mf->window_count - count);
+            if (mf->reply_timeout) {
+                flb_plg_error(ctx->ins, "no PUBACK received from %s:%i within %i "
+                              "seconds, %i messages are not acknowledged",
+                              ctx->u->tcp_host, ctx->u->tcp_port,
+                              ctx->u->base.net.io_timeout, mf->window_count - count);
+            }
+            else {
+                flb_plg_error(ctx->ins, "connection to %s:%i lost while waiting for "
+                              "%i PUBACK packets", ctx->u->tcp_host,
+                              ctx->u->tcp_port, mf->window_count - count);
+            }
             return -1;
         }
 
-        /* Not an acknowledgement, harmless */
+        /* Answer to a keep alive PINGREQ, or harmless */
         if (type == FLB_MQTT_PINGRESP && flags == 0 && len == 0) {
+            pingresp_received(mf);
             continue;
         }
 
@@ -718,7 +916,10 @@ static int puback_wait(struct mqtt_flush *mf)
 
         mf->acked[index] = 1;
         count++;
+        reply_deadline_set(mf);
     }
+
+    mf->reply_deadline = 0;
 
     return 0;
 }
@@ -734,40 +935,38 @@ static int session_confirm(struct mqtt_flush *mf)
     int ret;
     int type;
     int flags;
+    int confirm;
     size_t len;
-    size_t sent;
     unsigned char body[2];
-    flb_sds_t buf;
     struct flb_out_mqtt *ctx = mf->ctx;
 
-    buf = flb_sds_create_size(2);
-    if (!buf) {
-        flb_errno();
-        mf->conn_error = FLB_TRUE;
-        return FLB_RETRY;
-    }
-
-    ret = out_mqtt_prot_pingreq(&buf);
-    if (ret == 0) {
-        ret = flb_io_net_write(mf->conn, buf, flb_sds_len(buf), &sent);
-    }
-    flb_sds_destroy(buf);
-
-    if (ret == -1) {
+    if (ping_send(mf) != 0) {
         flb_plg_error(ctx->ins, "could not send PINGREQ to %s:%i",
                       ctx->u->tcp_host, ctx->u->tcp_port);
         mf->conn_error = FLB_TRUE;
         return FLB_RETRY;
     }
+    confirm = mf->pings_sent;
 
-    ret = packet_read(mf, &type, &flags, body, sizeof(body), &len);
-    if (ret != 0 || type != FLB_MQTT_PINGRESP || flags != 0 || len != 0) {
-        flb_plg_error(ctx->ins, "no PINGRESP received from %s:%i, the delivery "
-                      "of %i messages is not confirmed",
-                      ctx->u->tcp_host, ctx->u->tcp_port, mf->published);
-        mf->conn_error = FLB_TRUE;
-        return FLB_RETRY;
+    reply_deadline_set(mf);
+
+    /*
+     * PINGREQ packets are answered in order, the ones sent while waiting to
+     * keep the session alive are not waited for.
+     */
+    while (mf->pings_answered < confirm) {
+        ret = packet_read(mf, &type, &flags, body, sizeof(body), &len);
+        if (ret != 0 || type != FLB_MQTT_PINGRESP || flags != 0 || len != 0) {
+            flb_plg_error(ctx->ins, "no PINGRESP received from %s:%i, the delivery "
+                          "of %i messages is not confirmed",
+                          ctx->u->tcp_host, ctx->u->tcp_port, mf->published);
+            mf->conn_error = FLB_TRUE;
+            return FLB_RETRY;
+        }
+        pingresp_received(mf);
     }
+
+    mf->reply_deadline = 0;
 
     return FLB_OK;
 }
@@ -786,7 +985,6 @@ static void window_reset(struct mqtt_flush *mf)
 static int window_flush(struct mqtt_flush *mf)
 {
     int ret;
-    size_t sent;
     struct flb_out_mqtt *ctx = mf->ctx;
 
     if (mf->window_count == 0) {
@@ -809,8 +1007,8 @@ static int window_flush(struct mqtt_flush *mf)
         }
     }
 
-    ret = flb_io_net_write(mf->conn, mf->wbuf, flb_sds_len(mf->wbuf), &sent);
-    if (ret == -1 || sent != flb_sds_len(mf->wbuf)) {
+    ret = session_write(mf, mf->wbuf, flb_sds_len(mf->wbuf));
+    if (ret != 0) {
         flb_plg_error(ctx->ins, "could not write %i PUBLISH packets to %s:%i",
                       mf->window_count, ctx->u->tcp_host, ctx->u->tcp_port);
         mf->conn_error = FLB_TRUE;
@@ -942,8 +1140,14 @@ static int record_topic(struct mqtt_flush *mf, msgpack_object *body,
     return MQTT_RECORD_OK;
 }
 
+/*
+ * Pack the record timestamp. Returns 0, MQTT_PACK_NOMEM when the message
+ * buffer cannot grow or MQTT_PACK_INVALID when the timestamp cannot be
+ * formatted.
+ */
 static int date_pack(struct mqtt_flush *mf, struct flb_time *tm)
 {
+    int ret;
     int len;
     size_t size;
     struct tm gmt;
@@ -954,9 +1158,11 @@ static int date_pack(struct mqtt_flush *mf, struct flb_time *tm)
 
     switch (mf->ctx->json_date_format) {
     case FLB_PACK_JSON_DATE_EPOCH:
-        return msgpack_pack_uint64(pck, (uint64_t) tm->tm.tv_sec);
+        ret = msgpack_pack_uint64(pck, (uint64_t) tm->tm.tv_sec);
+        return ret == 0 ? 0 : MQTT_PACK_NOMEM;
     case FLB_PACK_JSON_DATE_EPOCH_MS:
-        return msgpack_pack_uint64(pck, flb_time_to_millisec(tm));
+        ret = msgpack_pack_uint64(pck, flb_time_to_millisec(tm));
+        return ret == 0 ? 0 : MQTT_PACK_NOMEM;
     case FLB_PACK_JSON_DATE_ISO8601:
         date_fmt = FLB_PACK_JSON_DATE_ISO8601_FMT;
         frac_fmt = ".%06" PRIu64 "Z";
@@ -966,36 +1172,40 @@ static int date_pack(struct mqtt_flush *mf, struct flb_time *tm)
         frac_fmt = ".%06" PRIu64;
         break;
     default:
-        return msgpack_pack_double(pck, flb_time_to_double(tm));
+        ret = msgpack_pack_double(pck, flb_time_to_double(tm));
+        return ret == 0 ? 0 : MQTT_PACK_NOMEM;
     }
 
+    /* A timestamp out of the calendar range fails the same way every time */
     if (gmtime_r(&tm->tm.tv_sec, &gmt) == NULL) {
-        return -1;
+        return MQTT_PACK_INVALID;
     }
 
     size = strftime(buf, sizeof(buf), date_fmt, &gmt);
     if (size == 0) {
-        return -1;
+        return MQTT_PACK_INVALID;
     }
 
     /* Microseconds precision, like the other JSON outputs */
     len = snprintf(buf + size, sizeof(buf) - size, frac_fmt,
                    (uint64_t) tm->tm.tv_nsec / 1000);
     if (len < 0 || (size_t) len >= sizeof(buf) - size) {
-        return -1;
+        return MQTT_PACK_INVALID;
     }
     size += len;
 
-    if (msgpack_pack_str(pck, size) != 0) {
-        return -1;
+    ret = msgpack_pack_str(pck, size);
+    if (ret == 0) {
+        ret = msgpack_pack_str_body(pck, buf, size);
     }
 
-    return msgpack_pack_str_body(pck, buf, size);
+    return ret == 0 ? 0 : MQTT_PACK_NOMEM;
 }
 
 /*
  * Compose the message object: the date key, when enabled, and the record
- * body. A body that is not a map is nested under a 'log' key.
+ * body. A body that is not a map is nested under a 'log' key. Returns 0,
+ * MQTT_PACK_NOMEM or MQTT_PACK_INVALID.
  */
 static int message_pack(struct mqtt_flush *mf, struct flb_log_event *event)
 {
@@ -1019,6 +1229,7 @@ static int message_pack(struct mqtt_flush *mf, struct flb_log_event *event)
         size++;
     }
 
+    /* msgpack-c packing only fails when the buffer cannot grow */
     ret = msgpack_pack_map(pck, size);
 
     if (ret == 0 && ctx->date_key) {
@@ -1029,6 +1240,9 @@ static int message_pack(struct mqtt_flush *mf, struct flb_log_event *event)
         }
         if (ret == 0) {
             ret = date_pack(mf, &event->timestamp);
+            if (ret != 0) {
+                return ret;
+            }
         }
     }
 
@@ -1050,13 +1264,17 @@ static int message_pack(struct mqtt_flush *mf, struct flb_log_event *event)
         }
     }
 
-    return ret == 0 ? 0 : -1;
+    return ret == 0 ? 0 : MQTT_PACK_NOMEM;
 }
 
 /*
  * Compose the message payload. With payload_key, a string or binary value is
  * sent as is and other values are encoded with the configured format.
  * Otherwise the record, with its date key, is encoded as JSON or MessagePack.
+ * A memory allocation failure fails the flush, so the chunk is retried
+ * instead of losing the record. A timestamp that cannot be formatted or a
+ * record JSON cannot represent skips the record: a retry would fail the
+ * same way.
  */
 static int record_payload(struct mqtt_flush *mf, struct flb_log_event *event,
                           const char **payload, size_t *payload_len,
@@ -1091,14 +1309,21 @@ static int record_payload(struct mqtt_flush *mf, struct flb_log_event *event,
         }
 
         ret = msgpack_pack_object(&mf->mp_pck, *val);
+        if (ret != 0) {
+            ret = MQTT_PACK_NOMEM;
+        }
     }
     else {
         ret = message_pack(mf, event);
     }
 
-    if (ret != 0) {
+    if (ret == MQTT_PACK_INVALID) {
         mf->skipped_encoding++;
         return MQTT_RECORD_SKIP;
+    }
+    else if (ret != 0) {
+        flb_plg_error(ctx->ins, "cannot compose a message, memory allocation failed");
+        return MQTT_RECORD_FAIL;
     }
 
     if (ctx->out_format == FLB_MQTT_FORMAT_MSGPACK) {
@@ -1107,11 +1332,24 @@ static int record_payload(struct mqtt_flush *mf, struct flb_log_event *event,
         return MQTT_RECORD_OK;
     }
 
+    /*
+     * The conversion fails for good with EINVAL, set just before returning,
+     * on a value JSON cannot represent, like a map key that is an array or a
+     * map. Any other failure is a memory allocation failure: errno is not
+     * always ENOMEM then, the core logs the error and the logging can change
+     * errno (isatty() sets ENOTTY when stderr is not a terminal).
+     */
+    errno = 0;
     *json = flb_msgpack_raw_to_json_sds(mf->mp_sbuf.data, mf->mp_sbuf.size,
                                         mf->config->json_escape_unicode);
     if (!*json) {
-        mf->skipped_encoding++;
-        return MQTT_RECORD_SKIP;
+        if (errno == EINVAL) {
+            mf->skipped_encoding++;
+            return MQTT_RECORD_SKIP;
+        }
+        flb_plg_error(ctx->ins, "cannot convert a message to JSON, memory "
+                      "allocation failed");
+        return MQTT_RECORD_FAIL;
     }
 
     *payload = *json;
@@ -1202,10 +1440,11 @@ static int flush_records(struct mqtt_flush *mf, const char *tag, int tag_len,
         return FLB_RETRY;
     }
 
+    /* The initialization only fails when memory runs out */
     ret = flb_log_event_decoder_init(&decoder, (char *) data, bytes);
     if (ret != FLB_EVENT_DECODER_SUCCESS) {
         flb_plg_error(ctx->ins, "log event decoder initialization error: %i", ret);
-        return FLB_ERROR;
+        return FLB_RETRY;
     }
 
     /* End of the last record decoded */
@@ -1460,8 +1699,12 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_INT, "qos", "1",
      0, FLB_TRUE, offsetof(struct flb_out_mqtt, qos),
-     "Quality of service: 0 (at most once) or 1 (at least once, every "
-     "message is acknowledged by the broker before the chunk succeeds)"
+     "Quality of service: 0 or 1. QoS 0 messages are not acknowledged one by "
+     "one, a flush ends with a PINGREQ round trip and a failed flush is "
+     "retried, so a message can be published more than once (set "
+     "'retry_limit' to 'no_retries' for at most once delivery). With QoS 1 "
+     "every message is acknowledged by the broker before the chunk succeeds "
+     "(at least once)"
     },
 
     {
@@ -1497,8 +1740,10 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_TIME, "keep_alive", "60s",
      0, FLB_TRUE, offsetof(struct flb_out_mqtt, keep_alive),
-     "MQTT keep alive interval sent to the broker, 0 disables it. Idle "
-     "keepalive connections are closed before this interval expires"
+     "MQTT keep alive interval sent to the broker, 0 disables it. PINGREQ "
+     "packets keep a session alive while broker replies are slow, idle "
+     "keepalive connections are closed before the broker drops them (after "
+     "one and a half times this interval of silence)"
     },
 
     {
