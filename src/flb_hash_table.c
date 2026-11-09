@@ -411,7 +411,27 @@ int flb_hash_table_add(struct flb_hash_table *ht, const char *key, int key_len,
         return -1;
     }
 
-    /* Check capacity */
+    /*
+     * Check if this is a replacement first. Replacing the value of an existing
+     * key does not change the number of entries, so it must be handled before
+     * the capacity check below; otherwise a replacement on a full table would
+     * needlessly evict an unrelated entry.
+     */
+    entry = hash_get_entry(ht, key, key_len, &id);
+    if (entry) {
+        /*
+         * The key already exists, just perform a value replacement, check if the
+         * value refers to our own previous allocation.
+         */
+        ret = entry_set_value(entry, val, val_size);
+        if (ret == -1) {
+            return -1;
+        }
+
+        return id;
+    }
+
+    /* Check capacity (only required when inserting a new entry) */
     if (ht->max_entries > 0 && ht->total_count >= ht->max_entries) {
         if (ht->evict_mode == FLB_HASH_TABLE_EVICT_NONE) {
             /* Do nothing */
@@ -425,21 +445,6 @@ int flb_hash_table_add(struct flb_hash_table *ht, const char *key, int key_len,
         else if (ht->evict_mode == FLB_HASH_TABLE_EVICT_RANDOM) {
             flb_hash_table_evict_random(ht);
         }
-    }
-
-    /* Check if this is a replacement */
-    entry = hash_get_entry(ht, key, key_len, &id);
-    if (entry) {
-        /*
-         * The key already exists, just perform a value replacement, check if the
-         * value refers to our own previous allocation.
-         */
-        ret = entry_set_value(entry, val, val_size);
-        if (ret == -1) {
-            return -1;
-        }
-
-        return id;
     }
 
     /*
