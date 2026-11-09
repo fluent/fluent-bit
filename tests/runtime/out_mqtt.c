@@ -20,7 +20,6 @@
 #include <fluent-bit.h>
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_time.h>
-#include <msgpack.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -801,20 +800,16 @@ void flb_test_payload_key_missing()
 
 void flb_test_format_msgpack()
 {
-    int ret;
-    int found;
     int in_ffd;
     int out_ffd;
-    size_t off;
-    uint32_t i;
     flb_ctx_t *ctx;
-    msgpack_object *k;
-    msgpack_object *v;
-    msgpack_unpacked result;
     struct mqtt_message *m;
     const char *records[] = {
         "[1, {\"msg\":\"hello\", \"val\":7}]"
     };
+    /* {"date": 1, "msg": "hello", "val": 7}: the date key comes first */
+    const char expected[] = "\x83\xa4" "date" "\x01\xa3" "msg" "\xa5" "hello"
+                            "\xa3" "val" "\x07";
 
     ctx = formatter_ctx_create("test", &in_ffd, &out_ffd);
     if (!ctx) {
@@ -828,50 +823,72 @@ void flb_test_format_msgpack()
     formatter_run(ctx, in_ffd, records, 1, 1);
 
     m = message_get(0);
-    if (!TEST_CHECK(m != NULL)) {
-        results_reset();
-        return;
+    if (TEST_CHECK(m != NULL)) {
+        /* Exact bytes: every key once, in order, with its value */
+        TEST_CHECK(m->payload_len == sizeof(expected) - 1);
+        TEST_CHECK(m->payload_len == sizeof(expected) - 1 &&
+                   memcmp(m->payload, expected, m->payload_len) == 0);
     }
-
-    off = 0;
-    found = 0;
-    msgpack_unpacked_init(&result);
-    ret = msgpack_unpack_next(&result, m->payload, m->payload_len, &off);
-    if (TEST_CHECK(ret == MSGPACK_UNPACK_SUCCESS) &&
-        TEST_CHECK(result.data.type == MSGPACK_OBJECT_MAP) &&
-        TEST_CHECK(off == m->payload_len)) {
-        TEST_CHECK(result.data.via.map.size == 3);
-
-        for (i = 0; i < result.data.via.map.size; i++) {
-            k = &result.data.via.map.ptr[i].key;
-            v = &result.data.via.map.ptr[i].val;
-
-            if (k->type != MSGPACK_OBJECT_STR) {
-                continue;
-            }
-            if (k->via.str.size == 4 && strncmp(k->via.str.ptr, "date", 4) == 0) {
-                TEST_CHECK(v->type == MSGPACK_OBJECT_POSITIVE_INTEGER);
-                TEST_CHECK(v->via.u64 == 1);
-                found++;
-            }
-            else if (k->via.str.size == 3 && strncmp(k->via.str.ptr, "msg", 3) == 0) {
-                TEST_CHECK(v->type == MSGPACK_OBJECT_STR);
-                TEST_CHECK(v->via.str.size == 5);
-                found++;
-            }
-            else if (k->via.str.size == 3 && strncmp(k->via.str.ptr, "val", 3) == 0) {
-                TEST_CHECK(v->type == MSGPACK_OBJECT_POSITIVE_INTEGER);
-                TEST_CHECK(v->via.u64 == 7);
-                found++;
-            }
-        }
-    }
-    msgpack_unpacked_destroy(&result);
-
-    TEST_CHECK(found == 3);
 
     results_reset();
 }
+
+#ifdef FLB_HAVE_LUA
+/*
+ * A record JSON cannot represent is dropped, the other records of the chunk
+ * are published and the flush succeeds: a retry would fail the same way. The
+ * lua filter packs a table used as a key as a msgpack array.
+ */
+void flb_test_json_unrepresentable_key()
+{
+    int in_ffd;
+    int out_ffd;
+    int filter_ffd;
+    flb_ctx_t *ctx;
+    struct mqtt_message *m;
+    const char *records[] = {
+        "[1, {\"msg\":\"kept\"}]",
+        "[2, {\"msg\":\"dropped\"}]"
+    };
+    const char *script =
+        "function cb(tag, ts, record)\n"
+        "  if record['msg'] == 'dropped' then\n"
+        "    record[{1}] = 'x'\n"
+        "  end\n"
+        "  return 1, ts, record\n"
+        "end\n";
+
+    ctx = formatter_ctx_create("test", &in_ffd, &out_ffd);
+    if (!ctx) {
+        return;
+    }
+
+    filter_ffd = flb_filter(ctx, (char *) "lua", NULL);
+    if (filter_ffd < 0) {
+        TEST_MSG("lua filter not available, test skipped");
+        flb_destroy(ctx);
+        return;
+    }
+    flb_filter_set(ctx, filter_ffd,
+                   "match", "*",
+                   "call", "cb",
+                   "code", script,
+                   NULL);
+
+    formatter_run(ctx, in_ffd, records, 2, 1);
+
+    m = message_get(0);
+    if (TEST_CHECK(m != NULL)) {
+        TEST_CHECK(strstr(m->payload, "\"kept\"") != NULL);
+    }
+
+    pthread_mutex_lock(&result_lock);
+    TEST_CHECK(fmt_result.ret == FLB_OK);
+    pthread_mutex_unlock(&result_lock);
+
+    results_reset();
+}
+#endif
 
 void flb_test_qos0_retain()
 {
@@ -1391,6 +1408,9 @@ TEST_LIST = {
     {"payload_key",            flb_test_payload_key},
     {"payload_key_missing",    flb_test_payload_key_missing},
     {"format_msgpack",         flb_test_format_msgpack},
+#ifdef FLB_HAVE_LUA
+    {"json_unrepresentable_key", flb_test_json_unrepresentable_key},
+#endif
     {"qos0_retain",            flb_test_qos0_retain},
     {"json_date",              flb_test_json_date},
     {"json_date_key_off",      flb_test_json_date_key_off},
