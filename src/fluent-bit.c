@@ -1902,7 +1902,13 @@ static int flb_main_run(int argc, char **argv)
 #ifdef FLB_SYSTEM_WINDOWS
         if (handler_signal == 1) {
             handler_signal = 0;
-            flb_reload(ctx, cf_opts);
+            ret = flb_reload(ctx, cf_opts);
+            if (ret == FLB_RELOAD_ABORTED) {
+                /* the old and the new context are both destroyed */
+                flb_bin_restarting = ret;
+                ctx = NULL;
+                break;
+            }
         }
         else if (handler_signal == 2){
             handler_signal = 0;
@@ -1943,6 +1949,15 @@ static int flb_main_run(int argc, char **argv)
             }
             else {
                 flb_bin_restarting = ret;
+                if (ret == FLB_RELOAD_ABORTED) {
+                    /*
+                     * flb_reload() destroyed the old context before the new
+                     * one failed to start, so there is no context left to
+                     * poll. Leave the loop instead of reading freed memory.
+                     */
+                    ctx = NULL;
+                    break;
+                }
                 if (ret != FLB_RELOAD_IN_PROGRESS) {
                     supervisor_reload_notified = FLB_FALSE;
                 }
@@ -1973,7 +1988,9 @@ static int flb_main_run(int argc, char **argv)
 
 #ifdef FLB_HAVE_CHUNK_TRACE
      if (trace_input != NULL) {
-        disable_trace_input(ctx, trace_input);
+        if (ctx != NULL) {
+            disable_trace_input(ctx, trace_input);
+        }
         flb_free(trace_input);
      }
      if (trace_output) {
