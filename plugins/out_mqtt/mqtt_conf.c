@@ -242,6 +242,18 @@ static struct flb_record_accessor *key_accessor_create(struct flb_out_mqtt *ctx,
     return ra;
 }
 
+/* Finalizer of splitmix64: every input bit changes about half of the output */
+static uint64_t seed_mix(uint64_t x)
+{
+    x ^= x >> 30;
+    x *= 0xbf58476d1ce4e5b9ULL;
+    x ^= x >> 27;
+    x *= 0x94d049bb133111ebULL;
+    x ^= x >> 31;
+
+    return x;
+}
+
 /* 'flb' + 12 hex digits taken from 6 random bytes */
 static void client_id_prefix_init(struct flb_out_mqtt *ctx)
 {
@@ -251,11 +263,20 @@ static void client_id_prefix_init(struct flb_out_mqtt *ctx)
     unsigned char bytes[6];
     static const char hex[] = "0123456789abcdef";
 
+    /*
+     * Like the other users of flb_random_bytes(), the instance does not fail
+     * without random bytes. The current time, the process identifier and the
+     * context address make two instances unlikely to share a prefix.
+     */
     ret = flb_random_bytes(bytes, sizeof(bytes));
     if (ret != 0) {
         flb_plg_warn(ctx->ins, "cannot read random bytes, generated client "
-                     "identifiers are derived from the current time");
-        seed = ((uint64_t) time(NULL) << 20) ^ (uint64_t) (uintptr_t) ctx;
+                     "identifiers are derived from the current time and the "
+                     "process identifier, set a unique 'client_id' to rule out "
+                     "collisions");
+        seed = seed_mix((uint64_t) time(NULL));
+        seed = seed_mix(seed ^ (uint64_t) getpid());
+        seed = seed_mix(seed ^ (uint64_t) (uintptr_t) ctx);
         for (i = 0; i < (int) sizeof(bytes); i++) {
             bytes[i] = (seed >> (i * 8)) & 0xff;
         }
