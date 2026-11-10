@@ -125,3 +125,5 @@ if(FLB_CONFIG_YAML AND FLB_PROCESSOR_SQL AND
   add_test(NAME flb-wasm-yaml COMMAND flb-wasm-yaml)
   set_tests_properties(flb-wasm-yaml PROPERTIES TIMEOUT 45)
 endif()
+
+include(${CMAKE_CURRENT_SOURCE_DIR}/portable-tests.cmake)
