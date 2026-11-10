@@ -101,9 +101,11 @@ jobs:
           flb_cmake_flags=()
           if [[ "$FLB_SANITIZER" == address ]]; then
             flb_cmake_flags+=(-DLIBCO_TESTS_ASAN=ON -DCMAKE_C_FLAGS=-fsanitize=address
+              -DCMAKE_CXX_FLAGS=-fsanitize=address
               '-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address -sALLOW_MEMORY_GROWTH=1')
           fi
           emcmake cmake -S . -B build-wasm -DFLB_WASM_BROWSER=ON \
+            -DFLB_TESTS_INTERNAL=ON -DFLB_TESTS_RUNTIME=ON \
             -DFLB_DEBUG=OFF -DFLB_RELEASE=OFF -DCMAKE_BUILD_TYPE=MinSizeRel "${flb_cmake_flags[@]}"
           cmake --build build-wasm -j8
           ctest --test-dir build-wasm --output-on-failure
