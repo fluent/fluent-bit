@@ -71,6 +71,7 @@ struct flb_systemd_config {
     struct flb_sqldb *db;
     flb_sds_t db_sync_mode;
     int db_sync;
+    int cursor_pending;  /* cursor not yet saved at its current position */
     sqlite3_stmt *stmt_cursor;
 #endif
     struct flb_input_instance *ins;
