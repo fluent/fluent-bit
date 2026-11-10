@@ -110,10 +110,10 @@ inline static struct throttle_size_window *find_throttle_size_window(struct
                                                                      unsigned
                                                                      name_length)
 {
-    char *window = NULL;
+    void *window = NULL;
     size_t out_size;
     if (flb_hash_table_get(table->windows, name, name_length,
-                           (const char **)&window, &out_size) >= 0) {
+                           &window, &out_size) >= 0) {
         if (out_size < sizeof(struct throttle_size_window)) {
             flb_error("Malformed data in size window hashtable");
             return NULL;
