@@ -1,0 +1,4 @@
+interface:
+  display_name: "Fluent Bit Benchmark"
+  short_description: "Run and interpret reproducible Fluent Bit benchmarks"
+  default_prompt: "Use $fluent-bit-benchmark to compare two Fluent Bit binaries on my workload."

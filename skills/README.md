@@ -6,6 +6,11 @@ in this repository. Each skill should live in its own subdirectory with a
 
 ## Available Skills
 
+- Fluent Bit Benchmark: [`fluent-bit-benchmark/SKILL.md`](fluent-bit-benchmark/SKILL.md)
+  - Reproducible upgrade/configuration comparisons, capacity investigation,
+    benchmark selection, retained evidence, and performance interpretation.
+  - Uses the agent-independent CLI in [`benchmarks/README.md`](../benchmarks/README.md).
+
 - Fluent Bit: [`fluent-bit/SKILL.md`](fluent-bit/SKILL.md)
   - Repository workflow, testing, patch review, pipeline architecture, and
     recurring subsystem guidance for Fluent Bit work.
