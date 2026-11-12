@@ -35,6 +35,7 @@ set(UNIT_TESTS_FILES
   input_chunk.c
   input_chunk_routes.c
   input_pause.c
+  input_ingest.c
   flb_time.c
   file.c
   csv.c
