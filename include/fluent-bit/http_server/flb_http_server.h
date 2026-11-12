@@ -91,6 +91,12 @@ struct flb_http_server_options {
     int                                  workers;
 
     /*
+     * If true the server has no listener: requests are supplied by the host
+     * program through flb_http_server_ingest().
+     */
+    int                                  host_driven;
+
+    /*
      * If true and workers == 1, run the server on the caller supplied
      * event loop. Otherwise the server owns the worker thread(s) and the
      * corresponding event loop(s).
@@ -141,6 +147,7 @@ struct flb_http_server {
     uint64_t                            active_connections;
     uint64_t                           *connection_counter;
     int                                 workers;
+    int                                 host_driven;
     int                                 worker_id;
     int                                 managed_worker;
     int                                 use_caller_event_loop;
@@ -197,6 +204,17 @@ int flb_http_server_init(struct flb_http_server *session,
                          void *user_data);
 
 void flb_http_server_options_init(struct flb_http_server_options *options);
+
+/* Authorization, body inflation and request handler for one request */
+int flb_http_server_request_process(struct flb_http_server *server,
+                                    struct flb_connection *connection,
+                                    struct flb_http_request *request,
+                                    struct flb_http_response *response);
+
+/* Process a request submitted by the host program (cb_ingest adapter) */
+struct flb_input_ingest_event;
+int flb_http_server_ingest(struct flb_http_server *server,
+                           const struct flb_input_ingest_event *event);
 
 
 int flb_http_server_options_init_from_input(struct flb_http_server_options *options,

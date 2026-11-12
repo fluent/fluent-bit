@@ -79,7 +79,10 @@ static int flb_http_request_get_version(struct flb_http_request *request)
 {
     int version;
 
-    if (request->stream->role == HTTP_STREAM_ROLE_SERVER) {
+    if (request->stream->role == HTTP_STREAM_ROLE_HOST) {
+        version = HTTP_PROTOCOL_VERSION_11;
+    }
+    else if (request->stream->role == HTTP_STREAM_ROLE_SERVER) {
         version = ((struct flb_http_server_session *) request->stream->parent)->version;
     }
     else {
@@ -999,7 +1002,10 @@ static int flb_http_response_get_version(struct flb_http_response *response)
 {
     int version;
 
-    if (response->stream->role == HTTP_STREAM_ROLE_SERVER) {
+    if (response->stream->role == HTTP_STREAM_ROLE_HOST) {
+        version = HTTP_PROTOCOL_VERSION_11;
+    }
+    else if (response->stream->role == HTTP_STREAM_ROLE_SERVER) {
         version = ((struct flb_http_server_session *) response->stream->parent)->version;
     }
     else {
@@ -1106,17 +1112,13 @@ struct flb_http_response *flb_http_response_begin(
 #endif
 }
 
-int flb_http_response_commit(struct flb_http_response *response)
+/* Headers every committed response carries; 'version' selects the framing */
+static void flb_http_response_set_default_headers(struct flb_http_response *response,
+                                                  int version)
 {
-#ifdef __EMSCRIPTEN__
-    return -1;
-#else
     int len;
     char tmp[64];
-    int version;
     char *server_header;
-
-    version = flb_http_response_get_version(response);
 
     server_header = flb_http_response_get_header(response, "server");
     if (server_header == NULL) {
@@ -1152,6 +1154,42 @@ int flb_http_response_commit(struct flb_http_response *response)
                                          tmp, len);
         }
     }
+}
+
+int flb_http_response_commit(struct flb_http_response *response)
+{
+#ifndef __EMSCRIPTEN__
+    int version;
+#endif
+
+    /*
+     * A request supplied by the host program has no connection to write to:
+     * the response stays in memory and the stream is marked as answered so
+     * the ingestion adapter can hand it back.
+     */
+    if (response->stream != NULL &&
+        response->stream->role == HTTP_STREAM_ROLE_HOST) {
+        if (response->stream->status == HTTP_STREAM_STATUS_CLOSED) {
+            return 0;
+        }
+
+        flb_http_response_set_default_headers(response, HTTP_PROTOCOL_VERSION_11);
+        response->stream->status = HTTP_STREAM_STATUS_CLOSED;
+
+        if (response->stream->cb_host_response != NULL) {
+            response->stream->cb_host_response(response,
+                                               response->stream->host_data);
+        }
+
+        return 0;
+    }
+
+#ifdef __EMSCRIPTEN__
+    return -1;
+#else
+    version = flb_http_response_get_version(response);
+
+    flb_http_response_set_default_headers(response, version);
 
     if (version == HTTP_PROTOCOL_VERSION_20) {
         return flb_http2_response_commit(response);
@@ -1560,6 +1598,8 @@ int flb_http_stream_init(struct flb_http_stream *stream,
     stream->role = role;
     stream->parent = parent;
     stream->user_data = user_data;
+    stream->cb_host_response = NULL;
+    stream->host_data = NULL;
 
     stream->request.stream  = stream;
     stream->response.stream = stream;
