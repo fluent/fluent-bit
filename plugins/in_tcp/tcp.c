@@ -336,6 +336,27 @@ static int in_tcp_init(struct flb_input_instance *in,
         ctx->workers = 1;
     }
 
+    if (flb_input_is_external(in)) {
+        /* The host program supplies the stream: no listener, no workers */
+        if (ctx->workers > 1 || ctx->source_address_key != NULL) {
+            flb_plg_error(ctx->ins,
+                          "'workers' and 'source_address_key' cannot be used "
+                          "with source.mode 'external'");
+            tcp_config_destroy(ctx);
+            return -1;
+        }
+
+        ctx->external = tcp_conn_external_create(ctx);
+        if (ctx->external == NULL) {
+            tcp_config_destroy(ctx);
+            return -1;
+        }
+
+        flb_plg_info(ctx->ins, "external source mode, no listener started");
+
+        return 0;
+    }
+
     if (ctx->workers > 1) {
         ret = flb_input_ingress_enable(in);
         if (ret != 0) {
@@ -379,7 +400,40 @@ static int in_tcp_exit(void *data, struct flb_config *config)
     in_tcp_workers_stop(ctx);
     in_tcp_connections_destroy(ctx);
 
+    /* Retained partial data is discarded, as it is when a peer disconnects */
+    tcp_conn_external_destroy(ctx->external);
+    ctx->external = NULL;
+
     tcp_config_destroy(ctx);
+
+    return 0;
+}
+
+/* Bytes submitted by the host program for an instance in external mode */
+static int in_tcp_ingest(struct flb_input_instance *ins, void *in_context,
+                         const struct flb_input_ingest_event *event)
+{
+    int ret;
+    struct flb_in_tcp_config *ctx;
+
+    ctx = in_context;
+
+    if (event->kind != FLB_INPUT_INGEST_STREAM_BYTES || ctx->external == NULL) {
+        return -1;
+    }
+
+    ret = tcp_conn_external_feed(ctx->external, event->data, event->size);
+    if (ret == -1) {
+        /*
+         * Same conditions that drop a connection. There is no peer to
+         * reconnect, so the stream stays failed until the input restarts.
+         */
+        flb_plg_error(ctx->ins, "external stream failed, discarding its data");
+        tcp_conn_external_destroy(ctx->external);
+        ctx->external = NULL;
+        flb_input_ingest_fail(ins);
+        return -1;
+    }
 
     return 0;
 }
@@ -390,6 +444,11 @@ static void in_tcp_pause(void *data, struct flb_config *config)
     struct flb_in_tcp_config *ctx = data;
 
     (void) config;
+
+    /* An external stream keeps its state: the core holds queued payloads */
+    if (flb_input_is_external(ctx->ins)) {
+        return;
+    }
 
     if (ctx->runtime != NULL) {
         ret = flb_downstream_worker_runtime_foreach(ctx->runtime,
@@ -412,6 +471,10 @@ static void in_tcp_resume(void *data, struct flb_config *config)
     struct flb_in_tcp_config *ctx = data;
 
     (void) config;
+
+    if (flb_input_is_external(ctx->ins)) {
+        return;
+    }
 
     if (ctx->runtime != NULL) {
         ret = flb_downstream_worker_runtime_foreach(ctx->runtime,
@@ -477,6 +540,8 @@ struct flb_input_plugin in_tcp_plugin = {
     .cb_pause     = in_tcp_pause,
     .cb_resume    = in_tcp_resume,
     .cb_exit      = in_tcp_exit,
+    .cb_ingest    = in_tcp_ingest,
+    .ingest_kinds = FLB_INPUT_INGEST_STREAM_BYTES,
     .config_map   = config_map,
     .flags        = FLB_INPUT_NET_SERVER | FLB_IO_OPT_TLS
 };
