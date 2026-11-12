@@ -312,3 +312,184 @@ test('drain stays in FIFO order between push and stop on a warm instance', async
     assert.deepEqual(methods, ['start', 'push', 'drain', 'stop']);
     await sdk.destroy();
 });
+
+// The engine answers a request command on admission; the reply is a separate
+// message correlated by the id of that command.
+function requestWorker(onRequest) {
+    reply = (worker, message) => {
+        if (message.type !== 'request') { return; }
+        if (message.method === 'request' || message.method === 'pushBytes') {
+            onRequest(worker, message);
+            return;
+        }
+        worker.emit({type: 'response', id: message.id, ok: true, value: null});
+    };
+}
+const admitted = (worker, message, value = null) =>
+    worker.emit({type: 'response', id: message.id, ok: true, value});
+const replied = (worker, id, fields = {}) => worker.emit({type: 'reply', id, outcome: 0, status: 201,
+    truncated: false, headers: [['content-length', '0']], body: new Uint8Array(), ...fields});
+
+test('pushBytes validates its arguments and resolves on admission', async () => {
+    const sdk = await createFluentBit(defaults);
+    const seen = [];
+    requestWorker((worker, message) => {
+        seen.push(message);
+        admitted(worker, message, {acceptedBytes: message.payload.data.byteLength});
+    });
+    await assert.rejects(sdk.pushBytes({input: 'tcp', data: 'x'}), {code: 'E_STATE'});
+    await sdk.start({yaml: 'pipeline: {}'});
+    await assert.rejects(sdk.pushBytes({input: 'bad alias', data: 'x'}), {code: 'E_ARGUMENT'});
+    await assert.rejects(sdk.pushBytes({input: 'tcp', data: ''}), {code: 'E_ARGUMENT'});
+    await assert.rejects(sdk.pushBytes({input: 'tcp', data: 3}), {code: 'E_ARGUMENT'});
+    await assert.rejects(sdk.pushBytes({input: 'tcp', data: new Uint8Array(1024 * 1024 + 1)}),
+                         {code: 'E_LIMIT'});
+    const data = new Uint8Array([123, 125]);
+    const accepted = sdk.pushBytes({input: 'tcp', data});
+    data[0] = 0;
+    assert.deepEqual(await accepted, {acceptedBytes: 2});
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0].payload.input, 'tcp');
+    assert.deepEqual([...seen[0].payload.data], [123, 125]);
+    await sdk.destroy();
+});
+
+test('request serializes one bounded buffer and resolves with the correlated reply', async () => {
+    const sdk = await createFluentBit(defaults);
+    const seen = [];
+    requestWorker((worker, message) => {
+        seen.push(message);
+        admitted(worker, message);
+        // Unknown ids are ignored, then the real reply, then a repeat of it.
+        replied(worker, 9999);
+        replied(worker, message.id, {status: 200, headers: [['content-type', 'application/json']],
+                                     body: new Uint8Array([123, 125]), truncated: true});
+        replied(worker, message.id, {status: 500});
+    });
+    await sdk.start({yaml: 'pipeline: {}'});
+    for (const options of [{input: 'otlp'}, {input: 'otlp', path: 'v1/logs'},
+                           {input: 'otlp', path: '/v1 logs'}, {input: 'otlp', path: '/', method: 'P OST'},
+                           {input: 'otlp', path: '/', headers: {'bad name': 'x'}},
+                           {input: 'otlp', path: '/', headers: {name: 'line\nbreak'}},
+                           {input: 'otlp', path: '/', headers: [['a']]},
+                           {input: 'otlp', path: '/', body: 7}]) {
+        await assert.rejects(sdk.request(options), {code: 'E_ARGUMENT'});
+    }
+    await assert.rejects(sdk.request({input: 'otlp', path: '/', body: new Uint8Array(1024 * 1024)}),
+                         {code: 'E_LIMIT'});
+    await assert.rejects(sdk.request({input: 'otlp', path: '/', body: 'x',
+        headers: {large: 'v'.repeat(1024 * 1024)}}), {code: 'E_LIMIT'});
+    assert.equal(seen.length, 0);
+
+    const result = await sdk.request({input: 'otlp', path: '/v1/logs?a=b',
+        headers: {'Content-Type': 'application/json'}, body: '{}'});
+    assert.equal(Object.isFrozen(result), true);
+    assert.equal(result.status, 200);
+    assert.equal(result.truncated, true);
+    assert.deepEqual(result.headers, [['content-type', 'application/json']]);
+    assert.deepEqual([...result.body], [123, 125]);
+
+    // method, path, header count and body lengths, then the strings.
+    const data = seen[0].payload.data;
+    const view = new DataView(data.buffer);
+    assert.deepEqual([0, 4, 8, 12].map(offset => view.getUint32(offset, true)), [4, 12, 2, 2]);
+    const text = new TextDecoder().decode(data);
+    assert.ok(text.includes('POST/v1/logs?a=b'));
+    assert.ok(text.includes('Content-Typeapplication/json'));
+    // A client always sends Host; handlers look for it.
+    assert.ok(text.includes('Hostlocalhost'));
+    assert.ok(text.endsWith('{}'));
+
+    await sdk.request({input: 'otlp', path: '/', method: 'GET', headers: [['host', 'example']]});
+    assert.equal(new DataView(seen[1].payload.data.buffer).getUint32(8, true), 1);
+    await sdk.destroy();
+});
+
+test('a reply that arrives before the admission response still settles the request', async () => {
+    const sdk = await createFluentBit(defaults);
+    requestWorker((worker, message) => {
+        replied(worker, message.id, {status: 204});
+        admitted(worker, message);
+    });
+    await sdk.start({yaml: 'pipeline: {}'});
+    assert.equal((await sdk.request({input: 'http', path: '/'})).status, 204);
+    await sdk.destroy();
+});
+
+test('request outcomes without a reply reject with distinct errors', async () => {
+    const sdk = await createFluentBit(defaults);
+    let outcome = 1;
+    requestWorker((worker, message) => {
+        admitted(worker, message);
+        worker.emit({type: 'reply', id: message.id, outcome, status: 0, truncated: false,
+                     headers: [], body: new Uint8Array()});
+    });
+    await sdk.start({yaml: 'pipeline: {}'});
+    await assert.rejects(sdk.request({input: 'http', path: '/'}), {code: 'E_REQUEST_FAILED'});
+    outcome = 2;
+    await assert.rejects(sdk.request({input: 'http', path: '/'}), {code: 'E_STOPPED'});
+    assert.equal(sdk.state, 'running');
+    await sdk.destroy();
+});
+
+test('a rejected admission leaves no waiter behind', async () => {
+    const sdk = await createFluentBit(defaults);
+    const ids = [];
+    requestWorker((worker, message) => {
+        ids.push(message.id);
+        worker.emit({type: 'response', id: message.id, ok: false,
+                     code: 'E_BACKPRESSURE', message: 'Input queue is full'});
+    });
+    await sdk.start({yaml: 'pipeline: {}'});
+    await assert.rejects(sdk.request({input: 'http', path: '/'}), {code: 'E_BACKPRESSURE'});
+    // A late reply for that id finds nothing to settle and is ignored.
+    replied(instances[0], ids[0]);
+    assert.equal(sdk.state, 'running');
+    await sdk.destroy();
+});
+
+test('stop is not queued behind a request waiting for its reply', async () => {
+    const sdk = await createFluentBit(defaults);
+    const methods = [];
+    reply = (worker, message) => {
+        if (message.type !== 'request') { return; }
+        methods.push(message.method);
+        // The input is paused: requests are admitted and never answered.
+        worker.emit({type: 'response', id: message.id, ok: true, value: null});
+    };
+    await sdk.start({yaml: 'pipeline: {}'});
+    const first = sdk.request({input: 'http', path: '/one'});
+    const second = sdk.request({input: 'http', path: '/two'});
+    const outcomes = Promise.allSettled([first, second]);
+    await sdk.stop();
+    assert.deepEqual(methods, ['start', 'request', 'request', 'stop']);
+    assert.equal(sdk.state, 'stopped');
+    for (const outcome of await outcomes) {
+        assert.equal(outcome.status, 'rejected');
+        assert.equal(outcome.reason.code, 'E_STOPPED');
+    }
+    await sdk.destroy();
+});
+
+test('destroy settles requests that still wait for a reply', async () => {
+    const sdk = await createFluentBit(defaults);
+    requestWorker((worker, message) => admitted(worker, message));
+    await sdk.start({yaml: 'pipeline: {}'});
+    const waiting = sdk.request({input: 'http', path: '/'});
+    const settled = Promise.allSettled([waiting]);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await sdk.destroy();
+    assert.equal((await settled)[0].reason.code, 'E_STOPPED');
+});
+
+test('a malformed reply is a protocol failure', async () => {
+    const sdk = await createFluentBit(defaults);
+    requestWorker((worker, message) => {
+        admitted(worker, message);
+        worker.emit({type: 'reply', id: message.id, outcome: 7, status: 200, truncated: false,
+                     headers: [], body: new Uint8Array()});
+    });
+    await sdk.start({yaml: 'pipeline: {}'});
+    await assert.rejects(sdk.request({input: 'http', path: '/'}), {code: 'E_PROTOCOL'});
+    assert.equal(sdk.state, 'failed');
+});

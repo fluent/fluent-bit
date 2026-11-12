@@ -222,6 +222,12 @@ def main():
                             assert plugin_result['passed'], plugin_result
                             assert_no_sanitizer_errors('\n'.join(plugin_result['logs']))
                             print('Browser virtual-file plugins passed', flush=True)
+                            phase = 'host-driven ingestion'
+                            ingest_result = page.evaluate(
+                                Path(__file__).with_name('ingest_test.js').read_text())
+                            assert ingest_result['passed'], ingest_result
+                            assert_no_sanitizer_errors('\n'.join(ingest_result['logs']))
+                            print('Browser host-driven inputs passed', flush=True)
                         phase = 'lifecycle'
                         result = page.evaluate(Path(__file__).with_suffix('.js').read_text())
                         assert result['passed'] and not errors, errors

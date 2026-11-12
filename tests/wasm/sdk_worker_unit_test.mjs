@@ -6,7 +6,7 @@ import vm from 'node:vm';
 
 function worker(BrowserWorker = class {}) {
     const source = readFileSync(new URL('../../sdk/browser/fluent-bit-worker.js', import.meta.url), 'utf8');
-    const context = vm.createContext({TextEncoder, setTimeout, clearTimeout,
+    const context = vm.createContext({TextEncoder, TextDecoder, setTimeout, clearTimeout,
         self: {Worker: BrowserWorker, addEventListener() {}}});
     // Startup is deliberately omitted: exercise the real command state machine
     // with a controllable storage backend, including rejected IndexedDB commits.
@@ -186,4 +186,51 @@ test('drain validates state, reports unsupported pipelines and waits for log del
     sdk.run('releaseLogs()');
     await draining;
     assert.equal(complete, true);
+});
+
+test('host-driven ingestion maps each engine result to its own error', async () => {
+    const sdk = worker();
+    const push = () => sdk.run(
+        `execute({id: 1, method: 'pushBytes', payload: {input: 'tcp', data: new Uint8Array(3)}})`);
+    assert.deepEqual({...await push()}, {acceptedBytes: 3});
+    for (const [result, code] of [[-2, 'E_INPUT'], [-10, 'E_BACKPRESSURE'], [-11, 'E_LIMIT'],
+                                  [-12, 'E_UNSUPPORTED'], [-13, 'E_STATE'],
+                                  [-14, 'E_STREAM_FAILED'], [-1, 'E_INGEST']]) {
+        sdk.run(`command = async () => ({result: ${result}})`);
+        await assert.rejects(push(), {code});
+        await assert.rejects(sdk.run(
+            `execute({id: 1, method: 'request', payload: {input: 'otlp', data: new Uint8Array(16)}})`), {code});
+    }
+    // Only accepted bytes are counted.
+    assert.equal((await sdk.request('getStats')).acceptedBytes, 3);
+    sdk.run('state = "stopped"');
+    await assert.rejects(push(), {code: 'E_STATE'});
+});
+
+test('completed replies are copied out, released and posted with their command id', () => {
+    const sdk = worker();
+    const posted = JSON.parse(sdk.run(`
+        const posted = [];
+        self.postMessage = message => posted.push({...message,
+            body: message.body ? [...message.body] : null});
+        // One replied completion with two headers and a body, then a failed one.
+        const data = [2, 0, 0, 0,
+                      1, 0, 0, 0, 2, 0, 0, 0, 97, 98, 99,
+                      2, 0, 0, 0, 1, 0, 0, 0, 120, 121, 122,
+                      79, 75];
+        runtime.HEAPU8.set(data, 1024);
+        const slots = [{fields: [41, 0, 201, 1, 1024, data.length]},
+                       {fields: [42, 1, 0, 0, 0, 0]}];
+        const released = [];
+        runtime._flb_wasm_sdk_reply_next = () => slots.findIndex(slot => slot !== null);
+        runtime._flb_wasm_sdk_reply_field = (index, field) => slots[index].fields[field];
+        runtime._flb_wasm_sdk_reply_release = index => { released.push(index); slots[index] = null; };
+        takeReplies();
+        JSON.stringify({posted, released});
+    `));
+    assert.deepEqual(posted.released, [0, 1]);
+    assert.deepEqual(posted.posted, [
+        {abi: 1, type: 'reply', id: 41, outcome: 0, status: 201, truncated: true,
+         headers: [['a', 'bc'], ['xy', 'z']], body: [79, 75]},
+        {abi: 1, type: 'reply', id: 42, outcome: 1, status: 0, truncated: false, headers: [], body: []}]);
 });

@@ -49,7 +49,7 @@ check_profile(reject_lua_without_backend "FLB_FILTER_LUA is not supported by the
   -DFLB_WASM_LUA=OFF -DFLB_FILTER_LUA=ON)
 check_profile(native_defaults "" -DPROFILE_TEST_MODE=native)
 check_profile(wrong_toolchain "FLB_WASM_BROWSER requires Emscripten" -DPROFILE_TEST_MODE=wrong_toolchain)
-foreach(incompatible IN ITEMS FLB_IN_HTTP FLB_OUT_TCP FLB_FILTER_WASM
+foreach(incompatible IN ITEMS FLB_IN_FORWARD FLB_OUT_TCP FLB_FILTER_WASM
     FLB_WASM FLB_TLS FLB_ALL FLB_DEV FLB_SHARED_LIB FLB_PREFER_SYSTEM_LIBS FLB_LUAJIT
     FLB_OUT_GCS FLB_FILTER_NIGHTFALL)
   check_profile(reject_${incompatible}
