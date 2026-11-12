@@ -3140,6 +3140,134 @@ void flb_test_db_compare_filename()
 #endif /* FLB_HAVE_SQLDB */
 
 /* Test list */
+#ifndef FLB_SYSTEM_WINDOWS
+static pthread_mutex_t replacement_mutex = PTHREAD_MUTEX_INITIALIZER;
+static flb_sds_t replacement_output = NULL;
+
+static int cb_replacement_collect(void *record, size_t size, void *data)
+{
+    (void) data;
+
+    pthread_mutex_lock(&replacement_mutex);
+    if (replacement_output == NULL) {
+        replacement_output = flb_sds_create_size(1024);
+    }
+    if (replacement_output != NULL) {
+        flb_sds_cat_safe(&replacement_output, (char *) record, size);
+    }
+    pthread_mutex_unlock(&replacement_mutex);
+
+    flb_free(record);
+    return 0;
+}
+
+static int replacement_output_has(const char *needle)
+{
+    int ret = FLB_FALSE;
+
+    pthread_mutex_lock(&replacement_mutex);
+    if (replacement_output != NULL && strstr(replacement_output, needle)) {
+        ret = FLB_TRUE;
+    }
+    pthread_mutex_unlock(&replacement_mutex);
+
+    return ret;
+}
+
+static void replacement_output_reset()
+{
+    pthread_mutex_lock(&replacement_mutex);
+    if (replacement_output != NULL) {
+        flb_sds_destroy(replacement_output);
+        replacement_output = NULL;
+    }
+    pthread_mutex_unlock(&replacement_mutex);
+}
+
+/*
+ * The file that replaces a rotated file is created after the rename was
+ * handled (kubelet renames the log, then the runtime reopens it). With a
+ * long refresh_interval the path scan does not find it in time; the watcher
+ * must register it instead.
+ */
+void flb_test_rotated_replacement_discovery()
+{
+    int i;
+    int ret;
+    int fd_new;
+    ssize_t w;
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+    char *file[] = {"rotated_replacement.log"};
+    char *rotated = "rotated_replacement.log.1";
+    char *line_old = "OLD_LINE\n";
+    char *line_new = "NEW_LINE\n";
+
+    replacement_output_reset();
+    unlink(rotated);
+
+    cb_data.cb = cb_replacement_collect;
+    cb_data.data = NULL;
+
+    ctx = test_tail_ctx_create(&cb_data, &file[0], 1, FLB_TRUE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "path", file[0],
+                        "read_from_head", "true",
+                        "refresh_interval", "600",
+                        "watcher_interval", "1",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+    flb_time_msleep(1000);
+
+    w = write(ctx->fds[0], line_old, strlen(line_old));
+    TEST_CHECK(w == (ssize_t) strlen(line_old));
+    fsync(ctx->fds[0]);
+
+    /* rename, let the rotation be handled, then create the replacement */
+    ret = rename(file[0], rotated);
+    TEST_CHECK(ret == 0);
+    flb_time_msleep(500);
+
+    fd_new = open(file[0], O_RDWR | O_CREAT | O_APPEND,
+                  S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
+    TEST_CHECK(fd_new >= 0);
+    w = write(fd_new, line_new, strlen(line_new));
+    TEST_CHECK(w == (ssize_t) strlen(line_new));
+    fsync(fd_new);
+
+    /* well below refresh_interval, above watcher_interval */
+    for (i = 0; i < 50; i++) {
+        if (replacement_output_has("\"log\":\"NEW_LINE\"") == FLB_TRUE) {
+            break;
+        }
+        flb_time_msleep(100);
+    }
+
+    TEST_CHECK(replacement_output_has("\"log\":\"OLD_LINE\"") == FLB_TRUE);
+    if (!TEST_CHECK(replacement_output_has("\"log\":\"NEW_LINE\"") == FLB_TRUE)) {
+        TEST_MSG("replacement file was not registered by the watcher");
+    }
+
+    close(fd_new);
+    unlink(rotated);
+    test_tail_ctx_destroy(ctx);
+    replacement_output_reset();
+}
+#endif /* !FLB_SYSTEM_WINDOWS */
+
 TEST_LIST = {
     {"issue_3943", flb_test_in_tail_issue_3943},
     /* Properties */
@@ -3162,6 +3290,9 @@ TEST_LIST = {
     {"ignore_active_older_files", flb_test_in_tail_ignore_active_older_files},
     {"ignore_active_older_files_reread_on_update", flb_test_in_tail_ignore_active_older_files_reread_on_update},
     {"ignore_active_older_files_reread_on_update_default_read_from_head", flb_test_in_tail_ignore_active_older_files_reread_on_update_default_read_from_head},
+#ifndef FLB_SYSTEM_WINDOWS
+    {"rotated_replacement_discovery", flb_test_rotated_replacement_discovery},
+#endif
 #ifdef FLB_HAVE_INOTIFY
     {"inotify_watcher_false", flb_test_inotify_watcher_false},
     {"inotify_pause_collectors", flb_test_inotify_pause_collectors},

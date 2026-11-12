@@ -2547,6 +2547,53 @@ int flb_tail_file_rotated(struct flb_tail_file *file)
     return 0;
 }
 
+/*
+ * Register the files that replaced rotated files but did not exist yet when
+ * the rotation was handled.
+ *
+ * flb_tail_file_rotated() looks for the replacement right after the rename
+ * is detected. A container runtime creates the new file only after the
+ * rename (kubelet renames the log, then asks the runtime to reopen it), so
+ * that lookup can come too early. The new file is then found by the next
+ * path scan, which runs every 'refresh_interval' (60 seconds by default),
+ * and if it is rotated again before that scan it is never read at all.
+ *
+ * Returns the number of files registered.
+ */
+int flb_tail_file_discover_rotated_replacements(struct flb_tail_config *ctx)
+{
+    int ret;
+    int count = 0;
+    struct stat st;
+    struct mk_list *head;
+    struct flb_tail_file *file;
+
+    mk_list_foreach(head, &ctx->files_rotated) {
+        file = mk_list_entry(head, struct flb_tail_file, _rotate_head);
+
+        /* Check if a new file has been created with the original name */
+        ret = tail_file_stat(ctx, file->orig_name, &st);
+        if (ret == 0 && st.st_ino != file->inode) {
+            if (flb_tail_file_exists(&st, ctx) == FLB_FALSE) {
+                flb_plg_debug(ctx->ins, "inode=%"PRIu64" replaced rotated "
+                              "inode=%"PRIu64" as %s", (uint64_t) st.st_ino,
+                              file->inode, file->orig_name);
+                ret = flb_tail_file_append(file->orig_name, &st,
+                                           FLB_TAIL_STATIC, -1, ctx);
+                if (ret == 0) {
+                    count++;
+                }
+            }
+        }
+    }
+
+    if (count > 0) {
+        tail_signal_manager(ctx);
+    }
+
+    return count;
+}
+
 static int check_purge_deleted_file(struct flb_tail_config *ctx,
                                     struct flb_tail_file *file, time_t ts)
 {
