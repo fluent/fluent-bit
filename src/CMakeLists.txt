@@ -112,6 +112,9 @@ if(NOT FLB_WASM_BROWSER)
     flb_http_client_http2.c flb_http_client.c)
 else()
   list(APPEND src flb_http_common.c flb_http_client.c wasm/http.c wasm/http_client.c)
+  # No listener in a browser: HTTP inputs process requests supplied by the host.
+  list(APPEND src http_server/flb_http_server_options.c
+    http_server/flb_http_server_ingest.c wasm/http_server.c wasm/oauth2_jwt.c)
 endif()
 
 set(src
