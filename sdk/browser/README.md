@@ -72,6 +72,41 @@ same YAML as the demo. A `lib` input is needed only for JavaScript `push()`.
 Write Lua/config assets with `writeFile('/config/script.lua', source)` before
 starting. Filesystem asset operations are rejected while the engine runs.
 
+### Feed network inputs from the page
+
+A browser cannot listen on a socket. Configure a network input with
+`source.mode: external` and submit what a client would send. The input runs
+its own parser or protocol decoder, so the format is the one the plugin
+already understands.
+
+```js
+await fluent.start({yaml: `pipeline:
+  inputs:
+    - name: opentelemetry
+      alias: otlp
+      source.mode: external
+    - name: tcp
+      alias: stream
+      source.mode: external
+      format: json
+  outputs:
+    - name: stdout
+      match: '*'
+`});
+
+// HTTP inputs: http, opentelemetry, splunk, elasticsearch, prometheus_remote_write.
+const reply = await fluent.request({input: 'otlp', path: '/v1/logs',
+    headers: {'Content-Type': 'application/x-protobuf'}, body: otlpBytes});
+// reply.status, reply.headers, reply.body (Uint8Array), reply.truncated
+
+// Stream inputs: tcp. A call is a chunk of the stream, not a record.
+await fluent.pushBytes({input: 'stream', data: '{"message":"hel'});
+await fluent.pushBytes({input: 'stream', data: 'lo"}'});
+```
+
+`input` is the alias of the input. The kind of payload is chosen by the method,
+never guessed from the bytes.
+
 For interactive runs, create one instance and retain it across runs:
 
 ```js
@@ -103,6 +138,23 @@ One or two threads cannot host the current SDK's three concurrent C threads.
   pipe, not records processed or delivered. Timestamps are assigned at submission.
   JSON number precision and JSON serialization semantics apply; BigInt/cycles are
   rejected. This is a logs API, not an arbitrary MessagePack/OTLP ingestion API.
+- `pushBytes()` copies its bytes and resolves when they are queued for the input,
+  not when they are parsed. `E_BACKPRESSURE` means nothing was taken: submit the
+  same bytes again later. Submitting different bytes instead leaves a gap in the
+  stream. Partial data is kept between calls and discarded at `stop()`. A stream
+  that hits a fatal condition (a single record larger than `buffer_size`) fails:
+  queued bytes are discarded, later calls reject with `E_STREAM_FAILED`, and the
+  input works again after the next `start()`.
+- `request()` resolves with the reply of the input: status, headers and body.
+  The method defaults to `POST` and a `Host` header is added when absent. It
+  rejects with `E_REQUEST_FAILED` when the input processed the request without
+  producing a reply (records may have been appended, so do not submit it again),
+  with `E_STOPPED` when the engine stopped first, and with `E_BACKPRESSURE` when
+  the input queue is full or 64 replies are still pending. A reply says how the
+  input answered; it is not a delivery guarantee. While an input is paused by
+  backpressure its requests wait, and `stop()` is not held behind them.
+- `drain()` is unavailable while an external-mode input is configured, as it is
+  for every input other than `lib`.
 - A partial input write makes the instance unusable: it cannot be replayed safely.
   Queue-full errors mean the command was not sent and may be retried after draining.
 - `drain()` immediately collects pending `lib` pipe data, flushes chunks through
@@ -146,7 +198,10 @@ loads when a script fails, at the cost of serializing their startup latency.
 ## Limits and storage
 
 The API bounds YAML to 64 KiB; batches to 1000 records/1 MiB; pending operations
-to 16/8 MiB. Files are limited to 1 MiB each, 32 files/8 MiB total beneath
+to 16/8 MiB. A `pushBytes()` call and a complete `request()` (method, path,
+headers and body together) are limited to 1 MiB and 64 headers; a reply to
+64 KiB, with a longer body cut and `truncated` set. An external-mode input
+queues at most 16 MiB of submitted payloads. Files are limited to 1 MiB each, 32 files/8 MiB total beneath
 `/config/`. Log delivery has bounded batches and an acknowledgment window;
 individual lines are truncated at 4096 characters and overload is reported as
 `E_LOG_DROPPED`. Configure Fluent Bit chunk/retry/memory limits too: SDK admission

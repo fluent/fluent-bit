@@ -49,6 +49,18 @@ export interface FluentBit {
     /** Input alias must select one lib input. Records receive an ingestion timestamp. */
     push(options: {input: string; records: Record<string, unknown>[]}):
         Promise<{acceptedBytes: number; acceptedRecords: number}>;
+    /** Feeds bytes to an input configured with `source.mode: external` that reads a
+     * byte stream, such as tcp. A call is not a record boundary. Resolves when the
+     * bytes are queued, not when they are parsed. E_BACKPRESSURE means nothing was
+     * taken: submit the same bytes again, different bytes would leave a gap. */
+    pushBytes(options: {input: string; data: string | Uint8Array}):
+        Promise<{acceptedBytes: number}>;
+    /** Submits one request to an HTTP input configured with `source.mode: external`
+     * and resolves with the reply of the input. Method defaults to POST and a Host
+     * header is added when absent. Rejects with E_REQUEST_FAILED when the input
+     * processed the request without a reply (do not submit it again) and with
+     * E_STOPPED when the engine stopped first. A reply is not a delivery guarantee. */
+    request(options: FluentBitRequest): Promise<FluentBitReply>;
     /** Assets beneath /config/ only; engine must be stopped. */
     writeFile(path: string, data: string | Uint8Array): Promise<void>;
     readFile(path: string): Promise<Uint8Array>;
@@ -56,6 +68,21 @@ export interface FluentBit {
     syncStorage(): Promise<void>;
     /** Idempotent. Force terminates immediately and can lose unflushed data. */
     destroy(options?: {force?: boolean}): Promise<void>;
+}
+export interface FluentBitRequest {
+    input: string;
+    method?: string;
+    /** Starts with "/" and may carry a query string. */
+    path: string;
+    headers?: Record<string, string> | [string, string][];
+    body?: string | Uint8Array;
+}
+export interface FluentBitReply {
+    readonly status: number;
+    readonly headers: readonly (readonly [string, string])[];
+    readonly body: Uint8Array;
+    /** True when the body did not fit the 64 KiB reply limit. */
+    readonly truncated: boolean;
 }
 export interface FluentBitStats {
     readonly state: FluentBitState;

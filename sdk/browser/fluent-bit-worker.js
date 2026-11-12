@@ -18,6 +18,7 @@ let dropped = 0;
 let logInFlight = false;
 let logTimer = null;
 const encoder = new TextEncoder();
+const decoder = new TextDecoder();
 const files = new Map();
 let fileBytes = 0;
 let logDrains = [];
@@ -250,6 +251,50 @@ async function fatal(message, code = 'E_RUNTIME') {
     post({type: 'fatal', code, message: String(message), closed: true});
 }
 
+// Results of the host-driven ingestion commands, see src/wasm/sdk.c.
+function ingestFailure(result) {
+    if (result === 0) { return; }
+    if (result === -2) { throw fail('E_INPUT', 'Select a unique alias of an input in external source mode'); }
+    if (result === -10) { throw fail('E_BACKPRESSURE', 'Input queue is full; submit the same data again later'); }
+    if (result === -11) { throw fail('E_LIMIT', 'Payload exceeds the input limits'); }
+    if (result === -12) { throw fail('E_UNSUPPORTED', 'Input does not accept this kind of payload'); }
+    if (result === -13) { throw fail('E_STATE', 'Input is not accepting data'); }
+    if (result === -14) { throw fail('E_STREAM_FAILED', 'Input stream failed; restart the engine'); }
+    throw fail('E_INGEST', 'Input did not accept the payload');
+}
+
+// Completed replies are taken on this thread. The engine thread only signals:
+// it never waits here and no pointer crosses the notification.
+function takeReplies() {
+    if (!runtime || state === 'failed' || state === 'destroyed') { return; }
+    for (;;) {
+        const index = runtime._flb_wasm_sdk_reply_next();
+        if (index < 0) { return; }
+        const field = number => runtime._flb_wasm_sdk_reply_field(index, number);
+        const reply = {type: 'reply', id: field(0), outcome: field(1), status: field(2),
+                       truncated: field(3) === 1, headers: [], body: new Uint8Array()};
+        const pointer = field(4) >>> 0;
+        const size = field(5);
+        if (reply.outcome === 0 && pointer && size >= 4) {
+            // Copy out of the shared WASM memory before the slot is released.
+            const data = runtime.HEAPU8.slice(pointer, pointer + size);
+            const view = new DataView(data.buffer);
+            let offset = 4;
+            for (let count = view.getUint32(0, true); count > 0; count--) {
+                const nameLength = view.getUint32(offset, true);
+                const valueLength = view.getUint32(offset + 4, true);
+                offset += 8;
+                reply.headers.push([decoder.decode(data.subarray(offset, offset + nameLength)),
+                    decoder.decode(data.subarray(offset + nameLength, offset + nameLength + valueLength))]);
+                offset += nameLength + valueLength;
+            }
+            reply.body = data.slice(offset);
+        }
+        runtime._flb_wasm_sdk_reply_release(index);
+        post(reply);
+    }
+}
+
 async function lockStorage(namespace) {
     if (!self.navigator.locks) {
         throw fail('E_UNSUPPORTED', 'Persistent storage requires the Web Locks API');
@@ -299,6 +344,10 @@ async function initialize(options) {
         printErr: text => log('stderr', text),
         onAbort: fatal,
         onSdkReady: (abi, engineVersion) => ready({abi, engineVersion}),
+        onSdkReply: () => {
+            try { takeReplies(); }
+            catch (error) { fatal(`Unable to read a request reply: ${error.message}`); }
+        },
         onSdkResult: (id, result, engineMs) => {
             if (!active || active.id !== id) { fatal('Unexpected engine response'); return; }
             const request = active;
@@ -405,6 +454,20 @@ async function execute(request) {
         acceptedBytes += response.result;
         acceptedRecords += payload.count;
         return {acceptedBytes: response.result, acceptedRecords: payload.count};
+    }
+    if (method === 'pushBytes') {
+        if (state !== 'running') { throw fail('E_STATE', 'Engine is not running'); }
+        response = await command(id, 6, payload.data, payload.input);
+        ingestFailure(response.result);
+        acceptedBytes += payload.data.byteLength;
+        return {acceptedBytes: payload.data.byteLength};
+    }
+    if (method === 'request') {
+        if (state !== 'running') { throw fail('E_STATE', 'Engine is not running'); }
+        // Resolves on admission; the reply follows as a separate message.
+        response = await command(id, 7, payload.data, payload.input);
+        ingestFailure(response.result);
+        return null;
     }
     if (state === 'running') { throw fail('E_STATE', 'Stop the engine before filesystem operations'); }
     if (method === 'writeFile') {

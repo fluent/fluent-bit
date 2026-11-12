@@ -13,7 +13,7 @@ set(sdk_link_flags
   "-sPROXY_TO_PTHREAD=1" "-sPTHREAD_POOL_SIZE=${FLB_WASM_PTHREAD_POOL_SIZE}" "-sSTACK_SIZE=262144"
   "-sALLOW_MEMORY_GROWTH=1" "-sMAXIMUM_MEMORY=1073741824"
   "-sINCOMING_MODULE_JS_API=['instantiateWasm','locateFile','mainScriptUrlOrBlob','onAbort','onExit','onRuntimeInitialized','preRun','print','printErr']"
-  "-sEXPORTED_FUNCTIONS=['_main','_malloc','_free','_flb_wasm_sdk_submit']"
+  "-sEXPORTED_FUNCTIONS=['_main','_malloc','_free','_flb_wasm_sdk_submit','_flb_wasm_sdk_reply_next','_flb_wasm_sdk_reply_field','_flb_wasm_sdk_reply_release']"
   "-sEXPORTED_RUNTIME_METHODS=['FS','HEAPU8']")
 string(REPLACE ";" " " sdk_link_flags "${sdk_link_flags}")
 set_target_properties(fluent-bit-runtime PROPERTIES
