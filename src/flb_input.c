@@ -215,6 +215,13 @@ struct flb_config_map input_global_properties[] = {
         "Enable threading on an input"
     },
     {
+        FLB_CONFIG_MAP_STR, "source.mode", "native",
+        0, FLB_FALSE, 0,
+        "Set how the input collects data: 'native' runs the plugin own collection, "
+        "'external' disables it and the plugin only processes payloads submitted by "
+        "the host program."
+    },
+    {
         FLB_CONFIG_MAP_INT, "thread.ring_buffer.capacity", STR(FLB_INPUT_RING_BUFFER_CAPACITY),
         0, FLB_FALSE, 0,
         "Set custom ring buffer capacity when the input runs in threaded mode"
@@ -583,6 +590,9 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->ingress_queue_pending_bytes = 0;
         instance->ingress_queue_event_limit = FLB_HTTP_SERVER_INGRESS_QUEUE_EVENT_LIMIT;
         instance->ingress_queue_byte_limit = FLB_HTTP_SERVER_INGRESS_QUEUE_BYTE_LIMIT;
+        instance->source_mode = FLB_INPUT_SOURCE_NATIVE;
+        instance->ingest_closed = FLB_FALSE;
+        instance->ingest_failed = FLB_FALSE;
 
         /* Plugin use networking */
         if (plugin->flags & (FLB_INPUT_NET | FLB_INPUT_NET_SERVER)) {
@@ -1028,6 +1038,21 @@ int flb_input_set_property(struct flb_input_instance *ins,
         }
 
         ins->is_threaded = enabled;
+    }
+    else if (prop_key_check("source.mode", k, len) == 0 && tmp) {
+        if (strcasecmp(tmp, "native") == 0) {
+            ins->source_mode = FLB_INPUT_SOURCE_NATIVE;
+        }
+        else if (strcasecmp(tmp, "external") == 0) {
+            ins->source_mode = FLB_INPUT_SOURCE_EXTERNAL;
+        }
+        else {
+            flb_error("[input] invalid source.mode '%s', use 'native' or 'external'",
+                      tmp);
+            flb_sds_destroy(tmp);
+            return -1;
+        }
+        flb_sds_destroy(tmp);
     }
     else if (prop_key_check("thread.ring_buffer.capacity", k, len) == 0 && tmp) {
         ret = atoi(tmp);
@@ -1604,6 +1629,41 @@ static int flb_input_http_server_property_check(struct flb_input_instance *ins,
     return 0;
 }
 
+/*
+ * An instance in external mode gets its data from the host program, so the
+ * options that only describe native collection are rejected before any
+ * transport is set up.
+ */
+static int flb_input_external_mode_check(struct flb_input_instance *ins)
+{
+    struct flb_input_plugin *p;
+
+    p = ins->p;
+
+    if (p->cb_ingest == NULL || p->ingest_kinds == 0) {
+        flb_plg_error(ins, "source.mode 'external' is not supported by this plugin");
+        return -1;
+    }
+
+    if (flb_input_is_threaded(ins)) {
+        flb_plg_error(ins, "source.mode 'external' cannot be used with threaded inputs");
+        return -1;
+    }
+
+    if (ins->use_tls == FLB_TRUE) {
+        flb_plg_error(ins, "'tls' cannot be used with source.mode 'external'");
+        return -1;
+    }
+
+    if (ins->host.listen != NULL || ins->host.port != 0) {
+        flb_plg_error(ins,
+                      "'listen' and 'port' cannot be used with source.mode 'external'");
+        return -1;
+    }
+
+    return 0;
+}
+
 int flb_input_instance_init(struct flb_input_instance *ins,
                             struct flb_config *config)
 {
@@ -1914,6 +1974,10 @@ int flb_input_instance_init(struct flb_input_instance *ins,
         }
     }
 
+    if (flb_input_is_external(ins) && flb_input_external_mode_check(ins) == -1) {
+        return -1;
+    }
+
 #ifdef FLB_HAVE_TLS
     if (ins->use_tls == FLB_TRUE) {
         if ((p->flags & FLB_INPUT_NET_SERVER) != 0) {
@@ -2087,6 +2151,17 @@ int flb_input_instance_init(struct flb_input_instance *ins,
                 ins->context = NULL;
                 return -1;
             }
+
+            if (flb_input_is_external(ins)) {
+                ret = flb_input_ingest_enable(ins);
+                if (ret != 0) {
+                    flb_error("failed to enable external ingestion on input %s",
+                              ins->name);
+                    flb_input_instance_exit(ins, config);
+                    ins->context = NULL;
+                    return -1;
+                }
+            }
         }
     }
 
@@ -2195,6 +2270,9 @@ void flb_input_instance_exit(struct flb_input_instance *ins,
         flb_input_thread_instance_exit(ins);
         return;
     }
+
+    /* Cancel host submissions while the plugin context is still alive */
+    flb_input_ingest_close(ins);
 
     flb_processor_input_stop(ins->processor);
     p = ins->p;

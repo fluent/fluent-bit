@@ -37,6 +37,7 @@
 #include <fluent-bit/flb_hash_table.h>
 
 #include <fluent-bit/flb_input_event.h>
+#include <fluent-bit/flb_input_ingest.h>
 #include <fluent-bit/flb_input_chunk.h>
 #include <fluent-bit/flb_input_log.h>
 #include <fluent-bit/flb_input_metric.h>
@@ -208,10 +209,15 @@ struct flb_input_plugin {
     int (*cb_resume_checked) (void *, struct flb_config *);
 
     /*
-     * Optional callback that can be used from a parent caller to ingest
-     * data into the engine.
+     * Optional callback for host-driven ingestion: it receives payloads
+     * submitted with flb_input_ingest_submit() when the instance runs with
+     * 'source.mode external'. It is invoked on the event loop that owns the
+     * instance and the event is borrowed for the duration of the call.
+     * 'ingest_kinds' is the mask of FLB_INPUT_INGEST_* kinds it understands.
      */
-    int (*cb_ingest) (void *in_context, void *, size_t);
+    int (*cb_ingest) (struct flb_input_instance *ins, void *in_context,
+                      const struct flb_input_ingest_event *event);
+    int ingest_kinds;
 
     /*
      * Notify a threaded input from the parent thread immediately before its
@@ -546,6 +552,11 @@ struct flb_input_instance {
     size_t ingress_queue_pending_bytes;
     size_t ingress_queue_event_limit;
     size_t ingress_queue_byte_limit;
+
+    /* Host-driven ingestion (flb_input_ingest.h) */
+    int source_mode;                  /* FLB_INPUT_SOURCE_*              */
+    int ingest_closed;                /* admission closed (queue lock)   */
+    int ingest_failed;                /* stream failed (queue lock)      */
 
     struct mk_list *oauth2_jwt_config_map;
     struct mk_list oauth2_jwt_properties;
@@ -940,6 +951,12 @@ struct mk_event_loop *flb_input_event_loop_get(struct flb_input_instance *ins);
 int flb_input_upstream_set(struct flb_upstream *u, struct flb_input_instance *ins);
 int flb_input_downstream_set(struct flb_downstream *stream,
                              struct flb_input_instance *ins);
+
+static inline int flb_input_is_external(struct flb_input_instance *ins)
+{
+    return ins->source_mode == FLB_INPUT_SOURCE_EXTERNAL;
+}
+
 void flb_input_ingress_destroy(struct flb_input_instance *ins);
 int flb_input_ingress_enable(struct flb_input_instance *ins);
 /* Nonblocking resume: success transfers *buf and clears it. Every failure
