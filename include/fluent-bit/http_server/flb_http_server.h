@@ -45,6 +45,7 @@
 #define HTTP_SERVER_PROVIDER_ERROR            -1
 #define HTTP_SERVER_ALLOCATION_ERROR          -2
 #define HTTP_SERVER_BUFFER_LIMIT_EXCEEDED     -3
+#define HTTP_SERVER_BAD_REQUEST               -4
 
 #define HTTP_SERVER_UNINITIALIZED              0
 #define HTTP_SERVER_INITIALIZED                1
