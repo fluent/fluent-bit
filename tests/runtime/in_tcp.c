@@ -23,6 +23,9 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_socket.h>
+#include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_ingest.h>
+#include <fluent-bit/flb_sds.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -1081,6 +1084,582 @@ void flb_test_format_none_large_record()
     flb_free(buf);
 }
 
+/*
+ * External source mode
+ * ====================
+ * The host program submits the bytes a socket would deliver. The scenarios
+ * below run the same chunks through a socket and through the external entry
+ * point and compare the records.
+ */
+static flb_sds_t collected_records = NULL;
+static int collected_count = 0;
+
+static void collected_release()
+{
+    pthread_mutex_lock(&result_mutex);
+    if (collected_records != NULL) {
+        flb_sds_destroy(collected_records);
+        collected_records = NULL;
+    }
+    pthread_mutex_unlock(&result_mutex);
+}
+
+static void collected_reset()
+{
+    pthread_mutex_lock(&result_mutex);
+    if (collected_records != NULL) {
+        flb_sds_destroy(collected_records);
+    }
+    collected_records = flb_sds_create_size(256);
+    collected_count = 0;
+    pthread_mutex_unlock(&result_mutex);
+}
+
+static int collected_wait(int expected)
+{
+    int i;
+    int count;
+
+    for (i = 0; i < 400; i++) {
+        pthread_mutex_lock(&result_mutex);
+        count = collected_count;
+        pthread_mutex_unlock(&result_mutex);
+
+        if (count >= expected) {
+            return count;
+        }
+        flb_time_msleep(10);
+    }
+
+    return count;
+}
+
+/* Keep the body of every record, one JSON document per line */
+static int cb_collect_records(void *record, size_t size, void *data)
+{
+    char *json;
+    size_t off = 0;
+    msgpack_unpacked result;
+    msgpack_object root;
+
+    (void) data;
+
+    msgpack_unpacked_init(&result);
+    while (msgpack_unpack_next(&result, record, size, &off) == MSGPACK_UNPACK_SUCCESS) {
+        root = result.data;
+        if (root.type != MSGPACK_OBJECT_ARRAY || root.via.array.size != 2) {
+            continue;
+        }
+
+        json = flb_msgpack_to_json_str(256, &root.via.array.ptr[1], FLB_TRUE);
+        if (json == NULL) {
+            continue;
+        }
+
+        pthread_mutex_lock(&result_mutex);
+        flb_sds_cat_safe(&collected_records, json, strlen(json));
+        flb_sds_cat_safe(&collected_records, "\n", 1);
+        collected_count++;
+        pthread_mutex_unlock(&result_mutex);
+
+        flb_free(json);
+    }
+    msgpack_unpacked_destroy(&result);
+
+    flb_free(record);
+
+    return 0;
+}
+
+static struct flb_input_instance *external_instance_get(struct test_ctx *ctx)
+{
+    struct mk_list *head;
+    struct flb_input_instance *ins;
+
+    mk_list_foreach(head, &ctx->flb->config->inputs) {
+        ins = mk_list_entry(head, struct flb_input_instance, _head);
+        if (ins->id == ctx->i_ffd) {
+            return ins;
+        }
+    }
+
+    return NULL;
+}
+
+static int external_wait_drained(struct flb_input_instance *ins)
+{
+    int i;
+    size_t pending;
+
+    for (i = 0; i < 400; i++) {
+        pthread_mutex_lock(&ins->ingress_queue_lock);
+        pending = ins->ingress_queue_pending_events;
+        pthread_mutex_unlock(&ins->ingress_queue_lock);
+
+        if (pending == 0) {
+            return 0;
+        }
+        flb_time_msleep(5);
+    }
+
+    return -1;
+}
+
+/* Submit and wait: every submission is seen by the plugin on its own */
+static int external_submit(struct flb_input_instance *ins,
+                           const char *data, size_t size)
+{
+    int i;
+    int ret;
+
+    ret = FLB_INPUT_INGEST_BUSY;
+    for (i = 0; i < 200 && ret == FLB_INPUT_INGEST_BUSY; i++) {
+        ret = flb_input_ingest_submit(ins, FLB_INPUT_INGEST_STREAM_BYTES,
+                                      data, size, NULL, NULL, NULL);
+        if (ret == FLB_INPUT_INGEST_BUSY) {
+            flb_time_msleep(5);
+        }
+    }
+
+    if (ret == FLB_INPUT_INGEST_OK) {
+        external_wait_drained(ins);
+    }
+
+    return ret;
+}
+
+struct stream_scenario {
+    const char *format;
+    const char *separator;
+    const char **chunks;       /* NULL terminated */
+    int expected_records;
+};
+
+#define SCENARIO_NATIVE         0   /* socket, one send per chunk          */
+#define SCENARIO_EXTERNAL       1   /* one submission per chunk            */
+#define SCENARIO_EXTERNAL_BYTES 2   /* one submission per byte             */
+#define SCENARIO_EXTERNAL_WHOLE 3   /* every chunk in a single submission  */
+
+/* Run a scenario and return the collected records; the caller owns them */
+static flb_sds_t scenario_run(struct stream_scenario *scenario, int mode)
+{
+    int i;
+    int ret;
+    size_t j;
+    size_t length;
+    flb_sockfd_t fd;
+    flb_sds_t whole;
+    flb_sds_t output;
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    struct flb_input_instance *ins;
+
+    collected_reset();
+
+    cb_data.cb = cb_collect_records;
+    cb_data.data = NULL;
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        return NULL;
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd, "match", "*", NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd, "format", scenario->format, NULL);
+    TEST_CHECK(ret == 0);
+
+    if (scenario->separator != NULL) {
+        ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                            "separator", scenario->separator, NULL);
+        TEST_CHECK(ret == 0);
+    }
+
+    if (mode != SCENARIO_NATIVE) {
+        ret = flb_input_set(ctx->flb, ctx->i_ffd, "source.mode", "external", NULL);
+        TEST_CHECK(ret == 0);
+    }
+
+    ret = flb_start(ctx->flb);
+    if (!TEST_CHECK(ret == 0)) {
+        flb_destroy(ctx->flb);
+        flb_free(ctx);
+        return NULL;
+    }
+
+    ins = external_instance_get(ctx);
+    TEST_CHECK(ins != NULL);
+
+    if (mode == SCENARIO_NATIVE) {
+        fd = connect_tcp(NULL, -1);
+        if (TEST_CHECK(fd >= 0)) {
+            for (i = 0; scenario->chunks[i] != NULL; i++) {
+                length = strlen(scenario->chunks[i]);
+                ret = send(fd, scenario->chunks[i], length, 0);
+                TEST_CHECK(ret == (int) length);
+                /* keep the read boundaries: one chunk per read */
+                flb_time_msleep(150);
+            }
+        }
+    }
+    else if (mode == SCENARIO_EXTERNAL_WHOLE) {
+        fd = -1;
+        whole = flb_sds_create_size(256);
+        for (i = 0; scenario->chunks[i] != NULL; i++) {
+            flb_sds_cat_safe(&whole, scenario->chunks[i], strlen(scenario->chunks[i]));
+        }
+        ret = external_submit(ins, whole, flb_sds_len(whole));
+        TEST_CHECK(ret == FLB_INPUT_INGEST_OK);
+        flb_sds_destroy(whole);
+    }
+    else {
+        fd = -1;
+        for (i = 0; scenario->chunks[i] != NULL; i++) {
+            length = strlen(scenario->chunks[i]);
+            if (mode == SCENARIO_EXTERNAL_BYTES) {
+                for (j = 0; j < length; j++) {
+                    ret = external_submit(ins, scenario->chunks[i] + j, 1);
+                    TEST_CHECK(ret == FLB_INPUT_INGEST_OK);
+                }
+            }
+            else {
+                ret = external_submit(ins, scenario->chunks[i], length);
+                TEST_CHECK(ret == FLB_INPUT_INGEST_OK);
+            }
+        }
+    }
+
+    ret = collected_wait(scenario->expected_records);
+    if (!TEST_CHECK(ret == scenario->expected_records)) {
+        TEST_MSG("mode=%d records=%d expected=%d", mode, ret,
+                 scenario->expected_records);
+    }
+
+    /* Nothing else may show up after the expected records */
+    flb_time_msleep(300);
+
+    if (fd >= 0) {
+        flb_socket_close(fd);
+    }
+
+    flb_stop(ctx->flb);
+    flb_destroy(ctx->flb);
+    flb_free(ctx);
+
+    pthread_mutex_lock(&result_mutex);
+    output = collected_records;
+    collected_records = NULL;
+    if (!TEST_CHECK(collected_count == scenario->expected_records)) {
+        TEST_MSG("mode=%d final records=%d expected=%d", mode, collected_count,
+                 scenario->expected_records);
+    }
+    pthread_mutex_unlock(&result_mutex);
+
+    return output;
+}
+
+/* The socket path is the reference for every way of submitting the chunks */
+static void scenario_compare(struct stream_scenario *scenario, int whole_is_equal)
+{
+    int mode;
+    flb_sds_t native;
+    flb_sds_t external;
+
+    native = scenario_run(scenario, SCENARIO_NATIVE);
+    if (!TEST_CHECK(native != NULL)) {
+        return;
+    }
+
+    for (mode = SCENARIO_EXTERNAL; mode <= SCENARIO_EXTERNAL_WHOLE; mode++) {
+        if (mode != SCENARIO_EXTERNAL && whole_is_equal == FLB_FALSE) {
+            continue;
+        }
+
+        external = scenario_run(scenario, mode);
+        if (!TEST_CHECK(external != NULL)) {
+            continue;
+        }
+
+        if (!TEST_CHECK(strcmp(native, external) == 0)) {
+            TEST_MSG("mode=%d\nnative:\n%s\nexternal:\n%s", mode, native, external);
+        }
+        flb_sds_destroy(external);
+    }
+
+    flb_sds_destroy(native);
+}
+
+void flb_test_external_json_parity()
+{
+    const char *chunks[] = {
+        "{\"key\":\"value\",\"n\":1}",
+        "{\"text\":\"h\xc3\xa9llo w\xc3\xb6rld \xe2\x82\xac\"}\n{\"nested\":{\"a\":[1,2,3]}}",
+        "\r\n{\"last\":true}",
+        NULL
+    };
+    struct stream_scenario scenario = { "json", NULL, chunks, 4 };
+
+    scenario_compare(&scenario, FLB_TRUE);
+}
+
+void flb_test_external_none_parity()
+{
+    const char *chunks[] = {
+        "first line\nsecond l",
+        "ine with \xe2\x82\xac and \xc3\xa9\n",
+        "third\nfourth\n",
+        NULL
+    };
+    struct stream_scenario scenario = { "none", NULL, chunks, 4 };
+
+    scenario_compare(&scenario, FLB_TRUE);
+}
+
+void flb_test_external_none_separator_parity()
+{
+    const char *chunks[] = {
+        "alpha;;beta;;gam",
+        "ma;;delta;;",
+        NULL
+    };
+    struct stream_scenario scenario = { "none", ";;", chunks, 4 };
+
+    scenario_compare(&scenario, FLB_TRUE);
+}
+
+/*
+ * Invalid JSON resets the buffer and the parser and the stream stays usable.
+ * What is dropped depends on the read boundaries, so only the submission
+ * that keeps them is compared with the socket.
+ */
+void flb_test_external_invalid_json_parity()
+{
+    const char *chunks[] = {
+        "{\"before\":1}",
+        "{\"broken\": ]]]}",
+        "{\"after\":2}",
+        NULL
+    };
+    struct stream_scenario scenario = { "json", NULL, chunks, 2 };
+
+    scenario_compare(&scenario, FLB_FALSE);
+}
+
+void flb_test_external_buffer_limits()
+{
+    int i;
+    int ret;
+    int count;
+    size_t length;
+    char *buf;
+    char line[64];
+    flb_sds_t payload;
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    struct flb_input_instance *ins;
+
+    collected_reset();
+
+    cb_data.cb = cb_collect_records;
+    cb_data.data = NULL;
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd, "match", "*", NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "source.mode", "external",
+                        "format", "none",
+                        "chunk_size", "1",
+                        "buffer_size", "4",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    ins = external_instance_get(ctx);
+    TEST_CHECK(ins != NULL);
+
+    /* One submission far larger than Buffer_Size, made of small records */
+    payload = flb_sds_create_size(128 * 1024);
+    for (i = 0; i < 4000; i++) {
+        length = snprintf(line, sizeof(line), "record number %d\n", i);
+        flb_sds_cat_safe(&payload, line, length);
+    }
+    TEST_CHECK(flb_sds_len(payload) > 4096 * 10);
+
+    ret = external_submit(ins, payload, flb_sds_len(payload));
+    TEST_CHECK(ret == FLB_INPUT_INGEST_OK);
+    flb_sds_destroy(payload);
+
+    count = collected_wait(4000);
+    if (!TEST_CHECK(count == 4000)) {
+        TEST_MSG("records=%d expected=4000", count);
+    }
+
+    /* A partial record stays buffered across submissions */
+    ret = external_submit(ins, "partial ", 8);
+    TEST_CHECK(ret == FLB_INPUT_INGEST_OK);
+    ret = external_submit(ins, "record\n", 7);
+    TEST_CHECK(ret == FLB_INPUT_INGEST_OK);
+    count = collected_wait(4001);
+    TEST_CHECK(count == 4001);
+    pthread_mutex_lock(&result_mutex);
+    TEST_CHECK(strstr(collected_records, "{\"log\":\"partial record\"}") != NULL);
+    pthread_mutex_unlock(&result_mutex);
+
+    /* A single record larger than Buffer_Size ends the stream */
+    buf = flb_malloc(8192);
+    TEST_CHECK(buf != NULL);
+    memset(buf, 'z', 8192);
+
+    ret = flb_input_ingest_submit(ins, FLB_INPUT_INGEST_STREAM_BYTES,
+                                  buf, 8192, NULL, NULL, NULL);
+    TEST_CHECK(ret == FLB_INPUT_INGEST_OK);
+    flb_free(buf);
+
+    ret = FLB_INPUT_INGEST_OK;
+    for (i = 0; i < 200 && ret != FLB_INPUT_INGEST_FAILED; i++) {
+        ret = flb_input_ingest_submit(ins, FLB_INPUT_INGEST_STREAM_BYTES,
+                                      "later\n", 6, NULL, NULL, NULL);
+        if (ret != FLB_INPUT_INGEST_FAILED) {
+            flb_time_msleep(10);
+        }
+    }
+    TEST_CHECK(ret == FLB_INPUT_INGEST_FAILED);
+
+    flb_time_msleep(300);
+    pthread_mutex_lock(&result_mutex);
+    TEST_CHECK(strstr(collected_records, "later") == NULL);
+    TEST_CHECK(strstr(collected_records, "zzzz") == NULL);
+    pthread_mutex_unlock(&result_mutex);
+
+    flb_stop(ctx->flb);
+    flb_destroy(ctx->flb);
+    flb_free(ctx);    collected_release();
+}
+
+/* Partial data retained when the engine stops is discarded */
+void flb_test_external_stop_with_partial_data()
+{
+    int ret;
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    struct flb_input_instance *ins;
+
+    collected_reset();
+
+    cb_data.cb = cb_collect_records;
+    cb_data.data = NULL;
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        exit(EXIT_FAILURE);
+    }
+
+    flb_output_set(ctx->flb, ctx->o_ffd, "match", "*", NULL);
+    ret = flb_input_set(ctx->flb, ctx->i_ffd, "source.mode", "external", NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    ins = external_instance_get(ctx);
+    TEST_CHECK(ins != NULL);
+
+    ret = external_submit(ins, "{\"complete\":1}{\"partial\":", 25);
+    TEST_CHECK(ret == FLB_INPUT_INGEST_OK);
+    TEST_CHECK(collected_wait(1) == 1);
+
+    flb_stop(ctx->flb);
+    flb_destroy(ctx->flb);
+    flb_free(ctx);
+
+    TEST_CHECK(collected_count == 1);    collected_release();
+}
+
+static void external_expect_start_failure(const char *key, const char *value)
+{
+    int ret;
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+
+    cb_data.cb = cb_collect_records;
+    cb_data.data = NULL;
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        exit(EXIT_FAILURE);
+    }
+
+    flb_service_set(ctx->flb, "Log_Level", "off", NULL);
+    flb_output_set(ctx->flb, ctx->o_ffd, "match", "*", NULL);
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "source.mode", "external",
+                        key, value,
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    if (!TEST_CHECK(ret != 0)) {
+        TEST_MSG("'%s' was accepted in external mode", key);
+        flb_stop(ctx->flb);
+    }
+
+    flb_destroy(ctx->flb);
+    flb_free(ctx);
+}
+
+void flb_test_external_rejected_options()
+{
+    external_expect_start_failure("workers", "2");
+    external_expect_start_failure("source_address_key", "source");
+    external_expect_start_failure("port", "5171");
+    external_expect_start_failure("listen", "127.0.0.1");
+    external_expect_start_failure("threaded", "true");
+#ifdef FLB_HAVE_TLS
+    external_expect_start_failure("tls", "on");
+#endif
+}
+
+/* A regular instance does not take submissions */
+void flb_test_external_native_mode_refuses()
+{
+    int ret;
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    struct flb_input_instance *ins;
+
+    cb_data.cb = cb_collect_records;
+    cb_data.data = NULL;
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        exit(EXIT_FAILURE);
+    }
+
+    flb_output_set(ctx->flb, ctx->o_ffd, "match", "*", NULL);
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    ins = external_instance_get(ctx);
+    TEST_CHECK(ins != NULL);
+
+    ret = flb_input_ingest_submit(ins, FLB_INPUT_INGEST_STREAM_BYTES,
+                                  "{}", 2, NULL, NULL, NULL);
+    TEST_CHECK(ret == FLB_INPUT_INGEST_NOT_SUPPORTED);
+
+    flb_stop(ctx->flb);
+    flb_destroy(ctx->flb);
+    flb_free(ctx);
+}
+
 TEST_LIST = {
     {"tcp", flb_test_tcp},
     {"tcp_with_source_address", flb_test_tcp_with_source_address},
@@ -1095,5 +1674,13 @@ TEST_LIST = {
 #endif
     {"format_none_large_record", flb_test_format_none_large_record},
     {"65535_records_issue_5336", flb_test_issue_5336},
+    {"external_json_parity", flb_test_external_json_parity},
+    {"external_none_parity", flb_test_external_none_parity},
+    {"external_none_separator_parity", flb_test_external_none_separator_parity},
+    {"external_invalid_json_parity", flb_test_external_invalid_json_parity},
+    {"external_buffer_limits", flb_test_external_buffer_limits},
+    {"external_stop_with_partial_data", flb_test_external_stop_with_partial_data},
+    {"external_rejected_options", flb_test_external_rejected_options},
+    {"external_native_mode_refuses", flb_test_external_native_mode_refuses},
     {NULL, NULL}
 };
