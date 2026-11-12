@@ -215,6 +215,14 @@ def main():
                             print('Pthread bootstrap faults and worker cleanup passed', flush=True)
                             return
                         page.evaluate('(value) => { globalThis.ftsOnly = value; }', args.fts_only)
+                        if not args.fts_only:
+                            phase = 'expanded plugins'
+                            plugin_result = page.evaluate(
+                                Path(__file__).with_name('plugins_test.js').read_text())
+                            assert plugin_result['passed'], plugin_result
+                            assert_no_sanitizer_errors('\n'.join(plugin_result['logs']))
+                            print('Browser virtual-file plugins passed', flush=True)
+                        phase = 'lifecycle'
                         result = page.evaluate(Path(__file__).with_suffix('.js').read_text())
                         assert result['passed'] and not errors, errors
                         if not args.fts_only:

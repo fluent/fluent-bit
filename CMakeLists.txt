@@ -478,7 +478,7 @@ if(FLB_CHUNK_TRACE)
 endif()
 
 # SSL/TLS: add encryption support
-if(FLB_OUT_TD)
+if(FLB_OUT_TD AND NOT FLB_WASM_BROWSER)
   set(FLB_TLS ON)
 endif()
 
@@ -878,8 +878,8 @@ add_subdirectory(${FLB_PATH_LIB_CHUNKIO} EXCLUDE_FROM_ALL)
 FLB_DEFINITION(JSMN_PARENT_LINKS)
 FLB_DEFINITION(JSMN_STRICT)
 add_subdirectory(${FLB_PATH_LIB_JSMN})
-# Runtime Tests (filter_kubernetes) requires HTTP Server
-if(FLB_TESTS_RUNTIME)
+# Native runtime tests (filter_kubernetes) require an HTTP server.
+if(FLB_TESTS_RUNTIME AND NOT FLB_WASM_BROWSER)
   FLB_OPTION(FLB_HTTP_SERVER  ON)
   FLB_OPTION(FLB_IN_EVENT_TEST ON)
 endif()
@@ -1717,9 +1717,10 @@ else()
 endif()
 
 # Instruct CMake to build the Fluent Bit Core
-if(MSVC OR FLB_JEMALLOC)
+if(MSVC OR FLB_JEMALLOC OR FLB_WASM_BROWSER)
   # MSVC tests need plugin-private symbols that are not exported from fluent-bit.dll.
   # Jemalloc must not be embedded in both the test executable and shared library.
+  # Browser tests use the static core; native shared libraries are unavailable.
   set(FLB_TEST_LINK_LIBRARY fluent-bit-static)
 else()
   set(FLB_TEST_LINK_LIBRARY fluent-bit-shared)
@@ -1737,13 +1738,13 @@ if(FLB_EXAMPLES)
   add_subdirectory(examples)
 endif()
 
-if(FLB_TESTS_RUNTIME)
+if(FLB_TESTS_RUNTIME AND NOT FLB_WASM_BROWSER)
   enable_testing()
   add_subdirectory(tests/runtime/)
   add_subdirectory(tests/runtime_shell/)
 endif()
 
-if(FLB_TESTS_INTERNAL)
+if(FLB_TESTS_INTERNAL AND NOT FLB_WASM_BROWSER)
   enable_testing()
   add_subdirectory(tests/internal/)
 endif()

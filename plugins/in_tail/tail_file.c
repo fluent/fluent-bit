@@ -2336,7 +2336,7 @@ char *flb_tail_file_name(struct flb_tail_file *file)
 {
     int ret;
     char *buf;
-#ifdef __linux__
+#if defined(__linux__) || defined(__EMSCRIPTEN__)
     ssize_t s;
     char tmp[128];
 #elif defined(__APPLE__)
@@ -2355,8 +2355,13 @@ char *flb_tail_file_name(struct flb_tail_file *file)
         return NULL;
     }
 
-#ifdef __linux__
+#if defined(__linux__) || defined(__EMSCRIPTEN__)
+#ifdef __EMSCRIPTEN__
+    /* Emscripten exposes descriptor names under /proc/self/fd. */
+    ret = snprintf(tmp, sizeof(tmp) - 1, "/proc/self/fd/%i", file->fd);
+#else
     ret = snprintf(tmp, sizeof(tmp) - 1, "/proc/%i/fd/%i", getpid(), file->fd);
+#endif
     if (ret == -1) {
         flb_errno();
         flb_free(buf);

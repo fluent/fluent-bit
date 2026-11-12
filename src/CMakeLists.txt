@@ -561,9 +561,9 @@ if(NOT FLB_SYSTEM_WINDOWS AND NOT FLB_WASM_BROWSER)
 endif()
 
 # Shared Library
-if(FLB_SHARED_LIB OR
+if(NOT FLB_WASM_BROWSER AND (FLB_SHARED_LIB OR
    (NOT MSVC AND NOT FLB_JEMALLOC AND
-    (FLB_TESTS_RUNTIME OR FLB_TESTS_INTERNAL OR FLB_TESTS_INTERNAL_FUZZ)))
+    (FLB_TESTS_RUNTIME OR FLB_TESTS_INTERNAL OR FLB_TESTS_INTERNAL_FUZZ))))
   add_library(fluent-bit-shared SHARED ${flb_core_sources})
   add_sanitizers(fluent-bit-shared)
   set_target_properties(fluent-bit-shared
