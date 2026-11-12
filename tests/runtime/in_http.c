@@ -871,6 +871,92 @@ void flb_test_http_failure_400_bad_json(void) {
     test_ctx_destroy(ctx);
 }
 
+static void test_http_failure_400_invalid_array(char *buf)
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    struct flb_http_client *c;
+    int ret;
+    int num;
+    size_t b_sent;
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = "\"test\":\"msg\"";
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd, NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    ctx->httpc = http_client_ctx_create();
+    TEST_CHECK(ctx->httpc != NULL);
+
+    c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_POST, "/", buf, strlen(buf),
+                        "127.0.0.1", 9880, NULL, 0);
+    if (!TEST_CHECK(c != NULL)) {
+        TEST_MSG("http_client failed");
+        exit(EXIT_FAILURE);
+    }
+    ret = flb_http_add_header(c, FLB_HTTP_HEADER_CONTENT_TYPE, strlen(FLB_HTTP_HEADER_CONTENT_TYPE),
+                              JSON_CONTENT_TYPE, strlen(JSON_CONTENT_TYPE));
+    TEST_CHECK(ret == 0);
+
+    ret = flb_http_do(c, &b_sent);
+    if (!TEST_CHECK(ret == 0)) {
+        TEST_MSG("ret error. ret=%d\n", ret);
+    }
+    else if (!TEST_CHECK(b_sent > 0)){
+        TEST_MSG("b_sent size error. b_sent = %lu\n", b_sent);
+    }
+    else if (!TEST_CHECK(c->resp.status == 400)) {
+        TEST_MSG("http response code error. expect: %d, got: %d\n", 400, c->resp.status);
+    }
+
+    /* waiting to flush */
+    flb_time_msleep(1500);
+
+    /* nothing from the rejected payload must reach the output */
+    num = get_output_num();
+    if (!TEST_CHECK(num == 0))  {
+        TEST_MSG("unexpected output. num=%d", num);
+    }
+
+    flb_http_client_destroy(c);
+    flb_upstream_conn_release(ctx->httpc->u_conn);
+    test_ctx_destroy(ctx);
+}
+
+void flb_test_http_failure_400_array_of_scalars(void)
+{
+    test_http_failure_400_invalid_array("[1,2,3]");
+}
+
+void flb_test_http_failure_400_mixed_array(void)
+{
+    test_http_failure_400_invalid_array("[{\"test\":\"msg\"},2]");
+}
+
+void flb_test_http_failure_400_map_then_invalid_array(void)
+{
+    test_http_failure_400_invalid_array("{\"test\":\"msg\"}\n[1]");
+}
+
 void flb_test_http_failure_400_bad_disk_write(void)
 {
     struct flb_lib_out_cb cb_data;
@@ -1316,5 +1402,8 @@ TEST_LIST = {
     {"add_remote_addr_array_ng", flb_test_http_remote_addr_array_ng},
     {"add_remote_addr_map", flb_test_http_remote_addr_map},
     {"add_remote_addr_array", flb_test_http_remote_addr_array},
+    {"failure_response_code_400_array_of_scalars", flb_test_http_failure_400_array_of_scalars},
+    {"failure_response_code_400_mixed_array", flb_test_http_failure_400_mixed_array},
+    {"failure_response_code_400_map_then_invalid_array", flb_test_http_failure_400_map_then_invalid_array},
     {NULL, NULL}
 };
