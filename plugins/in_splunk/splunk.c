@@ -85,11 +85,16 @@ static int in_splunk_init(struct flb_input_instance *ins,
         return -1;
     }
 
-    flb_plg_info(ctx->ins, "listening on %s:%u with %i worker%s",
-                 ins->host.listen,
-                 ins->host.port,
-                 ctx->http_server.workers,
-                 ctx->http_server.workers == 1 ? "" : "s");
+    if (flb_input_is_external(ins)) {
+        flb_plg_info(ctx->ins, "external source mode, no listener started");
+    }
+    else {
+        flb_plg_info(ctx->ins, "listening on %s:%u with %i worker%s",
+                     ins->host.listen,
+                     ins->host.port,
+                     ctx->http_server.workers,
+                     ctx->http_server.workers == 1 ? "" : "s");
+    }
     return 0;
 }
 
@@ -185,6 +190,19 @@ static struct flb_config_map config_map[] = {
     {0}
 };
 
+/* A request submitted by the host program for an instance in external mode */
+static int in_splunk_ingest(struct flb_input_instance *ins, void *in_context,
+                            const struct flb_input_ingest_event *event)
+{
+    struct flb_splunk *ctx;
+
+    (void) ins;
+
+    ctx = in_context;
+
+    return flb_http_server_ingest(&ctx->http_server, event);
+}
+
 /* Plugin reference */
 struct flb_input_plugin in_splunk_plugin = {
     .name         = "splunk",
@@ -196,6 +214,8 @@ struct flb_input_plugin in_splunk_plugin = {
     .cb_pause_checked = in_splunk_pause,
     .cb_resume_checked = in_splunk_resume,
     .cb_exit      = in_splunk_exit,
+    .cb_ingest    = in_splunk_ingest,
+    .ingest_kinds = FLB_INPUT_INGEST_HTTP_REQUEST,
     .config_map   = config_map,
     .flags        = FLB_INPUT_NET_SERVER | FLB_INPUT_HTTP_SERVER | FLB_IO_OPT_TLS
 };
