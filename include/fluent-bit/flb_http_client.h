@@ -402,6 +402,7 @@ flb_sds_t flb_http_get_response_header(struct flb_http_client *c,
                                        const char *key, size_t key_len);
 
 int flb_http_client_process_response_buffer(struct flb_http_client *c);
+int flb_http_client_consume_payload(struct flb_http_client *c, size_t bytes_consumed);
 int flb_http_basic_auth(struct flb_http_client *c,
                         const char *user, const char *passwd);
 int flb_http_proxy_auth(struct flb_http_client *c,
