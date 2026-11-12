@@ -34,6 +34,16 @@
 
 static void tcp_conn_drop(struct flb_connection *connection);
 
+/* A stream fed by the host program has no connection behind it */
+static inline int tcp_conn_fd(struct tcp_conn *conn)
+{
+    if (conn->connection == NULL) {
+        return -1;
+    }
+
+    return conn->connection->fd;
+}
+
 static inline void consume_bytes(char *buf, size_t bytes, size_t length)
 {
     if (bytes == 0 || bytes > length) {
@@ -83,7 +93,7 @@ static inline int process_pack(struct tcp_conn *conn,
             ret = flb_log_event_encoder_set_current_timestamp(ctx->log_encoder);
         }
 
-        if (ctx->source_address_key != NULL) {
+        if (ctx->source_address_key != NULL && conn->connection != NULL) {
             source_address = flb_connection_get_remote_address(conn->connection);
         }
 
@@ -288,7 +298,7 @@ static ssize_t parse_payload_none(struct tcp_conn *conn)
                                 ctx->log_encoder, &out_time);
                     }
 
-                    if (ctx->source_address_key != NULL) {
+                    if (ctx->source_address_key != NULL && conn->connection != NULL) {
                         source_address = flb_connection_get_remote_address(
                                             conn->connection);
                     }
@@ -339,7 +349,7 @@ static ssize_t parse_payload_none(struct tcp_conn *conn)
                                 ctx->log_encoder);
                     }
 
-                    if (ctx->source_address_key != NULL) {
+                    if (ctx->source_address_key != NULL && conn->connection != NULL) {
                         source_address = flb_connection_get_remote_address(
                                             conn->connection);
                     }
@@ -468,7 +478,7 @@ static int tcp_conn_process(struct tcp_conn *conn)
             if (flb_pack_state_init(&conn->pack_state) == -1) {
                 flb_plg_error(ctx->ins,
                               "fd=%i failed to reinitialize JSON parser state",
-                              conn->connection->fd);
+                              tcp_conn_fd(conn));
                 return -1;
             }
             conn->pack_state.multiple = FLB_TRUE;
@@ -489,14 +499,14 @@ static int tcp_conn_process(struct tcp_conn *conn)
     if (ret_payload < 0 || ret_payload > conn->buf_len) {
         flb_plg_warn(ctx->ins,
                      "fd=%i invalid payload consume length=%zd buf_len=%i",
-                     conn->connection->fd, ret_payload, conn->buf_len);
+                     tcp_conn_fd(conn), ret_payload, conn->buf_len);
 
         if (ctx->format == FLB_TCP_FMT_JSON) {
             flb_pack_state_reset(&conn->pack_state);
             if (flb_pack_state_init(&conn->pack_state) == -1) {
                 flb_plg_error(ctx->ins,
                               "fd=%i failed to reinitialize JSON parser state",
-                              conn->connection->fd);
+                              tcp_conn_fd(conn));
                 return -1;
             }
             conn->pack_state.multiple = FLB_TRUE;
@@ -520,6 +530,47 @@ static int tcp_conn_process(struct tcp_conn *conn)
     return 0;
 }
 
+/*
+ * Make room for incoming bytes, growing the buffer by 'chunk_size' up to
+ * 'buffer_size'. It returns the number of bytes that can be stored, or -1
+ * when the stream cannot continue.
+ */
+static int tcp_conn_buffer_reserve(struct tcp_conn *conn)
+{
+    int available;
+    int size;
+    char *tmp;
+    struct flb_in_tcp_config *ctx;
+
+    ctx = conn->ctx;
+
+    available = (conn->buf_size - conn->buf_len) - 1;
+    if (available >= 1) {
+        return available;
+    }
+
+    if (conn->buf_size + ctx->chunk_size > ctx->buffer_size) {
+        flb_plg_warn(ctx->ins,
+                     "fd=%i incoming data exceeds 'Buffer_Size' (%zu KB)",
+                     tcp_conn_fd(conn), (ctx->buffer_size / 1024));
+        return -1;
+    }
+
+    size = conn->buf_size + ctx->chunk_size;
+    tmp = flb_realloc(conn->buf_data, size);
+    if (!tmp) {
+        flb_errno();
+        return -1;
+    }
+    flb_plg_trace(ctx->ins, "fd=%i buffer realloc %i -> %i",
+                  tcp_conn_fd(conn), conn->buf_size, size);
+
+    conn->buf_data = tmp;
+    conn->buf_size = size;
+
+    return (conn->buf_size - conn->buf_len) - 1;
+}
+
 /* Parsers, filters and processors run on the parent stack */
 static int tcp_conn_process_dispatch(void *data)
 {
@@ -536,9 +587,7 @@ int tcp_conn_event(void *data)
 {
     int bytes;
     int available;
-    int size;
     int ret;
-    char *tmp;
     struct tcp_conn *conn;
     struct flb_connection *connection;
     struct flb_in_tcp_config *ctx;
@@ -554,29 +603,10 @@ int tcp_conn_event(void *data)
 
     ctx = conn->ctx;
 
-    available = (conn->buf_size - conn->buf_len) - 1;
+    available = tcp_conn_buffer_reserve(conn);
     if (available < 1) {
-        if (conn->buf_size + ctx->chunk_size > ctx->buffer_size) {
-            flb_plg_warn(ctx->ins,
-                         "fd=%i incoming data exceeds 'Buffer_Size' (%zu KB)",
-                         connection->fd, (ctx->buffer_size / 1024));
-            tcp_conn_del(conn);
-            return -1;
-        }
-
-        size = conn->buf_size + ctx->chunk_size;
-        tmp = flb_realloc(conn->buf_data, size);
-        if (!tmp) {
-            flb_errno();
-            tcp_conn_del(conn);
-            return -1;
-        }
-        flb_plg_trace(ctx->ins, "fd=%i buffer realloc %i -> %i",
-                      connection->fd, conn->buf_size, size);
-
-        conn->buf_data = tmp;
-        conn->buf_size = size;
-        available = (conn->buf_size - conn->buf_len) - 1;
+        tcp_conn_del(conn);
+        return -1;
     }
 
     /* Read data */
@@ -606,9 +636,8 @@ int tcp_conn_event(void *data)
     return bytes;
 }
 
-/* Create a new TCP connection wrapper */
-struct tcp_conn *tcp_conn_add(struct flb_connection *connection,
-                              struct flb_in_tcp_config *ctx)
+/* Allocate the stream state: buffer and parser. No connection is attached. */
+static struct tcp_conn *tcp_conn_create(struct flb_in_tcp_config *ctx)
 {
     struct tcp_conn *conn;
 
@@ -618,13 +647,14 @@ struct tcp_conn *tcp_conn_add(struct flb_connection *connection,
         return NULL;
     }
 
-    conn->connection = connection;
+    conn->connection = NULL;
 
     /* Connection info */
     conn->ctx     = ctx;
     conn->buf_len = 0;
     conn->rest    = 0;
     conn->status  = TCP_NEW;
+    mk_list_entry_init(&conn->_head);
 
     conn->buf_data = flb_malloc(ctx->chunk_size);
     if (!conn->buf_data) {
@@ -644,6 +674,21 @@ struct tcp_conn *tcp_conn_add(struct flb_connection *connection,
         conn->pack_state.multiple = FLB_TRUE;
     }
 
+    return conn;
+}
+
+/* Create a new TCP connection wrapper */
+struct tcp_conn *tcp_conn_add(struct flb_connection *connection,
+                              struct flb_in_tcp_config *ctx)
+{
+    struct tcp_conn *conn;
+
+    conn = tcp_conn_create(ctx);
+    if (conn == NULL) {
+        return NULL;
+    }
+
+    conn->connection = connection;
     connection->user_data = conn;
 
     mk_list_add(&conn->_head, &ctx->connections);
@@ -666,10 +711,65 @@ static void tcp_conn_release(struct tcp_conn *conn)
         flb_pack_state_reset(&conn->pack_state);
     }
 
-    mk_list_del(&conn->_head);
+    if (!mk_list_entry_is_orphan(&conn->_head)) {
+        mk_list_del(&conn->_head);
+    }
 
     flb_free(conn->buf_data);
     flb_free(conn);
+}
+
+/*
+ * External stream: the host program supplies the bytes a socket would
+ * deliver. It shares the buffer and the parsing of a regular connection.
+ */
+struct tcp_conn *tcp_conn_external_create(struct flb_in_tcp_config *ctx)
+{
+    return tcp_conn_create(ctx);
+}
+
+void tcp_conn_external_destroy(struct tcp_conn *conn)
+{
+    if (conn != NULL) {
+        tcp_conn_release(conn);
+    }
+}
+
+/*
+ * Feed a chunk of the stream. A chunk is not a record boundary: it is copied
+ * by available buffer room and parsed between copies, as successive socket
+ * reads would be. It returns -1 when the stream cannot continue, the same
+ * conditions that drop a connection.
+ */
+int tcp_conn_external_feed(struct tcp_conn *conn, const char *data, size_t size)
+{
+    int available;
+    size_t bytes;
+
+    while (size > 0) {
+        available = tcp_conn_buffer_reserve(conn);
+        if (available < 1) {
+            return -1;
+        }
+
+        bytes = (size_t) available;
+        if (bytes > size) {
+            bytes = size;
+        }
+
+        memcpy(&conn->buf_data[conn->buf_len], data, bytes);
+        conn->buf_len += (int) bytes;
+        conn->buf_data[conn->buf_len] = '\0';
+
+        data += bytes;
+        size -= bytes;
+
+        if (tcp_conn_process(conn) == -1) {
+            return -1;
+        }
+    }
+
+    return 0;
 }
 
 static void tcp_conn_drop(struct flb_connection *connection)

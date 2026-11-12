@@ -16,13 +16,13 @@ embeds WAMR inside native Fluent Bit and is disabled here.
 
 ## Expanded plugin profile
 
-The default browser profile enables 69 plugin options: 14 inputs, 19 filters,
+The default browser profile enables 75 plugin options: 20 inputs, 19 filters,
 10 processors and 26 outputs, plus SQLite, Ripser and Unicode conversion. Plugins still obey their
 usual feature dependencies. `FLB_MINIMAL=ON` and explicit plugin `OFF` overrides
 remain available. Use a fresh build directory to pick up changed defaults;
 existing CMake caches retain explicit and previously selected values.
 
-- Inputs: `blob`, `dummy`, `emitter`, `event_type`, `fluentbit_logs`, `fluentbit_metrics`, `head`, `lib`, `nginx_exporter_metrics`, `prometheus_scrape`, `prometheus_textfile`, `random`, `storage_backlog`, `tail`.
+- Inputs: `blob`, `dummy`, `elasticsearch`, `emitter`, `event_type`, `fluentbit_logs`, `fluentbit_metrics`, `head`, `http`, `lib`, `nginx_exporter_metrics`, `opentelemetry`, `prometheus_remote_write`, `prometheus_scrape`, `prometheus_textfile`, `random`, `splunk`, `storage_backlog`, `tail`, `tcp`.
 - Filters: `alter_size`, `checklist`, `ecs`, `expect`, `geoip2`, `grep`, `log_to_metrics`, `lua`, `modify`, `multiline`, `nest`, `parser`, `record_modifier`, `rewrite_tag`, `stdout`, `sysinfo`, `throttle`, `throttle_size`, `type_converter`.
 - Processors: `content_modifier`, `cumulative_to_delta`, `fts`, `journald_otel`, `labels`, `metrics_selector`, `opentelemetry_envelope`, `sampling`, `sql`, `tda`.
 - Outputs: `arvancloud_cloudlogs`, `azure`, `counter`, `datadog`, `es`, `exit`, `file`, `flowcounter`, `http`, `influxdb`, `kafka_rest`, `lib`, `logdna`, `loki`, `nrlogs`, `null`, `opensearch`, `opentelemetry`, `oracle_log_analytics`, `plot`, `prometheus_remote_write`, `skywalking`, `slack`, `splunk`, `stdout`, `td`.
@@ -45,11 +45,47 @@ fields describe the WASM runtime, not host OS telemetry. Configure
 supported by the SDK. HTTP scrape inputs also require accessible, CORS-enabled
 endpoints. ECS metadata is useful only through a browser-accessible endpoint.
 
+### Network inputs fed by the page
+
+`tcp`, `http`, `opentelemetry`, `splunk`, `elasticsearch` and
+`prometheus_remote_write` are in the profile, but a browser cannot listen on a
+socket. They only start with `source.mode: external`: the plugin opens no
+listener and processes what the page submits through the SDK, with its own
+parser, decoder and response.
+
+```yaml
+pipeline:
+  inputs:
+    - name: opentelemetry
+      alias: otlp
+      source.mode: external
+    - name: tcp
+      alias: stream
+      source.mode: external
+      format: json
+```
+
+```js
+const reply = await fluent.request({input: 'otlp', path: '/v1/logs',
+    headers: {'Content-Type': 'application/json'}, body: otlpJson});
+await fluent.pushBytes({input: 'stream', data: '{"message":"hello"}'});
+```
+
+`request()` resolves with the status, headers and body the input produced.
+`pushBytes()` resolves when the bytes are queued. Without `source.mode:
+external` these inputs fail at startup in the browser. `listen`, `port`, `tls`,
+`threaded`, `workers`, `http_server.workers` and the TCP `source_address_key`
+describe a listener and are rejected in this mode. What is not exercised is
+the transport itself: the HTTP wire parser, TLS, connection handling, HTTP/2
+and gRPC. A request with a gRPC content type gets a 415 reply. The same mode
+and the same C entry point (`flb_input_ingest_submit()`) work in native
+builds, which is how the runtime tests drive these inputs without sockets.
+
 The remaining native-only groups are:
 
 | Group | Why it remains disabled |
 | --- | --- |
-| TCP/UDP/Unix listeners, HTTP servers and exporters | Browsers cannot listen on native sockets. |
+| UDP/Unix listeners, the built-in HTTP server and exporters, and inputs without an external source mode (Forward, syslog, MQTT and others) | Browsers cannot listen on native sockets. |
 | Forward, GELF, NATS, syslog, TCP/UDP and native WebSocket outputs | Their existing implementations use raw socket I/O rather than Fetch. |
 | Host telemetry, systemd, Windows collectors, serial and eBPF | Require host devices, kernel APIs or process information. |
 | Exec, WASI exec and WAMR filters | Require process execution or the separate native WAMR integration. |

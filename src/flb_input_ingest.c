@@ -40,7 +40,8 @@ enum flb_input_ingress_event_type {
     FLB_INPUT_INGRESS_LOG = 0,
     FLB_INPUT_INGRESS_METRICS,
     FLB_INPUT_INGRESS_TRACES,
-    FLB_INPUT_INGRESS_PROFILES
+    FLB_INPUT_INGRESS_PROFILES,
+    FLB_INPUT_INGRESS_RAW          /* host payload for the plugin cb_ingest */
 };
 
 struct flb_input_ingress_event {
@@ -61,11 +62,21 @@ struct flb_input_ingress_event {
         } log;
         struct ctrace *traces;
         struct cprof  *profiles;
+        struct {
+            /* The view points into the storage that trails this struct */
+            struct flb_input_ingest_event view;
+            flb_input_ingest_reply_cb     reply_cb;
+            void                         *reply_data;
+            int                           replied;
+        } raw;
     } data;
 
     struct cfl_list metrics;
     struct mk_list _head;
 };
+
+static void flb_input_ingest_event_settle(struct flb_input_ingress_event *event,
+                                          int outcome);
 
 static void flb_input_ingress_event_destroy(struct flb_input_ingress_event *event)
 {
@@ -451,11 +462,16 @@ static int flb_input_ingress_collector(struct flb_input_instance *ins,
                                        void *context)
 {
     int result;
+    size_t raw_events;
+    size_t raw_bytes;
     struct flb_input_ingress_event *event;
     struct cmt *metrics_context;
 
     (void) config;
     (void) context;
+
+    raw_events = 0;
+    raw_bytes = 0;
 
     flb_input_ingress_drain_signal(ins);
     while (FLB_TRUE) {
@@ -464,6 +480,16 @@ static int flb_input_ingress_collector(struct flb_input_instance *ins,
             ins->ingress_queue_signal_pending = FLB_FALSE;
             pthread_mutex_unlock(&ins->ingress_queue_lock);
             break;
+        }
+        /* Host payloads are parsed here, on the engine loop: bound the work
+         * of one pass and rearm so the remaining events do not depend on a
+         * later submission. */
+        if (raw_events >= FLB_INPUT_INGEST_PASS_EVENTS ||
+            raw_bytes >= FLB_INPUT_INGEST_PASS_BYTES) {
+            ins->ingress_queue_signal_pending = FLB_TRUE;
+            pthread_mutex_unlock(&ins->ingress_queue_lock);
+            flb_input_ingress_signal(ins);
+            return 0;
         }
         /* Pause before invoking downstream processors: a generic append error
          * can follow partial publication and must never be blindly retried. */
@@ -550,6 +576,26 @@ static int flb_input_ingress_collector(struct flb_input_instance *ins,
                                                event->tag,
                                                event->tag != NULL ? flb_sds_len(event->tag) : 0,
                                                event->data.profiles);
+        }
+        else if (event->type == FLB_INPUT_INGRESS_RAW) {
+            raw_events++;
+            raw_bytes += event->size;
+
+            if (ins->context != NULL && ins->p->cb_ingest != NULL) {
+                result = ins->p->cb_ingest(ins, ins->context, &event->data.raw.view);
+            }
+            else {
+                result = -1;
+            }
+
+            /* The plugin reports its own processing errors. A request that
+             * got no reply is settled here so its caller never waits. */
+            flb_input_ingest_event_settle(event, FLB_INPUT_INGEST_REPLY_FAILED);
+            if (result != 0) {
+                flb_debug("[input %s] external payload was not fully processed",
+                          flb_input_name(ins));
+                result = 0;
+            }
         }
         else {
             result = -1;
@@ -882,4 +928,400 @@ int flb_input_ingress_queue_profiles(struct flb_input_instance *ins,
     event->size = flb_input_ingress_signal_size(payload_size);
 
     return flb_input_ingress_enqueue(ins, event);
+}
+
+/*
+ * Host-driven ingestion
+ * =====================
+ */
+
+static void flb_input_ingest_event_settle(struct flb_input_ingress_event *event,
+                                          int outcome)
+{
+    if (event->type != FLB_INPUT_INGRESS_RAW ||
+        event->data.raw.replied == FLB_TRUE) {
+        return;
+    }
+
+    event->data.raw.replied = FLB_TRUE;
+
+    if (event->data.raw.reply_cb != NULL) {
+        event->data.raw.reply_cb(outcome, NULL, event->data.raw.reply_data);
+    }
+}
+
+int flb_input_ingest_event_reply(const struct flb_input_ingest_event *view,
+                                 const struct flb_input_ingest_reply *reply)
+{
+    struct flb_input_ingress_event *event;
+
+    if (view == NULL || view->priv == NULL || reply == NULL) {
+        return -1;
+    }
+
+    event = view->priv;
+    if (event->data.raw.replied == FLB_TRUE) {
+        return -1;
+    }
+
+    event->data.raw.replied = FLB_TRUE;
+
+    if (event->data.raw.reply_cb != NULL) {
+        event->data.raw.reply_cb(FLB_INPUT_INGEST_REPLIED, reply,
+                                 event->data.raw.reply_data);
+    }
+
+    return 0;
+}
+
+/* Take every queued host payload out of the queue. Call with the lock held. */
+static void flb_input_ingest_detach_queued(struct flb_input_instance *ins,
+                                           struct mk_list *detached)
+{
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct flb_input_ingress_event *event;
+
+    mk_list_foreach_safe(head, tmp, &ins->ingress_queue) {
+        event = mk_list_entry(head, struct flb_input_ingress_event, _head);
+        if (event->type != FLB_INPUT_INGRESS_RAW) {
+            continue;
+        }
+
+        mk_list_del(&event->_head);
+        mk_list_add(&event->_head, detached);
+        ins->ingress_queue_pending_events--;
+        ins->ingress_queue_pending_bytes -= event->size;
+    }
+
+    flb_input_ingress_update_metrics(ins);
+    pthread_cond_broadcast(&ins->ingress_queue_space_available);
+}
+
+/* Settle and release detached payloads. Call without the lock held. */
+static void flb_input_ingest_discard(struct mk_list *detached, int outcome)
+{
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct flb_input_ingress_event *event;
+
+    mk_list_foreach_safe(head, tmp, detached) {
+        event = mk_list_entry(head, struct flb_input_ingress_event, _head);
+        flb_input_ingest_event_settle(event, outcome);
+        flb_input_ingress_event_destroy(event);
+    }
+}
+
+void flb_input_ingest_fail(struct flb_input_instance *ins)
+{
+    struct mk_list detached;
+
+    /* Only an instance in external mode can hold host payloads */
+    if (ins == NULL || !flb_input_is_external(ins)) {
+        return;
+    }
+
+    mk_list_init(&detached);
+
+    pthread_mutex_lock(&ins->ingress_queue_lock);
+    ins->ingest_failed = FLB_TRUE;
+    flb_input_ingest_detach_queued(ins, &detached);
+    pthread_mutex_unlock(&ins->ingress_queue_lock);
+
+    flb_input_ingest_discard(&detached, FLB_INPUT_INGEST_REPLY_FAILED);
+}
+
+void flb_input_ingest_close(struct flb_input_instance *ins)
+{
+    struct mk_list detached;
+
+    /* Only an instance in external mode can hold host payloads */
+    if (ins == NULL || !flb_input_is_external(ins)) {
+        return;
+    }
+
+    mk_list_init(&detached);
+
+    pthread_mutex_lock(&ins->ingress_queue_lock);
+    ins->ingest_closed = FLB_TRUE;
+    flb_input_ingest_detach_queued(ins, &detached);
+    pthread_mutex_unlock(&ins->ingress_queue_lock);
+
+    flb_input_ingest_discard(&detached, FLB_INPUT_INGEST_REPLY_CANCELLED);
+}
+
+int flb_input_ingest_enable(struct flb_input_instance *ins)
+{
+    int result;
+
+    result = flb_input_ingress_enable(ins);
+    if (result != 0) {
+        return -1;
+    }
+
+    /* The queue holds unparsed host payloads: keep it small */
+    pthread_mutex_lock(&ins->ingress_queue_lock);
+    if (ins->ingress_queue_byte_limit == 0 ||
+        ins->ingress_queue_byte_limit > FLB_INPUT_INGEST_QUEUE_BYTE_LIMIT) {
+        ins->ingress_queue_byte_limit = FLB_INPUT_INGEST_QUEUE_BYTE_LIMIT;
+    }
+    pthread_mutex_unlock(&ins->ingress_queue_lock);
+
+    return 0;
+}
+
+/* Bytes needed after the envelope to hold a complete copy of the payload */
+static int flb_input_ingest_storage_size(const void *data, size_t size,
+                                         const struct flb_input_ingest_request *request,
+                                         size_t *out_size)
+{
+    size_t i;
+    size_t total;
+    const struct flb_input_ingest_header *header;
+
+    if (data == NULL && size > 0) {
+        return FLB_INPUT_INGEST_ERROR;
+    }
+
+    if (size > FLB_INPUT_INGEST_EVENT_MAX) {
+        return FLB_INPUT_INGEST_TOO_LARGE;
+    }
+
+    /* Every string gets a terminator */
+    total = size + 1;
+
+    if (request != NULL) {
+        if ((request->method == NULL && request->method_len > 0) ||
+            (request->path == NULL && request->path_len > 0) ||
+            (request->headers == NULL && request->header_count > 0)) {
+            return -1;
+        }
+
+        if (request->header_count > FLB_INPUT_INGEST_HEADER_MAX ||
+            request->method_len > FLB_INPUT_INGEST_EVENT_MAX ||
+            request->path_len > FLB_INPUT_INGEST_EVENT_MAX) {
+            return FLB_INPUT_INGEST_TOO_LARGE;
+        }
+
+        total += request->method_len + 1 + request->path_len + 1;
+        total += request->header_count * sizeof(struct flb_input_ingest_header);
+
+        for (i = 0; i < request->header_count; i++) {
+            header = &request->headers[i];
+
+            if ((header->name == NULL && header->name_len > 0) ||
+                (header->value == NULL && header->value_len > 0)) {
+                return -1;
+            }
+
+            if (header->name_len > FLB_INPUT_INGEST_EVENT_MAX ||
+                header->value_len > FLB_INPUT_INGEST_EVENT_MAX) {
+                return FLB_INPUT_INGEST_TOO_LARGE;
+            }
+
+            total += header->name_len + 1 + header->value_len + 1;
+
+            if (total > FLB_INPUT_INGEST_EVENT_MAX * 2) {
+                return FLB_INPUT_INGEST_TOO_LARGE;
+            }
+        }
+    }
+
+    *out_size = total;
+
+    return 0;
+}
+
+static char *flb_input_ingest_copy(char **cursor, const char *data, size_t size)
+{
+    char *start;
+
+    start = *cursor;
+    if (size > 0) {
+        memcpy(start, data, size);
+    }
+    start[size] = '\0';
+    *cursor = start + size + 1;
+
+    return start;
+}
+
+static struct flb_input_ingress_event *flb_input_ingest_event_create(
+    int kind,
+    const void *data, size_t size,
+    const struct flb_input_ingest_request *request,
+    size_t storage_size)
+{
+    size_t i;
+    size_t envelope;
+    char *cursor;
+    struct flb_input_ingest_header *headers;
+    struct flb_input_ingress_event *event;
+    struct flb_input_ingest_event *view;
+
+    /* Keep the header array aligned right after the envelope */
+    envelope = sizeof(struct flb_input_ingress_event);
+
+    event = flb_calloc(1, envelope + storage_size);
+    if (event == NULL) {
+        flb_errno();
+        return NULL;
+    }
+
+    event->type = FLB_INPUT_INGRESS_RAW;
+    event->size = envelope + storage_size;
+    cfl_list_init(&event->metrics);
+    mk_list_entry_init(&event->_head);
+
+    view = &event->data.raw.view;
+    view->kind = kind;
+    view->priv = event;
+
+    cursor = ((char *) event) + envelope;
+
+    if (request != NULL) {
+        headers = (struct flb_input_ingest_header *) cursor;
+        cursor += request->header_count * sizeof(struct flb_input_ingest_header);
+
+        view->method = flb_input_ingest_copy(&cursor, request->method,
+                                             request->method_len);
+        view->method_len = request->method_len;
+        view->path = flb_input_ingest_copy(&cursor, request->path, request->path_len);
+        view->path_len = request->path_len;
+
+        for (i = 0; i < request->header_count; i++) {
+            headers[i].name = flb_input_ingest_copy(&cursor,
+                                                    request->headers[i].name,
+                                                    request->headers[i].name_len);
+            headers[i].name_len = request->headers[i].name_len;
+            headers[i].value = flb_input_ingest_copy(&cursor,
+                                                     request->headers[i].value,
+                                                     request->headers[i].value_len);
+            headers[i].value_len = request->headers[i].value_len;
+        }
+
+        view->headers = headers;
+        view->header_count = request->header_count;
+    }
+
+    view->data = flb_input_ingest_copy(&cursor, data, size);
+    view->size = size;
+
+    return event;
+}
+
+int flb_input_ingest_submit(struct flb_input_instance *ins,
+                            int kind,
+                            const void *data, size_t size,
+                            const struct flb_input_ingest_request *request,
+                            flb_input_ingest_reply_cb reply_cb,
+                            void *reply_data)
+{
+    int result;
+    int should_signal;
+    size_t storage_size;
+    size_t event_size;
+    struct flb_input_ingress_event *event;
+
+    if (ins == NULL || ins->p == NULL) {
+        return FLB_INPUT_INGEST_ERROR;
+    }
+
+    if (kind != FLB_INPUT_INGEST_STREAM_BYTES &&
+        kind != FLB_INPUT_INGEST_HTTP_REQUEST) {
+        return FLB_INPUT_INGEST_ERROR;
+    }
+
+    if ((kind == FLB_INPUT_INGEST_HTTP_REQUEST) != (request != NULL)) {
+        return FLB_INPUT_INGEST_ERROR;
+    }
+
+    if (!flb_input_is_external(ins) || ins->p->cb_ingest == NULL ||
+        (ins->p->ingest_kinds & kind) == 0) {
+        return FLB_INPUT_INGEST_NOT_SUPPORTED;
+    }
+
+    storage_size = 0;
+    result = flb_input_ingest_storage_size(data, size, request, &storage_size);
+    if (result != 0) {
+        return result;
+    }
+
+    /* The limit covers the complete representation: body and context */
+    if (storage_size > FLB_INPUT_INGEST_EVENT_MAX + 1) {
+        return FLB_INPUT_INGEST_TOO_LARGE;
+    }
+
+    event_size = sizeof(struct flb_input_ingress_event) + storage_size;
+
+    /* Check for room before copying anything; the answer is immediate */
+    pthread_mutex_lock(&ins->ingress_queue_lock);
+    result = FLB_INPUT_INGEST_OK;
+    if (ins->ingest_closed == FLB_TRUE || ins->ingress_queue_enabled != FLB_TRUE) {
+        result = FLB_INPUT_INGEST_NOT_RUNNING;
+    }
+    else if (ins->ingest_failed == FLB_TRUE) {
+        result = FLB_INPUT_INGEST_FAILED;
+    }
+    else if (ins->ingress_queue_byte_limit > 0 &&
+             event_size > ins->ingress_queue_byte_limit) {
+        result = FLB_INPUT_INGEST_TOO_LARGE;
+    }
+    else if ((ins->ingress_queue_event_limit > 0 &&
+              ins->ingress_queue_pending_events >= ins->ingress_queue_event_limit) ||
+             (ins->ingress_queue_byte_limit > 0 &&
+              ins->ingress_queue_pending_bytes >
+                  ins->ingress_queue_byte_limit - event_size)) {
+        result = FLB_INPUT_INGEST_BUSY;
+    }
+    pthread_mutex_unlock(&ins->ingress_queue_lock);
+
+    if (result != FLB_INPUT_INGEST_OK) {
+        return result;
+    }
+
+    event = flb_input_ingest_event_create(kind, data, size, request, storage_size);
+    if (event == NULL) {
+        return FLB_INPUT_INGEST_ERROR;
+    }
+    event->data.raw.reply_cb = reply_cb;
+    event->data.raw.reply_data = reply_data;
+
+    /* Another producer may have taken the room while copying */
+    pthread_mutex_lock(&ins->ingress_queue_lock);
+    if (ins->ingest_closed == FLB_TRUE || ins->ingress_queue_enabled != FLB_TRUE) {
+        result = FLB_INPUT_INGEST_NOT_RUNNING;
+    }
+    else if (ins->ingest_failed == FLB_TRUE) {
+        result = FLB_INPUT_INGEST_FAILED;
+    }
+    else if ((ins->ingress_queue_event_limit > 0 &&
+              ins->ingress_queue_pending_events >= ins->ingress_queue_event_limit) ||
+             (ins->ingress_queue_byte_limit > 0 &&
+              ins->ingress_queue_pending_bytes >
+                  ins->ingress_queue_byte_limit - event_size)) {
+        result = FLB_INPUT_INGEST_BUSY;
+    }
+
+    if (result != FLB_INPUT_INGEST_OK) {
+        pthread_mutex_unlock(&ins->ingress_queue_lock);
+        /* Not admitted: no reply is owed */
+        event->data.raw.replied = FLB_TRUE;
+        flb_input_ingress_event_destroy(event);
+        return result;
+    }
+
+    mk_list_add(&event->_head, &ins->ingress_queue);
+    ins->ingress_queue_pending_events++;
+    ins->ingress_queue_pending_bytes += event_size;
+    flb_input_ingress_update_metrics(ins);
+    should_signal = ins->ingress_queue_signal_pending == FLB_FALSE;
+    ins->ingress_queue_signal_pending = FLB_TRUE;
+    pthread_mutex_unlock(&ins->ingress_queue_lock);
+
+    if (should_signal) {
+        flb_input_ingress_signal(ins);
+    }
+
+    return FLB_INPUT_INGEST_OK;
 }

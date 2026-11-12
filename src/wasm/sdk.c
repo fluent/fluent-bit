@@ -10,6 +10,7 @@
 #include <openssl/crypto.h>
 #include <pthread.h>
 #include <poll.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,7 +21,45 @@
 #define SDK_PUSH 3
 #define SDK_DESTROY 4
 #define SDK_DRAIN 5
+#define SDK_PUSH_BYTES 6
+#define SDK_REQUEST 7
 #define SDK_PAYLOAD_LIMIT (1024 * 1024)
+
+/* Results of the host-driven ingestion commands (SDK_PUSH_BYTES, SDK_REQUEST) */
+#define SDK_INGEST_INVALID       -1
+#define SDK_INGEST_UNKNOWN_INPUT -2
+#define SDK_INGEST_BUSY          -10
+#define SDK_INGEST_TOO_LARGE     -11
+#define SDK_INGEST_NOT_SUPPORTED -12
+#define SDK_INGEST_NOT_RUNNING   -13
+#define SDK_INGEST_FAILED        -14
+
+/*
+ * Replies of requests. A slot is taken when the request is admitted and it
+ * is held until the main thread takes the completion, so an admitted request
+ * always has room for its outcome.
+ */
+#define SDK_REPLY_SLOTS 64
+#define SDK_REPLY_LIMIT (64 * 1024)
+
+#define SDK_REPLY_FREE    0
+#define SDK_REPLY_PENDING 1
+#define SDK_REPLY_DONE    2
+
+struct sdk_reply {
+    int state;
+    int id;                    /* id of the command that submitted it */
+    int outcome;               /* FLB_INPUT_INGEST_REPLIED, ...       */
+    int status;
+    int truncated;
+    unsigned char *data;       /* serialized headers and body         */
+    size_t size;
+};
+
+static pthread_mutex_t reply_mutex = PTHREAD_MUTEX_INITIALIZER;
+static struct sdk_reply replies[SDK_REPLY_SLOTS];
+
+static void sdk_replies_dispose(void);
 
 struct sdk_command {
     int id;
@@ -157,7 +196,7 @@ static int sdk_drain(flb_ctx_t *context)
 EMSCRIPTEN_KEEPALIVE int flb_wasm_sdk_submit(int id, int operation, char *name,
                                             unsigned char *data, size_t size, int grace)
 {
-    if (id <= 0 || operation < SDK_START || operation > SDK_DRAIN ||
+    if (id <= 0 || operation < SDK_START || operation > SDK_REQUEST ||
         size > SDK_PAYLOAD_LIMIT || (size != 0 && data == NULL) || grace < 0 || grace > 30) {
         return -1;
     }
@@ -228,6 +267,7 @@ static int sdk_stop(flb_ctx_t **context)
     ret = flb_stop(*context);
     flb_destroy(*context);
     *context = NULL;
+    sdk_replies_dispose();
     unlink("/config/.fluent-bit-sdk.yaml");
     OPENSSL_thread_stop();
     fflush(stdout);
@@ -261,6 +301,372 @@ static int sdk_push(flb_ctx_t *context, struct sdk_command *command)
     return flb_lib_push(context, selected->id, command->data, command->size);
 }
 
+/* An input in external mode is addressed by its alias */
+static struct flb_input_instance *sdk_external_input(flb_ctx_t *context,
+                                                     const char *alias)
+{
+    struct mk_list *head;
+    struct flb_input_instance *input;
+    struct flb_input_instance *selected;
+
+    selected = NULL;
+    mk_list_foreach(head, &context->config->inputs) {
+        input = mk_list_entry(head, struct flb_input_instance, _head);
+        if (flb_input_is_external(input) && input->alias != NULL &&
+            strcmp(input->alias, alias) == 0) {
+            if (selected != NULL) {
+                return NULL;
+            }
+            selected = input;
+        }
+    }
+
+    return selected;
+}
+
+static int sdk_ingest_result(int result)
+{
+    switch (result) {
+    case FLB_INPUT_INGEST_OK:
+        return 0;
+    case FLB_INPUT_INGEST_BUSY:
+        return SDK_INGEST_BUSY;
+    case FLB_INPUT_INGEST_TOO_LARGE:
+        return SDK_INGEST_TOO_LARGE;
+    case FLB_INPUT_INGEST_NOT_SUPPORTED:
+        return SDK_INGEST_NOT_SUPPORTED;
+    case FLB_INPUT_INGEST_NOT_RUNNING:
+        return SDK_INGEST_NOT_RUNNING;
+    case FLB_INPUT_INGEST_FAILED:
+        return SDK_INGEST_FAILED;
+    default:
+        return SDK_INGEST_INVALID;
+    }
+}
+
+static int sdk_push_bytes(flb_ctx_t *context, struct sdk_command *command)
+{
+    struct flb_input_instance *input;
+
+    if (context == NULL || command->name == NULL || command->size == 0) {
+        return SDK_INGEST_INVALID;
+    }
+
+    input = sdk_external_input(context, command->name);
+    if (input == NULL) {
+        return SDK_INGEST_UNKNOWN_INPUT;
+    }
+
+    return sdk_ingest_result(
+               flb_input_ingest_submit(input, FLB_INPUT_INGEST_STREAM_BYTES,
+                                       command->data, command->size,
+                                       NULL, NULL, NULL));
+}
+
+static uint32_t sdk_read_u32(const unsigned char *data)
+{
+    return (uint32_t) data[0] | ((uint32_t) data[1] << 8) |
+           ((uint32_t) data[2] << 16) | ((uint32_t) data[3] << 24);
+}
+
+static void sdk_write_u32(unsigned char *data, uint32_t value)
+{
+    data[0] = (unsigned char) (value & 0xff);
+    data[1] = (unsigned char) ((value >> 8) & 0xff);
+    data[2] = (unsigned char) ((value >> 16) & 0xff);
+    data[3] = (unsigned char) ((value >> 24) & 0xff);
+}
+
+/* Take 'length' bytes of the serialized request, or fail when it is short */
+static const char *sdk_request_take(const unsigned char *data, size_t size,
+                                    size_t *offset, size_t length)
+{
+    const char *start;
+
+    if (length > size - *offset) {
+        return NULL;
+    }
+
+    start = (const char *) data + *offset;
+    *offset += length;
+
+    return start;
+}
+
+/*
+ * The reply callback runs on the engine thread. It stores a bounded copy of
+ * the reply in the slot reserved at admission and wakes the main thread
+ * without waiting for it.
+ */
+static void sdk_reply_cb(int outcome, const struct flb_input_ingest_reply *reply,
+                         void *data)
+{
+    size_t i;
+    size_t size;
+    size_t body_size;
+    unsigned char *buffer;
+    unsigned char *cursor;
+    struct sdk_reply *slot;
+
+    slot = data;
+    buffer = NULL;
+    size = 0;
+    body_size = 0;
+
+    if (outcome == FLB_INPUT_INGEST_REPLIED && reply != NULL) {
+        /* Headers are kept whole; the body takes what is left of the bound */
+        size = 4;
+        for (i = 0; i < reply->header_count && size <= SDK_REPLY_LIMIT; i++) {
+            size += 8 + reply->headers[i].name_len + reply->headers[i].value_len;
+        }
+
+        if (size > SDK_REPLY_LIMIT) {
+            outcome = FLB_INPUT_INGEST_REPLY_FAILED;
+        }
+        else {
+            body_size = reply->body_size;
+            if (body_size > SDK_REPLY_LIMIT - size) {
+                body_size = SDK_REPLY_LIMIT - size;
+            }
+            buffer = malloc(size + body_size);
+            if (buffer == NULL) {
+                outcome = FLB_INPUT_INGEST_REPLY_FAILED;
+            }
+        }
+    }
+
+    if (buffer != NULL) {
+        cursor = buffer;
+        sdk_write_u32(cursor, (uint32_t) reply->header_count);
+        cursor += 4;
+        for (i = 0; i < reply->header_count; i++) {
+            sdk_write_u32(cursor, (uint32_t) reply->headers[i].name_len);
+            sdk_write_u32(cursor + 4, (uint32_t) reply->headers[i].value_len);
+            cursor += 8;
+            memcpy(cursor, reply->headers[i].name, reply->headers[i].name_len);
+            cursor += reply->headers[i].name_len;
+            memcpy(cursor, reply->headers[i].value, reply->headers[i].value_len);
+            cursor += reply->headers[i].value_len;
+        }
+        if (body_size > 0) {
+            memcpy(cursor, reply->body, body_size);
+        }
+    }
+
+    pthread_mutex_lock(&reply_mutex);
+    slot->outcome = outcome;
+    slot->status = buffer != NULL ? reply->status : 0;
+    slot->truncated = buffer != NULL && body_size < reply->body_size;
+    slot->data = buffer;
+    slot->size = buffer != NULL ? size + body_size : 0;
+    slot->state = SDK_REPLY_DONE;
+    pthread_mutex_unlock(&reply_mutex);
+
+    MAIN_THREAD_ASYNC_EM_ASM({ Module['onSdkReply'](); });
+}
+
+/* Main thread: index of a completed reply, or -1 when there is none */
+EMSCRIPTEN_KEEPALIVE int flb_wasm_sdk_reply_next(void)
+{
+    int i;
+    int found;
+
+    found = -1;
+    pthread_mutex_lock(&reply_mutex);
+    for (i = 0; i < SDK_REPLY_SLOTS; i++) {
+        if (replies[i].state == SDK_REPLY_DONE) {
+            found = i;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&reply_mutex);
+
+    return found;
+}
+
+/* Main thread: fields of a completed reply: 0 id, 1 outcome, 2 status,
+ * 3 truncated, 4 data pointer, 5 data size. */
+EMSCRIPTEN_KEEPALIVE int flb_wasm_sdk_reply_field(int index, int field)
+{
+    int value;
+    struct sdk_reply *slot;
+
+    if (index < 0 || index >= SDK_REPLY_SLOTS) {
+        return -1;
+    }
+
+    slot = &replies[index];
+    value = -1;
+
+    pthread_mutex_lock(&reply_mutex);
+    if (slot->state == SDK_REPLY_DONE) {
+        switch (field) {
+        case 0:
+            value = slot->id;
+            break;
+        case 1:
+            value = slot->outcome;
+            break;
+        case 2:
+            value = slot->status;
+            break;
+        case 3:
+            value = slot->truncated;
+            break;
+        case 4:
+            value = (int) (intptr_t) slot->data;
+            break;
+        case 5:
+            value = (int) slot->size;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&reply_mutex);
+
+    return value;
+}
+
+/* Main thread: the completion was taken, its slot can be used again */
+EMSCRIPTEN_KEEPALIVE void flb_wasm_sdk_reply_release(int index)
+{
+    unsigned char *data;
+
+    if (index < 0 || index >= SDK_REPLY_SLOTS) {
+        return;
+    }
+
+    data = NULL;
+    pthread_mutex_lock(&reply_mutex);
+    if (replies[index].state == SDK_REPLY_DONE) {
+        data = replies[index].data;
+        memset(&replies[index], 0, sizeof(struct sdk_reply));
+    }
+    pthread_mutex_unlock(&reply_mutex);
+
+    free(data);
+}
+
+/* The engine is gone: every callback has run, drop what was not taken */
+static void sdk_replies_dispose(void)
+{
+    int i;
+
+    pthread_mutex_lock(&reply_mutex);
+    for (i = 0; i < SDK_REPLY_SLOTS; i++) {
+        free(replies[i].data);
+        memset(&replies[i], 0, sizeof(struct sdk_reply));
+    }
+    pthread_mutex_unlock(&reply_mutex);
+}
+
+/*
+ * Serialized request, little endian:
+ *   u32 method length, u32 path length, u32 header count, u32 body length,
+ *   method, path, { u32 name length, u32 value length, name, value }, body
+ */
+static int sdk_request(flb_ctx_t *context, struct sdk_command *command)
+{
+    int i;
+    int result;
+    size_t offset;
+    uint32_t method_len;
+    uint32_t path_len;
+    uint32_t header_count;
+    uint32_t body_len;
+    const char *body;
+    struct sdk_reply *slot;
+    struct flb_input_instance *input;
+    struct flb_input_ingest_request request;
+    struct flb_input_ingest_header headers[FLB_INPUT_INGEST_HEADER_MAX];
+
+    if (context == NULL || command->name == NULL || command->size < 16) {
+        return SDK_INGEST_INVALID;
+    }
+
+    input = sdk_external_input(context, command->name);
+    if (input == NULL) {
+        return SDK_INGEST_UNKNOWN_INPUT;
+    }
+
+    method_len = sdk_read_u32(command->data);
+    path_len = sdk_read_u32(command->data + 4);
+    header_count = sdk_read_u32(command->data + 8);
+    body_len = sdk_read_u32(command->data + 12);
+    offset = 16;
+
+    if (header_count > FLB_INPUT_INGEST_HEADER_MAX) {
+        return SDK_INGEST_TOO_LARGE;
+    }
+
+    memset(&request, 0, sizeof(request));
+    request.method = sdk_request_take(command->data, command->size, &offset, method_len);
+    request.method_len = method_len;
+    if (request.method == NULL) {
+        return SDK_INGEST_INVALID;
+    }
+    request.path = sdk_request_take(command->data, command->size, &offset, path_len);
+    request.path_len = path_len;
+    if (request.path == NULL) {
+        return SDK_INGEST_INVALID;
+    }
+
+    for (i = 0; i < (int) header_count; i++) {
+        if (command->size - offset < 8) {
+            return SDK_INGEST_INVALID;
+        }
+        headers[i].name_len = sdk_read_u32(command->data + offset);
+        headers[i].value_len = sdk_read_u32(command->data + offset + 4);
+        offset += 8;
+        headers[i].name = sdk_request_take(command->data, command->size, &offset,
+                                           headers[i].name_len);
+        if (headers[i].name == NULL) {
+            return SDK_INGEST_INVALID;
+        }
+        headers[i].value = sdk_request_take(command->data, command->size, &offset,
+                                            headers[i].value_len);
+        if (headers[i].value == NULL) {
+            return SDK_INGEST_INVALID;
+        }
+    }
+    request.headers = headers;
+    request.header_count = header_count;
+
+    body = sdk_request_take(command->data, command->size, &offset, body_len);
+    if (body == NULL || offset != command->size) {
+        return SDK_INGEST_INVALID;
+    }
+
+    /* Reserve the completion before the request can be dispatched */
+    slot = NULL;
+    pthread_mutex_lock(&reply_mutex);
+    for (i = 0; i < SDK_REPLY_SLOTS; i++) {
+        if (replies[i].state == SDK_REPLY_FREE) {
+            slot = &replies[i];
+            memset(slot, 0, sizeof(struct sdk_reply));
+            slot->state = SDK_REPLY_PENDING;
+            slot->id = command->id;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&reply_mutex);
+
+    if (slot == NULL) {
+        return SDK_INGEST_BUSY;
+    }
+
+    result = flb_input_ingest_submit(input, FLB_INPUT_INGEST_HTTP_REQUEST,
+                                     body, body_len, &request,
+                                     sdk_reply_cb, slot);
+    if (result != FLB_INPUT_INGEST_OK) {
+        /* Not admitted: no reply will come */
+        pthread_mutex_lock(&reply_mutex);
+        memset(slot, 0, sizeof(struct sdk_reply));
+        pthread_mutex_unlock(&reply_mutex);
+    }
+
+    return sdk_ingest_result(result);
+}
+
 int main(void)
 {
     flb_ctx_t *context;
@@ -288,6 +694,12 @@ int main(void)
         }
         else if (command.operation == SDK_DRAIN) {
             result = sdk_drain(context);
+        }
+        else if (command.operation == SDK_PUSH_BYTES) {
+            result = sdk_push_bytes(context, &command);
+        }
+        else if (command.operation == SDK_REQUEST) {
+            result = sdk_request(context, &command);
         }
         else {
             result = sdk_stop(&context);

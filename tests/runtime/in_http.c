@@ -34,6 +34,9 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_network.h>
+#include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_ingest.h>
+#include <fluent-bit/flb_gzip.h>
 #include <monkey/mk_core.h>
 #include "flb_tests_runtime.h"
 
@@ -1301,6 +1304,570 @@ void flb_test_http_remote_addr_array(void)
     test_http_add_remote_addr("[{\"test\":\"msg\"}]", "1.2.3.4, 5.6.7.8", "1.2.3.4", "false");
 }
 
+/*
+ * External source mode
+ * ====================
+ * The host program submits assembled requests instead of using a socket.
+ * The same server stages and the same handler produce the reply.
+ */
+struct external_reply {
+    int count;
+    int outcome;
+    int status;
+    char body[256];
+    char content_length[32];
+};
+
+static void external_reply_cb(int outcome,
+                              const struct flb_input_ingest_reply *reply,
+                              void *data)
+{
+    size_t i;
+    size_t length;
+    struct external_reply *capture;
+
+    capture = data;
+
+    pthread_mutex_lock(&result_mutex);
+    capture->count++;
+    capture->outcome = outcome;
+    if (reply != NULL) {
+        capture->status = reply->status;
+        length = reply->body_size;
+        if (length >= sizeof(capture->body)) {
+            length = sizeof(capture->body) - 1;
+        }
+        if (length > 0) {
+            memcpy(capture->body, reply->body, length);
+        }
+        capture->body[length] = '\0';
+
+        for (i = 0; i < reply->header_count; i++) {
+            if (reply->headers[i].name_len == 14 &&
+                strncasecmp(reply->headers[i].name, "content-length", 14) == 0) {
+                length = reply->headers[i].value_len;
+                if (length >= sizeof(capture->content_length)) {
+                    length = sizeof(capture->content_length) - 1;
+                }
+                memcpy(capture->content_length, reply->headers[i].value, length);
+                capture->content_length[length] = '\0';
+            }
+        }
+    }
+    pthread_mutex_unlock(&result_mutex);
+}
+
+static struct flb_input_instance *external_instance_get(struct test_ctx *ctx)
+{
+    struct mk_list *head;
+    struct flb_input_instance *ins;
+
+    mk_list_foreach(head, &ctx->flb->config->inputs) {
+        ins = mk_list_entry(head, struct flb_input_instance, _head);
+        if (ins->id == ctx->i_ffd) {
+            return ins;
+        }
+    }
+
+    return NULL;
+}
+
+/* Submit a request and wait for its reply callback */
+static int external_request(struct test_ctx *ctx,
+                            const char *method, const char *path,
+                            const char *host, const char *content_type,
+                            const char *extra_name, const char *extra_value,
+                            const char *body, size_t body_size,
+                            struct external_reply *capture)
+{
+    int i;
+    int ret;
+    int count;
+    size_t headers;
+    struct flb_input_ingest_request request;
+    struct flb_input_ingest_header header[3];
+
+    memset(capture, 0, sizeof(struct external_reply));
+    capture->outcome = -1;
+
+    headers = 0;
+    if (host != NULL) {
+        header[headers].name = "Host";
+        header[headers].name_len = 4;
+        header[headers].value = host;
+        header[headers].value_len = strlen(host);
+        headers++;
+    }
+    if (content_type != NULL) {
+        header[headers].name = "Content-Type";
+        header[headers].name_len = 12;
+        header[headers].value = content_type;
+        header[headers].value_len = strlen(content_type);
+        headers++;
+    }
+    if (extra_name != NULL) {
+        header[headers].name = extra_name;
+        header[headers].name_len = strlen(extra_name);
+        header[headers].value = extra_value;
+        header[headers].value_len = strlen(extra_value);
+        headers++;
+    }
+
+    memset(&request, 0, sizeof(request));
+    request.method = method;
+    request.method_len = strlen(method);
+    request.path = path;
+    request.path_len = strlen(path);
+    request.headers = header;
+    request.header_count = headers;
+
+    ret = flb_input_ingest_submit(external_instance_get(ctx),
+                                  FLB_INPUT_INGEST_HTTP_REQUEST,
+                                  body, body_size, &request,
+                                  external_reply_cb, capture);
+    if (ret != FLB_INPUT_INGEST_OK) {
+        return ret;
+    }
+
+    for (i = 0; i < 400; i++) {
+        pthread_mutex_lock(&result_mutex);
+        count = capture->count;
+        pthread_mutex_unlock(&result_mutex);
+        if (count > 0) {
+            break;
+        }
+        flb_time_msleep(10);
+    }
+
+    /* Exactly one reply per admitted request */
+    flb_time_msleep(50);
+    TEST_CHECK(capture->count == 1);
+
+    return FLB_INPUT_INGEST_OK;
+}
+
+static struct test_ctx *external_ctx_create(struct flb_lib_out_cb *cb_data,
+                                            int external)
+{
+    int ret;
+    struct test_ctx *ctx;
+
+    ctx = test_ctx_create(cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        return NULL;
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    if (external == FLB_TRUE) {
+        ret = flb_input_set(ctx->flb, ctx->i_ffd, "source.mode", "external", NULL);
+        TEST_CHECK(ret == 0);
+    }
+
+    return ctx;
+}
+
+static void external_ctx_destroy(struct test_ctx *ctx)
+{
+    if (ctx->httpc) {
+        http_client_ctx_destroy(ctx->httpc);
+    }
+    flb_stop(ctx->flb);
+    flb_destroy(ctx->flb);
+    flb_free(ctx);
+}
+
+/* Same request over a socket: the reference for status and body */
+static void native_request(const char *path, const char *content_type,
+                           const char *body, size_t body_size,
+                           int *status, char *out_body, size_t out_size)
+{
+    int ret;
+    size_t b_sent;
+    size_t length;
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    struct flb_http_client *c;
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = "\"test\":\"msg\"";
+
+    *status = -1;
+    out_body[0] = '\0';
+
+    ctx = external_ctx_create(&cb_data, FLB_FALSE);
+    if (ctx == NULL) {
+        return;
+    }
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    ctx->httpc = http_client_ctx_create();
+    TEST_CHECK(ctx->httpc != NULL);
+
+    c = flb_http_client(ctx->httpc->u_conn, FLB_HTTP_POST, path, body, body_size,
+                        "127.0.0.1", 9880, NULL, 0);
+    TEST_CHECK(c != NULL);
+
+    if (content_type != NULL) {
+        flb_http_add_header(c, FLB_HTTP_HEADER_CONTENT_TYPE,
+                            strlen(FLB_HTTP_HEADER_CONTENT_TYPE),
+                            content_type, strlen(content_type));
+    }
+
+    ret = flb_http_do(c, &b_sent);
+    TEST_CHECK(ret == 0);
+
+    *status = c->resp.status;
+    length = c->resp.payload_size;
+    /*
+     * Some error paths of the handler write a second response behind the
+     * first one. A client is answered by the first: keep its body only.
+     */
+    if (c->resp.content_length >= 0 && (size_t) c->resp.content_length < length) {
+        length = (size_t) c->resp.content_length;
+    }
+    if (length >= out_size) {
+        length = out_size - 1;
+    }
+    if (length > 0) {
+        memcpy(out_body, c->resp.payload, length);
+    }
+    out_body[length] = '\0';
+
+    flb_time_msleep(500);
+
+    flb_http_client_destroy(c);
+    flb_upstream_conn_release(ctx->httpc->u_conn);
+    external_ctx_destroy(ctx);
+}
+
+static void external_parity_case(const char *content_type, const char *body,
+                                 int expected_status, int expected_records)
+{
+    int ret;
+    int native_status;
+    int native_records;
+    char native_body[256];
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    struct external_reply reply;
+
+    clear_output_num();
+    native_request("/", content_type, body, strlen(body),
+                   &native_status, native_body, sizeof(native_body));
+    native_records = get_output_num();
+
+    TEST_CHECK(native_status == expected_status);
+    TEST_CHECK((native_records > 0) == (expected_records > 0));
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = "\"test\":\"msg\"";
+
+    ctx = external_ctx_create(&cb_data, FLB_TRUE);
+    if (ctx == NULL) {
+        return;
+    }
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    ret = external_request(ctx, "POST", "/", "127.0.0.1:9880", content_type,
+                           NULL, NULL, body, strlen(body), &reply);
+    TEST_CHECK(ret == FLB_INPUT_INGEST_OK);
+    TEST_CHECK(reply.outcome == FLB_INPUT_INGEST_REPLIED);
+
+    if (!TEST_CHECK(reply.status == native_status)) {
+        TEST_MSG("status: native=%d external=%d", native_status, reply.status);
+    }
+    if (!TEST_CHECK(strcmp(reply.body, native_body) == 0)) {
+        TEST_MSG("body: native='%s' external='%s'", native_body, reply.body);
+    }
+
+    flb_time_msleep(500);
+    if (!TEST_CHECK(get_output_num() == native_records)) {
+        TEST_MSG("records: native=%d external=%d", native_records, get_output_num());
+    }
+
+    external_ctx_destroy(ctx);
+}
+
+void flb_test_http_external_parity(void)
+{
+    /* accepted, rejected by the decoder, rejected before decoding */
+    external_parity_case(JSON_CONTENT_TYPE, "{\"test\":\"msg\"}", 201, 1);
+    external_parity_case(JSON_CHARSET_CONTENT_TYPE, "{\"test\":\"msg\"}", 201, 1);
+    external_parity_case(JSON_CONTENT_TYPE, "{\"test\":\"msg\"", 400, 0);
+    external_parity_case("text/plain", "{\"test\":\"msg\"}", 400, 0);
+    external_parity_case(NULL, "{\"test\":\"msg\"}", 400, 0);
+}
+
+void flb_test_http_external_requests(void)
+{
+    int ret;
+    char *gz_data;
+    size_t gz_size;
+    const char *body = "{\"test\":\"msg\"}";
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    struct external_reply reply;
+    struct flb_input_ingest_request request;
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = "\"test\":\"msg\"";
+
+    ctx = external_ctx_create(&cb_data, FLB_TRUE);
+    if (ctx == NULL) {
+        return;
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "successful_response_code", "200",
+                        "http_server.max_decoded_body_size", "4096",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* The path carries the tag and the query string is not part of it */
+    ret = external_request(ctx, "POST", "/app%2Elogs?source=browser", "localhost",
+                           JSON_CONTENT_TYPE, NULL, NULL,
+                           body, strlen(body), &reply);
+    TEST_CHECK(ret == FLB_INPUT_INGEST_OK);
+    TEST_CHECK(reply.outcome == FLB_INPUT_INGEST_REPLIED);
+    TEST_CHECK(reply.status == 200);
+    TEST_CHECK(strcmp(reply.content_length, "0") == 0);
+
+    flb_time_msleep(500);
+    TEST_CHECK(get_output_num() == 1);
+
+    /* A compressed body goes through the server inflation stage */
+    ret = flb_gzip_compress((void *) body, strlen(body), (void **) &gz_data, &gz_size);
+    TEST_CHECK(ret == 0);
+
+    ret = external_request(ctx, "POST", "/", "localhost", JSON_CONTENT_TYPE,
+                           "Content-Encoding", "gzip",
+                           gz_data, gz_size, &reply);
+    TEST_CHECK(ret == FLB_INPUT_INGEST_OK);
+    TEST_CHECK(reply.outcome == FLB_INPUT_INGEST_REPLIED);
+    TEST_CHECK(reply.status == 200);
+    flb_free(gz_data);
+
+    flb_time_msleep(500);
+    TEST_CHECK(get_output_num() == 2);
+
+    /* ...and the inflation budget of the server still applies */
+    gz_data = flb_calloc(1, 65536);
+    TEST_CHECK(gz_data != NULL);
+    memset(gz_data, ' ', 65535);
+    {
+        char *packed;
+        size_t packed_size;
+
+        ret = flb_gzip_compress(gz_data, 65535, (void **) &packed, &packed_size);
+        TEST_CHECK(ret == 0);
+        ret = external_request(ctx, "POST", "/", "localhost", JSON_CONTENT_TYPE,
+                               "Content-Encoding", "gzip",
+                               packed, packed_size, &reply);
+        TEST_CHECK(ret == FLB_INPUT_INGEST_OK);
+        TEST_CHECK(reply.outcome == FLB_INPUT_INGEST_REPLIED);
+        TEST_CHECK(reply.status == 413);
+        flb_free(packed);
+    }
+    flb_free(gz_data);
+
+    /* A request without a Host header is accepted, as it is on a socket */
+    ret = external_request(ctx, "POST", "/", NULL, JSON_CONTENT_TYPE, NULL, NULL,
+                           body, strlen(body), &reply);
+    TEST_CHECK(ret == FLB_INPUT_INGEST_OK);
+    TEST_CHECK(reply.outcome == FLB_INPUT_INGEST_REPLIED);
+    TEST_CHECK(reply.status == 200);
+
+    flb_time_msleep(500);
+    TEST_CHECK(get_output_num() == 3);
+
+    /* Method checks of the handler */
+    ret = external_request(ctx, "DELETE", "/", "localhost", JSON_CONTENT_TYPE,
+                           NULL, NULL, body, strlen(body), &reply);
+    TEST_CHECK(ret == FLB_INPUT_INGEST_OK);
+    TEST_CHECK(reply.outcome == FLB_INPUT_INGEST_REPLIED);
+    TEST_CHECK(reply.status == 400);
+
+    /* gRPC needs HTTP/2 framing: refused by the adapter */
+    ret = external_request(ctx, "POST", "/", "localhost", "application/grpc",
+                           NULL, NULL, body, strlen(body), &reply);
+    TEST_CHECK(ret == FLB_INPUT_INGEST_OK);
+    TEST_CHECK(reply.outcome == FLB_INPUT_INGEST_REPLIED);
+    TEST_CHECK(reply.status == 415);
+
+    /* A request that cannot be assembled gets a failed outcome, no reply */
+    ret = external_request(ctx, "POST", "no-leading-slash", "localhost",
+                           JSON_CONTENT_TYPE, NULL, NULL,
+                           body, strlen(body), &reply);
+    TEST_CHECK(ret == FLB_INPUT_INGEST_OK);
+    TEST_CHECK(reply.outcome == FLB_INPUT_INGEST_REPLY_FAILED);
+
+    ret = external_request(ctx, "POST", "/", "localhost", JSON_CONTENT_TYPE,
+                           "X-Bad", "line\r\nbreak",
+                           body, strlen(body), &reply);
+    TEST_CHECK(ret == FLB_INPUT_INGEST_OK);
+    TEST_CHECK(reply.outcome == FLB_INPUT_INGEST_REPLY_FAILED);
+
+    flb_time_msleep(300);
+    TEST_CHECK(get_output_num() == 3);
+
+    /* Without a reply callback the request is processed all the same */
+    {
+        struct flb_input_ingest_header header[2];
+
+        header[0].name = "host";
+        header[0].name_len = 4;
+        header[0].value = "localhost";
+        header[0].value_len = 9;
+        header[1].name = "content-type";
+        header[1].name_len = 12;
+        header[1].value = JSON_CONTENT_TYPE;
+        header[1].value_len = strlen(JSON_CONTENT_TYPE);
+
+        memset(&request, 0, sizeof(request));
+        request.method = "POST";
+        request.method_len = 4;
+        request.path = "/";
+        request.path_len = 1;
+        request.headers = header;
+        request.header_count = 2;
+
+        ret = flb_input_ingest_submit(external_instance_get(ctx),
+                                      FLB_INPUT_INGEST_HTTP_REQUEST,
+                                      body, strlen(body), &request, NULL, NULL);
+        TEST_CHECK(ret == FLB_INPUT_INGEST_OK);
+    }
+
+    flb_time_msleep(500);
+    TEST_CHECK(get_output_num() == 4);
+
+    /* A stream payload is not something this plugin understands */
+    ret = flb_input_ingest_submit(external_instance_get(ctx),
+                                  FLB_INPUT_INGEST_STREAM_BYTES,
+                                  body, strlen(body), NULL, NULL, NULL);
+    TEST_CHECK(ret == FLB_INPUT_INGEST_NOT_SUPPORTED);
+
+    external_ctx_destroy(ctx);
+}
+
+void flb_test_http_external_authorization(void)
+{
+    int ret;
+    char jwks_url[64];
+    char bearer[1024];
+    const char *body = "{\"test\":\"msg\"}";
+    struct jwks_mock_server jwks;
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    struct external_reply reply;
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = "\"test\":\"msg\"";
+
+    if (!TEST_CHECK(jwks_mock_server_start(&jwks) == 0)) {
+        return;
+    }
+    snprintf(jwks_url, sizeof(jwks_url), "http://127.0.0.1:%d/jwks", jwks.port);
+
+    ctx = external_ctx_create(&cb_data, FLB_TRUE);
+    if (ctx == NULL) {
+        jwks_mock_server_stop(&jwks);
+        return;
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "oauth2.validate", "true",
+                        "oauth2.issuer", "issuer",
+                        "oauth2.jwks_url", jwks_url,
+                        "oauth2.allowed_audience", "audience",
+                        "oauth2.allowed_clients", "client1",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* The authorization stage runs before the handler */
+    ret = external_request(ctx, "POST", "/", "localhost", JSON_CONTENT_TYPE,
+                           NULL, NULL, body, strlen(body), &reply);
+    TEST_CHECK(ret == FLB_INPUT_INGEST_OK);
+    TEST_CHECK(reply.outcome == FLB_INPUT_INGEST_REPLIED);
+    TEST_CHECK(reply.status == 401);
+
+    flb_time_msleep(300);
+    TEST_CHECK(get_output_num() == 0);
+
+    snprintf(bearer, sizeof(bearer), "Bearer %s", MOCK_VALID_JWT);
+    ret = external_request(ctx, "POST", "/", "localhost", JSON_CONTENT_TYPE,
+                           "Authorization", bearer,
+                           body, strlen(body), &reply);
+    TEST_CHECK(ret == FLB_INPUT_INGEST_OK);
+    TEST_CHECK(reply.outcome == FLB_INPUT_INGEST_REPLIED);
+    TEST_CHECK(reply.status == 201);
+
+    flb_time_msleep(500);
+    TEST_CHECK(get_output_num() == 1);
+
+    external_ctx_destroy(ctx);
+    jwks_mock_server_stop(&jwks);
+}
+
+static void external_expect_start_failure(const char *key, const char *value)
+{
+    int ret;
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = "";
+
+    ctx = external_ctx_create(&cb_data, FLB_TRUE);
+    if (ctx == NULL) {
+        return;
+    }
+
+    flb_service_set(ctx->flb, "Log_Level", "off", NULL);
+    ret = flb_input_set(ctx->flb, ctx->i_ffd, key, value, NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    if (!TEST_CHECK(ret != 0)) {
+        TEST_MSG("'%s' was accepted in external mode", key);
+        flb_stop(ctx->flb);
+    }
+
+    flb_destroy(ctx->flb);
+    flb_free(ctx);
+}
+
+void flb_test_http_external_rejected_options(void)
+{
+    external_expect_start_failure("http_server.workers", "2");
+    external_expect_start_failure("port", "9881");
+    external_expect_start_failure("listen", "127.0.0.1");
+    external_expect_start_failure("threaded", "true");
+#ifdef FLB_HAVE_TLS
+    external_expect_start_failure("tls", "on");
+#endif
+}
+
 TEST_LIST = {
     {"http", flb_test_http},
     {"successful_response_code_200", flb_test_http_successful_response_code_200},
@@ -1316,5 +1883,9 @@ TEST_LIST = {
     {"add_remote_addr_array_ng", flb_test_http_remote_addr_array_ng},
     {"add_remote_addr_map", flb_test_http_remote_addr_map},
     {"add_remote_addr_array", flb_test_http_remote_addr_array},
+    {"external_parity", flb_test_http_external_parity},
+    {"external_requests", flb_test_http_external_requests},
+    {"external_authorization", flb_test_http_external_authorization},
+    {"external_rejected_options", flb_test_http_external_rejected_options},
     {NULL, NULL}
 };

@@ -66,6 +66,8 @@
 
 #define HTTP_STREAM_ROLE_SERVER                0
 #define HTTP_STREAM_ROLE_CLIENT                1
+/* Request supplied by the host program: no session and no connection */
+#define HTTP_STREAM_ROLE_HOST                  2
 
 #define HTTP_STREAM_STATUS_SENDING_HEADERS     0
 #define HTTP_STREAM_STATUS_SENDING_DATA        1
@@ -143,6 +145,15 @@ struct flb_http_stream {
 
     void                           *parent;
     void                           *user_data;
+
+    /*
+     * HTTP_STREAM_ROLE_HOST: receives the response when it is committed. Only
+     * the first commit counts, as a client only reads the first response.
+     */
+    void                          (*cb_host_response)(
+                                        struct flb_http_response *response,
+                                        void *data);
+    void                           *host_data;
 
     int                             releasable;
     struct cfl_list                 _head;

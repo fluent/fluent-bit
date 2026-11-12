@@ -57,4 +57,8 @@ int tcp_conn_event(void *data);
 struct tcp_conn *tcp_conn_add(struct flb_connection *connection, struct flb_in_tcp_config *ctx);
 int tcp_conn_del(struct tcp_conn *conn);
 
+struct tcp_conn *tcp_conn_external_create(struct flb_in_tcp_config *ctx);
+void tcp_conn_external_destroy(struct tcp_conn *conn);
+int tcp_conn_external_feed(struct tcp_conn *conn, const char *data, size_t size);
+
 #endif

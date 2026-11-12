@@ -929,6 +929,26 @@ if(FLB_HTTP_SERVER)
   add_subdirectory(${FLB_PATH_LIB_MONKEY} EXCLUDE_FROM_ALL)
 else()
   add_subdirectory(${FLB_PATH_LIB_MONKEY}/mk_core EXCLUDE_FROM_ALL)
+  if(FLB_WASM_BROWSER)
+    # The browser profile has no HTTP server, but its HTTP inputs include
+    # Monkey's declarations. Provide the headers Monkey's own configure step
+    # would generate; none of its code is built or linked here.
+    set(MK_VERSION_MAJOR 0)
+    set(MK_VERSION_MINOR 0)
+    set(MK_VERSION_PATCH 0)
+    set(MK_VERSION_STR "0.0.0")
+    set(MK_BUILD_CMD "")
+    set(MK_PATH_CONF "")
+    set(MK_BUILD_FLAGS "")
+    set(STATIC_PLUGINS_DECL "")
+    set(STATIC_PLUGINS_INIT "")
+    foreach(header mk_info.h mk_env.h mk_static_plugins.h)
+      configure_file("${FLB_ROOT}/${FLB_PATH_LIB_MONKEY}/include/monkey/${header}.in"
+                     "${CMAKE_BINARY_DIR}/lib/monkey/include/monkey/${header}")
+    endforeach()
+    # The inputs name Monkey's library as a dependency: nothing to link here.
+    add_library(monkey-core-static INTERFACE)
+  endif()
 endif()
 
 if(FLB_TLS)

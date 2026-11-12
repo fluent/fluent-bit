@@ -25,7 +25,7 @@ if(PROFILE_TEST_MODE STREQUAL "native")
     message(FATAL_ERROR "Native plugin defaults changed")
   endif()
 else()
-  if(FLB_IN_HTTP OR FLB_OUT_TCP OR FLB_FILTER_WASM)
+  if(FLB_IN_FORWARD OR FLB_OUT_TCP OR FLB_FILTER_WASM)
     message(FATAL_ERROR "A native-only plugin was enabled")
   endif()
   if(FLB_TLS OR FLB_WASM OR FLB_HAVE_FORK OR FLB_HAVE_ACCEPT4 OR FLB_HAVE_UNIX_SOCKET)
@@ -35,6 +35,13 @@ else()
     message(FATAL_ERROR "Browser filesystem and YAML defaults were lost")
   endif()
   if(NOT FLB_MINIMAL)
+    # Network inputs are present for host-driven ingestion (source.mode external).
+    foreach(plugin IN ITEMS FLB_IN_TCP FLB_IN_HTTP FLB_IN_OPENTELEMETRY
+        FLB_IN_SPLUNK FLB_IN_ELASTICSEARCH FLB_IN_PROMETHEUS_REMOTE_WRITE)
+      if(NOT ${plugin})
+        message(FATAL_ERROR "Browser plugin default lost: ${plugin}")
+      endif()
+    endforeach()
     foreach(plugin IN ITEMS FLB_IN_HEAD FLB_IN_TAIL FLB_IN_PROMETHEUS_SCRAPE
         FLB_IN_PROMETHEUS_TEXTFILE FLB_FILTER_GEOIP2
         FLB_PROCESSOR_JOURNALD_OTEL FLB_OUT_FILE FLB_OUT_ES

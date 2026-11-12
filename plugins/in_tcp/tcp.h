@@ -34,6 +34,7 @@
 #include <msgpack.h>
 
 struct flb_downstream_worker_runtime;
+struct tcp_conn;
 
 struct flb_in_tcp_config {
     flb_sds_t format_name;             /* Data format name */
@@ -66,6 +67,7 @@ struct flb_in_tcp_config {
     struct flb_input_instance *ins;    /* Input plugin instace        */
     struct flb_log_event_encoder *log_encoder;
     struct flb_downstream_worker_runtime *runtime;
+    struct tcp_conn *external;         /* Stream fed by the host program */
 };
 
 static inline int tcp_ingest_logs(struct flb_in_tcp_config *ctx,

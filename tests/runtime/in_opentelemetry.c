@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_input_ingest.h>
 
 #include "flb_tests_runtime.h"
 #include "../../plugins/in_opentelemetry/opentelemetry_prot.h"
@@ -822,6 +823,303 @@ void flb_test_tag_explicit_overrides_uri_for_all_signals()
     test_ctx_destroy(ctx);
 }
 
+/*
+ * External source mode
+ * ====================
+ * OTLP/HTTP requests submitted by the host program. Path and content type
+ * select the signal and the decoder, as they do on a socket.
+ */
+#define TEST_MSG_OTEL_METRICS "{\"resourceMetrics\":[{\"resource\":{\"attributes\":[{\"key\":\"service.name\",\"value\":{\"stringValue\":\"browser\"}}]},\"scopeMetrics\":[{\"scope\":{\"name\":\"my.library\"},\"metrics\":[{\"name\":\"requests\",\"unit\":\"1\",\"gauge\":{\"dataPoints\":[{\"asInt\":\"7\",\"timeUnixNano\":\"1660296023390371588\"}]}}]}]}]}"
+#define TEST_MSG_OTEL_TRACES "{\"resourceSpans\":[{\"resource\":{\"attributes\":[{\"key\":\"service.name\",\"value\":{\"stringValue\":\"browser\"}}]},\"scopeSpans\":[{\"scope\":{\"name\":\"my.library\"},\"spans\":[{\"traceId\":\"5b8efff798038103d269b633813fc60c\",\"spanId\":\"eee19b7ec3c1b174\",\"name\":\"page-load\",\"kind\":1,\"startTimeUnixNano\":\"1660296023390371588\",\"endTimeUnixNano\":\"1660296023390471588\"}]}]}]}"
+
+/* ExportLogsServiceRequest with one log record whose body is "hi" */
+static const char otel_logs_protobuf[] = {
+    0x0a, 0x0a, 0x12, 0x08, 0x12, 0x06, 0x2a, 0x04, 0x0a, 0x02, 'h', 'i'
+};
+
+struct external_reply {
+    int count;
+    int outcome;
+    int status;
+    char body[256];
+};
+
+static char external_last_body[256];
+
+static void external_reply_cb(int outcome,
+                              const struct flb_input_ingest_reply *reply,
+                              void *data)
+{
+    size_t length;
+    struct external_reply *capture;
+
+    capture = data;
+
+    pthread_mutex_lock(&result_mutex);
+    capture->count++;
+    capture->outcome = outcome;
+    if (reply != NULL) {
+        capture->status = reply->status;
+        length = reply->body_size;
+        if (length >= sizeof(capture->body)) {
+            length = sizeof(capture->body) - 1;
+        }
+        if (length > 0) {
+            memcpy(capture->body, reply->body, length);
+        }
+        capture->body[length] = '\0';
+    }
+    pthread_mutex_unlock(&result_mutex);
+}
+
+static int cb_external_log_body(void *chunk, size_t size, void *data)
+{
+    char *json;
+
+    (void) data;
+
+    json = get_log_body(chunk, size);
+    if (json != NULL) {
+        pthread_mutex_lock(&result_mutex);
+        snprintf(external_last_body, sizeof(external_last_body), "%s", json);
+        num_output++;
+        pthread_mutex_unlock(&result_mutex);
+        flb_free(json);
+    }
+
+    return 0;
+}
+
+static int external_request(struct test_ctx *ctx,
+                            const char *method, const char *path,
+                            const char *content_type,
+                            const char *body, size_t body_size,
+                            struct external_reply *capture)
+{
+    int i;
+    int ret;
+    int count;
+    struct flb_input_ingest_request request;
+    struct flb_input_ingest_header header[2];
+
+    memset(capture, 0, sizeof(struct external_reply));
+    capture->outcome = -1;
+
+    header[0].name = "Host";
+    header[0].name_len = 4;
+    header[0].value = "localhost";
+    header[0].value_len = 9;
+    header[1].name = "Content-Type";
+    header[1].name_len = 12;
+    header[1].value = content_type;
+    header[1].value_len = strlen(content_type);
+
+    memset(&request, 0, sizeof(request));
+    request.method = method;
+    request.method_len = strlen(method);
+    request.path = path;
+    request.path_len = strlen(path);
+    request.headers = header;
+    request.header_count = 2;
+
+    ret = flb_input_ingest_submit(get_opentelemetry_instance(ctx->flb),
+                                  FLB_INPUT_INGEST_HTTP_REQUEST,
+                                  body, body_size, &request,
+                                  external_reply_cb, capture);
+    if (ret != FLB_INPUT_INGEST_OK) {
+        return ret;
+    }
+
+    for (i = 0; i < 400; i++) {
+        pthread_mutex_lock(&result_mutex);
+        count = capture->count;
+        pthread_mutex_unlock(&result_mutex);
+        if (count > 0) {
+            break;
+        }
+        flb_time_msleep(10);
+    }
+
+    flb_time_msleep(50);
+    TEST_CHECK(capture->count == 1);
+
+    return FLB_INPUT_INGEST_OK;
+}
+
+static int external_wait_output(int expected)
+{
+    int i;
+
+    for (i = 0; i < 300; i++) {
+        if (get_output_num() >= expected) {
+            break;
+        }
+        flb_time_msleep(10);
+    }
+
+    return get_output_num();
+}
+
+static struct test_ctx *external_ctx_create(struct flb_lib_out_cb *cb_data)
+{
+    int ret;
+    struct test_ctx *ctx;
+
+    ctx = test_ctx_create(cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        return NULL;
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd, "source.mode", "external", NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd, "match", "*", NULL);
+    TEST_CHECK(ret == 0);
+
+    return ctx;
+}
+
+void flb_test_external_signals()
+{
+    int ret;
+    struct flb_lib_out_cb cb_data = {0};
+    struct test_ctx *ctx;
+    struct external_reply reply;
+
+    clear_output_num();
+
+    cb_data.cb = cb_no_check;
+    cb_data.data = NULL;
+
+    ctx = external_ctx_create(&cb_data);
+    if (ctx == NULL) {
+        return;
+    }
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Logs, JSON */
+    ret = external_request(ctx, "POST", V1_ENDPOINT_LOGS, JSON_CONTENT_TYPE,
+                           TEST_MSG_OTEL_LOGS, strlen(TEST_MSG_OTEL_LOGS), &reply);
+    TEST_CHECK(ret == FLB_INPUT_INGEST_OK);
+    TEST_CHECK(reply.outcome == FLB_INPUT_INGEST_REPLIED);
+    if (!TEST_CHECK(reply.status == 201)) {
+        TEST_MSG("logs status=%d body=%s", reply.status, reply.body);
+    }
+    TEST_CHECK(external_wait_output(1) == 1);
+
+    /* Metrics, JSON: the path selects the signal */
+    ret = external_request(ctx, "POST", "/v1/metrics", JSON_CONTENT_TYPE,
+                           TEST_MSG_OTEL_METRICS, strlen(TEST_MSG_OTEL_METRICS),
+                           &reply);
+    TEST_CHECK(ret == FLB_INPUT_INGEST_OK);
+    TEST_CHECK(reply.outcome == FLB_INPUT_INGEST_REPLIED);
+    if (!TEST_CHECK(reply.status == 201)) {
+        TEST_MSG("metrics status=%d body=%s", reply.status, reply.body);
+    }
+    TEST_CHECK(external_wait_output(2) == 2);
+
+    /* Traces, JSON */
+    ret = external_request(ctx, "POST", "/v1/traces", JSON_CONTENT_TYPE,
+                           TEST_MSG_OTEL_TRACES, strlen(TEST_MSG_OTEL_TRACES),
+                           &reply);
+    TEST_CHECK(ret == FLB_INPUT_INGEST_OK);
+    TEST_CHECK(reply.outcome == FLB_INPUT_INGEST_REPLIED);
+    if (!TEST_CHECK(reply.status == 201)) {
+        TEST_MSG("traces status=%d body=%s", reply.status, reply.body);
+    }
+    /* The lib output takes logs and metrics only: the status is the check */
+
+    /* The handler commits an error response and returns an error: replied */
+    ret = external_request(ctx, "POST", "/v1/unknown", JSON_CONTENT_TYPE,
+                           TEST_MSG_OTEL_LOGS, strlen(TEST_MSG_OTEL_LOGS), &reply);
+    TEST_CHECK(ret == FLB_INPUT_INGEST_OK);
+    TEST_CHECK(reply.outcome == FLB_INPUT_INGEST_REPLIED);
+    TEST_CHECK(reply.status == 404);
+
+    ret = external_request(ctx, "POST", V1_ENDPOINT_LOGS, JSON_CONTENT_TYPE,
+                           "{\"resourceLogs\":[", 17, &reply);
+    TEST_CHECK(ret == FLB_INPUT_INGEST_OK);
+    TEST_CHECK(reply.outcome == FLB_INPUT_INGEST_REPLIED);
+    TEST_CHECK(reply.status == 400);
+
+    ret = external_request(ctx, "GET", V1_ENDPOINT_LOGS, JSON_CONTENT_TYPE,
+                           NULL, 0, &reply);
+    TEST_CHECK(ret == FLB_INPUT_INGEST_OK);
+    TEST_CHECK(reply.outcome == FLB_INPUT_INGEST_REPLIED);
+    TEST_CHECK(reply.status == 400);
+
+    /* gRPC is refused: by content type in the adapter... */
+    ret = external_request(ctx, "POST", V1_ENDPOINT_LOGS, "application/grpc",
+                           otel_logs_protobuf, sizeof(otel_logs_protobuf), &reply);
+    TEST_CHECK(ret == FLB_INPUT_INGEST_OK);
+    TEST_CHECK(reply.outcome == FLB_INPUT_INGEST_REPLIED);
+    TEST_CHECK(reply.status == 415);
+
+    /*
+     * ...while a gRPC service path with a plain Protobuf body is a regular
+     * request for the handler, on a socket as well.
+     */
+    ret = external_request(ctx, "POST",
+                           "/opentelemetry.proto.collector.logs.v1.LogsService/Export",
+                           "application/x-protobuf",
+                           otel_logs_protobuf, sizeof(otel_logs_protobuf), &reply);
+    TEST_CHECK(ret == FLB_INPUT_INGEST_OK);
+    TEST_CHECK(reply.outcome == FLB_INPUT_INGEST_REPLIED);
+    TEST_CHECK(reply.status == 201);
+
+    TEST_CHECK(external_wait_output(3) == 3);
+    flb_time_msleep(300);
+    TEST_CHECK(get_output_num() == 3);
+
+    flb_stop(ctx->flb);
+    flb_destroy(ctx->flb);
+    flb_free(ctx);
+}
+
+void flb_test_external_logs_protobuf()
+{
+    int ret;
+    struct flb_lib_out_cb cb_data = {0};
+    struct test_ctx *ctx;
+    struct external_reply reply;
+
+    clear_output_num();
+    external_last_body[0] = '\0';
+
+    cb_data.cb = cb_external_log_body;
+    cb_data.data = NULL;
+
+    ctx = external_ctx_create(&cb_data);
+    if (ctx == NULL) {
+        return;
+    }
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Same path as JSON logs: the content type selects the decoder */
+    ret = external_request(ctx, "POST", V1_ENDPOINT_LOGS, "application/x-protobuf",
+                           otel_logs_protobuf, sizeof(otel_logs_protobuf), &reply);
+    TEST_CHECK(ret == FLB_INPUT_INGEST_OK);
+    TEST_CHECK(reply.outcome == FLB_INPUT_INGEST_REPLIED);
+    if (!TEST_CHECK(reply.status == 201)) {
+        TEST_MSG("protobuf status=%d body=%s", reply.status, reply.body);
+    }
+
+    TEST_CHECK(external_wait_output(1) == 1);
+    pthread_mutex_lock(&result_mutex);
+    if (!TEST_CHECK(strstr(external_last_body, "hi") != NULL)) {
+        TEST_MSG("log body: %s", external_last_body);
+    }
+    pthread_mutex_unlock(&result_mutex);
+
+    flb_stop(ctx->flb);
+    flb_destroy(ctx->flb);
+    flb_free(ctx);
+}
+
 TEST_LIST = {
     {"log_group_metadata"          , flb_test_log_group_metadata},
     {"log_group_body"              , flb_test_log_group_body},
@@ -831,5 +1129,7 @@ TEST_LIST = {
     {"successful_response_code_204", flb_test_successful_response_code_204},
     {"tag_from_uri_false"          , flb_test_tag_from_uri_false},
     {"tag_explicit_overrides_uri_for_all_signals", flb_test_tag_explicit_overrides_uri_for_all_signals},
+    {"external_signals"            , flb_test_external_signals},
+    {"external_logs_protobuf"      , flb_test_external_logs_protobuf},
     {NULL, NULL}
 };

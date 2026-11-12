@@ -2,7 +2,9 @@
 export const SDK_VERSION = '0.1.0-experimental';
 const ABI = 1;
 const MAX_PAYLOAD = 1024 * 1024;
+const MAX_HEADERS = 64;
 const encoder = new TextEncoder();
+const TOKEN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
 
 export class FluentBitError extends Error {
     constructor(code, message) {
@@ -37,6 +39,60 @@ function bytes(value, maximum, name) {
     if (result.byteLength > maximum) { throw error('E_LIMIT', `${name} exceeds ${maximum} bytes`); }
     return result;
 }
+function inputAlias(value) {
+    if (typeof value !== 'string' || !/^[A-Za-z0-9_.-]{1,128}$/.test(value)) {
+        throw error('E_ARGUMENT', 'input must be the alias of an input in external source mode');
+    }
+    return value;
+}
+// One buffer for the whole request, so one size check bounds body and context.
+// Layout (little endian): method, path, header count and body lengths, then
+// method, path, each header as name length, value length, name, value, body.
+function serializeRequest(method, path, headers, body) {
+    const parts = [encoder.encode(method), encoder.encode(path)];
+    let size = 16 + parts[0].byteLength + parts[1].byteLength + body.byteLength;
+    for (const [name, value] of headers) {
+        const pair = [encoder.encode(name), encoder.encode(value)];
+        parts.push(...pair);
+        size += 8 + pair[0].byteLength + pair[1].byteLength;
+    }
+    if (size > MAX_PAYLOAD) { throw error('E_LIMIT', `request exceeds ${MAX_PAYLOAD} bytes`); }
+    const data = new Uint8Array(size);
+    const view = new DataView(data.buffer);
+    view.setUint32(0, parts[0].byteLength, true);
+    view.setUint32(4, parts[1].byteLength, true);
+    view.setUint32(8, headers.length, true);
+    view.setUint32(12, body.byteLength, true);
+    let offset = 16;
+    for (const part of parts.slice(0, 2)) { data.set(part, offset); offset += part.byteLength; }
+    for (let index = 2; index < parts.length; index += 2) {
+        view.setUint32(offset, parts[index].byteLength, true);
+        view.setUint32(offset + 4, parts[index + 1].byteLength, true);
+        offset += 8;
+        data.set(parts[index], offset);
+        offset += parts[index].byteLength;
+        data.set(parts[index + 1], offset);
+        offset += parts[index + 1].byteLength;
+    }
+    data.set(body, offset);
+    return data;
+}
+function requestHeaders(value) {
+    if (value === undefined) { return []; }
+    const entries = Array.isArray(value) ? value :
+        (value && typeof value === 'object' ? Object.entries(value) : null);
+    if (!entries || entries.length > MAX_HEADERS) {
+        throw error('E_ARGUMENT', `headers must be an object or a list of at most ${MAX_HEADERS} pairs`);
+    }
+    return entries.map(entry => {
+        if (!Array.isArray(entry) || entry.length !== 2 || typeof entry[0] !== 'string' ||
+            typeof entry[1] !== 'string' || !TOKEN.test(entry[0]) || !entry[1] ||
+            /[\u0000-\u0008\u000a-\u001f\u007f]/.test(entry[1])) {
+            throw error('E_ARGUMENT', 'headers must be name and value text without control characters');
+        }
+        return [entry[0], entry[1]];
+    });
+}
 function assetPath(path) {
     if (typeof path !== 'string' || path.length > 240 || !path.startsWith('/config/') ||
         path.slice(8).split('/').some(part => !/^[A-Za-z0-9_-][A-Za-z0-9_.-]*$/.test(part))) {
@@ -64,6 +120,7 @@ class FluentBit {
     #state = 'loading';
     #info;
     #pending = null;
+    #replies = new Map();
     #sequence = 0;
     #tail = Promise.resolve();
     #queued = 0;
@@ -145,7 +202,38 @@ class FluentBit {
             this.#pending.reject(failure);
             this.#pending = null;
         }
+        this.#settleReplies(failure);
         this.#callback('onError', failure);
+    }
+    // Requests still waiting for a reply are settled when the engine goes away.
+    #settleReplies(failure) {
+        const waiting = [...this.#replies.values()];
+        this.#replies.clear();
+        waiting.forEach(waiter => waiter.reject(failure));
+    }
+    #reply(message) {
+        if (!Number.isSafeInteger(message.id) || ![0, 1, 2].includes(message.outcome) ||
+            !Number.isSafeInteger(message.status) || typeof message.truncated !== 'boolean' ||
+            !Array.isArray(message.headers) || !(message.body instanceof Uint8Array) ||
+            message.headers.some(header => !Array.isArray(header) || header.length !== 2 ||
+                typeof header[0] !== 'string' || typeof header[1] !== 'string')) {
+            this.#fatal(error('E_PROTOCOL', 'Invalid SDK request reply'));
+            return;
+        }
+        // A reply is delivered once; unknown and repeated ids are ignored.
+        const waiter = this.#replies.get(message.id);
+        if (!waiter) { return; }
+        this.#replies.delete(message.id);
+        if (message.outcome === 0) {
+            waiter.resolve(Object.freeze({status: message.status,
+                headers: Object.freeze(message.headers.map(header => Object.freeze([...header]))),
+                body: message.body, truncated: message.truncated}));
+        }
+        else if (message.outcome === 1) {
+            waiter.reject(error('E_REQUEST_FAILED',
+                'The input processed the request without a reply; do not submit it again'));
+        }
+        else { waiter.reject(error('E_STOPPED', 'The engine stopped before the request was processed')); }
     }
     #message(message) {
         if (['failed', 'destroyed'].includes(this.#state)) { return; }
@@ -195,6 +283,7 @@ class FluentBit {
             this.#workerClosed = message.closed === true;
             this.#fatal(error(message.code || 'E_RUNTIME', message.message));
         }
+        else if (message.type === 'reply') { this.#reply(message); }
         else if (message.type === 'response' && this.#pending?.id === message.id) {
             if (typeof message.ok !== 'boolean' || (!message.ok &&
                 (typeof message.code !== 'string' || typeof message.message !== 'string'))) {
@@ -220,7 +309,7 @@ class FluentBit {
         }
         else { this.#fatal(error('E_PROTOCOL', 'Unexpected SDK response')); }
     }
-    #send(method, payload = {}) {
+    #send(method, payload = {}, register = null) {
         if (['failed', 'destroyed'].includes(this.#state)) {
             return Promise.reject(error('E_STATE', `SDK instance is ${this.#state}`));
         }
@@ -230,6 +319,9 @@ class FluentBit {
             const timer = setTimeout(() => this.#fatal(error('E_TIMEOUT', `${method} timed out; runtime terminated`)),
                                      this.#options.operationTimeoutMs);
             this.#pending = {id, method, resolve, reject, timer};
+            // A waiter is in place before the command leaves, so a reply
+            // cannot arrive ahead of it.
+            register?.(id);
             try { this.#worker.postMessage({abi: ABI, type: 'request', id, method, payload}); }
             catch (_) { this.#fatal(error('E_PROTOCOL', 'Unable to send SDK command')); }
         });
@@ -285,7 +377,10 @@ class FluentBit {
         }
         this.#setState('stopping');
         try { await this.#send('stop'); }
-        finally { if (!['failed', 'destroyed'].includes(this.#state)) { this.#setState('stopped'); } }
+        finally {
+            this.#settleReplies(error('E_STOPPED', 'The engine stopped before the request was answered'));
+            if (!['failed', 'destroyed'].includes(this.#state)) { this.#setState('stopped'); }
+        }
     }
     stop() { return this.#enqueue(() => this.#stop()); }
 
@@ -327,6 +422,56 @@ class FluentBit {
         const input = options.input;
         const count = options.records.length;
         return this.#enqueue(() => this.#send('push', {input, data, count}), data.byteLength);
+    }
+    async pushBytes(options) {
+        object(options, 'pushBytes options');
+        const input = inputAlias(options.input);
+        const data = bytes(options.data, MAX_PAYLOAD, 'data');
+        if (!data.byteLength) { throw error('E_ARGUMENT', 'data must not be empty'); }
+        return this.#enqueue(() => {
+            if (this.#state !== 'running') { throw error('E_STATE', 'Engine is not running'); }
+            return this.#send('pushBytes', {input, data});
+        }, data.byteLength);
+    }
+    async request(options) {
+        object(options, 'request options');
+        const input = inputAlias(options.input);
+        const method = options.method ?? 'POST';
+        if (typeof method !== 'string' || !TOKEN.test(method) || method.length > 16) {
+            throw error('E_ARGUMENT', 'method must be an HTTP method name');
+        }
+        if (typeof options.path !== 'string' || !/^\/[\x21-\x7e]*$/.test(options.path)) {
+            throw error('E_ARGUMENT', 'path must start with / and contain no spaces');
+        }
+        const headers = requestHeaders(options.headers);
+        // Handlers expect the Host header a client would always send.
+        if (!headers.some(header => header[0].toLowerCase() === 'host')) {
+            if (headers.length >= MAX_HEADERS) { throw error('E_ARGUMENT', 'too many headers'); }
+            headers.push(['Host', 'localhost']);
+        }
+        const body = options.body === undefined ? new Uint8Array() :
+            bytes(options.body, MAX_PAYLOAD, 'body');
+        const data = serializeRequest(method, options.path, headers, body);
+        let waiter;
+        let requestId;
+        const reply = new Promise((resolve, reject) => { waiter = {resolve, reject}; });
+        reply.catch(() => {});
+        // The queued action ends at admission. Waiting for the reply inside it
+        // would keep later commands, stop() included, behind a paused input.
+        await this.#enqueue(async () => {
+            if (this.#state !== 'running') { throw error('E_STATE', 'Engine is not running'); }
+            try {
+                await this.#send('request', {input, data}, id => {
+                    requestId = id;
+                    this.#replies.set(id, waiter);
+                });
+            }
+            catch (failure) {
+                this.#replies.delete(requestId);
+                throw failure;
+            }
+        }, data.byteLength);
+        return reply;
     }
     async writeFile(path, value) {
         path = assetPath(path);
@@ -374,6 +519,7 @@ class FluentBit {
                     this.#pending.reject(error('E_DESTROYED', 'SDK instance was destroyed'));
                     this.#pending = null;
                 }
+                this.#settleReplies(error('E_DESTROYED', 'SDK instance was destroyed'));
                 this.#terminateWorker();
                 this.#setState('destroyed');
             }
