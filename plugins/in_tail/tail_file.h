@@ -61,58 +61,47 @@ static inline int64_t flb_tail_stat_mtime(struct stat *st)
     return -1;
 }
 
+/* Return a pointer to the last path component of path without calling
+ * libc basename(), which on some platforms (notably macOS) uses a
+ * process-wide static buffer and is not thread-safe.
+ */
+static inline const char *flb_tail_path_basename(const char *path)
+{
+    const char *p;
+    const char *base;
+
+    if (!path) {
+        return "";
+    }
+
+    base = path;
+    for (p = path; *p != '\0'; p++) {
+#ifdef FLB_SYSTEM_WINDOWS
+        if (*p == '/' || *p == '\\') {
+#else
+        if (*p == '/') {
+#endif
+            base = p + 1;
+        }
+    }
+
+    return base;
+}
+
 static inline int flb_tail_target_file_name_cmp(char *name,
                                                 struct flb_tail_file *file)
 {
-    int ret;
-    char *name_a = NULL;
-    char *name_b = NULL;
-    char *base_a = NULL;
-    char *base_b = NULL;
+    const char *base_a;
+    const char *base_b;
 
-    name_a = flb_strdup(name);
-    if (!name_a) {
-        flb_errno();
-        ret = -1;
-        goto out;
-    }
-
-    base_a = flb_strdup(basename(name_a));
-    if (!base_a) {
-        flb_errno();
-        ret = -1;
-        goto out;
-    }
+    base_a = flb_tail_path_basename(name);
+    base_b = flb_tail_path_basename(file->real_name);
 
 #if defined(FLB_SYSTEM_WINDOWS)
-    name_b = flb_strdup(file->real_name);
-    if (!name_b) {
-        flb_errno();
-        ret = -1;
-        goto out;
-    }
-
-    base_b = basename(name_b);
-    ret = _stricmp(base_a, base_b);
+    return _stricmp(base_a, base_b);
 #else
-    name_b = flb_strdup(file->real_name);
-    if (!name_b) {
-        flb_errno();
-        ret = -1;
-        goto out;
-    }
-    base_b = basename(name_b);
-    ret = strcmp(base_a, base_b);
+    return strcmp(base_a, base_b);
 #endif
-
- out:
-    flb_free(name_a);
-    flb_free(name_b);
-    flb_free(base_a);
-
-    /* FYI: 'base_b' never points to a new allocation, no flb_free is needed */
-
-    return ret;
 }
 
 int flb_tail_file_name_dup(char *path, struct flb_tail_file *file);
