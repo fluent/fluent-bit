@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 
 import requests
 
@@ -13,14 +14,34 @@ from utils.test_service import FluentBitTestService
 
 logger = logging.getLogger(__name__)
 
+UNCOMPRESSED_PAYLOAD_SIZE_METRIC = (
+    "fluentbit_azure_logs_ingestion_uncompressed_payload_size_bytes"
+)
+HTTP_PAYLOAD_SIZE_METRIC = "fluentbit_azure_logs_ingestion_http_payload_size_bytes"
+METRIC_RE = re.compile(r'^(?P<name>[^\{]+)\{(?P<labels>[^}]*)\} (?P<value>.+)$')
+
+
+def metric_value(metrics, metric_name, **expected_labels):
+    for line in metrics.splitlines():
+        match = METRIC_RE.match(line)
+        if match is None or match.group("name") != metric_name:
+            continue
+        labels = dict(
+            item.split("=", 1) for item in match.group("labels").replace('"', '').split(",")
+        )
+        if labels == expected_labels:
+            return float(match.group("value"))
+    raise AssertionError(f"metric not found: {metric_name} {expected_labels}")
+
 
 class Service:
-    def __init__(self, config_file):
+    def __init__(self, config_file, initial_http_status=200):
         self.config_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "../config", config_file))
         cert_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../in_splunk/certificate"))
         self.tls_crt_file = os.path.join(cert_dir, "certificate.pem")
         self.tls_key_file = os.path.join(cert_dir, "private_key.pem")
         self.oauth_server_port = None
+        self.initial_http_status = initial_http_status
         self.service = FluentBitTestService(
             self.config_file,
             data_storage=data_storage,
@@ -43,6 +64,7 @@ class Service:
             tls_key_file=self.tls_key_file,
             reset_state=False,
         )
+        configure_http_response(status_code=self.initial_http_status)
 
         def _http_ready():
             try:
@@ -115,25 +137,64 @@ class Service:
             description=f"{minimum_count} azure logs ingestion requests",
         )
 
+    def wait_for_log(self, text, timeout=10):
+        def contains_text():
+            with open(self.flb.log_file, encoding="utf-8", errors="replace") as handle:
+                return text in handle.read()
+
+        return self.service.wait_for_condition(
+            contains_text,
+            timeout=timeout,
+            interval=0.25,
+            description=f"Fluent Bit log containing {text!r}",
+        )
+
+    def metrics(self, expected, timeout=10):
+        url = (
+            f"http://127.0.0.1:{self.flb.http_monitoring_port}"
+            "/api/v2/metrics/prometheus"
+        )
+
+        def expected_metric():
+            response = requests.get(url, timeout=2)
+            if response.status_code == 200 and expected in response.text:
+                return response.text
+            return None
+
+        return self.service.wait_for_condition(
+            expected_metric,
+            timeout=timeout,
+            interval=0.5,
+            description=f"Prometheus metric {expected}",
+        )
+
 
 def test_out_azure_logs_ingestion_legacy_oauth2_and_payload_format():
-    service = Service("out_azure_logs_ingestion_oauth2.yaml")
+    service = Service("out_azure_logs_ingestion_oauth2.yaml", initial_http_status=500)
     service.start()
-    configure_http_response(status_code=200, body={"status": "received"})
     configure_oauth_token_response(
         status_code=200,
         body={"access_token": "oauth-access-token", "token_type": "Bearer", "expires_in": 300},
     )
 
-    requests_seen = service.wait_for_requests(2, timeout=15)
+    service.wait_for_requests(2, timeout=15)
+    service.wait_for_log("http_status=500", timeout=15)
+    configure_http_response(status_code=200, body={"status": "received"})
+    requests_seen = service.wait_for_requests(3, timeout=15)
+    labels = {"name": "azure_logs_ingestion.0", "dcr_id": "dcr-suite"}
+    metrics = service.metrics(
+        f'{HTTP_PAYLOAD_SIZE_METRIC}_count{{name="azure_logs_ingestion.0",'
+        f'dcr_id="dcr-suite"}} 2'
+    )
     service.stop()
 
     token_request = next(request for request in requests_seen if request["path"] == "/oauth/token")
-    data_request = next(
+    data_requests = [
         request
         for request in requests_seen
         if request["path"] == "/dataCollectionRules/dcr-suite/streams/Custom-suite_CL"
-    )
+    ]
+    data_request = data_requests[-1]
 
     assert token_request["method"] == "POST"
     assert "grant_type=client_credentials" in token_request["raw_data"]
@@ -154,3 +215,25 @@ def test_out_azure_logs_ingestion_legacy_oauth2_and_payload_format():
     assert payload[0]["source"] == "dummy"
     assert payload[0]["level"] == "info"
     assert isinstance(payload[0]["@timestamp"], (int, float))
+
+    uncompressed_size = sum(
+        len(request["decoded_data"].encode("utf-8")) for request in data_requests
+    )
+    http_size = sum(
+        int(request["headers"]["Content-Length"]) for request in data_requests
+    )
+    uncompressed_sum = metric_value(
+        metrics, f"{UNCOMPRESSED_PAYLOAD_SIZE_METRIC}_sum", **labels
+    )
+    http_sum = metric_value(metrics, f"{HTTP_PAYLOAD_SIZE_METRIC}_sum", **labels)
+
+    assert metric_value(metrics, f"{HTTP_PAYLOAD_SIZE_METRIC}_count", **labels) == 2
+    assert uncompressed_sum == uncompressed_size
+    assert http_sum == http_size
+    assert http_sum / uncompressed_sum == http_size / uncompressed_size
+    assert metric_value(
+        metrics,
+        f"{HTTP_PAYLOAD_SIZE_METRIC}_bucket",
+        **labels,
+        le="204800.0",
+    ) == 2
