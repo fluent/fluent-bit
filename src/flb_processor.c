@@ -1624,11 +1624,12 @@ static int run_logs_raw_segment(struct flb_processor *proc,
                                 const void *data, size_t bytes, int records,
                                 const char *tag, size_t tag_len,
                                 void **out_buf, size_t *out_size,
-                                struct mk_list **last)
+                                int *out_items, struct mk_list **last)
 {
     int result;
     int out_records;
     int error;
+    int filter;
     size_t count;
     size_t index;
     size_t locked;
@@ -1645,10 +1646,13 @@ static int run_logs_raw_segment(struct flb_processor *proc,
         initial->p->cb_process_logs_raw == NULL) {
         return FLB_PROCESSOR_RAW_UNSUPPORTED;
     }
+    /* a unit that changes the record count is accounted on its own */
+    filter = (initial->p->flags & FLB_PROCESSOR_FLAG_LOGS_RAW_FILTER) != 0;
+    out_records = records;
     count = 0;
     for (head = &first->_head; head != &proc->logs; head = head->next) {
         unit = mk_list_entry(head, struct flb_processor_unit, _head);
-        if (unit->unit_type == FLB_PROCESSOR_UNIT_FILTER) {
+        if (unit->unit_type == FLB_PROCESSOR_UNIT_FILTER || (filter && count == 1)) {
             break;
         }
         if (unit->condition != NULL ||
@@ -1684,7 +1688,11 @@ static int run_logs_raw_segment(struct flb_processor *proc,
     }
     result = initial->p->cb_process_logs_raw(instances, count, data, bytes,
                                             out_buf, out_size, tag, tag_len);
-    if (result == FLB_PROCESSOR_RAW_MODIFIED) {
+    if (result == FLB_PROCESSOR_RAW_MODIFIED && filter &&
+        *out_buf != NULL && *out_buf != data) {
+        out_records = *out_size > 0 ? flb_mp_count_log_records(*out_buf, *out_size) : 0;
+    }
+    else if (result == FLB_PROCESSOR_RAW_MODIFIED) {
         /* A fused segment cannot attribute additions/drops to individual units. */
         if (*out_buf == NULL || *out_buf == data ||
             flb_mp_count_log_records(*out_buf, *out_size) != records) {
@@ -1711,7 +1719,7 @@ cleanup:
     scope = processor_metrics_scope(proc);
     owner = processor_metrics_owner(proc);
     error = (result == FLB_PROCESSOR_FAILURE);
-    out_records = records;
+    *out_items = out_records;
     for (index = 0; index < locked; index++) {
         unit = instances[index]->pu;
         if (result != FLB_PROCESSOR_RAW_UNSUPPORTED) {
@@ -2252,7 +2260,8 @@ static int processor_run(struct flb_processor *proc, struct chunk_codec *codec,
             pu->unit_type == FLB_PROCESSOR_UNIT_NATIVE) {
             raw_last = head;
             raw_result = run_logs_raw_segment(proc, pu, cur_buf, cur_size, unit_in_items,
-                                              tag, tag_len, &tmp_buf, &tmp_size, &raw_last);
+                                              tag, tag_len, &tmp_buf, &tmp_size,
+                                              &unit_out_items, &raw_last);
             if (raw_result == FLB_PROCESSOR_FAILURE) {
                 if (cur_buf != data) {
                     flb_free(cur_buf);
@@ -2267,8 +2276,12 @@ static int processor_run(struct flb_processor *proc, struct chunk_codec *codec,
                     cur_buf = tmp_buf;
                     cur_size = tmp_size;
                 }
-                log_buffer_records = unit_in_items;
+                log_buffer_records = unit_out_items;
                 head = raw_last;
+                if (unit_out_items == 0) {
+                    /* a raw filter removed every record: nothing left to run */
+                    break;
+                }
                 continue;
             }
         }
