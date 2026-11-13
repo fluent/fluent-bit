@@ -45,8 +45,6 @@
 static int k8s_events_sql_insert_event(struct k8s_events *ctx, msgpack_object *item);
 #endif
 
-#define JSON_ARRAY_DELIM "\r\n"
-
 static int file_to_buffer(const char *path,
                           char **out_buf, size_t *out_size)
 {
@@ -818,33 +816,50 @@ static int process_http_chunk(struct k8s_events* ctx, struct flb_http_client *c,
     size_t token_size = 0;
     char *token_start = 0;
     char *token_end = NULL;
+    char *decoded_end = NULL;
 
+    /*
+     * Only scan bytes the chunked decoder has already de-framed. Past
+     * chunk_processed_end the buffer still holds raw chunk framing
+     * ("<hex>\r\n"), and splitting on it yields corrupt JSON lines.
+     */
     token_start = c->resp.payload;
-    token_end = strpbrk(token_start, JSON_ARRAY_DELIM);
-    while ( token_end != NULL && ret == 0 ) {
+    decoded_end = c->resp.payload + c->resp.payload_size;
+    if (c->resp.chunked_encoding == FLB_TRUE && c->resp.chunk_processed_end != NULL &&
+        c->resp.chunk_processed_end < decoded_end) {
+        decoded_end = c->resp.chunk_processed_end;
+    }
+
+    token_end = memchr(token_start, '\n', decoded_end - token_start);
+    while (token_end != NULL) {
         token_size = token_end - token_start;
-        ret = flb_pack_json(token_start, token_size, &buf_data, &buf_size, &root_type, &consumed);
-        if (ret == -1) {
-            flb_plg_debug(ctx->ins, "could not process payload, incomplete or bad formed JSON: %s",
-                          c->resp.payload);
-        }
-        else {
-            *bytes_consumed += token_size + 1;
-            ret = process_watched_event(ctx, buf_data, buf_size);
+        /* every complete line is consumed, parsed or not */
+        *bytes_consumed += token_size + 1;
+        /* a line may end in "\r\n", keep the '\r' out of the JSON */
+        if (token_size > 0 && token_start[token_size - 1] == '\r') {
+            token_size--;
         }
 
-        flb_free(buf_data);
-        if (buf_data) {
+        if (token_size > 0) {
+            ret = flb_pack_json(token_start, token_size, &buf_data, &buf_size,
+                                &root_type, &consumed);
+            if (ret == -1) {
+                flb_plg_debug(ctx->ins,
+                              "could not process payload, incomplete or bad formed JSON: %.*s",
+                              (int) token_size, token_start);
+            }
+            else {
+                process_watched_event(ctx, buf_data, buf_size);
+            }
+            flb_free(buf_data);
             buf_data = NULL;
         }
-        token_start = token_end+1;
-        token_end = strpbrk(token_start, JSON_ARRAY_DELIM);
+        token_start = token_end + 1;
+        token_end = memchr(token_start, '\n', decoded_end - token_start);
     }
 
-    if (buf_data) {
-        flb_free(buf_data);
-    }
-    return ret;
+    /* never stall the stream on a bad line: the caller keeps reading */
+    return 0;
 }
 
 static void initialize_http_client(struct flb_http_client* c, struct k8s_events* ctx)
