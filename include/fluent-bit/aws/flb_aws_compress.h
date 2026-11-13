@@ -84,6 +84,19 @@ int flb_aws_compression_compress_columnar(int columnar_format,
                                           void **out_buf, size_t *out_size,
                                           int compression_type);
 
+/* Arrow integration-format JSON schema (flat scalar fields).
+ * Schema is immutable and may be shared across flush workers. */
+struct flb_arrow_schema;
+struct flb_arrow_schema *flb_arrow_schema_create(const char *json, size_t size);
+void flb_arrow_schema_destroy(struct flb_arrow_schema *schema);
+
+/* Convert concatenated Fluent Bit MessagePack log events using a declared schema. */
+int flb_aws_compression_compress_columnar_msgpack(int columnar_format,
+                                                const void *data, size_t size,
+                                                void **out_buf, size_t *out_size,
+                                                int compression_type,
+                                                struct flb_arrow_schema *schema);
+
 /* Backward-compatible name retained for existing out-of-tree consumers. */
 int out_s3_compress_columnar(int columnar_format, void *json, size_t size,
                              void **out_buf, size_t *out_size,
