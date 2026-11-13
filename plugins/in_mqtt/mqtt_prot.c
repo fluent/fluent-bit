@@ -252,8 +252,12 @@ static int mqtt_handle_connect(struct mqtt_conn *conn)
     char buf[4] = {0, 0, 0, 0};
     struct flb_in_mqtt_config *ctx = conn->ctx;
 
+    /*
+     * This plugin does not keep any session state, so the Session Present
+     * flag in the CONNACK must always be zero (MQTT-3.2.2-1, MQTT-3.2.2-2).
+     */
     i = mqtt_packet_header(MQTT_CONNACK, 2 , (char *) &buf);
-    BIT_SET(buf[i], 0);
+    buf[i] = 0;
     i++;
     buf[i] = MQTT_CONN_ACCEPTED;
 
@@ -274,11 +278,47 @@ static int mqtt_handle_connect(struct mqtt_conn *conn)
 }
 
 /*
+ * QoS 2 publications that were acknowledged with a PUBREC and are waiting for
+ * their PUBREL are tracked in a bitmap with one bit per Packet Identifier, so
+ * a retransmitted PUBLISH is acknowledged again without ingesting it twice.
+ */
+static int mqtt_qos2_is_pending(struct mqtt_conn *conn, uint16_t packet_id)
+{
+    if (conn->qos2_pending == NULL) {
+        return FLB_FALSE;
+    }
+
+    return (conn->qos2_pending[packet_id >> 3] >> (packet_id & 7)) & 1;
+}
+
+static int mqtt_qos2_set_pending(struct mqtt_conn *conn, uint16_t packet_id)
+{
+    if (conn->qos2_pending == NULL) {
+        conn->qos2_pending = flb_calloc(MQTT_QOS2_BITMAP_SIZE, 1);
+        if (conn->qos2_pending == NULL) {
+            flb_errno();
+            return -1;
+        }
+    }
+
+    conn->qos2_pending[packet_id >> 3] |= (1 << (packet_id & 7));
+    return 0;
+}
+
+static void mqtt_qos2_clear_pending(struct mqtt_conn *conn, uint16_t packet_id)
+{
+    if (conn->qos2_pending != NULL) {
+        conn->qos2_pending[packet_id >> 3] &= ~(1 << (packet_id & 7));
+    }
+}
+
+/*
  * Handle a PUBLISH control packet
  */
 static int mqtt_handle_publish(struct mqtt_conn *conn)
 {
     int ret;
+    int duplicate = FLB_FALSE;
     int frame_avail;
     int topic;
     int topic_len;
@@ -346,6 +386,13 @@ static int mqtt_handle_publish(struct mqtt_conn *conn)
         }
         else if (qos == MQTT_QOS_LEV2) {
             mqtt_packet_header(MQTT_PUBREC, 2 , (char *) &buf);
+
+            /* a retransmission of a message that was already ingested */
+            duplicate = mqtt_qos2_is_pending(conn, packet_id);
+            if (duplicate == FLB_FALSE &&
+                mqtt_qos2_set_pending(conn, packet_id) == -1) {
+                return -1;
+            }
         }
         /* Set the identifier that we are replying to */
         buf[2] = (packet_id >> 8) & 0xff;
@@ -359,6 +406,12 @@ static int mqtt_handle_publish(struct mqtt_conn *conn)
             flb_plg_debug(ctx->ins, "[fd=%i] could not acknowledge publish",
                           conn->connection->fd);
             return -1;
+        }
+
+        if (duplicate == FLB_TRUE) {
+            flb_plg_trace(ctx->ins, "[fd=%i] CMD PUBLISH (duplicate QoS 2 id=%i)",
+                          conn->connection->fd, packet_id);
+            return 0;
         }
     }
 
@@ -384,6 +437,150 @@ static int mqtt_handle_publish(struct mqtt_conn *conn)
 
     flb_plg_trace(ctx->ins, "[fd=%i] CMD PUBLISH",
                   conn->connection->fd);
+    return 0;
+}
+
+/*
+ * Handle a PUBREL control packet: complete the QoS 2 exchange started by a
+ * PUBLISH by replying with a PUBCOMP that carries the same Packet Identifier.
+ */
+static int mqtt_handle_pubrel(struct mqtt_conn *conn)
+{
+    int ret;
+    size_t sent;
+    char *body;
+    char buf[4] = {0, 0, 0, 0};
+    struct flb_in_mqtt_config *ctx = conn->ctx;
+
+    /* MQTT-3.6.1-1: fixed header flags must be 0010, remaining length is 2 */
+    if ((conn->buf[0] & 0x0f) != 0x02 || conn->packet_length != 2) {
+        flb_plg_debug(ctx->ins, "[fd=%i] invalid PUBREL packet",
+                      conn->connection->fd);
+        return -1;
+    }
+
+    body = (char *) conn->buf + conn->buf_frame_end - conn->packet_length + 1;
+
+    /* the exchange is complete: the identifier can be used again */
+    mqtt_qos2_clear_pending(conn,
+                            ((uint8_t) body[0] << 8) | (uint8_t) body[1]);
+
+    mqtt_packet_header(MQTT_PUBCOMP, 2, (char *) &buf);
+    buf[2] = body[0];
+    buf[3] = body[1];
+
+    ret = flb_io_net_write(conn->connection, (void *) buf, 4, &sent);
+    flb_plg_trace(ctx->ins, "[fd=%i] CMD PUBREL (pubcomp=%i)",
+                  conn->connection->fd, ret);
+
+    if (ret == -1) {
+        return -1;
+    }
+
+    return 0;
+}
+
+/*
+ * Handle SUBSCRIBE and UNSUBSCRIBE control packets. This is an input plugin
+ * that only ingests published messages, so every topic filter of a SUBSCRIBE
+ * is answered with the failure code 0x80 in the SUBACK, and an UNSUBSCRIBE is
+ * acknowledged with an UNSUBACK, so clients do not wait forever.
+ */
+static int mqtt_handle_subscription(struct mqtt_conn *conn)
+{
+    int ret;
+    int len;
+    int filters = 0;
+    int offset;
+    int filter_len;
+    int hlen;
+    size_t sent;
+    size_t out_len;
+    uint8_t *body;
+    uint8_t *reply = NULL;
+    uint8_t small_reply[4];
+    struct flb_in_mqtt_config *ctx = conn->ctx;
+
+    /* MQTT-3.8.1-1 / MQTT-3.10.1-1: fixed header flags must be 0010 */
+    if ((conn->buf[0] & 0x0f) != 0x02 || conn->packet_length < 2) {
+        flb_plg_debug(ctx->ins, "[fd=%i] invalid SUBSCRIBE/UNSUBSCRIBE packet",
+                      conn->connection->fd);
+        return -1;
+    }
+
+    body = conn->buf + conn->buf_frame_end - conn->packet_length + 1;
+    len = conn->packet_length;
+    offset = 2;
+
+    if (conn->packet_type == MQTT_SUBSCRIBE) {
+        /* Payload: one or more { filter length (2), filter, requested QoS } */
+        while (offset < len) {
+            if (len - offset < 3) {
+                return -1;
+            }
+            offset += 2 + ((body[offset] << 8) | body[offset + 1]) + 1;
+            if (offset > len) {
+                return -1;
+            }
+            filters++;
+        }
+        if (filters == 0) {
+            return -1;
+        }
+
+        /*
+         * One return code per topic filter, after the packet identifier. The
+         * remaining length can need more than one byte, so reserve room for
+         * the largest fixed header.
+         */
+        reply = flb_malloc(5 + 2 + filters);
+        if (reply == NULL) {
+            flb_errno();
+            return -1;
+        }
+
+        hlen = mqtt_packet_header(MQTT_SUBACK, 2 + filters, (char *) reply);
+        memset(&reply[hlen + 2], MQTT_SUBACK_FAILURE, filters);
+        out_len = hlen + 2 + filters;
+    }
+    else {
+        /* Payload: one or more { filter length (2), filter } */
+        while (offset < len) {
+            if (len - offset < 2) {
+                return -1;
+            }
+            filter_len = (body[offset] << 8) | body[offset + 1];
+            if (filter_len == 0 || filter_len > len - offset - 2) {
+                return -1;
+            }
+            offset += 2 + filter_len;
+            filters++;
+        }
+        if (filters == 0) {
+            return -1;
+        }
+
+        reply = small_reply;
+        hlen = mqtt_packet_header(MQTT_UNSUBACK, 2, (char *) reply);
+        out_len = hlen + 2;
+    }
+
+    /* Set the identifier that we are replying to */
+    reply[hlen] = body[0];
+    reply[hlen + 1] = body[1];
+
+    ret = flb_io_net_write(conn->connection, (void *) reply, out_len, &sent);
+    flb_plg_trace(ctx->ins, "[fd=%i] CMD SUBSCRIPTION (reply=%i)",
+                  conn->connection->fd, ret);
+
+    if (reply != small_reply) {
+        flb_free(reply);
+    }
+
+    if (ret == -1) {
+        return -1;
+    }
+
     return 0;
 }
 
@@ -498,6 +695,13 @@ int mqtt_prot_parser(struct mqtt_conn *conn)
 
             /* At this point we have a full control packet in place */
             if (conn->packet_type == MQTT_CONNECT) {
+                if (conn->status == MQTT_NEXT) {
+                    /* MQTT-3.1.0-2: a second CONNECT is a protocol violation */
+                    flb_plg_debug(ctx->ins,
+                                  "[fd=%i] error, duplicated MQTT_CONNECT",
+                                  conn->connection->fd);
+                    return MQTT_ERROR;
+                }
                 ret = mqtt_handle_connect(conn);
                 if (ret == -1) {
                     return MQTT_ERROR;
@@ -505,6 +709,19 @@ int mqtt_prot_parser(struct mqtt_conn *conn)
             }
             else if (conn->packet_type == MQTT_PUBLISH) {
                 ret = mqtt_handle_publish(conn);
+                if (ret == -1) {
+                    return MQTT_ERROR;
+                }
+            }
+            else if (conn->packet_type == MQTT_PUBREL) {
+                ret = mqtt_handle_pubrel(conn);
+                if (ret == -1) {
+                    return MQTT_ERROR;
+                }
+            }
+            else if (conn->packet_type == MQTT_SUBSCRIBE ||
+                     conn->packet_type == MQTT_UNSUBSCRIBE) {
+                ret = mqtt_handle_subscription(conn);
                 if (ret == -1) {
                     return MQTT_ERROR;
                 }
