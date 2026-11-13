@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_random.h>
 #include <fluent-bit/flb_unescape.h>
+#include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_aws_util.h>
 #include <fluent-bit/aws/flb_aws_compress.h>
 
@@ -34,7 +35,15 @@
 
 #include <ctype.h>
 #include <limits.h>
+#include <openssl/bio.h>
+#include <openssl/err.h>
+#include <openssl/pem.h>
+#include <openssl/x509.h>
 #include <sys/stat.h>
+
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+#define X509_get0_notAfter(x) X509_get_notAfter(x)
+#endif
 
 static int gcs_ctx_destroy(void *data, struct flb_config *config);
 
@@ -812,6 +821,274 @@ static int gcs_read_identity_token(struct flb_gcs *ctx, flb_sds_t *out_token)
     return 0;
 }
 
+/* Load every X.509 certificate found in a PEM file, in file order */
+static STACK_OF(X509) *gcs_x509_load_pem_file(struct flb_gcs *ctx,
+                                              const char *path)
+{
+    int ret;
+    char *buf = NULL;
+    size_t size = 0;
+    unsigned long err;
+    char err_buf[256];
+    BIO *bio = NULL;
+    X509 *cert;
+    STACK_OF(X509) *certs = NULL;
+
+    ret = flb_utils_read_file((char *) path, &buf, &size);
+    if (ret != 0 || !buf || size == 0) {
+        flb_plg_error(ctx->ins, "could not read certificate file: %s", path);
+        goto error;
+    }
+    if (size > INT_MAX) {
+        flb_plg_error(ctx->ins, "certificate file is too large: %s", path);
+        goto error;
+    }
+
+    bio = BIO_new_mem_buf(buf, (int) size);
+    if (!bio) {
+        flb_errno();
+        goto error;
+    }
+
+    certs = sk_X509_new_null();
+    if (!certs) {
+        flb_errno();
+        goto error;
+    }
+
+    ERR_clear_error();
+    while ((cert = PEM_read_bio_X509_AUX(bio, NULL, NULL, NULL)) != NULL) {
+        if (!sk_X509_push(certs, cert)) {
+            X509_free(cert);
+            flb_errno();
+            goto error;
+        }
+    }
+
+    /*
+     * PEM_read_bio_X509_AUX reports the end of the input as
+     * PEM_R_NO_START_LINE; anything else means a block could not be decoded
+     */
+    err = ERR_peek_last_error();
+    ERR_clear_error();
+    if (err != 0 && (ERR_GET_LIB(err) != ERR_LIB_PEM ||
+                     ERR_GET_REASON(err) != PEM_R_NO_START_LINE)) {
+        ERR_error_string_n(err, err_buf, sizeof(err_buf));
+        flb_plg_error(ctx->ins, "malformed PEM data in %s: %s", path, err_buf);
+        goto error;
+    }
+
+    if (sk_X509_num(certs) == 0) {
+        flb_plg_error(ctx->ins, "no PEM certificate found in %s", path);
+        goto error;
+    }
+
+    BIO_free(bio);
+    flb_free(buf);
+    return certs;
+
+error:
+    if (certs) {
+        sk_X509_pop_free(certs, X509_free);
+    }
+    if (bio) {
+        BIO_free(bio);
+    }
+    if (buf) {
+        flb_free(buf);
+    }
+    return NULL;
+}
+
+/* Append 'cert' to the JSON array as a base64 DER string */
+static int gcs_x509_token_append(flb_sds_t *token, X509 *cert, int first)
+{
+    int ret = -1;
+    int der_len;
+    unsigned char *der = NULL;
+    size_t b64_len = 0;
+    flb_sds_t b64 = NULL;
+
+    der_len = i2d_X509(cert, &der);
+    if (der_len <= 0 || !der) {
+        return -1;
+    }
+
+    /* size query: reports the required buffer size including the NUL */
+    flb_base64_encode(NULL, 0, &b64_len, der, (size_t) der_len);
+    b64 = flb_sds_create_size(b64_len);
+    if (!b64) {
+        goto cleanup;
+    }
+    if (flb_base64_encode((unsigned char *) b64, b64_len, &b64_len,
+                          der, (size_t) der_len) != 0) {
+        goto cleanup;
+    }
+    flb_sds_len_set(b64, b64_len);
+
+    if (flb_sds_cat_safe(token, first ? "\"" : ",\"", first ? 1 : 2) < 0 ||
+        flb_sds_cat_safe(token, b64, flb_sds_len(b64)) < 0 ||
+        flb_sds_cat_safe(token, "\"", 1) < 0) {
+        goto cleanup;
+    }
+    ret = 0;
+
+cleanup:
+    flb_sds_destroy(b64);
+    OPENSSL_free(der);
+    return ret;
+}
+
+/* State shared while the certificates of one subject token are appended */
+struct gcs_x509_token_builder {
+    flb_sds_t token;
+    X509 *leaf;
+    X509 *prev;
+};
+
+/* One-line subject name of 'cert' for log messages */
+static const char *gcs_x509_subject(X509 *cert, char *buf, size_t size)
+{
+    return X509_NAME_oneline(X509_get_subject_name(cert), buf, (int) size);
+}
+
+/* True when 'cert' is already in 'certs' */
+static int gcs_x509_in_stack(STACK_OF(X509) *certs, X509 *cert)
+{
+    int i;
+
+    for (i = 0; i < sk_X509_num(certs); i++) {
+        if (X509_cmp(sk_X509_value(certs, i), cert) == 0) {
+            return FLB_TRUE;
+        }
+    }
+    return FLB_FALSE;
+}
+
+/*
+ * Append certificates [from, end) of 'certs' to the builder in file order.
+ * Google STS requires the chain leaf first, so a leaf found further down the
+ * chain file is an error, as in the Google client libraries. A certificate
+ * whose subject does not match the previous issuer is only reported: cross
+ * signed bundles and extra roots are legitimate and the STS validates the
+ * path itself.
+ */
+static int gcs_x509_builder_append(struct flb_gcs *ctx,
+                                   struct gcs_x509_token_builder *builder,
+                                   STACK_OF(X509) *certs, int from,
+                                   const char *path)
+{
+    int i;
+    X509 *cert;
+    char subject[256];
+
+    for (i = from; i < sk_X509_num(certs); i++) {
+        cert = sk_X509_value(certs, i);
+        if (X509_cmp(cert, builder->leaf) == 0) {
+            flb_plg_error(ctx->ins, "the leaf certificate must be at the top "
+                          "of the trust chain file: %s", path);
+            return -1;
+        }
+        if (X509_NAME_cmp(X509_get_subject_name(cert),
+                          X509_get_issuer_name(builder->prev)) != 0) {
+            flb_plg_warn(ctx->ins,
+                         "certificate #%d in %s (%s) is not the issuer of the "
+                         "preceding certificate; the chain should be ordered "
+                         "leaf first", i + 1, path,
+                         gcs_x509_subject(cert, subject, sizeof(subject)));
+        }
+        if (gcs_x509_token_append(&builder->token, cert, FLB_FALSE) != 0) {
+            return -1;
+        }
+        builder->prev = cert;
+    }
+    return 0;
+}
+
+/*
+ * Build the X.509 subject token: a JSON array of base64 DER certificates,
+ * leaf first (from 'tls.crt_file'), followed by any certificates bundled
+ * after it and then the optional 'x509_trust_chain_file'.
+ */
+static int gcs_x509_subject_token(struct flb_gcs *ctx, flb_sds_t *out_token)
+{
+    int ret = -1;
+    int from = 0;
+    STACK_OF(X509) *certs = NULL;
+    STACK_OF(X509) *chain = NULL;
+    struct gcs_x509_token_builder builder = {0};
+    char subject[256];
+
+    certs = gcs_x509_load_pem_file(ctx, ctx->ins->tls_crt_file);
+    if (!certs) {
+        return -1;
+    }
+    builder.leaf = sk_X509_value(certs, 0);
+    builder.prev = builder.leaf;
+
+    /* X509_cmp_current_time returns 0 on error, which is not "expired" */
+    if (X509_cmp_current_time(X509_get0_notAfter(builder.leaf)) < 0) {
+        flb_plg_warn(ctx->ins, "client certificate has expired (%s); the STS "
+                     "token exchange will be rejected",
+                     gcs_x509_subject(builder.leaf, subject, sizeof(subject)));
+    }
+
+    builder.token = flb_sds_create_size(2048);
+    if (!builder.token) {
+        goto cleanup;
+    }
+    if (flb_sds_cat_safe(&builder.token, "[", 1) < 0 ||
+        gcs_x509_token_append(&builder.token, builder.leaf, FLB_TRUE) != 0 ||
+        gcs_x509_builder_append(ctx, &builder, certs, 1,
+                                ctx->ins->tls_crt_file) != 0) {
+        goto cleanup;
+    }
+
+    if (ctx->x509_trust_chain_file) {
+        chain = gcs_x509_load_pem_file(ctx, ctx->x509_trust_chain_file);
+        if (!chain) {
+            goto cleanup;
+        }
+        /*
+         * The chain file may start by repeating certificates already sent
+         * from tls.crt_file (the leaf alone, or a full chain); skip them
+         */
+        while (from < sk_X509_num(chain) &&
+               gcs_x509_in_stack(certs, sk_X509_value(chain, from))) {
+            if (from > 0 && X509_cmp(sk_X509_value(chain, from),
+                                     builder.leaf) == 0) {
+                flb_plg_error(ctx->ins, "the leaf certificate must be at the "
+                              "top of the trust chain file: %s",
+                              ctx->x509_trust_chain_file);
+                goto cleanup;
+            }
+            from++;
+        }
+        if (gcs_x509_builder_append(ctx, &builder, chain, from,
+                                    ctx->x509_trust_chain_file) != 0) {
+            goto cleanup;
+        }
+    }
+
+    if (flb_sds_cat_safe(&builder.token, "]", 1) < 0) {
+        goto cleanup;
+    }
+
+    *out_token = builder.token;
+    builder.token = NULL;
+    ret = 0;
+
+cleanup:
+    sk_X509_pop_free(certs, X509_free);
+    if (chain) {
+        sk_X509_pop_free(chain, X509_free);
+    }
+    if (builder.token) {
+        flb_sds_destroy(builder.token);
+    }
+    return ret;
+}
+
 /* Escapes content only; the caller supplies the surrounding quotes. */
 static flb_sds_t gcs_json_escape(const char *str, size_t len)
 {
@@ -921,16 +1198,26 @@ static int gcs_exchange_identity_federation_token(struct flb_gcs *ctx)
     struct flb_connection *iam_conn = NULL;
     struct flb_http_client *sts_c = NULL;
     struct flb_http_client *iam_c = NULL;
+    const char *subject_token_type;
 
-    if (gcs_read_identity_token(ctx, &subject_token) != 0) {
-        return -1;
+    if (ctx->identity_federation_x509) {
+        if (gcs_x509_subject_token(ctx, &subject_token) != 0) {
+            return -1;
+        }
+        subject_token_type = FLB_GCS_STS_SUBJECT_TOKEN_TYPE_MTLS;
+    }
+    else {
+        if (gcs_read_identity_token(ctx, &subject_token) != 0) {
+            return -1;
+        }
+        subject_token_type = ctx->subject_token_type;
     }
 
     /* JSON-escape user-controlled values before embedding them in the request */
     audience_esc = gcs_json_escape(ctx->sts_audience,
                                    flb_sds_len(ctx->sts_audience));
-    token_type_esc = gcs_json_escape(ctx->subject_token_type,
-                                     flb_sds_len(ctx->subject_token_type));
+    token_type_esc = gcs_json_escape(subject_token_type,
+                                     strlen(subject_token_type));
     subject_token_esc = gcs_json_escape(subject_token,
                                         flb_sds_len(subject_token));
     if (!audience_esc || !token_type_esc || !subject_token_esc) {
@@ -1747,9 +2034,41 @@ static int flush_init(struct flb_gcs *ctx)
     return 0;
 }
 
+/*
+ * TLS context for the Google STS and IAM endpoints. With the X.509 source
+ * their fixed hostnames are always verified and 'tls.vhost', which belongs to
+ * the upload endpoint, is not applied to them.
+ */
+static struct flb_tls *gcs_federation_tls_create(struct flb_gcs *ctx)
+{
+    struct flb_tls *tls;
+    struct flb_output_instance *ins = ctx->ins;
+    int x509 = ctx->identity_federation_x509;
+
+    tls = flb_tls_create(FLB_TLS_CLIENT_MODE, ins->tls_verify, ins->tls_debug,
+                         x509 ? NULL : ins->tls_vhost,
+                         ins->tls_ca_path, ins->tls_ca_file,
+                         ins->tls_crt_file, ins->tls_key_file,
+                         ins->tls_key_passwd);
+    if (tls) {
+        flb_tls_set_verify_hostname(tls, x509 ? FLB_TRUE :
+                                    ins->tls_verify_hostname);
+    }
+    return tls;
+}
+
+/*
+ * Validate the Workload Identity Federation options and create the STS
+ * upstream, plus the IAM Credentials upstream when a service account is
+ * impersonated. With the 'x509' source the certificate chain is also built
+ * once here, so a malformed or misordered chain fails at startup. Returns 0
+ * on success and -1 on error; the caller releases the partial context.
+ */
 static int gcs_init_identity_federation(struct flb_gcs *ctx, struct flb_config *config)
 {
     int io_flags = FLB_IO_TLS;
+    const char *sts_url;
+    flb_sds_t subject_token = NULL;
     struct flb_output_instance *ins = ctx->ins;
 
     if (ins->host.ipv6 == FLB_TRUE) {
@@ -1771,10 +2090,74 @@ static int gcs_init_identity_federation(struct flb_gcs *ctx, struct flb_config *
                       "'enable_identity_federation' is true");
         return -1;
     }
-    if (!ctx->identity_token_file) {
-        flb_plg_error(ins, "'identity_token_file' is required when "
-                      "'enable_identity_federation' is true");
+    /* Credential source: OIDC token file (default) or X.509 certificate */
+    ctx->identity_federation_x509 = FLB_FALSE;
+    if (strcasecmp(ctx->identity_federation_source,
+                   FLB_GCS_FEDERATION_SOURCE_X509) == 0) {
+        ctx->identity_federation_x509 = FLB_TRUE;
+    }
+    else if (strcasecmp(ctx->identity_federation_source,
+                        FLB_GCS_FEDERATION_SOURCE_OIDC_FILE) != 0) {
+        flb_plg_error(ins, "invalid 'identity_federation_source' '%s': "
+                      "expected '" FLB_GCS_FEDERATION_SOURCE_OIDC_FILE
+                      "' or '" FLB_GCS_FEDERATION_SOURCE_X509 "'",
+                      ctx->identity_federation_source);
         return -1;
+    }
+
+    if (ctx->identity_federation_x509) {
+        if (!ins->tls_crt_file || !ins->tls_key_file) {
+            flb_plg_error(ins, "'tls.crt_file' and 'tls.key_file' are required "
+                          "when 'identity_federation_source' is '"
+                          FLB_GCS_FEDERATION_SOURCE_X509 "'");
+            return -1;
+        }
+        /*
+         * The device credential is only ever presented to a verified Google
+         * endpoint: the STS host is fixed, so its name is always checked
+         */
+        if (ins->tls_verify == FLB_FALSE) {
+            flb_plg_error(ins, "'tls.verify' must be enabled when "
+                          "'identity_federation_source' is '"
+                          FLB_GCS_FEDERATION_SOURCE_X509 "'");
+            return -1;
+        }
+        if (ins->tls_verify_hostname == FLB_FALSE) {
+            flb_plg_warn(ins, "'tls.verify_hostname' is disabled; the STS "
+                         "exchange verifies the Google hostname regardless "
+                         "with the '" FLB_GCS_FEDERATION_SOURCE_X509 "' "
+                         "source, consider enabling it for the Cloud Storage "
+                         "upload connection too");
+        }
+        if (ctx->identity_token_file) {
+            flb_plg_warn(ins, "'identity_token_file' is ignored when "
+                         "'identity_federation_source' is '"
+                         FLB_GCS_FEDERATION_SOURCE_X509 "'");
+        }
+        if (ctx->subject_token_type &&
+            strcasecmp(ctx->subject_token_type,
+                       FLB_GCS_STS_SUBJECT_TOKEN_TYPE) != 0 &&
+            strcasecmp(ctx->subject_token_type,
+                       FLB_GCS_STS_SUBJECT_TOKEN_TYPE_MTLS) != 0) {
+            flb_plg_warn(ins, "'subject_token_type' is ignored when "
+                         "'identity_federation_source' is '"
+                         FLB_GCS_FEDERATION_SOURCE_X509 "'; using "
+                         FLB_GCS_STS_SUBJECT_TOKEN_TYPE_MTLS);
+        }
+        sts_url = FLB_GCS_GOOGLE_STS_MTLS_URL;
+    }
+    else {
+        if (!ctx->identity_token_file) {
+            flb_plg_error(ins, "'identity_token_file' is required when "
+                          "'enable_identity_federation' is true");
+            return -1;
+        }
+        if (ctx->x509_trust_chain_file) {
+            flb_plg_warn(ins, "'x509_trust_chain_file' is ignored when "
+                         "'identity_federation_source' is not '"
+                         FLB_GCS_FEDERATION_SOURCE_X509 "'");
+        }
+        sts_url = FLB_GCS_GOOGLE_STS_URL;
     }
 
     /* Build the STS audience (workload identity pool provider resource name) */
@@ -1788,37 +2171,38 @@ static int gcs_init_identity_federation(struct flb_gcs *ctx, struct flb_config *
     }
 
     /* Google STS upstream (token exchange) */
-    ctx->sts_tls = flb_tls_create(FLB_TLS_CLIENT_MODE, ins->tls_verify,
-                                  ins->tls_debug, ins->tls_vhost,
-                                  ins->tls_ca_path, ins->tls_ca_file,
-                                  ins->tls_crt_file, ins->tls_key_file,
-                                  ins->tls_key_passwd);
+    ctx->sts_tls = gcs_federation_tls_create(ctx);
     if (!ctx->sts_tls) {
         flb_plg_error(ins, "failed to create Google STS TLS context");
         return -1;
     }
-    flb_tls_set_verify_hostname(ctx->sts_tls, ins->tls_verify_hostname);
 
-    ctx->sts_u = flb_upstream_create_url(config, FLB_GCS_GOOGLE_STS_URL,
+    ctx->sts_u = flb_upstream_create_url(config, sts_url,
                                          io_flags, ctx->sts_tls);
     if (!ctx->sts_u) {
         flb_plg_error(ins, "failed to create Google STS upstream");
         return -1;
     }
+
+    /* Fail at startup on an unreadable or malformed certificate chain */
+    if (ctx->identity_federation_x509) {
+        if (gcs_x509_subject_token(ctx, &subject_token) != 0) {
+            return -1;
+        }
+        if (gcs_under_test_mode() == FLB_TRUE) {
+            gcs_setenv("TEST_GCS_X509_SUBJECT_TOKEN", subject_token);
+        }
+        flb_sds_destroy(subject_token);
+    }
     flb_stream_disable_async_mode(&ctx->sts_u->base);
 
     /* Google IAM Credentials upstream (only needed for impersonation) */
     if (ctx->google_service_account) {
-        ctx->iam_tls = flb_tls_create(FLB_TLS_CLIENT_MODE, ins->tls_verify,
-                                      ins->tls_debug, ins->tls_vhost,
-                                      ins->tls_ca_path, ins->tls_ca_file,
-                                      ins->tls_crt_file, ins->tls_key_file,
-                                      ins->tls_key_passwd);
+        ctx->iam_tls = gcs_federation_tls_create(ctx);
         if (!ctx->iam_tls) {
             flb_plg_error(ins, "failed to create Google IAM TLS context");
             return -1;
         }
-        flb_tls_set_verify_hostname(ctx->iam_tls, ins->tls_verify_hostname);
 
         ctx->iam_u = flb_upstream_create_url(config, FLB_GCS_GOOGLE_IAM_URL,
                                              io_flags, ctx->iam_tls);
@@ -1830,8 +2214,13 @@ static int gcs_init_identity_federation(struct flb_gcs *ctx, struct flb_config *
     }
 
     flb_plg_info(ins,
-                 "Workload Identity Federation enabled (audience=%s, impersonation=%s)",
+                 "Workload Identity Federation enabled (audience=%s, source=%s, "
+                 "sts=%s, impersonation=%s)",
                  ctx->sts_audience,
+                 ctx->identity_federation_x509 ?
+                     FLB_GCS_FEDERATION_SOURCE_X509 :
+                     FLB_GCS_FEDERATION_SOURCE_OIDC_FILE,
+                 sts_url,
                  ctx->google_service_account ? ctx->google_service_account : "none");
     return 0;
 }
@@ -2391,10 +2780,27 @@ static struct flb_config_map config_map[] = {
      "Workload identity pool provider id (identity federation)."
     },
     {
+     FLB_CONFIG_MAP_STR, "identity_federation_source",
+     FLB_GCS_FEDERATION_SOURCE_OIDC_FILE,
+     0, FLB_TRUE, offsetof(struct flb_gcs, identity_federation_source),
+     "Credential source for identity federation: 'oidc_file' exchanges the "
+     "token in 'identity_token_file'; 'x509' authenticates with the "
+     "certificate in 'tls.crt_file'/'tls.key_file' over mTLS "
+     "(certificate-based Workload Identity Federation). Rotated certificates "
+     "are picked up at the next token refresh."
+    },
+    {
      FLB_CONFIG_MAP_STR, "identity_token_file", NULL,
      0, FLB_TRUE, offsetof(struct flb_gcs, identity_token_file),
      "Path to the OIDC subject token file used as the federation credential "
-     "source (identity federation)."
+     "source (identity federation, 'oidc_file' source)."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "x509_trust_chain_file", NULL,
+     0, FLB_TRUE, offsetof(struct flb_gcs, x509_trust_chain_file),
+     "Optional PEM file with the intermediate certificates sent after the "
+     "leaf certificate and any certificates bundled with it in 'tls.crt_file' "
+     "(identity federation, 'x509' source)."
     },
     {
      FLB_CONFIG_MAP_STR, "google_service_account", NULL,
@@ -2405,7 +2811,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "subject_token_type", FLB_GCS_STS_SUBJECT_TOKEN_TYPE,
      0, FLB_TRUE, offsetof(struct flb_gcs, subject_token_type),
-     "OIDC subject token type for identity federation."
+     "OIDC subject token type for identity federation ('oidc_file' source)."
     },
     {
      FLB_CONFIG_MAP_STR, "store_dir", "/tmp/fluent-bit/gcs",
