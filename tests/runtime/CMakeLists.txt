@@ -328,6 +328,10 @@ if (FLB_PROCESSOR_CONTENT_MODIFIER)
   FLB_RT_TEST(FLB_PROCESSOR_CONTENT_MODIFIER "processor_content_modifier.c")
 endif()
 
+if (FLB_PROCESSOR_ADAPTIVE)
+  FLB_RT_TEST(FLB_PROCESSOR_ADAPTIVE "processor_adaptive.c")
+endif()
+
 if (FLB_PROCESSOR_CUMULATIVE_TO_DELTA)
   FLB_RT_TEST(FLB_PROCESSOR_CUMULATIVE_TO_DELTA
               "processor_cumulative_to_delta.c")
