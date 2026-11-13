@@ -232,13 +232,25 @@ static void cb_ws_flush(struct flb_event_chunk *event_chunk,
     //TODO how to determine the interval? conn disconnet is about 30 sec, so we set 20 ssecnds here.
     flb_debug("[out_ws] interval is  %ld and handshake is %d", now - ctx->last_input_timestamp, ctx->handshake);
     if ((now - ctx->last_input_timestamp > ctx->idle_interval) && (ctx->handshake == 0)) {
+        /*
+         * Drop the pooled connection. Releasing it with keepalive would
+         * recycle an already-upgraded socket, and the retry would send a
+         * second HTTP Upgrade on it.
+         */
         ctx->handshake = 1;
+        flb_upstream_conn_recycle(u_conn, FLB_FALSE);
         flb_upstream_conn_release(u_conn);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
     ctx->last_input_timestamp = now;
 
-    if (ctx->handshake == 1) {
+    /*
+     * Handshake on the first use of a connection. ka_count is 0 for a
+     * connection just created by the upstream pool and greater than 0
+     * after it has been recycled. ctx->handshake still forces a new
+     * upgrade after write errors.
+     */
+    if (ctx->handshake == 1 || u_conn->ka_count == 0) {
         /* Handshake with websocket server*/
         flb_info("[out_ws] handshake for ws");
         ret = flb_ws_handshake(u_conn, ctx);
