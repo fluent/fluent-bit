@@ -1289,6 +1289,8 @@ void test_router_apply_config_success()
 
     path = cfl_list_entry(input.routes_direct.next, struct flb_router_path, _head);
     TEST_CHECK(path->ins == &output);
+    TEST_CHECK(route_output.status == FLB_ROUTE_OUTPUT_CONNECTED);
+    TEST_CHECK(route_output.used_fallback == FLB_FALSE);
 
     flb_router_exit(&config);
 
@@ -1338,6 +1340,7 @@ void test_router_apply_config_missing_output()
 
     /* When output is missing, no routes should be created */
     TEST_CHECK(cfl_list_is_empty(&input.routes_direct));
+    TEST_CHECK(route_output.status == FLB_ROUTE_OUTPUT_NOT_FOUND);
 
     flb_router_exit(&config);
 
@@ -1385,6 +1388,7 @@ void test_router_apply_config_rejects_incompatible_output_signal()
 
     TEST_CHECK(flb_router_apply_config(&config) == 0);
     TEST_CHECK(cfl_list_is_empty(&input.routes_direct));
+    TEST_CHECK(route_output.status == FLB_ROUTE_OUTPUT_SIGNAL_NOT_SUPPORTED);
 
     flb_router_exit(&config);
 
@@ -2623,6 +2627,167 @@ static void test_router_path_should_route_condition()
     free_route_condition(condition);
 }
 
+/* An input is connected to an output once: a later route naming it owns nothing */
+void test_router_apply_config_reports_output_status()
+{
+    struct flb_config config;
+    struct flb_input_instance input;
+    struct flb_output_instance output;
+    struct flb_input_routes input_routes;
+    struct flb_route first;
+    struct flb_route second;
+    struct flb_route_output first_output;
+    struct flb_route_output second_output;
+    struct flb_route_output fallback_output;
+    struct flb_input_plugin input_plugin;
+    struct flb_output_plugin output_plugin;
+
+    setup_test_instances(&config, &input, &input_plugin, "dummy", "dummy",
+                         &output, &output_plugin, "printme", "stdout");
+
+    memset(&input_routes, 0, sizeof(input_routes));
+    cfl_list_init(&input_routes._head);
+    cfl_list_init(&input_routes.routes);
+    input_routes.input_name = flb_sds_create("dummy");
+    input_routes.plugin_name = flb_sds_create("dummy");
+    input_routes.has_alias = FLB_FALSE;
+    cfl_list_add(&input_routes._head, &config.input_routes);
+
+    memset(&first, 0, sizeof(first));
+    cfl_list_init(&first._head);
+    cfl_list_init(&first.outputs);
+    first.name = flb_sds_create("first");
+    first.signals = FLB_ROUTER_SIGNAL_LOGS;
+    cfl_list_add(&first._head, &input_routes.routes);
+
+    memset(&second, 0, sizeof(second));
+    cfl_list_init(&second._head);
+    cfl_list_init(&second.outputs);
+    second.name = flb_sds_create("second");
+    second.signals = FLB_ROUTER_SIGNAL_LOGS;
+    cfl_list_add(&second._head, &input_routes.routes);
+
+    /* resolved through its fallback, since 'unknown' does not exist */
+    memset(&fallback_output, 0, sizeof(fallback_output));
+    cfl_list_init(&fallback_output._head);
+    fallback_output.name = flb_sds_create("unknown");
+    fallback_output.fallback = flb_sds_create("printme");
+    cfl_list_add(&fallback_output._head, &first.outputs);
+
+    memset(&first_output, 0, sizeof(first_output));
+    cfl_list_init(&first_output._head);
+    first_output.name = flb_sds_create("printme");
+    cfl_list_add(&first_output._head, &first.outputs);
+
+    memset(&second_output, 0, sizeof(second_output));
+    cfl_list_init(&second_output._head);
+    second_output.name = flb_sds_create("printme");
+    cfl_list_add(&second_output._head, &second.outputs);
+
+    TEST_CHECK(fallback_output.status == FLB_ROUTE_OUTPUT_PENDING);
+    TEST_CHECK(flb_router_apply_config(&config) == 0);
+
+    TEST_CHECK(cfl_list_size(&input.routes_direct) == 1);
+    TEST_CHECK(fallback_output.status == FLB_ROUTE_OUTPUT_CONNECTED);
+    TEST_CHECK(fallback_output.used_fallback == FLB_TRUE);
+    TEST_CHECK(first_output.status == FLB_ROUTE_OUTPUT_ALREADY_CONNECTED);
+    TEST_CHECK(first_output.used_fallback == FLB_FALSE);
+    TEST_CHECK(second_output.status == FLB_ROUTE_OUTPUT_ALREADY_CONNECTED);
+
+    flb_router_exit(&config);
+
+    flb_sds_destroy(input.alias);
+    flb_sds_destroy(output.alias);
+    flb_sds_destroy(input_routes.input_name);
+    flb_sds_destroy(input_routes.plugin_name);
+    flb_sds_destroy(first.name);
+    flb_sds_destroy(second.name);
+    flb_sds_destroy(fallback_output.name);
+    flb_sds_destroy(fallback_output.fallback);
+    flb_sds_destroy(first_output.name);
+    flb_sds_destroy(second_output.name);
+}
+
+static struct cfl_variant *condition_variant(const char *op, const char *field)
+{
+    struct cfl_kvlist *condition;
+    struct cfl_kvlist *rule;
+    struct cfl_array *rules;
+
+    condition = cfl_kvlist_create();
+    TEST_CHECK(condition != NULL);
+    if (op) {
+        TEST_CHECK(cfl_kvlist_insert_string(condition, "op", (char *) op) == 0);
+    }
+    if (field) {
+        rules = cfl_array_create(1);
+        rule = cfl_kvlist_create();
+        TEST_CHECK(rules != NULL && rule != NULL);
+        TEST_CHECK(cfl_kvlist_insert_string(rule, "field", (char *) field) == 0);
+        TEST_CHECK(cfl_kvlist_insert_string(rule, "op", "eq") == 0);
+        TEST_CHECK(cfl_kvlist_insert_string(rule, "value", "error") == 0);
+        TEST_CHECK(cfl_array_append_kvlist(rules, rule) == 0);
+        TEST_CHECK(cfl_kvlist_insert_array(condition, "rules", rules) == 0);
+    }
+    return cfl_variant_create_from_kvlist(condition);
+}
+
+/* A condition can be built outside a configuration, with the reason when refused */
+static void test_router_condition_create_reports_error()
+{
+    struct cfl_variant *variant;
+    struct flb_route_condition *condition;
+    const char *error;
+
+    variant = condition_variant("and", "$level");
+    error = "unset";
+    condition = flb_router_condition_create(variant, FLB_ROUTER_SIGNAL_LOGS, &error);
+    TEST_CHECK(condition != NULL);
+    TEST_CHECK(error == NULL);
+    if (condition) {
+        TEST_CHECK(cfl_list_size(&condition->rules) == 1);
+        flb_router_condition_destroy(condition);
+    }
+    cfl_variant_destroy(variant);
+
+    variant = condition_variant(NULL, NULL);
+    error = NULL;
+    condition = flb_router_condition_create(variant, FLB_ROUTER_SIGNAL_LOGS, &error);
+    TEST_CHECK(condition == NULL);
+    TEST_CHECK(error != NULL &&
+               strcmp(error, "a condition needs 'rules' or 'default: true'") == 0);
+    cfl_variant_destroy(variant);
+
+    variant = condition_variant("xor", "$level");
+    error = NULL;
+    condition = flb_router_condition_create(variant, FLB_ROUTER_SIGNAL_LOGS, &error);
+    TEST_CHECK(condition == NULL);
+    TEST_CHECK(error != NULL &&
+               strcmp(error, "condition 'op' must be 'and' or 'or'") == 0);
+    cfl_variant_destroy(variant);
+
+    /* a rule refused after it was parsed is released with the condition */
+    variant = condition_variant(NULL, "$metric.name");
+    error = NULL;
+    condition = flb_router_condition_create(variant, FLB_ROUTER_SIGNAL_LOGS, &error);
+    TEST_CHECK(condition == NULL);
+    TEST_CHECK(error != NULL &&
+               strcmp(error, "a rule 'field' is not valid for the route signal") == 0);
+    cfl_variant_destroy(variant);
+
+    variant = cfl_variant_create_from_string("level");
+    error = NULL;
+    condition = flb_router_condition_create(variant, FLB_ROUTER_SIGNAL_LOGS, &error);
+    TEST_CHECK(condition == NULL);
+    TEST_CHECK(error != NULL && strcmp(error, "a condition must be a map") == 0);
+    cfl_variant_destroy(variant);
+
+    /* the reason is optional */
+    variant = condition_variant(NULL, NULL);
+    TEST_CHECK(flb_router_condition_create(variant, FLB_ROUTER_SIGNAL_LOGS, NULL) == NULL);
+    cfl_variant_destroy(variant);
+}
+
 TEST_LIST = {
     { "parse_basic", test_router_config_parse_basic },
     { "duplicate_route", test_router_config_duplicate_route },
@@ -2637,7 +2802,9 @@ TEST_LIST = {
     { "apply_config_distinct_instances_without_alias", test_router_apply_config_distinct_instances_without_alias },
     { "apply_config_routes_bind_to_exact_section_without_alias",
       test_router_apply_config_routes_bind_to_exact_section_without_alias },
+    { "apply_config_reports_output_status", test_router_apply_config_reports_output_status },
     { "route_default_precedence", test_router_route_default_precedence },
+    { "condition_create_reports_error", test_router_condition_create_reports_error },
     { "condition_eval_logs_metadata_context", test_router_condition_eval_logs_metadata_context },
     { "condition_eval_logs_group_context", test_router_condition_eval_logs_group_context },
     { "condition_eval_logs_otel_contexts", test_router_condition_eval_logs_otel_contexts },
