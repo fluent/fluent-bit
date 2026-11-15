@@ -1005,6 +1005,25 @@ def test_out_opentelemetry_gzip_and_logs_body_key_attributes():
     assert "message" not in attributes
 
 
+def test_out_opentelemetry_logs_body_key_attributes_exclude():
+    service = Service("out_otel_http_logs_attributes_exclude.yaml")
+    service.start()
+    service.wait_for_requests(1)
+    logs_seen = service.wait_for_signal("logs")
+    service.stop()
+
+    output = json.loads(json_format.MessageToJson(logs_seen[0]))
+    record, attributes, _ = next(iter_log_records(output))
+
+    assert record["body"]["stringValue"] == "body only"
+    assert base64.b64decode(record["traceId"]) == bytes.fromhex("63560bd4d8de74fae7d1e4160f2ee099")
+    assert record["severityText"] == "WARN"
+    assert attributes["thread"] == "main"
+    assert "TraceId" not in attributes
+    assert "SeverityText" not in attributes
+    assert "message" not in attributes
+
+
 @pytest.mark.skipif(
     shutil.which("zstd") is None,
     reason="zstd executable is required to decode the test payload",
