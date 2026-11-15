@@ -656,6 +656,28 @@ static int opentelemetry_check_grpc_status(struct opentelemetry_context *ctx,
     return result;
 }
 
+/*
+ * A tag can't be used as a header value if it contains CR, LF or NUL,
+ * since that would split or truncate the request headers.
+ */
+static int opentelemetry_tag_is_valid_header_value(const char *tag,
+                                                   int tag_len)
+{
+    int i;
+
+    if (tag == NULL || tag_len <= 0) {
+        return FLB_FALSE;
+    }
+
+    for (i = 0; i < tag_len; i++) {
+        if (tag[i] == '\r' || tag[i] == '\n' || tag[i] == '\0') {
+            return FLB_FALSE;
+        }
+    }
+
+    return FLB_TRUE;
+}
+
 int opentelemetry_legacy_post(struct opentelemetry_context *ctx,
                               const void *body, size_t body_len,
                               const char *tag, int tag_len,
@@ -772,6 +794,19 @@ int opentelemetry_legacy_post(struct opentelemetry_context *ctx,
         flb_http_add_header(c,
                             key->str, flb_sds_len(key->str),
                             val->str, flb_sds_len(val->str));
+    }
+
+    if (ctx->header_tag != NULL) {
+        if (opentelemetry_tag_is_valid_header_value(tag, tag_len)) {
+            flb_http_add_header(c,
+                                ctx->header_tag,
+                                flb_sds_len(ctx->header_tag),
+                                tag, tag_len);
+        }
+        else {
+            flb_plg_warn(ctx->ins, "tag can't be used as a header value, "
+                         "skipping header '%s'", ctx->header_tag);
+        }
     }
 
 #ifdef FLB_HAVE_SIGNV4
@@ -939,6 +974,27 @@ int opentelemetry_post(struct opentelemetry_context *ctx,
         flb_plg_error(ctx->ins, "error initializing http request");
 
         return FLB_RETRY;
+    }
+
+    if (ctx->header_tag != NULL) {
+        if (opentelemetry_tag_is_valid_header_value(tag, tag_len)) {
+            result = flb_http_request_set_header(request,
+                                                 ctx->header_tag,
+                                                 flb_sds_len(ctx->header_tag),
+                                                 (char *) tag, tag_len);
+
+            if (result != 0) {
+                flb_plg_error(ctx->ins, "failed to set header '%s'",
+                              ctx->header_tag);
+                flb_http_client_request_destroy(request, FLB_TRUE);
+
+                return FLB_RETRY;
+            }
+        }
+        else {
+            flb_plg_warn(ctx->ins, "tag can't be used as a header value, "
+                         "skipping header '%s'", ctx->header_tag);
+        }
     }
 
     if (request->protocol_version == HTTP_PROTOCOL_VERSION_20 &&
@@ -1725,6 +1781,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_SLIST_1, "header", NULL,
      FLB_CONFIG_MAP_MULT, FLB_TRUE, offsetof(struct opentelemetry_context, headers),
      "Add a HTTP header key/value pair. Multiple headers can be set"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "header_tag", NULL,
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, header_tag),
+     "Set a HTTP header whose value is the tag of the records being sent"
     },
     {
      FLB_CONFIG_MAP_STR, "metrics_uri", "/v1/metrics",

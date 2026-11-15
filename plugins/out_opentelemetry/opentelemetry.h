@@ -185,6 +185,9 @@ struct opentelemetry_context {
     /* Arbitrary HTTP headers */
     struct mk_list *headers;
 
+    /* HTTP header whose value is the tag of the chunk */
+    flb_sds_t header_tag;
+
     /* instance context */
     struct flb_output_instance *ins;
 
