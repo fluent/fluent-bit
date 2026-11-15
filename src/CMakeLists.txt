@@ -111,7 +111,8 @@ if(NOT FLB_WASM_BROWSER)
   list(APPEND src flb_http_common.c flb_http_client_http1.c
     flb_http_client_http2.c flb_http_client.c)
 else()
-  list(APPEND src flb_http_common.c flb_http_client.c wasm/http.c wasm/http_client.c)
+  list(APPEND src flb_http_common.c flb_http_client.c wasm/http.c wasm/http_client.c
+    wasm/inspect.c)
 endif()
 
 set(src
