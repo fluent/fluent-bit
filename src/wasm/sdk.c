@@ -6,6 +6,7 @@
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_version.h>
+#include <fluent-bit/wasm/flb_wasm_inspect.h>
 #include <emscripten.h>
 #include <openssl/crypto.h>
 #include <pthread.h>
@@ -20,6 +21,15 @@
 #define SDK_PUSH 3
 #define SDK_DESTROY 4
 #define SDK_DRAIN 5
+/* Inspection: report what the engine decides. 'grace' carries the argument. */
+#define SDK_EVALUATE 6
+#define SDK_TOPOLOGY 7
+#define SDK_TRACE 8
+#define SDK_TRACE_TAKE 0
+#define SDK_TRACE_ENABLE 1
+#define SDK_TRACE_DISABLE 2
+/* Advertised to the worker so callers can feature-detect. */
+#define SDK_FEATURES "condition,topology,trace"
 #define SDK_PAYLOAD_LIMIT (1024 * 1024)
 
 struct sdk_command {
@@ -157,7 +167,7 @@ static int sdk_drain(flb_ctx_t *context)
 EMSCRIPTEN_KEEPALIVE int flb_wasm_sdk_submit(int id, int operation, char *name,
                                             unsigned char *data, size_t size, int grace)
 {
-    if (id <= 0 || operation < SDK_START || operation > SDK_DRAIN ||
+    if (id <= 0 || operation < SDK_START || operation > SDK_TRACE ||
         size > SDK_PAYLOAD_LIMIT || (size != 0 && data == NULL) || grace < 0 || grace > 30) {
         return -1;
     }
@@ -261,15 +271,43 @@ static int sdk_push(flb_ctx_t *context, struct sdk_command *command)
     return flb_lib_push(context, selected->id, command->data, command->size);
 }
 
+/* Results are JSON in a malloc(3) buffer that the worker copies and frees. */
+static int sdk_inspect(flb_ctx_t *context, struct sdk_command *command,
+                       char **output, size_t *output_size)
+{
+    if (command->operation == SDK_EVALUATE) {
+        if (command->size == 0) {
+            return -1;
+        }
+        return flb_wasm_inspect_condition((const char *) command->data, command->size,
+                                          output, output_size);
+    }
+    if (command->operation == SDK_TOPOLOGY) {
+        /* Instance lists and routes are fixed once the engine has started. */
+        if (context == NULL) {
+            return -3;
+        }
+        return flb_wasm_inspect_topology(context->config, output, output_size);
+    }
+    if (command->grace == SDK_TRACE_TAKE) {
+        return flb_wasm_trace_take(output, output_size);
+    }
+    flb_wasm_trace_set(command->grace == SDK_TRACE_ENABLE);
+    return 0;
+}
+
 int main(void)
 {
     flb_ctx_t *context;
     struct sdk_command command;
     int result;
     double elapsed;
+    char *output;
+    size_t output_size;
 
     context = NULL;
-    MAIN_THREAD_EM_ASM({ Module['onSdkReady'](1, UTF8ToString($0)); }, FLB_VERSION_STR);
+    MAIN_THREAD_EM_ASM({ Module['onSdkReady'](1, UTF8ToString($0), UTF8ToString($1)); },
+                       FLB_VERSION_STR, SDK_FEATURES);
     for (;;) {
         pthread_mutex_lock(&command_mutex);
         while (!command_pending) {
@@ -280,7 +318,12 @@ int main(void)
         command_pending = 0;
         pthread_mutex_unlock(&command_mutex);
         elapsed = 0;
-        if (command.operation == SDK_START) {
+        output = NULL;
+        output_size = 0;
+        if (command.operation >= SDK_EVALUATE) {
+            result = sdk_inspect(context, &command, &output, &output_size);
+        }
+        else if (command.operation == SDK_START) {
             result = sdk_start(&context, &command, &elapsed);
         }
         else if (command.operation == SDK_PUSH) {
@@ -298,6 +341,7 @@ int main(void)
             OPENSSL_thread_stop();
             return result == 0 ? 0 : 1;
         }
-        MAIN_THREAD_EM_ASM({ Module['onSdkResult']($0, $1, $2); }, command.id, result, elapsed);
+        MAIN_THREAD_EM_ASM({ Module['onSdkResult']($0, $1, $2, $3, $4); },
+                           command.id, result, elapsed, output, output_size);
     }
 }

@@ -187,7 +187,10 @@ class FluentBit {
             }
             clearTimeout(this.#loadTimer);
             this.#detachAbort();
-            this.#info = Object.freeze({...message.info, sdkVersion: SDK_VERSION});
+            const features = Array.isArray(message.info.features) ?
+                message.info.features.filter(name => typeof name === 'string') : [];
+            this.#info = Object.freeze({...message.info, features: Object.freeze(features),
+                sdkVersion: SDK_VERSION});
             this.#setState('ready');
             this.#resolveReady();
         }
@@ -262,11 +265,16 @@ class FluentBit {
         }
         const yaml = bytes(options.yaml, 65536, 'yaml');
         const grace = integer(options.graceSeconds ?? 5, 0, 30, 'graceSeconds');
+        if (options.trace !== undefined && typeof options.trace !== 'boolean') {
+            throw error('E_ARGUMENT', 'trace must be boolean');
+        }
+        const trace = options.trace === true;
+        this.#feature(trace ? 'trace' : null);
         return this.#enqueue(async () => {
             if (!['ready', 'stopped'].includes(this.#state)) { throw error('E_STATE', 'Stop before starting again'); }
             this.#setState('starting');
             try {
-                const result = await this.#send('start', {yaml, grace});
+                const result = await this.#send('start', {yaml, grace, trace});
                 if (['failed', 'destroyed'].includes(this.#state)) {
                     throw error('E_STATE', 'SDK instance is unavailable');
                 }
@@ -293,6 +301,57 @@ class FluentBit {
         return this.#enqueue(() => {
             if (this.#state !== 'running') { throw error('E_STATE', 'Engine is not running'); }
             return this.#send('drain');
+        });
+    }
+
+    #feature(name) {
+        if (name && !this.#info.features.includes(name)) {
+            throw error('E_UNSUPPORTED', `This runtime does not support ${name} inspection`);
+        }
+    }
+    async evaluateCondition(options) {
+        object(options, 'evaluateCondition options');
+        object(options.condition, 'condition');
+        if (!Array.isArray(options.records) || options.records.length > 1000) {
+            throw error('E_ARGUMENT', 'records must contain at most 1000 JSON objects');
+        }
+        if (options.metadata !== undefined && (!Array.isArray(options.metadata) ||
+            options.metadata.length !== options.records.length)) {
+            throw error('E_ARGUMENT', 'metadata must have one entry per record');
+        }
+        this.#feature('condition');
+        let json;
+        try {
+            options.records.forEach(record => object(record, 'record'));
+            json = JSON.stringify({condition: options.condition, records: options.records,
+                                   metadata: options.metadata});
+        }
+        catch (cause) {
+            throw error('E_ARGUMENT', 'Condition and records must be JSON-serializable objects');
+        }
+        const data = bytes(json, MAX_PAYLOAD, 'condition request');
+        const count = options.records.length;
+        return this.#enqueue(async () => {
+            const value = await this.#send('evaluateCondition', {data});
+            if (!Array.isArray(value?.matched) || value.matched.length !== count) {
+                throw error('E_PROTOCOL', 'Invalid condition result');
+            }
+            return Object.freeze({matched: Object.freeze(value.matched.map(Boolean))});
+        }, data.byteLength);
+    }
+    getTopology() {
+        return this.#enqueue(() => {
+            this.#feature('topology');
+            if (this.#state !== 'running') { throw error('E_STATE', 'Engine is not running'); }
+            return this.#send('getTopology');
+        });
+    }
+    takeTrace() {
+        return this.#enqueue(async () => {
+            this.#feature('trace');
+            const value = await this.#send('takeTrace');
+            if (!Array.isArray(value?.events)) { throw error('E_PROTOCOL', 'Invalid trace result'); }
+            return {events: value.events, dropped: Number(value.dropped) || 0};
         });
     }
 

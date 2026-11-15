@@ -91,6 +91,47 @@ Configure `FLB_WASM_PTHREAD_POOL_SIZE` (3–16, default 3) at build time if a wo
 needs additional pthreads. CMake sets both the runtime pool and worker limit.
 One or two threads cannot host the current SDK's three concurrent C threads.
 
+## Inspecting routing decisions
+
+Three calls report what the engine decides. They never change routing, and each
+is listed in `info.features` (`condition`, `topology`, `trace`) so a caller can
+detect a runtime that lacks them.
+
+```js
+// Which sample log records a route condition takes. Needs no running pipeline.
+const {matched} = await fluent.evaluateCondition({
+  condition: {op: 'or', rules: [{field: '$level', op: 'eq', value: 'error'}]},
+  records: [{level: 'error'}, {level: 'info'}]
+});                                        // [true, false]
+
+await fluent.start({yaml, trace: true});
+// Connections made for this configuration: each route output with the instance
+// it resolved to, whether its fallback was used and why it was skipped
+// (`not_found`, `signal_not_supported`, `already_connected`), plus the outputs
+// and filters whose match selects each input's configured tag.
+const topology = await fluent.getTopology();
+
+await fluent.push({input: 'application', records});
+await fluent.drain();
+// Decisions since the last call: the route each record followed (`route`,
+// `unrouted`), each filter call with record counts in and out, and each chunk
+// an output received (`output`) or that had no destination (`undelivered`).
+const {events, dropped} = await fluent.takeTrace();
+```
+
+A condition the engine rejects fails with `E_CONDITION` and the engine's reason.
+`evaluateCondition` takes log records only; `metadata`, when given, is one entry
+per record. Route events name a record by its position among the log records of
+the appended chunk (`append`, `record`), group markers left out; filter and
+output events are per chunk, identified by the chunk tag, because filters
+rewrite chunks and records carry no identity. Routes with a condition are split
+into chunks tagged with the route name. A route without a condition is not
+split: its outputs receive the input's own chunk with every record, so an input
+that has one reports no record as `unrouted`. The trace
+holds at most 20,000 events or 512 KiB between calls and counts the rest in
+`dropped`. Tracing is off unless `start` asks for it, and the engine checks one
+flag per decision while it is off.
+
 ## Lifecycle and delivery contract
 
 - Creation resolves when the command worker and C runtime are ready. `start()`
