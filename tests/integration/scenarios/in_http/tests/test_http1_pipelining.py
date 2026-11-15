@@ -79,3 +79,15 @@ def test_http1_pipelined_requests_in_one_write(listener):
         stream = sock.makefile("rb")
         assert read_response(stream) == 201
         assert read_response(stream) == 200
+
+
+def test_http1_pipelined_header_only_requests(listener):
+    # Two requests without a body. The first one ends at its blank line, so
+    # the second one has to be kept in the buffer when the first is evicted.
+    request = b"GET /health HTTP/1.1\r\nHost: localhost\r\n\r\n"
+
+    with socket.create_connection(("127.0.0.1", listener), timeout=5) as sock:
+        sock.sendall(request + request)
+        stream = sock.makefile("rb")
+        assert read_response(stream) == 200
+        assert read_response(stream) == 200
