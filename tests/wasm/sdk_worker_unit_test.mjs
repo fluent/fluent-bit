@@ -6,7 +6,7 @@ import vm from 'node:vm';
 
 function worker(BrowserWorker = class {}) {
     const source = readFileSync(new URL('../../sdk/browser/fluent-bit-worker.js', import.meta.url), 'utf8');
-    const context = vm.createContext({TextEncoder, setTimeout, clearTimeout,
+    const context = vm.createContext({TextEncoder, TextDecoder, setTimeout, clearTimeout,
         self: {Worker: BrowserWorker, addEventListener() {}}});
     // Startup is deliberately omitted: exercise the real command state machine
     // with a controllable storage backend, including rejected IndexedDB commits.
@@ -186,4 +186,51 @@ test('drain validates state, reports unsupported pipelines and waits for log del
     sdk.run('releaseLogs()');
     await draining;
     assert.equal(complete, true);
+});
+
+test('inspection results are decoded, feature-gated and report the engine reason', async () => {
+    const sdk = worker();
+    const output = value => `new TextEncoder().encode(JSON.stringify(${JSON.stringify(value)}))`;
+    await assert.rejects(sdk.request('evaluateCondition'), {code: 'E_UNSUPPORTED'});
+    await assert.rejects(sdk.request('getTopology'), {code: 'E_UNSUPPORTED'});
+    await assert.rejects(sdk.request('takeTrace'), {code: 'E_UNSUPPORTED'});
+    sdk.run(`features = ['condition', 'topology', 'trace'];
+        let operations = [];
+        command = async (id, operation, data, name, grace) => {
+            operations.push([operation, grace]);
+            return {result: 0, output: ${output({matched: [true, false]})}};
+        };`);
+    // Values come from the worker's own realm; compare them as JSON.
+    assert.equal(JSON.stringify(await sdk.request('evaluateCondition')), '{"matched":[true,false]}');
+    sdk.run(`command = async () => ({result: 0, output: ${output({error: "a rule needs a 'value'"})}})`);
+    await assert.rejects(sdk.request('evaluateCondition'),
+                         {code: 'E_CONDITION', message: "a rule needs a 'value'"});
+    sdk.run('command = async () => ({result: -1, output: null})');
+    await assert.rejects(sdk.request('evaluateCondition'), {code: 'E_CONDITION'});
+    await assert.rejects(sdk.request('takeTrace'), {code: 'E_TRACE'});
+    sdk.run('state = "stopped"');
+    await assert.rejects(sdk.request('getTopology'), {code: 'E_STATE'});
+    sdk.run(`state = "running"; command = async (id, operation, data, name, grace) => {
+        operations.push([operation, grace]);
+        return {result: 0, output: ${output({events: [], dropped: 0})}};
+    };`);
+    assert.equal(JSON.stringify(await sdk.request('takeTrace')), '{"events":[],"dropped":0}');
+    assert.equal(sdk.run('JSON.stringify(operations)'), '[[6,null],[8,0]]');
+});
+
+test('start configures tracing before the engine and copies result buffers out', async () => {
+    const sdk = worker();
+    sdk.run(`features = ['trace']; runtime.flbStorage.persistent = false; checkpointRequired = false; state = 'stopped';
+        let operations = [];
+        command = async (id, operation, data, name, grace) => {
+            operations.push([operation, grace]);
+            return {result: 0, engineMs: 1};
+        };`);
+    await sdk.run(`execute({id: 1, method: 'start', payload: {yaml: new Uint8Array(1), grace: 0, trace: true}})`);
+    sdk.run('state = "stopped"');
+    await sdk.run(`execute({id: 2, method: 'start', payload: {yaml: new Uint8Array(1), grace: 0, trace: false}})`);
+    assert.equal(sdk.run('JSON.stringify(operations)'), '[[8,1],[1,0],[8,2],[1,0]]');
+    sdk.run(`features = []; state = 'stopped'`);
+    await assert.rejects(sdk.run(`execute({id: 3, method: 'start',
+        payload: {yaml: new Uint8Array(1), grace: 0, trace: true}})`), {code: 'E_UNSUPPORTED'});
 });

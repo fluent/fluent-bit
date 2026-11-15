@@ -20,11 +20,24 @@ async function application(): Promise<void> {
     const drained: void = await fluent.drain();
     await fluent.stop();
     await fluent.syncStorage();
+    const traced: {engineMs: number} = await fluent.start({yaml: '', trace: true});
+    const supported: boolean = fluent.info.features.includes('condition');
+    const matched: readonly boolean[] = (await fluent.evaluateCondition({
+        condition: {rules: [{field: '$level', op: 'eq', value: 'error'}]},
+        records: [{level: 'error'}], metadata: [null]})).matched;
+    const status: string = (await fluent.getTopology()).inputs[0].routes[0].outputs[0].status;
+    for (const event of (await fluent.takeTrace()).events) {
+        if (event.stage === 'route') { const record: number = event.record; void record; }
+        if (event.stage === 'filter') { const kept: number = event.recordsOut; void kept; }
+    }
+    void [traced, supported, matched, status];
     const heap: number = (await fluent.getStats()).wasmMemoryBytes;
     await fluent.destroy();
     void [bytes, result, accepted, drained, heap];
     // @ts-expect-error Only JSON object records are accepted.
     await fluent.push({input: 'app', records: ['text']});
+    // @ts-expect-error A condition is an object, not YAML text.
+    await fluent.evaluateCondition({condition: 'default: true', records: []});
     // @ts-expect-error Persistent storage requires a namespace.
     await createFluentBit({storage: {persistent: true}});
 }

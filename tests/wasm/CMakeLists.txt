@@ -89,6 +89,17 @@ if(FLB_IN_LIB AND FLB_OUT_LIB AND FLB_FILTER_MODIFY AND FLB_FILTER_GREP)
   set_tests_properties(flb-wasm-pipeline PROPERTIES TIMEOUT 45)
 endif()
 
+if(FLB_CONFIG_YAML AND FLB_IN_LIB AND FLB_IN_EVENT_TYPE AND FLB_OUT_NULL AND
+   FLB_FILTER_GREP AND FLB_FILTER_REWRITE_TAG AND FLB_PROCESSOR_OPENTELEMETRY_ENVELOPE)
+  # SDK inspection: condition results, resolved topology and the record trace.
+  add_executable(flb-wasm-routing routing.c)
+  target_link_libraries(flb-wasm-routing fluent-bit-static)
+  set_target_properties(flb-wasm-routing PROPERTIES LINK_FLAGS
+    "-sASSERTIONS=2 -sEXIT_RUNTIME=1 -sPROXY_TO_PTHREAD=1 -sPTHREAD_POOL_SIZE=8 -sSTACK_SIZE=262144 -sALLOW_MEMORY_GROWTH=1")
+  add_test(NAME flb-wasm-routing COMMAND flb-wasm-routing)
+  set_tests_properties(flb-wasm-routing PROPERTIES TIMEOUT 120)
+endif()
+
 add_executable(flb-wasm-events "${PROJECT_SOURCE_DIR}/lib/monkey/test/wasm/events.c")
 target_link_libraries(flb-wasm-events mk_core "-sASYNCIFY=1")
 set_target_properties(flb-wasm-events PROPERTIES LINK_FLAGS

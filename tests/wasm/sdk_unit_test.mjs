@@ -312,3 +312,54 @@ test('drain stays in FIFO order between push and stop on a warm instance', async
     assert.deepEqual(methods, ['start', 'push', 'drain', 'stop']);
     await sdk.destroy();
 });
+
+test('inspection methods are feature-detected and validated before queueing', async () => {
+    const plain = await createFluentBit(defaults);
+    assert.deepEqual(plain.info.features, []);
+    await assert.rejects(plain.evaluateCondition({condition: {default: true}, records: []}),
+                         {code: 'E_UNSUPPORTED'});
+    await assert.rejects(plain.start({yaml: 'pipeline: {}', trace: true}), {code: 'E_UNSUPPORTED'});
+    await assert.rejects(plain.getTopology(), {code: 'E_UNSUPPORTED'});
+    await assert.rejects(plain.takeTrace(), {code: 'E_UNSUPPORTED'});
+    await plain.destroy({force: true});
+
+    const requests = [];
+    let matched = [true, false];
+    reply = (worker, message) => {
+        if (message.type === 'init') {
+            worker.emit({type: 'ready', info: {abi: 1, engineVersion: 'test',
+                features: ['condition', 'topology', 'trace', 7]}});
+        }
+        if (message.type === 'request') {
+            requests.push(message);
+            const value = {evaluateCondition: {matched}, getTopology: {inputs: [], filters: [], outputs: []},
+                takeTrace: {events: [{stage: 'append'}], dropped: 2}}[message.method] ?? {engineMs: 1};
+            worker.emit({type: 'response', id: message.id, ok: true, value});
+        }
+    };
+    const sdk = await createFluentBit(defaults);
+    assert.deepEqual(sdk.info.features, ['condition', 'topology', 'trace']);
+    assert.equal(Object.isFrozen(sdk.info.features), true);
+    await assert.rejects(sdk.evaluateCondition({condition: [], records: []}), {code: 'E_ARGUMENT'});
+    await assert.rejects(sdk.evaluateCondition({condition: {}, records: [1]}), {code: 'E_ARGUMENT'});
+    await assert.rejects(sdk.evaluateCondition({condition: {}, records: [{}], metadata: []}),
+                         {code: 'E_ARGUMENT'});
+    await assert.rejects(sdk.start({yaml: 'pipeline: {}', trace: 'yes'}), {code: 'E_ARGUMENT'});
+    assert.equal(requests.length, 0);
+
+    const condition = {rules: [{field: '$level', op: 'eq', value: 'error'}]};
+    const result = await sdk.evaluateCondition({condition, records: [{level: 'error'}, {level: 'info'}]});
+    assert.deepEqual(result, {matched: [true, false]});
+    assert.equal(Object.isFrozen(result.matched), true);
+    assert.deepEqual(JSON.parse(new TextDecoder().decode(requests[0].payload.data)),
+                     {condition, records: [{level: 'error'}, {level: 'info'}]});
+    matched = [true];
+    await assert.rejects(sdk.evaluateCondition({condition, records: [{}, {}]}), {code: 'E_PROTOCOL'});
+
+    await assert.rejects(sdk.getTopology(), {code: 'E_STATE'});
+    await sdk.start({yaml: 'pipeline: {}', trace: true});
+    assert.equal(requests.at(-1).payload.trace, true);
+    assert.deepEqual(await sdk.getTopology(), {inputs: [], filters: [], outputs: []});
+    assert.deepEqual(await sdk.takeTrace(), {events: [{stage: 'append'}], dropped: 2});
+    await sdk.destroy({force: true});
+});

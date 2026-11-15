@@ -69,6 +69,119 @@ pipeline:
               'FTS reports the unsupported JIT option');
         console.log('Browser FTS processor passed: typed values, nested views, drop and JIT rejection');
     };
+    // Inspection reports what the engine decides: it must agree with delivery.
+    const checkInspection = async fluent => {
+        check(['condition', 'topology', 'trace'].every(name => fluent.info.features.includes(name)),
+              'Inspection features are advertised');
+        const records = [{level: 'error', service: 'web'}, {level: 'info', service: 'payments'},
+                         {level: 'error', service: 'payments'}, {level: 'info', service: 'web'}];
+        const errors = {rules: [{field: '$level', op: 'eq', value: 'error'}]};
+        const either = {op: 'or', rules: [...errors.rules,
+                                          {field: '$service', op: 'regex', value: '^pay'}]};
+        check(JSON.stringify((await fluent.evaluateCondition({condition: errors, records})).matched) ===
+              '[true,false,true,false]', 'Condition result before any pipeline runs');
+        check(JSON.stringify((await fluent.evaluateCondition({condition: either, records})).matched) ===
+              '[true,true,true,false]', 'Rules combined with or');
+        try {
+            await fluent.evaluateCondition({condition: {rules: [{field: '$level', op: 'eq'}]}, records});
+            throw new Error('Expected E_CONDITION');
+        }
+        catch (error) {
+            check(error.code === 'E_CONDITION' && error.message.includes("'value'"),
+                  `Rejected condition carries the engine reason: ${error.code}: ${error.message}`);
+        }
+        await rejected(() => fluent.getTopology(), 'E_STATE');
+        const routedYaml = `service:
+  flush: 60
+  log_level: error
+pipeline:
+  inputs:
+    - name: lib
+      alias: app
+      tag: app
+      routes:
+        logs:
+          - name: errors
+            condition:
+              rules:
+                - field: $level
+                  op: eq
+                  value: error
+            to:
+              outputs:
+                - alerts
+                - name: absent
+                  fallback: archive
+          - name: rest
+            condition:
+              default: true
+            to:
+              outputs:
+                - other
+                - alerts
+                - nowhere
+  filters:
+    - name: grep
+      match: errors
+      exclude: service payments
+  outputs:
+    - name: stdout
+      alias: alerts
+      match: nothing
+      format: json_lines
+    - name: 'null'
+      alias: archive
+      match: nothing
+    - name: 'null'
+      alias: other
+      match: nothing
+`;
+        await fluent.start({yaml: routedYaml, graceSeconds: 0, trace: true});
+        const topology = await fluent.getTopology();
+        const [errorsRoute, restRoute] = topology.inputs[0].routes;
+        check(topology.inputs[0].matchedOutputs.length === 0 &&
+              JSON.stringify(topology.inputs[0].directOutputs) === '[0,1,2]', 'Routes replace tag matching');
+        check(errorsRoute.outputs[0].status === 'connected' && errorsRoute.outputs[0].resolved === 0 &&
+              errorsRoute.outputs[1].usedFallback && errorsRoute.outputs[1].resolved === 1,
+              'Route outputs resolve by alias, then by fallback');
+        // Only the first route of an input that names an output is connected to it.
+        check(restRoute.isDefault && restRoute.outputs[0].status === 'connected' &&
+              restRoute.outputs[1].status === 'already_connected' &&
+              restRoute.outputs[2].status === 'not_found' && restRoute.outputs[2].resolved === null,
+              'Skipped route outputs carry the engine reason');
+        check(topology.filters[0].match === 'errors' && topology.filters[0].matchesInputs.length === 0,
+              'Filter matches are reported against configured tags');
+        await fluent.push({input: 'app', records});
+        await fluent.drain();
+        const {events, dropped} = await fluent.takeTrace();
+        const routed = name => events.filter(event => event.stage === 'route' && event.route === name)
+            .map(event => event.record).join();
+        check(dropped === 0 && routed('errors') === '0,2' && routed('rest') === '1,3',
+              `Each record is traced to its route: ${JSON.stringify(events)}`);
+        check(events.some(event => event.stage === 'filter' && event.tag === 'errors' &&
+              event.recordsIn === 2 && event.recordsOut === 1 && event.modified),
+              'Filters are traced on the route tag');
+        check(events.some(event => event.stage === 'output' && event.tag === 'errors' &&
+              event.output === 0 && event.records === 1) &&
+              events.some(event => event.stage === 'output' && event.tag === 'rest' &&
+              event.output === 2 && event.records === 2) &&
+              !events.some(event => event.stage === 'output' && event.tag === 'rest' && event.output === 0),
+              'Outputs are traced with what they receive');
+        check(!events.some(event => event.stage === 'unrouted'), 'Every record found a route');
+        check(logs.filter(line => {
+            try { return JSON.parse(line).level === 'error'; }
+            catch (_) { return false; }
+        }).length === 1, 'The trace agrees with what the output received');
+        check((await fluent.takeTrace()).events.length === 0, 'Taking the trace empties it');
+        await fluent.stop();
+        // Tracing is per start.
+        await fluent.start({yaml: routedYaml, graceSeconds: 0});
+        await fluent.push({input: 'app', records});
+        await fluent.drain();
+        check((await fluent.takeTrace()).events.length === 0, 'A start without trace records nothing');
+        await fluent.stop();
+        console.log('Browser SDK inspection passed: conditions, topology and record trace');
+    };
     check(getBrowserSupport().supported, 'Browser preflight');
     const logs = [];
     const errors = [];
@@ -209,6 +322,7 @@ pipeline:
             catch (_) { return false; }
         }));
         await fluent.stop();
+        await checkInspection(fluent);
         await checkFts(fluent);
         await fluent.start({yaml, graceSeconds: 1});
         await fluent.stop();
