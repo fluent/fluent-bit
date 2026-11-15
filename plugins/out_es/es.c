@@ -1436,9 +1436,22 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     next_retry_payload = NULL;
     throttle_detected = FLB_FALSE;
 
+    retry_payload = flb_output_get_retry_context(out_flush, NULL, NULL);
+
     node_ctx = NULL;
     if (ctx->ha_mode == FLB_TRUE) {
-        node = flb_upstream_ha_node_get(ctx->ha);
+        /*
+         * A saved partial retry payload was formatted for the node that
+         * answered it, with that node's index, write_operation and id
+         * settings, so send it back there instead of to the next node in
+         * the rotation.
+         */
+        if (retry_payload != NULL && retry_payload->node != NULL) {
+            node = retry_payload->node;
+        }
+        else {
+            node = flb_upstream_ha_node_get(ctx->ha);
+        }
         if (node == NULL) {
             FLB_OUTPUT_RETURN(FLB_RETRY);
         }
@@ -1459,7 +1472,6 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    retry_payload = flb_output_get_retry_context(out_flush, NULL, NULL);
     if (retry_payload != NULL) {
         out_buf = flb_malloc(retry_payload->size);
         if (out_buf == NULL) {
@@ -1650,6 +1662,8 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
             retry_records = 0;
             if (next_retry_payload != NULL) {
                 retry_records = next_retry_payload->records;
+                /* NULL unless upstream mode picked a node */
+                next_retry_payload->node = node;
             }
             dropped_records = 0;
             dropped_bytes = 0;
