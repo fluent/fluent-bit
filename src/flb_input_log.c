@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_processor.h>
+#include <fluent-bit/wasm/flb_wasm_inspect.h>
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_routes_mask.h>
 #include <fluent-bit/flb_conditionals.h>
@@ -436,6 +437,47 @@ static int encode_chunk_record(struct flb_log_event_encoder *encoder,
     return 0;
 }
 
+#ifdef __EMSCRIPTEN__
+/* Group start and end markers travel with the records but are not log records. */
+static int trace_is_log_record(struct flb_mp_chunk_record *record)
+{
+    int32_t type;
+
+    if (flb_log_event_decoder_get_record_type(&record->event, &type) != 0) {
+        return FLB_TRUE;
+    }
+
+    return type != FLB_LOG_EVENT_GROUP_START && type != FLB_LOG_EVENT_GROUP_END;
+}
+
+/*
+ * A route without a condition is not split: its outputs get the input's own
+ * chunk with every record (see input_chunk_apply_base_direct_routes).
+ */
+static int trace_has_base_route(struct flb_input_instance *ins)
+{
+    struct cfl_list *head;
+    struct flb_router_path *route_path;
+
+    cfl_list_foreach(head, &ins->routes_direct) {
+        route_path = cfl_list_entry(head, struct flb_router_path, _head);
+
+        if (!route_path->ins) {
+            continue;
+        }
+
+        if (route_path->route &&
+            (route_path->route->condition || route_path->route->per_record_routing)) {
+            continue;
+        }
+
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+#endif
+
 static int build_payload_for_route(struct flb_input_instance *ins,
                                    struct flb_route_payload *payload,
                                    struct flb_mp_chunk_record **records,
@@ -453,6 +495,10 @@ static int build_payload_for_route(struct flb_input_instance *ins,
     struct flb_mp_chunk_record *group_end = NULL;
     struct flb_mp_chunk_record *group_start_record = NULL;
     uint8_t *matched_by_route = NULL;
+#ifdef __EMSCRIPTEN__
+    size_t trace_record = 0;
+    size_t trace_position;
+#endif
 
     if (!payload || !records || record_count == 0 || !matched_non_default ||
         !matched_any_route) {
@@ -491,6 +537,11 @@ static int build_payload_for_route(struct flb_input_instance *ins,
             }
         }
 
+#ifdef __EMSCRIPTEN__
+        /* position among the log records, group markers left out */
+        trace_position = trace_record++;
+#endif
+
         condition_result = flb_router_condition_evaluate_record(payload->route, records[i]);
         if (condition_result != FLB_TRUE) {
             continue;
@@ -500,6 +551,8 @@ static int build_payload_for_route(struct flb_input_instance *ins,
         matched_non_default[i] = 1;
         matched_any_route[i] = 1;
         matched++;
+        FLB_WASM_TRACE(flb_wasm_trace_route(ins, trace_position, payload->route,
+                                            FLB_FALSE));
     }
 
     /* If no matches, return early */
@@ -616,6 +669,10 @@ static int build_payload_for_default_route(struct flb_input_instance *ins,
     struct flb_mp_chunk_record *group_end = NULL;
     struct flb_mp_chunk_record *group_start_record = NULL;
     int *matched_by_default = NULL;
+#ifdef __EMSCRIPTEN__
+    size_t trace_record = 0;
+    size_t trace_position;
+#endif
 
     if (!payload || !records || !matched_non_default || !matched_any_route) {
         return -1;
@@ -667,6 +724,12 @@ static int build_payload_for_default_route(struct flb_input_instance *ins,
 
     /* Mark matching records */
     for (i = 0; i < record_count; i++) {
+#ifdef __EMSCRIPTEN__
+        trace_position = trace_record;
+        if (trace_is_log_record(records[i])) {
+            trace_record++;
+        }
+#endif
         if (flb_log_event_decoder_get_record_type(&records[i]->event, &record_type) == 0 &&
             record_type == FLB_LOG_EVENT_NORMAL) {
             if (!matched_non_default[i]) {
@@ -675,11 +738,15 @@ static int build_payload_for_default_route(struct flb_input_instance *ins,
                     if (condition_result == FLB_TRUE) {
                         matched_by_default[i] = 1;
                         matched_any_route[i] = 1;
+                        FLB_WASM_TRACE(flb_wasm_trace_route(ins, trace_position, payload->route,
+                                                            FLB_TRUE));
                     }
                 }
                 else {
                     matched_by_default[i] = 1;
                     matched_any_route[i] = 1;
+                    FLB_WASM_TRACE(flb_wasm_trace_route(ins, trace_position, payload->route,
+                                                            FLB_TRUE));
                 }
             }
         }
@@ -1368,6 +1435,23 @@ static int split_and_append_route_payloads(struct flb_input_instance *ins,
         }
     }
 
+#ifdef __EMSCRIPTEN__
+    /* Records no route takes; none when a route without a condition gets them all. */
+    if (flb_wasm_trace_active && trace_has_base_route(ins) == FLB_FALSE) {
+        size_t trace_record = 0;
+
+        for (index = 0; index < record_count; index++) {
+            if (trace_is_log_record(records_array[index]) == FLB_FALSE) {
+                continue;
+            }
+            if (!matched_any_route[index]) {
+                flb_wasm_trace_unrouted(ins, trace_record);
+            }
+            trace_record++;
+        }
+    }
+#endif
+
     flb_free(records_array);
     flb_free(matched_non_default);
     flb_free(matched_any_route);
@@ -1482,6 +1566,8 @@ static int input_log_append_processed_internal(struct flb_input_instance *ins,
     else if (base_tag_len == 0) {
         base_tag_len = strlen(base_tag);
     }
+
+    FLB_WASM_TRACE(flb_wasm_trace_append(ins, base_tag, base_tag_len, records));
 
     conditional_result = split_and_append_route_payloads(ins, records, tag, tag_len,
                                                          buf, buf_size,
