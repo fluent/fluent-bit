@@ -907,6 +907,15 @@ def test_out_opentelemetry_http_logs_uri_headers_and_basic_auth():
     assert base64.b64decode(record["spanId"]) == bytes.fromhex("251484295a9df731")
 
 
+def test_out_opentelemetry_http_logs_header_tag():
+    service = Service("out_otel_http_logs_header_tag.yaml")
+    service.start()
+    requests_seen = service.wait_for_requests(1)
+    service.stop()
+
+    assert requests_seen[0]["headers"]["X-Fluent-Tag"] == "app.orders"
+
+
 @pytest.mark.parametrize(
     "config_file,auth_mode",
     [
