@@ -32,14 +32,86 @@ export interface FluentBitInfo {
     readonly sdkVersion: string;
     readonly storagePath: string;
     readonly persistent: boolean;
+    /** Inspection methods this runtime supports; check before calling them. */
+    readonly features: readonly FluentBitFeature[];
 }
+export type FluentBitFeature = 'condition' | 'topology' | 'trace';
+export type FluentBitSignal = 'logs' | 'metrics' | 'traces';
+/** One instance as the engine created it; `index` is its position in the configuration. */
+export interface FluentBitInstance {
+    readonly index: number;
+    /** Instance name, such as `stdout.0`. */
+    readonly name: string;
+    readonly plugin: string;
+    readonly alias: string | null;
+}
+export interface FluentBitRouteOutput {
+    /** Name written in the route. */
+    readonly requested: string;
+    readonly fallback: string | null;
+    /** Output index the name resolved to, if any. */
+    readonly resolved: number | null;
+    readonly usedFallback: boolean;
+    /** `already_connected`: an earlier route of the input owns the connection. */
+    readonly status: 'connected' | 'already_connected' | 'not_found' |
+        'signal_not_supported' | 'connect_failed' | 'pending';
+}
+export interface FluentBitRoute {
+    readonly name: string;
+    readonly signals: readonly FluentBitSignal[];
+    readonly conditional: boolean;
+    readonly isDefault: boolean;
+    readonly perRecord: boolean;
+    /** True when records are split per route and re-tagged with the route name. */
+    readonly split: boolean;
+    readonly outputs: readonly FluentBitRouteOutput[];
+}
+export interface FluentBitTopology {
+    readonly inputs: readonly (FluentBitInstance & {
+        readonly tag: string | null;
+        /** Outputs whose match selected the configured tag. */
+        readonly matchedOutputs: readonly number[];
+        /** Outputs connected by routes; when present they replace tag matching. */
+        readonly directOutputs: readonly number[];
+        readonly routes: readonly FluentBitRoute[];
+    })[];
+    readonly filters: readonly (FluentBitInstance & {
+        readonly match: string | null;
+        readonly matchRegex: boolean;
+        /** Inputs whose configured tag the filter selects. */
+        readonly matchesInputs: readonly number[];
+    })[];
+    readonly outputs: readonly (FluentBitInstance & {
+        readonly match: string | null;
+        readonly matchRegex: boolean;
+    })[];
+}
+/** `record` is the position among the log records of the chunk named by `append`. */
+export type FluentBitTraceEvent =
+    {stage: 'append'; append: number; input: number; tag: string; records: number} |
+    {stage: 'route'; append: number; record: number; input: number; route: string; isDefault: boolean} |
+    {stage: 'unrouted'; append: number; record: number; input: number} |
+    {stage: 'filter'; input: number; tag: string; filter: number;
+     recordsIn: number; recordsOut: number; modified: boolean} |
+    {stage: 'output'; input: number; tag: string; output: number; records: number} |
+    {stage: 'undelivered'; input: number; tag: string; records: number};
 export interface FluentBit {
     readonly state: FluentBitState;
     readonly info: FluentBitInfo;
     /** Lifetime SDK counters; acceptance is not delivery. Includes this queued query. */
     getStats(): Promise<FluentBitStats>;
     /** Resolves at actual engine readiness; graceSeconds overrides YAML grace. */
-    start(options: {yaml: string; graceSeconds?: number}): Promise<{engineMs: number}>;
+    start(options: {yaml: string; graceSeconds?: number; trace?: boolean}): Promise<{engineMs: number}>;
+    /** Which sample log records a route `condition` takes, decided by the engine.
+     * Needs no running pipeline. Rejects with E_CONDITION and the engine's reason. */
+    evaluateCondition(options: {condition: Record<string, unknown>;
+        records: Record<string, unknown>[]; metadata?: (Record<string, unknown> | null)[]}):
+        Promise<{readonly matched: readonly boolean[]}>;
+    /** Connections the running engine made: routes, fallbacks and tag matches. */
+    getTopology(): Promise<FluentBitTopology>;
+    /** Decisions recorded since the last call, for a start with `trace: true`.
+     * Call after drain(). `dropped` counts events beyond the trace limit. */
+    takeTrace(): Promise<{events: FluentBitTraceEvent[]; dropped: number}>;
     /** Quiesces the engine and checkpoints persistent chunks; not a delivery guarantee. */
     stop(): Promise<void>;
     /** Flushes queued engine chunks and invokes stdout/stderr callbacks before resolving.

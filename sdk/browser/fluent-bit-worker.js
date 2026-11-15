@@ -28,6 +28,7 @@ let checkpointFailures = 0;
 let lastCheckpointTime = null;
 let acceptedBytes = 0;
 let acceptedRecords = 0;
+let features = [];
 
 async function checkpoint() {
     checkpointRequired = true;
@@ -298,12 +299,19 @@ async function initialize(options) {
         print: text => log('stdout', text),
         printErr: text => log('stderr', text),
         onAbort: fatal,
-        onSdkReady: (abi, engineVersion) => ready({abi, engineVersion}),
-        onSdkResult: (id, result, engineMs) => {
+        onSdkReady: (abi, engineVersion, features = '') => ready({abi, engineVersion,
+            features: String(features).split(',').filter(Boolean)}),
+        onSdkResult: (id, result, engineMs, pointer = 0, length = 0) => {
+            // The engine hands over a result buffer; copy it out of shared memory and free it.
+            let output = null;
+            if (pointer) {
+                output = runtime.HEAPU8.slice(pointer, pointer + length);
+                runtime._free(pointer);
+            }
             if (!active || active.id !== id) { fatal('Unexpected engine response'); return; }
             const request = active;
             active = null;
-            request.resolve({result, engineMs});
+            request.resolve({result, engineMs, output});
         },
         onExit: code => {
             if (active?.operation === 4 && code === 0) {
@@ -316,9 +324,20 @@ async function initialize(options) {
     });
     const info = await started;
     if (info.abi !== ABI) { throw fail('E_ABI', 'SDK and WASM ABI versions do not match'); }
+    features = info.features;
     runtime.FS.mkdirTree('/config');
     state = 'ready';
     post({type: 'ready', info: {...info, storagePath: path, persistent}});
+}
+
+function inspection(response, code, message) {
+    let value = null;
+    if (response.result === 0 && response.output) {
+        try { value = JSON.parse(new TextDecoder().decode(response.output)); }
+        catch (_) { value = null; }
+    }
+    if (!value || typeof value !== 'object') { throw fail(code, message); }
+    return value;
 }
 
 function command(id, operation, data = new Uint8Array(), name = '', grace = 5) {
@@ -369,6 +388,12 @@ async function execute(request) {
         if (checkpointRequired) { throw fail('E_STORAGE', 'Retry syncStorage() before restarting'); }
         // Failed engine initialization can also modify restored chunk files.
         checkpointRequired = runtime.flbStorage.persistent;
+        // Tracing is per start: the previous run's events never leak into this one.
+        if (features.includes('trace')) {
+            response = await command(id, 8, undefined, '', payload.trace ? 1 : 2);
+            if (response.result !== 0) { throw fail('E_TRACE', 'Unable to configure tracing'); }
+        }
+        else if (payload.trace) { throw fail('E_UNSUPPORTED', 'This runtime cannot trace records'); }
         response = await command(id, 1, payload.yaml, '', payload.grace);
         if (response.result !== 0) { throw fail('E_CONFIG', 'Engine startup failed; inspect stderr'); }
         state = 'running';
@@ -392,6 +417,22 @@ async function execute(request) {
         if (response.result !== 0) { throw fail('E_DRAIN', 'Engine drain failed'); }
         await drainLogs();
         return null;
+    }
+    if (method === 'evaluateCondition') {
+        if (!features.includes('condition')) { throw fail('E_UNSUPPORTED', 'This runtime cannot evaluate conditions'); }
+        response = await command(id, 6, payload.data);
+        const value = inspection(response, 'E_CONDITION', 'Condition evaluation failed');
+        if (typeof value.error === 'string') { throw fail('E_CONDITION', value.error); }
+        return value;
+    }
+    if (method === 'getTopology') {
+        if (!features.includes('topology')) { throw fail('E_UNSUPPORTED', 'This runtime cannot report its topology'); }
+        if (state !== 'running') { throw fail('E_STATE', 'Engine is not running'); }
+        return inspection(await command(id, 7), 'E_TOPOLOGY', 'Topology is unavailable');
+    }
+    if (method === 'takeTrace') {
+        if (!features.includes('trace')) { throw fail('E_UNSUPPORTED', 'This runtime cannot trace records'); }
+        return inspection(await command(id, 8, undefined, '', 0), 'E_TRACE', 'Trace is unavailable');
     }
     if (method === 'push') {
         if (state !== 'running') { throw fail('E_STATE', 'Engine is not running'); }
