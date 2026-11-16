@@ -139,6 +139,7 @@ struct flb_tail_config {
     struct flb_sqldb *db;
     int db_sync;
     int db_locking;
+    int db_batch;              /* is a batch of writes (transaction) open ? */
     int compare_filename;
     flb_sds_t db_journal_mode;
     sqlite3_stmt *stmt_get_file;

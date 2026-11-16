@@ -479,6 +479,72 @@ error:
     return -1;
 }
 
+/*
+ * Group the database writes done by one collector invocation in a single
+ * transaction.
+ *
+ * A collector can update the offset of many files in a row, and in
+ * auto-commit mode each update is a transaction of its own (journal write and
+ * file locks included). Everything between begin and end is committed at
+ * once before returning to the event loop, so the offsets are persisted at
+ * the same point they are today from the perspective of any other event.
+ *
+ * The handler of the database can be shared with other instances that might
+ * run in a different thread, in that case statements are left in auto-commit
+ * mode since a transaction would span statements of all of them.
+ */
+void flb_tail_db_batch_begin(struct flb_tail_config *ctx)
+{
+    int ret;
+
+    if (ctx->db == NULL || ctx->db_batch == FLB_TRUE) {
+        return;
+    }
+
+    if (ctx->db->shared == FLB_TRUE || ctx->db->users > 0 ||
+        sqlite3_get_autocommit(ctx->db->handler) == 0) {
+        return;
+    }
+
+    if (tail_db_lock(ctx) != 0) {
+        return;
+    }
+
+    ret = sqlite3_exec(ctx->db->handler, "BEGIN;", NULL, NULL, NULL);
+    if (ret == SQLITE_OK) {
+        ctx->db_batch = FLB_TRUE;
+    }
+
+    tail_db_unlock(ctx);
+}
+
+void flb_tail_db_batch_end(struct flb_tail_config *ctx)
+{
+    int ret;
+
+    if (ctx->db == NULL || ctx->db_batch == FLB_FALSE) {
+        return;
+    }
+    ctx->db_batch = FLB_FALSE;
+
+    if (tail_db_lock(ctx) != 0) {
+        return;
+    }
+
+    ret = sqlite3_exec(ctx->db->handler, "COMMIT;", NULL, NULL, NULL);
+    if (ret != SQLITE_OK) {
+        flb_plg_error(ctx->ins, "db: could not commit file offsets: %s",
+                      sqlite3_errmsg(ctx->db->handler));
+
+        /* do not leave the transaction open */
+        if (sqlite3_get_autocommit(ctx->db->handler) == 0) {
+            sqlite3_exec(ctx->db->handler, "ROLLBACK;", NULL, NULL, NULL);
+        }
+    }
+
+    tail_db_unlock(ctx);
+}
+
 int flb_tail_db_file_set(struct flb_tail_file *file,
                          struct flb_tail_config *ctx)
 {

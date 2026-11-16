@@ -475,6 +475,8 @@ static int tail_fs_event(struct flb_input_instance *ins,
      * one is processed, so the reference is always resolved again through
      * its watch descriptor.
      */
+    flb_tail_db_batch_begin(ctx);
+
     for (i = 0; i < count; i++) {
         file = watch_table_get(ctx, watches[i]);
         if (!file || file->event_batch_id != ctx->event_batch_id) {
@@ -498,6 +500,8 @@ static int tail_fs_event(struct flb_input_instance *ins,
         reconcile_all_files(ctx);
         flb_tail_scan(ctx->path_list, ctx);
     }
+
+    flb_tail_db_batch_end(ctx);
 
     return 0;
 }

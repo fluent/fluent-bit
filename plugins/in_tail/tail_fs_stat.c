@@ -69,6 +69,8 @@ static int tail_fs_event(struct flb_input_instance *ins,
 
     t = time(NULL);
 
+    flb_tail_db_batch_begin(ctx);
+
     /* Lookup watched file */
     mk_list_foreach_safe(head, tmp, &ctx->files_event) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
@@ -104,6 +106,8 @@ static int tail_fs_event(struct flb_input_instance *ins,
             }
         }
     }
+
+    flb_tail_db_batch_end(ctx);
 
     if (pending == FLB_TRUE) {
         tail_signal_pending(ctx);

@@ -79,6 +79,8 @@ static int in_tail_collect_pending(struct flb_input_instance *ins,
     uint64_t pre;
     uint64_t total_processed = 0;
 
+    flb_tail_db_batch_begin(ctx);
+
     mk_list_foreach_safe(head, tmp, &ctx->files_pending) {
         file = mk_list_entry(head, struct flb_tail_file, _pending_head);
 
@@ -169,6 +171,8 @@ static int in_tail_collect_pending(struct flb_input_instance *ins,
         tail_consume_pending(ctx);
     }
 
+    flb_tail_db_batch_end(ctx);
+
     return 0;
 }
 
@@ -189,6 +193,8 @@ static int in_tail_collect_static(struct flb_input_instance *ins,
     struct flb_tail_file *file;
     uint64_t pre;
     uint64_t total_processed = 0;
+
+    flb_tail_db_batch_begin(ctx);
 
     /* Do a data chunk collection for each file */
     mk_list_foreach_safe(head, tmp, &ctx->files_static) {
@@ -313,6 +319,8 @@ static int in_tail_collect_static(struct flb_input_instance *ins,
             break;
         }
     }
+
+    flb_tail_db_batch_end(ctx);
 
     /*
      * If there are no more active static handlers, we consume the 'byte' that
