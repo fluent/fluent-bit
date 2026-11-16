@@ -103,6 +103,7 @@ static int http1_evict_request(struct flb_http1_server_session *session)
                 session_buffer_length);
 
         session_buffer[session_buffer_length] = '\0';
+        cfl_sds_set_len(session_buffer, session_buffer_length);
     }
     else {
         cfl_sds_set_len(session_buffer, 0);
