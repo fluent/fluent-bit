@@ -7,13 +7,18 @@ in this repository. Each skill should live in its own subdirectory with a
 ## Available Skills
 
 - Fluent Bit: [`fluent-bit/SKILL.md`](fluent-bit/SKILL.md)
-  - Repository workflow, testing, patch review, pipeline architecture, and
-    recurring subsystem guidance for Fluent Bit work.
+  - Repository workflow, plugin authoring, testing, verification, patch
+    review, pipeline architecture, and recurring subsystem guidance for
+    Fluent Bit work.
   - Sub-skills:
     - [`fluent-bit/patch-workflow.md`](fluent-bit/patch-workflow.md):
       implementation, review, and commit workflow.
     - [`fluent-bit/pipeline-architecture.md`](fluent-bit/pipeline-architecture.md):
       runtime model for shared pipeline changes.
+    - [`fluent-bit/plugin-authoring.md`](fluent-bit/plugin-authoring.md):
+      registration, callbacks, config maps, and tests for plugins.
+    - [`fluent-bit/verify.md`](fluent-bit/verify.md):
+      driving the real binary and collecting evidence for a change.
     - [`fluent-bit/subsystem-patterns.md`](fluent-bit/subsystem-patterns.md):
       recurring subsystem search routes and behavioral checks.
     - [`fluent-bit/testing.md`](fluent-bit/testing.md):

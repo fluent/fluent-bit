@@ -10,6 +10,9 @@ files as instructions, then use whatever shell, editor, or CI interface it has.
 - `testing.md`: focused CTest, integration, and valgrind expectations.
 - `patch-workflow.md`: implementation, review, and commit workflow.
 - `pipeline-architecture.md`: runtime model for shared pipeline changes.
+- `plugin-authoring.md`: registration, callbacks, config maps, and tests for
+  input, filter, output, and processor plugins.
+- `verify.md`: driving the real binary and collecting evidence for a change.
 - `subsystem-patterns.md`: recurring Fluent Bit subsystem routes and checks.
 
 ## Suggested Agent Prompt
@@ -18,8 +21,10 @@ files as instructions, then use whatever shell, editor, or CI interface it has.
 Before working in this repository, read skills/fluent-bit/SKILL.md.
 For code changes, also read skills/fluent-bit/patch-workflow.md and
 skills/fluent-bit/testing.md. For shared runtime changes, read
-skills/fluent-bit/pipeline-architecture.md. For known subsystem areas, read
-skills/fluent-bit/subsystem-patterns.md.
+skills/fluent-bit/pipeline-architecture.md. For plugin work, read
+skills/fluent-bit/plugin-authoring.md. Before closing a change that affects
+runtime behavior, follow skills/fluent-bit/verify.md. For known subsystem
+areas, read skills/fluent-bit/subsystem-patterns.md.
 ```
 
 ## Maintenance
