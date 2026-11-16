@@ -10,7 +10,8 @@ from utils.fluent_bit_manager import FluentBitManager
 class Cluster:
     """Two fake Elasticsearch nodes sharing one request log."""
 
-    def __init__(self):
+    def __init__(self, fail_retry=False):
+        self.fail_retry = fail_retry
         self.lock = threading.Lock()
         self.requests = []
         self.servers = [self._server(name) for name in ("node_a", "node_b")]
@@ -26,8 +27,15 @@ class Cluster:
                 lines = [json.loads(line) for line in body.splitlines() if line.strip()]
                 actions = lines[0::2]
                 with cluster.lock:
-                    first = not cluster.requests
+                    count = len(cluster.requests)
                     cluster.requests.append((name, actions))
+                first = count == 0
+                if cluster.fail_retry and count == 1:
+                    # The node the retry is pinned to is down.
+                    self.send_response(503)
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
                 # Answer with the same operation as each action line.
                 items = [{next(iter(action)): {"status": 201}} for action in actions]
                 if first and len(items) > 1:
@@ -59,8 +67,7 @@ class Cluster:
             server.server_close()
 
 
-def test_partial_retry_goes_back_to_the_same_node(tmp_path):
-    cluster = Cluster()
+def run_cluster(tmp_path, cluster, want):
     upstream = tmp_path / "upstream.conf"
     upstream.write_text(
         "[UPSTREAM]\n"
@@ -99,13 +106,21 @@ def test_partial_retry_goes_back_to_the_same_node(tmp_path):
     try:
         manager.start()
         deadline = time.monotonic() + 30
-        while time.monotonic() < deadline and len(cluster.snapshot()) < 2:
+        while time.monotonic() < deadline and len(cluster.snapshot()) < want:
             time.sleep(0.1)
     finally:
         manager.stop()
         cluster.close()
 
-    requests = cluster.snapshot()
+    return cluster.snapshot()
+
+
+def index_of(node):
+    return "index_a" if node == "node_a" else "index_b"
+
+
+def test_partial_retry_goes_back_to_the_same_node(tmp_path):
+    requests = run_cluster(tmp_path, Cluster(), 2)
     assert len(requests) >= 2, f"expected the first request and a retry, got {requests}"
 
     first_node, first_actions = requests[0]
@@ -115,6 +130,22 @@ def test_partial_retry_goes_back_to_the_same_node(tmp_path):
     # first request, with that node's index.
     assert retry_node == first_node
     assert len(retry_actions) == 1
-    expected_index = "index_a" if first_node == "node_a" else "index_b"
     operation = next(iter(retry_actions[0]))
-    assert retry_actions[0][operation]["_index"] == expected_index
+    assert retry_actions[0][operation]["_index"] == index_of(first_node)
+
+
+def test_partial_retry_fails_over_when_the_node_goes_down(tmp_path):
+    requests = run_cluster(tmp_path, Cluster(fail_retry=True), 3)
+    assert len(requests) >= 3, f"expected a failed retry and a failover, got {requests}"
+
+    first_node, _ = requests[0]
+    pinned_node, _ = requests[1]
+    next_node, next_actions = requests[2]
+    assert pinned_node == first_node
+    # The pinned node answered 503, so the whole chunk is formatted again
+    # for the next node in the rotation.
+    assert next_node != first_node
+    assert len(next_actions) == 2
+    for action in next_actions:
+        operation = next(iter(action))
+        assert action[operation]["_index"] == index_of(next_node)
