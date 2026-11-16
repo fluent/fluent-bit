@@ -89,6 +89,23 @@ static int tail_fs_event(struct flb_input_instance *ins,
             /* Update stat info and trigger the notification */
             memcpy(&fst->st, &st, sizeof(struct stat));
             fst->checked = t;
+
+            /*
+             * A file truncated that grew beyond the previous offset before
+             * this check looks like a regular append: make sure the content
+             * that precedes the offset is the one that was read.
+             */
+            if (st.st_size >= file->offset &&
+                flb_tail_file_offset_marker_matches(file) != FLB_TRUE) {
+                ret = flb_tail_file_reset_on_truncate(file,
+                                                      st.st_size - file->size,
+                                                      "tail_fs_event");
+                if (ret == -1) {
+                    continue;
+                }
+                file->size = st.st_size;
+            }
+
             ret = in_tail_collect_event(file, config);
             if (ret == FLB_TAIL_ERROR) {
                 /* the file was removed */
