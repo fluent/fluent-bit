@@ -3353,6 +3353,111 @@ void flb_test_db()
     unlink(db);
 }
 
+#define DB_MANY_FILES  200
+
+/*
+ * Many files registered in the database by the same scan and updated by the
+ * same collector run: after a restart every offset must be the one that was
+ * reached, so nothing is read again and the new content is read once.
+ */
+void flb_test_db_many_files_restart()
+{
+    int i;
+    int j;
+    int ret;
+    int num;
+    int len;
+    int pass;
+    int expected;
+    ssize_t bytes;
+    char line[128];
+    char names[DB_MANY_FILES][64];
+    char *files[DB_MANY_FILES];
+    char *db = "test_db_many_files.db";
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+
+    unlink(db);
+
+    for (i = 0; i < DB_MANY_FILES; i++) {
+        snprintf(names[i], sizeof(names[i]), "db_many_%03d.log", i);
+        files[i] = names[i];
+    }
+
+    for (pass = 0; pass < 2; pass++) {
+        clear_output_num();
+
+        cb_data.cb = cb_count_msgpack;
+        cb_data.data = NULL;
+
+        /* the files are only truncated in the first pass */
+        ctx = test_tail_ctx_create(&cb_data, &files[0], DB_MANY_FILES,
+                                   pass == 0 ? FLB_TRUE : FLB_FALSE);
+        if (!TEST_CHECK(ctx != NULL)) {
+            TEST_MSG("test_ctx_create failed");
+            unlink(db);
+            exit(EXIT_FAILURE);
+        }
+
+        ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                            "path", "db_many_*.log",
+                            "read_from_head", "true",
+                            "db", db,
+                            NULL);
+        TEST_CHECK(ret == 0);
+
+        ret = flb_start(ctx->flb);
+        TEST_CHECK(ret == 0);
+
+        flb_time_msleep(1500);
+
+        if (pass == 1) {
+            /* nothing that was read before the restart shows up again */
+            num = get_output_num();
+            if (!TEST_CHECK(num == 0)) {
+                TEST_MSG("records read again after restart: %d", num);
+            }
+        }
+
+        for (j = 0; j < 3; j++) {
+            for (i = 0; i < DB_MANY_FILES; i++) {
+                len = snprintf(line, sizeof(line), "pass %d file %03d line %d\n",
+                               pass, i, j);
+                bytes = write(ctx->fds[i], line, len);
+                TEST_CHECK(bytes == len);
+            }
+        }
+
+        expected = DB_MANY_FILES * 3;
+        num = wait_output_num(expected, 10000);
+        if (!TEST_CHECK(num == expected)) {
+            TEST_MSG("pass %d: output num error. expect=%d got=%d",
+                     pass, expected, num);
+        }
+
+        /* no late duplicates */
+        flb_time_msleep(500);
+        num = get_output_num();
+        TEST_CHECK(num == expected);
+
+        if (pass == 0) {
+            /* stop keeping the files in place */
+            for (i = 0; i < ctx->fd_num; i++) {
+                close(ctx->fds[i]);
+            }
+            flb_free(ctx->fds);
+            flb_stop(ctx->flb);
+            flb_destroy(ctx->flb);
+            flb_free(ctx);
+        }
+        else {
+            test_tail_ctx_destroy(ctx);
+        }
+    }
+
+    unlink(db);
+}
+
 void flb_test_db_delete_stale_file()
 {
     struct flb_lib_out_cb cb_data;
@@ -3734,6 +3839,7 @@ TEST_LIST = {
 
 #ifdef FLB_HAVE_SQLDB
     {"db", flb_test_db},
+    {"db_many_files_restart", flb_test_db_many_files_restart},
     {"db_delete_stale_file", flb_test_db_delete_stale_file},
     {"db_compare_filename", flb_test_db_compare_filename},
 #endif
