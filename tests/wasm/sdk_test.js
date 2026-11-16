@@ -231,9 +231,15 @@ pipeline:
             payload: {resourceMetrics: [{scopeMetrics: [{metrics: []}]}]}}), 'E_ARGUMENT');
         await rejected(() => fluent.pushOtlp({input: 'app', signal: 'traces', payload: 'null'}), 'E_ARGUMENT');
         const from = logs.length;
+        for (const [signal, payload] of [['metrics', metrics], ['traces', JSON.stringify(traces)]]) {
+            for (const suffix of [`\n${payload}`, '\n{}', '\n{"partial":', '\ntrailing', '\u0000']) {
+                await rejected(() => fluent.pushOtlp({input: 'app', signal, payload: payload + suffix}),
+                               'E_ARGUMENT');
+            }
+        }
         const accepted = await fluent.pushOtlp({input: 'app', signal: 'metrics', payload: metrics});
         check(accepted.acceptedBytes === new TextEncoder().encode(metrics).length, 'Metrics acceptance');
-        await fluent.pushOtlp({input: 'app', signal: 'traces', payload: traces});
+        await fluent.pushOtlp({input: 'app', signal: 'traces', payload: ` \n${JSON.stringify(traces)}\t\r\n`});
         await fluent.drain();
         const printed = logs.slice(from).flatMap(line => {
             try { return [JSON.parse(line)]; }

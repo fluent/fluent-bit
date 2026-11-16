@@ -57,6 +57,13 @@ add_test(NAME flb-wasm-build-profile
     -DTEST_BINARY_ROOT=${CMAKE_CURRENT_BINARY_DIR}/profile-tests
     -P ${CMAKE_CURRENT_SOURCE_DIR}/check_profile.cmake)
 
+add_executable(flb-wasm-sdk-ingest sdk_ingest.c)
+target_link_libraries(flb-wasm-sdk-ingest fluent-bit-static)
+set_target_properties(flb-wasm-sdk-ingest PROPERTIES LINK_FLAGS
+  "-sASSERTIONS=2 -sEXIT_RUNTIME=1 -sPROXY_TO_PTHREAD=1 -sPTHREAD_POOL_SIZE=1 -sSTACK_SIZE=262144 -sALLOW_MEMORY_GROWTH=1")
+add_test(NAME flb-wasm-sdk-ingest COMMAND flb-wasm-sdk-ingest)
+set_tests_properties(flb-wasm-sdk-ingest PROPERTIES TIMEOUT 30)
+
 add_executable(flb-wasm-http http.c)
 target_link_libraries(flb-wasm-http fluent-bit-static)
 set_target_properties(flb-wasm-http PROPERTIES LINK_FLAGS
