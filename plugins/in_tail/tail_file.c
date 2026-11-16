@@ -1794,6 +1794,7 @@ void flb_tail_file_remove(struct flb_tail_file *file)
     if (file->read_retry_pending) {
         mk_list_del(&file->_retry_head);
     }
+    flb_tail_file_pending_del(file);
 
     if (file->decompression_context != NULL) {
         flb_decompression_context_destroy(file->decompression_context);
@@ -2280,21 +2281,6 @@ int flb_tail_file_to_event(struct flb_tail_file *file)
     struct stat st;
     struct flb_tail_config *ctx = file->config;
 
-    /* Check if the file promoted have pending bytes */
-    ret = fstat(file->fd, &st);
-    if (ret != 0) {
-        flb_errno();
-        return -1;
-    }
-
-    if (file->offset < st.st_size) {
-        file->pending_bytes = (st.st_size - file->offset);
-        tail_signal_pending(file->config);
-    }
-    else {
-        file->pending_bytes = 0;
-    }
-
     /* Check if the file has been rotated */
     ret = flb_tail_file_is_rotated(ctx, file);
     if (ret == FLB_TRUE) {
@@ -2307,6 +2293,18 @@ int flb_tail_file_to_event(struct flb_tail_file *file)
         return -1;
     }
 
+    /*
+     * Check if the file promoted have pending bytes. This is done once the
+     * file is being monitored: any data appended from now on is notified by
+     * the fs-event handler, and anything written before is detected here.
+     */
+    ret = fstat(file->fd, &st);
+    if (ret != 0) {
+        flb_errno();
+        flb_tail_fs_remove(ctx, file);
+        return -1;
+    }
+
     ret = flb_hash_table_add(ctx->event_hash,
                              file->hash_key, flb_sds_len(file->hash_key),
                              file, sizeof(file));
@@ -2314,6 +2312,15 @@ int flb_tail_file_to_event(struct flb_tail_file *file)
         flb_plg_error(ctx->ins, "could not register file in event hash");
         flb_tail_fs_remove(ctx, file);
         return -1;
+    }
+
+    if (file->offset < st.st_size) {
+        file->pending_bytes = (st.st_size - file->offset);
+        flb_tail_file_pending_add(file);
+        tail_signal_pending(file->config);
+    }
+    else {
+        file->pending_bytes = 0;
     }
 
     /* List swap: change from 'static' to 'event' list */

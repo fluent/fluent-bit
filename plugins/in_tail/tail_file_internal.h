@@ -119,6 +119,10 @@ struct flb_tail_file {
     uint64_t db_offset_marker;
     size_t db_offset_marker_size;
 
+    /* Inotify: coalescing of the events read in a single batch */
+    uint64_t event_batch_id;
+    uint32_t event_mask;
+
     uint64_t hash_bits;
     flb_sds_t hash_key;
 
@@ -135,6 +139,9 @@ struct flb_tail_file {
     int tail_mode;
     int read_retry_pending;
     struct mk_list _retry_head;
+    int pending_listed;          /* is the file linked to files_pending ? */
+    struct mk_list _pending_head;
+    struct mk_list _watch_head;  /* inotify: link to watch descriptor table */
     struct flb_tail_config *config;
     struct mk_list _head;
     struct mk_list _rotate_head;

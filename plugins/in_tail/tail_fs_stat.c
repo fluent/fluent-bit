@@ -65,6 +65,7 @@ static int tail_fs_event(struct flb_input_instance *ins,
     struct fs_stat *fst;
     struct stat st;
     time_t t;
+    int pending = FLB_FALSE;
 
     t = time(NULL);
 
@@ -86,8 +87,26 @@ static int tail_fs_event(struct flb_input_instance *ins,
             /* Update stat info and trigger the notification */
             memcpy(&fst->st, &st, sizeof(struct stat));
             fst->checked = t;
-            in_tail_collect_event(file, config);
+            ret = in_tail_collect_event(file, config);
+            if (ret == FLB_TAIL_ERROR) {
+                /* the file was removed */
+                continue;
+            }
+
+            /*
+             * One read might not be enough to consume the new data, let the
+             * 'pending' collector drain the file instead of waiting for the
+             * next timer tick.
+             */
+            if (flb_tail_file_has_pending_data(file) == FLB_TRUE) {
+                flb_tail_file_pending_add(file);
+                pending = FLB_TRUE;
+            }
         }
+    }
+
+    if (pending == FLB_TRUE) {
+        tail_signal_pending(ctx);
     }
 
     return 0;
@@ -149,6 +168,7 @@ static int tail_fs_check(struct flb_input_instance *ins,
 
         if (file->offset < st.st_size) {
             file->pending_bytes = (st.st_size - file->offset);
+            flb_tail_file_pending_add(file);
             tail_signal_pending(ctx);
         }
         else {
