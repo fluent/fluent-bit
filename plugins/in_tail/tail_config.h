@@ -154,6 +154,8 @@ struct flb_tail_config {
     int docker_mode;           /* Docker mode enabled ?  */
     int docker_mode_flush;     /* Docker mode flush/wait */
     struct flb_parser *docker_mode_parser; /* Parser for separate multiline logs */
+    int docker_mode_ml;        /* Docker mode served by the multiline core ? */
+    struct flb_ml_parser_ins *docker_mode_ml_parser; /* multiline parser instance */
 
     /* Multiline core engine */
     struct flb_ml *ml_ctx;

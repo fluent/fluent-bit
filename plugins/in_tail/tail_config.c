@@ -496,6 +496,15 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
         }
         flb_plg_info(ctx->ins, "multiline core started");
     }
+
+    /* Docker mode (deprecated): hand it over to the multiline core if possible */
+    if (ctx->docker_mode == FLB_TRUE) {
+        ret = flb_tail_dmode_ml_create(ctx);
+        if (ret == -1) {
+            flb_tail_config_destroy(ctx);
+            return NULL;
+        }
+    }
 #endif
 
 #ifdef FLB_HAVE_METRICS

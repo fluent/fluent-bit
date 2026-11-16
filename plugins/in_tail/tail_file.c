@@ -921,6 +921,10 @@ static int process_content(struct flb_tail_file *file, size_t *bytes)
                                      &out_time,
                                      line,
                                      line_len);
+            if (ctx->docker_mode_ml == FLB_TRUE) {
+                /* Docker mode: wait for more content of this file */
+                file->dmode_flush_timeout = now + (ctx->docker_mode_flush - 1);
+            }
             if (ret == FLB_MULTILINE_TRUNCATED) {
                 flb_plg_warn(ctx->ins, "multiline message truncated due to buffer limit");
 #ifdef FLB_HAVE_METRICS
