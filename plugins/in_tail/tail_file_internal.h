@@ -146,6 +146,8 @@ struct flb_tail_file {
      * strictly necessary.
      */
     struct flb_log_event_encoder *ml_log_event_encoder;
+    size_t ml_records;         /* records held by ml_log_event_encoder */
+    int ml_records_unknown;    /* the records must be counted on flush */
     struct flb_log_event_encoder *sl_log_event_encoder;
 
     /* reference */

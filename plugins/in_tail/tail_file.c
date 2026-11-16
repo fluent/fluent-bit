@@ -1265,14 +1265,28 @@ static int ml_stream_buffer_append(struct flb_tail_file *file, char *buf_data, s
 static int ml_stream_buffer_flush(struct flb_tail_config *ctx, struct flb_tail_file *file)
 {
     if (file->ml_log_event_encoder->output_length > 0) {
-        flb_input_log_append(ctx->ins,
-                             file->tag_buf,
-                             file->tag_len,
-                             file->ml_log_event_encoder->output_buffer,
-                             file->ml_log_event_encoder->output_length);
+        if (file->ml_records_unknown == FLB_FALSE && file->ml_records > 0) {
+            /* the number of records is known, no need to scan the buffer */
+            flb_input_log_append_records(ctx->ins,
+                                         file->ml_records,
+                                         file->tag_buf,
+                                         file->tag_len,
+                                         file->ml_log_event_encoder->output_buffer,
+                                         file->ml_log_event_encoder->output_length);
+        }
+        else {
+            flb_input_log_append(ctx->ins,
+                                 file->tag_buf,
+                                 file->tag_len,
+                                 file->ml_log_event_encoder->output_buffer,
+                                 file->ml_log_event_encoder->output_length);
+        }
 
         flb_log_event_encoder_reset(file->ml_log_event_encoder);
     }
+
+    file->ml_records = 0;
+    file->ml_records_unknown = FLB_FALSE;
 
     return 0;
 }
@@ -1975,7 +1989,10 @@ static int set_file_position(struct flb_tail_config *ctx,
     return 0;
 }
 
-/* Multiline flush callback: invoked every time some content is complete */
+/*
+ * Multiline flush callback: invoked every time some content is complete, the
+ * multiline engine delivers one record per call.
+ */
 static int ml_flush_callback(struct flb_ml_parser *parser,
                              struct flb_ml_stream *mst,
                              void *data, char *buf_data, size_t buf_size)
@@ -1987,12 +2004,27 @@ static int ml_flush_callback(struct flb_ml_parser *parser,
     struct flb_tail_config *ctx = file->config;
 
     if (ctx->path_key == NULL && ctx->offset_key == NULL) {
-        ml_stream_buffer_append(file, buf_data, buf_size);
+        if (ml_stream_buffer_append(file, buf_data, buf_size) == 0) {
+            file->ml_records++;
+        }
+        else {
+            file->ml_records_unknown = FLB_TRUE;
+        }
     }
-    else if (record_append_custom_keys_raw(file, buf_data, buf_size) >= 0) {
-        ml_stream_buffer_append(file, ctx->pack_sbuf.data, ctx->pack_sbuf.size);
+    else if ((result = record_append_custom_keys_raw(file, buf_data,
+                                                     buf_size)) >= 0) {
+        if (ml_stream_buffer_append(file, ctx->pack_sbuf.data,
+                                    ctx->pack_sbuf.size) == 0) {
+            file->ml_records += result;
+        }
+        else {
+            file->ml_records_unknown = FLB_TRUE;
+        }
     }
     else {
+        /* generic path: the records are counted when they are ingested */
+        file->ml_records_unknown = FLB_TRUE;
+
         /* adjust the records in a new buffer */
         result = record_append_custom_keys(file,
                                            buf_data,
