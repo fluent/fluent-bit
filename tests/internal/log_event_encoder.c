@@ -22,6 +22,7 @@
 #include <fluent-bit.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_log_event_encoder.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 #include <msgpack.h>
 #include <float.h>
 #include <math.h>
@@ -899,6 +900,161 @@ static void output_limit_record_rollback(void)
     }
 }
 
+/*
+ * Dynamic field scopes are reused across records: a record with nested maps
+ * and arrays must not be affected by the scopes used by the previous ones
+ * (different nesting depth, different number of entries, rolled back record).
+ */
+static void scope_reuse()
+{
+    int ret;
+    int i;
+    int entries;
+    int records = 0;
+    char *json;
+    char expected[256];
+    struct flb_log_event event;
+    struct flb_log_event_encoder encoder;
+    struct flb_log_event_encoder *context = &encoder;
+    struct flb_log_event_decoder decoder;
+
+    ret = flb_log_event_encoder_init(&encoder, FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2);
+    if (!TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS)) {
+        TEST_MSG("flb_log_event_encoder_init failed. ret=%s",
+                 flb_log_event_encoder_get_error_description(ret));
+        return;
+    }
+
+    /* record 0: {"m": {"k0": 0, "k1": 1, "k2": 2}, "a": [[1, 2], 3]} */
+    ret = flb_log_event_encoder_begin_record(&encoder);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    ret = flb_log_event_encoder_set_current_timestamp(&encoder);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+
+    ret = flb_log_event_encoder_append_body_cstring(&encoder, "m");
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    ret = flb_log_event_encoder_body_begin_map(context);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    for (i = 0; i < 3; i++) {
+        snprintf(expected, sizeof(expected), "k%d", i);
+        ret = flb_log_event_encoder_append_body_values(
+                &encoder,
+                FLB_LOG_EVENT_CSTRING_VALUE(expected),
+                FLB_LOG_EVENT_INT64_VALUE(i));
+        TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    }
+    ret = flb_log_event_encoder_body_commit_map(context);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+
+    ret = flb_log_event_encoder_append_body_cstring(&encoder, "a");
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    ret = flb_log_event_encoder_body_begin_array(context);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    ret = flb_log_event_encoder_body_begin_array(context);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    ret = flb_log_event_encoder_append_body_values(
+            &encoder,
+            FLB_LOG_EVENT_INT64_VALUE(1),
+            FLB_LOG_EVENT_INT64_VALUE(2));
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    ret = flb_log_event_encoder_body_commit_array(context);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    ret = flb_log_event_encoder_append_body_int64(&encoder, 3);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    ret = flb_log_event_encoder_body_commit_array(context);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+
+    ret = flb_log_event_encoder_commit_record(&encoder);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+
+    /* a record with open scopes that is discarded */
+    ret = flb_log_event_encoder_begin_record(&encoder);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    ret = flb_log_event_encoder_append_body_cstring(&encoder, "discarded");
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    ret = flb_log_event_encoder_body_begin_map(context);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    ret = flb_log_event_encoder_append_body_values(
+            &encoder,
+            FLB_LOG_EVENT_CSTRING_VALUE("x"),
+            FLB_LOG_EVENT_INT64_VALUE(1));
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    ret = flb_log_event_encoder_rollback_record(&encoder);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+
+    /* records 1..3: {"m": {"k0": 0 [, "k1": 1]}} with 1, 2 and 0 entries */
+    for (entries = 1; entries <= 3; entries++) {
+        ret = flb_log_event_encoder_begin_record(&encoder);
+        TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+        ret = flb_log_event_encoder_set_current_timestamp(&encoder);
+        TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+        ret = flb_log_event_encoder_append_body_cstring(&encoder, "m");
+        TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+        ret = flb_log_event_encoder_body_begin_map(context);
+        TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+        for (i = 0; i < entries % 3; i++) {
+            snprintf(expected, sizeof(expected), "k%d", i);
+            ret = flb_log_event_encoder_append_body_values(
+                    &encoder,
+                    FLB_LOG_EVENT_CSTRING_VALUE(expected),
+                    FLB_LOG_EVENT_INT64_VALUE(i));
+            TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+        }
+        ret = flb_log_event_encoder_body_commit_map(context);
+        TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+        ret = flb_log_event_encoder_commit_record(&encoder);
+        TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    }
+
+    ret = flb_log_event_decoder_init(&decoder, encoder.output_buffer,
+                                     encoder.output_length);
+    if (!TEST_CHECK(ret == FLB_EVENT_DECODER_SUCCESS)) {
+        TEST_MSG("flb_log_event_decoder_init failed. ret=%s",
+                 flb_log_event_decoder_get_error_description(ret));
+        flb_log_event_encoder_destroy(&encoder);
+        return;
+    }
+
+    while (flb_log_event_decoder_next(&decoder, &event) ==
+           FLB_EVENT_DECODER_SUCCESS) {
+        switch (records) {
+        case 0:
+            snprintf(expected, sizeof(expected),
+                     "{\"m\":{\"k0\":0,\"k1\":1,\"k2\":2},\"a\":[[1,2],3]}");
+            break;
+        case 1:
+            snprintf(expected, sizeof(expected), "{\"m\":{\"k0\":0}}");
+            break;
+        case 2:
+            snprintf(expected, sizeof(expected), "{\"m\":{\"k0\":0,\"k1\":1}}");
+            break;
+        default:
+            snprintf(expected, sizeof(expected), "{\"m\":{}}");
+            break;
+        }
+
+        json = flb_msgpack_to_json_str(256, event.body, FLB_TRUE);
+        if (TEST_CHECK(json != NULL)) {
+            if (!TEST_CHECK(strcmp(json, expected) == 0)) {
+                TEST_MSG("record %d mismatch. expect=%s got=%s",
+                         records, expected, json);
+            }
+            flb_free(json);
+        }
+
+        TEST_CHECK(event.metadata->type == MSGPACK_OBJECT_MAP &&
+                   event.metadata->via.map.size == 0);
+        records++;
+    }
+
+    if (!TEST_CHECK(records == 4)) {
+        TEST_MSG("records mismatch. expect=4 got=%d", records);
+    }
+
+    flb_log_event_decoder_destroy(&decoder);
+    flb_log_event_encoder_destroy(&encoder);
+}
+
 TEST_LIST = {
     { "output_limit_record_rollback", output_limit_record_rollback},
     { "output_limit", output_limit},
@@ -910,6 +1066,7 @@ TEST_LIST = {
     { "init_destroy", init_destroy},
     { "init_unsupported_format", init_unsupported_format},
     { "emit_raw_record", emit_raw_record},
+    { "scope_reuse", scope_reuse},
     { "metadata_with_empty_map", metadata_with_empty_map},
     { "timestamp_encoding", timestamp_encoding},
     { NULL, NULL }
