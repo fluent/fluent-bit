@@ -21,6 +21,7 @@
 #define FLB_ML_PARSER_H
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_parser.h>
 
 /* fwd decl */
@@ -81,6 +82,31 @@ int flb_ml_parser_instance_set(struct flb_ml_parser_ins *p, char *prop, char *va
 
 int flb_ml_parser_instance_destroy(struct flb_ml_parser_ins *ins);
 int flb_ml_parser_instance_has_data(struct flb_ml_parser_ins *ins);
+
+/*
+ * Native decoder for the built-in 'cri' parser: the fields are references
+ * to the original line.
+ */
+#define FLB_ML_CRI_OK         0
+#define FLB_ML_CRI_NO_MATCH  -1
+#define FLB_ML_CRI_FALLBACK   1   /* undecided, use the regex parser */
+
+struct flb_ml_cri_record {
+    const char *time;
+    size_t time_len;
+    const char *stream;       /* 'stdout' or 'stderr', 6 bytes */
+    const char *flag;         /* 'F' or 'P', 1 byte */
+    const char *log;
+    size_t log_len;
+};
+
+int flb_ml_parser_cri_decode(const char *buf, size_t size,
+                             struct flb_ml_cri_record *record);
+int flb_ml_parser_cri_time(struct flb_parser *parser,
+                           struct flb_ml_cri_record *record,
+                           struct flb_time *out_time);
+size_t flb_ml_parser_cri_map_size(struct flb_ml_cri_record *record);
+size_t flb_ml_parser_cri_map_pack(struct flb_ml_cri_record *record, char *out);
 
 /* Built-in multiline parsers */
 struct flb_ml_parser *flb_ml_parser_docker(struct flb_config *config);
