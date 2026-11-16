@@ -8,6 +8,7 @@
 | [staging-build](./staging-build.yaml)            | Builds the distro packages and docker images from a tagged release into staging (S3 and GHCR) | on new release/tag |
 | [staging-test](./staging-test.yaml)            | Test the staging distro packages and docker images| manually or when `staging-build` completes successfully |
 | [staging-release](./staging-release.yaml)        | Publishes the docker images/manifest on hub.docker.io/fluent/ and the distro packages | manual approval |
+| [release-rebuild-images](./release-rebuild-images.yaml) | Rebuilds the container images of a released version on updated base images and refreshes the wiki status page | manually |
 | [pr-closed-docker](./pr-closed-docker.yaml)      | Removes docker images for PR on hub.docker.io/fluentbitdev/| on pr closed|
 | [pr-compile-check](./pr-compile-check.yaml)      | Runs some compilation sanity checks on a PR |
 | [pr-integration-test](./pr-integration-test.yaml)     | Runs the integration testing suite on a PR branch | pr opened / label created 'ok-to-test' / on new commit/push on PR(s) |
@@ -389,3 +390,85 @@ The following workflows can be triggered manually for specific PRs too:
 * [Full package build](./pr-package-tests.yaml): builds all Linux, macOs and Windows packages as well as container images.
 
 To trigger these, apply the relevant label.
+
+## Rebuilding released container images
+
+Base image fixes (distroless, Debian, Windows) do not need a new Fluent Bit release. The
+[release-rebuild-images](./release-rebuild-images.yaml) workflow rebuilds the container images of
+an already released version from its `v<version>` tag, so the binary is recompiled and linked
+against the refreshed base, and publishes the result under the same tags. Packages are untouched.
+
+### Triggering a rebuild
+
+Maintainers with write access trigger it manually, typically after a user reports a base image
+CVE or when the status page shows fixable findings.
+
+From the web interface:
+
+1. Open the repository **Actions** tab and select
+   **Rebuild released container images on updated base images** in the workflow list.
+2. Click **Run workflow**, keep the branch as `master` and fill in the inputs below. Leaving
+   `version` empty rebuilds the newest release.
+3. Click **Run workflow**. Once the rebuilt images pass the comparison, the publishing jobs wait
+   for approval of the `release` environment: open the run, click **Review deployments** and
+   approve.
+4. When the run finishes, the run summary and the wiki page show the new state.
+
+From the command line:
+
+```shell
+# Rebuild the newest release if its images have fixable findings
+gh workflow run release-rebuild-images.yaml --ref master
+
+# Rebuild a specific release, repeat per supported series
+gh workflow run release-rebuild-images.yaml --ref master -f version=5.1.5
+
+# Force a rebuild even when the scan finds nothing fixable
+gh workflow run release-rebuild-images.yaml --ref master -f version=5.2.0 -f mode=always
+
+# Only refresh the wiki status page
+gh workflow run release-rebuild-images.yaml --ref master -f mode=report-only
+
+# Follow the run
+gh run watch "$(gh run list --workflow release-rebuild-images.yaml --limit 1 --json databaseId --jq '.[0].databaseId')"
+```
+
+| Input | Default | Purpose |
+|---|---|---|
+| `version` | newest release | Released version to rebuild, without the `v` prefix. |
+| `mode` | `if-needed` | `if-needed` rebuilds only when the published images have fixable critical or high findings, `always` forces a rebuild, `report-only` just regenerates the status page. |
+| `promote` | `true` | Publish to Docker Hub and GHCR. Disable to stop after the staging build, tests and comparison. |
+| `update-wiki` | `true` | Push the regenerated status page to the wiki. |
+
+### What a run does
+
+1. Scans the published production and debug images with Trivy.
+2. Rebuilds all Linux and Windows images into the staging registry with fresh base images and no
+   layer cache, then runs the usual image tests.
+3. Scans the rebuilt images and publishes them only when they have fewer fixable findings than the
+   published ones and no partial multi-arch manifest (`always` also accepts an equal count).
+4. Promotes by digest to `<version>` and a dated `<version>-<YYYYMMDD>` tag, plus the `-debug`,
+   per-architecture and Windows tags, then signs them. `<major>.<minor>` and `latest` only move
+   when the version is the newest of its series or the newest release.
+5. Regenerates the
+   [Container image security status](https://github.com/fluent/fluent-bit/wiki/Container-Image-Security-Status)
+   wiki page from the registry for the newest patch of the three most recent series. This step runs
+   even when nothing was rebuilt.
+
+### Testing from a branch
+
+Publishing jobs use the `release` environment, so they need its approval and only run from a
+protected branch. From any other branch run with `promote=false` to exercise the build, tests,
+comparison and status page without publishing anything:
+
+```shell
+gh workflow run release-rebuild-images.yaml --ref my-branch -f promote=false -f update-wiki=false
+```
+
+The rendered page is always attached to the run as the `container-image-security-status`
+artifact and shown in the run summary. A run that ends without publishing is expected when the
+rebuild does not reduce the fixable findings; use `mode=always` to publish it regardless.
+
+The planning, gating and page rendering live in
+[release_image_rebuild.py](../scripts/release_image_rebuild.py) and are covered by
+`.github/scripts/tests/test_release_image_rebuild.py`.
