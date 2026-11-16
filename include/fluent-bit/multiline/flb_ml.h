@@ -61,6 +61,9 @@
 #define FLB_MULTILINE_PROCESSED  1 /* Reserved */
 #define FLB_MULTILINE_TRUNCATED  2
 
+/* Buckets of the table used to lookup the streams of a parser instance */
+#define FLB_ML_STREAM_TABLE_SIZE 1024
+
 /* Maximum number of groups per stream */
 #define FLB_ML_MAX_GROUPS       6
 
@@ -152,6 +155,7 @@ struct flb_ml_stream {
     struct flb_ml_parser_ins *parser;
 
     struct mk_list _head;
+    struct mk_list _head_table;  /* link to flb_ml_parser_ins->stream_table */
 };
 
 /* Multiline Parser definition (no running state, just definition) */
@@ -245,6 +249,10 @@ struct flb_ml_parser_ins {
      */
     uint64_t last_stream_id;
     struct flb_ml_stream_group *last_stream_group;
+
+    /* streams indexed by id, and the last one retrieved */
+    struct mk_list *stream_table;
+    struct flb_ml_stream *stream_cache;
 
     /*
      * Every multiline parser context has N streams, a stream represent a source
