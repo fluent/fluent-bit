@@ -53,6 +53,8 @@ static struct input inputs[] = {
     S("2019-05-07T18:57:50.904275087+00:00 stdxxx F bad stream"),
     S("2019-05-07T18:57:50.904275087+00:00 stdout FF bad flag"),
     S("not-a-time stdout F message"),
+    S("2019-05-07T18:57:50.904275087INVALID stdout F fraction then bad zone"),
+    S("2019-05-07T18:57:50.9042INVALID stderr P fraction then bad zone"),
     S("two words stdout F message"),
     S(" stdout F message"),
     S("stdout F message"),
@@ -81,12 +83,19 @@ static struct input inputs[] = {
       "stdout F long time token"),
 };
 
+static struct flb_parser *parser_create_strict(struct flb_config *config, char *name,
+                                               char *format, char *regex,
+                                               int time_keep, int time_strict)
+{
+    return flb_parser_create(name, format, regex, FLB_FALSE, CRI_TIME, "time", NULL,
+                             time_keep, time_strict, FLB_FALSE, FLB_FALSE,
+                             NULL, 0, NULL, config);
+}
+
 static struct flb_parser *parser_create(struct flb_config *config, char *name,
                                         char *format, char *regex, int time_keep)
 {
-    return flb_parser_create(name, format, regex, FLB_FALSE, CRI_TIME, "time", NULL,
-                             time_keep, FLB_FALSE, FLB_FALSE, FLB_FALSE,
-                             NULL, 0, NULL, config);
+    return parser_create_strict(config, name, format, regex, time_keep, FLB_FALSE);
 }
 
 /* Copy without terminator, so a read past the input is caught by sanitizers */
@@ -134,6 +143,7 @@ static void test_regex_parity(void)
 {
     int i;
     int keep;
+    int strict;
     int r1;
     int r2;
     int same;
@@ -149,12 +159,14 @@ static void test_regex_parity(void)
     struct flb_parser *re;
     struct flb_parser *cri;
 
-    for (keep = 0; keep < 2; keep++) {
+    /* every combination of time_keep and time_strict */
+    for (keep = 0; keep < 4; keep++) {
+        strict = keep >> 1;
         config = flb_config_init();
         TEST_CHECK(config != NULL);
 
-        re = parser_create(config, "re", "regex", CRI_REGEX, keep);
-        cri = parser_create(config, "cri", "cri", NULL, keep);
+        re = parser_create_strict(config, "re", "regex", CRI_REGEX, keep & 1, strict);
+        cri = parser_create_strict(config, "cri", "cri", NULL, keep & 1, strict);
         TEST_CHECK(re != NULL);
         TEST_CHECK(cri != NULL);
 
@@ -180,8 +192,8 @@ static void test_regex_parity(void)
             }
 
             TEST_CHECK(same);
-            TEST_MSG("input %d (time_keep=%d): '%.*s' regex=%d cri=%d",
-                     i, keep, (int) len, inputs[i].buf, r1, r2);
+            TEST_MSG("input %d (time_keep=%d time_strict=%d): '%.*s' regex=%d cri=%d",
+                     i, keep & 1, strict, (int) len, inputs[i].buf, r1, r2);
 
             if (r1 >= 0) {
                 flb_free(b1);
