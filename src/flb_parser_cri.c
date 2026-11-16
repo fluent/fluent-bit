@@ -131,6 +131,8 @@ int flb_parser_cri_do(struct flb_parser *parser,
             flb_warn("[parser:%s] invalid time format %s for '%.*s'",
                      parser->name, parser->time_fmt_full,
                      time_len > 254 ? 254 : (int) time_len, in_buf);
+            /* the lookup may have set the fraction before it failed */
+            tmfrac = 0;
             map_size--;
         }
         else {
