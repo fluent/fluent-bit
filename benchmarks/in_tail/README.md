@@ -11,6 +11,7 @@ compiler optimizations.
 | `tail_bench.py live` | CPU per line while a paced writer appends to N monitored files, plus the CPU used once the writer stops |
 | `tail_stress.py` | delivery check (by unique line id) while files are rotated, copy-truncated and deleted |
 | `tail_encoding_diff.py` | byte level comparison of the records two binaries generate for the same corpus |
+| `tail_cri_diff.py` | byte level comparison, timestamps included, of the records two binaries generate for a corpus of valid, partial and malformed CRI lines |
 
 Every benchmark run checks that the number of ingested records matches the
 number of lines written and reports it as `"ok"`.
@@ -38,8 +39,8 @@ number of lines written and reports it as `"ok"`.
 ./tail_encoding_diff.py /path/to/reference/fluent-bit build/bin/fluent-bit
 ```
 
-`tail_encoding_diff.py` requires the `msgpack` Python module, `--strace`
-requires `strace`.
+`tail_encoding_diff.py` and `tail_cri_diff.py` require the `msgpack` Python
+module, `--strace` requires `strace`.
 
 ## Results: event mode, read path and serialization changes
 
@@ -108,3 +109,31 @@ of this plugin.
   before and after. With `inotify_watcher off` both versions miss the same
   lines: a file rotated twice within one polling interval is never seen under
   a name that matches the path.
+
+## Results: native decoder for `multiline.parser cri`
+
+Same environment. "Before" is the series without the native decoder, which
+uses a regular expression for every line.
+
+Static files with CRI lines (512MB, 3.4M lines of 148 bytes):
+
+| Configuration | CPU before | CPU after | Throughput before | Throughput after |
+| --- | --- | --- | --- | --- |
+| `multiline.parser cri` | 6.56 s | 0.50 s | 76 MB/s | ~700 MB/s |
+| + `path_key`, `offset_key` | 7.67 s | 0.70 s | 66 MB/s | ~690 MB/s |
+| `multiline.parser docker, cri` | 6.60 s | 0.52 s | 73 MB/s | ~890 MB/s |
+| 2000 files (8M lines) | 29.5 s | 1.71 s | 17.5 MB/s | ~214 MB/s |
+
+Instructions per line (callgrind, 300k lines): 34,400 before, 1,515 after;
+with `path_key` and `offset_key` 38,900 before, 2,356 after.
+
+Live appends, 20k lines/s, CPU per line:
+
+| Monitored files | Before | After |
+| --- | --- | --- |
+| 500 | 10.8 us | 8.3 us |
+| 5000 | 21.3 us | 9.8 us |
+
+```shell
+./tail_cri_diff.py /path/to/reference/fluent-bit build/bin/fluent-bit
+```
