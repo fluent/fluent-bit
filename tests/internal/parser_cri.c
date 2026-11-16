@@ -53,6 +53,7 @@ static struct input inputs[] = {
     S("2019-05-07T18:57:50.904275087+00:00 stdxxx F bad stream"),
     S("2019-05-07T18:57:50.904275087+00:00 stdout FF bad flag"),
     S("not-a-time stdout F message"),
+    S("2019-05-07T18:57:50.904275087+00:00 stdout F 2021-01-02T03:04:05.5+00:00"),
     S("2019-05-07T18:57:50.904275087INVALID stdout F fraction then bad zone"),
     S("2019-05-07T18:57:50.9042INVALID stderr P fraction then bad zone"),
     S("two words stdout F message"),
@@ -83,13 +84,21 @@ static struct input inputs[] = {
       "stdout F long time token"),
 };
 
+static struct flb_parser *parser_create_key(struct flb_config *config, char *name,
+                                            char *format, char *regex,
+                                            int time_keep, int time_strict,
+                                            char *time_key)
+{
+    return flb_parser_create(name, format, regex, FLB_FALSE, CRI_TIME, time_key, NULL,
+                             time_keep, time_strict, FLB_FALSE, FLB_FALSE,
+                             NULL, 0, NULL, config);
+}
+
 static struct flb_parser *parser_create_strict(struct flb_config *config, char *name,
                                                char *format, char *regex,
                                                int time_keep, int time_strict)
 {
-    return flb_parser_create(name, format, regex, FLB_FALSE, CRI_TIME, "time", NULL,
-                             time_keep, time_strict, FLB_FALSE, FLB_FALSE,
-                             NULL, 0, NULL, config);
+    return parser_create_key(config, name, format, regex, time_keep, time_strict, "time");
 }
 
 static struct flb_parser *parser_create(struct flb_config *config, char *name,
@@ -139,7 +148,7 @@ static int check_str(msgpack_object map, int pos, const char *key,
 }
 
 /* Every input must produce the same result of the regex backend */
-static void test_regex_parity(void)
+static void check_regex_parity(char *time_key)
 {
     int i;
     int keep;
@@ -165,8 +174,10 @@ static void test_regex_parity(void)
         config = flb_config_init();
         TEST_CHECK(config != NULL);
 
-        re = parser_create_strict(config, "re", "regex", CRI_REGEX, keep & 1, strict);
-        cri = parser_create_strict(config, "cri", "cri", NULL, keep & 1, strict);
+        re = parser_create_key(config, "re", "regex", CRI_REGEX, keep & 1, strict,
+                               time_key);
+        cri = parser_create_key(config, "cri", "cri", NULL, keep & 1, strict,
+                                time_key);
         TEST_CHECK(re != NULL);
         TEST_CHECK(cri != NULL);
 
@@ -192,8 +203,10 @@ static void test_regex_parity(void)
             }
 
             TEST_CHECK(same);
-            TEST_MSG("input %d (time_keep=%d time_strict=%d): '%.*s' regex=%d cri=%d",
-                     i, keep & 1, strict, (int) len, inputs[i].buf, r1, r2);
+            TEST_MSG("input %d (time_key=%s time_keep=%d time_strict=%d): "
+                     "'%.*s' regex=%d cri=%d",
+                     i, time_key ? time_key : "(null)", keep & 1, strict,
+                     (int) len, inputs[i].buf, r1, r2);
 
             if (r1 >= 0) {
                 flb_free(b1);
@@ -207,6 +220,65 @@ static void test_regex_parity(void)
         flb_parser_exit(config);
         flb_config_exit(config);
     }
+}
+
+static void test_regex_parity(void)
+{
+    check_regex_parity("time");
+}
+
+/*
+ * The time key selects the field used for the time lookup: another field
+ * of the line, or none when it does not name a field.
+ */
+static void test_regex_parity_time_key(void)
+{
+    check_regex_parity(NULL);
+    check_regex_parity("log");
+    check_regex_parity("stream");
+    check_regex_parity("_p");
+    check_regex_parity("other");
+}
+
+/* A time key that names the content must not duplicate the 'log' field */
+static void test_time_key_log(void)
+{
+    int ret;
+    size_t off = 0;
+    size_t size = 0;
+    void *buf = NULL;
+    const char *line = CRI_LINE "2021-01-02T03:04:05.5+00:00";
+    char *copy;
+    struct flb_time tm;
+    struct flb_config *config;
+    struct flb_parser *cri;
+    msgpack_unpacked result;
+
+    config = flb_config_init();
+    cri = parser_create_key(config, "cri", "cri", NULL, FLB_TRUE, FLB_FALSE, "log");
+    TEST_CHECK(cri != NULL);
+
+    copy = exact_copy(line, strlen(line));
+    flb_time_zero(&tm);
+
+    ret = flb_parser_do(cri, copy, strlen(line), &buf, &size, &tm);
+    TEST_CHECK(ret == strlen(line));
+    TEST_CHECK(tm.tm.tv_sec == 1609556645);
+    TEST_CHECK(tm.tm.tv_nsec == 500000000);
+
+    msgpack_unpacked_init(&result);
+    ret = msgpack_unpack_next(&result, buf, size, &off);
+    TEST_CHECK(ret == MSGPACK_UNPACK_SUCCESS);
+    TEST_CHECK(result.data.via.map.size == 4);
+    TEST_CHECK(check_str(result.data, 0, "time",
+                         "2019-05-07T18:57:50.904275087+00:00", 35));
+    TEST_CHECK(check_str(result.data, 3, "log", "2021-01-02T03:04:05.5+00:00", 27));
+
+    msgpack_unpacked_destroy(&result);
+    flb_free(buf);
+    free(copy);
+    flb_parser_exit(config);
+    flb_config_exit(config);
 }
 
 static void test_fields(void)
@@ -368,6 +440,8 @@ static void test_truncated(void)
 
 TEST_LIST = {
     { "regex_parity", test_regex_parity},
+    { "regex_parity_time_key", test_regex_parity_time_key},
+    { "time_key_log", test_time_key_log},
     { "fields", test_fields},
     { "carriage_return", test_carriage_return},
     { "time_keep_off", test_time_keep_off},
