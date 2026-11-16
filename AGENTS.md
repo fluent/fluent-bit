@@ -1,5 +1,13 @@
 # Repository Guidelines
 
+## Skills
+- Task-specific guidance lives in `skills/`. Before changing code, read
+  `skills/fluent-bit/SKILL.md` and follow its reading order for the task:
+  plugin authoring, testing, verification with the real binary, patch and
+  review workflow, and pipeline architecture.
+- This file states the repository rules. When a skill and this file disagree,
+  this file wins; fix the skill.
+
 ## Preferred Commands
 - Configure: `cmake -S . -B build -DFLB_TESTS_RUNTIME=On -DFLB_TESTS_INTERNAL=On`
 - Configure on Windows:
