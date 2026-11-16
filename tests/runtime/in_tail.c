@@ -1941,10 +1941,8 @@ void flb_test_skip_empty_lines()
     ret = flb_start(ctx->flb);
     TEST_CHECK(ret == 0);
 
-    /* waiting to flush */
-    flb_time_msleep(500);
-
-    num = get_output_num();
+    /* wait for the record, the tail input can take longer than a fixed delay */
+    wait_expected_num_with_timeout(5000, 1, &num);
     if (!TEST_CHECK(num == 1))  {
         TEST_MSG("output error: expect=1 got=%d", num);
     }
@@ -2010,10 +2008,8 @@ void flb_test_skip_empty_lines_crlf()
     ret = flb_start(ctx->flb);
     TEST_CHECK(ret == 0);
 
-    /* waiting to flush */
-    flb_time_msleep(500);
-
-    num = get_output_num();
+    /* wait for the record, the tail input can take longer than a fixed delay */
+    wait_expected_num_with_timeout(5000, 1, &num);
     if (!TEST_CHECK(num == 1))  {
         TEST_MSG("output error: expect=1 got=%d", num);
     }
