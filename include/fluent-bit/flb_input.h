@@ -348,6 +348,15 @@ struct flb_input_instance {
     int storage_buf_status;
 
     /*
+     * Status set by the memory monitor when the process memory usage is
+     * over the configured 'memory.limit':
+     *
+     * - FLB_INPUT_RUNNING -> can append more data
+     * - FLB_INPUT_PAUSED  -> cannot append data
+     */
+    int mem_monitor_status;
+
+    /*
      * Optional data passed to the plugin, this info is useful when
      * running Fluent Bit in library mode and the target plugin needs
      * some specific data from it caller.
@@ -784,6 +793,9 @@ static inline int flb_input_buf_paused(struct flb_input_instance *i)
         return FLB_TRUE;
     }
     if (i->storage_buf_status == FLB_INPUT_PAUSED) {
+        return FLB_TRUE;
+    }
+    if (i->mem_monitor_status == FLB_INPUT_PAUSED) {
         return FLB_TRUE;
     }
 

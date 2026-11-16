@@ -702,6 +702,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->rate_gate_timer = NULL;
 #endif
         instance->storage_buf_status = FLB_INPUT_RUNNING;
+        instance->mem_monitor_status = FLB_INPUT_RUNNING;
         mk_list_add(&instance->_head, &config->inputs);
 
         /* processor instance */
@@ -2765,6 +2766,7 @@ static void flb_input_rate_gate_resume(struct flb_input_instance *ins)
 
     if (ins->mem_buf_status == FLB_INPUT_RUNNING &&
         ins->storage_buf_status == FLB_INPUT_RUNNING &&
+        ins->mem_monitor_status == FLB_INPUT_RUNNING &&
         ins->config->is_running == FLB_TRUE &&
         ins->config->is_ingestion_active == FLB_TRUE) {
         flb_input_resume(ins);
