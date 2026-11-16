@@ -8,7 +8,7 @@ async function application(): Promise<void> {
     }
     const fluent: FluentBit = await createFluentBit({
         workerUrl: new URL('./fluent-bit-worker.js', import.meta.url),
-        storage: {persistent: true, namespace: 'type-test'},
+        storage: {persistent: true, namespace: 'type-test'}, outputLineLimit: 65536,
         onStateChange: (state: FluentBitState) => { void state; },
         onError: error => { void error.code; },
         onProgress: progress => { const bytes: number = progress.loadedBytes; void bytes; }
@@ -30,12 +30,17 @@ async function application(): Promise<void> {
         if (event.stage === 'route') { const record: number = event.record; void record; }
         if (event.stage === 'filter') { const kept: number = event.recordsOut; void kept; }
     }
-    void [traced, supported, matched, status];
+    const otlp: number = (await fluent.pushOtlp({input: 'app', signal: 'metrics',
+        payload: {resourceMetrics: []}})).acceptedBytes;
+    await fluent.pushOtlp({input: 'app', signal: 'traces', payload: '{"resourceSpans":[]}'});
+    void [traced, supported, matched, status, otlp];
     const heap: number = (await fluent.getStats()).wasmMemoryBytes;
     await fluent.destroy();
     void [bytes, result, accepted, drained, heap];
     // @ts-expect-error Only JSON object records are accepted.
     await fluent.push({input: 'app', records: ['text']});
+    // @ts-expect-error Logs are pushed as records.
+    await fluent.pushOtlp({input: 'app', signal: 'logs', payload: {}});
     // @ts-expect-error A condition is an object, not YAML text.
     await fluent.evaluateCondition({condition: 'default: true', records: []});
     // @ts-expect-error Persistent storage requires a namespace.
