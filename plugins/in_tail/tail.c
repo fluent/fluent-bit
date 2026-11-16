@@ -391,6 +391,12 @@ static int in_tail_watcher_callback(struct flb_input_instance *ins,
             flb_tail_file_rotated(file);
         }
     }
+
+    /* rotated files waiting for the new file to be created */
+    if (mk_list_is_empty(&ctx->files_rotated) != 0) {
+        flb_tail_file_rotated_lookup(ctx);
+    }
+
     return ret;
 }
 

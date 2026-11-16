@@ -51,6 +51,7 @@ struct flb_tail_file {
     char *name;                 /* target file name given by scan routine */
     char *real_name;            /* real file name in the file system */
     char *orig_name;            /* original file name (before rotation) */
+    int rotate_lookup;          /* rotated: the new file was not found yet */
     size_t name_len;
     size_t orig_name_len;
     time_t rotated;

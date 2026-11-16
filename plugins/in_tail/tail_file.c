@@ -3200,11 +3200,77 @@ int flb_tail_file_rotated(struct flb_tail_file *file)
                 }
             }
         }
+        else {
+            /*
+             * The application did not create the new file yet: look for it
+             * while the rotated file is kept open instead of waiting for
+             * the next scan of the path.
+             */
+            file->rotate_lookup = FLB_TRUE;
+        }
     }
     flb_free(tmp);
     flb_free(name);
 
     return 0;
+}
+
+/*
+ * A rotated file where the new file was not found at rotation time: check
+ * if a new file showed up using the previous name. A file that is created
+ * and rotated again before the next scan of the path would be never read.
+ *
+ * Returns FLB_TRUE if a new file was registered.
+ */
+static int rotated_lookup_file(struct flb_tail_config *ctx,
+                               struct flb_tail_file *file)
+{
+    int ret;
+    struct stat st;
+
+    if (file->rotate_lookup == FLB_FALSE || file->orig_name == NULL) {
+        return FLB_FALSE;
+    }
+
+    ret = tail_file_stat(ctx, file->orig_name, &st);
+    if (ret != 0 || st.st_ino == file->inode) {
+        return FLB_FALSE;
+    }
+
+    file->rotate_lookup = FLB_FALSE;
+    if (flb_tail_file_exists(&st, ctx) == FLB_TRUE) {
+        return FLB_FALSE;
+    }
+
+    ret = flb_tail_file_append(file->orig_name, &st, FLB_TAIL_STATIC, -1, ctx);
+    if (ret != 0) {
+        return FLB_FALSE;
+    }
+
+    flb_plg_debug(ctx->ins, "inode=%"PRIu64" new file found after rotation: %s",
+                  (uint64_t) st.st_ino, file->orig_name);
+
+    return FLB_TRUE;
+}
+
+int flb_tail_file_rotated_lookup(struct flb_tail_config *ctx)
+{
+    int count = 0;
+    struct mk_list *head;
+    struct flb_tail_file *file;
+
+    mk_list_foreach(head, &ctx->files_rotated) {
+        file = mk_list_entry(head, struct flb_tail_file, _rotate_head);
+        if (rotated_lookup_file(ctx, file) == FLB_TRUE) {
+            count++;
+        }
+    }
+
+    if (count > 0) {
+        tail_signal_manager(ctx);
+    }
+
+    return count;
 }
 
 static int check_purge_deleted_file(struct flb_tail_config *ctx,
@@ -3295,6 +3361,11 @@ int flb_tail_file_purge(struct flb_input_instance *ins,
                 flb_plg_debug(ctx->ins,
                               "inode=%"PRIu64" purge rotated file %s (offset=%"PRId64")",
                               file->inode, file->name, file->offset);
+            }
+
+            /* last chance to find the file that replaced the rotated one */
+            if (rotated_lookup_file(ctx, file) == FLB_TRUE) {
+                tail_signal_manager(ctx);
             }
 
             flb_tail_file_remove(file);
