@@ -119,6 +119,19 @@ struct flb_tail_file {
     uint64_t db_offset_marker;
     size_t db_offset_marker_size;
 
+    /*
+     * Resumable offset the marker above was computed for, or -1 when it is
+     * unknown. It allows to reuse the marker (and to skip redundant offset
+     * updates) while the resumable offset did not move.
+     */
+    int64_t db_offset_marker_pos;
+
+    /* Last resumable offset that was persisted, or -1 if none */
+    int64_t db_offset_saved;
+
+    /* Raw offset covered by the last posix_fadvise(2) call */
+    int64_t fadvise_offset;
+
     /* Inotify: coalescing of the events read in a single batch */
     uint64_t event_batch_id;
     uint32_t event_mask;

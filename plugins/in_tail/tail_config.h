@@ -52,6 +52,13 @@
  */
 #define FLB_TAIL_WATCH_TABLE_SIZE 4096
 
+/*
+ * With 'file_cache_advise' enabled, tell the kernel to drop the pages that
+ * were already consumed every time the read offset advances this many bytes
+ * (or when the end of the file is reached).
+ */
+#define FLB_TAIL_FADVISE_WINDOW   (4 * 1024 * 1024)
+
 #ifdef FLB_SYSTEM_WINDOWS
 #define FLB_TAIL_WINDOWS_PATH_ENCODING_ANSI 0
 #define FLB_TAIL_WINDOWS_PATH_ENCODING_UTF8 1
