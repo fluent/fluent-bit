@@ -203,10 +203,6 @@ struct flb_tail_config {
     struct flb_log_event_encoder log_event_encoder;
     struct flb_log_event_decoder log_event_decoder;
 
-    /* Scratch buffer used to serialize unstructured lines (see tail_file.c) */
-    msgpack_sbuffer pack_sbuf;
-    msgpack_packer pack_pck;
-
 #ifdef FLB_HAVE_METRICS
     /* Metrics */
     struct cmt_counter *cmt_files_opened;
