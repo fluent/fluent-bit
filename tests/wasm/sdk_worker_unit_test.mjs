@@ -234,3 +234,40 @@ test('start configures tracing before the engine and copies result buffers out',
     await assert.rejects(sdk.run(`execute({id: 3, method: 'start',
         payload: {yaml: new Uint8Array(1), grace: 0, trace: true}})`), {code: 'E_UNSUPPORTED'});
 });
+
+test('OTLP pushes select the signal operation and map the engine result', async () => {
+    const sdk = worker();
+    const push = signal => sdk.run(`execute({id: 1, method: 'pushOtlp',
+        payload: {input: 'app', signal: '${signal}', data: new Uint8Array(5)}})`);
+    await assert.rejects(push('metrics'), {code: 'E_UNSUPPORTED'});
+    sdk.run(`features = ['otlp']; state = 'stopped'; let operations = []; let result = 0;
+        command = async (id, operation, data, name) => {
+            operations.push([operation, name, data.byteLength]);
+            return {result};
+        };`);
+    await assert.rejects(push('metrics'), {code: 'E_STATE'});
+    sdk.run('state = "running"');
+    assert.equal(JSON.stringify(await push('metrics')), '{"acceptedBytes":5}');
+    assert.equal(JSON.stringify(await push('traces')), '{"acceptedBytes":5}');
+    assert.equal(sdk.run('JSON.stringify(operations)'), '[[9,"app",5],[10,"app",5]]');
+    assert.equal(sdk.run('acceptedBytes'), 10);
+    sdk.run('result = -2');
+    await assert.rejects(push('metrics'), {code: 'E_INPUT'});
+    sdk.run('result = -4');
+    await assert.rejects(push('traces'), {code: 'E_ARGUMENT', message: /traces/});
+    sdk.run('result = -1');
+    await assert.rejects(push('metrics'), {code: 'E_INGEST'});
+    assert.equal(sdk.run('acceptedBytes'), 10);
+});
+
+test('long output lines are kept up to the requested limit and still bounded', () => {
+    const sdk = worker();
+    sdk.run(`post = () => {}; log('stdout', 'x'.repeat(5000));`);
+    assert.equal(sdk.run('logs[0].text.length'), 4096 + ' [truncated]'.length);
+    sdk.run(`logs = []; logBytes = 0; lineLimit = 100000;
+        log('stdout', 'x'.repeat(100000)); log('stdout', 'y'.repeat(100001)); log('stdout', 'z'.repeat(100000));`);
+    assert.equal(sdk.run('logs.length'), 2);
+    assert.equal(sdk.run('logs[0].text.length'), 100000);
+    assert.equal(sdk.run('logs[1].text.endsWith(" [truncated]")'), true);
+    assert.equal(sdk.run('dropped'), 1);
+});
