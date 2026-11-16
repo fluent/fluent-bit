@@ -55,6 +55,25 @@ static inline int match_negate(struct flb_ml_parser *ml_parser, int matched)
     return rule_match;
 }
 
+/*
+ * A timestamp can be used for a record if the log event encoder accepts it,
+ * a time parsed from the content can be out of the supported range.
+ */
+static inline int ml_time_is_usable(struct flb_time *tm)
+{
+    if (flb_time_is_valid_eventtime(tm) == FLB_TRUE) {
+        return FLB_TRUE;
+    }
+
+    if (tm->tm.tv_nsec == 0 &&
+        (tm->tm.tv_sec == FLB_LOG_EVENT_GROUP_START ||
+         tm->tm.tv_sec == FLB_LOG_EVENT_GROUP_END)) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
 static uint64_t time_ms_now()
 {
     uint64_t ms;
@@ -1650,8 +1669,13 @@ int flb_ml_flush_stream_group(struct flb_ml_parser *ml_parser,
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-    /* if the group don't have a time set, use current time */
-    if (flb_time_to_nanosec(&group->mp_time) == 0L) {
+    /*
+     * If the group don't have a time set use the current time, the same
+     * applies for a time that cannot be represented in a record: otherwise
+     * the record is rejected and its content ends up in the next one.
+     */
+    if (flb_time_to_nanosec(&group->mp_time) == 0L ||
+        ml_time_is_usable(&group->mp_time) == FLB_FALSE) {
         flb_time_get(&now);
         group_time = &now;
     } else {
@@ -1801,6 +1825,11 @@ int flb_ml_flush_stream_group(struct flb_ml_parser *ml_parser,
             flb_ml_stream_group_purge_metadata(group);
             group->mp_md_sbuf.size = 0;
             msgpack_sbuffer_destroy(&mp_sbuf);
+
+            /* do not leave partial state for the next record */
+            flb_log_event_encoder_reset(&mst->ml->log_event_encoder);
+            flb_sds_len_set(group->buf, 0);
+            group->truncated = FLB_FALSE;
 
             return -1;
         }
