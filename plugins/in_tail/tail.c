@@ -398,6 +398,15 @@ static int in_tail_init(struct flb_input_instance *in,
     }
     ctx->ins = in;
 
+    /*
+     * The multiline core can hold unfinished records. If the plugin is
+     * already paused by a buffer limit when the shutdown starts, it still
+     * needs its pause callback and the permission to ingest that content.
+     */
+    if (ctx->ml_ctx) {
+        in->flags |= FLB_INPUT_SHUTDOWN_FLUSH;
+    }
+
     /* Initialize file-system watcher */
     ret = flb_tail_fs_init(in, ctx, config);
     if (ret == -1) {
@@ -565,6 +574,21 @@ static void in_tail_pause(void *data, struct flb_config *config)
             flb_plg_info(ctx->ins, "flushing pending multiline data...");
             flb_tail_mult_pending_flush_all(ctx);
         }
+    }
+
+    /*
+     * Multiline core: on shutdown the pending content must be ingested now,
+     * once the plugin exits there are no outputs left to deliver it.
+     *
+     * Ingesting the content can pause the plugin again if a buffer limit is
+     * reached, do not start a new flush on top of the one that is running.
+     */
+    if (ctx->ml_ctx && config->is_ingestion_active == FLB_FALSE &&
+        ctx->ml_shutdown_flush == FLB_FALSE) {
+        ctx->ml_shutdown_flush = FLB_TRUE;
+        flb_plg_debug(ctx->ins, "flushing pending multiline core data...");
+        flb_ml_flush_pending_now(ctx->ml_ctx);
+        ctx->ml_shutdown_flush = FLB_FALSE;
     }
 
     /* Pause file system backend handlers */
