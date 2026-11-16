@@ -7,6 +7,7 @@
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_opentelemetry.h>
 #include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_engine.h>
 #include <fluent-bit/flb_storage.h>
 #include <fluent-bit/flb_version.h>
@@ -355,6 +356,31 @@ static int sdk_push(flb_ctx_t *context, struct sdk_command *command)
     return flb_lib_push(context, selected->id, command->data, command->size);
 }
 
+/* Validate the whole request without replacing the bytes passed to the decoder. */
+static int sdk_otlp_json_valid(const unsigned char *data, size_t size)
+{
+    char *packed;
+    size_t packed_size;
+    size_t consumed;
+    int root_type;
+    int records;
+    int result;
+
+    packed = NULL;
+    consumed = 0;
+    result = flb_pack_json_recs((const char *) data, size, &packed, &packed_size,
+                               &root_type, &records, &consumed);
+    flb_free(packed);
+    if (result != 0 || root_type != JSMN_OBJECT || records != 1) {
+        return FLB_FALSE;
+    }
+    while (consumed < size && (data[consumed] == ' ' || data[consumed] == '\t' ||
+                              data[consumed] == '\r' || data[consumed] == '\n')) {
+        consumed++;
+    }
+    return consumed == size;
+}
+
 /* Decode here, append on the engine thread. -4 reports a payload that is not OTLP/JSON. */
 static int sdk_push_otlp(flb_ctx_t *context, struct sdk_command *command)
 {
@@ -369,9 +395,19 @@ static int sdk_push_otlp(flb_ctx_t *context, struct sdk_command *command)
     if (context == NULL || command->name == NULL || command->size == 0) {
         return -1;
     }
+    /* Shutdown sets engine_stopped under this lock before freeing input aliases. */
+    pthread_mutex_lock(&command_mutex);
+    if (engine_stopped) {
+        pthread_mutex_unlock(&command_mutex);
+        return -1;
+    }
     selected = sdk_input(context, command->name);
+    pthread_mutex_unlock(&command_mutex);
     if (selected == NULL) {
         return -2;
+    }
+    if (!sdk_otlp_json_valid(command->data, command->size)) {
+        return -4;
     }
     traces = NULL;
     if (command->operation == SDK_PUSH_METRICS) {
