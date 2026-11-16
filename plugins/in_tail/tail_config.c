@@ -104,6 +104,8 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
     }
     ctx->config = config;
     ctx->ins = ins;
+    msgpack_sbuffer_init(&ctx->pack_sbuf);
+    msgpack_packer_init(&ctx->pack_pck, &ctx->pack_sbuf, msgpack_sbuffer_write);
     ctx->ignore_older = 0;
     ctx->skip_long_lines = FLB_FALSE;
 #ifdef FLB_HAVE_SQLDB
@@ -563,6 +565,8 @@ struct flb_tail_config *flb_tail_config_create(struct flb_input_instance *ins,
 
 int flb_tail_config_destroy(struct flb_tail_config *config)
 {
+    msgpack_sbuffer_destroy(&config->pack_sbuf);
+
 
 #ifdef FLB_HAVE_PARSER
     flb_tail_mult_destroy(config);
