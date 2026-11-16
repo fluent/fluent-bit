@@ -357,15 +357,17 @@ static int az_li_flush_records(struct flb_az_li *ctx, struct flb_config *config,
         }
     }
 
-    if (final_payload_size > FLB_AZ_LI_MAX_PAYLOAD_SIZE && last - first > 1) {
+    /* the limit applies to the compressed and to the uncompressed payload */
+    if ((final_payload_size > FLB_AZ_LI_MAX_PAYLOAD_SIZE ||
+         json_payload_size > FLB_AZ_LI_MAX_PAYLOAD_SIZE) && last - first > 1) {
         if (is_compressed == FLB_TRUE) {
             flb_free(final_payload);
         }
         flb_sds_destroy(json_payload);
 
         middle = first + (last - first) / 2;
-        flb_plg_debug(ctx->ins, "payload of %zu records is %zu bytes, splitting it",
-                      last - first, final_payload_size);
+        flb_plg_debug(ctx->ins, "payload of %zu records is %zu bytes (%zu uncompressed), splitting it",
+                      last - first, final_payload_size, json_payload_size);
 
         /* Stop at the first failure, the chunk is retried as a whole */
         ret = az_li_flush_records(ctx, config, token, data, offsets, first, middle);

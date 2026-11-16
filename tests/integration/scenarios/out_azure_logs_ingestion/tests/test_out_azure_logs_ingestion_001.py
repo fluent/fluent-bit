@@ -157,8 +157,8 @@ def test_out_azure_logs_ingestion_legacy_oauth2_and_payload_format():
     assert isinstance(payload[0]["@timestamp"], (int, float))
 
 
-def test_out_azure_logs_ingestion_splits_payloads_over_1mib():
-    # 500 records of about 3 KB serialize to about 1.5 MiB, above the 1 MiB
+def test_out_azure_logs_ingestion_splits_payloads_over_the_request_limit():
+    # 500 records of about 3 KB serialize to about 1.5 MB, above the 1 MB
     # limit of the Logs Ingestion API, so the chunk must go out in several
     # requests that are each under the limit.
     message = "x" * 3000
@@ -194,6 +194,6 @@ def test_out_azure_logs_ingestion_splits_payloads_over_1mib():
 
     assert len(requests_seen) >= 2
     for request in requests_seen:
-        assert len(request["raw_data"].encode("utf-8")) <= 1024 * 1024
+        assert len(request["raw_data"].encode("utf-8")) <= 1000000
         assert all(record["message"] == message for record in request["json"])
     assert sum(len(request["json"]) for request in requests_seen) == 500
