@@ -308,6 +308,12 @@ struct flb_config {
     struct flb_storage_metrics *storage_metrics_ctx; /* storage metrics context */
     int   storage_trim_files;       /* enable/disable file trimming */
     char *storage_type;             /* global storage type */
+
+    /* Memory monitor */
+    char *mem_limit;                /* process memory limit (size or %) */
+    char *mem_spike_reserve;        /* headroom kept below the limit */
+    double mem_check_interval;      /* seconds between memory checks */
+    struct flb_mem_monitor *mem_monitor; /* memory monitor context */
     int   storage_inherit;          /* apply storage type to inputs */
 
     /* DLQ for non-retriable output failures */
@@ -504,6 +510,11 @@ enum conf_type {
 #define FLB_CONF_STORAGE_KEEP_REJECTED "storage.keep.rejected"
 #define FLB_CONF_STORAGE_REJECTED_PATH "storage.rejected.path"
 #define FLB_CONF_STORAGE_REJECTED_LIMIT "storage.rejected.limit"
+
+/* Memory monitor */
+#define FLB_CONF_MEMORY_LIMIT          "memory.limit"
+#define FLB_CONF_MEMORY_SPIKE_RESERVE  "memory.spike_reserve"
+#define FLB_CONF_MEMORY_CHECK_INTERVAL "memory.check_interval"
 
 /* Coroutines */
 #define FLB_CONF_STR_CORO_STACK_SIZE "Coro_Stack_Size"

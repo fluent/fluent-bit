@@ -241,6 +241,17 @@ struct flb_service_config service_configs[] = {
      * is intentionally no flat dotted-key service property for them.
      */
 
+    /* Memory monitor */
+    {FLB_CONF_MEMORY_LIMIT,
+     FLB_CONF_TYPE_STR,
+     offsetof(struct flb_config, mem_limit)},
+    {FLB_CONF_MEMORY_SPIKE_RESERVE,
+     FLB_CONF_TYPE_STR,
+     offsetof(struct flb_config, mem_spike_reserve)},
+    {FLB_CONF_MEMORY_CHECK_INTERVAL,
+     FLB_CONF_TYPE_DOUBLE,
+     offsetof(struct flb_config, mem_check_interval)},
+
     /* Coroutines */
     {FLB_CONF_STR_CORO_STACK_SIZE,
      FLB_CONF_TYPE_INT,
@@ -668,6 +679,15 @@ void flb_config_exit(struct flb_config *config)
     }
     config->ch_notif[0] = FLB_UNINITIALIZED_SOCKET;
     config->ch_notif[1] = FLB_UNINITIALIZED_SOCKET;
+
+    if (config->mem_limit) {
+        flb_free(config->mem_limit);
+        config->mem_limit = NULL;
+    }
+    if (config->mem_spike_reserve) {
+        flb_free(config->mem_spike_reserve);
+        config->mem_spike_reserve = NULL;
+    }
 
     /* free heap-owned multiline_buffer_limit if set */
     if (config->multiline_buffer_limit) {
