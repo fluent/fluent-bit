@@ -446,7 +446,9 @@ int flb_tail_fs_inotify_init(struct flb_input_instance *in,
                                        ctx->progress_check_interval_nsec,
                                        config);
     if (ret == -1) {
-        flb_tail_config_destroy(ctx);
+        /* the caller is in charge of releasing the context */
+        close(fd);
+        ctx->fd_notify = -1;
         return -1;
     }
     ctx->coll_fd_progress_check = ret;
