@@ -39,6 +39,16 @@ on:
         type: boolean
         required: false
         default: true
+      refresh-base-images:
+        description: Pull the current base images and bypass layer caches, used to rebuild an already released version.
+        type: boolean
+        required: false
+        default: false
+      scan-exit-code:
+        description: Exit code of the Trivy scan on fixable findings, set to 0 when the caller evaluates the scan itself.
+        type: string
+        required: false
+        default: "1"
     secrets:
       token:
         description: The Github token or similar to authenticate with for the registry.
@@ -128,6 +138,8 @@ jobs:
           # This is configured in outputs above
           push: ${{ inputs.push }}
           load: false
+          pull: ${{ inputs.refresh-base-images }}
+          no-cache: ${{ inputs.refresh-base-images }}
           build-args: |
             FLB_NIGHTLY_BUILD=${{ inputs.unstable }}
             RELEASE_VERSION=${{ inputs.version }}
@@ -335,7 +347,7 @@ jobs:
         with:
           image-ref: "${{ inputs.registry }}/${{ inputs.image }}:${{ inputs.version }}"
           format: "table"
-          exit-code: "1"
+          exit-code: ${{ inputs.scan-exit-code }}
           ignore-unfixed: true
           vuln-type: "os,library"
           severity: "CRITICAL,HIGH"
@@ -508,6 +520,7 @@ jobs:
         shell: pwsh
 
       - name: Pull the last release image to speed up the build with a cache
+        if: ${{ ! inputs.refresh-base-images }}
         continue-on-error: true
         run: |
           VERSION=$(gh release list --json tagName,isLatest --jq '.[] | select(.isLatest)|.tagName | sub("^v"; "")')
@@ -519,8 +532,10 @@ jobs:
 
       - name: Build the production images
         run: |
-          docker build -t $IMAGE --build-arg FLB_NIGHTLY_BUILD=${{ inputs.unstable }} --build-arg WINDOWS_VERSION=ltsc${{ matrix.windows-base-version }} -f ./dockerfiles/${{ matrix.dockerfile }} .
+          docker build $PULL_FLAGS -t $IMAGE --build-arg FLB_NIGHTLY_BUILD=${{ inputs.unstable }} --build-arg WINDOWS_VERSION=ltsc${{ matrix.windows-base-version }} -f ./dockerfiles/${{ matrix.dockerfile }} .
         shell: bash
+        env:
+          PULL_FLAGS: ${{ inputs.refresh-base-images && '--pull --no-cache' || '' }}
 
       - name: Sanity check of the production images
         run: |
