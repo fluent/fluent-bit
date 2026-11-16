@@ -147,6 +147,12 @@ struct flb_sqldb *flb_tail_db_open(const char *path,
         return NULL;
     }
 
+    /* The index only speeds up lookups, the database works without it */
+    ret = flb_sqldb_query(db, SQL_CREATE_FILES_INODE_INDEX, NULL, NULL);
+    if (ret != FLB_OK) {
+        flb_plg_warn(ctx->ins, "db: could not create index for inode lookups");
+    }
+
     return db;
 }
 
