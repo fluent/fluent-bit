@@ -20,6 +20,7 @@
 #include <fluent-bit/flb_input_plugin.h>
 #include "tail.h"
 #include "tail_config.h"
+#include "tail_db.h"
 
 /*
  * Include proper scan backend
@@ -106,6 +107,18 @@ int flb_tail_scan(struct mk_list *path_list, struct flb_tail_config *ctx)
     int ret;
     struct mk_list *head;
     struct flb_slist_entry *pattern;
+#ifdef FLB_HAVE_SQLDB
+    int db_batch = FLB_FALSE;
+
+    /*
+     * Every new file is registered in the database: do it in one transaction
+     * instead of one per file, unless the caller already opened one.
+     */
+    if (ctx->db != NULL && ctx->db_batch == FLB_FALSE) {
+        flb_tail_db_batch_begin(ctx);
+        db_batch = ctx->db_batch;
+    }
+#endif
 
     mk_list_foreach(head, path_list) {
         pattern = mk_list_entry(head, struct flb_slist_entry, _head);
@@ -118,6 +131,12 @@ int flb_tail_scan(struct mk_list *path_list, struct flb_tail_config *ctx)
                           ret, pattern->str);
         }
     }
+
+#ifdef FLB_HAVE_SQLDB
+    if (db_batch == FLB_TRUE) {
+        flb_tail_db_batch_end(ctx);
+    }
+#endif
 
     return 0;
 }
