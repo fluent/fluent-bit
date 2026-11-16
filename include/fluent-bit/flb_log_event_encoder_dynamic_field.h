@@ -42,6 +42,7 @@ struct flb_log_event_encoder_dynamic_field {
     msgpack_packer           packer;
     msgpack_sbuffer          buffer;
     struct cfl_list          scopes;
+    struct cfl_list          scopes_free; /* released scopes, ready for reuse */
 
     char                    *data;
     size_t                   size;
