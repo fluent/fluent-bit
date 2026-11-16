@@ -2960,6 +2960,7 @@ size_t flb_input_chunk_set_limits(struct flb_input_instance *in)
 #endif
         in->mem_buf_status == FLB_INPUT_RUNNING &&
         in->storage_buf_status == FLB_INPUT_RUNNING &&
+        in->mem_monitor_status == FLB_INPUT_RUNNING &&
         in->config->is_running == FLB_TRUE &&
         in->config->is_ingestion_active == FLB_TRUE) {
         flb_input_resume(in);
