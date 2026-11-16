@@ -12,6 +12,9 @@ export interface FluentBitOptions {
     initTimeoutMs?: number;
     operationTimeoutMs?: number;
     destroyTimeoutMs?: number;
+    /** Characters kept of one stdout or stderr line, 4096 (default) to 1048576.
+     * `otlp_json` prints a whole export request as one line. */
+    outputLineLimit?: number;
     storage?: {persistent?: false} | {persistent: true; namespace: string};
     onStdout?: (line: string) => void;
     onStderr?: (line: string) => void;
@@ -32,10 +35,10 @@ export interface FluentBitInfo {
     readonly sdkVersion: string;
     readonly storagePath: string;
     readonly persistent: boolean;
-    /** Inspection methods this runtime supports; check before calling them. */
+    /** Optional methods this runtime supports; check before calling them. */
     readonly features: readonly FluentBitFeature[];
 }
-export type FluentBitFeature = 'condition' | 'topology' | 'trace';
+export type FluentBitFeature = 'condition' | 'topology' | 'trace' | 'otlp';
 export type FluentBitSignal = 'logs' | 'metrics' | 'traces';
 /** One instance as the engine created it; `index` is its position in the configuration. */
 export interface FluentBitInstance {
@@ -121,6 +124,12 @@ export interface FluentBit {
     /** Input alias must select one lib input. Records receive an ingestion timestamp. */
     push(options: {input: string; records: Record<string, unknown>[]}):
         Promise<{acceptedBytes: number; acceptedRecords: number}>;
+    /** One OTLP/JSON export request (`resourceMetrics` or `resourceSpans`) for a lib
+     * input, decoded by the engine; the input's processors run before this resolves.
+     * Text is passed as written. Needs the `otlp` feature; a payload the engine
+     * cannot decode rejects with E_ARGUMENT. */
+    pushOtlp(options: {input: string; signal: 'metrics' | 'traces';
+        payload: string | Record<string, unknown>}): Promise<{acceptedBytes: number}>;
     /** Assets beneath /config/ only; engine must be stopped. */
     writeFile(path: string, data: string | Uint8Array): Promise<void>;
     readFile(path: string): Promise<Uint8Array>;
