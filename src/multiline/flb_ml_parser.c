@@ -268,6 +268,7 @@ int flb_ml_parser_instance_has_data(struct flb_ml_parser_ins *ins)
 struct flb_ml_parser_ins *flb_ml_parser_instance_create(struct flb_ml *ml,
                                                         char *name)
 {
+    int i;
     int ret;
     struct flb_ml_parser_ins *ins;
     struct flb_ml_parser *parser;
@@ -287,6 +288,17 @@ struct flb_ml_parser_ins *flb_ml_parser_instance_create(struct flb_ml *ml,
     ins->ml_parser = parser;
     mk_list_init(&ins->streams);
 
+    ins->stream_table = flb_calloc(FLB_ML_STREAM_TABLE_SIZE,
+                                   sizeof(struct mk_list));
+    if (!ins->stream_table) {
+        flb_errno();
+        flb_free(ins);
+        return NULL;
+    }
+    for (i = 0; i < FLB_ML_STREAM_TABLE_SIZE; i++) {
+        mk_list_init(&ins->stream_table[i]);
+    }
+
     /* Copy parent configuration */
     if (parser->key_content) {
         ins->key_content = flb_sds_create(parser->key_content);
@@ -303,6 +315,7 @@ struct flb_ml_parser_ins *flb_ml_parser_instance_create(struct flb_ml *ml,
     if (ret != 0) {
         flb_error("[multiline] could not register parser '%s' on "
                   "multiline '%s 'group", name, ml->name);
+        flb_free(ins->stream_table);
         flb_free(ins);
         return NULL;
     }
@@ -405,6 +418,7 @@ int flb_ml_parser_instance_destroy(struct flb_ml_parser_ins *ins)
         flb_sds_destroy(ins->key_group);
     }
 
+    flb_free(ins->stream_table);
     flb_free(ins);
 
     return 0;

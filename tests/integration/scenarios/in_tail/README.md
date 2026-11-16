@@ -33,6 +33,8 @@ harness, not just unit or runtime-library coverage.
 - `ignore_older`
 - `ignore_active_older_files`
 - delayed readability after startup
+- bursts of appends across many files in event mode, with rotation in the
+  middle of the burst (inotify and polling, with and without database)
 
 ## Notes
 

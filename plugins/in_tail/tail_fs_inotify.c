@@ -39,6 +39,9 @@
 
 #include <sys/ioctl.h>
 
+/* Maximum number of inotify events consumed per collector invocation */
+#define FLB_TAIL_INOTIFY_EVENTS   256
+
 static int debug_event_mask(struct flb_tail_config *ctx,
                             struct flb_tail_file *file,
                             uint32_t mask)
@@ -93,6 +96,56 @@ static int debug_event_mask(struct flb_tail_config *ctx,
     flb_sds_destroy(buf);
 
     return 0;
+}
+
+/*
+ * Watch descriptor table: resolving the file associated to an inotify event
+ * must not depend on the number of monitored files, otherwise every event
+ * pays a linear lookup.
+ */
+static inline struct mk_list *watch_table_bucket(struct flb_tail_config *ctx,
+                                                 int watch_fd)
+{
+    return &ctx->watch_table[((uint32_t) watch_fd) &
+                             (FLB_TAIL_WATCH_TABLE_SIZE - 1)];
+}
+
+static void watch_table_unset(struct flb_tail_file *file)
+{
+    if (file->watch_fd == -1) {
+        return;
+    }
+
+    mk_list_del(&file->_watch_head);
+    file->watch_fd = -1;
+}
+
+static void watch_table_set(struct flb_tail_config *ctx,
+                            struct flb_tail_file *file, int watch_fd)
+{
+    if (file->watch_fd == watch_fd) {
+        return;
+    }
+
+    watch_table_unset(file);
+    file->watch_fd = watch_fd;
+    mk_list_add(&file->_watch_head, watch_table_bucket(ctx, watch_fd));
+}
+
+static struct flb_tail_file *watch_table_get(struct flb_tail_config *ctx,
+                                             int watch_fd)
+{
+    struct mk_list *head;
+    struct flb_tail_file *file;
+
+    mk_list_foreach(head, watch_table_bucket(ctx, watch_fd)) {
+        file = mk_list_entry(head, struct flb_tail_file, _watch_head);
+        if (file->watch_fd == watch_fd) {
+            return file;
+        }
+    }
+
+    return NULL;
 }
 
 static int tail_fs_add(struct flb_tail_file *file, int check_rotated)
@@ -153,7 +206,7 @@ static int tail_fs_add(struct flb_tail_file *file, int check_rotated)
         }
         return -1;
     }
-    file->watch_fd = watch_fd;
+    watch_table_set(ctx, file, watch_fd);
     flb_plg_info(ctx->ins, "inotify_fs_add(): inode=%"PRIu64" watch_fd=%i name=%s",
                  file->inode, watch_fd, file->name);
     return 0;
@@ -164,9 +217,16 @@ static int flb_tail_fs_add_rotated(struct flb_tail_file *file)
     return tail_fs_add(file, FLB_FALSE);
 }
 
+/*
+ * Synchronize the state of a file with the file system. When 'check_rotated'
+ * is disabled the (expensive) name based rotation lookup is skipped: this is
+ * only meant for events that cannot be the result of a rotation, any other
+ * caller must enable it.
+ */
 static int reconcile_file_state(struct flb_tail_config *ctx,
                                 struct flb_tail_file *file,
                                 const char *caller,
+                                int check_rotated,
                                 int *pending_data_detected)
 {
     int ret;
@@ -201,6 +261,7 @@ static int reconcile_file_state(struct flb_tail_config *ctx,
     if (file->offset < st.st_size) {
         file->pending_bytes = (st.st_size - file->offset);
         if (pending_data_detected != NULL) {
+            flb_tail_file_pending_add(file);
             *pending_data_detected = FLB_TRUE;
         }
     }
@@ -229,7 +290,11 @@ static int reconcile_file_state(struct flb_tail_config *ctx,
         return -1;
     }
 
-    ret = flb_tail_file_is_rotated(ctx, file);
+    ret = FLB_FALSE;
+    if (check_rotated == FLB_TRUE) {
+        ret = flb_tail_file_is_rotated(ctx, file);
+    }
+
     if (ret == FLB_TRUE) {
         ret = flb_tail_file_rotated(file);
         if (ret == -1) {
@@ -268,7 +333,8 @@ static int reconcile_all_files(struct flb_tail_config *ctx)
 
     mk_list_foreach_safe(head, tmp, &ctx->files_event) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
-        ret = reconcile_file_state(ctx, file, "inotify_reconcile", &pending);
+        ret = reconcile_file_state(ctx, file, "inotify_reconcile",
+                                   FLB_TRUE, &pending);
         if (ret == -1) {
             continue;
         }
@@ -285,88 +351,157 @@ static int reconcile_all_files(struct flb_tail_config *ctx)
     return pending_data_detected;
 }
 
-static int tail_fs_event(struct flb_input_instance *ins,
-                         struct flb_config *config, void *in_context)
+/*
+ * Process the (coalesced) events reported for a file. Returns FLB_TRUE if the
+ * file still has data waiting to be consumed by the 'pending' collector.
+ */
+static int tail_fs_event_file(struct flb_tail_config *ctx,
+                              struct flb_config *config,
+                              struct flb_tail_file *file, uint32_t mask)
 {
     int ret;
-    struct mk_list *head;
-    struct mk_list *tmp;
-    struct flb_tail_config *ctx = in_context;
-    struct flb_tail_file *file = NULL;
-    struct inotify_event ev;
-
-    (void) ins;
-
-    /* Read the event */
-    ret = read(ctx->fd_notify, &ev, sizeof(struct inotify_event));
-    if (ret < 1) {
-        return -1;
-    }
-
-    if (ev.mask & IN_Q_OVERFLOW) {
-        debug_event_mask(ctx, NULL, ev.mask);
-        flb_plg_warn(ctx->ins, "inotify event queue overflow, reconciling files");
-
-        reconcile_all_files(ctx);
-        flb_tail_scan(ctx->path_list, ctx);
-        return 0;
-    }
-
-    /* Lookup watched file */
-    mk_list_foreach_safe(head, tmp, &ctx->files_event) {
-        file = mk_list_entry(head, struct flb_tail_file, _head);
-        if (file->watch_fd != ev.wd) {
-            file = NULL;
-            continue;
-        }
-        break;
-    }
-
-    if (!file) {
-        return -1;
-    }
+    int check_rotated = FLB_FALSE;
 
     /* Debug event */
-    debug_event_mask(ctx, file, ev.mask);
+    debug_event_mask(ctx, file, mask);
 
-    if (ev.mask & IN_IGNORED) {
+    if ((mask & ~IN_IGNORED) == 0) {
         flb_plg_debug(ctx->ins, "inode=%"PRIu64" watch_fd=%i IN_IGNORED",
-                      file->inode, ev.wd);
-        return -1;
+                      file->inode, file->watch_fd);
+        return FLB_FALSE;
     }
 
     /*
-     * IN_MOVE_SELF rotation is handled inside reconcile_file_state via
-     * flb_tail_file_is_rotated, which detects the inode/name divergence and
-     * re-registers the watch through the same retry path.
+     * A rotation renames the monitored inode, which is always reported as
+     * IN_MOVE_SELF, IN_ATTRIB is delivered when the link count changes. A
+     * plain IN_MODIFY cannot be a rotation so the name lookup is skipped,
+     * the progress check timer covers any event that the kernel did not
+     * deliver (e.g: network file systems).
      */
-    ret = reconcile_file_state(ctx, file, "tail_fs_event", NULL);
+    if (mask & (IN_MOVE_SELF | IN_ATTRIB)) {
+        check_rotated = FLB_TRUE;
+    }
+
+    ret = reconcile_file_state(ctx, file, "tail_fs_event", check_rotated, NULL);
     if (ret == -1) {
-        return 0;
+        return FLB_FALSE;
     }
 
     /* Collect the data */
     ret = in_tail_collect_event(file, config);
-    if (ret != FLB_TAIL_ERROR) {
-        /*
-         * Due to read buffer size capacity, there are some cases where the
-         * read operation cannot consume all new data available on one
-         * round; upon successfull read(2) some data can still remain.
-         *
-         * If that is the case, we set in the structure how
-         * many bytes are available 'now', so then the further
-         * routine that check pending bytes and then the inotified-file
-         * can process them properly after an internal signal.
-         *
-         * The goal to defer this routine is to avoid a blocking
-         * read(2) operation, that might kill performance. Just let's
-         * wait a second and do a good job.
-         */
+    if (ret == FLB_TAIL_ERROR) {
+        /* the file is not longer valid, it was removed */
+        return FLB_FALSE;
+    }
+
+    /*
+     * Due to read buffer size capacity, there are some cases where the
+     * read operation cannot consume all new data available on one
+     * round; upon successfull read(2) some data can still remain.
+     *
+     * If that is the case, the file is registered in the 'pending' list so
+     * the collector in charge of it can process the remaining bytes after
+     * an internal signal, the goal to defer this routine is to avoid
+     * monopolizing the event loop with a single file.
+     */
+    if (flb_tail_file_has_pending_data(file) == FLB_TRUE) {
+        flb_tail_file_pending_add(file);
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
+static int tail_fs_event(struct flb_input_instance *ins,
+                         struct flb_config *config, void *in_context)
+{
+    int i;
+    int count = 0;
+    int overflow = FLB_FALSE;
+    int pending = FLB_FALSE;
+    ssize_t bytes;
+    size_t off;
+    struct flb_tail_config *ctx = in_context;
+    struct flb_tail_file *file;
+    struct inotify_event ev;
+    int watches[FLB_TAIL_INOTIFY_EVENTS];
+    char buf[FLB_TAIL_INOTIFY_EVENTS * sizeof(struct inotify_event)];
+
+    (void) ins;
+
+    /*
+     * Read as many events as possible in one shot: consuming a single event
+     * per event loop iteration does not scale when many files are written
+     * at the same time.
+     */
+    bytes = read(ctx->fd_notify, buf, sizeof(buf));
+    if (bytes < (ssize_t) sizeof(struct inotify_event)) {
+        return -1;
+    }
+
+    /*
+     * First pass: coalesce the events per file. A busy file usually reports
+     * several IN_MODIFY events between two reads, one reconciliation and one
+     * read attempt are enough for all of them.
+     */
+    ctx->event_batch_id++;
+
+    for (off = 0; off + sizeof(struct inotify_event) <= (size_t) bytes;
+         off += sizeof(struct inotify_event) + ev.len) {
+        memcpy(&ev, buf + off, sizeof(struct inotify_event));
+
+        if (ev.mask & IN_Q_OVERFLOW) {
+            overflow = FLB_TRUE;
+            continue;
+        }
+
+        file = watch_table_get(ctx, ev.wd);
+        if (!file) {
+            continue;
+        }
+
+        if (file->event_batch_id == ctx->event_batch_id) {
+            file->event_mask |= ev.mask;
+            continue;
+        }
+
+        file->event_batch_id = ctx->event_batch_id;
+        file->event_mask = ev.mask;
+        watches[count++] = ev.wd;
+    }
+
+    /*
+     * Second pass: process the files. A file can be removed while a previous
+     * one is processed, so the reference is always resolved again through
+     * its watch descriptor.
+     */
+    flb_tail_db_batch_begin(ctx);
+
+    for (i = 0; i < count; i++) {
+        file = watch_table_get(ctx, watches[i]);
+        if (!file || file->event_batch_id != ctx->event_batch_id) {
+            continue;
+        }
+
+        if (tail_fs_event_file(ctx, config, file,
+                               file->event_mask) == FLB_TRUE) {
+            pending = FLB_TRUE;
+        }
+    }
+
+    if (pending == FLB_TRUE) {
         tail_signal_pending(ctx);
     }
-    else {
-        return ret;
+
+    if (overflow == FLB_TRUE) {
+        debug_event_mask(ctx, NULL, IN_Q_OVERFLOW);
+        flb_plg_warn(ctx->ins, "inotify event queue overflow, reconciling files");
+
+        reconcile_all_files(ctx);
+        flb_tail_scan(ctx->path_list, ctx);
     }
+
+    flb_tail_db_batch_end(ctx);
 
     return 0;
 }
@@ -393,7 +528,8 @@ static int in_tail_progress_check_callback(struct flb_input_instance *ins,
 
     mk_list_foreach_safe(head, tmp, &ctx->files_event) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
-        ret = reconcile_file_state(ctx, file, "in_tail_progress_check", &pending);
+        ret = reconcile_file_state(ctx, file, "in_tail_progress_check",
+                                   FLB_TRUE, &pending);
         if (ret == -1) {
             continue;
         }
@@ -446,7 +582,9 @@ int flb_tail_fs_inotify_init(struct flb_input_instance *in,
                                        ctx->progress_check_interval_nsec,
                                        config);
     if (ret == -1) {
-        flb_tail_config_destroy(ctx);
+        /* the caller is in charge of releasing the context */
+        close(fd);
+        ctx->fd_notify = -1;
         return -1;
     }
     ctx->coll_fd_progress_check = ret;
@@ -493,7 +631,7 @@ int flb_tail_fs_inotify_remove(struct flb_tail_file *file)
              file->inode, file->watch_fd);
 
     inotify_rm_watch(file->config->fd_notify, file->watch_fd);
-    file->watch_fd = -1;
+    watch_table_unset(file);
     return 0;
 }
 

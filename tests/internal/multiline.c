@@ -2477,11 +2477,356 @@ static void test_buffer_limit_truncation_metadata()
     flb_config_exit(config);
 }
 
+/*
+ * The native decoder of the 'cri' parser must generate the same result than
+ * the regex parser it replaces: same match decision, same serialized map and
+ * same timestamp.
+ */
+static void cri_native_compare(struct flb_parser *parser,
+                               const char *line, size_t len)
+{
+    int ret;
+    int ret_regex;
+    void *regex_buf = NULL;
+    size_t regex_size = 0;
+    char *native_buf;
+    size_t native_size;
+    struct flb_time regex_time;
+    struct flb_time native_time;
+    struct flb_ml_cri_record record;
+
+    flb_time_zero(&regex_time);
+    flb_time_zero(&native_time);
+
+    ret_regex = flb_parser_do(parser, line, len,
+                              &regex_buf, &regex_size, &regex_time);
+
+    ret = flb_ml_parser_cri_decode(line, len, &record);
+    if (ret == FLB_ML_CRI_FALLBACK) {
+        /* only content with line breaks is delegated */
+        TEST_CHECK(len > 0 && memchr(line, '\n', len) != NULL);
+    }
+    else if (ret == FLB_ML_CRI_NO_MATCH) {
+        if (!TEST_CHECK(ret_regex < 0)) {
+            TEST_MSG("regex matched, native did not: '%.*s'", (int) len, line);
+        }
+    }
+    else {
+        if (!TEST_CHECK(ret_regex >= 0)) {
+            TEST_MSG("native matched, regex did not: '%.*s'", (int) len, line);
+        }
+        else {
+            ret = flb_ml_parser_cri_time(parser, &record, &native_time);
+            TEST_CHECK(ret == 0);
+
+            native_buf = flb_malloc(flb_ml_parser_cri_map_size(&record));
+            TEST_CHECK(native_buf != NULL);
+            native_size = flb_ml_parser_cri_map_pack(&record, native_buf);
+            TEST_CHECK(native_size <= flb_ml_parser_cri_map_size(&record));
+
+            if (!TEST_CHECK(native_size == regex_size &&
+                            memcmp(native_buf, regex_buf, regex_size) == 0)) {
+                TEST_MSG("different map for: '%.*s'", (int) len, line);
+            }
+
+            if (!TEST_CHECK(native_time.tm.tv_sec == regex_time.tm.tv_sec &&
+                            native_time.tm.tv_nsec == regex_time.tm.tv_nsec)) {
+                TEST_MSG("different time for: '%.*s' regex=%ld.%09ld "
+                         "native=%ld.%09ld", (int) len, line,
+                         (long) regex_time.tm.tv_sec,
+                         (long) regex_time.tm.tv_nsec,
+                         (long) native_time.tm.tv_sec,
+                         (long) native_time.tm.tv_nsec);
+            }
+            flb_free(native_buf);
+        }
+    }
+
+    if (ret_regex >= 0) {
+        flb_free(regex_buf);
+    }
+}
+
+static uint32_t cri_rand(uint32_t *state)
+{
+    *state = (*state * 1103515245u) + 12345u;
+    return (*state >> 16) & 0x7fff;
+}
+
+static void test_cri_native_decoder()
+{
+    int i;
+    int j;
+    int n;
+    int parts;
+    size_t len;
+    uint32_t seed = 20261116;
+    char line[2048];
+    char tmp[128];
+    struct flb_config *config;
+    struct flb_ml_parser *mlp;
+    char *times[] = {
+        "2021-05-18T23:50:58.546169657Z", "2016-10-06T00:17:09.669794202Z",
+        "2021-05-18T23:50:58.5+02:00", "2021-05-18T23:50:58.123456-07:00",
+        "2021-05-18T23:50:58.1Z", "2021-05-18T23:50:58.12Z",
+        "2021-05-18T23:50:58.000000001Z", "2021-05-18T23:50:58.999999999Z",
+        "2021-05-18T23:50:58.000000000+14:00", "2021-02-28T23:59:59.5-00:30",
+        "2020-02-29T00:00:00.5Z", "2021-02-31T10:00:00.5Z",
+        "1970-01-01T00:00:00.5Z", "1969-12-31T23:59:59.5Z",
+        "9999-12-31T23:59:59.999999999Z", "0001-01-01T00:00:00.5Z",
+        "2021-05-18T23:50:58Z", "2021-05-18T23:50:58.Z",
+        "2021-05-18T23:50:58.1234567890Z", "2021-05-18T23:50:58.123z",
+        "2021-05-18T23:50:60.5Z", "2021-13-18T23:50:58.5Z",
+        "2021-05-18T25:50:58.5Z", "2021-05-18T23:50:58.5+0200",
+        "2021-05-18T23:50:58.5+02", "2021-05-18T23:50:58.5+99:99",
+        "2021-05-18T23:50:58.5Zjunk", "2021-5-8T3:5:8.5Z",
+        "2021-05-18 23:50:58.5Z", "2021-05-18T23:50:58,5Z",
+        "2021-05-18T23:50:58.1e2Z", "2021-05-18T23:50:58.5UTC",
+        "2021-05-18T23:50:58.5GMT", "2021-05-18T23:50:58.5EST",
+        "2021-05-18T23:50:58.5-", "2021-05-18T23:50:58.5+1:00",
+        "2021-05-18T23:50:58.5 +02:00", "garbage", "a b c", "", " ", "\xe4",
+        "\xe4\xb8\xad", "\xff\xfe", "x", "-", "2021-05-18T23:50:58.5Z ",
+        "2021-05-18T23:50:58.111111111111111111111111111111111111111111111"
+        "1111111111111111111111111111111Z",
+    };
+    char *tokens[] = {
+        " ", " ", " ", "stdout", "stderr", "stdout", "stderr", "F", "P", "F",
+        "stdxxx", "STDOUT", "std", "X", "FF", "", "  ", "\t", "\r", "log",
+        "some text", "\xe4", "\xe4\xb8", "\xf0\x9f\x98", "\xc3\xa9",
+        "a stdout F b", " stderr P ", "stdout F", "stdout F ", "\n",
+    };
+    char *lines[] = {
+        "2021-05-18T23:50:58.546169657Z stdout F hello",
+        "2021-05-18T23:50:58.546169657Z stderr P partial",
+        "2021-05-18T23:50:58.546169657Z stdout F ",
+        "2021-05-18T23:50:58.546169657Z stdout F",
+        "2021-05-18T23:50:58.546169657Z stdout  F double",
+        "2021-05-18T23:50:58.546169657Z  stdout F double",
+        "2021-05-18T23:50:58.546169657Z stdout F a stderr P b stdout F c",
+        "first second stdout F third stderr P fourth",
+        " stdout F empty time",
+        "x stdout F y",
+        "stdout F no time",
+        "",
+        " ",
+        "plain text",
+        "2021-05-18T23:50:58.546169657Z stdout F trailing cr\r",
+        "2021-05-18T23:50:58.546169657Z stdout F line\nbreak",
+        "first line\n2021-05-18T23:50:58.546169657Z stdout F second line",
+        "2021-05-18T23:50:58.546169657Z stdout F truncated utf8 \xe4\xb8",
+    };
+
+    config = flb_config_init();
+    mlp = flb_ml_parser_get(config, "cri");
+    TEST_CHECK(mlp != NULL && mlp->parser != NULL);
+    TEST_CHECK(mlp->native == FLB_ML_NATIVE_CRI);
+
+    for (i = 0; i < sizeof(lines) / sizeof(char *); i++) {
+        cri_native_compare(mlp->parser, lines[i], strlen(lines[i]));
+    }
+
+    /* every timestamp in a well formed line */
+    for (i = 0; i < sizeof(times) / sizeof(char *); i++) {
+        n = snprintf(line, sizeof(line), "%s stdout F message %i", times[i], i);
+        cri_native_compare(mlp->parser, line, n);
+    }
+
+    /* generated timestamps */
+    for (i = 0; i < 20000; i++) {
+        n = snprintf(tmp, sizeof(tmp), "%09u", (unsigned int)
+                     ((cri_rand(&seed) * 32768u + cri_rand(&seed)) % 1000000000u));
+        tmp[1 + (cri_rand(&seed) % 9)] = '\0';
+        n = snprintf(line, sizeof(line),
+                     "%04u-%02u-%02uT%02u:%02u:%02u.%s%s stderr F m",
+                     1970 + (cri_rand(&seed) % 130),
+                     1 + (cri_rand(&seed) % 12), 1 + (cri_rand(&seed) % 31),
+                     cri_rand(&seed) % 24, cri_rand(&seed) % 60,
+                     cri_rand(&seed) % 60, tmp,
+                     (cri_rand(&seed) % 2) ? "Z" :
+                     (cri_rand(&seed) % 2) ? "+05:30" : "-11:45");
+        cri_native_compare(mlp->parser, line, n);
+    }
+
+    /* random combinations of tokens */
+    for (i = 0; i < 50000; i++) {
+        len = 0;
+        line[0] = '\0';
+        parts = cri_rand(&seed) % 9;
+
+        if (cri_rand(&seed) % 4 != 0) {
+            j = cri_rand(&seed) % (sizeof(times) / sizeof(char *));
+            len += snprintf(line + len, sizeof(line) - len, "%s", times[j]);
+        }
+
+        for (j = 0; j < parts; j++) {
+            n = cri_rand(&seed) % (sizeof(tokens) / sizeof(char *));
+            len += snprintf(line + len, sizeof(line) - len, "%s", tokens[n]);
+        }
+        cri_native_compare(mlp->parser, line, len);
+    }
+
+    /* long content */
+    n = snprintf(line, sizeof(line), "2021-05-18T23:50:58.546169657Z stdout F ");
+    memset(line + n, 'x', sizeof(line) - n);
+    for (len = n; len < sizeof(line); len += 37) {
+        cri_native_compare(mlp->parser, line, len);
+    }
+    cri_native_compare(mlp->parser, line, n + 31);
+    cri_native_compare(mlp->parser, line, n + 32);
+    cri_native_compare(mlp->parser, line, n + 255);
+    cri_native_compare(mlp->parser, line, n + 256);
+
+    flb_config_exit(config);
+}
+
+/*
+ * A line with a time that cannot be used for a record (not valid or out of
+ * range) must be delivered with its own content: it used to be rejected at
+ * flush time leaving the content behind, which was then added to the next
+ * record of the same stream.
+ */
+static void test_cri_invalid_time()
+{
+    int i;
+    int len;
+    int ret;
+    int entries;
+    uint64_t stream_id;
+    struct flb_config *config;
+    struct flb_time tm;
+    struct flb_ml *ml;
+    struct flb_ml_parser_ins *mlp_i;
+    struct expected_result res = {0};
+    struct record_check input[] = {
+        {"garbage stdout F one"},
+        {"2021-05-18T23:50:58.546169657Z stdout F two"},
+        {"1969-12-31T23:59:59.5Z stdout F three"},
+        {"garbage stdout P fo"},
+        {"garbage stdout F ur"},
+        {"2021-05-18T23:50:58.546169657Z stdout F five"},
+        {"9999-12-31T23:59:59.5Z stderr P s"},
+        {"2021-05-18T23:50:58.546169657Z stderr F ix"},
+        {"2021-05-18T23:50:58.546169657Z stderr F seven"},
+    };
+    struct record_check output[] = {
+        {"one"}, {"two"}, {"three"}, {"four"}, {"five"}, {"six"}, {"seven"},
+    };
+
+    res.key = "log";
+    res.out_records = output;
+
+    config = flb_config_init();
+
+    ml = flb_ml_create(config, "cri-invalid-time");
+    TEST_CHECK(ml != NULL);
+
+    mlp_i = flb_ml_parser_instance_create(ml, "cri");
+    TEST_CHECK(mlp_i != NULL);
+
+    ret = flb_ml_stream_create(ml, "cri", -1, flush_callback, (void *) &res,
+                               &stream_id);
+    TEST_CHECK(ret == 0);
+
+    entries = sizeof(input) / sizeof(struct record_check);
+    for (i = 0; i < entries; i++) {
+        len = strlen(input[i].buf);
+        flb_time_zero(&tm);
+        flb_ml_append_text(ml, stream_id, &tm, input[i].buf, len);
+    }
+
+    TEST_CHECK(res.current_record == sizeof(output) / sizeof(struct record_check));
+
+    flb_ml_destroy(ml);
+    flb_config_exit(config);
+}
+
+static int flush_callback_count(struct flb_ml_parser *parser,
+                                struct flb_ml_stream *mst,
+                                void *data, char *buf_data, size_t buf_size)
+{
+    int *count = data;
+
+    (*count)++;
+    return 0;
+}
+
+/* Streams are retrieved by id: create, use and remove a large number */
+static void test_many_streams()
+{
+    int i;
+    int len;
+    int ret;
+    int round;
+    int count = 0;
+    int streams = 3000;
+    char name[64];
+    char *line = "2021-05-18T23:50:58.546169657Z stdout F message";
+    uint64_t *ids;
+    struct flb_config *config;
+    struct flb_time tm;
+    struct flb_ml *ml;
+    struct flb_ml_parser_ins *mlp_i;
+
+    ids = flb_calloc(streams, sizeof(uint64_t));
+    TEST_CHECK(ids != NULL);
+
+    config = flb_config_init();
+
+    ml = flb_ml_create(config, "many-streams");
+    TEST_CHECK(ml != NULL);
+
+    mlp_i = flb_ml_parser_instance_create(ml, "cri");
+    TEST_CHECK(mlp_i != NULL);
+
+    for (i = 0; i < streams; i++) {
+        len = snprintf(name, sizeof(name), "stream-%i", i);
+        ret = flb_ml_stream_create(ml, name, len, flush_callback_count,
+                                   &count, &ids[i]);
+        TEST_CHECK(ret == 0);
+        TEST_CHECK(flb_ml_stream_get(mlp_i, ids[i]) != NULL);
+    }
+
+    len = strlen(line);
+    for (round = 0; round < 2; round++) {
+        for (i = 0; i < streams; i++) {
+            flb_time_zero(&tm);
+            ret = flb_ml_append_text(ml, ids[i], &tm, line, len);
+            TEST_CHECK(ret == FLB_MULTILINE_OK);
+        }
+    }
+    TEST_CHECK(count == streams * 2);
+
+    /* remove one of every two streams, the last one used included */
+    for (i = streams - 1; i >= 0; i -= 2) {
+        flb_ml_stream_id_destroy_all(ml, ids[i]);
+        TEST_CHECK(flb_ml_stream_get(mlp_i, ids[i]) == NULL);
+    }
+
+    count = 0;
+    for (i = 0; i < streams; i += 2) {
+        TEST_CHECK(flb_ml_stream_get(mlp_i, ids[i]) != NULL);
+        flb_time_zero(&tm);
+        flb_ml_append_text(ml, ids[i], &tm, line, len);
+
+        /* a line that does not match flushes only its own stream */
+        flb_ml_append_text(ml, ids[i], &tm, "plain", 5);
+    }
+    TEST_CHECK(count == streams);
+
+    flb_ml_destroy(ml);
+    flb_config_exit(config);
+    flb_free(ids);
+}
+
+
 TEST_LIST = {
     /* Normal features tests */
     { "parser_docker",  test_parser_docker},
     { "parser_cri",     test_parser_cri},
     { "parser_docker_cri_chain", test_parser_docker_cri_chain},
+    { "cri_native_decoder", test_cri_native_decoder},
+    { "cri_invalid_time", test_cri_invalid_time},
+    { "many_streams", test_many_streams},
     { "parser_java",    test_parser_java},
     { "parser_python",  test_parser_python},
     { "parser_ruby",    test_parser_ruby},

@@ -57,12 +57,20 @@ static inline int consume_byte(flb_pipefd_t fd)
     return 0;
 }
 
-/* cb_collect callback */
+/*
+ * cb_collect callback: consume the data of the files in 'event' mode that are
+ * known to have pending bytes.
+ *
+ * Only the files registered in the 'pending' list are processed, the files
+ * that are idle are not touched at all: walking (and stat'ing) every
+ * monitored file on each invocation makes the cost of this collector
+ * proportional to the number of files instead of the amount of work to do.
+ */
 static int in_tail_collect_pending(struct flb_input_instance *ins,
                                    struct flb_config *config, void *in_context)
 {
     int ret;
-    int active = 0;
+    int paused = FLB_FALSE;
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_tail_config *ctx = in_context;
@@ -71,12 +79,23 @@ static int in_tail_collect_pending(struct flb_input_instance *ins,
     uint64_t pre;
     uint64_t total_processed = 0;
 
-    /* Iterate promoted event files with pending bytes */
-    mk_list_foreach_safe(head, tmp, &ctx->files_event) {
-        file = mk_list_entry(head, struct flb_tail_file, _head);
+    flb_tail_db_batch_begin(ctx);
 
-        if (file->watch_fd == -1 ||
-            (file->offset >= file->size)) {
+    mk_list_foreach_safe(head, tmp, &ctx->files_pending) {
+        file = mk_list_entry(head, struct flb_tail_file, _pending_head);
+
+        if (ctx->event_batch_size > 0 &&
+            total_processed >= ctx->event_batch_size) {
+            break;
+        }
+
+        if (file->read_retry_pending) {
+            /* The watcher timer will register and signal this file again */
+            flb_tail_file_pending_del(file);
+            continue;
+        }
+
+        if (file->offset >= file->size) {
             /* Gather current file size */
             ret = fstat(file->fd, &st);
             if (ret == -1) {
@@ -87,20 +106,10 @@ static int in_tail_collect_pending(struct flb_input_instance *ins,
             file->size = st.st_size;
             file->pending_bytes = (file->size - file->offset);
         }
-        else {
-            memset(&st, 0, sizeof(struct stat));
-        }
 
-        if (file->pending_bytes <= 0) {
-            if(file->decompression_context == NULL ||
-               file->decompression_context->input_buffer_length == 0) {
-                continue;
-            }
-        }
-
-        if (ctx->event_batch_size > 0 &&
-            total_processed >= ctx->event_batch_size) {
-            break;
+        if (flb_tail_file_has_pending_data(file) == FLB_FALSE) {
+            flb_tail_file_pending_del(file);
+            continue;
         }
 
         /* get initial offset to calculate the number of processed bytes later */
@@ -116,37 +125,53 @@ static int in_tail_collect_pending(struct flb_input_instance *ins,
         switch (ret) {
         case FLB_TAIL_RETRY:
             /* The watcher timer will resignal this file. */
+            flb_tail_file_pending_del(file);
             break;
         case FLB_TAIL_ERROR:
             /* Could not longer read the file */
             flb_tail_file_remove(file);
             break;
-        case FLB_TAIL_OK:
         case FLB_TAIL_BUSY:
+            /* The input is paused: keep the pending files for later */
+            paused = FLB_TRUE;
+            break;
+        case FLB_TAIL_WAIT:
+            /*
+             * End of file: there is nothing else to read no matter what the
+             * (maybe stale) size reports, wait for the next notification.
+             */
+            flb_tail_file_pending_del(file);
+            break;
+        case FLB_TAIL_OK:
             /*
              * Adjust counter to verify if we need a further read(2) later.
-             * For more details refer to tail_fs_inotify.c:96.
+             * For more details refer to tail_fs_inotify.c.
              */
             if (file->offset < file->size) {
                 file->pending_bytes = (file->size - file->offset);
-                active++;
             }
-            else if(file->decompression_context != NULL &&
-                    file->decompression_context->input_buffer_length > 0) {
-                active++;
-            }
-            else {
+            else if (file->decompression_context == NULL ||
+                     file->decompression_context->input_buffer_length == 0) {
                 file->pending_bytes = 0;
+                flb_tail_file_pending_del(file);
             }
+            break;
+        }
 
+        if (paused == FLB_TRUE) {
             break;
         }
     }
 
-    /* If no more active files, consume pending signal so we don't get called again. */
-    if (active == 0) {
+    /*
+     * If no more files are pending, consume the signal so we don't get
+     * called again.
+     */
+    if (mk_list_is_empty(&ctx->files_pending) == 0) {
         tail_consume_pending(ctx);
     }
+
+    flb_tail_db_batch_end(ctx);
 
     return 0;
 }
@@ -168,6 +193,8 @@ static int in_tail_collect_static(struct flb_input_instance *ins,
     struct flb_tail_file *file;
     uint64_t pre;
     uint64_t total_processed = 0;
+
+    flb_tail_db_batch_begin(ctx);
 
     /* Do a data chunk collection for each file */
     mk_list_foreach_safe(head, tmp, &ctx->files_static) {
@@ -293,6 +320,8 @@ static int in_tail_collect_static(struct flb_input_instance *ins,
         }
     }
 
+    flb_tail_db_batch_end(ctx);
+
     /*
      * If there are no more active static handlers, we consume the 'byte' that
      * triggered this event so this is not longer called again.
@@ -339,6 +368,7 @@ static int in_tail_watcher_callback(struct flb_input_instance *ins,
             retry_static = FLB_TRUE;
         }
         else {
+            flb_tail_file_pending_add(file);
             retry_event = FLB_TRUE;
         }
     }
@@ -361,6 +391,12 @@ static int in_tail_watcher_callback(struct flb_input_instance *ins,
             flb_tail_file_rotated(file);
         }
     }
+
+    /* rotated files waiting for the new file to be created */
+    if (mk_list_is_empty(&ctx->files_rotated) != 0) {
+        flb_tail_file_rotated_lookup(ctx);
+    }
+
     return ret;
 }
 
@@ -381,7 +417,11 @@ int in_tail_collect_event(void *file, struct flb_config *config)
         break;
     }
 
-    return 0;
+    /*
+     * Let the caller know the result: on FLB_TAIL_ERROR the file reference
+     * is not longer valid.
+     */
+    return ret;
 }
 
 /* Initialize plugin */

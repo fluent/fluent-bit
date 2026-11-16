@@ -61,6 +61,13 @@
 #define FLB_MULTILINE_PROCESSED  1 /* Reserved */
 #define FLB_MULTILINE_TRUNCATED  2
 
+/* Multiline parsers with a native decoder (no regex involved) */
+#define FLB_ML_NATIVE_NONE       0
+#define FLB_ML_NATIVE_CRI        1
+
+/* Buckets of the table used to lookup the streams of a parser instance */
+#define FLB_ML_STREAM_TABLE_SIZE 1024
+
 /* Maximum number of groups per stream */
 #define FLB_ML_MAX_GROUPS       6
 
@@ -152,6 +159,7 @@ struct flb_ml_stream {
     struct flb_ml_parser_ins *parser;
 
     struct mk_list _head;
+    struct mk_list _head_table;  /* link to flb_ml_parser_ins->stream_table */
 };
 
 /* Multiline Parser definition (no running state, just definition) */
@@ -197,6 +205,12 @@ struct flb_ml_parser {
      * under the same stream.
      */
     flb_sds_t key_group;
+
+    /*
+     * Built-in parsers can provide a native decoder for the content, in that
+     * case 'parser' is only used as a fallback.
+     */
+    int native;
 
     /* internal */
     struct flb_parser *parser;                 /* parser context */
@@ -245,6 +259,10 @@ struct flb_ml_parser_ins {
      */
     uint64_t last_stream_id;
     struct flb_ml_stream_group *last_stream_group;
+
+    /* streams indexed by id, and the last one retrieved */
+    struct mk_list *stream_table;
+    struct flb_ml_stream *stream_cache;
 
     /*
      * Every multiline parser context has N streams, a stream represent a source
@@ -295,6 +313,10 @@ struct flb_ml {
 
     /* Limit for concatenated multiline messages */
     size_t buffer_limit;
+
+    /* scratch buffer used by the native decoders */
+    char *native_buf;
+    size_t native_buf_size;
 };
 
 struct flb_ml *flb_ml_create(struct flb_config *ctx, char *name);

@@ -52,11 +52,28 @@ int flb_log_event_encoder_dynamic_field_scope_enter(
         return result;
     }
 
-    scope = flb_calloc(1,
-                       sizeof(struct flb_log_event_encoder_dynamic_field_scope));
+    /*
+     * Scopes are opened and closed for every single record, reuse the ones
+     * that were released before instead of hitting the allocator each time.
+     */
+    if (!cfl_list_is_empty(&field->scopes_free)) {
+        scope = cfl_list_entry_first(
+                    &field->scopes_free,
+                    struct flb_log_event_encoder_dynamic_field_scope,
+                    _head);
 
-    if (scope == NULL) {
-        return FLB_EVENT_ENCODER_ERROR_ALLOCATION_ERROR;
+        cfl_list_del(&scope->_head);
+        memset(scope, 0,
+               sizeof(struct flb_log_event_encoder_dynamic_field_scope));
+    }
+    else {
+        scope = flb_calloc(
+                    1,
+                    sizeof(struct flb_log_event_encoder_dynamic_field_scope));
+
+        if (scope == NULL) {
+            return FLB_EVENT_ENCODER_ERROR_ALLOCATION_ERROR;
+        }
     }
 
     cfl_list_entry_init(&scope->_head);
@@ -106,7 +123,8 @@ int flb_log_event_encoder_dynamic_field_scope_leave(
 
     cfl_list_del(&scope->_head);
 
-    flb_free(scope);
+    /* keep the scope around for the next record */
+    cfl_list_prepend(&scope->_head, &field->scopes_free);
 
     return FLB_EVENT_ENCODER_SUCCESS;
 }
@@ -258,6 +276,7 @@ int flb_log_event_encoder_dynamic_field_init(
     field->type = type;
 
     cfl_list_init(&field->scopes);
+    cfl_list_init(&field->scopes_free);
     flb_log_event_encoder_dynamic_field_reset(field);
 
     return FLB_EVENT_ENCODER_SUCCESS;
@@ -266,12 +285,26 @@ int flb_log_event_encoder_dynamic_field_init(
 void flb_log_event_encoder_dynamic_field_destroy(
     struct flb_log_event_encoder_dynamic_field *field)
 {
+    struct cfl_list                                  *head;
+    struct cfl_list                                  *tmp;
+    struct flb_log_event_encoder_dynamic_field_scope *scope;
+
     /*
      * Ensure any outstanding scopes are cleaned up before releasing the
      * underlying buffer. Otherwise these allocations would leak if the
      * caller did not properly flush or rollback all scopes.
      */
     flb_log_event_encoder_dynamic_field_reset(field);
+
+    cfl_list_foreach_safe(head, tmp, &field->scopes_free) {
+        scope = cfl_list_entry(
+                    head,
+                    struct flb_log_event_encoder_dynamic_field_scope,
+                    _head);
+
+        cfl_list_del(&scope->_head);
+        flb_free(scope);
+    }
 
     msgpack_sbuffer_destroy(&field->buffer);
 

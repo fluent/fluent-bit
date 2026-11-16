@@ -124,7 +124,9 @@ static int compute_offset_marker(struct flb_tail_file *file,
                                  uint64_t *marker,
                                  size_t *marker_size)
 {
+#ifdef FLB_SYSTEM_WINDOWS
     off_t current;
+#endif
     off_t start;
     ssize_t bytes;
     size_t window;
@@ -137,18 +139,27 @@ static int compute_offset_marker(struct flb_tail_file *file,
         return 0;
     }
 
-    current = lseek(file->fd, 0, SEEK_CUR);
-    if (current == -1) {
-        flb_errno();
-        return -1;
-    }
-
     window = offset;
     if (window > sizeof(buf)) {
         window = sizeof(buf);
     }
 
     start = offset - window;
+
+#ifndef FLB_SYSTEM_WINDOWS
+    /* positional read: the file position is not altered, one system call */
+    bytes = pread(file->fd, buf, window, start);
+    if (bytes == -1) {
+        flb_errno();
+        return -1;
+    }
+#else
+    current = lseek(file->fd, 0, SEEK_CUR);
+    if (current == -1) {
+        flb_errno();
+        return -1;
+    }
+
     if (lseek(file->fd, start, SEEK_SET) == -1) {
         flb_errno();
         return -1;
@@ -165,6 +176,7 @@ static int compute_offset_marker(struct flb_tail_file *file,
         flb_errno();
         return -1;
     }
+#endif
 
     if (bytes != window) {
         return -1;
@@ -184,16 +196,70 @@ int flb_tail_file_update_offset_marker(struct flb_tail_file *file)
 
     db_offset = flb_tail_file_db_offset(file);
 
+    /*
+     * The marker describes the content right before the resumable offset:
+     * if it was already computed for this same offset there is nothing to
+     * refresh. Reading it again could only pick up content that replaced
+     * the original one, which is what the marker aims to detect.
+     */
+    if (file->db_offset_marker_pos == (int64_t) db_offset) {
+        return 0;
+    }
+
     ret = compute_offset_marker(file, db_offset, &marker, &marker_size);
     if (ret != 0) {
         file->db_offset_marker = 0;
         file->db_offset_marker_size = 0;
+        file->db_offset_marker_pos = -1;
         return -1;
     }
 
     file->db_offset_marker = marker;
     file->db_offset_marker_size = marker_size;
+    file->db_offset_marker_pos = db_offset;
     return 0;
+}
+
+/*
+ * Compute the offset marker from the read buffer, this function must be
+ * called right before 'processed_bytes' are consumed from it.
+ *
+ * The read buffer always mirrors the raw content of the file that ends at
+ * 'file->offset', so the bytes that precede the new resumable offset are
+ * already in memory and there is no need to read them back from the file
+ * system on every chunk.
+ */
+static void update_offset_marker_from_buffer(struct flb_tail_file *file,
+                                             size_t processed_bytes)
+{
+    int64_t buf_start;
+    int64_t db_offset;
+    size_t window;
+
+    /* The buffer of compressed files does not hold raw file content */
+    if (file->decompression_context != NULL ||
+        processed_bytes == 0 || processed_bytes > file->buf_len ||
+        file->offset < (int64_t) file->buf_len) {
+        return;
+    }
+
+    buf_start = file->offset - file->buf_len;
+    db_offset = buf_start + processed_bytes;
+
+    window = FLB_TAIL_DB_OFFSET_MARKER_SIZE;
+    if ((int64_t) window > db_offset) {
+        window = db_offset;
+    }
+
+    if (window > processed_bytes) {
+        /* part of the window was consumed before, read it from the file */
+        return;
+    }
+
+    file->db_offset_marker = cfl_hash_64bits(file->buf_data +
+                                             processed_bytes - window, window);
+    file->db_offset_marker_size = window;
+    file->db_offset_marker_pos = db_offset;
 }
 
 int flb_tail_file_offset_marker_matches(struct flb_tail_file *file)
@@ -252,15 +318,67 @@ int flb_tail_file_read_offset_is_valid(struct flb_tail_file *file)
 
 static void update_resumable_offset_state(struct flb_tail_file *file)
 {
+    int ret;
+    int64_t db_offset;
+
+    /* Nothing to do if the resumable offset did not move */
+    db_offset = flb_tail_file_db_offset(file);
+    if (file->db_offset_saved == db_offset &&
+        file->db_offset_marker_pos == db_offset) {
+        return;
+    }
+
 #ifdef FLB_HAVE_SQLDB
     if (file->config->db) {
-        flb_tail_db_file_offset(file, file->config);
+        ret = flb_tail_db_file_offset(file, file->config);
+        if (ret == 0) {
+            file->db_offset_saved = db_offset;
+        }
         return;
     }
 #endif
 
-    flb_tail_file_update_offset_marker(file);
+    ret = flb_tail_file_update_offset_marker(file);
+    if (ret == 0) {
+        file->db_offset_saved = db_offset;
+    }
 }
+
+#ifdef __linux__
+/*
+ * file_cache_advise: let the kernel know that the content that was already
+ * consumed is not needed in the page cache.
+ *
+ * The advice only covers the range that was read: issuing it for the whole
+ * file on every read(2) also discards the pages that the kernel just read
+ * ahead (which forces the next read to hit the storage again) and it costs
+ * one extra system call per chunk. The range is advised when the file is
+ * caught up, or every FLB_TAIL_FADVISE_WINDOW bytes while a backlog is
+ * being processed.
+ */
+static void file_cache_advise(struct flb_tail_config *ctx,
+                              struct flb_tail_file *file)
+{
+    int ret;
+
+    if (!ctx->file_cache_advise || file->offset <= file->fadvise_offset) {
+        return;
+    }
+
+    if (file->pending_bytes > 0 &&
+        file->offset - file->fadvise_offset < FLB_TAIL_FADVISE_WINDOW) {
+        return;
+    }
+
+    /* posix_fadvise(2) returns the error number, errno is not set */
+    ret = posix_fadvise(file->fd, 0, file->offset, POSIX_FADV_DONTNEED);
+    if (ret != 0) {
+        flb_plg_debug(ctx->ins, "posix_fadvise() failed for %s: %s",
+                      file->name, strerror(ret));
+    }
+    file->fadvise_offset = file->offset;
+}
+#endif
 
 int flb_tail_file_reset_on_truncate(struct flb_tail_file *file,
                                     int64_t size_delta,
@@ -283,6 +401,9 @@ int flb_tail_file_reset_on_truncate(struct flb_tail_file *file,
     file->stream_offset = offset;
     file->last_processed_bytes = 0;
     file->buf_len = 0;
+    file->fadvise_offset = 0;
+    file->db_offset_marker_pos = -1;
+    file->db_offset_saved = -1;
 
     update_resumable_offset_state(file);
     return 0;
@@ -336,6 +457,101 @@ static int stat_to_hash_key(struct flb_tail_config *ctx, struct stat *st,
 
     *key = buf;
     return 0;
+}
+
+static inline uint32_t custom_keys_count(struct flb_tail_config *ctx)
+{
+    uint32_t count = 0;
+
+    if (ctx->path_key != NULL) {
+        count++;
+    }
+    if (ctx->offset_key != NULL) {
+        count++;
+    }
+
+    return count;
+}
+
+/* Append the optional path_key and offset_key entries to an open raw record */
+static int pack_custom_keys(struct flb_tail_file *file,
+                            struct flb_log_event_encoder *encoder,
+                            uint64_t offset)
+{
+    int result = FLB_EVENT_ENCODER_SUCCESS;
+    struct flb_tail_config *ctx = file->config;
+
+    /* path_key */
+    if (ctx->path_key != NULL) {
+        result = flb_log_event_encoder_raw_record_append_string(
+                    encoder, ctx->path_key, flb_sds_len(ctx->path_key));
+
+        if (result == FLB_EVENT_ENCODER_SUCCESS) {
+            result = flb_log_event_encoder_raw_record_append_string(
+                        encoder, file->orig_name, file->orig_name_len);
+        }
+    }
+
+    /* offset_key */
+    if (result == FLB_EVENT_ENCODER_SUCCESS && ctx->offset_key != NULL) {
+        result = flb_log_event_encoder_raw_record_append_string(
+                    encoder, ctx->offset_key, flb_sds_len(ctx->offset_key));
+
+        if (result == FLB_EVENT_ENCODER_SUCCESS) {
+            result = flb_log_event_encoder_raw_record_append_uint64(encoder,
+                                                                    offset);
+        }
+    }
+
+    return result;
+}
+
+/*
+ * Append custom keys (path_key, offset_key) to the records generated by the
+ * multiline engine without decoding and encoding back every field: the log
+ * event encoder copies each record leaving its body open, so the new entries
+ * are appended to it.
+ *
+ * Returns the number of records written to the multiline encoder of the
+ * file, 'consumed' is set to the number of bytes of the input that were
+ * processed: if it's less than the input size the remaining content has a
+ * layout that is not handled and the caller must use the generic version.
+ */
+static int record_append_custom_keys_raw(struct flb_tail_file *file,
+                                         char *in_data, size_t in_size,
+                                         size_t *consumed)
+{
+    int ret;
+    int records = 0;
+    size_t off = 0;
+    size_t record_size;
+    struct flb_tail_config *ctx = file->config;
+    struct flb_log_event_encoder *encoder = file->ml_log_event_encoder;
+
+    while (off < in_size) {
+        ret = flb_log_event_encoder_raw_record_begin_from_record(
+                    encoder, in_data + off, in_size - off,
+                    custom_keys_count(ctx), &record_size);
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            break;
+        }
+
+        ret = pack_custom_keys(file, encoder,
+                               (uint64_t) (file->stream_offset +
+                                           file->last_processed_bytes));
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            flb_log_event_encoder_raw_record_rollback(encoder);
+            break;
+        }
+
+        flb_log_event_encoder_raw_record_commit(encoder);
+        off += record_size;
+        records++;
+    }
+
+    *consumed = off;
+
+    return records;
 }
 
 /* Append custom keys and report the number of records processed */
@@ -508,11 +724,61 @@ static int flb_tail_repack_map(struct flb_log_event_encoder *encoder,
     return result;
 }
 
+/*
+ * Serialize a record out of the map generated by a parser: the entries of
+ * the map are copied as they are instead of being decoded and encoded again
+ * one by one. Returns 1 if the content cannot be handled here, in that case
+ * the caller must use the generic encoder.
+ */
+static int pack_line_map_raw(struct flb_time *time, char *data,
+                             size_t data_size, struct flb_tail_file *file,
+                             size_t processed_bytes)
+{
+    int result;
+    struct flb_tail_config *ctx = file->config;
+    struct flb_log_event_encoder *encoder = file->sl_log_event_encoder;
+
+    result = flb_log_event_encoder_raw_record_begin_from_map(
+                encoder, time, data, data_size, custom_keys_count(ctx));
+    if (result == FLB_EVENT_ENCODER_ERROR_INVALID_ARGUMENT) {
+        /* not a map or a time that needs the generic checks */
+        return 1;
+    }
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = pack_custom_keys(file, encoder,
+                                  (uint64_t) (file->stream_offset +
+                                              processed_bytes));
+
+        if (result == FLB_EVENT_ENCODER_SUCCESS) {
+            result = flb_log_event_encoder_raw_record_commit(encoder);
+        }
+        else {
+            flb_log_event_encoder_raw_record_rollback(encoder);
+        }
+    }
+
+    if (result != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(ctx->ins, "error packing event : %d", result);
+        return -1;
+    }
+
+    return 0;
+}
+
 int flb_tail_pack_line_map(struct flb_time *time, char **data,
                            size_t *data_size, struct flb_tail_file *file,
                            size_t processed_bytes)
 {
     int result;
+
+    if (time != NULL) {
+        result = pack_line_map_raw(time, *data, *data_size, file,
+                                   processed_bytes);
+        if (result <= 0) {
+            return result;
+        }
+    }
 
     result = flb_log_event_encoder_begin_record(file->sl_log_event_encoder);
 
@@ -568,10 +834,66 @@ int flb_tail_pack_line_map(struct flb_time *time, char **data,
     return 0;
 }
 
+/*
+ * Serialize an unstructured line straight into its final representation.
+ *
+ * Going through the dynamic fields of the log event encoder costs several
+ * buffers and function calls per field, which is the dominant cost of this
+ * plugin when no parser is in use. The content of this record is known
+ * beforehand, so it's written as a raw record:
+ *
+ *   [[TIMESTAMP, {}], {path_key: name, offset_key: offset, key: line}]
+ */
+static int pack_line_raw(char *data, size_t data_size,
+                         struct flb_tail_file *file, size_t processed_bytes)
+{
+    int result;
+    struct flb_time tm;
+    struct flb_tail_config *ctx = file->config;
+    struct flb_log_event_encoder *encoder = file->sl_log_event_encoder;
+
+    flb_time_get(&tm);
+
+    result = flb_log_event_encoder_raw_record_begin_map(
+                encoder, &tm, 1 + custom_keys_count(ctx));
+    if (result != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_plg_error(ctx->ins, "error packing event : %d", result);
+        return -1;
+    }
+
+    result = pack_custom_keys(file, encoder,
+                              (uint64_t) (file->stream_offset +
+                                          processed_bytes));
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_raw_record_append_string(
+                    encoder, ctx->key, flb_sds_len(ctx->key));
+    }
+
+    if (result == FLB_EVENT_ENCODER_SUCCESS) {
+        result = flb_log_event_encoder_raw_record_append_string(
+                    encoder, data, data_size);
+    }
+
+    if (result != FLB_EVENT_ENCODER_SUCCESS) {
+        flb_log_event_encoder_raw_record_rollback(encoder);
+        flb_plg_error(ctx->ins, "error packing event : %d", result);
+        return -1;
+    }
+
+    flb_log_event_encoder_raw_record_commit(encoder);
+
+    return 0;
+}
+
 int flb_tail_file_pack_line(struct flb_time *time, char *data, size_t data_size,
                             struct flb_tail_file *file, size_t processed_bytes)
 {
     int result;
+
+    if (time == NULL) {
+        return pack_line_raw(data, data_size, file, processed_bytes);
+    }
 
     result = flb_log_event_encoder_begin_record(file->sl_log_event_encoder);
 
@@ -648,14 +970,28 @@ static int ml_stream_buffer_append(struct flb_tail_file *file, char *buf_data, s
 static int ml_stream_buffer_flush(struct flb_tail_config *ctx, struct flb_tail_file *file)
 {
     if (file->ml_log_event_encoder->output_length > 0) {
-        flb_input_log_append(ctx->ins,
-                             file->tag_buf,
-                             file->tag_len,
-                             file->ml_log_event_encoder->output_buffer,
-                             file->ml_log_event_encoder->output_length);
+        if (file->ml_records_unknown == FLB_FALSE && file->ml_records > 0) {
+            /* the number of records is known, no need to scan the buffer */
+            flb_input_log_append_records(ctx->ins,
+                                         file->ml_records,
+                                         file->tag_buf,
+                                         file->tag_len,
+                                         file->ml_log_event_encoder->output_buffer,
+                                         file->ml_log_event_encoder->output_length);
+        }
+        else {
+            flb_input_log_append(ctx->ins,
+                                 file->tag_buf,
+                                 file->tag_len,
+                                 file->ml_log_event_encoder->output_buffer,
+                                 file->ml_log_event_encoder->output_length);
+        }
 
         flb_log_event_encoder_reset(file->ml_log_event_encoder);
     }
+
+    file->ml_records = 0;
+    file->ml_records_unknown = FLB_FALSE;
 
     return 0;
 }
@@ -1358,35 +1694,55 @@ static int set_file_position(struct flb_tail_config *ctx,
     return 0;
 }
 
-/* Multiline flush callback: invoked every time some content is complete */
+/*
+ * Multiline flush callback: invoked every time some content is complete, the
+ * multiline engine delivers one record per call.
+ */
 static int ml_flush_callback(struct flb_ml_parser *parser,
                              struct flb_ml_stream *mst,
                              void *data, char *buf_data, size_t buf_size)
 {
     int result;
+    size_t consumed = 0;
     size_t mult_size = 0;
     char *mult_buf = NULL;
     struct flb_tail_file *file = data;
     struct flb_tail_config *ctx = file->config;
 
     if (ctx->path_key == NULL && ctx->offset_key == NULL) {
-        ml_stream_buffer_append(file, buf_data, buf_size);
-    }
-    else {
-        /* adjust the records in a new buffer */
-        result = record_append_custom_keys(file,
-                                           buf_data,
-                                           buf_size,
-                                           &mult_buf,
-                                           &mult_size);
-
-        if (result < 0) {
-            ml_stream_buffer_append(file, buf_data, buf_size);
+        if (ml_stream_buffer_append(file, buf_data, buf_size) == 0) {
+            file->ml_records++;
         }
         else {
-            ml_stream_buffer_append(file, mult_buf, mult_size);
+            file->ml_records_unknown = FLB_TRUE;
+        }
+    }
+    else {
+        result = record_append_custom_keys_raw(file, buf_data, buf_size,
+                                               &consumed);
+        file->ml_records += result;
 
-            flb_free(mult_buf);
+        if (consumed < buf_size) {
+            /* generic path: the records are counted when they are ingested */
+            file->ml_records_unknown = FLB_TRUE;
+            buf_data += consumed;
+            buf_size -= consumed;
+
+            /* adjust the records in a new buffer */
+            result = record_append_custom_keys(file,
+                                               buf_data,
+                                               buf_size,
+                                               &mult_buf,
+                                               &mult_size);
+
+            if (result < 0) {
+                ml_stream_buffer_append(file, buf_data, buf_size);
+            }
+            else {
+                ml_stream_buffer_append(file, mult_buf, mult_size);
+
+                flb_free(mult_buf);
+            }
         }
     }
 
@@ -1564,6 +1920,8 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
 #endif
     file->db_offset_marker = 0;
     file->db_offset_marker_size = 0;
+    file->db_offset_marker_pos = -1;
+    file->db_offset_saved = -1;
     file->skip_next = FLB_FALSE;
     file->skip_warn = FLB_FALSE;
 
@@ -1794,6 +2152,7 @@ void flb_tail_file_remove(struct flb_tail_file *file)
     if (file->read_retry_pending) {
         mk_list_del(&file->_retry_head);
     }
+    flb_tail_file_pending_del(file);
 
     if (file->decompression_context != NULL) {
         flb_decompression_context_destroy(file->decompression_context);
@@ -1971,6 +2330,7 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
             if (lines > 0) {
                 file->stream_offset += processed_bytes;
                 file->last_processed_bytes = 0;
+                update_offset_marker_from_buffer(file, processed_bytes);
                 consume_bytes(file->buf_data, processed_bytes, file->buf_len);
                 file->buf_len -= processed_bytes;
                 file->buf_data[file->buf_len] = '\0';
@@ -2034,15 +2394,6 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
 
         file_buffer_capacity = (file->buf_size - file->buf_len) - 1;
     }
-
-    #ifdef __linux__
-    if (ctx->file_cache_advise) {
-        if (posix_fadvise(file->fd, 0, 0, POSIX_FADV_DONTNEED) == -1) {
-            flb_errno();
-            flb_plg_error(ctx->ins, "error during posix_fadvise");
-        }
-    }
-    #endif
 
     read_size = file_buffer_capacity;
 
@@ -2157,6 +2508,7 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
         /* Adjust the file offset and buffer */
         file->stream_offset += processed_bytes;
         file->last_processed_bytes = 0;
+        update_offset_marker_from_buffer(file, processed_bytes);
         consume_bytes(file->buf_data, processed_bytes, file->buf_len);
         file->buf_len -= processed_bytes;
         file->buf_data[file->buf_len] = '\0';
@@ -2165,6 +2517,12 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
 
         /* adjust file counters, returns FLB_TAIL_OK or FLB_TAIL_ERROR */
         ret = adjust_counters(ctx, file);
+
+#ifdef __linux__
+        if (ret == FLB_TAIL_OK) {
+            file_cache_advise(ctx, file);
+        }
+#endif
 
         /* Data was consumed but likely some bytes still remain */
         return ret;
@@ -2280,21 +2638,6 @@ int flb_tail_file_to_event(struct flb_tail_file *file)
     struct stat st;
     struct flb_tail_config *ctx = file->config;
 
-    /* Check if the file promoted have pending bytes */
-    ret = fstat(file->fd, &st);
-    if (ret != 0) {
-        flb_errno();
-        return -1;
-    }
-
-    if (file->offset < st.st_size) {
-        file->pending_bytes = (st.st_size - file->offset);
-        tail_signal_pending(file->config);
-    }
-    else {
-        file->pending_bytes = 0;
-    }
-
     /* Check if the file has been rotated */
     ret = flb_tail_file_is_rotated(ctx, file);
     if (ret == FLB_TRUE) {
@@ -2307,6 +2650,18 @@ int flb_tail_file_to_event(struct flb_tail_file *file)
         return -1;
     }
 
+    /*
+     * Check if the file promoted have pending bytes. This is done once the
+     * file is being monitored: any data appended from now on is notified by
+     * the fs-event handler, and anything written before is detected here.
+     */
+    ret = fstat(file->fd, &st);
+    if (ret != 0) {
+        flb_errno();
+        flb_tail_fs_remove(ctx, file);
+        return -1;
+    }
+
     ret = flb_hash_table_add(ctx->event_hash,
                              file->hash_key, flb_sds_len(file->hash_key),
                              file, sizeof(file));
@@ -2314,6 +2669,15 @@ int flb_tail_file_to_event(struct flb_tail_file *file)
         flb_plg_error(ctx->ins, "could not register file in event hash");
         flb_tail_fs_remove(ctx, file);
         return -1;
+    }
+
+    if (file->offset < st.st_size) {
+        file->pending_bytes = (st.st_size - file->offset);
+        flb_tail_file_pending_add(file);
+        tail_signal_pending(file->config);
+    }
+    else {
+        file->pending_bytes = 0;
     }
 
     /* List swap: change from 'static' to 'event' list */
@@ -2356,7 +2720,7 @@ char *flb_tail_file_name(struct flb_tail_file *file)
     }
 
 #ifdef __linux__
-    ret = snprintf(tmp, sizeof(tmp) - 1, "/proc/%i/fd/%i", getpid(), file->fd);
+    ret = snprintf(tmp, sizeof(tmp) - 1, "/proc/self/fd/%i", file->fd);
     if (ret == -1) {
         flb_errno();
         flb_free(buf);
@@ -2540,11 +2904,77 @@ int flb_tail_file_rotated(struct flb_tail_file *file)
                 }
             }
         }
+        else {
+            /*
+             * The application did not create the new file yet: look for it
+             * while the rotated file is kept open instead of waiting for
+             * the next scan of the path.
+             */
+            file->rotate_lookup = FLB_TRUE;
+        }
     }
     flb_free(tmp);
     flb_free(name);
 
     return 0;
+}
+
+/*
+ * A rotated file where the new file was not found at rotation time: check
+ * if a new file showed up using the previous name. A file that is created
+ * and rotated again before the next scan of the path would be never read.
+ *
+ * Returns FLB_TRUE if a new file was registered.
+ */
+static int rotated_lookup_file(struct flb_tail_config *ctx,
+                               struct flb_tail_file *file)
+{
+    int ret;
+    struct stat st;
+
+    if (file->rotate_lookup == FLB_FALSE || file->orig_name == NULL) {
+        return FLB_FALSE;
+    }
+
+    ret = tail_file_stat(ctx, file->orig_name, &st);
+    if (ret != 0 || st.st_ino == file->inode) {
+        return FLB_FALSE;
+    }
+
+    file->rotate_lookup = FLB_FALSE;
+    if (flb_tail_file_exists(&st, ctx) == FLB_TRUE) {
+        return FLB_FALSE;
+    }
+
+    ret = flb_tail_file_append(file->orig_name, &st, FLB_TAIL_STATIC, -1, ctx);
+    if (ret != 0) {
+        return FLB_FALSE;
+    }
+
+    flb_plg_debug(ctx->ins, "inode=%"PRIu64" new file found after rotation: %s",
+                  (uint64_t) st.st_ino, file->orig_name);
+
+    return FLB_TRUE;
+}
+
+int flb_tail_file_rotated_lookup(struct flb_tail_config *ctx)
+{
+    int count = 0;
+    struct mk_list *head;
+    struct flb_tail_file *file;
+
+    mk_list_foreach(head, &ctx->files_rotated) {
+        file = mk_list_entry(head, struct flb_tail_file, _rotate_head);
+        if (rotated_lookup_file(ctx, file) == FLB_TRUE) {
+            count++;
+        }
+    }
+
+    if (count > 0) {
+        tail_signal_manager(ctx);
+    }
+
+    return count;
 }
 
 static int check_purge_deleted_file(struct flb_tail_config *ctx,
@@ -2635,6 +3065,11 @@ int flb_tail_file_purge(struct flb_input_instance *ins,
                 flb_plg_debug(ctx->ins,
                               "inode=%"PRIu64" purge rotated file %s (offset=%"PRId64")",
                               file->inode, file->name, file->offset);
+            }
+
+            /* last chance to find the file that replaced the rotated one */
+            if (rotated_lookup_file(ctx, file) == FLB_TRUE) {
+                tail_signal_manager(ctx);
             }
 
             flb_tail_file_remove(file);

@@ -51,6 +51,7 @@ struct flb_tail_file {
     char *name;                 /* target file name given by scan routine */
     char *real_name;            /* real file name in the file system */
     char *orig_name;            /* original file name (before rotation) */
+    int rotate_lookup;          /* rotated: the new file was not found yet */
     size_t name_len;
     size_t orig_name_len;
     time_t rotated;
@@ -119,6 +120,23 @@ struct flb_tail_file {
     uint64_t db_offset_marker;
     size_t db_offset_marker_size;
 
+    /*
+     * Resumable offset the marker above was computed for, or -1 when it is
+     * unknown. It allows to reuse the marker (and to skip redundant offset
+     * updates) while the resumable offset did not move.
+     */
+    int64_t db_offset_marker_pos;
+
+    /* Last resumable offset that was persisted, or -1 if none */
+    int64_t db_offset_saved;
+
+    /* Raw offset covered by the last posix_fadvise(2) call */
+    int64_t fadvise_offset;
+
+    /* Inotify: coalescing of the events read in a single batch */
+    uint64_t event_batch_id;
+    uint32_t event_mask;
+
     uint64_t hash_bits;
     flb_sds_t hash_key;
 
@@ -129,12 +147,17 @@ struct flb_tail_file {
      * strictly necessary.
      */
     struct flb_log_event_encoder *ml_log_event_encoder;
+    size_t ml_records;         /* records held by ml_log_event_encoder */
+    int ml_records_unknown;    /* the records must be counted on flush */
     struct flb_log_event_encoder *sl_log_event_encoder;
 
     /* reference */
     int tail_mode;
     int read_retry_pending;
     struct mk_list _retry_head;
+    int pending_listed;          /* is the file linked to files_pending ? */
+    struct mk_list _pending_head;
+    struct mk_list _watch_head;  /* inotify: link to watch descriptor table */
     struct flb_tail_config *config;
     struct mk_list _head;
     struct mk_list _rotate_head;

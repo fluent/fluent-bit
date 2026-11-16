@@ -39,6 +39,15 @@
     "  offset_marker_size INTEGER DEFAULT 0"                            \
     ");"
 
+/*
+ * Files are looked up by inode every time they are registered: without an
+ * index each lookup is a full table scan, which makes the startup time grow
+ * quadratically with the number of monitored files.
+ */
+#define SQL_CREATE_FILES_INODE_INDEX                                    \
+    "CREATE INDEX IF NOT EXISTS in_tail_files_inode "                   \
+    "ON in_tail_files (inode);"
+
 #define SQL_GET_FILE                                                    \
     "SELECT id, name, offset, inode, offset_marker, offset_marker_size " \
     "from in_tail_files WHERE inode=@inode order by id desc;"

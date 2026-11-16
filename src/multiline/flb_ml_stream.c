@@ -218,6 +218,8 @@ static struct flb_ml_stream *stream_create(struct flb_ml *ml,
     }
 
     mk_list_add(&stream->_head, &parser->streams);
+    mk_list_add(&stream->_head_table,
+                &parser->stream_table[id % FLB_ML_STREAM_TABLE_SIZE]);
     return stream;
 }
 
@@ -282,9 +284,20 @@ struct flb_ml_stream *flb_ml_stream_get(struct flb_ml_parser_ins *parser,
     struct mk_list *head;
     struct flb_ml_stream *mst = NULL;
 
-    mk_list_foreach(head, &parser->streams) {
-        mst = mk_list_entry(head, struct flb_ml_stream, _head);
+    /*
+     * Consecutive lookups usually ask for the same stream: check the last
+     * one first, then the table indexed by id.
+     */
+    mst = parser->stream_cache;
+    if (mst != NULL && mst->id == stream_id) {
+        return mst;
+    }
+
+    mk_list_foreach(head, &parser->stream_table[stream_id %
+                                                FLB_ML_STREAM_TABLE_SIZE]) {
+        mst = mk_list_entry(head, struct flb_ml_stream, _head_table);
         if (mst->id == stream_id) {
+            parser->stream_cache = mst;
             return mst;
         }
     }
@@ -329,7 +342,12 @@ void flb_ml_stream_id_destroy_all(struct flb_ml *ml, uint64_t stream_id)
 
 int flb_ml_stream_destroy(struct flb_ml_stream *mst)
 {
+    if (mst->parser != NULL && mst->parser->stream_cache == mst) {
+        mst->parser->stream_cache = NULL;
+    }
+
     mk_list_del(&mst->_head);
+    mk_list_del(&mst->_head_table);
     if (mst->name) {
         flb_sds_destroy(mst->name);
     }

@@ -46,6 +46,19 @@
 #define FLB_TAIL_METRIC_L_SKIPPED 105  /* number of skipped occurrences of long lines */
 #endif
 
+/*
+ * Number of buckets (power of two) of the table used to resolve an inotify
+ * watch descriptor into its monitored file.
+ */
+#define FLB_TAIL_WATCH_TABLE_SIZE 4096
+
+/*
+ * With 'file_cache_advise' enabled, tell the kernel to drop the pages that
+ * were already consumed every time the read offset advances this many bytes
+ * (or when the end of the file is reached).
+ */
+#define FLB_TAIL_FADVISE_WINDOW   (4 * 1024 * 1024)
+
 #ifdef FLB_SYSTEM_WINDOWS
 #define FLB_TAIL_WINDOWS_PATH_ENCODING_ANSI 0
 #define FLB_TAIL_WINDOWS_PATH_ENCODING_UTF8 1
@@ -126,6 +139,7 @@ struct flb_tail_config {
     struct flb_sqldb *db;
     int db_sync;
     int db_locking;
+    int db_batch;              /* is a batch of writes (transaction) open ? */
     int compare_filename;
     flb_sds_t db_journal_mode;
     sqlite3_stmt *stmt_get_file;
@@ -163,6 +177,19 @@ struct flb_tail_config {
     struct mk_list files_static;
     struct mk_list files_event;
     struct mk_list files_retry; /* Files waiting for a transient read retry */
+
+    /*
+     * Files in 'event' mode with data that is known to be pending: the
+     * 'pending' collector only iterates this list instead of every
+     * monitored file.
+     */
+    struct mk_list files_pending;
+
+#ifdef FLB_HAVE_INOTIFY
+    /* Inotify: watch descriptor -> file lookup table and batch counter */
+    uint64_t event_batch_id;
+    struct mk_list watch_table[FLB_TAIL_WATCH_TABLE_SIZE];
+#endif
 
     /* List of rotated files that needs to be removed after 'rotate_wait' */
     struct mk_list files_rotated;

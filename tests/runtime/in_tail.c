@@ -2437,6 +2437,556 @@ void flb_test_inotify_watcher_false()
 }
 
 #ifdef FLB_HAVE_INOTIFY
+/* Wait until the output received the expected number of records */
+static int wait_output_num(int expected, int timeout_ms)
+{
+    int elapsed = 0;
+
+    while (get_output_num() < expected && elapsed < timeout_ms) {
+        flb_time_msleep(50);
+        elapsed += 50;
+    }
+
+    return get_output_num();
+}
+
+#define EVENT_BURST_FILES   64
+#define EVENT_BURST_LINES   25
+
+/*
+ * Many files in 'event' mode receiving data at the same time: every record
+ * must be delivered no matter how the file system notifications are batched
+ * or how the pending data is scheduled.
+ */
+static void test_event_burst_many_files(const char *inotify_watcher)
+{
+    int i;
+    int j;
+    int ret;
+    int num;
+    int len;
+    int expected;
+    ssize_t bytes;
+    char line[128];
+    char names[EVENT_BURST_FILES][64];
+    char *files[EVENT_BURST_FILES];
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+
+    clear_output_num();
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = NULL;
+
+    for (i = 0; i < EVENT_BURST_FILES; i++) {
+        snprintf(names[i], sizeof(names[i]), "event_burst_%03d.log", i);
+        files[i] = names[i];
+    }
+
+    ctx = test_tail_ctx_create(&cb_data, &files[0], EVENT_BURST_FILES, FLB_TRUE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "path", "event_burst_*.log",
+                        "read_from_head", "true",
+                        "inotify_watcher", inotify_watcher,
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* the (empty) files are promoted to 'event' mode */
+    flb_time_msleep(1500);
+
+    for (j = 0; j < EVENT_BURST_LINES; j++) {
+        for (i = 0; i < EVENT_BURST_FILES; i++) {
+            len = snprintf(line, sizeof(line), "file %03d line %03d\n", i, j);
+            bytes = write(ctx->fds[i], line, len);
+            if (!TEST_CHECK(bytes == len)) {
+                TEST_MSG("write failed. errno=%d", errno);
+            }
+        }
+    }
+
+    expected = EVENT_BURST_FILES * EVENT_BURST_LINES;
+    num = wait_output_num(expected, 10000);
+    if (!TEST_CHECK(num == expected)) {
+        TEST_MSG("output num error. expect=%d got=%d", expected, num);
+    }
+
+    test_tail_ctx_destroy(ctx);
+}
+
+void flb_test_event_burst_many_files()
+{
+    test_event_burst_many_files("true");
+}
+
+void flb_test_event_burst_many_files_stat()
+{
+    test_event_burst_many_files("false");
+}
+
+#define EVENT_BACKLOG_LINES  20000
+
+/*
+ * A file in 'event' mode receives much more data than what fits in the read
+ * buffer: the remaining bytes must be consumed by the 'pending' collector
+ * without waiting for further notifications.
+ */
+static void test_event_backlog(const char *inotify_watcher)
+{
+    int i;
+    int ret;
+    int num;
+    int len;
+    size_t size = 0;
+    ssize_t bytes;
+    char *buf;
+    char *file[] = {"event_backlog.log"};
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+
+    clear_output_num();
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = NULL;
+
+    ctx = test_tail_ctx_create(&cb_data, &file[0], 1, FLB_TRUE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "path", file[0],
+                        "read_from_head", "true",
+                        "inotify_watcher", inotify_watcher,
+                        "buffer_chunk_size", "4k",
+                        "buffer_max_size", "8k",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* the (empty) file is promoted to 'event' mode */
+    flb_time_msleep(1500);
+
+    buf = flb_malloc(EVENT_BACKLOG_LINES * 64);
+    if (!TEST_CHECK(buf != NULL)) {
+        test_tail_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    for (i = 0; i < EVENT_BACKLOG_LINES; i++) {
+        len = snprintf(buf + size, 64, "backlog line %06d aaaaaaaaaaaaaaaaaaaa\n", i);
+        size += len;
+    }
+
+    /* one single notification for the whole content */
+    bytes = write(ctx->fds[0], buf, size);
+    TEST_CHECK(bytes == (ssize_t) size);
+    flb_free(buf);
+
+    num = wait_output_num(EVENT_BACKLOG_LINES, 15000);
+    if (!TEST_CHECK(num == EVENT_BACKLOG_LINES)) {
+        TEST_MSG("output num error. expect=%d got=%d", EVENT_BACKLOG_LINES, num);
+    }
+
+    test_tail_ctx_destroy(ctx);
+}
+
+void flb_test_event_backlog()
+{
+    test_event_backlog("true");
+}
+
+void flb_test_event_backlog_stat()
+{
+    test_event_backlog("false");
+}
+
+/*
+ * A file that is written, rotated and written again in a row: the events of
+ * the rotation and the ones of the appends can be reported together, no
+ * record from the old or the new file can be lost.
+ *
+ * The new file might be created after the rotation was handled, in that case
+ * it's discovered by the periodic scan (refresh_interval).
+ */
+void flb_test_event_rotation_burst()
+{
+    int i;
+    int fd;
+    int ret;
+    int num;
+    int len;
+    int expected = 0;
+    ssize_t bytes;
+    char line[128];
+    char *file[] = {"event_rotation.log"};
+    char *rotated = "event_rotation.log.1";
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+
+    clear_output_num();
+    unlink(rotated);
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = NULL;
+
+    ctx = test_tail_ctx_create(&cb_data, &file[0], 1, FLB_TRUE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "path", file[0],
+                        "read_from_head", "true",
+                        "rotate_wait", "2",
+                        "refresh_interval", "1",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    flb_time_msleep(1500);
+
+    /* append, rotate, append to the old file and to the new one */
+    for (i = 0; i < 100; i++) {
+        len = snprintf(line, sizeof(line), "before rotation %03d\n", i);
+        bytes = write(ctx->fds[0], line, len);
+        TEST_CHECK(bytes == len);
+        expected++;
+    }
+
+    ret = rename(file[0], rotated);
+    TEST_CHECK(ret == 0);
+
+    for (i = 0; i < 100; i++) {
+        len = snprintf(line, sizeof(line), "old file after rotation %03d\n", i);
+        bytes = write(ctx->fds[0], line, len);
+        TEST_CHECK(bytes == len);
+        expected++;
+    }
+
+    fd = open(file[0], O_RDWR | O_CREAT | O_APPEND,
+              S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
+    TEST_CHECK(fd >= 0);
+
+    for (i = 0; i < 100; i++) {
+        len = snprintf(line, sizeof(line), "new file %03d\n", i);
+        bytes = write(fd, line, len);
+        TEST_CHECK(bytes == len);
+        expected++;
+    }
+
+    num = wait_output_num(expected, 10000);
+    if (!TEST_CHECK(num == expected)) {
+        TEST_MSG("output num error. expect=%d got=%d", expected, num);
+    }
+
+    close(fd);
+    unlink(rotated);
+    test_tail_ctx_destroy(ctx);
+}
+
+/*
+ * The application creates the new file some time after the rotation: it
+ * must be found without waiting for the next scan of the path.
+ */
+void flb_test_rotation_new_file_delayed()
+{
+    int i;
+    int fd;
+    int ret;
+    int num;
+    int len;
+    int expected = 0;
+    ssize_t bytes;
+    char line[128];
+    char *file[] = {"rotation_delayed.log"};
+    char *rotated = "rotation_delayed.log.1";
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+
+    clear_output_num();
+    unlink(rotated);
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = NULL;
+
+    ctx = test_tail_ctx_create(&cb_data, &file[0], 1, FLB_TRUE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    /* the scan of the path will not run during the test */
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "path", file[0],
+                        "read_from_head", "true",
+                        "rotate_wait", "5",
+                        "refresh_interval", "120",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    flb_time_msleep(1500);
+
+    for (i = 0; i < 10; i++) {
+        len = snprintf(line, sizeof(line), "before rotation %03d\n", i);
+        bytes = write(ctx->fds[0], line, len);
+        TEST_CHECK(bytes == len);
+        expected++;
+    }
+
+    ret = rename(file[0], rotated);
+    TEST_CHECK(ret == 0);
+
+    /* let the rotation be processed before the new file exists */
+    flb_time_msleep(1500);
+
+    fd = open(file[0], O_RDWR | O_CREAT | O_APPEND,
+              S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
+    TEST_CHECK(fd >= 0);
+
+    for (i = 0; i < 10; i++) {
+        len = snprintf(line, sizeof(line), "new file %03d\n", i);
+        bytes = write(fd, line, len);
+        TEST_CHECK(bytes == len);
+        expected++;
+    }
+
+    num = wait_output_num(expected, 10000);
+    if (!TEST_CHECK(num == expected)) {
+        TEST_MSG("output num error. expect=%d got=%d", expected, num);
+    }
+
+    close(fd);
+    unlink(rotated);
+    test_tail_ctx_destroy(ctx);
+}
+
+/*
+ * Without inotify a file that is truncated and grows beyond the previous
+ * offset between two checks looks like an append: the new content must be
+ * read from the beginning.
+ */
+void flb_test_truncate_regrow_stat()
+{
+    int i;
+    int ret;
+    int num;
+    int len;
+    int expected = 0;
+    ssize_t bytes;
+    char line[128];
+    char *file[] = {"truncate_regrow.log"};
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+
+    clear_output_num();
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = NULL;
+
+    ctx = test_tail_ctx_create(&cb_data, &file[0], 1, FLB_TRUE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "path", file[0],
+                        "read_from_head", "true",
+                        "inotify_watcher", "false",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    flb_time_msleep(1500);
+
+    for (i = 0; i < 20; i++) {
+        len = snprintf(line, sizeof(line), "before truncate %03d\n", i);
+        bytes = write(ctx->fds[0], line, len);
+        TEST_CHECK(bytes == len);
+        expected++;
+    }
+
+    num = wait_output_num(expected, 5000);
+    TEST_CHECK(num == expected);
+
+    /* truncate and write more than what the file had, in one go */
+    ret = ftruncate(ctx->fds[0], 0);
+    TEST_CHECK(ret == 0);
+    lseek(ctx->fds[0], 0, SEEK_SET);
+
+    for (i = 0; i < 60; i++) {
+        len = snprintf(line, sizeof(line), "after truncate, longer %03d\n", i);
+        bytes = write(ctx->fds[0], line, len);
+        TEST_CHECK(bytes == len);
+        expected++;
+    }
+
+    num = wait_output_num(expected, 5000);
+    if (!TEST_CHECK(num == expected)) {
+        TEST_MSG("output num error. expect=%d got=%d", expected, num);
+    }
+
+    test_tail_ctx_destroy(ctx);
+}
+
+/*
+ * path_key and offset_key are appended to the records generated by a parser
+ * and by the multiline engine: validate the resulting content.
+ */
+void flb_test_parser_path_key_offset_key()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+    char *file[] = {"parser_keys.log"};
+    char *msg = "{\"level\":\"info\",\"nested\":{\"a\":[1,2]},\"msg\":\"hello\"}";
+    char expected_offset[64] = {0};
+    int ret;
+    int num;
+
+    char *expected_strs[] = {"\"level\":\"info\"", "\"nested\":{\"a\":[1,2]}",
+                             "\"msg\":\"hello\"",
+                             "\"file\":\"parser_keys.log\"",
+                             &expected_offset[0]};
+    struct str_list expected = {
+                                .size = sizeof(expected_strs)/sizeof(char*),
+                                .lists = &expected_strs[0],
+    };
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_json_str_list;
+    cb_data.data = &expected;
+
+    /* the offset of the first record is zero */
+    snprintf(expected_offset, sizeof(expected_offset), "\"off\":0");
+
+    ctx = test_tail_ctx_create(&cb_data, &file[0], 1, FLB_TRUE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "path", file[0],
+                        "read_from_head", "true",
+                        "parser", "json",
+                        "path_key", "file",
+                        "offset_key", "off",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    ret = write_msg(ctx, msg, strlen(msg));
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    num = wait_output_num(1, 5000);
+    if (!TEST_CHECK(num == 1))  {
+        TEST_MSG("output num error. expect=1 got=%d", num);
+    }
+
+    test_tail_ctx_destroy(ctx);
+}
+
+void flb_test_multiline_cri_path_key_offset_key()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+    char *file[] = {"cri_keys.log"};
+    char *msg = "2026-11-15T10:00:00.123456789Z stdout F hello cri";
+    char expected_offset[64] = {0};
+    int ret;
+    int num;
+
+    char *expected_strs[] = {"\"log\":\"hello cri\"", "\"stream\":\"stdout\"",
+                             "\"_p\":\"F\"",
+                             "\"file\":\"cri_keys.log\"",
+                             &expected_offset[0]};
+    struct str_list expected = {
+                                .size = sizeof(expected_strs)/sizeof(char*),
+                                .lists = &expected_strs[0],
+    };
+
+    clear_output_num();
+
+    cb_data.cb = cb_check_json_str_list;
+    cb_data.data = &expected;
+
+    /* a complete (F) line is flushed right away with its start offset */
+    snprintf(expected_offset, sizeof(expected_offset), "\"off\":0");
+
+    ctx = test_tail_ctx_create(&cb_data, &file[0], 1, FLB_TRUE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "path", file[0],
+                        "read_from_head", "true",
+                        "multiline.parser", "cri",
+                        "path_key", "file",
+                        "offset_key", "off",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "format", "json",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Start the engine */
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    ret = write_msg(ctx, msg, strlen(msg));
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    num = wait_output_num(1, 5000);
+    if (!TEST_CHECK(num == 1))  {
+        TEST_MSG("output num error. expect=1 got=%d", num);
+    }
+
+    test_tail_ctx_destroy(ctx);
+}
+#endif /* FLB_HAVE_INOTIFY */
+
+#ifdef FLB_HAVE_INOTIFY
 static int wait_tail_collectors_state(struct flb_tail_config *tail_ctx,
                                       struct flb_input_instance *ins,
                                       int expected)
@@ -2803,6 +3353,111 @@ void flb_test_db()
     unlink(db);
 }
 
+#define DB_MANY_FILES  200
+
+/*
+ * Many files registered in the database by the same scan and updated by the
+ * same collector run: after a restart every offset must be the one that was
+ * reached, so nothing is read again and the new content is read once.
+ */
+void flb_test_db_many_files_restart()
+{
+    int i;
+    int j;
+    int ret;
+    int num;
+    int len;
+    int pass;
+    int expected;
+    ssize_t bytes;
+    char line[128];
+    char names[DB_MANY_FILES][64];
+    char *files[DB_MANY_FILES];
+    char *db = "test_db_many_files.db";
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+
+    unlink(db);
+
+    for (i = 0; i < DB_MANY_FILES; i++) {
+        snprintf(names[i], sizeof(names[i]), "db_many_%03d.log", i);
+        files[i] = names[i];
+    }
+
+    for (pass = 0; pass < 2; pass++) {
+        clear_output_num();
+
+        cb_data.cb = cb_count_msgpack;
+        cb_data.data = NULL;
+
+        /* the files are only truncated in the first pass */
+        ctx = test_tail_ctx_create(&cb_data, &files[0], DB_MANY_FILES,
+                                   pass == 0 ? FLB_TRUE : FLB_FALSE);
+        if (!TEST_CHECK(ctx != NULL)) {
+            TEST_MSG("test_ctx_create failed");
+            unlink(db);
+            exit(EXIT_FAILURE);
+        }
+
+        ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                            "path", "db_many_*.log",
+                            "read_from_head", "true",
+                            "db", db,
+                            NULL);
+        TEST_CHECK(ret == 0);
+
+        ret = flb_start(ctx->flb);
+        TEST_CHECK(ret == 0);
+
+        flb_time_msleep(1500);
+
+        if (pass == 1) {
+            /* nothing that was read before the restart shows up again */
+            num = get_output_num();
+            if (!TEST_CHECK(num == 0)) {
+                TEST_MSG("records read again after restart: %d", num);
+            }
+        }
+
+        for (j = 0; j < 3; j++) {
+            for (i = 0; i < DB_MANY_FILES; i++) {
+                len = snprintf(line, sizeof(line), "pass %d file %03d line %d\n",
+                               pass, i, j);
+                bytes = write(ctx->fds[i], line, len);
+                TEST_CHECK(bytes == len);
+            }
+        }
+
+        expected = DB_MANY_FILES * 3;
+        num = wait_output_num(expected, 10000);
+        if (!TEST_CHECK(num == expected)) {
+            TEST_MSG("pass %d: output num error. expect=%d got=%d",
+                     pass, expected, num);
+        }
+
+        /* no late duplicates */
+        flb_time_msleep(500);
+        num = get_output_num();
+        TEST_CHECK(num == expected);
+
+        if (pass == 0) {
+            /* stop keeping the files in place */
+            for (i = 0; i < ctx->fd_num; i++) {
+                close(ctx->fds[i]);
+            }
+            flb_free(ctx->fds);
+            flb_stop(ctx->flb);
+            flb_destroy(ctx->flb);
+            flb_free(ctx);
+        }
+        else {
+            test_tail_ctx_destroy(ctx);
+        }
+    }
+
+    unlink(db);
+}
+
 void flb_test_db_delete_stale_file()
 {
     struct flb_lib_out_cb cb_data;
@@ -3164,6 +3819,15 @@ TEST_LIST = {
     {"ignore_active_older_files_reread_on_update_default_read_from_head", flb_test_in_tail_ignore_active_older_files_reread_on_update_default_read_from_head},
 #ifdef FLB_HAVE_INOTIFY
     {"inotify_watcher_false", flb_test_inotify_watcher_false},
+    {"event_burst_many_files", flb_test_event_burst_many_files},
+    {"event_burst_many_files_stat", flb_test_event_burst_many_files_stat},
+    {"event_backlog", flb_test_event_backlog},
+    {"event_backlog_stat", flb_test_event_backlog_stat},
+    {"event_rotation_burst", flb_test_event_rotation_burst},
+    {"rotation_new_file_delayed", flb_test_rotation_new_file_delayed},
+    {"truncate_regrow_stat", flb_test_truncate_regrow_stat},
+    {"parser_path_key_offset_key", flb_test_parser_path_key_offset_key},
+    {"multiline_cri_path_key_offset_key", flb_test_multiline_cri_path_key_offset_key},
     {"inotify_pause_collectors", flb_test_inotify_pause_collectors},
     {"inotify_threaded_pause_collectors", flb_test_inotify_threaded_pause_collectors},
 #endif /* FLB_HAVE_INOTIFY */
@@ -3175,6 +3839,7 @@ TEST_LIST = {
 
 #ifdef FLB_HAVE_SQLDB
     {"db", flb_test_db},
+    {"db_many_files_restart", flb_test_db_many_files_restart},
     {"db_delete_stale_file", flb_test_db_delete_stale_file},
     {"db_compare_filename", flb_test_db_compare_filename},
 #endif

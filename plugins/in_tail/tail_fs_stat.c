@@ -65,8 +65,11 @@ static int tail_fs_event(struct flb_input_instance *ins,
     struct fs_stat *fst;
     struct stat st;
     time_t t;
+    int pending = FLB_FALSE;
 
     t = time(NULL);
+
+    flb_tail_db_batch_begin(ctx);
 
     /* Lookup watched file */
     mk_list_foreach_safe(head, tmp, &ctx->files_event) {
@@ -86,8 +89,45 @@ static int tail_fs_event(struct flb_input_instance *ins,
             /* Update stat info and trigger the notification */
             memcpy(&fst->st, &st, sizeof(struct stat));
             fst->checked = t;
-            in_tail_collect_event(file, config);
+
+            /*
+             * A file truncated that grew beyond the previous offset before
+             * this check looks like a regular append: make sure the content
+             * that precedes the offset is the one that was read.
+             */
+            if (st.st_size >= file->offset &&
+                flb_tail_file_offset_marker_matches(file) != FLB_TRUE) {
+                ret = flb_tail_file_reset_on_truncate(file,
+                                                      st.st_size - file->size,
+                                                      "tail_fs_event");
+                if (ret == -1) {
+                    continue;
+                }
+                file->size = st.st_size;
+            }
+
+            ret = in_tail_collect_event(file, config);
+            if (ret == FLB_TAIL_ERROR) {
+                /* the file was removed */
+                continue;
+            }
+
+            /*
+             * One read might not be enough to consume the new data, let the
+             * 'pending' collector drain the file instead of waiting for the
+             * next timer tick.
+             */
+            if (flb_tail_file_has_pending_data(file) == FLB_TRUE) {
+                flb_tail_file_pending_add(file);
+                pending = FLB_TRUE;
+            }
         }
+    }
+
+    flb_tail_db_batch_end(ctx);
+
+    if (pending == FLB_TRUE) {
+        tail_signal_pending(ctx);
     }
 
     return 0;
@@ -149,6 +189,7 @@ static int tail_fs_check(struct flb_input_instance *ins,
 
         if (file->offset < st.st_size) {
             file->pending_bytes = (st.st_size - file->offset);
+            flb_tail_file_pending_add(file);
             tail_signal_pending(ctx);
         }
         else {

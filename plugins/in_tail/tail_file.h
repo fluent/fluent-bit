@@ -127,6 +127,7 @@ char *flb_tail_file_name(struct flb_tail_file *file);
 int flb_tail_file_is_rotated(struct flb_tail_config *ctx,
                              struct flb_tail_file *file);
 int flb_tail_file_rotated(struct flb_tail_file *file);
+int flb_tail_file_rotated_lookup(struct flb_tail_config *ctx);
 int flb_tail_file_purge(struct flb_input_instance *ins,
                         struct flb_config *config, void *context);
 int flb_tail_pack_line_map(struct flb_time *time, char **data,
@@ -151,6 +152,45 @@ static inline off_t flb_tail_file_db_offset(struct flb_tail_file *file)
     }
 
     return file->offset;
+}
+
+/* Does the file have data that can be consumed without waiting for an event ? */
+static inline int flb_tail_file_has_pending_data(struct flb_tail_file *file)
+{
+    if (file->pending_bytes > 0) {
+        return FLB_TRUE;
+    }
+
+    if (file->decompression_context != NULL &&
+        file->decompression_context->input_buffer_length > 0) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
+/*
+ * Register the file in the list processed by the 'pending' collector. The
+ * caller is responsible for signaling the collector (tail_signal_pending()).
+ */
+static inline void flb_tail_file_pending_add(struct flb_tail_file *file)
+{
+    if (file->pending_listed == FLB_TRUE) {
+        return;
+    }
+
+    mk_list_add(&file->_pending_head, &file->config->files_pending);
+    file->pending_listed = FLB_TRUE;
+}
+
+static inline void flb_tail_file_pending_del(struct flb_tail_file *file)
+{
+    if (file->pending_listed == FLB_FALSE) {
+        return;
+    }
+
+    mk_list_del(&file->_pending_head);
+    file->pending_listed = FLB_FALSE;
 }
 
 int flb_tail_file_update_offset_marker(struct flb_tail_file *file);

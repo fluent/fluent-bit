@@ -25,7 +25,9 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_byteswap.h>
 #include <fluent-bit/multiline/flb_ml.h>
+#include <fluent-bit/multiline/flb_ml_parser.h>
 #include <fluent-bit/multiline/flb_ml_rule.h>
 #include <fluent-bit/multiline/flb_ml_group.h>
 
@@ -53,6 +55,25 @@ static inline int match_negate(struct flb_ml_parser *ml_parser, int matched)
     }
 
     return rule_match;
+}
+
+/*
+ * A timestamp can be used for a record if the log event encoder accepts it,
+ * a time parsed from the content can be out of the supported range.
+ */
+static inline int ml_time_is_usable(struct flb_time *tm)
+{
+    if (flb_time_is_valid_eventtime(tm) == FLB_TRUE) {
+        return FLB_TRUE;
+    }
+
+    if (tm->tm.tv_nsec == 0 &&
+        (tm->tm.tv_sec == FLB_LOG_EVENT_GROUP_START ||
+         tm->tm.tv_sec == FLB_LOG_EVENT_GROUP_END)) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
 }
 
 static uint64_t time_ms_now()
@@ -106,11 +127,20 @@ void flb_ml_flush_parser_instance(struct flb_ml *ml,
     struct flb_ml_stream *mst;
     struct flb_ml_stream_group *group;
 
+    /* a specific stream: no need to walk the whole list */
+    if (stream_id != 0) {
+        mst = flb_ml_stream_get(parser_i, stream_id);
+        if (mst != NULL) {
+            mk_list_foreach(head_group, &mst->groups) {
+                group = mk_list_entry(head_group, struct flb_ml_stream_group, _head);
+                flb_ml_flush_stream_group(parser_i->ml_parser, mst, group, forced_flush);
+            }
+        }
+        return;
+    }
+
     mk_list_foreach(head, &parser_i->streams) {
         mst = mk_list_entry(head, struct flb_ml_stream, _head);
-        if (stream_id != 0 && mst->id != stream_id) {
-            continue;
-        }
 
         /* Iterate stream groups */
         mk_list_foreach(head_group, &mst->groups) {
@@ -536,6 +566,47 @@ static int process_append(struct flb_ml_parser_ins *parser_i,
     return ret;
 }
 
+/*
+ * Parse the content with the parser associated to the multiline parser: if
+ * a native decoder exists it's used first, the result is the same that the
+ * parser would generate.
+ */
+static int ml_parser_do(struct flb_ml_parser *ml_parser,
+                        const char *buf, size_t size,
+                        void **out_buf, size_t *out_size,
+                        struct flb_time *out_time)
+{
+    int ret;
+    char *map;
+    struct flb_time tm;
+    struct flb_ml_cri_record record;
+
+    if (ml_parser->native == FLB_ML_NATIVE_CRI) {
+        ret = flb_ml_parser_cri_decode(buf, size, &record);
+        if (ret == FLB_ML_CRI_NO_MATCH) {
+            return -1;
+        }
+
+        if (ret == FLB_ML_CRI_OK &&
+            flb_ml_parser_cri_time(ml_parser->parser, &record, &tm) == 0) {
+            map = flb_malloc(flb_ml_parser_cri_map_size(&record));
+            if (!map) {
+                flb_errno();
+                return -1;
+            }
+
+            *out_size = flb_ml_parser_cri_map_pack(&record, map);
+            *out_buf = map;
+            flb_time_copy(out_time, &tm);
+
+            return size;
+        }
+    }
+
+    return flb_parser_do(ml_parser->parser, buf, size,
+                         out_buf, out_size, out_time);
+}
+
 static int ml_append_try_parser_type_text(struct flb_ml_parser_ins *parser,
                                           uint64_t stream_id,
                                           int *type,
@@ -548,8 +619,8 @@ static int ml_append_try_parser_type_text(struct flb_ml_parser_ins *parser,
 
     if (parser->ml_parser->parser) {
         /* Parse incoming content */
-        ret = flb_parser_do(parser->ml_parser->parser, (char *) buf, size,
-                            out_buf, out_size, out_time);
+        ret = ml_parser_do(parser->ml_parser, (char *) buf, size,
+                           out_buf, out_size, out_time);
         if (flb_time_to_nanosec(out_time) == 0L) {
             flb_time_copy(out_time, tm);
         }
@@ -624,6 +695,148 @@ static int ml_append_try_parser_type_map(struct flb_ml_parser_ins *parser,
     return 0;
 }
 
+/* the native path could not take the content, use the generic one */
+#define ML_NATIVE_SKIP    -2
+
+/* size of [[TIMESTAMP, {}], which precedes the body of a record */
+#define ML_RECORD_HEADER_SIZE   17
+
+static inline int ml_key_equals(flb_sds_t key, const char *str, int len)
+{
+    return key != NULL && flb_sds_len(key) == len && memcmp(key, str, len) == 0;
+}
+
+/*
+ * Direct path for the lines of the built-in 'cri' parser.
+ *
+ * A complete line ('F' flag) that arrives when its group has nothing
+ * buffered generates one record by itself: instead of creating a msgpack
+ * map, decoding it, keeping a copy as context, concatenating the content
+ * and encoding everything back at flush time, the record is serialized
+ * straight from the line and delivered to the flush callback.
+ *
+ * Partial lines and any other case goes through the generic path, the
+ * outcome of both paths is the same.
+ */
+static int ml_append_cri(struct flb_ml_parser_ins *parser_i,
+                         uint64_t stream_id, struct flb_time *tm,
+                         void *buf, size_t size)
+{
+    int ret;
+    char *out;
+    char *tmp;
+    size_t out_size;
+    uint32_t value;
+    msgpack_object group_name;
+    struct flb_time out_time;
+    struct flb_ml *ml;
+    struct flb_ml_stream *mst;
+    struct flb_ml_stream_group *group;
+    struct flb_ml_parser *ml_parser = parser_i->ml_parser;
+    struct flb_ml_cri_record record;
+
+    /* the keys can be overridden per instance */
+    if (!ml_key_equals(parser_i->key_content, "log", 3) ||
+        !ml_key_equals(parser_i->key_pattern, "_p", 2) ||
+        !ml_key_equals(parser_i->key_group, "stream", 6)) {
+        return ML_NATIVE_SKIP;
+    }
+
+    ret = flb_ml_parser_cri_decode(buf, size, &record);
+    if (ret == FLB_ML_CRI_NO_MATCH) {
+        return -1;
+    }
+    else if (ret != FLB_ML_CRI_OK || *record.flag != 'F') {
+        return ML_NATIVE_SKIP;
+    }
+
+    mst = flb_ml_stream_get(parser_i, stream_id);
+    if (!mst) {
+        return ML_NATIVE_SKIP;
+    }
+    ml = mst->ml;
+
+    /* the content would be truncated */
+    if (ml->buffer_limit > 0 && record.log_len > ml->buffer_limit) {
+        return ML_NATIVE_SKIP;
+    }
+
+    group_name.type = MSGPACK_OBJECT_STR;
+    group_name.via.str.ptr = record.stream;
+    group_name.via.str.size = 6;
+
+    group = flb_ml_stream_group_get(parser_i, mst, &group_name);
+    if (!group) {
+        return -1;
+    }
+
+    /* a previous partial line or pending metadata must be completed */
+    if (flb_sds_len(group->buf) > 0 || group->mp_sbuf.size > 0 ||
+        group->truncated == FLB_TRUE ||
+        (group->metadata_objects_initialized == FLB_TRUE &&
+         mk_list_is_empty(&group->metadata_objects) != 0)) {
+        return ML_NATIVE_SKIP;
+    }
+
+    ret = flb_ml_parser_cri_time(ml_parser->parser, &record, &out_time);
+    if (ret != 0) {
+        return ML_NATIVE_SKIP;
+    }
+
+    if (flb_time_to_nanosec(&out_time) == 0L) {
+        if (tm && flb_time_to_nanosec(tm) != 0L) {
+            flb_time_copy(&out_time, tm);
+        }
+        else {
+            flb_time_get(&out_time);
+        }
+    }
+
+    /* the flush uses the current time if the one found cannot be used */
+    if (ml_time_is_usable(&out_time) == FLB_FALSE) {
+        flb_time_get(&out_time);
+    }
+
+    out_size = ML_RECORD_HEADER_SIZE + flb_ml_parser_cri_map_size(&record);
+    if (out_size > ml->native_buf_size) {
+        tmp = flb_realloc(ml->native_buf, out_size + 1024);
+        if (!tmp) {
+            flb_errno();
+            return ML_NATIVE_SKIP;
+        }
+        ml->native_buf = tmp;
+        ml->native_buf_size = out_size + 1024;
+    }
+    out = ml->native_buf;
+
+    /* [[ timestamp (fixext 8, type 0), empty metadata ], */
+    out[0] = (char) 0x92;
+    out[1] = (char) 0x92;
+    out[2] = (char) 0xd7;
+    out[3] = (char) 0x00;
+    value = FLB_UINT32_TO_NETWORK_BYTE_ORDER((uint32_t) out_time.tm.tv_sec);
+    memcpy(&out[4], &value, 4);
+    value = FLB_UINT32_TO_NETWORK_BYTE_ORDER((uint32_t) out_time.tm.tv_nsec);
+    memcpy(&out[8], &value, 4);
+    out[12] = (char) 0xdf;
+    out[13] = 0;
+    out[14] = 0;
+    out[15] = 0;
+    out[16] = 0;
+
+    /* body */
+    out_size = ML_RECORD_HEADER_SIZE +
+               flb_ml_parser_cri_map_pack(&record, out + ML_RECORD_HEADER_SIZE);
+
+    /* same state left by the generic path */
+    mst->last_stream_group = group;
+    flb_time_copy(&group->mp_time, &out_time);
+
+    mst->cb_flush(ml_parser, mst, mst->cb_data, out, out_size);
+
+    return FLB_TRUE;
+}
+
 static int ml_append_try_parser(struct flb_ml_parser_ins *parser,
                                 uint64_t stream_id,
                                 int type,
@@ -637,6 +850,14 @@ static int ml_append_try_parser(struct flb_ml_parser_ins *parser,
     size_t out_size = 0;
     struct flb_time out_time;
     struct flb_ml_stream *mst;
+
+    if (type == FLB_ML_TYPE_TEXT &&
+        parser->ml_parser->native == FLB_ML_NATIVE_CRI) {
+        ret = ml_append_cri(parser, stream_id, tm, buf, size);
+        if (ret != ML_NATIVE_SKIP) {
+            return ret;
+        }
+    }
 
     flb_time_zero(&out_time);
 
@@ -1039,6 +1260,10 @@ int flb_ml_destroy(struct flb_ml *ml)
 
     if (ml->name) {
         flb_sds_destroy(ml->name);
+    }
+
+    if (ml->native_buf) {
+        flb_free(ml->native_buf);
     }
 
     /* destroy groups */
@@ -1650,8 +1875,13 @@ int flb_ml_flush_stream_group(struct flb_ml_parser *ml_parser,
     msgpack_sbuffer_init(&mp_sbuf);
     msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
 
-    /* if the group don't have a time set, use current time */
-    if (flb_time_to_nanosec(&group->mp_time) == 0L) {
+    /*
+     * If the group don't have a time set use the current time, the same
+     * applies for a time that cannot be represented in a record: otherwise
+     * the record is rejected and its content ends up in the next one.
+     */
+    if (flb_time_to_nanosec(&group->mp_time) == 0L ||
+        ml_time_is_usable(&group->mp_time) == FLB_FALSE) {
         flb_time_get(&now);
         group_time = &now;
     } else {
@@ -1801,6 +2031,11 @@ int flb_ml_flush_stream_group(struct flb_ml_parser *ml_parser,
             flb_ml_stream_group_purge_metadata(group);
             group->mp_md_sbuf.size = 0;
             msgpack_sbuffer_destroy(&mp_sbuf);
+
+            /* do not leave partial state for the next record */
+            flb_log_event_encoder_reset(&mst->ml->log_event_encoder);
+            flb_sds_len_set(group->buf, 0);
+            group->truncated = FLB_FALSE;
 
             return -1;
         }

@@ -247,6 +247,10 @@ struct flb_log_event_encoder {
     msgpack_sbuffer                             buffer;
 
     int                                         format;
+
+    /* raw record being written straight to the output buffer */
+    int                                         raw_record_open;
+    size_t                                      raw_record_start;
 };
 
 int flb_log_event_encoder_init(struct flb_log_event_encoder *context,
@@ -266,6 +270,68 @@ int flb_log_event_encoder_reset_record(struct flb_log_event_encoder *context);
 int flb_log_event_encoder_begin_record(struct flb_log_event_encoder *context);
 int flb_log_event_encoder_commit_record(struct flb_log_event_encoder *context);
 int flb_log_event_encoder_rollback_record(struct flb_log_event_encoder *context);
+/*
+ * Raw records
+ * -----------
+ * Interface to serialize a record straight to the output buffer when the
+ * caller already has the content of the body, or a complete record that
+ * only needs more entries in its body. The layout of the record is owned by
+ * the encoder: [[TIMESTAMP, {}], BODY], always with empty metadata.
+ *
+ * A record is opened with one of the 'begin' functions, its content is
+ * appended in order and it becomes part of the output on 'commit'. If any
+ * call fails the record must be discarded with 'rollback'. Only
+ * FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V2 is supported, for any other format the
+ * 'begin' functions return an error and the regular interface must be used.
+ */
+
+/* the caller appends the body as one serialized msgpack object */
+int flb_log_event_encoder_raw_record_begin(struct flb_log_event_encoder *context,
+                                           struct flb_time *timestamp);
+
+/* the body is a map of 'entries' pairs appended by the caller */
+int flb_log_event_encoder_raw_record_begin_map(
+        struct flb_log_event_encoder *context,
+        struct flb_time *timestamp,
+        uint32_t entries);
+
+/*
+ * the body starts with the entries of a serialized map, the caller appends
+ * 'extra_entries' more pairs.
+ */
+int flb_log_event_encoder_raw_record_begin_from_map(
+        struct flb_log_event_encoder *context,
+        struct flb_time *timestamp,
+        const char *map, size_t map_length,
+        uint32_t extra_entries);
+
+/*
+ * copy the first record found in 'buffer' leaving its body open, the caller
+ * appends 'extra_entries' more pairs. 'consumed' is set to the length of
+ * the record that was copied.
+ */
+int flb_log_event_encoder_raw_record_begin_from_record(
+        struct flb_log_event_encoder *context,
+        const char *buffer, size_t length,
+        uint32_t extra_entries,
+        size_t *consumed);
+
+int flb_log_event_encoder_raw_record_append_map(
+        struct flb_log_event_encoder *context,
+        uint32_t entries);
+int flb_log_event_encoder_raw_record_append_string(
+        struct flb_log_event_encoder *context,
+        const char *value, size_t length);
+int flb_log_event_encoder_raw_record_append_uint64(
+        struct flb_log_event_encoder *context,
+        uint64_t value);
+int flb_log_event_encoder_raw_record_append_msgpack(
+        struct flb_log_event_encoder *context,
+        const char *buffer, size_t length);
+
+int flb_log_event_encoder_raw_record_commit(struct flb_log_event_encoder *context);
+int flb_log_event_encoder_raw_record_rollback(struct flb_log_event_encoder *context);
+
 int flb_log_event_encoder_emit_raw_record(struct flb_log_event_encoder *context,
                                           const char *buffer,
                                           size_t length);
