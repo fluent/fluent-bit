@@ -35,6 +35,12 @@
  */
 #define CRI_FIXED_LEN   10
 
+/* Fields of a CRI line, in the order they are packed */
+#define CRI_FIELDS      4
+
+static const char *cri_keys[CRI_FIELDS] = {"time", "stream", "_p", "log"};
+static const size_t cri_key_lens[CRI_FIELDS] = {4, 6, 2, 3};
+
 /*
  * Check if the delimiter found after the time candidate is followed by a
  * stream name and a partial/full flag.
@@ -57,15 +63,18 @@ int flb_parser_cri_do(struct flb_parser *parser,
                       void **out_buf, size_t *out_size,
                       struct flb_time *out_time)
 {
+    int i;
     int ret;
-    int map_size = 4;
+    int skip = -1;
+    int time_field = -1;
     double tmfrac = 0;
     size_t time_len;
-    size_t time_key_len;
     size_t log_len;
+    size_t lens[CRI_FIELDS];
     size_t dec_out_size;
     char *dec_out_buf;
     char *time_key;
+    const char *vals[CRI_FIELDS];
     const char *end;
     const char *token_end;
     const char *stream;
@@ -76,14 +85,6 @@ int flb_parser_cri_do(struct flb_parser *parser,
     struct flb_tm tm = {0};
     msgpack_sbuffer tmp_sbuf;
     msgpack_packer tmp_pck;
-
-    if (parser->time_key) {
-        time_key = parser->time_key;
-    }
-    else {
-        time_key = "time";
-    }
-    time_key_len = strlen(time_key);
 
     /*
      * Time: the field ends at the first delimiter that is followed by the
@@ -125,20 +126,52 @@ int flb_parser_cri_do(struct flb_parser *parser,
     }
     log_len = end_of_line - log;
 
+    vals[0] = in_buf;
+    lens[0] = time_len;
+    vals[1] = stream;
+    lens[1] = 6;
+    vals[2] = flag;
+    lens[2] = 1;
+    vals[3] = log;
+    lens[3] = log_len;
+
+    /*
+     * The field names are fixed, as the capture names of the regular
+     * expression. The time key selects the field used for the time lookup,
+     * if it does not name a field no lookup is done.
+     */
     if (parser->time_fmt) {
-        ret = flb_parser_time_lookup(in_buf, time_len, 0, parser, &tm, &tmfrac);
+        if (parser->time_key) {
+            time_key = parser->time_key;
+        }
+        else {
+            time_key = "time";
+        }
+
+        for (i = 0; i < CRI_FIELDS; i++) {
+            if (strcmp(time_key, cri_keys[i]) == 0) {
+                time_field = i;
+                break;
+            }
+        }
+    }
+
+    if (time_field >= 0) {
+        ret = flb_parser_time_lookup(vals[time_field], lens[time_field],
+                                     0, parser, &tm, &tmfrac);
         if (ret == -1) {
             flb_warn("[parser:%s] invalid time format %s for '%.*s'",
                      parser->name, parser->time_fmt_full,
-                     time_len > 254 ? 254 : (int) time_len, in_buf);
+                     lens[time_field] > 254 ? 254 : (int) lens[time_field],
+                     vals[time_field]);
             /* the lookup may have set the fraction before it failed */
             tmfrac = 0;
-            map_size--;
+            skip = time_field;
         }
         else {
             time_lookup = flb_parser_tm2time_parser(&tm, parser);
             if (parser->time_keep == FLB_FALSE) {
-                map_size--;
+                skip = time_field;
             }
         }
     }
@@ -146,29 +179,18 @@ int flb_parser_cri_do(struct flb_parser *parser,
     /* Prepare new outgoing buffer */
     msgpack_sbuffer_init(&tmp_sbuf);
     msgpack_packer_init(&tmp_pck, &tmp_sbuf, msgpack_sbuffer_write);
-    msgpack_pack_map(&tmp_pck, map_size);
+    msgpack_pack_map(&tmp_pck, skip >= 0 ? CRI_FIELDS - 1 : CRI_FIELDS);
 
-    if (map_size == 4) {
-        msgpack_pack_str(&tmp_pck, time_key_len);
-        msgpack_pack_str_body(&tmp_pck, time_key, time_key_len);
-        msgpack_pack_str(&tmp_pck, time_len);
-        msgpack_pack_str_body(&tmp_pck, in_buf, time_len);
+    for (i = 0; i < CRI_FIELDS; i++) {
+        if (i == skip) {
+            continue;
+        }
+
+        msgpack_pack_str(&tmp_pck, cri_key_lens[i]);
+        msgpack_pack_str_body(&tmp_pck, cri_keys[i], cri_key_lens[i]);
+        msgpack_pack_str(&tmp_pck, lens[i]);
+        msgpack_pack_str_body(&tmp_pck, vals[i], lens[i]);
     }
-
-    msgpack_pack_str(&tmp_pck, 6);
-    msgpack_pack_str_body(&tmp_pck, "stream", 6);
-    msgpack_pack_str(&tmp_pck, 6);
-    msgpack_pack_str_body(&tmp_pck, stream, 6);
-
-    msgpack_pack_str(&tmp_pck, 2);
-    msgpack_pack_str_body(&tmp_pck, "_p", 2);
-    msgpack_pack_str(&tmp_pck, 1);
-    msgpack_pack_str_body(&tmp_pck, flag, 1);
-
-    msgpack_pack_str(&tmp_pck, 3);
-    msgpack_pack_str_body(&tmp_pck, "log", 3);
-    msgpack_pack_str(&tmp_pck, log_len);
-    msgpack_pack_str_body(&tmp_pck, log, log_len);
 
     /* Export results */
     out_time->tm.tv_sec = time_lookup;
