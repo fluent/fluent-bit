@@ -1055,6 +1055,216 @@ static void scope_reuse()
     flb_log_event_encoder_destroy(&encoder);
 }
 
+/*
+ * Raw records must be byte per byte the same content generated through the
+ * regular interface for the same timestamp and body.
+ */
+static void raw_record()
+{
+    int ret;
+    size_t consumed = 0;
+    size_t first_size;
+    char map[64];
+    msgpack_sbuffer sbuf;
+    msgpack_packer pck;
+    struct flb_time tm;
+    struct flb_log_event event;
+    struct flb_log_event_decoder decoder;
+    struct flb_log_event_encoder regular;
+    struct flb_log_event_encoder raw;
+
+    flb_time_set(&tm, 1700000000, 123456789);
+
+    ret = flb_log_event_encoder_init(&regular, FLB_LOG_EVENT_FORMAT_DEFAULT);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    ret = flb_log_event_encoder_init(&raw, FLB_LOG_EVENT_FORMAT_DEFAULT);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+
+    /* reference: {"file": "a.log", "offset": 77, "log": "hello"} */
+    ret = flb_log_event_encoder_begin_record(&regular);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    ret = flb_log_event_encoder_set_timestamp(&regular, &tm);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    ret = flb_log_event_encoder_append_body_values(
+            &regular,
+            FLB_LOG_EVENT_CSTRING_VALUE("file"),
+            FLB_LOG_EVENT_CSTRING_VALUE("a.log"),
+            FLB_LOG_EVENT_CSTRING_VALUE("offset"),
+            FLB_LOG_EVENT_UINT64_VALUE(77),
+            FLB_LOG_EVENT_CSTRING_VALUE("log"),
+            FLB_LOG_EVENT_CSTRING_VALUE("hello"));
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    ret = flb_log_event_encoder_commit_record(&regular);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+
+    /* 1. body map written entry by entry */
+    ret = flb_log_event_encoder_raw_record_begin_map(&raw, &tm, 3);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+
+    /* nothing is visible until the record is committed */
+    TEST_CHECK(raw.output_length == 0);
+
+    /* a second record cannot be opened */
+    ret = flb_log_event_encoder_raw_record_begin_map(&raw, &tm, 1);
+    TEST_CHECK(ret != FLB_EVENT_ENCODER_SUCCESS);
+
+    ret = flb_log_event_encoder_raw_record_append_string(&raw, "file", 4);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    ret = flb_log_event_encoder_raw_record_append_string(&raw, "a.log", 5);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    ret = flb_log_event_encoder_raw_record_append_string(&raw, "offset", 6);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    ret = flb_log_event_encoder_raw_record_append_uint64(&raw, 77);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    ret = flb_log_event_encoder_raw_record_append_string(&raw, "log", 3);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    ret = flb_log_event_encoder_raw_record_append_string(&raw, "hello", 5);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    ret = flb_log_event_encoder_raw_record_commit(&raw);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+
+    if (!TEST_CHECK(raw.output_length == regular.output_length &&
+                    memcmp(raw.output_buffer, regular.output_buffer,
+                           regular.output_length) == 0)) {
+        TEST_MSG("begin_map: content differs from the regular interface");
+    }
+    first_size = raw.output_length;
+
+    /* 2. a record that is rolled back leaves no trace */
+    ret = flb_log_event_encoder_raw_record_begin_map(&raw, &tm, 1);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    ret = flb_log_event_encoder_raw_record_append_string(&raw, "x", 1);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    ret = flb_log_event_encoder_raw_record_rollback(&raw);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    TEST_CHECK(raw.output_length == first_size);
+    TEST_CHECK(flb_log_event_encoder_raw_record_commit(&raw) !=
+               FLB_EVENT_ENCODER_SUCCESS);
+    TEST_CHECK(flb_log_event_encoder_raw_record_append_string(&raw, "x", 1) !=
+               FLB_EVENT_ENCODER_SUCCESS);
+
+    /* 3. body from a serialized map {"file": "a.log"} plus two entries */
+    flb_log_event_encoder_reset(&raw);
+
+    msgpack_sbuffer_init(&sbuf);
+    msgpack_packer_init(&pck, &sbuf, msgpack_sbuffer_write);
+    msgpack_pack_map(&pck, 1);
+    msgpack_pack_str(&pck, 4);
+    msgpack_pack_str_body(&pck, "file", 4);
+    msgpack_pack_str(&pck, 5);
+    msgpack_pack_str_body(&pck, "a.log", 5);
+
+    ret = flb_log_event_encoder_raw_record_begin_from_map(&raw, &tm, sbuf.data,
+                                                          sbuf.size, 2);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    flb_log_event_encoder_raw_record_append_string(&raw, "offset", 6);
+    flb_log_event_encoder_raw_record_append_uint64(&raw, 77);
+    flb_log_event_encoder_raw_record_append_string(&raw, "log", 3);
+    flb_log_event_encoder_raw_record_append_string(&raw, "hello", 5);
+    ret = flb_log_event_encoder_raw_record_commit(&raw);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+
+    if (!TEST_CHECK(raw.output_length == regular.output_length &&
+                    memcmp(raw.output_buffer, regular.output_buffer,
+                           regular.output_length) == 0)) {
+        TEST_MSG("begin_from_map: content differs from the regular interface");
+    }
+
+    /* content that is not a map */
+    flb_log_event_encoder_reset(&raw);
+    ret = flb_log_event_encoder_raw_record_begin_from_map(&raw, &tm, "\xa1x", 2, 0);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_ERROR_INVALID_ARGUMENT);
+    TEST_CHECK(raw.output_length == 0 && raw.raw_record_open == FLB_FALSE);
+
+    /* 4. extend a complete record: [[ts, {}], {"file": "a.log"}] */
+    flb_log_event_encoder_reset(&raw);
+    ret = flb_log_event_encoder_raw_record_begin(&raw, &tm);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    ret = flb_log_event_encoder_raw_record_append_msgpack(&raw, sbuf.data,
+                                                          sbuf.size);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    ret = flb_log_event_encoder_raw_record_commit(&raw);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+
+    /* the source is followed by something else: only one record is taken */
+    memcpy(map, raw.output_buffer, raw.output_length);
+    memcpy(map + raw.output_length, "\x92\x92", 2);
+    first_size = raw.output_length;
+
+    flb_log_event_encoder_reset(&raw);
+    ret = flb_log_event_encoder_raw_record_begin_from_record(&raw, map,
+                                                             first_size + 2,
+                                                             2, &consumed);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    TEST_CHECK(consumed == first_size);
+    flb_log_event_encoder_raw_record_append_string(&raw, "offset", 6);
+    flb_log_event_encoder_raw_record_append_uint64(&raw, 77);
+    flb_log_event_encoder_raw_record_append_string(&raw, "log", 3);
+    flb_log_event_encoder_raw_record_append_string(&raw, "hello", 5);
+    ret = flb_log_event_encoder_raw_record_commit(&raw);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+
+    if (!TEST_CHECK(raw.output_length == regular.output_length &&
+                    memcmp(raw.output_buffer, regular.output_buffer,
+                           regular.output_length) == 0)) {
+        TEST_MSG("begin_from_record: content differs from the regular interface");
+    }
+
+    /* the result is a valid record for the decoder */
+    ret = flb_log_event_decoder_init(&decoder, raw.output_buffer,
+                                     raw.output_length);
+    TEST_CHECK(ret == FLB_EVENT_DECODER_SUCCESS);
+    ret = flb_log_event_decoder_next(&decoder, &event);
+    TEST_CHECK(ret == FLB_EVENT_DECODER_SUCCESS);
+    TEST_CHECK(event.timestamp.tm.tv_sec == 1700000000 &&
+               event.timestamp.tm.tv_nsec == 123456789);
+    TEST_CHECK(event.body->type == MSGPACK_OBJECT_MAP &&
+               event.body->via.map.size == 3);
+    TEST_CHECK(flb_log_event_decoder_next(&decoder, &event) !=
+               FLB_EVENT_DECODER_SUCCESS);
+    flb_log_event_decoder_destroy(&decoder);
+
+    /* truncated and unsupported sources are rejected without side effects */
+    flb_log_event_encoder_reset(&raw);
+    ret = flb_log_event_encoder_raw_record_begin_from_record(&raw, map,
+                                                             first_size - 1,
+                                                             2, &consumed);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_ERROR_INVALID_ARGUMENT);
+    ret = flb_log_event_encoder_raw_record_begin_from_record(&raw, "\x92\x01\x80",
+                                                             3, 2, &consumed);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_ERROR_INVALID_ARGUMENT);
+    TEST_CHECK(raw.output_length == 0 && raw.raw_record_open == FLB_FALSE);
+
+    /* 5. a time that cannot be represented is not accepted */
+    flb_time_set(&tm, -1, 0);
+    ret = flb_log_event_encoder_raw_record_begin_map(&raw, &tm, 1);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_ERROR_INVALID_ARGUMENT);
+
+    /* 6. the output limit applies, the record can be discarded */
+    flb_time_set(&tm, 1700000000, 0);
+    raw.output_limit = 30;
+    ret = flb_log_event_encoder_raw_record_begin_map(&raw, &tm, 1);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    ret = flb_log_event_encoder_raw_record_append_string(&raw, "log", 3);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    ret = flb_log_event_encoder_raw_record_append_string(&raw, "0123456789", 10);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_ERROR_SERIALIZATION_FAILURE);
+    ret = flb_log_event_encoder_raw_record_rollback(&raw);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    TEST_CHECK(raw.output_length == 0);
+
+    msgpack_sbuffer_destroy(&sbuf);
+    flb_log_event_encoder_destroy(&raw);
+    flb_log_event_encoder_destroy(&regular);
+
+    /* 7. only the default format is supported */
+    ret = flb_log_event_encoder_init(&raw, FLB_LOG_EVENT_FORMAT_FLUENT_BIT_V1);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_SUCCESS);
+    ret = flb_log_event_encoder_raw_record_begin_map(&raw, &tm, 1);
+    TEST_CHECK(ret == FLB_EVENT_ENCODER_ERROR_INVALID_ARGUMENT);
+    flb_log_event_encoder_destroy(&raw);
+}
+
 TEST_LIST = {
     { "output_limit_record_rollback", output_limit_record_rollback},
     { "output_limit", output_limit},
@@ -1066,6 +1276,7 @@ TEST_LIST = {
     { "init_destroy", init_destroy},
     { "init_unsupported_format", init_unsupported_format},
     { "emit_raw_record", emit_raw_record},
+    { "raw_record", raw_record},
     { "scope_reuse", scope_reuse},
     { "metadata_with_empty_map", metadata_with_empty_map},
     { "timestamp_encoding", timestamp_encoding},
