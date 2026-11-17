@@ -1359,6 +1359,11 @@ int flb_log_destroy(struct flb_log *log, struct flb_config *config)
         log->worker->log_cache = NULL;
     }
     flb_log_worker_destroy(log->worker);
+
+    /* the creating thread must not keep a reference to the released worker */
+    if (FLB_TLS_GET(flb_worker_ctx) == log->worker) {
+        FLB_TLS_SET(flb_worker_ctx, NULL);
+    }
     flb_free(log->worker);
     flb_log_metrics_destroy(log->metrics);
     flb_free(log);
