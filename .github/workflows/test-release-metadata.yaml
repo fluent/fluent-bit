@@ -8,6 +8,7 @@ on:
       - '.github/scripts/tests/test_release_*.py'
       - '.github/workflows/call-build-images.yaml'
       - '.github/workflows/release-rebuild-images.yaml'
+      - '.github/workflows/release-rebuild-images-retry.yaml'
       - '.github/workflows/staging-build.yaml'
       - '.github/workflows/staging-release.yaml'
       - '.github/workflows/test-release-metadata.yaml'
@@ -20,6 +21,7 @@ on:
       - '.github/scripts/tests/test_release_*.py'
       - '.github/workflows/call-build-images.yaml'
       - '.github/workflows/release-rebuild-images.yaml'
+      - '.github/workflows/release-rebuild-images-retry.yaml'
       - '.github/workflows/staging-build.yaml'
       - '.github/workflows/staging-release.yaml'
       - '.github/workflows/test-release-metadata.yaml'
@@ -41,6 +43,7 @@ jobs:
           go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -shellcheck='' \
             .github/workflows/call-build-images.yaml \
             .github/workflows/release-rebuild-images.yaml \
+            .github/workflows/release-rebuild-images-retry.yaml \
             .github/workflows/staging-build.yaml \
             .github/workflows/staging-release.yaml \
             .github/workflows/test-release-metadata.yaml
