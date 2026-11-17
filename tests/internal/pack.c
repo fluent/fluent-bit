@@ -16,6 +16,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <math.h> /* for NAN */
+#include <locale.h>
 
 
 #include "flb_tests_internal.h"
@@ -1879,7 +1880,56 @@ void test_json_pack_iterative_buffer_retry(void)
     flb_free(packed);
 }
 
+static void test_json_numeric_locale(void)
+{
+    const char *requested;
+    const char *locales[] = {"de_DE.UTF-8", "fr_FR.UTF-8", "de_DE", "fr_FR", "C"};
+    const double values[] = {1.5, -1.5, 1.0, -0.0, 1.25e-20};
+    char *saved;
+    char *selected;
+    char expected[128];
+    char actual[128];
+    msgpack_object value;
+    size_t index;
+    int ret;
+
+    saved = flb_strdup(setlocale(LC_NUMERIC, NULL));
+    TEST_ASSERT(saved != NULL);
+    requested = getenv("FLB_TEST_NUMERIC_LOCALE");
+    if (requested) {
+        selected = setlocale(LC_NUMERIC, requested);
+        TEST_ASSERT(selected != NULL);
+    }
+    else {
+        selected = NULL;
+        for (index = 0; index < sizeof(locales) / sizeof(locales[0]); index++) {
+            selected = setlocale(LC_NUMERIC, locales[index]);
+            if (selected) {
+                break;
+            }
+        }
+    }
+    selected = flb_strdup(selected);
+    TEST_ASSERT(selected != NULL);
+    value.type = MSGPACK_OBJECT_FLOAT64;
+    for (index = 0; index < sizeof(values) / sizeof(values[0]); index++) {
+        value.via.f64 = values[index];
+        setlocale(LC_NUMERIC, "C");
+        ret = flb_msgpack_to_json(expected, sizeof(expected), &value, FLB_FALSE);
+        TEST_CHECK(ret > 0);
+        setlocale(LC_NUMERIC, selected);
+        ret = flb_msgpack_to_json(actual, sizeof(actual), &value, FLB_FALSE);
+        TEST_CHECK(ret > 0);
+        TEST_CHECK(strcmp(actual, expected) == 0);
+        TEST_MSG("locale=%s expected=%s actual=%s", selected, expected, actual);
+    }
+    setlocale(LC_NUMERIC, saved);
+    flb_free(selected);
+    flb_free(saved);
+}
+
 TEST_LIST = {
+    { "json_numeric_locale", test_json_numeric_locale },
     { "json_pack_buffer_capacity", test_json_pack_buffer_capacity },
 #ifdef FLB_HAVE_YYJSON
     { "json_pack_depth_limit", test_json_pack_depth_limit },
