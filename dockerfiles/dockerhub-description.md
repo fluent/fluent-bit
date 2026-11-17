@@ -10,6 +10,19 @@ For a detailed list of tags and versions available, please refer to the the offi
 
 <https://docs.fluentbit.io/manual/installation/docker>
 
+## Security updates
+
+Released images are rebuilt on updated base images when a base image security fix is available,
+without a new Fluent Bit release. The version tag, for example `5.2.0`, moves to the newest build
+and every build keeps a dated tag that never moves, for example `5.2.0-20261117`.
+
+- [Container images](https://github.com/fluent/fluent-bit/wiki/Container-Images): every published
+  build with its tags, digests and build date.
+- [Container image security status](https://github.com/fluent/fluent-bit/wiki/Container-Image-Security-Status):
+  known critical and high findings of the current images.
+- [Security policy](https://github.com/fluent/fluent-bit/blob/master/SECURITY.md#-container-images):
+  what to do when a scanner reports a finding in an image.
+
 ## Getting Started
 
 Run a Fluent Bit instance that will receive messages over TCP port 24224 through the [Forward](https://docs.fluentbit.io/manual/pipeline/outputs/forward) protocol, and send the messages to the STDOUT interface in JSON format every second:
