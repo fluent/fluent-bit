@@ -44,6 +44,11 @@ on:
         type: boolean
         required: false
         default: false
+      windows-images:
+        description: JSON list of the Windows image tag prefixes to build, used to rebuild releases that ship fewer images.
+        type: string
+        required: false
+        default: '["windows-2022","windows-2025","windows-nano-2025"]'
       scan-exit-code:
         description: Exit code of the Trivy scan on fixable findings, set to 0 when the caller evaluates the scan itself.
         type: string
@@ -446,8 +451,11 @@ jobs:
       packages: write
     env:
       IMAGE: ${{ inputs.registry }}/${{ inputs.image }}:${{ matrix.image-tag-prefix }}-${{ inputs.version }}
+      # The matrix is static, images that were not requested become no-op jobs.
+      REQUESTED: ${{ contains(fromJSON(inputs.windows-images), matrix.image-tag-prefix) }}
     steps:
       - name: Checkout repository
+        if: env.REQUESTED == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.ref }}
@@ -456,6 +464,7 @@ jobs:
       #   uses: docker/setup-buildx-action@v4
 
       - name: Log in to the Container registry
+        if: env.REQUESTED == 'true'
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ${{ inputs.registry }}
@@ -466,6 +475,7 @@ jobs:
       # https://github.com/moby/moby/issues/48093
       # https://support.microsoft.com/en-us/topic/gettemppath-changes-in-windows-february-cumulative-update-preview-4cc631fb-9d97-4118-ab6d-f643cd0a7259#ID0EDF
       - name: Move Docker storage and system temp to the build drive
+        if: env.REQUESTED == 'true'
         id: relocate-system-temp-dir
         run: |
           $ErrorActionPreference = "Stop"
@@ -520,7 +530,7 @@ jobs:
         shell: pwsh
 
       - name: Pull the last release image to speed up the build with a cache
-        if: ${{ ! inputs.refresh-base-images }}
+        if: env.REQUESTED == 'true' && (! inputs.refresh-base-images)
         continue-on-error: true
         run: |
           VERSION=$(gh release list --json tagName,isLatest --jq '.[] | select(.isLatest)|.tagName | sub("^v"; "")')
@@ -531,6 +541,7 @@ jobs:
           GH_TOKEN: ${{ secrets.token }}
 
       - name: Build the production images
+        if: env.REQUESTED == 'true'
         run: |
           docker build $PULL_FLAGS -t $IMAGE --build-arg FLB_NIGHTLY_BUILD=${{ inputs.unstable }} --build-arg WINDOWS_VERSION=ltsc${{ matrix.windows-base-version }} -f ./dockerfiles/${{ matrix.dockerfile }} .
         shell: bash
@@ -538,12 +549,13 @@ jobs:
           PULL_FLAGS: ${{ inputs.refresh-base-images && '--pull --no-cache' || '' }}
 
       - name: Sanity check of the production images
+        if: env.REQUESTED == 'true'
         run: |
           docker run --rm -t $IMAGE --help
         shell: bash
 
       - name: Sanity check the Nano Server default configuration
-        if: matrix.windows-container-type == 'nanoserver'
+        if: env.REQUESTED == 'true' && (matrix.windows-container-type == 'nanoserver')
         run: |
           $containerName = "fluent-bit-nano-${{ matrix.windows-base-version }}"
 
@@ -567,7 +579,7 @@ jobs:
         shell: pwsh
 
       - name: Push the production images
-        if: inputs.push
+        if: env.REQUESTED == 'true' && inputs.push
         run: |
           docker push $IMAGE
         shell: bash
