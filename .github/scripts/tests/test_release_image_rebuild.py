@@ -53,7 +53,7 @@ class PlanTests(unittest.TestCase):
     def test_newest_release_moves_every_floating_tag(self):
         for requested in ("", "5.2.0", "v5.2.0"):
             with self.subTest(requested=requested):
-                plan = rebuild.plan(requested, self.versions, "20261116", REGISTRY)
+                plan = rebuild.plan(requested, self.versions, "20261116", REGISTRY, "20261109")
                 self.assertEqual(plan["version"], "5.2.0")
                 self.assertEqual(plan["ref"], "v5.2.0")
                 self.assertEqual(plan["tags"], [
@@ -61,38 +61,127 @@ class PlanTests(unittest.TestCase):
                     "5.2.0-debug", "5.2.0-20261116-debug", "5.2-debug", "latest-debug"])
 
     def test_floating_tags_never_move_backwards(self):
-        plan = rebuild.plan("5.1.5", self.versions, "20261116", REGISTRY)
+        plan = rebuild.plan("5.1.5", self.versions, "20261116", REGISTRY, "20261021")
         self.assertEqual(plan["tags"], ["5.1.5", "5.1.5-20261116", "5.1",
                                         "5.1.5-debug", "5.1.5-20261116-debug", "5.1-debug"])
-        plan = rebuild.plan("5.1.4", self.versions, "20261116", REGISTRY)
+        plan = rebuild.plan("5.1.4", self.versions, "20261116", REGISTRY, "20261001")
         self.assertEqual(plan["tags"], ["5.1.4", "5.1.4-20261116",
                                         "5.1.4-debug", "5.1.4-20261116-debug"])
 
     def test_report_covers_newest_patch_of_recent_series(self):
-        plan = rebuild.plan("5.1.4", self.versions, "20261116", REGISTRY)
+        plan = rebuild.plan("5.1.4", self.versions, "20261116", REGISTRY, "20261001")
         self.assertEqual(plan["report-versions"], ["5.2.0", "5.1.5", "5.0.11"])
         self.assertEqual(plan["report-tags"][:2], ["5.2.0", "5.2.0-debug"])
-        self.assertEqual(rebuild.plan("", self.versions, "20261116", REGISTRY, 1)["report-versions"], ["5.2.0"])
+        self.assertEqual(rebuild.plan("", self.versions, "20261116", REGISTRY, "20261109", 1)["report-versions"], ["5.2.0"])
 
     def test_invalid_requests_are_rejected(self):
         for requested, date in (("5.2.1", "20261116"), ("master", "20261116"), ("5.2", "20261116"),
                                 ("5.2.0-rc1", "20261116"), ("5.2.0; id", "20261116"),
                                 ("5.2.0", "2026-11-16")):
             with self.subTest(requested=requested, date=date), self.assertRaises(ValueError):
-                rebuild.plan(requested, self.versions, date, REGISTRY)
+                rebuild.plan(requested, self.versions, date, REGISTRY, "20261109")
         with self.assertRaises(ValueError):
             rebuild.plan("", [], "20261116", REGISTRY)
 
     def test_only_originally_published_images_are_rebuilt(self):
-        plan = rebuild.plan("5.2.0", self.versions, "20261116", REGISTRY)
+        plan = rebuild.plan("5.2.0", self.versions, "20261116", REGISTRY, "20261109")
         self.assertEqual(plan["windows-images"], ["windows-2022", "windows-2025", "windows-nano-2025"])
         self.assertEqual(plan["windows-tags"][0], "windows-2022-5.2.0")
-        plan = rebuild.plan("5.0.11", self.versions, "20261116", REGISTRY)
+        plan = rebuild.plan("5.0.11", self.versions, "20261116", REGISTRY, "20261009")
         self.assertEqual(plan["windows-images"], ["windows-2022"])
         self.assertEqual(plan["windows-tags"], ["windows-2022-5.0.11"])
-        self.assertEqual(rebuild.plan("5.1.5", self.versions, "20261116", REGISTRY)["windows-tags"], [])
+        self.assertEqual(rebuild.plan("5.1.5", self.versions, "20261116", REGISTRY, "20261021")["windows-tags"], [])
         with self.assertRaisesRegex(ValueError, "no published container images"):
             rebuild.plan("4.2.9", self.versions, "20261116", REGISTRY)
+
+    def test_original_release_is_kept_before_its_tags_move(self):
+        plan = rebuild.plan("5.0.11", self.versions, "20261116", REGISTRY, "20261009")
+        self.assertEqual(plan["build"], "20261116")
+        self.assertEqual(plan["preserve"], [
+            {"from": "5.0.11", "to": "5.0.11-20261009"},
+            {"from": "5.0.11-debug", "to": "5.0.11-20261009-debug"},
+            {"from": "windows-2022-5.0.11", "to": "windows-2022-5.0.11-20261009"}])
+        for created in ("", "2026-10-09", "unknown"):
+            with self.subTest(created=created), self.assertRaisesRegex(ValueError, "build date"):
+                rebuild.plan("5.0.11", self.versions, "20261116", REGISTRY, created)
+
+    def test_interrupted_preservation_is_resumed(self):
+        # A previous run kept the production image and failed before the other images or registry.
+        plan = rebuild.plan("5.0.11", self.versions, "20261116", REGISTRY + ["5.0.11-20261009"])
+        self.assertEqual(plan["build"], "20261116")
+        self.assertEqual([item["to"] for item in plan["preserve"]],
+                         ["5.0.11-20261009", "5.0.11-20261009-debug", "windows-2022-5.0.11-20261009"])
+        # Once a rebuild is published the version tags have moved and must not be kept as original.
+        registry = REGISTRY + ["5.0.11-20261009", "5.0.11-20261116"]
+        self.assertEqual(rebuild.plan("5.0.11", self.versions, "20261117", registry)["preserve"], [])
+
+    def test_every_build_gets_a_dated_tag_of_its_own(self):
+        # Released and rebuilt on the same day: the rebuild must not take the original's tag.
+        plan = rebuild.plan("5.2.0", self.versions, "20261109", REGISTRY, "20261109")
+        self.assertEqual(plan["build"], "20261109.2")
+        self.assertEqual(plan["tags"][:2], ["5.2.0", "5.2.0-20261109.2"])
+        self.assertIn("5.2.0-20261109.2-debug", plan["tags"])
+        registry = REGISTRY + ["5.2.0-20261109", "5.2.0-20261116", "5.2.0-20261116.2", "5.2.0-20261116-debug",
+                               "5.2.0-20261116.02", "5.2.0-2026111", "5.2.00-20261116.9"]
+        self.assertEqual(rebuild.builds("5.2.0", registry), ["20261109", "20261116", "20261116.2"])
+        plan = rebuild.plan("5.2.0", self.versions, "20261116", registry)
+        self.assertEqual(plan["build"], "20261116.3")
+        self.assertEqual(plan["preserve"], [])
+        self.assertEqual(rebuild.plan("5.2.0", self.versions, "20261120", registry)["build"], "20261120")
+        self.assertEqual(rebuild.image_tag("windows-2022", "5.2.0", "20261116.2"), "windows-2022-5.2.0-20261116.2")
+        self.assertEqual(rebuild.image_tag("debug", "5.2.0"), "5.2.0-debug")
+
+
+class IndexTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.versions = rebuild.stable_versions(TAGS)
+        self.registry = REGISTRY + ["5.2.0-20261109", "5.2.0-20261109-debug", "windows-2022-5.2.0-20261109",
+                                    "5.2.0-20261116", "5.2.0-20261116-debug", "windows-2022-5.2.0-20261116"]
+
+    def inspect(self, tag, digest, created="2026-11-09T02:00:00Z"):
+        (Path(self.directory.name) / f"inspect-{tag}.json").write_text(json.dumps(
+            {"Digest": "sha256:" + digest * 16, "Created": created}))
+
+    def test_index_tags_cover_every_image_of_every_build(self):
+        tags = rebuild.index_tags(self.versions, self.registry)
+        for tag in ("5.2.0", "5.2.0-20261109", "5.2.0-20261116-debug", "windows-2022-5.2.0-20261116",
+                    "windows-nano-2025-5.2.0", "5.1.5", "5.1.4", "windows-2022-5.1.4", "5.0.11-debug"):
+            self.assertIn(tag, tags)
+        self.assertNotIn("4.2.9", tags)
+        self.assertNotIn("windows-2022-5.1.50", tags)
+        self.assertEqual(len(tags), len(set(tags)))
+        self.assertLessEqual(set(tags), set(self.registry))
+
+    def test_index_lists_history_with_short_and_full_digests(self):
+        self.inspect("5.2.0", "bbbb", "2026-11-16T02:00:00Z")
+        self.inspect("5.2.0-20261116", "bbbb", "2026-11-16T02:00:00Z")
+        self.inspect("5.2.0-20261109", "aaaa")
+        self.inspect("5.2.0-20261116-debug", "cccc")
+        self.inspect("5.1.5", "dddd", "2026-10-21T02:00:00Z")
+        self.inspect("5.1.4", "eeee", "2026-10-01T02:00:00Z")
+        page = rebuild.render_index(self.versions, self.registry, self.directory.name,
+                                    ["fluent/fluent-bit", "ghcr.io/fluent/fluent-bit"], "now")
+        self.assertIn("| 5.2.0 | `5.2.0` | `5.2.0-20261116` | `bbbbbbbbbbbb` | 2026-11-16 | rebuild | current |", page)
+        self.assertIn("| 5.2.0 | – | `5.2.0-20261109` | `aaaaaaaaaaaa` | 2026-11-09 | release | "
+                      "superseded by `5.2.0-20261116` |", page)
+        self.assertIn("| 5.1.5 | `5.1.5` | – | `dddddddddddd` | 2026-10-21 | release | current |", page)
+        self.assertIn("| 5.1.4 | `5.1.4` | – | `eeeeeeeeeeee` | 2026-10-01 | release | superseded by `5.1.5` |", page)
+        self.assertIn("| debug | `5.2.0-20261116-debug` | `fluent/fluent-bit@sha256:" + "cccc" * 16 + "` |", page)
+        self.assertIn("| windows-2022 | `windows-2022-5.2.0-20261116` | unavailable |", page)
+        self.assertIn("| 5.0.11 | `5.0.11` | – | unavailable | unavailable | release | current |", page)
+        self.assertLess(page.index("## 5.2"), page.index("## 5.1"))
+        self.assertNotIn("4.2.9", page)
+
+    def test_version_tag_is_shown_only_on_the_build_it_points_to(self):
+        # A partial publication left the version tag on the previous build.
+        self.inspect("5.2.0", "aaaa")
+        self.inspect("5.2.0-20261116", "bbbb")
+        self.inspect("5.2.0-20261109", "aaaa")
+        page = rebuild.render_index(self.versions, self.registry, self.directory.name, ["fluent/fluent-bit"], "now")
+        self.assertIn("| 5.2.0 | – | `5.2.0-20261116` | `bbbbbbbbbbbb` |", page)
+        self.assertIn("| 5.2.0 | `5.2.0` | `5.2.0-20261109` | `aaaaaaaaaaaa` |", page)
 
 
 class GateTests(unittest.TestCase):
@@ -193,7 +282,7 @@ class WorkflowTests(unittest.TestCase):
 
     def test_publication_requires_verified_rebuild_and_release_environment(self):
         publishing = [name for name in self.jobs if name.startswith("rebuild-release-")]
-        self.assertEqual(len(publishing), 5)
+        self.assertEqual(len(publishing), 6)
         for name in publishing:
             with self.subTest(job=name):
                 job = self.jobs[name]
@@ -214,6 +303,31 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("docker://$STAGING_IMAGE_NAME:", commands)
         verify = "\n".join(step.get("run", "") for step in self.jobs["rebuild-verify"]["steps"])
         self.assertIn('"amd64,arm,arm64"', verify)
+
+    def test_original_release_is_kept_before_any_tag_moves(self):
+        keep = self.jobs["rebuild-release-preserve-original"]
+        self.assertEqual(keep["if"], "inputs.promote && needs.rebuild-verify.outputs.promote == 'true'")
+        run = keep["steps"][0]["run"]
+        self.assertIn("--preserve-digests", run)
+        # Completeness is checked per registry and image, and a kept build is never overwritten.
+        self.assertEqual(run.count("list-tags"), 1)
+        self.assertIn("'.Tags | index($tag)' existing-tags.json", run)
+        self.assertLess(run.index("is already kept"), run.index("copy --all"))
+        self.assertIn('keep "$GHCR_RELEASE_IMAGE_NAME" "$GHCR_CREDS"', run)
+        self.assertIn('keep "$DH_RELEASE_IMAGE_NAME" "$DH_CREDS"', run)
+        self.assertEqual(keep["steps"][0]["env"]["PRESERVE"], "${{ needs.rebuild-plan.outputs.preserve }}")
+        for name in ("rebuild-release-images", "rebuild-release-images-windows"):
+            self.assertIn("rebuild-release-preserve-original", self.jobs[name]["needs"])
+        windows = "\n".join(step.get("run", "") for step in self.jobs["rebuild-release-images-windows"]["steps"])
+        self.assertEqual(windows.count('for NAME in "$TAG" "$TAG-$BUILD"'), 2)
+
+    def test_both_wiki_pages_are_published(self):
+        steps = self.jobs["rebuild-report-publish"]["steps"]
+        commands = "\n".join(step.get("run", "") for step in steps)
+        self.assertIn("release_image_rebuild.py index-tags", commands)
+        self.assertIn("release_image_rebuild.py index ", commands)
+        self.assertIn('git add "$WIKI_INDEX_PAGE.md" "$WIKI_STATUS_PAGE.md"', commands)
+        self.assertEqual(self.workflow["env"]["WIKI_INDEX_PAGE"], "Container-Images")
 
     def test_status_page_runs_without_a_rebuild_and_only_it_can_write(self):
         for name in ("rebuild-report-scan", "rebuild-report-publish"):
