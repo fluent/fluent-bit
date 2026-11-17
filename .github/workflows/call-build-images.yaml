@@ -128,6 +128,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.token }}
 
+      # The arm/v7 images are built natively on ARM64 runners. Emulation is not an alternative, the
+      # build enables SIMD from the host processor, so stop early with a clear reason when the
+      # runner CPU cannot execute 32-bit ARM binaries. Re-running the job picks another runner.
+      - name: Check native 32-bit ARM support
+        if: matrix.platform == 'arm/v7'
+        run: |
+          if ! docker run --rm --platform=linux/arm/v7 alpine uname -m; then
+            echo "::error::This runner cannot execute 32-bit ARM binaries, re-run the job"
+            exit 1
+          fi
+        shell: bash
+
       - name: Build and push by digest the standard ${{ matrix.target }} image
         id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -542,8 +554,17 @@ jobs:
 
       - name: Build the production images
         if: env.REQUESTED == 'true'
+        # The build downloads its toolchain and dependencies, which times out now and then. Later
+        # attempts reuse the layers already built on top of the freshly pulled base image.
         run: |
-          docker build $PULL_FLAGS -t $IMAGE --build-arg FLB_NIGHTLY_BUILD=${{ inputs.unstable }} --build-arg WINDOWS_VERSION=ltsc${{ matrix.windows-base-version }} -f ./dockerfiles/${{ matrix.dockerfile }} .
+          for ATTEMPT in 1 2 3; do
+            if docker build $PULL_FLAGS -t $IMAGE --build-arg FLB_NIGHTLY_BUILD=${{ inputs.unstable }} --build-arg WINDOWS_VERSION=ltsc${{ matrix.windows-base-version }} -f ./dockerfiles/${{ matrix.dockerfile }} .; then
+              exit 0
+            fi
+            echo "::warning::Windows image build attempt $ATTEMPT failed"
+            PULL_FLAGS=""
+          done
+          exit 1
         shell: bash
         env:
           PULL_FLAGS: ${{ inputs.refresh-base-images && '--pull --no-cache' || '' }}
