@@ -226,6 +226,34 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(push["if"], "inputs.update-wiki")
         self.assertIn(".wiki.git", push["run"])
 
+    def test_failed_jobs_are_rerun_a_bounded_number_of_times(self):
+        retry = yaml.safe_load((ROOT / ".github/workflows/release-rebuild-images-retry.yaml").read_text())
+        self.assertEqual(retry[True]["workflow_run"]["workflows"], [self.workflow["name"]])
+        self.assertEqual(retry[True]["workflow_run"]["types"], ["completed"])
+        job = retry["jobs"]["rebuild-retry-failed-jobs"]
+        self.assertIn("workflow_run.conclusion == 'failure'", job["if"])
+        self.assertIn("workflow_run.run_attempt < 3", job["if"])
+        self.assertEqual(job["permissions"], {"actions": "write"})
+        self.assertIn("--failed", job["steps"][0]["run"])
+        # A stale event must not start a further attempt.
+        self.assertIn('"$CURRENT" != "$ATTEMPT completed failure"', job["steps"][0]["run"])
+        self.assertEqual(job["steps"][0]["env"]["ATTEMPT"], "${{ github.event.workflow_run.run_attempt }}")
+        self.assertEqual(job["concurrency"], {"group": "rebuild-retry-${{ github.event.workflow_run.id }}",
+                                              "cancel-in-progress": False})
+
+    def test_transient_build_failures_are_handled(self):
+        jobs = yaml.safe_load((ROOT / ".github/workflows/call-build-images.yaml").read_text())["jobs"]
+        build = next(step for step in jobs["call-build-windows-container"]["steps"]
+                     if step["name"] == "Build the production images")
+        self.assertIn("for ATTEMPT in 1 2 3", build["run"])
+        self.assertIn('PULL_FLAGS=""', build["run"])
+        steps = jobs["call-build-single-arch-container-images"]["steps"]
+        names = [step["name"] for step in steps]
+        check = names.index("Check native 32-bit ARM support")
+        self.assertEqual(steps[check]["if"], "matrix.platform == 'arm/v7'")
+        self.assertLess(check, next(i for i, step in enumerate(steps) if step.get("id") == "build"))
+        self.assertNotIn("setup-qemu-action", str(steps))
+
 
 if __name__ == "__main__":
     unittest.main()
