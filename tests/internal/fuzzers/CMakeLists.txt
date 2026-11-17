@@ -13,6 +13,7 @@ set(UNIT_TESTS_FILES
   signv4_fuzzer.c
   flb_json_fuzzer.c
   flb_mp_fuzzer.c
+  flb_mp_raw_fuzzer.c
   filter_stdout_fuzzer.c
   fstore_fuzzer.c
   parser_fuzzer.c
