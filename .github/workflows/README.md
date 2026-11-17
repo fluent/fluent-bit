@@ -455,6 +455,20 @@ gh run watch "$(gh run list --workflow release-rebuild-images.yaml --limit 1 --j
    wiki page from the registry for the newest patch of the three most recent series. This step runs
    even when nothing was rebuilt.
 
+### Failed jobs
+
+A rebuild runs many jobs on shared runners and one of them occasionally fails for a reason that
+a new runner solves, such as a download timing out in a Windows build or an ARM64 runner that
+cannot execute 32-bit ARM binaries. [release-rebuild-images-retry](./release-rebuild-images-retry.yaml)
+re-runs only the failed jobs of a failed rebuild, at most twice, so this needs no action. A run
+that is still red after the third attempt has a real problem.
+
+A missing architecture never gets published: the comparison job refuses a manifest that does not
+provide `amd64`, `arm64` and `arm/v7`.
+
+Only the images the release originally published are rebuilt, so older series with fewer Windows
+images are handled without changes.
+
 ### Testing from a branch
 
 Publishing jobs use the `release` environment, so they need its approval and only run from a
