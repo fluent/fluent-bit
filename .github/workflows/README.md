@@ -8,7 +8,7 @@
 | [staging-build](./staging-build.yaml)            | Builds the distro packages and docker images from a tagged release into staging (S3 and GHCR) | on new release/tag |
 | [staging-test](./staging-test.yaml)            | Test the staging distro packages and docker images| manually or when `staging-build` completes successfully |
 | [staging-release](./staging-release.yaml)        | Publishes the docker images/manifest on hub.docker.io/fluent/ and the distro packages | manual approval |
-| [release-rebuild-images](./release-rebuild-images.yaml) | Rebuilds the container images of a released version on updated base images and refreshes the wiki status page | manually |
+| [release-rebuild-images](./release-rebuild-images.yaml) | Rebuilds the container images of a released version on updated base images and refreshes the wiki image index and status pages | manually |
 | [pr-closed-docker](./pr-closed-docker.yaml)      | Removes docker images for PR on hub.docker.io/fluentbitdev/| on pr closed|
 | [pr-compile-check](./pr-compile-check.yaml)      | Runs some compilation sanity checks on a PR |
 | [pr-integration-test](./pr-integration-test.yaml)     | Runs the integration testing suite on a PR branch | pr opened / label created 'ok-to-test' / on new commit/push on PR(s) |
@@ -426,7 +426,7 @@ gh workflow run release-rebuild-images.yaml --ref master -f version=5.1.5
 # Force a rebuild even when the scan finds nothing fixable
 gh workflow run release-rebuild-images.yaml --ref master -f version=5.2.0 -f mode=always
 
-# Only refresh the wiki status page
+# Only refresh the wiki pages
 gh workflow run release-rebuild-images.yaml --ref master -f mode=report-only
 
 # Follow the run
@@ -436,9 +436,9 @@ gh run watch "$(gh run list --workflow release-rebuild-images.yaml --limit 1 --j
 | Input | Default | Purpose |
 |---|---|---|
 | `version` | newest release | Released version to rebuild, without the `v` prefix. |
-| `mode` | `if-needed` | `if-needed` rebuilds only when the published images have fixable critical or high findings, `always` forces a rebuild, `report-only` just regenerates the status page. |
+| `mode` | `if-needed` | `if-needed` rebuilds only when the published images have fixable critical or high findings, `always` forces a rebuild, `report-only` just regenerates the wiki pages. |
 | `promote` | `true` | Publish to Docker Hub and GHCR. Disable to stop after the staging build, tests and comparison. |
-| `update-wiki` | `true` | Push the regenerated status page to the wiki. |
+| `update-wiki` | `true` | Push the regenerated pages to the wiki. |
 
 ### What a run does
 
@@ -447,13 +447,36 @@ gh run watch "$(gh run list --workflow release-rebuild-images.yaml --limit 1 --j
    layer cache, then runs the usual image tests.
 3. Scans the rebuilt images and publishes them only when they have fewer fixable findings than the
    published ones and no partial multi-arch manifest (`always` also accepts an equal count).
-4. Promotes by digest to `<version>` and a dated `<version>-<YYYYMMDD>` tag, plus the `-debug`,
+4. Before the version tags move for the first time, gives every image of the original release a
+   dated tag from its own build date, so that build stays listed and pullable. Existing dated tags
+   are never written again, so a run that failed half way is completed by the next one.
+5. Promotes by digest to `<version>` and a dated `<version>-<YYYYMMDD>` tag, plus the `-debug`,
    per-architecture and Windows tags, then signs them. `<major>.<minor>` and `latest` only move
    when the version is the newest of its series or the newest release.
-5. Regenerates the
-   [Container image security status](https://github.com/fluent/fluent-bit/wiki/Container-Image-Security-Status)
-   wiki page from the registry for the newest patch of the three most recent series. This step runs
-   even when nothing was rebuilt.
+6. Regenerates two wiki pages from the registry. This step runs even when nothing was rebuilt.
+
+### Tags and builds
+
+One version can have several builds. All images of one build share a build id, `YYYYMMDD`, or
+`YYYYMMDD.N` for a further build on the same day:
+
+| Tag | Example | Behavior |
+|---|---|---|
+| Version tag | `5.2.0`, `5.2.0-debug`, `windows-2022-5.2.0` | Moves to the newest build |
+| Dated tag | `5.2.0-20261117`, `5.2.0-20261117-debug`, `windows-2022-5.2.0-20261117` | Names one build and never moves |
+| Digest | `fluent/fluent-bit@sha256:...` | Identifies one image exactly |
+
+Dated tags are never removed: the index is generated from them.
+
+### Wiki pages
+
+| Page | Content |
+|---|---|
+| [Container images](https://github.com/fluent/fluent-bit/wiki/Container-Images) | Index of every build of every release in the three most recent series: version tag, dated tag, short digest, build date, whether it is the release or a rebuild, and whether it is current or superseded. The full digest of every image, including debug and Windows, is listed per version. This is the page to send users to. |
+| [Container image security status](https://github.com/fluent/fluent-bit/wiki/Container-Image-Security-Status) | Trivy findings of the current image of the newest patch of each of those series, split into fixable by a rebuild and not fixed upstream yet. |
+
+Both pages are overwritten on every run and need no manual edits. The wiki history keeps the
+previous versions.
 
 ### Failed jobs
 
@@ -473,14 +496,14 @@ images are handled without changes.
 
 Publishing jobs use the `release` environment, so they need its approval and only run from a
 protected branch. From any other branch run with `promote=false` to exercise the build, tests,
-comparison and status page without publishing anything:
+comparison and wiki pages without publishing anything:
 
 ```shell
 gh workflow run release-rebuild-images.yaml --ref my-branch -f promote=false -f update-wiki=false
 ```
 
-The rendered page is always attached to the run as the `container-image-security-status`
-artifact and shown in the run summary. A run that ends without publishing is expected when the
+The rendered pages are always attached to the run as the `container-image-pages` artifact and
+shown in the run summary. A run that ends without publishing is expected when the
 rebuild does not reduce the fixable findings; use `mode=always` to publish it regardless.
 
 The planning, gating and page rendering live in
