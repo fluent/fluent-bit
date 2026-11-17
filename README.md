@@ -80,7 +80,10 @@ More details: [Build & Install](https://docs.fluentbit.io/manual/installation/do
 ## Install Fluent Bit
 
 - [Linux packages (Debian, Ubuntu, RHEL, etc.)](https://docs.fluentbit.io/manual/installation/downloads/linux)
-- [Docker images](https://docs.fluentbit.io/manual/installation/downloads/docker)
+- [Docker images](https://docs.fluentbit.io/manual/installation/downloads/docker):
+  see the [container image index](https://github.com/fluent/fluent-bit/wiki/Container-Images)
+  for every published build and the [security policy](SECURITY.md#-container-images) for how
+  images are rebuilt on updated base images
 - [Windows binaries](https://docs.fluentbit.io/manual/installation/downloads/windows)
 
 ---
