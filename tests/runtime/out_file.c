@@ -26,8 +26,10 @@ void flb_test_file_delim_ltsv(void);
 void flb_test_file_label_delim(void);
 void flb_test_file_template(void);
 void flb_test_file_mkdir(void);
+void flb_test_file_mkdir_hardened(void);
 void flb_test_file_literal_percent(void);
 void flb_test_file_dynamic_path_file(void);
+void flb_test_file_dynamic_path_file_hardened(void);
 void flb_test_file_dynamic_timestamp(void);
 void flb_test_file_dynamic_percent_values(void);
 void flb_test_file_dynamic_requires_fallback(void);
@@ -46,8 +48,10 @@ TEST_LIST = {
     {"path",            flb_test_file_path},
     {"path_file",       flb_test_file_path_file},
     {"mkdir",           flb_test_file_mkdir},
+    {"mkdir_hardened", flb_test_file_mkdir_hardened},
     {"literal_percent", flb_test_file_literal_percent},
     {"dynamic_path_file", flb_test_file_dynamic_path_file},
+    {"dynamic_path_file_hardened", flb_test_file_dynamic_path_file_hardened},
     {"dynamic_timestamp", flb_test_file_dynamic_timestamp},
     {"dynamic_percent_values", flb_test_file_dynamic_percent_values},
     {"dynamic_requires_fallback", flb_test_file_dynamic_requires_fallback},
@@ -615,7 +619,7 @@ void flb_test_file_literal_percent(void)
     flb_test_rmdir(TEST_LOGPATH);
 }
 
-void flb_test_file_dynamic_path_file(void)
+static void test_file_dynamic_path_file_policy(const char *follow_symlinks)
 {
     int ret;
     int bytes;
@@ -658,6 +662,7 @@ void flb_test_file_dynamic_path_file(void)
     flb_output_set(ctx, out_ffd, "fallback_path", TEST_LOGPATH, NULL);
     flb_output_set(ctx, out_ffd, "fallback_file", "metrics.log", NULL);
     flb_output_set(ctx, out_ffd, "mkdir", "true", NULL);
+    flb_output_set(ctx, out_ffd, "follow_symlinks", follow_symlinks, NULL);
     flb_output_set(ctx, out_ffd, "format", "plain", NULL);
 
     ret = flb_start(ctx);
@@ -680,6 +685,16 @@ void flb_test_file_dynamic_path_file(void)
     flb_test_rmdir(dir2);
     flb_test_rmdir(tag_dir);
     flb_test_rmdir(TEST_LOGPATH);
+}
+
+void flb_test_file_dynamic_path_file(void)
+{
+    test_file_dynamic_path_file_policy("true");
+}
+
+void flb_test_file_dynamic_path_file_hardened(void)
+{
+    test_file_dynamic_path_file_policy("false");
 }
 
 void flb_test_file_dynamic_timestamp(void)
@@ -1367,7 +1382,7 @@ void flb_test_file_template(void)
     }
 }
 
-void flb_test_file_mkdir(void)
+static void test_file_mkdir_policy(const char *follow_symlinks)
 {
     int i;
     int ret;
@@ -1409,6 +1424,7 @@ void flb_test_file_mkdir(void)
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
     flb_output_set(ctx, out_ffd, "path", TEST_LOGPATH, NULL);
     flb_output_set(ctx, out_ffd, "mkdir", "true", NULL);
+    flb_output_set(ctx, out_ffd, "follow_symlinks", follow_symlinks, NULL);
 
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
@@ -1433,6 +1449,16 @@ void flb_test_file_mkdir(void)
     flb_sds_destroy(path);
     flb_sds_destroy(file);
     flb_test_rmdir(TEST_LOGPATH);
+}
+
+void flb_test_file_mkdir(void)
+{
+    test_file_mkdir_policy("true");
+}
+
+void flb_test_file_mkdir_hardened(void)
+{
+    test_file_mkdir_policy("false");
 }
 
 void flb_test_file_tag_escape(void)
