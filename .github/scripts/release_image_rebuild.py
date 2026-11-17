@@ -11,6 +11,7 @@ from pathlib import Path
 SEVERITIES = ("CRITICAL", "HIGH")
 STABLE_TAG = re.compile(r"(?:refs/tags/)?v(\d+)\.(\d+)\.(\d+)")
 MODES = ("if-needed", "always", "report-only")
+WINDOWS_IMAGES = ("windows-2022", "windows-2025", "windows-nano-2025")
 REPORT_SERIES = 3
 
 
@@ -39,8 +40,11 @@ def stable_versions(lines):
     return sorted(versions)
 
 
-def plan(requested, versions, date, series_count=REPORT_SERIES):
-    """Resolve what one rebuild publishes: floating tags only move forward, never to an older patch."""
+def plan(requested, versions, date, registry_tags, series_count=REPORT_SERIES):
+    """Resolve what one rebuild publishes: floating tags only move forward, never to an older patch.
+
+    Only images the release originally published are rebuilt, older series ship fewer Windows images.
+    """
     if not versions:
         raise ValueError("no stable release tags found")
     if not re.fullmatch(r"\d{8}", date):
@@ -53,6 +57,10 @@ def plan(requested, versions, date, series_count=REPORT_SERIES):
         newest[candidate[:2]] = candidate
     series = version[:2]
     name = text(version)
+    missing = [tag for tag in (name, f"{name}-debug") if tag not in registry_tags]
+    if missing:
+        raise ValueError(f"{name} has no published container images: missing {', '.join(missing)}")
+    windows = [prefix for prefix in WINDOWS_IMAGES if f"{prefix}-{name}" in registry_tags]
     tags = [name, f"{name}-{date}"]
     if newest[series] == version:
         tags.append(text(series))
@@ -65,6 +73,8 @@ def plan(requested, versions, date, series_count=REPORT_SERIES):
         "ref": f"v{name}",
         "revision": f"{name}-{date}",
         "tags": tags,
+        "windows-images": windows,
+        "windows-tags": [f"{prefix}-{name}" for prefix in windows],
         "report-versions": report,
         "report-tags": [tag for item in report for tag in (item, f"{item}-debug")],
     }
@@ -227,6 +237,7 @@ def main(argv=None):
     command = commands.add_parser("plan", help="resolve the version and tags of a rebuild")
     command.add_argument("--version", default="")
     command.add_argument("--tags-file", required=True, help="output of git ls-remote --tags")
+    command.add_argument("--registry-tags", required=True, help="output of skopeo list-tags")
     command.add_argument("--date", required=True, help="YYYYMMDD suffix of the dated tag")
     command.add_argument("--series", type=int, default=REPORT_SERIES)
 
@@ -251,7 +262,8 @@ def main(argv=None):
     try:
         if args.command == "plan":
             lines = Path(args.tags_file).read_text().splitlines()
-            emit(plan(args.version.strip(), stable_versions(lines), args.date, args.series))
+            registry_tags = json.loads(Path(args.registry_tags).read_text())["Tags"]
+            emit(plan(args.version.strip(), stable_versions(lines), args.date, registry_tags, args.series))
         elif args.command == "decide-rebuild":
             emit(decide_rebuild(args.mode, args.scans))
         elif args.command == "decide-promote":

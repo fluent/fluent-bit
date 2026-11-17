@@ -52,17 +52,23 @@ jobs:
       version: ${{ steps.plan.outputs.version }}
       ref: ${{ steps.plan.outputs.ref }}
       tags: ${{ steps.plan.outputs.tags }}
+      windows-images: ${{ steps.plan.outputs.windows-images }}
+      windows-tags: ${{ steps.plan.outputs.windows-tags }}
       report-tags: ${{ steps.plan.outputs.report-tags }}
     steps:
       - name: Checkout release tooling
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Resolve the plan from the release tags
+      # The published tags decide which images exist for the release, so nothing new is published.
+      - name: Resolve the plan from the release and registry tags
         id: plan
         run: |
           git ls-remote --tags "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" 'v*' > release-tags.txt
+          docker run --rm quay.io/skopeo/stable:latest list-tags --retry-times 10 \
+            "docker://$GHCR_RELEASE_IMAGE_NAME" > registry-tags.json
           python3 .github/scripts/release_image_rebuild.py plan \
-            --version "$VERSION" --tags-file release-tags.txt --date "$(date -u +%Y%m%d)"
+            --version "$VERSION" --tags-file release-tags.txt --registry-tags registry-tags.json \
+            --date "$(date -u +%Y%m%d)"
         env:
           VERSION: ${{ inputs.version }}
         shell: bash
@@ -148,6 +154,7 @@ jobs:
       image: ${{ github.repository }}/staging
       environment: staging
       refresh-base-images: true
+      windows-images: ${{ needs.rebuild-plan.outputs.windows-images }}
       # The rebuild is compared against the published images below instead of failing here.
       scan-exit-code: "0"
     secrets:
@@ -384,8 +391,8 @@ jobs:
   rebuild-release-images-windows:
     name: Release Windows images
     # Cannot be done by Skopeo on a Linux runner unfortunately
-    runs-on: ${{ matrix.runs_on }}
-    if: inputs.promote && needs.rebuild-verify.outputs.promote == 'true'
+    runs-on: ${{ startsWith(matrix.tag, 'windows-2022-') && 'windows-latest' || 'windows-2025' }}
+    if: inputs.promote && needs.rebuild-verify.outputs.promote == 'true' && needs.rebuild-plan.outputs.windows-tags != '[]'
     needs:
       - rebuild-plan
       - rebuild-verify
@@ -395,13 +402,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - tag: "windows-2022-${{ needs.rebuild-plan.outputs.version }}"
-            runs_on: windows-latest
-          - tag: "windows-2025-${{ needs.rebuild-plan.outputs.version }}"
-            runs_on: windows-2025
-          - tag: "windows-nano-2025-${{ needs.rebuild-plan.outputs.version }}"
-            runs_on: windows-2025
+        tag: ${{ fromJSON(needs.rebuild-plan.outputs.windows-tags) }}
     steps:
       - name: Login to GitHub Container Registry
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
