@@ -38,6 +38,11 @@ def scan(directory, name, entries, system=("debian", "13.7")):
     return path
 
 
+REGISTRY = ["5.2.0", "5.2.0-debug", "windows-2022-5.2.0", "windows-2025-5.2.0", "windows-nano-2025-5.2.0",
+            "5.1.5", "5.1.5-debug", "5.1.4", "5.1.4-debug", "windows-2022-5.1.4", "windows-2022-5.1.50",
+            "5.0.11", "5.0.11-debug", "windows-2022-5.0.11", "4.2.9"]
+
+
 class PlanTests(unittest.TestCase):
     def setUp(self):
         self.versions = rebuild.stable_versions(TAGS)
@@ -48,7 +53,7 @@ class PlanTests(unittest.TestCase):
     def test_newest_release_moves_every_floating_tag(self):
         for requested in ("", "5.2.0", "v5.2.0"):
             with self.subTest(requested=requested):
-                plan = rebuild.plan(requested, self.versions, "20261116")
+                plan = rebuild.plan(requested, self.versions, "20261116", REGISTRY)
                 self.assertEqual(plan["version"], "5.2.0")
                 self.assertEqual(plan["ref"], "v5.2.0")
                 self.assertEqual(plan["tags"], [
@@ -56,27 +61,38 @@ class PlanTests(unittest.TestCase):
                     "5.2.0-debug", "5.2.0-20261116-debug", "5.2-debug", "latest-debug"])
 
     def test_floating_tags_never_move_backwards(self):
-        plan = rebuild.plan("5.1.5", self.versions, "20261116")
+        plan = rebuild.plan("5.1.5", self.versions, "20261116", REGISTRY)
         self.assertEqual(plan["tags"], ["5.1.5", "5.1.5-20261116", "5.1",
                                         "5.1.5-debug", "5.1.5-20261116-debug", "5.1-debug"])
-        plan = rebuild.plan("5.1.4", self.versions, "20261116")
+        plan = rebuild.plan("5.1.4", self.versions, "20261116", REGISTRY)
         self.assertEqual(plan["tags"], ["5.1.4", "5.1.4-20261116",
                                         "5.1.4-debug", "5.1.4-20261116-debug"])
 
     def test_report_covers_newest_patch_of_recent_series(self):
-        plan = rebuild.plan("5.1.4", self.versions, "20261116")
+        plan = rebuild.plan("5.1.4", self.versions, "20261116", REGISTRY)
         self.assertEqual(plan["report-versions"], ["5.2.0", "5.1.5", "5.0.11"])
         self.assertEqual(plan["report-tags"][:2], ["5.2.0", "5.2.0-debug"])
-        self.assertEqual(rebuild.plan("", self.versions, "20261116", 1)["report-versions"], ["5.2.0"])
+        self.assertEqual(rebuild.plan("", self.versions, "20261116", REGISTRY, 1)["report-versions"], ["5.2.0"])
 
     def test_invalid_requests_are_rejected(self):
         for requested, date in (("5.2.1", "20261116"), ("master", "20261116"), ("5.2", "20261116"),
                                 ("5.2.0-rc1", "20261116"), ("5.2.0; id", "20261116"),
                                 ("5.2.0", "2026-11-16")):
             with self.subTest(requested=requested, date=date), self.assertRaises(ValueError):
-                rebuild.plan(requested, self.versions, date)
+                rebuild.plan(requested, self.versions, date, REGISTRY)
         with self.assertRaises(ValueError):
-            rebuild.plan("", [], "20261116")
+            rebuild.plan("", [], "20261116", REGISTRY)
+
+    def test_only_originally_published_images_are_rebuilt(self):
+        plan = rebuild.plan("5.2.0", self.versions, "20261116", REGISTRY)
+        self.assertEqual(plan["windows-images"], ["windows-2022", "windows-2025", "windows-nano-2025"])
+        self.assertEqual(plan["windows-tags"][0], "windows-2022-5.2.0")
+        plan = rebuild.plan("5.0.11", self.versions, "20261116", REGISTRY)
+        self.assertEqual(plan["windows-images"], ["windows-2022"])
+        self.assertEqual(plan["windows-tags"], ["windows-2022-5.0.11"])
+        self.assertEqual(rebuild.plan("5.1.5", self.versions, "20261116", REGISTRY)["windows-tags"], [])
+        with self.assertRaisesRegex(ValueError, "no published container images"):
+            rebuild.plan("4.2.9", self.versions, "20261116", REGISTRY)
 
 
 class GateTests(unittest.TestCase):
@@ -165,6 +181,14 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("pull: ${{ inputs.refresh-base-images }}", shared)
         self.assertIn("no-cache: ${{ inputs.refresh-base-images }}", shared)
         self.assertIn("'--pull --no-cache'", shared)
+        self.assertEqual(build["with"]["windows-images"], "${{ needs.rebuild-plan.outputs.windows-images }}")
+        windows = yaml.safe_load(shared)["jobs"]["call-build-windows-container"]
+        self.assertEqual(json.loads(yaml.safe_load(shared)[True]["workflow_call"]["inputs"]["windows-images"]["default"]),
+                         [entry["image-tag-prefix"] for entry in windows["strategy"]["matrix"]["include"]])
+        self.assertEqual(list(rebuild.WINDOWS_IMAGES),
+                         [entry["image-tag-prefix"] for entry in windows["strategy"]["matrix"]["include"]])
+        for step in windows["steps"]:
+            self.assertIn("env.REQUESTED == 'true'", step["if"])
         self.assertEqual(yaml.safe_load(shared)[True]["workflow_call"]["inputs"]["scan-exit-code"]["default"], "1")
 
     def test_publication_requires_verified_rebuild_and_release_environment(self):
@@ -178,8 +202,8 @@ class WorkflowTests(unittest.TestCase):
                 self.assertNotIn("always()", str(job.get("if", "")))
                 self.assertNotIn("cancelled()", str(job.get("if", "")))
         for name in ("rebuild-release-images", "rebuild-release-images-windows"):
-            self.assertEqual(self.jobs[name]["if"],
-                             "inputs.promote && needs.rebuild-verify.outputs.promote == 'true'")
+            self.assertTrue(self.jobs[name]["if"].startswith(
+                "inputs.promote && needs.rebuild-verify.outputs.promote == 'true'"))
 
     def test_linux_images_are_promoted_by_verified_digest(self):
         job = self.jobs["rebuild-release-images"]
