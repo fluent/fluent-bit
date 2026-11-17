@@ -15,7 +15,7 @@ on:
       mode:
         description: >-
           if-needed rebuilds only when the published images have fixable critical or high findings,
-          always forces a rebuild, report-only just refreshes the wiki page.
+          always forces a rebuild, report-only just refreshes the wiki pages.
         type: choice
         options:
           - if-needed
@@ -27,7 +27,7 @@ on:
         type: boolean
         default: true
       update-wiki:
-        description: Push the regenerated status page to the repository wiki.
+        description: Push the regenerated image index and status pages to the repository wiki.
         type: boolean
         default: true
 
@@ -40,7 +40,8 @@ permissions:
 env:
   STAGING_IMAGE_NAME: ghcr.io/${{ github.repository }}/staging
   GHCR_RELEASE_IMAGE_NAME: ghcr.io/${{ github.repository }}
-  WIKI_PAGE: Container-Image-Security-Status
+  WIKI_INDEX_PAGE: Container-Images
+  WIKI_STATUS_PAGE: Container-Image-Security-Status
 
 jobs:
   rebuild-plan:
@@ -51,6 +52,8 @@ jobs:
     outputs:
       version: ${{ steps.plan.outputs.version }}
       ref: ${{ steps.plan.outputs.ref }}
+      build: ${{ steps.plan.outputs.build }}
+      preserve: ${{ steps.plan.outputs.preserve }}
       tags: ${{ steps.plan.outputs.tags }}
       windows-images: ${{ steps.plan.outputs.windows-images }}
       windows-tags: ${{ steps.plan.outputs.windows-tags }}
@@ -66,9 +69,14 @@ jobs:
           git ls-remote --tags "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" 'v*' > release-tags.txt
           docker run --rm quay.io/skopeo/stable:latest list-tags --retry-times 10 \
             "docker://$GHCR_RELEASE_IMAGE_NAME" > registry-tags.json
+          # The build date of the published image names the original build when it is preserved.
+          RESOLVED=$(python3 .github/scripts/release_image_rebuild.py resolve \
+            --version "$VERSION" --tags-file release-tags.txt)
+          docker run --rm quay.io/skopeo/stable:latest inspect --retry-times 10 \
+            "docker://$GHCR_RELEASE_IMAGE_NAME:$RESOLVED" > original.json || rm -f original.json
           python3 .github/scripts/release_image_rebuild.py plan \
-            --version "$VERSION" --tags-file release-tags.txt --registry-tags registry-tags.json \
-            --date "$(date -u +%Y%m%d)"
+            --version "$RESOLVED" --tags-file release-tags.txt --registry-tags registry-tags.json \
+            --original-inspect original.json --date "$(date -u +%Y%m%d)"
         env:
           VERSION: ${{ inputs.version }}
         shell: bash
@@ -269,6 +277,48 @@ jobs:
           MODE: ${{ inputs.mode }}
         shell: bash
 
+  # A registry cannot tell what a tag used to point to. Before the version tags move for the first
+  # time, give every image of the original release a dated tag so it stays listed and pullable.
+  # This only adds tags inside each registry, which also works for the Windows images. A dated tag
+  # that already exists is never written again, so a run that stopped half way is completed by the
+  # next one, registry by registry and image by image.
+  rebuild-release-preserve-original:
+    name: Keep the original release under a dated tag
+    if: inputs.promote && needs.rebuild-verify.outputs.promote == 'true'
+    needs:
+      - rebuild-plan
+      - rebuild-verify
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      packages: write
+    steps:
+      - name: Tag the original images
+        run: |
+          keep() {
+            # Failing to list the tags fails the job: guessing could overwrite a kept build.
+            docker run --rm quay.io/skopeo/stable:latest list-tags --retry-times 10 \
+              --creds "$2" "docker://$1" > existing-tags.json
+            jq -r '.[] | "\(.from) \(.to)"' <<< "$PRESERVE" | while read -r FROM TO; do
+              if jq -e --arg tag "$TO" '.Tags | index($tag)' existing-tags.json > /dev/null; then
+                echo "$1:$TO is already kept"
+                continue
+              fi
+              echo "Keeping $1:$FROM as $1:$TO"
+              docker run --rm quay.io/skopeo/stable:latest copy --all --preserve-digests \
+                --retry-times 10 --src-creds "$2" --dest-creds "$2" \
+                "docker://$1:$FROM" "docker://$1:$TO" < /dev/null
+            done
+          }
+          keep "$GHCR_RELEASE_IMAGE_NAME" "$GHCR_CREDS"
+          keep "$DH_RELEASE_IMAGE_NAME" "$DH_CREDS"
+        env:
+          PRESERVE: ${{ needs.rebuild-plan.outputs.preserve }}
+          DH_RELEASE_IMAGE_NAME: docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}
+          DH_CREDS: ${{ secrets.DOCKERHUB_USERNAME }}:${{ secrets.DOCKERHUB_TOKEN }}
+          GHCR_CREDS: ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+
   # Same promotion as staging-release: copy the verified manifests by digest, never by tag.
   rebuild-release-images:
     name: Release ${{ matrix.tag }} Linux container images
@@ -276,6 +326,7 @@ jobs:
     needs:
       - rebuild-plan
       - rebuild-verify
+      - rebuild-release-preserve-original
     runs-on: ubuntu-latest
     environment: release
     env:
@@ -396,6 +447,7 @@ jobs:
     needs:
       - rebuild-plan
       - rebuild-verify
+      - rebuild-release-preserve-original
     environment: release
     permissions:
       packages: write
@@ -422,10 +474,13 @@ jobs:
       - name: Promote container images from staging to GHCR.io
         run: |
           docker pull "$STAGING_IMAGE_NAME:$TAG"
-          docker tag "$STAGING_IMAGE_NAME:$TAG" "$GHCR_RELEASE_IMAGE_NAME:$TAG"
-          docker push "$GHCR_RELEASE_IMAGE_NAME:$TAG"
+          for NAME in "$TAG" "$TAG-$BUILD"; do
+            docker tag "$STAGING_IMAGE_NAME:$TAG" "$GHCR_RELEASE_IMAGE_NAME:$NAME"
+            docker push "$GHCR_RELEASE_IMAGE_NAME:$NAME"
+          done
         env:
           TAG: ${{ matrix.tag }}
+          BUILD: ${{ needs.rebuild-plan.outputs.build }}
         shell: bash
 
       - name: Login to Docker Hub
@@ -436,11 +491,14 @@ jobs:
 
       - name: Promote container images from staging to Dockerhub
         run: |
-          docker tag "$STAGING_IMAGE_NAME:$TAG" "$RELEASE_IMAGE_NAME:$TAG"
-          docker push "$RELEASE_IMAGE_NAME:$TAG"
+          for NAME in "$TAG" "$TAG-$BUILD"; do
+            docker tag "$STAGING_IMAGE_NAME:$TAG" "$RELEASE_IMAGE_NAME:$NAME"
+            docker push "$RELEASE_IMAGE_NAME:$NAME"
+          done
         env:
           RELEASE_IMAGE_NAME: docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}
           TAG: ${{ matrix.tag }}
+          BUILD: ${{ needs.rebuild-plan.outputs.build }}
         shell: bash
 
   rebuild-release-images-sign:
@@ -537,6 +595,7 @@ jobs:
     if: ${{ !cancelled() && needs.rebuild-plan.result == 'success' }}
     needs:
       - rebuild-plan
+      - rebuild-release-preserve-original
       - rebuild-release-images
       - rebuild-release-images-arch-specific-legacy-tags
       - rebuild-release-images-windows
@@ -592,7 +651,7 @@ jobs:
           retention-days: 7
 
   rebuild-report-publish:
-    name: Publish the image status page
+    name: Publish the image index and status pages
     if: ${{ !cancelled() && needs.rebuild-plan.result == 'success' }}
     needs:
       - rebuild-plan
@@ -612,44 +671,65 @@ jobs:
           path: scans
           merge-multiple: true
 
-      - name: Render the status page
+      # Both pages are regenerated from what the registry serves, so no state is kept between runs.
+      - name: Inspect every build listed in the index
         run: |
           mkdir -p scans
+          git ls-remote --tags "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" 'v*' > release-tags.txt
           docker run --rm quay.io/skopeo/stable:latest list-tags --retry-times 10 \
             "docker://$GHCR_RELEASE_IMAGE_NAME" > scans/registry-tags.json
+          python3 .github/scripts/release_image_rebuild.py index-tags \
+            --tags-file release-tags.txt --registry-tags scans/registry-tags.json > index-tags.txt
+          while read -r TAG; do
+            # A tag that cannot be inspected is listed as unavailable instead of failing the page.
+            docker run --rm quay.io/skopeo/stable:latest inspect --retry-times 10 \
+              "docker://$GHCR_RELEASE_IMAGE_NAME:$TAG" > "scans/inspect-$TAG.json" < /dev/null ||
+              rm -f "scans/inspect-$TAG.json"
+          done < index-tags.txt
+        shell: bash
+
+      - name: Render the pages
+        run: |
+          python3 .github/scripts/release_image_rebuild.py index \
+            --tags-file release-tags.txt --registry-tags scans/registry-tags.json --scan-dir scans \
+            --image "${GITHUB_REPOSITORY}" --image "$GHCR_RELEASE_IMAGE_NAME" \
+            --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --output "$WIKI_INDEX_PAGE.md"
           # shellcheck disable=SC2046
           python3 .github/scripts/release_image_rebuild.py report \
             --tags $(jq -r 'join(" ")' <<< "$REPORT_TAGS") \
             --scan-dir scans --registry-tags scans/registry-tags.json \
             --image "docker.io/${GITHUB_REPOSITORY}" --image "$GHCR_RELEASE_IMAGE_NAME" \
             --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
-            --output "$WIKI_PAGE.md"
-          cat "$WIKI_PAGE.md" >> "$GITHUB_STEP_SUMMARY"
+            --output "$WIKI_STATUS_PAGE.md"
+          cat "$WIKI_INDEX_PAGE.md" "$WIKI_STATUS_PAGE.md" >> "$GITHUB_STEP_SUMMARY"
         env:
           REPORT_TAGS: ${{ needs.rebuild-plan.outputs.report-tags }}
         shell: bash
 
-      - name: Upload the status page
+      - name: Upload the pages
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: container-image-security-status
-          path: ${{ env.WIKI_PAGE }}.md
+          name: container-image-pages
+          path: |
+            ${{ env.WIKI_INDEX_PAGE }}.md
+            ${{ env.WIKI_STATUS_PAGE }}.md
           if-no-files-found: error
 
-      - name: Push the status page to the wiki
+      - name: Push the pages to the wiki
         if: inputs.update-wiki
         run: |
           git clone --depth 1 "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git" wiki
-          cp "$WIKI_PAGE.md" wiki/
+          cp "$WIKI_INDEX_PAGE.md" "$WIKI_STATUS_PAGE.md" wiki/
           cd wiki
-          git add "$WIKI_PAGE.md"
+          git add "$WIKI_INDEX_PAGE.md" "$WIKI_STATUS_PAGE.md"
           if git diff --cached --quiet; then
-            echo "The status page is unchanged"
+            echo "The pages are unchanged"
             exit 0
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit --quiet -m "Update container image security status"
+          git commit --quiet -m "Update container image index and security status"
           # Rebuilds of other versions may publish at the same time.
           for ATTEMPT in 1 2 3 4 5; do
             if git push; then
@@ -657,7 +737,7 @@ jobs:
             fi
             git pull --rebase
           done
-          echo "::error::Unable to push the status page to the wiki"
+          echo "::error::Unable to push the pages to the wiki"
           exit 1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
