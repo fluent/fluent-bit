@@ -2,6 +2,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/multiline/flb_ml.h>
@@ -2477,6 +2478,308 @@ static void test_buffer_limit_truncation_metadata()
     flb_config_exit(config);
 }
 
+/* issue 12713: a rule returning to start_state must not leave a stale
+ * record context behind (terminal line emitted twice) */
+#define ISSUE_12713_MAX_RECORDS 8
+
+struct issue_12713_result {
+    int records;
+    int with_stream[ISSUE_12713_MAX_RECORDS];
+    int with_trace[ISSUE_12713_MAX_RECORDS];   /* metadata key "trace" */
+    char logs[ISSUE_12713_MAX_RECORDS][1024];
+};
+
+static int flush_callback_issue_12713(struct flb_ml_parser *parser,
+                                      struct flb_ml_stream *mst,
+                                      void *data, char *buf_data, size_t buf_size)
+{
+    int i;
+    int ret;
+    size_t len;
+    msgpack_object *map;
+    msgpack_object key;
+    msgpack_object val;
+    struct flb_log_event_decoder dec;
+    struct flb_log_event event;
+    struct issue_12713_result *res = data;
+
+    ret = flb_log_event_decoder_init(&dec, buf_data, buf_size);
+    TEST_CHECK(ret == FLB_EVENT_DECODER_SUCCESS);
+    ret = flb_log_event_decoder_next(&dec, &event);
+    TEST_CHECK(ret == FLB_EVENT_DECODER_SUCCESS);
+    map = event.body;
+
+    if (res->records < ISSUE_12713_MAX_RECORDS) {
+        if (event.metadata && event.metadata->type == MSGPACK_OBJECT_MAP) {
+            for (i = 0; i < event.metadata->via.map.size; i++) {
+                key = event.metadata->via.map.ptr[i].key;
+                if (key.type == MSGPACK_OBJECT_STR && key.via.str.size == 5 &&
+                    strncmp(key.via.str.ptr, "trace", 5) == 0) {
+                    res->with_trace[res->records] = FLB_TRUE;
+                }
+            }
+        }
+        for (i = 0; i < map->via.map.size; i++) {
+            key = map->via.map.ptr[i].key;
+            val = map->via.map.ptr[i].val;
+            if (key.type != MSGPACK_OBJECT_STR || val.type != MSGPACK_OBJECT_STR) {
+                continue;
+            }
+            if (key.via.str.size == 3 && strncmp(key.via.str.ptr, "log", 3) == 0) {
+                len = val.via.str.size;
+                if (len > sizeof(res->logs[0]) - 1) {
+                    len = sizeof(res->logs[0]) - 1;
+                }
+                memcpy(res->logs[res->records], val.via.str.ptr, len);
+                res->logs[res->records][len] = '\0';
+            }
+            else if (key.via.str.size == 6 &&
+                     strncmp(key.via.str.ptr, "stream", 6) == 0) {
+                res->with_stream[res->records] = FLB_TRUE;
+            }
+        }
+    }
+    res->records++;
+
+    flb_log_event_decoder_destroy(&dec);
+    return 0;
+}
+
+/*
+ * append {"log": line, "stream": "stdout"} as a record object, with the
+ * event metadata {"trace": trace} when trace is not NULL
+ */
+static int issue_12713_append_md(struct flb_ml *ml, uint64_t stream_id,
+                                 const char *line, const char *trace)
+{
+    int ret;
+    size_t off = 0;
+    size_t len = strlen(line);
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
+    msgpack_unpacked result;
+    msgpack_sbuffer md_sbuf;
+    msgpack_packer md_pck;
+    msgpack_unpacked md_result;
+    msgpack_object *md = NULL;
+    struct flb_time tm;
+
+    flb_time_get(&tm);
+
+    msgpack_sbuffer_init(&md_sbuf);
+    msgpack_unpacked_init(&md_result);
+    if (trace) {
+        msgpack_packer_init(&md_pck, &md_sbuf, msgpack_sbuffer_write);
+        msgpack_pack_map(&md_pck, 1);
+        msgpack_pack_str(&md_pck, 5);
+        msgpack_pack_str_body(&md_pck, "trace", 5);
+        msgpack_pack_str(&md_pck, strlen(trace));
+        msgpack_pack_str_body(&md_pck, trace, strlen(trace));
+        off = 0;
+        ret = msgpack_unpack_next(&md_result, md_sbuf.data, md_sbuf.size, &off);
+        TEST_CHECK(ret == MSGPACK_UNPACK_SUCCESS);
+        md = &md_result.data;
+        off = 0;
+    }
+
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    msgpack_pack_map(&mp_pck, 2);
+    msgpack_pack_str(&mp_pck, 3);
+    msgpack_pack_str_body(&mp_pck, "log", 3);
+    msgpack_pack_str(&mp_pck, len);
+    msgpack_pack_str_body(&mp_pck, line, len);
+    msgpack_pack_str(&mp_pck, 6);
+    msgpack_pack_str_body(&mp_pck, "stream", 6);
+    msgpack_pack_str(&mp_pck, 6);
+    msgpack_pack_str_body(&mp_pck, "stdout", 6);
+
+    msgpack_unpacked_init(&result);
+    ret = msgpack_unpack_next(&result, mp_sbuf.data, mp_sbuf.size, &off);
+    TEST_CHECK(ret == MSGPACK_UNPACK_SUCCESS);
+
+    ret = flb_ml_append_object(ml, stream_id, &tm, md, &result.data);
+
+    msgpack_unpacked_destroy(&result);
+    msgpack_sbuffer_destroy(&mp_sbuf);
+    msgpack_unpacked_destroy(&md_result);
+    msgpack_sbuffer_destroy(&md_sbuf);
+    return ret;
+}
+
+static int issue_12713_append(struct flb_ml *ml, uint64_t stream_id,
+                              const char *line)
+{
+    return issue_12713_append_md(ml, stream_id, line, NULL);
+}
+
+static const char *issue_12713_python_trace[] = {
+    "Traceback (most recent call last):",
+    "  File \"/app/main.py\", line 10, in <module>",
+    "    run()",
+    "ValueError: invalid literal for int()"
+};
+
+/* built-in python parser: the whole trace must be exactly one record */
+static void test_issue_12713_python_no_duplicate()
+{
+    int i;
+    int ret;
+    int lines;
+    uint64_t stream_id;
+    struct flb_config *config;
+    struct flb_ml *ml;
+    struct flb_ml_parser_ins *mlp_i;
+    struct issue_12713_result res = {0};
+
+    config = flb_config_init();
+    TEST_CHECK(config != NULL);
+
+    ml = flb_ml_create(config, "issue-12713-python");
+    TEST_CHECK(ml != NULL);
+
+    mlp_i = flb_ml_parser_instance_create(ml, "python");
+    TEST_CHECK(mlp_i != NULL);
+    flb_ml_parser_instance_set(mlp_i, "key_content", "log");
+
+    ret = flb_ml_stream_create(ml, "test", -1, flush_callback_issue_12713,
+                               (void *) &res, &stream_id);
+    TEST_CHECK(ret == 0);
+
+    lines = sizeof(issue_12713_python_trace) / sizeof(char *);
+    for (i = 0; i < lines; i++) {
+        ret = issue_12713_append(ml, stream_id, issue_12713_python_trace[i]);
+        TEST_CHECK(ret >= 0);
+    }
+
+    /* what the flush timer does: nothing may be left to emit */
+    flb_ml_flush_pending_now(ml);
+
+    if (!TEST_CHECK(res.records == 1)) {
+        TEST_MSG("expected 1 record, got %d (second: '%s')",
+                 res.records, res.logs[1]);
+    }
+    TEST_CHECK(strncmp(res.logs[0], "Traceback", 9) == 0);
+    TEST_CHECK(strstr(res.logs[0], "ValueError: invalid literal") != NULL);
+    TEST_CHECK(res.with_stream[0] == FLB_TRUE);
+
+    flb_ml_destroy(ml);
+    flb_config_exit(config);
+}
+
+/* custom regex parser whose terminal rule returns to start_state */
+static void test_issue_12713_regex_to_start_state()
+{
+    int i;
+    int ret;
+    uint64_t stream_id;
+    struct flb_config *config;
+    struct flb_ml *ml;
+    struct flb_ml_parser *mlp;
+    struct flb_ml_parser_ins *mlp_i;
+    struct issue_12713_result res = {0};
+    const char *php_trace[] = {
+        "PHP Fatal error:  Uncaught Exception: test in /var/www/index.php:10",
+        "Stack trace:",
+        "#0 {main}",
+        "  thrown in /var/www/index.php on line 10"
+    };
+
+    config = flb_config_init();
+    TEST_CHECK(config != NULL);
+
+    mlp = flb_ml_parser_create(config, "php_12713", FLB_ML_REGEX, NULL,
+                               FLB_FALSE, 1000, "log", NULL, NULL, NULL, NULL);
+    TEST_CHECK(mlp != NULL);
+    ret = flb_ml_rule_create(mlp, "start_state", "/^PHP Fatal error: /",
+                             "php_stack", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_ml_rule_create(mlp, "php_stack", "/^(?:Stack trace:|#\\d+ )/",
+                             "php_stack", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_ml_rule_create(mlp, "php_stack", "/^\\s+thrown in /",
+                             "start_state", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_ml_parser_init(mlp);
+    TEST_CHECK(ret == 0);
+
+    ml = flb_ml_create(config, "issue-12713-php");
+    TEST_CHECK(ml != NULL);
+    mlp_i = flb_ml_parser_instance_create(ml, "php_12713");
+    TEST_CHECK(mlp_i != NULL);
+    flb_ml_parser_instance_set(mlp_i, "key_content", "log");
+
+    ret = flb_ml_stream_create(ml, "test", -1, flush_callback_issue_12713,
+                               (void *) &res, &stream_id);
+    TEST_CHECK(ret == 0);
+
+    for (i = 0; i < 4; i++) {
+        ret = issue_12713_append(ml, stream_id, php_trace[i]);
+        TEST_CHECK(ret >= 0);
+    }
+    flb_ml_flush_pending_now(ml);
+
+    if (!TEST_CHECK(res.records == 1)) {
+        TEST_MSG("expected 1 record, got %d", res.records);
+    }
+    TEST_CHECK(strstr(res.logs[0], "thrown in /var/www/index.php") != NULL);
+    TEST_CHECK(res.with_stream[0] == FLB_TRUE);
+
+    flb_ml_destroy(ml);
+    flb_config_exit(config);
+}
+
+/* timer flush mid-trace, then the terminal line: emitted once, with context */
+static void test_issue_12713_flush_before_terminal_line()
+{
+    int i;
+    int ret;
+    uint64_t stream_id;
+    struct flb_config *config;
+    struct flb_ml *ml;
+    struct flb_ml_parser_ins *mlp_i;
+    struct issue_12713_result res = {0};
+
+    config = flb_config_init();
+    TEST_CHECK(config != NULL);
+
+    ml = flb_ml_create(config, "issue-12713-split");
+    TEST_CHECK(ml != NULL);
+    mlp_i = flb_ml_parser_instance_create(ml, "python");
+    TEST_CHECK(mlp_i != NULL);
+    flb_ml_parser_instance_set(mlp_i, "key_content", "log");
+
+    ret = flb_ml_stream_create(ml, "test", -1, flush_callback_issue_12713,
+                               (void *) &res, &stream_id);
+    TEST_CHECK(ret == 0);
+
+    for (i = 0; i < 3; i++) {
+        ret = issue_12713_append(ml, stream_id, issue_12713_python_trace[i]);
+        TEST_CHECK(ret >= 0);
+    }
+    /* timer fires before the terminal line arrives */
+    flb_ml_flush_pending_now(ml);
+    TEST_CHECK(res.records == 1);
+
+    /* the terminal line carries its own metadata */
+    ret = issue_12713_append_md(ml, stream_id, issue_12713_python_trace[3], "t1");
+    TEST_CHECK(ret >= 0);
+    flb_ml_flush_pending_now(ml);
+
+    if (!TEST_CHECK(res.records == 2)) {
+        TEST_MSG("expected 2 records, got %d", res.records);
+    }
+    TEST_CHECK(strncmp(res.logs[1], "ValueError", 10) == 0);
+    /* the terminal line keeps its own record context and metadata */
+    TEST_CHECK(res.with_stream[0] == FLB_TRUE);
+    TEST_CHECK(res.with_stream[1] == FLB_TRUE);
+    TEST_CHECK(res.with_trace[0] == FLB_FALSE);
+    TEST_CHECK(res.with_trace[1] == FLB_TRUE);
+
+    flb_ml_destroy(ml);
+    flb_config_exit(config);
+}
+
 TEST_LIST = {
     /* Normal features tests */
     { "parser_docker",  test_parser_docker},
@@ -2510,6 +2813,9 @@ TEST_LIST = {
     { "issue_4949"    , test_issue_4949},
     { "issue_5504"    , test_issue_5504},
     { "issue_10576"   , test_issue_10576},
+    { "issue_12713_python_no_duplicate", test_issue_12713_python_no_duplicate},
+    { "issue_12713_regex_to_start_state", test_issue_12713_regex_to_start_state},
+    { "issue_12713_flush_before_terminal_line", test_issue_12713_flush_before_terminal_line},
     { "issue_truncation_10576", test_issue_truncation_10576 },
     { 0 }
 };

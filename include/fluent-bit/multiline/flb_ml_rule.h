@@ -34,6 +34,7 @@ void flb_ml_rule_destroy_all(struct flb_ml_parser *ml_parser);
 int flb_ml_rule_process(struct flb_ml_parser *ml_parser,
                         struct flb_ml_stream *mst,
                         struct flb_ml_stream_group *group,
+                        msgpack_object *metadata,
                         msgpack_object *full_map,
                         void *buf, size_t size, struct flb_time *tm,
                         msgpack_object *val_content,

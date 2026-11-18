@@ -329,6 +329,7 @@ static struct flb_ml_rule *try_start_state(struct flb_ml_parser *ml_parser,
 int flb_ml_rule_process(struct flb_ml_parser *ml_parser,
                         struct flb_ml_stream *mst,
                         struct flb_ml_stream_group *group,
+                        msgpack_object *metadata,
                         msgpack_object *full_map,
                         void *buf, size_t size, struct flb_time *tm,
                         msgpack_object *val_content,
@@ -376,6 +377,7 @@ int flb_ml_rule_process(struct flb_ml_parser *ml_parser,
                     flb_sds_cat_safe(&group->buf, "\n", 1);
                 }
 
+                ret = 0;
                 if (buf_size == 0) {
                     flb_sds_cat_safe(&group->buf, "\n", 1);
                 }
@@ -384,14 +386,25 @@ int flb_ml_rule_process(struct flb_ml_parser *ml_parser,
                     if (ret < 0) {
                         return ret;
                     }
-                    if (ret == FLB_MULTILINE_TRUNCATED) {
-                        /* Buffer is full. Flush immediately to send the truncated record. */
-                        flb_ml_flush_stream_group(ml_parser, mst, group, FLB_FALSE);
+                }
 
-                        /* Reset state so no more lines are appended to this record. */
-                        group->rule_to_state = NULL;
-                        return ret;
-                    }
+                /* the line is part of the record: attach its metadata and,
+                 * if the group has none (e.g. after a timer flush), its
+                 * context, before any flush below */
+                if (metadata) {
+                    flb_ml_stream_group_add_metadata(group, metadata);
+                }
+                if (group->mp_sbuf.size == 0) {
+                    flb_ml_register_context(group, tm, full_map);
+                }
+
+                if (ret == FLB_MULTILINE_TRUNCATED) {
+                    /* Buffer is full. Flush immediately to send the truncated record. */
+                    flb_ml_flush_stream_group(ml_parser, mst, group, FLB_FALSE);
+
+                    /* Reset state so no more lines are appended to this record. */
+                    group->rule_to_state = NULL;
+                    return ret;
                 }
                 rule = st->rule;
                 break;
@@ -416,6 +429,9 @@ int flb_ml_rule_process(struct flb_ml_parser *ml_parser,
             ret = flb_ml_group_cat(group, buf_data, buf_size);
             if (ret < 0) {
                 return ret;
+            }
+            if (metadata) {
+                flb_ml_stream_group_add_metadata(group, metadata);
             }
             if (ret == FLB_MULTILINE_TRUNCATED) {
                 return ret;
