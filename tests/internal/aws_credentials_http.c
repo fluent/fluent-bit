@@ -5,6 +5,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/tls/flb_tls.h>
 
 #include <monkey/mk_core.h>
 #include <string.h>
@@ -602,8 +603,10 @@ static void test_http_provider_eks_with_token_file()
 static void test_http_provider_https_endpoint()
 {
     struct flb_aws_provider *provider;
+    struct flb_aws_provider_http *implementation;
     struct flb_aws_credentials *creds;
     struct flb_config *config;
+    struct flb_stream *stream;
     int ret;
 
     flb_test_setenv("AWS_CONTAINER_CREDENTIALS_FULL_URI", "https://customers-vpc-credential-vending-server/iam_credentials/pod1", 1);
@@ -633,6 +636,18 @@ static void test_http_provider_https_endpoint()
             set(PAYLOAD_SIZE, 257)
         )
     ), &provider, &config);
+
+    implementation = provider->implementation;
+    stream = &implementation->client->upstream->base;
+    TEST_CHECK(flb_stream_is_secure(stream) == FLB_TRUE);
+    TEST_CHECK(stream->tls_context != NULL);
+    if (stream->tls_context != NULL) {
+        TEST_CHECK(stream->tls_context->verify == FLB_TRUE);
+        TEST_CHECK(stream->tls_context->verify_hostname == FLB_FALSE);
+        TEST_CHECK(stream->tls_context->vhost != NULL &&
+                   strcmp(stream->tls_context->vhost,
+                          "customers-vpc-credential-vending-server") == 0);
+    }
 
     flb_time_msleep(1000);
 
@@ -671,6 +686,56 @@ static void test_http_provider_https_endpoint()
     TEST_CHECK(flb_aws_client_mock_generator_count_unused_requests() == 0);
 
     cleanup_test(provider, config);
+}
+
+static void test_http_provider_chain_hostname_verification(void)
+{
+    size_t index;
+    int found;
+    int verify_hostname[] = {FLB_FALSE, FLB_TRUE};
+    struct flb_config *config;
+    struct flb_aws_provider *provider;
+    struct flb_upstream *upstream;
+    struct mk_list *head;
+    struct flb_tls *endpoint_tls;
+    struct flb_tls tls = {0};
+    const char *host = "container-credentials.example";
+
+    flb_test_setenv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "", 1);
+    flb_test_setenv("AWS_CONTAINER_CREDENTIALS_FULL_URI",
+                    "https://container-credentials.example/credentials", 1);
+
+    config = flb_config_init();
+    TEST_ASSERT(config != NULL);
+
+    for (index = 0; index < sizeof(verify_hostname) / sizeof(verify_hostname[0]); index++) {
+        tls.verify_hostname = verify_hostname[index];
+        provider = flb_standard_chain_provider_create(config, &tls, "us-west-2", NULL,
+                                                      NULL, flb_aws_client_generator(), NULL);
+        TEST_CHECK(provider != NULL);
+        if (provider == NULL) {
+            break;
+        }
+
+        found = FLB_FALSE;
+        mk_list_foreach(head, &config->upstreams) {
+            upstream = mk_list_entry(head, struct flb_upstream, base._head);
+            endpoint_tls = upstream->base.tls_context;
+            if (endpoint_tls != NULL && endpoint_tls->vhost != NULL &&
+                strcmp(endpoint_tls->vhost, host) == 0) {
+                found = FLB_TRUE;
+                TEST_CHECK(flb_stream_is_secure(&upstream->base) == FLB_TRUE);
+                TEST_CHECK(endpoint_tls->verify == FLB_TRUE);
+                TEST_CHECK(endpoint_tls->verify_hostname == verify_hostname[index]);
+                break;
+            }
+        }
+        TEST_CHECK(found == FLB_TRUE);
+        flb_aws_provider_destroy(provider);
+    }
+
+    flb_test_setenv("AWS_CONTAINER_CREDENTIALS_FULL_URI", "", 1);
+    flb_config_exit(config);
 }
 
 static void test_http_provider_server_failure()
@@ -976,6 +1041,8 @@ TEST_LIST = {
     { "test_http_provider_eks_with_token", test_http_provider_eks_with_token},
     { "test_http_provider_eks_with_token_file", test_http_provider_eks_with_token_file},
     { "test_http_provider_https_endpoint", test_http_provider_https_endpoint},
+    { "test_http_provider_chain_hostname_verification",
+      test_http_provider_chain_hostname_verification},
     { "test_http_provider_server_failure", test_http_provider_server_failure},
     { "test_http_validator_invalid_host", test_http_validator_invalid_host},
     { "test_http_validator_rejects_host_lookalikes", test_http_validator_rejects_host_lookalikes},
