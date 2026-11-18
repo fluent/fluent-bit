@@ -108,7 +108,15 @@ static int tail_fs_add(struct flb_tail_file *file, int check_rotated)
      * lines from the file and once we reach EOF (and a watch_fd exists),
      * we update the flags to receive notifications.
      */
+#ifdef __QNXNTO__
+    /*
+     * The QNX inotify service rejects the event-only bits IN_IGNORED and
+     * IN_Q_OVERFLOW in a request (EINVAL). They are still reported in events.
+     */
+    flags = IN_ATTRIB | IN_MODIFY;
+#else
     flags = IN_ATTRIB | IN_IGNORED | IN_MODIFY | IN_Q_OVERFLOW;
+#endif
 
     if (check_rotated == FLB_TRUE) {
         flags |= IN_MOVE_SELF;
