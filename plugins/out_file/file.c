@@ -42,6 +42,7 @@
 #ifdef FLB_SYSTEM_WINDOWS
 #include <Shlobj.h>
 #include <Shlwapi.h>
+#include <fluent-bit/record_accessor/flb_ra_parser.h>
 #endif
 
 #include "file.h"
@@ -88,6 +89,10 @@ struct flb_file_conf {
     int dynamic_destination;
     int limit_tag_files;
     int enable_strftime;
+    int windows_absolute_dynamic_path;
+#ifdef FLB_SYSTEM_WINDOWS
+    size_t dynamic_path_root_length;
+#endif
     int time_path;
     int time_file;
     struct flb_record_accessor *ra_path;
@@ -270,6 +275,95 @@ static int validate_dynamic_file(const char *file)
     return 0;
 }
 
+#ifdef FLB_SYSTEM_WINDOWS
+static int windows_path_separator(char c)
+{
+    return c == '/' || c == '\\';
+}
+
+static int validate_windows_path(const char *path, size_t length)
+{
+    size_t i;
+    unsigned char c;
+
+    if (length < 3 ||
+        !((path[0] >= 'A' && path[0] <= 'Z') ||
+          (path[0] >= 'a' && path[0] <= 'z')) ||
+        path[1] != ':' || !windows_path_separator(path[2])) {
+        return -1;
+    }
+
+    for (i = 3; i < length; i++) {
+        c = (unsigned char) path[i];
+        if (windows_path_separator(c)) {
+            if (windows_path_separator(path[i - 1]) ||
+                path[i - 1] == '.' || path[i - 1] == ' ') {
+                return -1;
+            }
+        }
+        else if (c < 0x20 || c == 0x7f || strchr(":*?\"<>|", c) != NULL) {
+            return -1;
+        }
+    }
+
+    /* Win32 can trim trailing periods and spaces when resolving a path. */
+    if (path[length - 1] == '.' || path[length - 1] == ' ') {
+        return -1;
+    }
+
+    return 0;
+}
+
+static size_t windows_path_root_length(const char *path, int enable_strftime)
+{
+    size_t i;
+    size_t length = 0;
+
+    for (i = 0; path[i] != '\0' && path[i] != '$'; i++) {
+        if (enable_strftime == FLB_TRUE && path[i] == '%') {
+            break;
+        }
+        if (windows_path_separator(path[i])) {
+            length = i + 1;
+        }
+    }
+
+    if (validate_windows_path(path, length) != 0) {
+        return 0;
+    }
+
+    return length;
+}
+
+static size_t windows_path_separator_count(const char *path)
+{
+    size_t count = 0;
+
+    for (; *path != '\0'; path++) {
+        count += windows_path_separator(*path);
+    }
+
+    return count;
+}
+
+/* Accessors can fill path components, but only literals may separate them. */
+static int windows_path_components_match(struct flb_record_accessor *ra, const char *path)
+{
+    size_t count = 0;
+    struct mk_list *head;
+    struct flb_ra_parser *part;
+
+    mk_list_foreach(head, &ra->list) {
+        part = mk_list_entry(head, struct flb_ra_parser, _head);
+        if (part->type == FLB_RA_PARSER_STRING) {
+            count += windows_path_separator_count(part->key->name);
+        }
+    }
+
+    return count == windows_path_separator_count(path);
+}
+#endif
+
 static int validate_dynamic_path(const char *path)
 {
     size_t component_length;
@@ -435,6 +529,7 @@ static int resolve_dynamic_destination(struct flb_file_conf *ctx,
                                        size_t output_size)
 {
     int ret;
+    int unsafe_path = FLB_FALSE;
     char sanitized_tag[PATH_MAX];
     flb_sds_t dynamic_path = NULL;
     flb_sds_t dynamic_file = NULL;
@@ -475,6 +570,12 @@ static int resolve_dynamic_destination(struct flb_file_conf *ctx,
         dynamic_path = flb_ra_translate_check(ra_path,
                                               (char *) tag, strlen(tag),
                                               map, NULL, FLB_TRUE);
+#ifdef FLB_SYSTEM_WINDOWS
+        if (ctx->dynamic_path_root_length > 0 && dynamic_path != NULL &&
+            !windows_path_components_match(ra_path, dynamic_path)) {
+            unsafe_path = FLB_TRUE;
+        }
+#endif
         if (event_ra_path != NULL) {
             flb_ra_destroy(event_ra_path);
         }
@@ -539,8 +640,22 @@ static int resolve_dynamic_destination(struct flb_file_conf *ctx,
         file = sanitized_tag;
     }
 
-    if (((ctx->ra_path != NULL || ctx->time_path == FLB_TRUE) &&
-         validate_dynamic_path(path) != 0) ||
+#ifdef FLB_SYSTEM_WINDOWS
+    if (ctx->dynamic_path_root_length > 0 &&
+        (validate_windows_path(path, dynamic_path != NULL ?
+                               flb_sds_len(dynamic_path) : strlen(path)) != 0 ||
+         strncmp(path, ctx->out_path, ctx->dynamic_path_root_length) != 0 ||
+         validate_dynamic_file(file) != 0 ||
+         (dynamic_file != NULL && strlen(file) != flb_sds_len(dynamic_file)) ||
+         file[strlen(file) - 1] == '.' || file[strlen(file) - 1] == ' ')) {
+        unsafe_path = FLB_TRUE;
+    }
+#endif
+    if ((ctx->ra_path != NULL || ctx->time_path == FLB_TRUE) &&
+        validate_dynamic_path(path) != 0) {
+        unsafe_path = FLB_TRUE;
+    }
+    if (unsafe_path == FLB_TRUE ||
         ((ctx->ra_file != NULL || ctx->time_file == FLB_TRUE) &&
          validate_dynamic_file(file) != 0)) {
         flb_sds_destroy(dynamic_path);
@@ -621,8 +736,29 @@ static int cb_file_init(struct flb_output_instance *ins,
         return -1;
     }
 
-    if (ctx->out_path != NULL && strchr(ctx->out_path, '$') != NULL) {
-        accessor = strchr(ctx->out_path, '$');
+    accessor = ctx->out_path != NULL ? strchr(ctx->out_path, '$') : NULL;
+    if (ctx->enable_strftime == FLB_TRUE &&
+        ctx->out_path != NULL && strchr(ctx->out_path, '%') != NULL) {
+        ctx->time_path = FLB_TRUE;
+        ctx->dynamic_destination = FLB_TRUE;
+    }
+
+#ifdef FLB_SYSTEM_WINDOWS
+    if (ctx->windows_absolute_dynamic_path == FLB_TRUE &&
+        (accessor != NULL || ctx->time_path == FLB_TRUE)) {
+        ctx->dynamic_path_root_length = windows_path_root_length(ctx->out_path,
+                                                                ctx->time_path);
+        if (ctx->dynamic_path_root_length == 0) {
+            flb_plg_error(ctx->ins,
+                          "'windows.absolute_dynamic_path' requires a fixed drive-absolute "
+                          "directory before the first dynamic 'path' placeholder");
+            file_conf_destroy(ctx);
+            return -1;
+        }
+    }
+#endif
+
+    if (accessor != NULL) {
         if (accessor == ctx->out_path) {
             flb_plg_error(ctx->ins,
                           "dynamic 'path' must include a static prefix before record accessors");
@@ -636,12 +772,6 @@ static int cb_file_init(struct flb_output_instance *ins,
             file_conf_destroy(ctx);
             return -1;
         }
-        ctx->dynamic_destination = FLB_TRUE;
-    }
-
-    if (ctx->enable_strftime == FLB_TRUE &&
-        ctx->out_path != NULL && strchr(ctx->out_path, '%') != NULL) {
-        ctx->time_path = FLB_TRUE;
         ctx->dynamic_destination = FLB_TRUE;
     }
 
@@ -1671,6 +1801,13 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_file_conf, enable_strftime),
      "Enable strftime placeholders in path and file. Disabled by default so literal "
      "percent characters in existing filenames are preserved"
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "windows.absolute_dynamic_path", "false",
+     0, FLB_TRUE, offsetof(struct flb_file_conf, windows_absolute_dynamic_path),
+     "On Windows, require a fixed drive-absolute directory before the first dynamic "
+     "path placeholder and prevent record accessors from adding directory levels"
     },
 
     {
