@@ -588,6 +588,11 @@ static struct flb_aws_provider *standard_chain_create(struct flb_config
 
     sub_provider = flb_http_provider_create(config, generator);
     if (sub_provider) {
+        /* Apply the hostname policy to the container endpoint's own TLS context. */
+        if (sub_provider->cred_tls && tls && tls->verify_hostname == FLB_TRUE) {
+            flb_tls_set_verify_hostname(sub_provider->cred_tls, FLB_TRUE);
+        }
+
         /* ECS Provider will fail creation if we are not running in ECS */
         mk_list_add(&sub_provider->_head, &implementation->sub_providers);
         flb_debug("[aws_credentials] Initialized ECS Provider in standard chain");
