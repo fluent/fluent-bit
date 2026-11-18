@@ -35,6 +35,9 @@ void flb_test_file_dynamic_missing_fallback(void);
 void flb_test_file_dynamic_unsafe_fallback(void);
 void flb_test_file_dynamic_windows_unsafe_fallback(void);
 void flb_test_file_dynamic_path_traversal_fallback(void);
+#ifdef FLB_SYSTEM_WINDOWS
+void flb_test_file_dynamic_windows_path_root(void);
+#endif
 void flb_test_file_dynamic_limit_fallback(void);
 void flb_test_file_tag_limit_fallback(void);
 
@@ -55,6 +58,9 @@ TEST_LIST = {
     {"dynamic_unsafe_fallback", flb_test_file_dynamic_unsafe_fallback},
     {"dynamic_windows_unsafe_fallback", flb_test_file_dynamic_windows_unsafe_fallback},
     {"dynamic_path_traversal_fallback", flb_test_file_dynamic_path_traversal_fallback},
+#ifdef FLB_SYSTEM_WINDOWS
+    {"dynamic_windows_path_root", flb_test_file_dynamic_windows_path_root},
+#endif
     {"dynamic_limit_fallback", flb_test_file_dynamic_limit_fallback},
     {"tag_limit_fallback", flb_test_file_tag_limit_fallback},
     {"template",        flb_test_file_template},
@@ -76,6 +82,22 @@ TEST_LIST = {
 #define TEST_LOGFILE "flb_test_file_dummy.log"
 #define TEST_LOGPATH "out_file"
 #define TEST_TIMEOUT 5
+
+static int set_dynamic_path(flb_ctx_t *ctx, int out_ffd, const char *pattern)
+{
+#ifdef FLB_SYSTEM_WINDOWS
+    char path[PATH_MAX];
+
+    if (_fullpath(path, pattern, sizeof(path)) == NULL) {
+        return -1;
+    }
+    pattern = path;
+    return flb_output_set(ctx, out_ffd, "path", pattern,
+                          "windows.absolute_dynamic_path", "true", NULL);
+#else
+    return flb_output_set(ctx, out_ffd, "path", pattern, NULL);
+#endif
+}
 
 void flb_test_file_json_invalid(void)
 {
@@ -652,7 +674,7 @@ void flb_test_file_dynamic_path_file(void)
     out_ffd = flb_output(ctx, (char *) "file", NULL);
     TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
-    flb_output_set(ctx, out_ffd, "path", TEST_LOGPATH "/$TAG/$proxy_name", NULL);
+    TEST_CHECK(set_dynamic_path(ctx, out_ffd, TEST_LOGPATH "/$TAG/$proxy_name") == 0);
     flb_output_set(ctx, out_ffd, "file", "file.%Y%m%d", NULL);
     flb_output_set(ctx, out_ffd, "enable_strftime", "true", NULL);
     flb_output_set(ctx, out_ffd, "fallback_path", TEST_LOGPATH, NULL);
@@ -1095,6 +1117,11 @@ void flb_test_file_dynamic_path_traversal_fallback(void)
     flb_ctx_t *ctx;
     int in_ffd;
     int out_ffd;
+#ifdef FLB_SYSTEM_WINDOWS
+    const char *nested = "[1448403340,{\"proxy_name\":\"region/site\"}]";
+    char line[256];
+    FILE *fp;
+#endif
 
     snprintf(fallback, sizeof(fallback), "%s/fallback.log", TEST_LOGPATH);
     remove(fallback);
@@ -1111,7 +1138,7 @@ void flb_test_file_dynamic_path_traversal_fallback(void)
     out_ffd = flb_output(ctx, (char *) "file", NULL);
     TEST_CHECK(out_ffd >= 0);
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
-    flb_output_set(ctx, out_ffd, "path", TEST_LOGPATH "/$proxy_name", NULL);
+    TEST_CHECK(set_dynamic_path(ctx, out_ffd, TEST_LOGPATH "/$proxy_name") == 0);
     flb_output_set(ctx, out_ffd, "file", "unsafe.log", NULL);
     flb_output_set(ctx, out_ffd, "on_missing_field", "fallback", NULL);
     flb_output_set(ctx, out_ffd, "fallback_path", TEST_LOGPATH, NULL);
@@ -1123,6 +1150,10 @@ void flb_test_file_dynamic_path_traversal_fallback(void)
 
     bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
     TEST_CHECK(bytes == strlen(p));
+#ifdef FLB_SYSTEM_WINDOWS
+    bytes = flb_lib_push(ctx, in_ffd, nested, strlen(nested));
+    TEST_CHECK(bytes == strlen(nested));
+#endif
     ret = wait_for_file(fallback, 1, TEST_TIMEOUT);
     TEST_CHECK(ret == 0);
 
@@ -1130,9 +1161,64 @@ void flb_test_file_dynamic_path_traversal_fallback(void)
     flb_destroy(ctx);
 
     TEST_CHECK(access("unsafe.log", F_OK) != 0);
+#ifdef FLB_SYSTEM_WINDOWS
+    TEST_CHECK(access(TEST_LOGPATH "/region", F_OK) != 0);
+    fp = fopen(fallback, "r");
+    if (TEST_CHECK(fp != NULL)) {
+        TEST_CHECK(fgets(line, sizeof(line), fp) != NULL);
+        TEST_CHECK(fgets(line, sizeof(line), fp) != NULL);
+        TEST_CHECK(fgets(line, sizeof(line), fp) == NULL);
+        fclose(fp);
+    }
+#endif
     remove(fallback);
     flb_test_rmdir(TEST_LOGPATH);
 }
+
+#ifdef FLB_SYSTEM_WINDOWS
+void flb_test_file_dynamic_windows_path_root(void)
+{
+    int i;
+    int ret;
+    int in_ffd;
+    int out_ffd;
+    flb_ctx_t *ctx;
+    const char *patterns[] = {
+        "C:$dir",
+        "C:$dir\\logs",
+        "\\$dir\\logs",
+        "\\\\$dir\\logs",
+        "//fixed-server/$dir",
+        "\\\\?\\C:\\logs\\$dir",
+        "\\\\.\\C:\\logs\\$dir",
+        TEST_LOGPATH "/$dir",
+        "C:%Y/logs"
+    };
+
+    for (i = 0; i < sizeof(patterns) / sizeof(patterns[0]); i++) {
+        ctx = flb_create();
+        flb_service_set(ctx, "Grace", "1", "Log_Level", "off", NULL);
+        in_ffd = flb_input(ctx, (char *) "lib", NULL);
+        TEST_CHECK(in_ffd >= 0);
+
+        out_ffd = flb_output(ctx, (char *) "file", NULL);
+        TEST_CHECK(out_ffd >= 0);
+        TEST_CHECK(flb_output_set(ctx, out_ffd, "match", "*",
+                                  "path", patterns[i], "file", "test.log",
+                                  "fallback_file", "fallback.log",
+                                  "windows.absolute_dynamic_path", "true",
+                                  "enable_strftime", "true", NULL) == 0);
+        /* Exercise configuration only. No records or filesystem I/O. */
+        ret = flb_start(ctx);
+        TEST_CHECK(ret != 0);
+        TEST_MSG("path template: %s", patterns[i]);
+        if (ret == 0) {
+            flb_stop(ctx);
+        }
+        flb_destroy(ctx);
+    }
+}
+#endif
 
 void flb_test_file_delim_csv(void)
 {
