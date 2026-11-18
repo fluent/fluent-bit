@@ -2448,11 +2448,11 @@ char *flb_tail_file_name(struct flb_tail_file *file)
         flb_free(buf);
         return NULL;
     }
-    if (len >= PATH_MAX) {
+    /* len counts the terminating NUL, which iofdinfo() always writes */
+    if (len > PATH_MAX) {
         flb_free(buf);
         return NULL;
     }
-    buf[len] = '\0';
 #elif defined(FLB_SYSTEM_FREEBSD)
     if ((file_entries = kinfo_getfile(getpid(), &file_count)) == NULL) {
         flb_free(buf);
