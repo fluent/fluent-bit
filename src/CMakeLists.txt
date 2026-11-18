@@ -335,6 +335,15 @@ if(FLB_SYSTEM_MACOS)
     )
 endif()
 
+# QNX: BSD sockets are in libsocket and inotify is in libfsnotify
+if(FLB_SYSTEM_QNX)
+  set(FLB_DEPS
+    ${FLB_DEPS}
+    socket
+    fsnotify
+    )
+endif()
+
 # Record Accessor
 # ---------------
 # Make sure it dependency is enabled

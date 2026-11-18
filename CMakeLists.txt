@@ -41,6 +41,16 @@ if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
   add_definitions(-DFLB_SYSTEM_MACOS)
 endif()
 
+# Define macro to identify QNX Neutrino (SDP 8.0)
+if(CMAKE_SYSTEM_NAME STREQUAL "QNX")
+  set(FLB_SYSTEM_QNX On)
+  add_definitions(-DFLB_SYSTEM_QNX)
+  # BSD sockets live in libsocket and inotify in libfsnotify on QNX, not in
+  # libc. The configure probes (accept4, inotify, unix sockets) need them to
+  # link; the core links them through FLB_DEPS in src/CMakeLists.txt.
+  list(APPEND CMAKE_REQUIRED_LIBRARIES socket fsnotify)
+endif()
+
 # Define macro to identify Linux system
 if(CMAKE_SYSTEM_NAME MATCHES "Linux")
   set(FLB_SYSTEM_LINUX On)
