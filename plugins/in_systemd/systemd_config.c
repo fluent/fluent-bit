@@ -171,6 +171,8 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
         if (!ctx->db) {
             flb_plg_error(ctx->ins, "could not open/create database '%s'", ctx->db_path);
         }
+        /* Save the starting position on the first cycle, including the tail */
+        ctx->cursor_pending = FLB_TRUE;
     }
 
 #endif
