@@ -152,6 +152,7 @@ if(FLB_SYSTEM_WINDOWS)
   set(src
     ${src}
     flb_dlfcn_win32.c
+    flb_file_win32.c
     )
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W2")
 endif()
@@ -306,6 +307,7 @@ check_symbol_exists(accept4 "sys/socket.h" HAVE_ACCEPT4)
 if(FLB_SYSTEM_WINDOWS)
   set(FLB_DEPS
     "ws2_32.lib"
+    "ntdll.lib"
     "crypt32.lib"
     "Bcrypt.lib"
     "Shlwapi.lib"
