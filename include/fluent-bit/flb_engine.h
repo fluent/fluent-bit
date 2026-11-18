@@ -34,6 +34,7 @@ int flb_engine_flush(struct flb_config *config,
                      struct flb_input_plugin *in_force);
 int flb_engine_exit(struct flb_config *config);
 int flb_engine_exit_status(struct flb_config *config, int status);
+int flb_engine_flush_request(struct flb_config *config, int reschedule_retries);
 int flb_engine_shutdown(struct flb_config *config);
 int flb_engine_destroy_tasks(struct mk_list *tasks);
 void flb_engine_reschedule_retries(struct flb_config *config);

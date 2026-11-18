@@ -23,6 +23,7 @@
 #include "health.h"
 #include "metrics.h"
 #include "reload.h"
+#include "flush.h"
 
 int api_v2_registration(struct flb_hs *hs)
 {
@@ -39,6 +40,11 @@ int api_v2_registration(struct flb_hs *hs)
     }
 
     ret = api_v2_health(hs);
+    if (ret != 0) {
+        return ret;
+    }
+
+    ret = api_v2_flush(hs);
     if (ret != 0) {
         return ret;
     }
