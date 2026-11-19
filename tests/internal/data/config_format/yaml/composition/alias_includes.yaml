@@ -1,0 +1,6 @@
+defaults:
+  file: &file nested.yaml
+  files: &files
+    - *file
+includes: *files
+service: *nested

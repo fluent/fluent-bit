@@ -1,0 +1,7 @@
+defaults:
+  old: &name first
+  frozen: &frozen {log_file: *name}
+  new: &name second
+service:
+  <<: *frozen
+  log_level: *name
