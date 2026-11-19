@@ -1,0 +1,5 @@
+defaults:
+  middle: &middle {storage.path: *level}
+pipeline:
+  inputs:
+    - {name: dummy, tag: second}

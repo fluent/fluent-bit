@@ -1,0 +1,7 @@
+defaults:
+  saved: &saved {log_file: *level}
+  level: &level debug
+  next: &next_file list_second.yaml
+pipeline:
+  inputs:
+    - {name: dummy, tag: first}
