@@ -29,7 +29,11 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #endif
+#ifndef _WIN32
+#include <sys/select.h>
+#endif
 #include <fcntl.h>
+#include <limits.h>
 #include "flb_tests_runtime.h"
 
 #define DPATH            FLB_TESTS_DATA_PATH "/data/common"
@@ -604,6 +608,7 @@ void flb_test_syslog_unknown_mode()
     flb_free(ctx);
 }
 
+#ifdef FLB_HAVE_UNIX_SOCKET
 void flb_test_syslog_unix_perm()
 {
     struct flb_lib_out_cb cb_data;
@@ -639,12 +644,13 @@ void flb_test_syslog_unix_perm()
     ret = flb_start(ctx->flb);
     TEST_CHECK(ret == 0);
 
-    ret = stat(unix_path, &sb);
+    ret = lstat(unix_path, &sb);
     if (!TEST_CHECK(ret == 0)) {
         TEST_MSG("stat failed. errno=%d", errno);
                 test_ctx_destroy(ctx);
         exit(EXIT_FAILURE);
     }
+    TEST_CHECK(S_ISSOCK(sb.st_mode));
 
 #ifndef _WIN32
     if (!TEST_CHECK((sb.st_mode & S_IRWXO) == 0)) {
@@ -660,6 +666,51 @@ void flb_test_syslog_unix_perm()
 
     test_ctx_destroy(ctx);
 }
+
+void flb_test_syslog_unix_symlink_refused()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    struct stat sb;
+    int fd;
+    int ret;
+    const char *unix_path = "in_syslog_symlink";
+    const char *victim_path = "in_syslog_symlink_victim";
+
+    fd = open(victim_path, O_CREAT | O_WRONLY | O_TRUNC, 0600);
+    TEST_CHECK(fd >= 0);
+    if (fd < 0) {
+        return;
+    }
+    fchmod(fd, 0600);
+    close(fd);
+    unlink(unix_path);
+    ret = symlink(victim_path, unix_path);
+    TEST_CHECK(ret == 0);
+
+    cb_data.cb = cb_check_json_str_list;
+    cb_data.data = NULL;
+    ctx = test_ctx_create(&cb_data);
+    TEST_CHECK(ctx != NULL);
+    if (ctx != NULL) {
+        ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                            "path", unix_path, "unix_perm", "0666",
+                            "parser", PARSER_NAME_RFC5424, NULL);
+        TEST_CHECK(ret == 0);
+        ret = flb_start(ctx->flb);
+        TEST_CHECK(ret != 0);
+        if (ret == 0) {
+            flb_stop(ctx->flb);
+        }
+        flb_destroy(ctx->flb);
+        flb_free(ctx);
+    }
+    ret = stat(victim_path, &sb);
+    TEST_CHECK(ret == 0 && (sb.st_mode & 0777) == 0600);
+    unlink(unix_path);
+    unlink(victim_path);
+}
+#endif
 
 void flb_test_syslog_udp()
 {
@@ -1333,7 +1384,219 @@ void flb_test_syslog_tcp_octet_counting_multi()
     test_ctx_destroy(ctx);
 }
 
+/* Check every record in order, including unexpected truncated duplicates. */
+static int cb_check_stream_records(void *record, size_t size, void *data)
+{
+    struct str_list *expected = data;
+    int index;
+
+    pthread_mutex_lock(&result_mutex);
+    index = num_output++;
+    if (TEST_CHECK(index < expected->size)) {
+        TEST_CHECK(strstr(record, expected->lists[index]) != NULL);
+        TEST_MSG("record %d: expected %s, got %.*s", index,
+                 expected->lists[index], (int) size, (char *) record);
+    }
+    pthread_mutex_unlock(&result_mutex);
+    flb_free(record);
+    return 0;
+}
+
+static void wait_stream_records(int count)
+{
+    int attempt;
+
+    for (attempt = 0; attempt < 100 && get_output_num() < count; attempt++) {
+        flb_time_msleep(50);
+    }
+    TEST_CHECK(get_output_num() == count);
+}
+
+static void check_stream_framing(const char *payload, size_t size, int invalid_length)
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    struct flb_parser *parser;
+    flb_sockfd_t fd;
+    fd_set read_fds;
+    struct timeval timeout;
+    char byte;
+    int ret;
+    char *newline_records[] = {"\"message\":\"first\"", "\"message\":\"second\"",
+                               "\"message\":\"partial\""};
+    char *octet_records[] = {"\"message\":\"hello\"", "\"message\":\"world\""};
+    struct str_list expected;
+
+    expected.size = invalid_length ? 2 : 3;
+    expected.lists = invalid_length ? octet_records : newline_records;
+    clear_output_num();
+    cb_data.cb = cb_check_stream_records;
+    cb_data.data = &expected;
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        return;
+    }
+
+    parser = flb_parser_create("stream_passthrough", "regex", "^(?<message>.*)$",
+                               FLB_TRUE, NULL, NULL, NULL, FLB_FALSE, FLB_TRUE,
+                               FLB_FALSE, FLB_FALSE, NULL, 0, NULL, ctx->flb->config);
+    if (!TEST_CHECK(parser != NULL)) {
+        test_ctx_destroy(ctx);
+        return;
+    }
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                       "mode", "tcp", "parser", "stream_passthrough",
+                       "buffer_chunk_size", invalid_length ? "256" : "8",
+                       "buffer_max_size", "256",
+                       "format", invalid_length ? "octet_counting" : "newline", NULL);
+    TEST_CHECK(ret == 0);
+    ret = flb_start(ctx->flb);
+    if (!TEST_CHECK(ret == 0)) {
+        test_ctx_destroy(ctx);
+        return;
+    }
+    fd = connect_tcp(NULL, -1);
+    if (!TEST_CHECK(fd >= 0)) {
+        test_ctx_destroy(ctx);
+        return;
+    }
+    TEST_CHECK(send(fd, payload, size, 0) == (ssize_t) size);
+
+    if (invalid_length) {
+        /* Bound the wait: the broken implementation leaves the socket open. */
+        FD_ZERO(&read_fds);
+        FD_SET(fd, &read_fds);
+        timeout.tv_sec = 5;
+        timeout.tv_usec = 0;
+        ret = select((int) (fd + 1), &read_fds, NULL, NULL, &timeout);
+        if (TEST_CHECK(ret == 1)) {
+            TEST_CHECK(recv(fd, &byte, 1, 0) == 0);
+        }
+        flb_socket_close(fd);
+        wait_stream_records(1);
+        /* Only the malformed connection is rejected; a new one still works. */
+        fd = connect_tcp(NULL, -1);
+        if (TEST_CHECK(fd >= 0)) {
+            TEST_CHECK(send(fd, "5 world", 7, 0) == 7);
+        }
+    }
+    else {
+        wait_stream_records(2);
+        /* Complete the partial message retained after the empty delimiters. */
+        TEST_CHECK(send(fd, "tial\n\n", 6, 0) == 6);
+    }
+    wait_stream_records((int) expected.size);
+    if (fd >= 0) {
+        flb_socket_close(fd);
+    }
+    test_ctx_destroy(ctx);
+    TEST_CHECK(get_output_num() == expected.size);
+}
+
+void flb_test_syslog_tcp_empty_lines(void)
+{
+    const char payload[] = "\n\nfirst\n\n\nsecond\npar";
+
+    check_stream_framing(payload, sizeof(payload) - 1, FLB_FALSE);
+}
+
+void flb_test_syslog_tcp_empty_nul_frames(void)
+{
+    const char payload[] = "\0\0first\0\0\0second\0par";
+
+    check_stream_framing(payload, sizeof(payload) - 1, FLB_FALSE);
+}
+
+void flb_test_syslog_tcp_zero_octet_count(void)
+{
+    const char payload[] = "5 hello0 7 goodbye";
+
+    check_stream_framing(payload, sizeof(payload) - 1, FLB_TRUE);
+}
+
+void flb_test_syslog_tcp_missing_octet_count(void)
+{
+    const char payload[] = "5 hello 7 goodbye";
+
+    check_stream_framing(payload, sizeof(payload) - 1, FLB_TRUE);
+}
+
+void flb_test_syslog_tcp_octet_counting_leading_zero(void)
+{
+    const char payload[] = "5 hello01 7 goodbye";
+
+    check_stream_framing(payload, sizeof(payload) - 1, FLB_TRUE);
+}
+
+void flb_test_syslog_buffer_limits(void)
+{
+    flb_ctx_t *ctx;
+    int input;
+    int ret;
+    size_t i;
+    char limit[32];
+    char above_limit[32];
+    struct {
+        char *chunk;
+        char *maximum;
+        int valid;
+    } cases[] = {
+        {"0", "0", FLB_FALSE},
+        {"1", "0", FLB_FALSE},
+        {"-1", "0", FLB_FALSE},
+        {above_limit, "0", FLB_FALSE},
+        {"3000000000", "0", FLB_FALSE},
+        {"4294967296", "0", FLB_FALSE},
+        {"4294967304", "0", FLB_FALSE},
+        {"-4294967288", "0", FLB_FALSE},
+        {"8", above_limit, FLB_FALSE},
+        {"8", "4294967296", FLB_FALSE},
+        {"8", "4294967304", FLB_FALSE},
+        {"8", "-4294967296", FLB_FALSE},
+        {"8", "-1", FLB_FALSE},
+        {"2147483648", "4294967296", FLB_FALSE},
+        {"2", "0", FLB_TRUE},
+        {"1k", "2k", FLB_TRUE},
+        {"8", limit, FLB_TRUE},
+        {limit, "0", FLB_TRUE}
+    };
+
+    snprintf(limit, sizeof(limit), "%i", INT_MAX);
+    snprintf(above_limit, sizeof(above_limit), "%zu", (size_t) INT_MAX + 1);
+
+    for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        ctx = flb_create();
+        if (!TEST_CHECK(ctx != NULL)) {
+            return;
+        }
+        flb_service_set(ctx, "Log_Level", "error", "Grace", "1",
+                        "Parsers_File", DPATH "/parsers.conf", NULL);
+        input = flb_input(ctx, "syslog", NULL);
+        TEST_CHECK(input >= 0);
+        ret = flb_input_set(ctx, input, "mode", "tcp", "listen", "127.0.0.1",
+                            "port", "0", "parser", PARSER_NAME_RFC5424,
+                            "buffer_chunk_size", cases[i].chunk,
+                            "buffer_max_size", cases[i].maximum, NULL);
+        TEST_CHECK(ret == 0);
+
+        /* TCP allocates its buffer only on accept: test large limits cheaply. */
+        ret = flb_start(ctx);
+        TEST_CHECK(cases[i].valid ? ret == 0 : ret != 0);
+        TEST_MSG("chunk=%s maximum=%s start=%i", cases[i].chunk, cases[i].maximum, ret);
+        if (ret == 0) {
+            flb_stop(ctx);
+        }
+        flb_destroy(ctx);
+    }
+}
+
 TEST_LIST = {
+    {"syslog_buffer_limits", flb_test_syslog_buffer_limits},
+    {"syslog_tcp_octet_counting_leading_zero", flb_test_syslog_tcp_octet_counting_leading_zero},
+    {"syslog_tcp_empty_lines", flb_test_syslog_tcp_empty_lines},
+    {"syslog_tcp_empty_nul_frames", flb_test_syslog_tcp_empty_nul_frames},
+    {"syslog_tcp_zero_octet_count", flb_test_syslog_tcp_zero_octet_count},
+    {"syslog_tcp_missing_octet_count", flb_test_syslog_tcp_missing_octet_count},
     {"syslog_tcp", flb_test_syslog_tcp},
     {"syslog_udp", flb_test_syslog_udp},
     {"syslog_tcp_port", flb_test_syslog_tcp_port},
@@ -1343,6 +1606,7 @@ TEST_LIST = {
     {"syslog_unknown_mode", flb_test_syslog_unknown_mode},
 #ifdef FLB_HAVE_UNIX_SOCKET
     {"syslog_unix_perm", flb_test_syslog_unix_perm},
+    {"syslog_unix_symlink_refused", flb_test_syslog_unix_symlink_refused},
 #endif
     {"syslog_rfc3164", flb_test_syslog_rfc3164},
 #ifdef FLB_HAVE_UNIX_SOCKET

@@ -137,6 +137,8 @@ void flb_net_setup_init(struct flb_net_setup *net);
 int flb_net_host_set(const char *plugin_name, struct flb_net_host *host, const char *address);
 
 /* DNS handling */
+int flb_net_getaddrinfo(const char *node, const char *service, struct addrinfo *hints,
+                       struct addrinfo **res, char *dns_mode_textual, int timeout);
 void flb_net_dns_lookup_context_cleanup(struct flb_net_dns *dns_ctx);
 
 /* TCP options */
@@ -145,6 +147,7 @@ int flb_net_socket_tcp_nodelay(flb_sockfd_t fd);
 int flb_net_socket_blocking(flb_sockfd_t fd);
 int flb_net_socket_nonblocking(flb_sockfd_t fd);
 int flb_net_socket_set_rcvtimeout(flb_sockfd_t fd, int timeout_in_seconds);
+int flb_net_socket_set_sndtimeout(flb_sockfd_t fd, int timeout_in_seconds);
 int flb_net_socket_rcv_buffer(flb_sockfd_t fd, int rcvbuf);
 int flb_net_socket_tcp_fastopen(flb_sockfd_t sockfd);
 int flb_net_socket_tcp_keepalive(flb_sockfd_t fd, struct flb_net_setup *net);

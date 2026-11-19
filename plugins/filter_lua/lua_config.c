@@ -41,7 +41,6 @@ struct lua_filter *lua_config_create(struct flb_filter_instance *ins,
     const char *script = NULL;
     const char *tmp = NULL;
     (void) config;
-    struct stat st;
     struct lua_filter *lf;
     struct mk_list *split   = NULL;
     struct mk_list *head    = NULL;
@@ -81,20 +80,12 @@ struct lua_filter *lua_config_create(struct flb_filter_instance *ins,
             return NULL;
         }
 
-        /* Compose path */
-        ret = stat(script, &st);
-        if (ret == -1 && errno == ENOENT) {
-            if (script[0] == '/') {
-                flb_plg_error(lf->ins, "cannot access script '%s'", script);
-                flb_free(lf);
-                return NULL;
-            }
-
-            if (config->conf_path) {
-                snprintf(buf, sizeof(buf) - 1, "%s%s",
-                         config->conf_path, script);
-                script = buf;
-            }
+        script = flb_utils_resolve_config_path(script, config->conf_path,
+                                               buf, sizeof(buf));
+        if (!script) {
+            flb_plg_error(lf->ins, "script path is too long");
+            flb_free(lf);
+            return NULL;
         }
 
         /* Validate script path */

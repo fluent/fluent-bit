@@ -6,6 +6,11 @@ import pytest
 import requests
 
 from server.http_server import configure_http_response, data_storage, http_server_run
+from utils.input_pause_resume import (
+    assert_pause_resume_cycles,
+    assert_shutdown_while_paused,
+    open_partial_http_request,
+)
 from utils.test_service import FluentBitTestService
 from utils.http_matrix import PROTOCOL_CASES, run_curl_request
 
@@ -255,6 +260,72 @@ def test_in_splunk_hec_auth_status_codes(case):
 
     assert result["status_code"] == case["status_code"]
     assert result["body"] == case["body"]
+
+
+@pytest.mark.parametrize(
+    "config_file",
+    [
+        "splunk_pause_resume.yaml",
+        "splunk_pause_resume_workers.yaml",
+    ],
+    ids=["single_listener", "workers_4"],
+)
+def test_in_splunk_pause_resume_cycles(config_file):
+    service = Service(config_file)
+
+    try:
+        service.start()
+        large_event = json.dumps({"event": "x" * 6144})
+        small_event = json.dumps({"event": "resume-check"})
+
+        def open_active_connections():
+            return [
+                open_partial_http_request(
+                    "127.0.0.1",
+                    service.flb_listener_port,
+                )
+                for _ in range(8)
+            ]
+
+        assert_pause_resume_cycles(
+            service.flb,
+            f"http://localhost:{service.flb_listener_port}/services/collector",
+            large_event,
+            create_splunk_headers(),
+            input_name="splunk.0",
+            success_status=200,
+            cycles=2,
+            pause_trigger_requests=2,
+            resume_payload=small_event,
+            active_connection_factory=open_active_connections,
+        )
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize(
+    "config_file",
+    ["splunk_pause_resume.yaml", "splunk_pause_resume_workers.yaml"],
+    ids=["single_listener", "workers_4"],
+)
+def test_in_splunk_shutdown_while_paused(config_file):
+    service = Service(config_file)
+
+    try:
+        service.start()
+        assert_shutdown_while_paused(
+            service.flb,
+            service.stop,
+            "127.0.0.1",
+            service.flb_listener_port,
+            f"http://localhost:{service.flb_listener_port}/services/collector",
+            json.dumps({"event": "x" * 6144}),
+            create_splunk_headers(),
+            input_name="splunk.0",
+            success_status=200,
+        )
+    finally:
+        service.stop()
 
 
 def test_in_splunk_to_out_splunk_prefers_configured_output_token():

@@ -1,0 +1,55 @@
+service:
+  flush: 0.1
+  grace: 1
+  log_level: error
+  storage.path: /storage/pipeline
+  storage.sync: full
+  storage.checksum: on
+
+pipeline:
+  inputs:
+    - name: lib
+      tag: browser.logs
+      storage.type: filesystem
+      processors:
+        logs:
+          - name: content_modifier
+            action: insert
+            key: wasm
+            value: browser
+          - name: sql
+            query: "SELECT * FROM STREAM WHERE keep = 'yes';"
+          - name: opentelemetry_envelope
+    - name: event_type
+      type: metrics
+      threaded: false
+      tag: browser.metrics
+      interval_sec: 0
+      interval_nsec: 50000000
+      storage.type: filesystem
+      processors:
+        metrics:
+          - name: metrics_selector
+            context: metric_name
+            action: include
+            metric_name: kubernetes_network
+          - name: labels
+            insert: runtime browser
+          - name: cumulative_to_delta
+            initial_value: keep
+    - name: event_type
+      type: traces
+      threaded: false
+      tag: browser.traces
+      interval_sec: 0
+      interval_nsec: 50000000
+      storage.type: filesystem
+      processors:
+        traces:
+          - name: sampling
+            type: probabilistic
+            sampling_settings:
+              sampling_percentage: 100
+  outputs:
+    - name: wasm_capture
+      match: '*'

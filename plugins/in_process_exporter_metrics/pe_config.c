@@ -18,6 +18,9 @@
  */
 
 #include <fluent-bit/flb_input_plugin.h>
+
+#include <unistd.h>
+
 #include "pe.h"
 
 struct flb_pe *flb_pe_config_create(struct flb_input_instance *ins,
@@ -36,6 +39,9 @@ struct flb_pe *flb_pe_config_create(struct flb_input_instance *ins,
     ctx->ins = ins;
     ctx->process_regex_include_list = NULL;
     ctx->process_regex_exclude_list = NULL;
+
+    /* Cache the system page size for procfs RSS pages-to-bytes conversion. */
+    ctx->page_size = sysconf(_SC_PAGESIZE);
 
     /* Load the config map */
     ret = flb_input_config_map_set(ins, (void *) ctx);

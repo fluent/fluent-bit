@@ -34,6 +34,7 @@
 #include <monkey/mk_server.h>
 #include <monkey/mk_plugin_stage.h>
 #include <monkey/mk_http_thread.h>
+#include <monkey/mk_tls_transport.h>
 
 #include <signal.h>
 
@@ -188,7 +189,7 @@ struct mk_sched_conn *mk_sched_add_connection(int remote_fd,
 
     /* Close connection, otherwise continue */
     if (ret == MK_PLUGIN_RET_CLOSE_CONX) {
-        listener->network->network->close(listener->network, remote_fd);
+        listener->network->close(listener->network->plugin, remote_fd);
         MK_LT_SCHED(remote_fd, "PLUGIN_CLOSE");
         return NULL;
     }
@@ -216,7 +217,7 @@ struct mk_sched_conn *mk_sched_add_connection(int remote_fd,
     event->status       = MK_EVENT_NONE;
     conn->arrive_time   = server->clock_context->log_current_utime;
     conn->protocol      = handler;
-    conn->net           = listener->network->network;
+    conn->net           = listener->network;
     conn->is_timeout_on = MK_FALSE;
     conn->server_listen = listener;
 
@@ -390,6 +391,7 @@ void *mk_sched_launch_worker_loop(void *data)
 
     /* Export known scheduler node to context thread */
     MK_TLS_SET(mk_tls_sched_worker_node, sched);
+    mk_tls_thread_init(server);
     mk_plugin_core_thread(server);
 
     if (server->scheduler_mode == MK_SCHEDULER_REUSEPORT) {
@@ -598,8 +600,10 @@ int mk_sched_check_timeouts(struct mk_sched_worker *sched,
             MK_TRACE("Scheduler, closing fd %i due TIMEOUT",
                      conn->event.fd);
             MK_LT_SCHED(conn->event.fd, "TIMEOUT_CONN_PENDING");
-            conn->protocol->cb_close(conn, sched, MK_SCHED_CONN_TIMEOUT,
-                                     server);
+            if (conn->protocol->cb_close) {
+                conn->protocol->cb_close(conn, sched, MK_SCHED_CONN_TIMEOUT,
+                                         server);
+            }
             mk_sched_drop_connection(conn, sched, server);
         }
     }
@@ -673,6 +677,8 @@ int mk_sched_threads_destroy_conn(struct mk_sched_worker *sched,
  * Scheduler events handler: lookup for event handler and invoke
  * proper callbacks.
  */
+static int mk_sched_conn_pending_output(struct mk_channel *channel);
+
 int mk_sched_event_read(struct mk_sched_conn *conn,
                         struct mk_sched_worker *sched,
                         struct mk_server *server)
@@ -696,12 +702,52 @@ int mk_sched_event_read(struct mk_sched_conn *conn,
     if (ret == -1) {
         if (errno == EAGAIN) {
             MK_TRACE("[FD %i] EAGAIN: need to read more data", conn->event.fd);
+            mk_event_add(sched->loop, conn->event.fd,
+                         MK_EVENT_CONNECTION,
+                         mk_net_transport_event_interest(conn->net,
+                                                         conn->event.fd,
+                                                         MK_EVENT_READ),
+                         conn);
             return 1;
         }
         return -1;
     }
 
+    if (mk_sched_conn_pending_output(&conn->channel) == MK_TRUE) {
+        return mk_sched_event_write(conn, sched, server);
+    }
+
     return ret;
+}
+
+static int mk_sched_conn_pending_output(struct mk_channel *channel)
+{
+    struct mk_list *head;
+    struct mk_stream *stream;
+    struct mk_stream_input *input;
+
+    if (mk_channel_is_empty(channel) == 0) {
+        return MK_FALSE;
+    }
+
+    /*
+     * The request parser installs placeholder input streams with zero bytes
+     * before a response exists. Only treat the channel as writable work when
+     * at least one input actually has bytes pending.
+     */
+    mk_list_foreach(head, &channel->streams) {
+        stream = mk_list_entry(head, struct mk_stream, _head);
+        if (mk_list_is_empty(&stream->inputs) == 0) {
+            continue;
+        }
+
+        input = mk_list_entry_first(&stream->inputs, struct mk_stream_input, _head);
+        if (input->bytes_total > 0) {
+            return MK_TRUE;
+        }
+    }
+
+    return MK_FALSE;
 }
 
 int mk_sched_event_write(struct mk_sched_conn *conn,
@@ -716,6 +762,14 @@ int mk_sched_event_write(struct mk_sched_conn *conn,
 
     ret = mk_channel_write(&conn->channel, &count);
     if (ret == MK_CHANNEL_FLUSH || ret == MK_CHANNEL_BUSY) {
+        if ((conn->event.mask & MK_EVENT_WRITE) == 0) {
+            mk_event_add(sched->loop, conn->event.fd,
+                         MK_EVENT_CONNECTION,
+                         mk_net_transport_event_interest(conn->net,
+                                                         conn->event.fd,
+                                                         MK_EVENT_WRITE),
+                         conn);
+        }
         return 0;
     }
     else if (ret == MK_CHANNEL_DONE || ret == MK_CHANNEL_EMPTY) {
@@ -729,7 +783,9 @@ int mk_sched_event_write(struct mk_sched_conn *conn,
             event = &conn->event;
             mk_event_add(sched->loop, event->fd,
                          MK_EVENT_CONNECTION,
-                         MK_EVENT_READ,
+                         mk_net_transport_event_interest(conn->net,
+                                                         event->fd,
+                                                         MK_EVENT_READ),
                          conn);
         }
         return 0;
@@ -749,7 +805,7 @@ int mk_sched_event_close(struct mk_sched_conn *conn,
     MK_TRACE("[FD %i] Connection Handler, closed", conn->event.fd);
     mk_event_del(sched->loop, &conn->event);
 
-    if (type != MK_EP_SOCKET_DONE) {
+    if (type != MK_EP_SOCKET_DONE && conn->protocol->cb_close) {
         conn->protocol->cb_close(conn, sched, type, server);
     }
     /*

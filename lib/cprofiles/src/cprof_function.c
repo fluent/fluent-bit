@@ -38,6 +38,10 @@ struct cprof_function *cprof_function_create(struct cprof_profile *profile)
 void cprof_function_destroy(struct cprof_function *instance)
 {
     if (instance != NULL) {
+        if (cfl_list_entry_is_orphan(&instance->_head) == CFL_FALSE) {
+            cfl_list_del(&instance->_head);
+        }
+
         free(instance);
     }
 }

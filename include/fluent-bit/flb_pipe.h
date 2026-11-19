@@ -39,7 +39,12 @@
 #define FLB_PIPE_WOULDBLOCK() (errno == EAGAIN || errno == EWOULDBLOCK)
 #endif
 
+struct mk_event_loop;
+
 int flb_pipe_create(flb_pipefd_t pipefd[2]);
+int flb_pipe_event_channel_create(struct mk_event_loop *loop,
+                                  flb_pipefd_t *read_fd, flb_pipefd_t *write_fd,
+                                  void *event);
 void flb_pipe_destroy(flb_pipefd_t pipefd[2]);
 int flb_pipe_close(flb_pipefd_t fd);
 int flb_pipe_set_nonblocking(flb_pipefd_t fd);

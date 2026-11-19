@@ -194,6 +194,7 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                         if (bulk_statuses_cat(ctx, bulk_statuses,
                                               "{\"index\":", 9) == FLB_FALSE) {
                             flb_sds_destroy(write_op);
+                            write_op = NULL;
                             break;
                         }
                         error_op = FLB_FALSE;
@@ -202,6 +203,7 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                         if (bulk_statuses_cat(ctx, bulk_statuses,
                                               "{\"create\":", 10) == FLB_FALSE) {
                             flb_sds_destroy(write_op);
+                            write_op = NULL;
                             break;
                         }
                         error_op = FLB_FALSE;
@@ -210,6 +212,7 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                         if (bulk_statuses_cat(ctx, bulk_statuses,
                                               "{\"update\":", 10) == FLB_FALSE) {
                             flb_sds_destroy(write_op);
+                            write_op = NULL;
                             break;
                         }
                         error_op = FLB_TRUE;
@@ -219,6 +222,7 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                                               "{\"delete\":{\"status\":404,\"result\":\"not_found\"}}",
                                               46) == FLB_FALSE) {
                             flb_sds_destroy(write_op);
+                            write_op = NULL;
                             break;
                         }
                         error_op = FLB_TRUE;
@@ -226,6 +230,7 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                                    * in the end of the loop.
                                    * Due to delete actions include only one line. */
                         flb_sds_destroy(write_op);
+                        write_op = NULL;
 
                         goto proceed;
                     }
@@ -234,16 +239,19 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                                               "{\"unknown\":{\"status\":400,\"result\":\"bad_request\"}}",
                                               49) == FLB_FALSE) {
                             flb_sds_destroy(write_op);
+                            write_op = NULL;
                             break;
                         }
                         error_op = FLB_TRUE;
 
                         flb_sds_destroy(write_op);
+                        write_op = NULL;
 
                         break;
                     }
                 } else {
                     flb_sds_destroy(write_op);
+                    write_op = NULL;
                     flb_plg_error(ctx->ins, "meta information line is missing");
                     error_op = FLB_TRUE;
 
@@ -256,10 +264,11 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                     ret = flb_log_event_encoder_begin_record(encoder);
 
                     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
-                        flb_sds_destroy(write_op);
                         flb_plg_error(ctx->ins, "event encoder error : %d", ret);
                         error_op = FLB_TRUE;
-
+                        ingest_result = -1;
+                        flb_sds_destroy(write_op);
+                        write_op = NULL;
                         break;
                     }
 
@@ -268,10 +277,11 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                             &tm);
 
                     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
-                        flb_sds_destroy(write_op);
                         flb_plg_error(ctx->ins, "event encoder error : %d", ret);
                         error_op = FLB_TRUE;
-
+                        ingest_result = -1;
+                        flb_sds_destroy(write_op);
+                        write_op = NULL;
                         break;
                     }
 
@@ -283,10 +293,11 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                     }
 
                     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
-                        flb_sds_destroy(write_op);
                         flb_plg_error(ctx->ins, "event encoder error : %d", ret);
                         error_op = FLB_TRUE;
-
+                        ingest_result = -1;
+                        flb_sds_destroy(write_op);
+                        write_op = NULL;
                         break;
                     }
                 }
@@ -310,7 +321,9 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
                         flb_plg_error(ctx->ins, "event encoder error : %d", ret);
                         error_op = FLB_TRUE;
-
+                        ingest_result = -1;
+                        flb_sds_destroy(write_op);
+                        write_op = NULL;
                         break;
                     }
 
@@ -319,7 +332,9 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
                     if (ret != FLB_EVENT_ENCODER_SUCCESS) {
                         flb_plg_error(ctx->ins, "event encoder error : %d", ret);
                         error_op = FLB_TRUE;
-
+                        ingest_result = -1;
+                        flb_sds_destroy(write_op);
+                        write_op = NULL;
                         break;
                     }
 
@@ -365,6 +380,7 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
 
                         error_op = FLB_TRUE;
                         flb_sds_destroy(write_op);
+                        write_op = NULL;
                         break;
                     }
 
@@ -418,40 +434,40 @@ static int process_ndpack(struct flb_in_elasticsearch *ctx, flb_sds_t tag, char 
         else {
             flb_plg_error(ctx->ins, "skip record from invalid type: %i",
                          result.data.type);
+            flb_sds_destroy(write_op);
+            write_op = NULL;
             msgpack_unpacked_destroy(&result);
             if (destroy_local_encoder == FLB_TRUE) {
                 flb_log_event_encoder_destroy(encoder);
             }
-            return -1;
+            return FLB_ERR_JSON_INVAL;
         }
+    }
+
+    /* Release the pending action name, if any, on every exit path. */
+    flb_sds_destroy(write_op);
+    write_op = NULL;
+
+    if (ingest_result != 0) {
+        msgpack_unpacked_destroy(&result);
+        if (destroy_local_encoder == FLB_TRUE) {
+            flb_log_event_encoder_destroy(encoder);
+        }
+        return ingest_result;
     }
 
     if (idx % 2 != 0) {
         flb_plg_warn(ctx->ins, "decode payload of Bulk API is failed");
         msgpack_unpacked_destroy(&result);
-        if (error_op == FLB_FALSE && write_op != NULL) {
-            /* On lacking of body case in non-error case, there is no
-             * releasing memory code paths. We should proceed to do
-             * it here. */
-            flb_sds_destroy(write_op);
-        }
 
         if (destroy_local_encoder == FLB_TRUE) {
             flb_log_event_encoder_destroy(encoder);
         }
 
-        return -1;
+        return FLB_ERR_JSON_INVAL;
     }
 
     msgpack_unpacked_destroy(&result);
-
-    if (ingest_result != 0) {
-        if (destroy_local_encoder == FLB_TRUE) {
-            flb_log_event_encoder_destroy(encoder);
-        }
-
-        return ingest_result;
-    }
 
     if (destroy_local_encoder == FLB_TRUE) {
         flb_log_event_encoder_destroy(encoder);
@@ -465,25 +481,40 @@ static ssize_t parse_payload_ndjson(struct flb_in_elasticsearch *ctx, flb_sds_t 
 {
     int ret;
     int out_size;
+    size_t offset;
     char *pack;
     struct flb_pack_state pack_state;
 
     /* Initialize packer */
-    flb_pack_state_init(&pack_state);
+    ret = flb_pack_state_init(&pack_state);
+    if (ret != 0) {
+        return -1;
+    }
 
     /* Pack JSON as msgpack */
     ret = flb_pack_json_state(payload, size,
                               &pack, &out_size, &pack_state);
+    if (ret == 0) {
+        /* The packer can succeed with a complete prefix of an incomplete request. */
+        for (offset = pack_state.last_byte; offset < size; offset++) {
+            if (payload[offset] != ' ' && payload[offset] != '\t' &&
+                payload[offset] != '\r' && payload[offset] != '\n') {
+                flb_free(pack);
+                ret = FLB_ERR_JSON_INVAL;
+                break;
+            }
+        }
+    }
     flb_pack_state_reset(&pack_state);
 
     /* Handle exceptions */
     if (ret == FLB_ERR_JSON_PART) {
         flb_plg_warn(ctx->ins, "JSON data is incomplete, skipping");
-        return -1;
+        return FLB_ERR_JSON_INVAL;
     }
     else if (ret == FLB_ERR_JSON_INVAL) {
         flb_plg_warn(ctx->ins, "invalid JSON message, skipping");
-        return -1;
+        return FLB_ERR_JSON_INVAL;
     }
     else if (ret == -1) {
         return -1;
@@ -609,6 +640,8 @@ static int process_payload_ng(struct flb_http_request *request,
                               flb_sds_t tag,
                               flb_sds_t *bulk_statuses)
 {
+    int ret;
+
     if (request->content_type == NULL) {
         send_response_ng(response, 400, NULL, "error: header 'Content-Type' is not set\n");
 
@@ -627,8 +660,16 @@ static int process_payload_ng(struct flb_http_request *request,
         return -1;
     }
 
-    return parse_payload_ndjson(context, tag, request->body,
-                                cfl_sds_len(request->body), bulk_statuses);
+    ret = parse_payload_ndjson(context, tag, request->body,
+                               cfl_sds_len(request->body), bulk_statuses);
+    if (ret == FLB_ERR_JSON_INVAL) {
+        send_response_ng(response, 400, NULL, "error: invalid bulk payload\n");
+    }
+    else if (ret != 0 && ret != FLB_INPUT_INGRESS_BUSY) {
+        send_response_ng(response, 500, NULL, "error: could not ingest bulk payload\n");
+    }
+
+    return ret;
 }
 
 int in_elasticsearch_bulk_prot_handle_ng(struct flb_http_request *request,
@@ -648,7 +689,7 @@ int in_elasticsearch_bulk_prot_handle_ng(struct flb_http_request *request,
 
     context = (struct flb_in_elasticsearch *) response->stream->user_data;
 
-    if (request->path[0] != '/') {
+    if (request->path == NULL || request->path[0] != '/') {
         send_response_ng(response, 400, NULL, "error: invalid request\n");
         return -1;
     }

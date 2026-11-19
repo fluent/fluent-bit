@@ -1,0 +1,60 @@
+fixture_version: 1
+signal: logs
+processor:
+  name: fts
+  packs:
+  - ../pack.json
+  recipe_version: 1
+  error_mode: keep
+  recipe:
+  - id: policy
+    use: org.fluentbit.policy.windows-security/apply
+cases:
+- name: logon-failure
+  input:
+  - body:
+      ProviderName: Microsoft-Windows-Security-Auditing
+      EventID: 4625
+      TargetUserName: synthetic-user
+  expected:
+    records:
+    - body:
+        ProviderName: Microsoft-Windows-Security-Auditing
+        EventID: 4625
+        TargetUserName: synthetic-user
+        event.outcome: failure
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0
+- name: unknown-security-preserved
+  input:
+  - body:
+      ProviderName: Microsoft-Windows-Security-Auditing
+      EventID: 9999
+  expected:
+    records:
+    - body:
+        ProviderName: Microsoft-Windows-Security-Auditing
+        EventID: 9999
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0
+- name: logon-success
+  input:
+  - body:
+      ProviderName: Microsoft-Windows-Security-Auditing
+      EventID: 4624
+      TargetUserName: synthetic-user
+  expected:
+    records:
+    - body:
+        ProviderName: Microsoft-Windows-Security-Auditing
+        EventID: 4624
+        TargetUserName: synthetic-user
+        event.outcome: success
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0

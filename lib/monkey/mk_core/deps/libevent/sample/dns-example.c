@@ -60,6 +60,11 @@ main_callback(int result, char type, int count, int ttl,
 			  void *addrs, void *orig) {
 	char *n = (char*)orig;
 	int i;
+
+	if (type == DNS_CNAME) {
+		printf("%s: %s (CNAME)\n", n, (char*)addrs);
+	}
+
 	for (i = 0; i < count; ++i) {
 		if (type == DNS_IPv4_A) {
 			printf("%s: %s\n", n, debug_ntoa(((u32*)addrs)[i]));
@@ -78,6 +83,8 @@ gai_callback(int err, struct evutil_addrinfo *ai, void *arg)
 {
 	const char *name = arg;
 	int i;
+	struct evutil_addrinfo *first_ai = ai;
+
 	if (err) {
 		printf("%s: %s\n", name, evutil_gai_strerror(err));
 	}
@@ -99,6 +106,9 @@ gai_callback(int err, struct evutil_addrinfo *ai, void *arg)
 			printf("[%d] %s: %s\n",i,name,buf);
 		}
 	}
+
+	if (first_ai)
+		evutil_freeaddrinfo(first_ai);
 }
 
 static void
@@ -154,19 +164,19 @@ main(int c, char **v) {
 		const char *ns;
 	};
 	struct options o;
-	char opt;
+	int opt;
 	struct event_base *event_base = NULL;
 	struct evdns_base *evdns_base = NULL;
 
 	memset(&o, 0, sizeof(o));
-	
+
 	if (c < 2) {
 		fprintf(stderr, "syntax: %s [-x] [-v] [-c resolv.conf] [-s ns] hostname\n", v[0]);
 		fprintf(stderr, "syntax: %s [-T]\n", v[0]);
 		return 1;
 	}
 
-	while ((opt = getopt(c, v, "xvc:Ts:")) != -1) {
+	while ((opt = getopt(c, v, "xvc:Ts:g")) != -1) {
 		switch (opt) {
 			case 'x': o.reverse = 1; break;
 			case 'v': ++verbose; break;
@@ -186,7 +196,17 @@ main(int c, char **v) {
 #endif
 
 	event_base = event_base_new();
+	if (event_base == NULL) {
+		fprintf(stderr, "Couldn't create new event_base\n");
+		return 1;
+	}
 	evdns_base = evdns_base_new(event_base, EVDNS_BASE_DISABLE_WHEN_INACTIVE);
+	if (evdns_base == NULL) {
+		event_base_free(event_base);
+		fprintf(stderr, "Couldn't create new evdns_base\n");
+		return 1;
+	}
+	
 	evdns_set_log_fn(logfn);
 
 	if (o.servertest) {
@@ -220,8 +240,8 @@ main(int c, char **v) {
 			res = evdns_base_resolv_conf_parse(evdns_base,
 			    DNS_OPTION_NAMESERVERS, o.resolv_conf);
 
-		if (res < 0) {
-			fprintf(stderr, "Couldn't configure nameservers");
+		if (res) {
+			fprintf(stderr, "Couldn't configure nameservers\n");
 			return 1;
 		}
 	}
@@ -247,11 +267,13 @@ main(int c, char **v) {
 			    gai_callback, v[optind]);
 		} else {
 			fprintf(stderr, "resolving (fwd) %s...\n",v[optind]);
-			evdns_base_resolve_ipv4(evdns_base, v[optind], 0, main_callback, v[optind]);
+			evdns_base_resolve_ipv4(evdns_base, v[optind], DNS_CNAME_CALLBACK, main_callback, v[optind]);
 		}
 	}
 	fflush(stdout);
 	event_base_dispatch(event_base);
+	evdns_base_free(evdns_base, 1);
+	event_base_free(event_base);
 	return 0;
 }
 

@@ -119,10 +119,22 @@ struct flb_route_condition {
     int compiled_status;
 };
 
+/* Outcome of connecting one output named by a route (flb_router_apply_config) */
+enum flb_route_output_status {
+    FLB_ROUTE_OUTPUT_PENDING = 0,          /* configuration not applied yet     */
+    FLB_ROUTE_OUTPUT_CONNECTED,            /* this route owns the connection    */
+    FLB_ROUTE_OUTPUT_ALREADY_CONNECTED,    /* an earlier route of the input does */
+    FLB_ROUTE_OUTPUT_NOT_FOUND,            /* neither name nor fallback exists  */
+    FLB_ROUTE_OUTPUT_SIGNAL_NOT_SUPPORTED, /* output cannot take the signal     */
+    FLB_ROUTE_OUTPUT_CONNECT_FAILED
+};
+
 struct flb_route_output {
     flb_sds_t name;
     flb_sds_t fallback;
     struct flb_output_instance *ins;
+    int status;                            /* enum flb_route_output_status      */
+    int used_fallback;                     /* ins was resolved through fallback */
     struct cfl_list _head;
 };
 
@@ -195,6 +207,16 @@ int flb_router_path_should_route(struct flb_event_chunk *chunk,
                                  struct flb_router_path *path);
 
 struct flb_condition *flb_router_route_get_condition(struct flb_route *route);
+
+/*
+ * Build a route condition from a 'condition' block the way routes are parsed.
+ * On failure NULL is returned and, when 'error' is set, it points to a static
+ * description of the reason.
+ */
+struct flb_route_condition *flb_router_condition_create(struct cfl_variant *variant,
+                                                        uint32_t signals,
+                                                        const char **error);
+void flb_router_condition_destroy(struct flb_route_condition *condition);
 
 struct flb_cf;
 

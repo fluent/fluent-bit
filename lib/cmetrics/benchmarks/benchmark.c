@@ -7,6 +7,9 @@
 
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_counter.h>
+#include <cmetrics/cmt_cat.h>
+#include <cmetrics/cmt_map.h>
+#include <cmetrics/cmt_compat.h>
 #include <cmetrics/cmt_encode_opentelemetry.h>
 #include <cmetrics/cmt_encode_prometheus.h>
 #include <cmetrics/cmt_gauge.h>
@@ -14,11 +17,22 @@
 
 static uint64_t monotonic_ns(void)
 {
+#ifdef _WIN32
+    LARGE_INTEGER counter;
+    LARGE_INTEGER frequency;
+
+    QueryPerformanceCounter(&counter);
+    QueryPerformanceFrequency(&frequency);
+    return (uint64_t) (counter.QuadPart / frequency.QuadPart) * 1000000000ULL +
+           (uint64_t) (counter.QuadPart % frequency.QuadPart) * 1000000000ULL /
+           frequency.QuadPart;
+#else
     struct timespec timestamp;
 
     clock_gettime(CLOCK_MONOTONIC, &timestamp);
 
     return (uint64_t) timestamp.tv_sec * 1000000000ULL + timestamp.tv_nsec;
+#endif
 }
 
 static size_t parse_size(const char *text, const char *name)
@@ -303,13 +317,98 @@ static int benchmark_opentelemetry_mixed(size_t cardinality, size_t operations)
     return 0;
 }
 
+static int benchmark_cat(size_t cardinality, size_t operations)
+{
+    size_t source_index;
+    size_t series_index;
+    size_t total;
+    int result = -1;
+    uint64_t start;
+    uint64_t elapsed;
+    double value;
+    char source_label[32];
+    char series_label[32];
+    char *keys[] = {"source", "series"};
+    char *values[] = {source_label, series_label};
+    struct cmt **sources;
+    struct cmt *destination;
+    struct cmt_counter *counter;
+
+    if (operations > SIZE_MAX / cardinality) {
+        return -1;
+    }
+    total = operations * cardinality;
+    sources = calloc(operations, sizeof(*sources));
+    destination = cmt_create();
+    if (sources == NULL || destination == NULL) {
+        free(sources);
+        if (destination != NULL) {
+            cmt_destroy(destination);
+        }
+        return -1;
+    }
+    for (source_index = 0; source_index < operations; source_index++) {
+        sources[source_index] = cmt_create();
+        if (sources[source_index] == NULL) {
+            goto cleanup;
+        }
+        counter = cmt_counter_create(sources[source_index], "bench", "", "counter",
+                                     "benchmark", 2, keys);
+        if (counter == NULL) {
+            goto cleanup;
+        }
+        snprintf(source_label, sizeof(source_label), "%zu", source_index);
+        for (series_index = 0; series_index < cardinality; series_index++) {
+            snprintf(series_label, sizeof(series_label), "%zu", series_index);
+            if (cmt_counter_set(counter, 1, (double) series_index, 2, values) != 0) {
+                goto cleanup;
+            }
+        }
+    }
+    start = monotonic_ns();
+    for (source_index = 0; source_index < operations; source_index++) {
+        if (cmt_cat(destination, sources[source_index]) != 0) {
+            goto cleanup;
+        }
+    }
+    elapsed = monotonic_ns() - start;
+    counter = cfl_list_entry(destination->counters.next, struct cmt_counter, _head);
+    if ((size_t) cfl_list_size(&counter->map->metrics) != total) {
+        goto cleanup;
+    }
+    for (source_index = 0; source_index < operations; source_index++) {
+        snprintf(source_label, sizeof(source_label), "%zu", source_index);
+        for (series_index = 0; series_index < cardinality; series_index++) {
+            snprintf(series_label, sizeof(series_label), "%zu", series_index);
+            if (cmt_counter_get_val(counter, 2, values, &value) != 0 ||
+                value != (double) series_index) {
+                goto cleanup;
+            }
+        }
+    }
+    printf("benchmark=cat cardinality=%zu operations=%zu series=%zu elapsed_ns=%"
+           PRIu64 " ns_per_series=%.2f\n", cardinality, operations, total,
+           elapsed, (double) elapsed / total);
+    result = 0;
+
+cleanup:
+    for (source_index = 0; source_index < operations; source_index++) {
+        if (sources[source_index] != NULL) {
+            cmt_destroy(sources[source_index]);
+        }
+    }
+    free(sources);
+    cmt_destroy(destination);
+    return result;
+}
+
 int main(int argc, char **argv)
 {
     size_t cardinality;
     size_t operations;
 
     if (argc != 4) {
-        fprintf(stderr, "usage: %s lookup|update|prometheus|opentelemetry|"
+        fprintf(stderr, "usage: %s cat|lookup|update|prometheus|opentelemetry|"
                         "opentelemetry-mixed "
                         "CARDINALITY OPERATIONS\n",
                 argv[0]);
@@ -320,6 +419,9 @@ int main(int argc, char **argv)
     operations = parse_size(argv[3], "operations");
     cmt_initialize();
 
+    if (strcmp(argv[1], "cat") == 0) {
+        return benchmark_cat(cardinality, operations) == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
     if (strcmp(argv[1], "lookup") == 0) {
         return benchmark_lookup(cardinality, operations) == 0 ?
                EXIT_SUCCESS : EXIT_FAILURE;

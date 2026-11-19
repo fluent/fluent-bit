@@ -1,0 +1,29 @@
+{
+  "pack_version": 1,
+  "fts_api_version": 1,
+  "id": "org.fluentbit.policy.metric-dimensions",
+  "version": "1.0.1",
+  "title": "Metric dimension reduction",
+  "description": "Sum selected gauge datapoints across dimensions within each callback family. Resource/scope remain distinct. This is in-batch aggregation, not temporal rollup or global uniqueness enforcement. Use only additive values with compatible timestamps and source ownership.",
+  "blocks": [
+    {
+      "name": "apply",
+      "signals": [
+        "metrics"
+      ],
+      "source": "blocks/apply.lua",
+      "parameters": {
+        "names": {
+          "type": "strings",
+          "default": [
+            "queue_depth"
+          ]
+        }
+      },
+      "privacy": false
+    }
+  ],
+  "fixtures": [
+    "tests/policy.yaml"
+  ]
+}

@@ -123,6 +123,14 @@ static void oauth2_cache_cleanup(void)
         oauth2_cache_users--;
         if (oauth2_cache_users == 0 &&
             oauth2_cache_initialized == FLB_TRUE) {
+            /* Deleting keys does not run destructors for the initialization thread. */
+            oauth2_cache_exit(pthread_getspecific(oauth2_type));
+            oauth2_cache_exit(pthread_getspecific(oauth2_token));
+            oauth2_cache_free_expiration(pthread_getspecific(oauth2_token_expires));
+            /* Windows key deletion leaves the current thread's TLS values intact. */
+            pthread_setspecific(oauth2_type, NULL);
+            pthread_setspecific(oauth2_token, NULL);
+            pthread_setspecific(oauth2_token_expires, NULL);
             pthread_key_delete(oauth2_type);
             pthread_key_delete(oauth2_token);
             pthread_key_delete(oauth2_token_expires);
@@ -415,7 +423,8 @@ static int get_oauth2_token(struct flb_stackdriver *ctx)
         flb_plg_error(ctx->ins, "JWT signature generation failed");
         return -1;
     }
-    flb_plg_debug(ctx->ins, "JWT signature:\n%s", sig_data);
+    /* The assertion is a replayable credential; never log its contents. */
+    flb_plg_debug(ctx->ins, "JWT assertion generated");
 
     ret = flb_oauth2_payload_append(ctx->o,
                                     "grant_type", -1,
@@ -474,6 +483,8 @@ static flb_sds_t get_google_token(struct flb_stackdriver *ctx)
              * Cached token is expired. Wait on lock to use up-to-date token
              * by either waiting for it to be refreshed or refresh it ourselves.
              */
+            flb_sds_destroy(output);
+            output = NULL;
             flb_plg_info(ctx->ins, "Cached token is expired. Waiting on lock.");
             ret = pthread_mutex_lock(&ctx->token_mutex);
         }
@@ -1386,7 +1397,7 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
                                               FLB_IO_TCP, NULL);
 
     /* Create oauth2 context */
-    ctx->o = flb_oauth2_create(ctx->config, FLB_STD_AUTH_URL, 3000);
+    ctx->o = flb_oauth2_create(ins, FLB_STD_AUTH_URL, 3000);
 
     if (!ctx->u) {
         flb_plg_error(ctx->ins, "upstream creation failed");
@@ -1401,6 +1412,19 @@ static int cb_stackdriver_init(struct flb_output_instance *ins,
         goto error;
     }
     flb_output_upstream_set(ctx->u, ins);
+
+    /*
+     * Authentication is synchronous and serialized by token_mutex, but its
+     * connections must still belong to the calling worker. Otherwise the
+     * main engine can clean up a connection while a worker is using it.
+     * Preserve the authentication upstreams' own TLS and network settings.
+     */
+    if (ins->tp_workers > 0) {
+        flb_upstream_thread_safe(ctx->metadata_u);
+        mk_list_add(&ctx->metadata_u->base._head, &ins->upstreams);
+        flb_upstream_thread_safe(ctx->o->u);
+        mk_list_add(&ctx->o->u->base._head, &ins->upstreams);
+    }
 
     /* Metadata Upstream Sync flags */
     flb_stream_disable_async_mode(&ctx->metadata_u->base);
@@ -2524,8 +2548,10 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
             msgpack_pack_str_body(&mp_pck, "trace", 5);
 
             if (ctx->autoformat_stackdriver_trace) {
-                len = snprintf(stackdriver_trace, sizeof(stackdriver_trace) - 1,
+                snprintf(stackdriver_trace, sizeof(stackdriver_trace) - 1,
                     "projects/%s/traces/%s", ctx->project_id, trace);
+                /* snprintf may report more bytes than fit in the buffer. */
+                len = strlen(stackdriver_trace);
                 new_trace = stackdriver_trace;
             }
             else {
@@ -2628,11 +2654,11 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
         }
 
         if (project_id_extracted == FLB_TRUE) {
-            len = snprintf(path, sizeof(path) - 1,
+            snprintf(path, sizeof(path) - 1,
                        "projects/%s/logs/%s", project_id_key, new_log_name);
             flb_sds_destroy(project_id_key);
         } else {
-            len = snprintf(path, sizeof(path) - 1,
+            snprintf(path, sizeof(path) - 1,
                        "projects/%s/logs/%s", ctx->export_to_project_id, new_log_name);
         }
 
@@ -2643,6 +2669,8 @@ static flb_sds_t stackdriver_format(struct flb_stackdriver *ctx,
 
         msgpack_pack_str(&mp_pck, 7);
         msgpack_pack_str_body(&mp_pck, "logName", 7);
+        /* Only serialize bytes actually stored in the buffer. */
+        len = strlen(path);
         msgpack_pack_str(&mp_pck, len);
         msgpack_pack_str_body(&mp_pck, path, len);
         flb_sds_destroy(stream_key);

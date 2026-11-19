@@ -126,6 +126,7 @@ static struct test_ctx *test_ctx_create(struct flb_lib_out_cb *data)
     int i_ffd;
     int o_ffd;
     struct test_ctx *ctx = NULL;
+    const char *port;
 
     ctx = flb_malloc(sizeof(struct test_ctx));
     if (!TEST_CHECK(ctx != NULL)) {
@@ -146,6 +147,10 @@ static struct test_ctx *test_ctx_create(struct flb_lib_out_cb *data)
     i_ffd = flb_input(ctx->flb, (char *) "forward", NULL);
     TEST_CHECK(i_ffd >= 0);
     ctx->i_ffd = i_ffd;
+    port = getenv("FLB_TEST_FORWARD_PORT");
+    if (port) {
+        TEST_CHECK(flb_input_set(ctx->flb, i_ffd, "port", port, NULL) == 0);
+    }
 
     /* Output */
     o_ffd = flb_output(ctx->flb, (char *) "lib", (void *) data);
@@ -179,6 +184,9 @@ static flb_sockfd_t connect_tcp(char *in_host, int in_port)
     }
     if (port < 0) {
         port = DEFAULT_PORT;
+        if (getenv("FLB_TEST_FORWARD_PORT")) {
+            port = atoi(getenv("FLB_TEST_FORWARD_PORT"));
+        }
     }
 
     memset(&addr, 0, sizeof(addr));
@@ -558,12 +566,13 @@ void flb_test_unix_perm()
 
 
     /* File permission */
-    ret = stat(unix_path, &sb);
+    ret = lstat(unix_path, &sb);
     if (!TEST_CHECK(ret == 0)) {
         TEST_MSG("stat failed. errno=%d", errno);
                 test_ctx_destroy(ctx);
         exit(EXIT_FAILURE);
     }
+    TEST_CHECK(S_ISSOCK(sb.st_mode));
 
 #ifndef _WIN32
     if (!TEST_CHECK((sb.st_mode & S_IRWXO) == 0)) {
@@ -579,6 +588,49 @@ void flb_test_unix_perm()
 
     flb_socket_close(fd);
     test_ctx_destroy(ctx);
+}
+
+void flb_test_unix_symlink_refused()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_ctx *ctx;
+    struct stat sb;
+    int fd;
+    int ret;
+    const char *unix_path = "in_forward_symlink";
+    const char *victim_path = "in_forward_symlink_victim";
+
+    fd = open(victim_path, O_CREAT | O_WRONLY | O_TRUNC, 0600);
+    TEST_CHECK(fd >= 0);
+    if (fd < 0) {
+        return;
+    }
+    fchmod(fd, 0600);
+    close(fd);
+    unlink(unix_path);
+    ret = symlink(victim_path, unix_path);
+    TEST_CHECK(ret == 0);
+
+    cb_data.cb = cb_check_result_json;
+    cb_data.data = "";
+    ctx = test_ctx_create(&cb_data);
+    TEST_CHECK(ctx != NULL);
+    if (ctx != NULL) {
+        ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                            "unix_path", unix_path, "unix_perm", "0666", NULL);
+        TEST_CHECK(ret == 0);
+        ret = flb_start(ctx->flb);
+        TEST_CHECK(ret != 0);
+        if (ret == 0) {
+            flb_stop(ctx->flb);
+        }
+        flb_destroy(ctx->flb);
+        flb_free(ctx);
+    }
+    ret = stat(victim_path, &sb);
+    TEST_CHECK(ret == 0 && (sb.st_mode & 0777) == 0600);
+    unlink(unix_path);
+    unlink(victim_path);
 }
 #endif /* FLB_HAVE_UNIX_SOCKET */
 
@@ -1088,6 +1140,10 @@ void flb_test_threaded_forward_issue_10946()
 
     in_ffd = flb_input(ctx, (char *) "forward", NULL);
     TEST_CHECK(in_ffd >= 0);
+    if (getenv("FLB_TEST_FORWARD_PORT")) {
+        ret = flb_input_set(ctx, in_ffd, "port", getenv("FLB_TEST_FORWARD_PORT"), NULL);
+        TEST_CHECK(ret == 0);
+    }
     ret = flb_input_set(ctx, in_ffd,
                         "tag", "logs",
                         "threaded", "true",
@@ -1174,6 +1230,10 @@ static flb_ctx_t *fw_make_ctx_with_forward(int *in_ffd_out, int *out_ffd_out)
     /* forward input */
     in_ffd = flb_input(ctx, (char *) "forward", NULL);
     TEST_CHECK(in_ffd >= 0);
+    if (getenv("FLB_TEST_FORWARD_PORT")) {
+        ret = flb_input_set(ctx, in_ffd, "port", getenv("FLB_TEST_FORWARD_PORT"), NULL);
+        TEST_CHECK(ret == 0);
+    }
     if (in_ffd < 0) { flb_destroy(ctx); return NULL; }
 
     /* lib output: count only (no payload check) */
@@ -1304,6 +1364,7 @@ TEST_LIST = {
 #ifdef FLB_HAVE_UNIX_SOCKET
     {"unix_path", flb_test_unix_path},
     {"unix_perm", flb_test_unix_perm},
+    {"unix_symlink_refused", flb_test_unix_symlink_refused},
 #endif
     {"forward_gzip", flb_test_forward_gzip},
     {"forward_zstd", flb_test_forward_zstd},

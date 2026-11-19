@@ -38,27 +38,27 @@ void ctr_log_print(void *ctx, int level, const char *file, int line,
 int ctr_errno_print(int errnum, const char *file, int line);
 
 #define ctr_log_error(ctx, fmt, ...)                    \
-    ctr_log_print(ctx, CTR_LOG_ERROR, __FILENAME__,     \
+    ctr_log_print(ctx, CTR_LOG_ERROR, __CTR_FILENAME__, \
                   __LINE__, fmt, ##__VA_ARGS__)
 
 #define ctr_log_warn(ctx, fmt, ...)                 \
-    ctr_log_print(ctx, CTR_LOG_WARN, __FILENAME__,  \
+    ctr_log_print(ctx, CTR_LOG_WARN, __CTR_FILENAME__, \
                   __LINE__, fmt, ##__VA_ARGS__)
 
 #define ctr_log_info(ctx, fmt, ...)                 \
-    ctr_log_print(ctx, CTR_LOG_INFO, __FILENAME__,  \
+    ctr_log_print(ctx, CTR_LOG_INFO, __CTR_FILENAME__, \
                   __LINE__, fmt, ##__VA_ARGS__)
 
 #define ctr_log_debug(ctx, fmt, ...)                \
-    ctr_log_print(ctx, CTR_LOG_DEBUG, __FILENAME__, \
+    ctr_log_print(ctx, CTR_LOG_DEBUG, __CTR_FILENAME__, \
                   __LINE__, fmt, ##__VA_ARGS__)
 
 #define ctr_log_trace(ctx, fmt, ...)                \
-    ctr_log_print(ctx, CTR_LOG_TRACE, __FILENAME__, \
+    ctr_log_print(ctx, CTR_LOG_TRACE, __CTR_FILENAME__, \
                   __LINE__, fmt, ##__VA_ARGS__)
 
-#ifdef __FILENAME__
-#define ctr_errno() ctr_errno_print(errno, __FILENAME__, __LINE__)
+#ifdef __CTR_FILENAME__
+#define ctr_errno() ctr_errno_print(errno, __CTR_FILENAME__, __LINE__)
 #else
 #define ctr_errno() ctr_errno_print(errno, __FILE__, __LINE__)
 #endif

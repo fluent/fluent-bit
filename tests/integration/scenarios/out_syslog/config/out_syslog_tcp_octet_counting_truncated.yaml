@@ -1,0 +1,24 @@
+service:
+  flush: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: out_syslog
+      dummy: >-
+        {"message":"truncated-日本語-abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz
+        abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz"}
+      samples: 1
+
+  outputs:
+    - name: syslog
+      match: out_syslog
+      host: 127.0.0.1
+      port: ${SYSLOG_RECEIVER_PORT}
+      mode: tcp
+      syslog_message_key: message
+      syslog_maxsize: 160
+      syslog_framing: octet_counting

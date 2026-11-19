@@ -254,6 +254,31 @@ static uint32_t parse_signal_key(const char *key)
     return mask;
 }
 
+static void route_condition_rule_destroy(struct flb_route_condition_rule *rule)
+{
+    size_t idx;
+
+    if (rule->field) {
+        flb_sds_destroy(rule->field);
+    }
+    if (rule->op) {
+        flb_sds_destroy(rule->op);
+    }
+    if (rule->value) {
+        flb_sds_destroy(rule->value);
+    }
+    if (rule->values) {
+        for (idx = 0; idx < rule->values_count; idx++) {
+            if (rule->values[idx]) {
+                flb_sds_destroy(rule->values[idx]);
+            }
+        }
+        flb_free(rule->values);
+    }
+
+    flb_free(rule);
+}
+
 static void route_condition_destroy(struct flb_route_condition *condition)
 {
     struct cfl_list *tmp;
@@ -267,28 +292,7 @@ static void route_condition_destroy(struct flb_route_condition *condition)
     cfl_list_foreach_safe(head, tmp, &condition->rules) {
         rule = cfl_list_entry(head, struct flb_route_condition_rule, _head);
         cfl_list_del(&rule->_head);
-
-        if (rule->field) {
-            flb_sds_destroy(rule->field);
-        }
-        if (rule->op) {
-            flb_sds_destroy(rule->op);
-        }
-        if (rule->value) {
-            flb_sds_destroy(rule->value);
-        }
-        if (rule->values) {
-            size_t idx;
-
-            for (idx = 0; idx < rule->values_count; idx++) {
-                if (rule->values[idx]) {
-                    flb_sds_destroy(rule->values[idx]);
-                }
-            }
-            flb_free(rule->values);
-        }
-
-        flb_free(rule);
+        route_condition_rule_destroy(rule);
     }
 
     if (condition->compiled) {
@@ -577,7 +581,8 @@ static int parse_condition_rule_context(const char *value,
     return -1;
 }
 
-static struct flb_route_condition_rule *parse_condition_rule(struct cfl_variant *variant)
+static struct flb_route_condition_rule *parse_condition_rule(struct cfl_variant *variant,
+                                                             const char **error)
 {
     struct flb_route_condition_rule *rule;
     struct cfl_kvlist *kvlist;
@@ -587,6 +592,7 @@ static struct flb_route_condition_rule *parse_condition_rule(struct cfl_variant 
     struct cfl_variant *context_var;
 
     if (!variant || variant->type != CFL_VARIANT_KVLIST) {
+        *error = "a rule must be a map with 'field', 'op' and 'value'";
         return NULL;
     }
 
@@ -596,9 +602,11 @@ static struct flb_route_condition_rule *parse_condition_rule(struct cfl_variant 
     value_var = cfl_kvlist_fetch(kvlist, "value");
 
     if (!field_var || field_var->type != CFL_VARIANT_STRING) {
+        *error = "a rule needs a 'field' string";
         return NULL;
     }
     if (!op_var || op_var->type != CFL_VARIANT_STRING) {
+        *error = "a rule needs an 'op' string";
         return NULL;
     }
 
@@ -626,6 +634,7 @@ static struct flb_route_condition_rule *parse_condition_rule(struct cfl_variant 
     }
 
     if (!value_var) {
+        *error = "a rule needs a 'value'";
         flb_sds_destroy(rule->op);
         flb_sds_destroy(rule->field);
         flb_free(rule);
@@ -639,6 +648,7 @@ static struct flb_route_condition_rule *parse_condition_rule(struct cfl_variant 
 
         array = value_var->data.as_array;
         if (!array || cfl_array_size(array) == 0) {
+            *error = "a rule 'value' list cannot be empty";
             flb_sds_destroy(rule->op);
             flb_sds_destroy(rule->field);
             flb_free(rule);
@@ -660,6 +670,7 @@ static struct flb_route_condition_rule *parse_condition_rule(struct cfl_variant 
             if (!rule->values[idx]) {
                 size_t j;
 
+                *error = "a rule 'value' list accepts strings, numbers and booleans";
                 for (j = 0; j < idx; j++) {
                     flb_sds_destroy(rule->values[j]);
                 }
@@ -675,6 +686,7 @@ static struct flb_route_condition_rule *parse_condition_rule(struct cfl_variant 
     else {
         rule->value = variant_to_sds(value_var);
         if (!rule->value) {
+            *error = "a rule 'value' must be a string, number, boolean or list";
             flb_sds_destroy(rule->op);
             flb_sds_destroy(rule->field);
             flb_free(rule);
@@ -688,6 +700,7 @@ static struct flb_route_condition_rule *parse_condition_rule(struct cfl_variant 
             parse_condition_rule_context(context_var->data.as_string, &rule->context) != 0) {
             size_t j;
 
+            *error = "a rule 'context' is not a known record context";
             if (rule->values) {
                 for (j = 0; j < rule->values_count; j++) {
                     if (rule->values[j]) {
@@ -712,7 +725,8 @@ static struct flb_route_condition_rule *parse_condition_rule(struct cfl_variant 
 }
 
 static struct flb_route_condition *parse_condition(struct cfl_variant *variant,
-                                                   uint32_t signals)
+                                                   uint32_t signals,
+                                                   const char **error)
 {
     struct flb_route_condition *condition;
     struct cfl_variant *rules_var;
@@ -725,6 +739,7 @@ static struct flb_route_condition *parse_condition(struct cfl_variant *variant,
     size_t idx;
 
     if (!variant || variant->type != CFL_VARIANT_KVLIST) {
+        *error = "a condition must be a map";
         return NULL;
     }
 
@@ -744,6 +759,7 @@ static struct flb_route_condition *parse_condition(struct cfl_variant *variant,
 
     if (op_var) {
         if (op_var->type != CFL_VARIANT_STRING) {
+            *error = "condition 'op' must be 'and' or 'or'";
             route_condition_destroy(condition);
             return NULL;
         }
@@ -755,6 +771,7 @@ static struct flb_route_condition *parse_condition(struct cfl_variant *variant,
             condition->op = FLB_COND_OP_OR;
         }
         else {
+            *error = "condition 'op' must be 'and' or 'or'";
             route_condition_destroy(condition);
             return NULL;
         }
@@ -762,6 +779,7 @@ static struct flb_route_condition *parse_condition(struct cfl_variant *variant,
 
     if (default_var) {
         if (variant_to_bool(default_var, &val) != 0) {
+            *error = "condition 'default' must be a boolean";
             route_condition_destroy(condition);
             return NULL;
         }
@@ -770,6 +788,7 @@ static struct flb_route_condition *parse_condition(struct cfl_variant *variant,
 
     if (rules_var) {
         if (rules_var->type != CFL_VARIANT_ARRAY) {
+            *error = "condition 'rules' must be a list";
             route_condition_destroy(condition);
             return NULL;
         }
@@ -777,13 +796,16 @@ static struct flb_route_condition *parse_condition(struct cfl_variant *variant,
         rules_array = rules_var->data.as_array;
         for (idx = 0; idx < cfl_array_size(rules_array); idx++) {
             entry = cfl_array_fetch_by_index(rules_array, idx);
-            rule = parse_condition_rule(entry);
+            rule = parse_condition_rule(entry, error);
             if (!rule) {
                 route_condition_destroy(condition);
                 return NULL;
             }
 
             if (!validate_rule_field(rule->field, signals)) {
+                *error = "a rule 'field' is not valid for the route signal";
+                /* not linked to the condition yet */
+                route_condition_rule_destroy(rule);
                 route_condition_destroy(condition);
                 return NULL;
             }
@@ -793,11 +815,32 @@ static struct flb_route_condition *parse_condition(struct cfl_variant *variant,
     }
 
     if (!condition->is_default && cfl_list_is_empty(&condition->rules) == 1) {
+        *error = "a condition needs 'rules' or 'default: true'";
         route_condition_destroy(condition);
         return NULL;
     }
 
     return condition;
+}
+
+struct flb_route_condition *flb_router_condition_create(struct cfl_variant *variant,
+                                                        uint32_t signals,
+                                                        const char **error)
+{
+    const char *reason = NULL;
+    struct flb_route_condition *condition;
+
+    condition = parse_condition(variant, signals, &reason);
+    if (error) {
+        *error = condition ? NULL : (reason ? reason : "invalid condition");
+    }
+
+    return condition;
+}
+
+void flb_router_condition_destroy(struct flb_route_condition *condition)
+{
+    route_condition_destroy(condition);
 }
 
 static int add_output_from_variant(struct flb_route *route,
@@ -930,6 +973,7 @@ static int parse_route(struct cfl_variant *variant,
     struct cfl_variant *processors_var;
     struct cfl_variant *to_var;
     struct cfl_variant *outputs_var;
+    const char *condition_error = NULL;
 
     (void) config;
 
@@ -974,8 +1018,12 @@ static int parse_route(struct cfl_variant *variant,
 
     condition_var = cfl_kvlist_fetch(kvlist, "condition");
     if (condition_var) {
-        route->condition = parse_condition(condition_var, route->signals);
+        route->condition = parse_condition(condition_var, route->signals,
+                                           &condition_error);
         if (!route->condition) {
+            flb_error("[router] route '%s' has an invalid condition: %s",
+                      route->name,
+                      condition_error ? condition_error : "unknown reason");
             flb_sds_destroy(route->name);
             flb_free(route);
             return -1;
@@ -1508,7 +1556,10 @@ int flb_router_apply_config(struct flb_config *config)
                     }
                 }
 
+                route_output->used_fallback = fallback_ins ? FLB_TRUE : FLB_FALSE;
+
                 if (!output_ins) {
+                    route_output->status = FLB_ROUTE_OUTPUT_NOT_FOUND;
                     flb_warn("[router] could not find output instance '%s' for route '%s/%s'",
                              route_output->name ? route_output->name : "(null)",
                              input_routes->input_name ? input_routes->input_name : "(null)",
@@ -1517,6 +1568,7 @@ int flb_router_apply_config(struct flb_config *config)
                 }
 
                 if (!output_supports_signals(output_ins, route->signals)) {
+                    route_output->status = FLB_ROUTE_OUTPUT_SIGNAL_NOT_SUPPORTED;
                     flb_warn("[router] output '%s' does not support required signals for route '%s/%s'",
                              flb_output_name(output_ins),
                              input_routes->input_name ? input_routes->input_name : "(null)",
@@ -1527,12 +1579,14 @@ int flb_router_apply_config(struct flb_config *config)
                 route_output->ins = output_ins;
 
                 if (input_has_direct_route(input_ins, output_ins)) {
+                    route_output->status = FLB_ROUTE_OUTPUT_ALREADY_CONNECTED;
                     continue;
                 }
 
                 if (flb_router_connect_direct(input_ins, output_ins) == 0) {
                     path = cfl_list_entry_last(&input_ins->routes_direct, struct flb_router_path, _head);
                     path->route = route;
+                    route_output->status = FLB_ROUTE_OUTPUT_CONNECTED;
                     created++;
                     flb_debug("[router] connected input '%s' route '%s' to output '%s'",
                               flb_input_name(input_ins),
@@ -1540,6 +1594,7 @@ int flb_router_apply_config(struct flb_config *config)
                               flb_output_name(output_ins));
                 }
                 else {
+                    route_output->status = FLB_ROUTE_OUTPUT_CONNECT_FAILED;
                     flb_error("[router] failed to connect input '%s' to output '%s'",
                               flb_input_name(input_ins),
                               flb_output_name(output_ins));

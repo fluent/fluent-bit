@@ -23,6 +23,8 @@
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_strptime.h>
 #include <fluent-bit/flb_time.h>
 #include <stdint.h>
 #ifdef FLB_HAVE_CLOCK_GET_TIME
@@ -30,6 +32,10 @@
 #  include <mach/mach.h>
 #endif
 
+#include <ctype.h>
+#include <errno.h>
+#include <math.h>
+#include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
 #include <time.h>
@@ -298,6 +304,226 @@ int flb_time_msgpack_to_time(struct flb_time *time, msgpack_object *obj)
         break;
     default:
         flb_warn("unknown time format %x", obj->type);
+        return -1;
+    }
+
+    return 0;
+}
+
+/*
+ * Parse the fractional seconds matched by the '%L' specifier:
+ *
+ *   2020-10-23T12:00:31.415213Z
+ *                      ------
+ *
+ * Returns the number of characters consumed or -1 on error.
+ */
+static int parse_subseconds(const char *str, size_t len, double *subsec)
+{
+    int digits = 9;  /* 1 ns = 000000001 (9 digits) */
+    int consumed;
+    char *end;
+    char buf[16];
+
+    if (len < (size_t) digits) {
+        digits = (int) len;
+    }
+
+    memcpy(buf, "0.", 2);
+    memcpy(buf + 2, str, digits);
+    buf[digits + 2] = '\0';
+
+    *subsec = strtod(buf, &end);
+
+    consumed = end - buf - 2;
+    if (consumed <= 0) {
+        return -1;
+    }
+
+    return consumed;
+}
+
+int flb_time_fmt_create(struct flb_time_fmt *tf, const char *format)
+{
+    char *frac;
+
+    if (tf == NULL || format == NULL) {
+        return -1;
+    }
+
+    tf->frac_secs = NULL;
+    tf->fmt = flb_strdup(format);
+    if (tf->fmt == NULL) {
+        flb_errno();
+        return -1;
+    }
+
+    frac = strstr(tf->fmt, "%L");
+    if (frac != NULL) {
+        *frac = '\0';
+        tf->frac_secs = frac + 2;
+    }
+
+    return 0;
+}
+
+void flb_time_fmt_destroy(struct flb_time_fmt *tf)
+{
+    if (tf == NULL) {
+        return;
+    }
+
+    if (tf->fmt != NULL) {
+        flb_free(tf->fmt);
+        tf->fmt = NULL;
+    }
+
+    tf->frac_secs = NULL;
+}
+
+/*
+ * Convert a timestamp string into 'tm'. When 'tf' holds a prepared format the
+ * value is parsed with strptime(3) semantics, otherwise the value is expected
+ * to contain a numeric Unix timestamp.
+ *
+ * The whole value must be consumed, a partial match is not considered a valid
+ * timestamp.
+ */
+int flb_time_from_str(struct flb_time *tm, const char *str, size_t len,
+                      struct flb_time_fmt *tf)
+{
+    int consumed;
+    char *end;
+    char *p;
+    char buf[FLB_TIME_STR_MAX];
+    long int gmtoff;
+    double subsec = 0.0;
+    double value;
+    struct tm tm_conv;
+    struct flb_tm tmp;
+    struct flb_tm frac_tmp;
+
+    if (tm == NULL || str == NULL || len == 0 || len >= sizeof(buf)) {
+        return -1;
+    }
+
+    /* both flb_strptime(3) and strtod(3) require a null terminated string */
+    memcpy(buf, str, len);
+    buf[len] = '\0';
+
+    if (tf == NULL || tf->fmt == NULL) {
+        errno = 0;
+        value = strtod(buf, &end);
+
+        /*
+         * non finite values are rejected: they cannot be represented as a
+         * timestamp and they serialize to invalid JSON.
+         */
+        if (end == buf || errno == ERANGE || !isfinite(value)) {
+            return -1;
+        }
+
+        while (isspace((unsigned char) *end)) {
+            end++;
+        }
+
+        if (*end != '\0') {
+            return -1;
+        }
+
+        tm->tm.tv_sec = (time_t) value;
+        tm->tm.tv_nsec = (long) ((value - (double) tm->tm.tv_sec) *
+                                 ONESEC_IN_NSEC);
+
+        return 0;
+    }
+
+    memset(&tmp, 0, sizeof(struct flb_tm));
+
+    p = flb_strptime(buf, tf->fmt, &tmp);
+    if (p == NULL) {
+        return -1;
+    }
+
+    if (tf->frac_secs != NULL) {
+        consumed = parse_subseconds(p, len - (p - buf), &subsec);
+        if (consumed < 0) {
+            return -1;
+        }
+        p += consumed;
+
+        /*
+         * flb_strptime() resets the timezone offset on every call, so the part
+         * of the format that follows '%L' is parsed into a separate structure
+         * and only a timezone that it actually matched is carried over.
+         */
+        memset(&frac_tmp, 0, sizeof(struct flb_tm));
+
+        p = flb_strptime(p, tf->frac_secs, &frac_tmp);
+        if (p == NULL) {
+            return -1;
+        }
+
+        if (flb_tm_gmtoff(&frac_tmp) != 0) {
+            flb_tm_gmtoff(&tmp) = flb_tm_gmtoff(&frac_tmp);
+        }
+    }
+
+    while (isspace((unsigned char) *p)) {
+        p++;
+    }
+
+    if (*p != '\0') {
+        return -1;
+    }
+
+    /*
+     * timegm(3) normalizes the structure it receives, and on platforms where
+     * the timezone offset is a member of 'struct tm' it is reset by the
+     * conversion, so the offset is saved and a copy is handed over.
+     */
+    gmtoff = flb_tm_gmtoff(&tmp);
+    tm_conv = tmp.tm;
+
+    flb_time_set(tm, timegm(&tm_conv) - gmtoff,
+                 (long) (subsec * ONESEC_IN_NSEC));
+
+    return 0;
+}
+
+/*
+ * Extract a timestamp out of a record value. This extends
+ * flb_time_msgpack_to_time() with support for string values, which are parsed
+ * using 'tf', and it rejects non finite floats.
+ */
+int flb_time_from_msgpack_object(struct flb_time *tm, msgpack_object *obj,
+                                 struct flb_time_fmt *tf)
+{
+    if (tm == NULL || obj == NULL) {
+        return -1;
+    }
+
+    switch (obj->type) {
+    case MSGPACK_OBJECT_POSITIVE_INTEGER:
+        flb_time_set(tm, (time_t) obj->via.u64, 0);
+        break;
+    case MSGPACK_OBJECT_NEGATIVE_INTEGER:
+        flb_time_set(tm, (time_t) obj->via.i64, 0);
+        break;
+    case MSGPACK_OBJECT_FLOAT32:
+    case MSGPACK_OBJECT_FLOAT64:
+        if (!isfinite(obj->via.f64)) {
+            return -1;
+        }
+        tm->tm.tv_sec = (time_t) obj->via.f64;
+        tm->tm.tv_nsec = (long) ((obj->via.f64 - (double) tm->tm.tv_sec) *
+                                 ONESEC_IN_NSEC);
+        break;
+    case MSGPACK_OBJECT_STR:
+        return flb_time_from_str(tm, obj->via.str.ptr, obj->via.str.size, tf);
+    case MSGPACK_OBJECT_EXT:
+        return flb_time_msgpack_to_time(tm, obj);
+    default:
         return -1;
     }
 

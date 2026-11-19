@@ -1,5 +1,7 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 #include <fluent-bit.h>
+#include "../../plugins/out_s3/s3.h"
+#define TEST_FINI flb_s3_test_env_reset()
 #include "flb_tests_runtime.h"
 #include "../include/flb_tests_tmpdir.h"
 #include "../../plugins/in_opentelemetry/opentelemetry.h"
@@ -81,7 +83,7 @@ void flb_test_s3_format_otlp_json(void)
         return;
     }
 
-    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    flb_s3_test_env_set("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
 
     ctx = flb_create();
     in_ffd = flb_input(ctx, (char *) "opentelemetry", NULL);
@@ -110,15 +112,15 @@ void flb_test_s3_format_otlp_json(void)
     TEST_CHECK(ret == 0);
     sleep(10);
 
-    call_count_str = getenv("TEST_PutObject_CALL_COUNT");
+    call_count_str = flb_s3_test_env_get("TEST_PutObject_CALL_COUNT");
     call_count = call_count_str ? atoi(call_count_str) : 0;
     TEST_CHECK_(call_count == 1,
                 "Expected 1 PutObject call, got %d", call_count);
 
     flb_stop(ctx);
     flb_destroy(ctx);
-    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
-    unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_s3_test_env_unset("FLB_S3_PLUGIN_UNDER_TEST");
+    flb_s3_test_env_unset("TEST_PutObject_CALL_COUNT");
     flb_free(store_dir);
 }
 
@@ -138,7 +140,7 @@ void flb_test_s3_format_otlp_json_with_compression(void)
         return;
     }
 
-    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    flb_s3_test_env_set("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
 
     ctx = flb_create();
 
@@ -169,15 +171,15 @@ void flb_test_s3_format_otlp_json_with_compression(void)
     TEST_CHECK(ret == 0);
     sleep(10);
 
-    call_count_str = getenv("TEST_PutObject_CALL_COUNT");
+    call_count_str = flb_s3_test_env_get("TEST_PutObject_CALL_COUNT");
     call_count = call_count_str ? atoi(call_count_str) : 0;
     TEST_CHECK_(call_count == 1,
                 "Expected 1 PutObject call, got %d", call_count);
 
     flb_stop(ctx);
     flb_destroy(ctx);
-    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
-    unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_s3_test_env_unset("FLB_S3_PLUGIN_UNDER_TEST");
+    flb_s3_test_env_unset("TEST_PutObject_CALL_COUNT");
     flb_free(store_dir);
 }
 

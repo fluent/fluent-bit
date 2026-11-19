@@ -26,13 +26,21 @@
 struct s3_file {
     int locked;                      /* locked chunk is busy, cannot write to it */
     int failures;                    /* delivery failures */
-    size_t size;                     /* file size */
+    uint64_t upload_scan_id;
+    uint64_t size;                   /* file size */
     time_t create_time;              /* creation time */
     time_t first_log_time;           /* first log time */
     flb_sds_t file_path;             /* file path */
     struct flb_fstore_file *fsf;     /* reference to parent flb_fstore_file */
 };
 
+#define S3_STORE_QUARANTINE_FULL -2
+
+/*
+ * Runtime callers must hold ctx->files_mutex across store operations and use
+ * of returned pointers, except owned chunks while uploading an independent
+ * payload. Initialization and exit run without competing workers.
+ */
 int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
                         const char *tag, int tag_len,
                         char *data, size_t bytes,
@@ -46,6 +54,7 @@ int s3_store_has_uploads(struct flb_s3 *ctx);
 
 int s3_store_file_inactive(struct flb_s3 *ctx, struct s3_file *s3_file);
 int s3_store_file_quarantine(struct flb_s3 *ctx, struct s3_file *s3_file);
+uint64_t s3_store_file_size_get(struct s3_file *s3_file);
 struct s3_file *s3_store_file_get(struct flb_s3 *ctx, const char *tag,
                                   int tag_len);
 int s3_store_file_delete(struct flb_s3 *ctx, struct s3_file *s3_file);

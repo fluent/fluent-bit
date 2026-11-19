@@ -1,0 +1,10 @@
+{
+  "verification_version": 2,
+  "evidence": "../../verification.json",
+  "coverage": {
+    "fixture_files": 2,
+    "typed_cases": 4,
+    "manifest_version": 2
+  },
+  "scope": "Refer to the shared record for the exact runtime hash, commands, normal/Valgrind results, test-harness repair and platform limits."
+}

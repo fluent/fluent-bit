@@ -61,6 +61,10 @@ void ctr_destroy(struct ctrace *ctx)
     struct cfl_list *tmp;
     struct ctrace_resource_span *resource_span;
 
+    if (!ctx) {
+        return;
+    }
+
     /* delete resources */
     cfl_list_foreach_safe(head, tmp, &ctx->resource_spans) {
         resource_span = cfl_list_entry(head, struct ctrace_resource_span, _head);

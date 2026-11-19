@@ -67,7 +67,40 @@
 #define AWS_CLIENT_MOCK_H
 
 /* Variadic Argument Counter, Counts up to 64 variadic args */
-#ifdef _MSC_VER
+#if defined(_MSC_VER) && defined(_MSVC_TRADITIONAL) && _MSVC_TRADITIONAL
+/* Detect empty arguments before counting with the traditional preprocessor. */
+#define FLB_AWS_CLIENT_MOCK_COUNT_T(args) \
+    FLB_AWS_CLIENT_MOCK_EVAL(_FLB_AWS_CLIENT_MOCK_COUNT64 args)
+#define FLB_AWS_CLIENT_MOCK_HAS_COMMA(...) \
+    FLB_AWS_CLIENT_MOCK_EVAL(FLB_AWS_CLIENT_MOCK_COUNT_T((dummy, __VA_ARGS__, 1, 1, 1, 1, 1, 1, \
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, \
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0)))
+#define FLB_AWS_CLIENT_MOCK_TRIGGER(...) ,
+#define FLB_AWS_CLIENT_MOCK_JOIN_I(a,b,c,d,e) a##b##c##d##e
+#define FLB_AWS_CLIENT_MOCK_JOIN(a,b,c,d,e) \
+    FLB_AWS_CLIENT_MOCK_EVAL(FLB_AWS_CLIENT_MOCK_JOIN_I(a, b, c, d, e))
+#define FLB_AWS_CLIENT_MOCK_EMPTY_CASE_0001 ,
+#define FLB_AWS_CLIENT_MOCK_EMPTY_I(a,b,c,d) \
+    FLB_AWS_CLIENT_MOCK_EVAL(FLB_AWS_CLIENT_MOCK_HAS_COMMA(FLB_AWS_CLIENT_MOCK_JOIN(FLB_AWS_CLIENT_MOCK_EMPTY_CASE_, \
+    a, b, c, d)))
+#define FLB_AWS_CLIENT_MOCK_IS_EMPTY(...) \
+    FLB_AWS_CLIENT_MOCK_EVAL(FLB_AWS_CLIENT_MOCK_EMPTY_I(FLB_AWS_CLIENT_MOCK_HAS_COMMA(__VA_ARGS__), \
+    FLB_AWS_CLIENT_MOCK_HAS_COMMA(FLB_AWS_CLIENT_MOCK_TRIGGER __VA_ARGS__), \
+    FLB_AWS_CLIENT_MOCK_HAS_COMMA(__VA_ARGS__ ()), \
+    FLB_AWS_CLIENT_MOCK_HAS_COMMA(FLB_AWS_CLIENT_MOCK_TRIGGER __VA_ARGS__ ())))
+#define FLB_AWS_CLIENT_MOCK_CAT_I(a,b) a##b
+#define FLB_AWS_CLIENT_MOCK_CAT(a,b) FLB_AWS_CLIENT_MOCK_CAT_I(a,b)
+#define FLB_AWS_CLIENT_MOCK_COUNT_1(...) 0
+#define FLB_AWS_CLIENT_MOCK_COUNT_0(...) \
+    FLB_AWS_CLIENT_MOCK_COUNT_T((dummy, __VA_ARGS__, 63, 62, 61, 60, 59, 58, 57, 56, 55, 54, 53, \
+    52, 51, 50, 49, 48, 47, 46, 45, 44, 43, 42, 41, 40, 39, 38, 37, 36, 35, 34, 33, 32, 31, 30, \
+    29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, \
+    5, 4, 3, 2, 1, 0))
+#define FLB_AWS_CLIENT_MOCK_COUNT(...) \
+    FLB_AWS_CLIENT_MOCK_EVAL(FLB_AWS_CLIENT_MOCK_CAT(FLB_AWS_CLIENT_MOCK_COUNT_, \
+    FLB_AWS_CLIENT_MOCK_IS_EMPTY(__VA_ARGS__))(__VA_ARGS__))
+#define FLB_AWS_CLIENT_MOCK_COUNT64(...) FLB_AWS_CLIENT_MOCK_COUNT(__VA_ARGS__)
+#elif defined(_MSC_VER)
 #define FLB_AWS_CLIENT_MOCK_COUNT64(...)                                                 \
     _FLB_AWS_CLIENT_MOCK_COUNT64(dummy __VA_OPT__(,) __VA_ARGS__, 63, 62, 61, 60, 59,    \
                                  58, 57, 56, 55, 54, 53, 52, 51, 50, 49, 48, 47, 46, 45, \
@@ -97,12 +130,14 @@
 /* Make block-scope addressable compound-literal request chain */
 #define FLB_AWS_CLIENT_MOCK(...)                                          \
     FLB_AWS_CLIENT_MOCK_EVAL(&(struct flb_aws_client_mock_request_chain){ \
-        FLB_AWS_CLIENT_MOCK_COUNT64(__VA_ARGS__),                         \
+        sizeof((struct flb_aws_client_mock_response[]){__VA_ARGS__}) /   \
+            sizeof(struct flb_aws_client_mock_response),                 \
         (struct flb_aws_client_mock_response[]){__VA_ARGS__}})
 
 #define FLB_AWS_CLIENT_MOCK_RESPONSE(...)                  \
     {                                                      \
-        FLB_AWS_CLIENT_MOCK_COUNT64(__VA_ARGS__),          \
+        sizeof((struct flb_aws_client_mock_response_config[]){__VA_ARGS__}) / \
+            sizeof(struct flb_aws_client_mock_response_config), \
             (struct flb_aws_client_mock_response_config[]) \
         {                                                  \
             __VA_ARGS__                                    \

@@ -103,6 +103,7 @@ static int cb_nightfall_init(struct flb_filter_instance *f_ins,
         flb_free(ctx);
         return -1;
     }
+    flb_tls_set_verify_hostname(ctx->tls, ctx->tls_verify_hostname);
 
     ctx->upstream = flb_upstream_create_url(config,
                                             FLB_FILTER_NIGHTFALL_API_URL,
@@ -629,6 +630,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "tls.verify", "true",
      0, FLB_TRUE, offsetof(struct flb_filter_nightfall, tls_verify),
      "Enable or disable verification of TLS peer certificate"
+    },
+    {
+     FLB_CONFIG_MAP_BOOL, "tls.verify_hostname", "off",
+     0, FLB_TRUE, offsetof(struct flb_filter_nightfall, tls_verify_hostname),
+     "Enable or disable TLS hostname verification"
     },
     {
      FLB_CONFIG_MAP_STR, "tls.vhost", NULL,

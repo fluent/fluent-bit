@@ -1,0 +1,941 @@
+{
+  "verification_version": 3,
+  "platform": "Linux; Valgrind 3.23.0",
+  "base_commit": "c0099465e2da0093db6da497d000c27d3c23739b",
+  "artifact": {
+    "fingerprint_format": "SHA256 of UTF-8 JSON mapping relative file paths to SHA256(file bytes), or null for deleted files; sorted keys, compact separators, no trailing newline. Excludes this verification record. Resolve files from repository root.",
+    "files": [
+      "documentation/fts/README.md",
+      "documentation/fts/architecture.md",
+      "documentation/fts/authoring.md",
+      "documentation/fts/blocks.md",
+      "documentation/fts/research.md",
+      "documentation/fts/state-and-windows.md",
+      "include/fluent-bit/flb_input.h",
+      "include/fluent-bit/flb_processor.h",
+      "packs/README.md",
+      "packs/fts/AUTHORING.md",
+      "packs/fts/CATALOG.md",
+      "packs/fts/README.md",
+      "packs/fts/catalog.json",
+      "packs/fts/logs/application-json/README.md",
+      "packs/fts/logs/application-json/blocks/apply.lua",
+      "packs/fts/logs/application-json/events.jsonl",
+      "packs/fts/logs/application-json/fluent-bit.yaml",
+      "packs/fts/logs/application-json/pack.json",
+      "packs/fts/logs/application-json/parsers.conf",
+      "packs/fts/logs/application-json/tests/policy.yaml",
+      "packs/fts/logs/cloudtrail/README.md",
+      "packs/fts/logs/cloudtrail/blocks/apply.lua",
+      "packs/fts/logs/cloudtrail/events.jsonl",
+      "packs/fts/logs/cloudtrail/fluent-bit.yaml",
+      "packs/fts/logs/cloudtrail/pack.json",
+      "packs/fts/logs/cloudtrail/parsers.conf",
+      "packs/fts/logs/cloudtrail/tests/policy.yaml",
+      "packs/fts/logs/event-quality/README.md",
+      "packs/fts/logs/event-quality/blocks/apply.lua",
+      "packs/fts/logs/event-quality/events.jsonl",
+      "packs/fts/logs/event-quality/fluent-bit.yaml",
+      "packs/fts/logs/event-quality/pack.json",
+      "packs/fts/logs/event-quality/parsers.conf",
+      "packs/fts/logs/event-quality/tests/policy.yaml",
+      "packs/fts/logs/firewall/README.md",
+      "packs/fts/logs/firewall/blocks/apply.lua",
+      "packs/fts/logs/firewall/events.jsonl",
+      "packs/fts/logs/firewall/fluent-bit.yaml",
+      "packs/fts/logs/firewall/pack.json",
+      "packs/fts/logs/firewall/parsers.conf",
+      "packs/fts/logs/firewall/tests/policy.yaml",
+      "packs/fts/logs/genai-privacy/README.md",
+      "packs/fts/logs/genai-privacy/blocks/apply.lua",
+      "packs/fts/logs/genai-privacy/events.jsonl",
+      "packs/fts/logs/genai-privacy/fluent-bit.yaml",
+      "packs/fts/logs/genai-privacy/pack.json",
+      "packs/fts/logs/genai-privacy/parsers.conf",
+      "packs/fts/logs/genai-privacy/tests/otlp-privacy.yaml",
+      "packs/fts/logs/genai-privacy/tests/policy.yaml",
+      "packs/fts/logs/kubernetes-hygiene/README.md",
+      "packs/fts/logs/kubernetes-hygiene/blocks/apply.lua",
+      "packs/fts/logs/kubernetes-hygiene/events.jsonl",
+      "packs/fts/logs/kubernetes-hygiene/fluent-bit.yaml",
+      "packs/fts/logs/kubernetes-hygiene/pack.json",
+      "packs/fts/logs/kubernetes-hygiene/parsers.conf",
+      "packs/fts/logs/kubernetes-hygiene/tests/policy.yaml",
+      "packs/fts/logs/log-trace-correlation/README.md",
+      "packs/fts/logs/log-trace-correlation/blocks/apply.lua",
+      "packs/fts/logs/log-trace-correlation/fluent-bit.yaml",
+      "packs/fts/logs/log-trace-correlation/pack.json",
+      "packs/fts/logs/log-trace-correlation/parsers.conf",
+      "packs/fts/logs/log-trace-correlation/tests/policy.yaml",
+      "packs/fts/logs/nested-labels/README.md",
+      "packs/fts/logs/nested-labels/blocks/enrich.lua",
+      "packs/fts/logs/nested-labels/events.jsonl",
+      "packs/fts/logs/nested-labels/fluent-bit.yaml",
+      "packs/fts/logs/nested-labels/pack.json",
+      "packs/fts/logs/nested-labels/parsers.conf",
+      "packs/fts/logs/nested-labels/tests/overwrite.yaml",
+      "packs/fts/logs/nested-labels/tests/preserve.yaml",
+      "packs/fts/logs/nested-labels/verification.json",
+      "packs/fts/logs/pseudonyms/README.md",
+      "packs/fts/logs/pseudonyms/blocks/apply.lua",
+      "packs/fts/logs/pseudonyms/events.jsonl",
+      "packs/fts/logs/pseudonyms/fluent-bit.yaml",
+      "packs/fts/logs/pseudonyms/pack.json",
+      "packs/fts/logs/pseudonyms/parsers.conf",
+      "packs/fts/logs/pseudonyms/tests/policy.yaml",
+      "packs/fts/logs/pseudonyms/tests/rotated.yaml",
+      "packs/fts/logs/pseudonyms/tests/tenant-b.yaml",
+      "packs/fts/logs/service-identity/README.md",
+      "packs/fts/logs/service-identity/blocks/apply.lua",
+      "packs/fts/logs/service-identity/events.jsonl",
+      "packs/fts/logs/service-identity/fluent-bit.yaml",
+      "packs/fts/logs/service-identity/pack.json",
+      "packs/fts/logs/service-identity/parsers.conf",
+      "packs/fts/logs/service-identity/tests/policy.yaml",
+      "packs/fts/logs/stable-log-sampling/README.md",
+      "packs/fts/logs/stable-log-sampling/blocks/apply.lua",
+      "packs/fts/logs/stable-log-sampling/events.jsonl",
+      "packs/fts/logs/stable-log-sampling/fluent-bit.yaml",
+      "packs/fts/logs/stable-log-sampling/pack.json",
+      "packs/fts/logs/stable-log-sampling/parsers.conf",
+      "packs/fts/logs/stable-log-sampling/tests/half-budget.yaml",
+      "packs/fts/logs/stable-log-sampling/tests/keep-all.yaml",
+      "packs/fts/logs/stable-log-sampling/tests/policy.yaml",
+      "packs/fts/logs/structured-secrets/README.md",
+      "packs/fts/logs/structured-secrets/blocks/apply.lua",
+      "packs/fts/logs/structured-secrets/events.jsonl",
+      "packs/fts/logs/structured-secrets/fluent-bit.yaml",
+      "packs/fts/logs/structured-secrets/pack.json",
+      "packs/fts/logs/structured-secrets/parsers.conf",
+      "packs/fts/logs/structured-secrets/tests/policy.yaml",
+      "packs/fts/logs/successful-probes/README.md",
+      "packs/fts/logs/successful-probes/blocks/apply.lua",
+      "packs/fts/logs/successful-probes/events.jsonl",
+      "packs/fts/logs/successful-probes/fluent-bit.yaml",
+      "packs/fts/logs/successful-probes/pack.json",
+      "packs/fts/logs/successful-probes/parsers.conf",
+      "packs/fts/logs/successful-probes/tests/policy.yaml",
+      "packs/fts/logs/url-sanitization/README.md",
+      "packs/fts/logs/url-sanitization/blocks/apply.lua",
+      "packs/fts/logs/url-sanitization/events.jsonl",
+      "packs/fts/logs/url-sanitization/fluent-bit.yaml",
+      "packs/fts/logs/url-sanitization/pack.json",
+      "packs/fts/logs/url-sanitization/parsers.conf",
+      "packs/fts/logs/url-sanitization/tests/policy.yaml",
+      "packs/fts/logs/vpc-flow/README.md",
+      "packs/fts/logs/vpc-flow/blocks/apply.lua",
+      "packs/fts/logs/vpc-flow/events.jsonl",
+      "packs/fts/logs/vpc-flow/fluent-bit.yaml",
+      "packs/fts/logs/vpc-flow/pack.json",
+      "packs/fts/logs/vpc-flow/parsers.conf",
+      "packs/fts/logs/vpc-flow/tests/policy.yaml",
+      "packs/fts/logs/windows-security/README.md",
+      "packs/fts/logs/windows-security/blocks/apply.lua",
+      "packs/fts/logs/windows-security/events.jsonl",
+      "packs/fts/logs/windows-security/fluent-bit.yaml",
+      "packs/fts/logs/windows-security/pack.json",
+      "packs/fts/logs/windows-security/parsers.conf",
+      "packs/fts/logs/windows-security/tests/policy.yaml",
+      "packs/fts/metrics/gauge-rollup/README.md",
+      "packs/fts/metrics/gauge-rollup/blocks/apply.lua",
+      "packs/fts/metrics/gauge-rollup/fluent-bit.yaml",
+      "packs/fts/metrics/gauge-rollup/pack.json",
+      "packs/fts/metrics/gauge-rollup/tests/count.yaml",
+      "packs/fts/metrics/gauge-rollup/tests/max.yaml",
+      "packs/fts/metrics/gauge-rollup/tests/mean.yaml",
+      "packs/fts/metrics/gauge-rollup/tests/min.yaml",
+      "packs/fts/metrics/gauge-rollup/tests/sum.yaml",
+      "packs/fts/metrics/gauge-rollup/verification.json",
+      "packs/fts/metrics/metric-compatibility/README.md",
+      "packs/fts/metrics/metric-compatibility/blocks/apply.lua",
+      "packs/fts/metrics/metric-compatibility/fluent-bit.yaml",
+      "packs/fts/metrics/metric-compatibility/pack.json",
+      "packs/fts/metrics/metric-compatibility/parsers.conf",
+      "packs/fts/metrics/metric-compatibility/tests/policy.yaml",
+      "packs/fts/metrics/metric-dimensions/README.md",
+      "packs/fts/metrics/metric-dimensions/blocks/apply.lua",
+      "packs/fts/metrics/metric-dimensions/fluent-bit.yaml",
+      "packs/fts/metrics/metric-dimensions/pack.json",
+      "packs/fts/metrics/metric-dimensions/parsers.conf",
+      "packs/fts/metrics/metric-dimensions/tests/policy.yaml",
+      "packs/fts/multisignal/observability-basics/README.md",
+      "packs/fts/multisignal/observability-basics/blocks/dedupe_log.lua",
+      "packs/fts/multisignal/observability-basics/blocks/metric_allowlist.lua",
+      "packs/fts/multisignal/observability-basics/blocks/redact_log.lua",
+      "packs/fts/multisignal/observability-basics/blocks/span_route_name.lua",
+      "packs/fts/multisignal/observability-basics/pack.json",
+      "packs/fts/multisignal/observability-basics/tests/dedupe-log.yaml",
+      "packs/fts/multisignal/observability-basics/tests/metric-allowlist.yaml",
+      "packs/fts/multisignal/observability-basics/tests/otlp-privacy.yaml",
+      "packs/fts/multisignal/observability-basics/tests/redact-log.yaml",
+      "packs/fts/multisignal/observability-basics/tests/span-route-name.yaml",
+      "packs/fts/pending/ocsf/README.md",
+      "packs/fts/pending/ocsf/policy.json",
+      "packs/fts/pending/tenant-egress/README.md",
+      "packs/fts/pending/tenant-egress/policy.json",
+      "packs/fts/traces/span-operations/README.md",
+      "packs/fts/traces/span-operations/blocks/apply.lua",
+      "packs/fts/traces/span-operations/fluent-bit.yaml",
+      "packs/fts/traces/span-operations/pack.json",
+      "packs/fts/traces/span-operations/parsers.conf",
+      "packs/fts/traces/span-operations/tests/policy.yaml",
+      "plugins/processor_fts/CMakeLists.txt",
+      "plugins/processor_fts/README.md",
+      "plugins/processor_fts/examples/recipes/README.md",
+      "plugins/processor_fts/examples/recipes/dedupe.yaml",
+      "plugins/processor_fts/examples/recipes/throttle.yaml",
+      "plugins/processor_fts/examples/recipes/window-request-error/README.md",
+      "plugins/processor_fts/examples/recipes/window-request-error/events.jsonl",
+      "plugins/processor_fts/examples/recipes/window-request-error/fluent-bit.yaml",
+      "plugins/processor_fts/fts.c",
+      "plugins/processor_fts/fts.h",
+      "plugins/processor_fts/fts_crypto_api.c",
+      "plugins/processor_fts/fts_crypto_api.h",
+      "plugins/processor_fts/fts_hash_api.c",
+      "plugins/processor_fts/fts_helpers.h.in",
+      "plugins/processor_fts/fts_logs.c",
+      "plugins/processor_fts/fts_metric_window.c",
+      "plugins/processor_fts/fts_metric_window.h",
+      "plugins/processor_fts/fts_metrics.c",
+      "plugins/processor_fts/fts_recipe.c",
+      "plugins/processor_fts/fts_recipe.lua",
+      "plugins/processor_fts/fts_runtime.c",
+      "plugins/processor_fts/fts_snapshot_window.c",
+      "plugins/processor_fts/fts_snapshot_window.h",
+      "plugins/processor_fts/fts_state.c",
+      "plugins/processor_fts/fts_state.h",
+      "plugins/processor_fts/fts_telemetry.c",
+      "plugins/processor_fts/fts_telemetry.h",
+      "plugins/processor_fts/fts_telemetry_helpers.lua",
+      "plugins/processor_fts/fts_window.c",
+      "plugins/processor_fts/fts_window.h",
+      "plugins/processor_fts/fts_window_runtime.c",
+      "plugins/processor_fts/schemas/README.md",
+      "plugins/processor_fts/schemas/fts-model.json",
+      "src/flb_input.c",
+      "src/flb_input_ingest.c",
+      "src/flb_input_thread.c",
+      "src/flb_plugin.c",
+      "src/flb_processor.c",
+      "src/flb_reload.c",
+      "tests/integration/requirements.txt",
+      "tests/integration/scenarios/in_opentelemetry/tests/test_in_opentelemetry_001.py",
+      "tests/integration/scenarios/processor_fts/tests/hold_processor.c",
+      "tests/integration/scenarios/processor_fts/tests/legacy_processor.c",
+      "tests/integration/scenarios/processor_fts/tests/lifecycle_processor.c",
+      "tests/integration/scenarios/processor_fts/tests/pause_processor.c",
+      "tests/integration/scenarios/processor_fts/tests/resume_processor.c",
+      "tests/integration/scenarios/processor_fts/tests/stop_processor.c",
+      "tests/integration/scenarios/processor_fts/tests/test_fts_crypto_api.py",
+      "tests/integration/scenarios/processor_fts/tests/test_fts_fixture_format.py",
+      "tests/integration/scenarios/processor_fts/tests/test_fts_hold_prerequisites.py",
+      "tests/integration/scenarios/processor_fts/tests/test_fts_metric_windows.py",
+      "tests/integration/scenarios/processor_fts/tests/test_fts_nested_parameters.py",
+      "tests/integration/scenarios/processor_fts/tests/test_fts_packs.py",
+      "tests/integration/scenarios/processor_fts/tests/test_fts_policy_catalog.py",
+      "tests/integration/scenarios/processor_fts/tests/test_fts_recipe_catalog.py",
+      "tests/integration/scenarios/processor_fts/tests/test_fts_recipe_preflight.py",
+      "tests/integration/scenarios/processor_fts/tests/test_fts_recipe_prerequisites.py",
+      "tests/integration/scenarios/processor_fts/tests/test_fts_recipe_state.py",
+      "tests/integration/scenarios/processor_fts/tests/test_fts_recipe_vertical.py",
+      "tests/integration/scenarios/processor_fts/tests/test_fts_recipes.py",
+      "tests/integration/scenarios/processor_fts/tests/test_fts_resume_prerequisites.py",
+      "tests/integration/scenarios/processor_fts/tests/test_fts_schema_model.py",
+      "tests/integration/scenarios/processor_fts/tests/test_fts_signals.py",
+      "tests/integration/scenarios/processor_fts/tests/test_fts_state_prerequisites.py",
+      "tests/integration/scenarios/processor_fts/tests/test_fts_stop_prerequisites.py",
+      "tests/integration/scenarios/processor_fts/tests/test_fts_streaming.py",
+      "tests/integration/scenarios/processor_fts/tests/test_fts_windows.py",
+      "tests/integration/src/utils/fluent_bit_manager.py",
+      "tests/integration/src/utils/network.py",
+      "tests/integration/src/utils/test_service.py",
+      "tests/integration/tests/test_fluent_bit_manager.py",
+      "tests/integration/tests/test_network.py",
+      "tests/internal/CMakeLists.txt",
+      "tests/internal/fts.c",
+      "tests/internal/input_ingest_alloc.c",
+      "tests/internal/processor.c",
+      "tools/fts/.gitignore",
+      "tools/fts/README.md",
+      "tools/fts/fts_fixture.py",
+      "tools/fts/fts_schema.lua",
+      "tools/fts/fts_schema.py",
+      "tools/fts/requirements.txt"
+    ],
+    "files_sha256": "f7dcdbbd8cfe62170eb3e0dd3136a7062f71277115fe8c612b8048765440b164"
+  },
+  "runtime": {
+    "binary_sha256": "dfcdd0bbc0fd9f16ee17b5d4d36187fb8640833ea649159812517e8123633e5d",
+    "model_sha256": "1930aaee295d67aedd439d29def19ce68bec84cc8b8bc00e5a0cfd402994d7f7",
+    "build_commands": [
+      "cmake -S . -B build -DFLB_TESTS_RUNTIME=On -DFLB_TESTS_INTERNAL=On",
+      "cmake --build build -j8"
+    ],
+    "verification_note": "Build before verification. The checked source files and binary were frozen in an isolated checkout for the final focused checks; history cleanup used a separate checkout."
+  },
+  "integration": {
+    "normal": {
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/integration/scenarios/processor_fts/tests/test_fts_nested_parameters.py",
+        "tests/integration/scenarios/processor_fts/tests/test_fts_schema_model.py",
+        "tests/integration/scenarios/processor_fts/tests/test_fts_packs.py",
+        "tests/integration/scenarios/processor_fts/tests/test_fts_crypto_api.py",
+        "tests/integration/scenarios/processor_fts/tests/test_fts_metric_windows.py",
+        "tests/integration/scenarios/processor_fts/tests/test_fts_windows.py",
+        "tests/integration/scenarios/processor_fts/tests/test_fts_hold_prerequisites.py",
+        "tests/integration/scenarios/processor_fts/tests/test_fts_resume_prerequisites.py",
+        "tests/integration/scenarios/processor_fts/tests/test_fts_stop_prerequisites.py",
+        "tests/integration/scenarios/processor_fts/tests/test_fts_fixture_format.py",
+        "tests/integration/scenarios/processor_fts/tests/test_fts_recipe_vertical.py",
+        "tests/integration/scenarios/processor_fts/tests/test_fts_recipe_preflight.py",
+        "tests/integration/scenarios/processor_fts/tests/test_fts_recipe_catalog.py",
+        "tests/integration/scenarios/processor_fts/tests/test_fts_recipe_state.py",
+        "tests/integration/scenarios/processor_fts/tests/test_fts_state_prerequisites.py",
+        "-k",
+        "not ten_thousand",
+        "-n",
+        "8",
+        "-q",
+        "-ra"
+      ],
+      "status": "passed",
+      "passed": 519,
+      "skipped": 0,
+      "environment": {
+        "FLUENT_BIT_BINARY": "$PWD/build/bin/fluent-bit"
+      }
+    },
+    "strict": {
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/integration/scenarios/processor_fts/tests/test_fts_nested_parameters.py",
+        "tests/integration/scenarios/processor_fts/tests/test_fts_schema_model.py",
+        "tests/integration/scenarios/processor_fts/tests/test_fts_packs.py",
+        "tests/integration/scenarios/processor_fts/tests/test_fts_crypto_api.py",
+        "tests/integration/scenarios/processor_fts/tests/test_fts_metric_windows.py",
+        "tests/integration/scenarios/processor_fts/tests/test_fts_windows.py",
+        "tests/integration/scenarios/processor_fts/tests/test_fts_hold_prerequisites.py",
+        "tests/integration/scenarios/processor_fts/tests/test_fts_resume_prerequisites.py",
+        "tests/integration/scenarios/processor_fts/tests/test_fts_stop_prerequisites.py",
+        "tests/integration/scenarios/processor_fts/tests/test_fts_fixture_format.py",
+        "tests/integration/scenarios/processor_fts/tests/test_fts_recipe_vertical.py",
+        "tests/integration/scenarios/processor_fts/tests/test_fts_recipe_preflight.py",
+        "tests/integration/scenarios/processor_fts/tests/test_fts_recipe_catalog.py",
+        "tests/integration/scenarios/processor_fts/tests/test_fts_recipe_state.py",
+        "tests/integration/scenarios/processor_fts/tests/test_fts_state_prerequisites.py",
+        "-k",
+        "not ten_thousand",
+        "-n",
+        "8",
+        "-q",
+        "-ra"
+      ],
+      "status": "passed",
+      "passed": 519,
+      "skipped": 0,
+      "environment": {
+        "FLUENT_BIT_BINARY": "$PWD/build/bin/fluent-bit",
+        "VALGRIND": "1",
+        "VALGRIND_STRICT": "1"
+      }
+    }
+  },
+  "fixtures": {
+    "packs": 21,
+    "blocks": 24,
+    "catalog_policies": 18,
+    "pending_policies": [
+      "ocsf",
+      "tenant-egress"
+    ],
+    "cases": 98,
+    "catalog_cases": 82,
+    "results": {
+      "packs/fts/logs/application-json": {
+        "cases": 2,
+        "normal": "passed",
+        "strict": "passed"
+      },
+      "packs/fts/logs/cloudtrail": {
+        "cases": 2,
+        "normal": "passed",
+        "strict": "passed"
+      },
+      "packs/fts/logs/event-quality": {
+        "cases": 4,
+        "normal": "passed",
+        "strict": "passed"
+      },
+      "packs/fts/logs/firewall": {
+        "cases": 2,
+        "normal": "passed",
+        "strict": "passed"
+      },
+      "packs/fts/logs/genai-privacy": {
+        "cases": 3,
+        "normal": "passed",
+        "strict": "passed"
+      },
+      "packs/fts/logs/kubernetes-hygiene": {
+        "cases": 5,
+        "normal": "passed",
+        "strict": "passed"
+      },
+      "packs/fts/logs/log-trace-correlation": {
+        "cases": 3,
+        "normal": "passed",
+        "strict": "passed"
+      },
+      "packs/fts/logs/nested-labels": {
+        "cases": 4,
+        "normal": "passed",
+        "strict": "passed"
+      },
+      "packs/fts/logs/pseudonyms": {
+        "cases": 5,
+        "normal": "passed",
+        "strict": "passed"
+      },
+      "packs/fts/logs/service-identity": {
+        "cases": 3,
+        "normal": "passed",
+        "strict": "passed"
+      },
+      "packs/fts/logs/stable-log-sampling": {
+        "cases": 5,
+        "normal": "passed",
+        "strict": "passed"
+      },
+      "packs/fts/logs/structured-secrets": {
+        "cases": 2,
+        "normal": "passed",
+        "strict": "passed"
+      },
+      "packs/fts/logs/successful-probes": {
+        "cases": 6,
+        "normal": "passed",
+        "strict": "passed"
+      },
+      "packs/fts/logs/url-sanitization": {
+        "cases": 24,
+        "normal": "passed",
+        "strict": "passed"
+      },
+      "packs/fts/logs/vpc-flow": {
+        "cases": 5,
+        "normal": "passed",
+        "strict": "passed"
+      },
+      "packs/fts/logs/windows-security": {
+        "cases": 3,
+        "normal": "passed",
+        "strict": "passed"
+      },
+      "packs/fts/metrics/gauge-rollup": {
+        "cases": 5,
+        "normal": "passed",
+        "strict": "passed"
+      },
+      "packs/fts/metrics/metric-compatibility": {
+        "cases": 3,
+        "normal": "passed",
+        "strict": "passed"
+      },
+      "packs/fts/metrics/metric-dimensions": {
+        "cases": 3,
+        "normal": "passed",
+        "strict": "passed"
+      },
+      "packs/fts/multisignal/observability-basics": {
+        "cases": 7,
+        "normal": "passed",
+        "strict": "passed"
+      },
+      "packs/fts/traces/span-operations": {
+        "cases": 2,
+        "normal": "passed",
+        "strict": "passed"
+      }
+    },
+    "commands": [
+      [
+        "python",
+        "tools/fts/fts_fixture.py",
+        "--binary",
+        "build/bin/fluent-bit",
+        "packs/fts/logs/application-json/tests/policy.yaml"
+      ],
+      [
+        "python",
+        "tools/fts/fts_fixture.py",
+        "--binary",
+        "build/bin/fluent-bit",
+        "packs/fts/logs/cloudtrail/tests/policy.yaml"
+      ],
+      [
+        "python",
+        "tools/fts/fts_fixture.py",
+        "--binary",
+        "build/bin/fluent-bit",
+        "packs/fts/logs/event-quality/tests/policy.yaml"
+      ],
+      [
+        "python",
+        "tools/fts/fts_fixture.py",
+        "--binary",
+        "build/bin/fluent-bit",
+        "packs/fts/logs/firewall/tests/policy.yaml"
+      ],
+      [
+        "python",
+        "tools/fts/fts_fixture.py",
+        "--binary",
+        "build/bin/fluent-bit",
+        "packs/fts/logs/genai-privacy/tests/policy.yaml",
+        "packs/fts/logs/genai-privacy/tests/otlp-privacy.yaml"
+      ],
+      [
+        "python",
+        "tools/fts/fts_fixture.py",
+        "--binary",
+        "build/bin/fluent-bit",
+        "packs/fts/logs/kubernetes-hygiene/tests/policy.yaml"
+      ],
+      [
+        "python",
+        "tools/fts/fts_fixture.py",
+        "--binary",
+        "build/bin/fluent-bit",
+        "packs/fts/logs/log-trace-correlation/tests/policy.yaml"
+      ],
+      [
+        "python",
+        "tools/fts/fts_fixture.py",
+        "--binary",
+        "build/bin/fluent-bit",
+        "packs/fts/logs/nested-labels/tests/preserve.yaml",
+        "packs/fts/logs/nested-labels/tests/overwrite.yaml"
+      ],
+      [
+        "python",
+        "tools/fts/fts_fixture.py",
+        "--binary",
+        "build/bin/fluent-bit",
+        "packs/fts/logs/pseudonyms/tests/policy.yaml",
+        "packs/fts/logs/pseudonyms/tests/tenant-b.yaml",
+        "packs/fts/logs/pseudonyms/tests/rotated.yaml"
+      ],
+      [
+        "python",
+        "tools/fts/fts_fixture.py",
+        "--binary",
+        "build/bin/fluent-bit",
+        "packs/fts/logs/service-identity/tests/policy.yaml"
+      ],
+      [
+        "python",
+        "tools/fts/fts_fixture.py",
+        "--binary",
+        "build/bin/fluent-bit",
+        "packs/fts/logs/stable-log-sampling/tests/policy.yaml",
+        "packs/fts/logs/stable-log-sampling/tests/keep-all.yaml",
+        "packs/fts/logs/stable-log-sampling/tests/half-budget.yaml"
+      ],
+      [
+        "python",
+        "tools/fts/fts_fixture.py",
+        "--binary",
+        "build/bin/fluent-bit",
+        "packs/fts/logs/structured-secrets/tests/policy.yaml"
+      ],
+      [
+        "python",
+        "tools/fts/fts_fixture.py",
+        "--binary",
+        "build/bin/fluent-bit",
+        "packs/fts/logs/successful-probes/tests/policy.yaml"
+      ],
+      [
+        "python",
+        "tools/fts/fts_fixture.py",
+        "--binary",
+        "build/bin/fluent-bit",
+        "packs/fts/logs/url-sanitization/tests/policy.yaml"
+      ],
+      [
+        "python",
+        "tools/fts/fts_fixture.py",
+        "--binary",
+        "build/bin/fluent-bit",
+        "packs/fts/logs/vpc-flow/tests/policy.yaml"
+      ],
+      [
+        "python",
+        "tools/fts/fts_fixture.py",
+        "--binary",
+        "build/bin/fluent-bit",
+        "packs/fts/logs/windows-security/tests/policy.yaml"
+      ],
+      [
+        "python",
+        "tools/fts/fts_fixture.py",
+        "--binary",
+        "build/bin/fluent-bit",
+        "packs/fts/metrics/gauge-rollup/tests/sum.yaml",
+        "packs/fts/metrics/gauge-rollup/tests/mean.yaml",
+        "packs/fts/metrics/gauge-rollup/tests/count.yaml",
+        "packs/fts/metrics/gauge-rollup/tests/min.yaml",
+        "packs/fts/metrics/gauge-rollup/tests/max.yaml"
+      ],
+      [
+        "python",
+        "tools/fts/fts_fixture.py",
+        "--binary",
+        "build/bin/fluent-bit",
+        "packs/fts/metrics/metric-compatibility/tests/policy.yaml"
+      ],
+      [
+        "python",
+        "tools/fts/fts_fixture.py",
+        "--binary",
+        "build/bin/fluent-bit",
+        "packs/fts/metrics/metric-dimensions/tests/policy.yaml"
+      ],
+      [
+        "python",
+        "tools/fts/fts_fixture.py",
+        "--binary",
+        "build/bin/fluent-bit",
+        "packs/fts/multisignal/observability-basics/tests/redact-log.yaml",
+        "packs/fts/multisignal/observability-basics/tests/metric-allowlist.yaml",
+        "packs/fts/multisignal/observability-basics/tests/span-route-name.yaml",
+        "packs/fts/multisignal/observability-basics/tests/dedupe-log.yaml",
+        "packs/fts/multisignal/observability-basics/tests/otlp-privacy.yaml"
+      ],
+      [
+        "python",
+        "tools/fts/fts_fixture.py",
+        "--binary",
+        "build/bin/fluent-bit",
+        "packs/fts/traces/span-operations/tests/policy.yaml"
+      ]
+    ],
+    "memory_command": "Insert --valgrind before fixture paths in each command; no production secrets are used."
+  },
+  "internal_tests": {
+    "status": "passed",
+    "targets": 12,
+    "command": "ctest --test-dir build -R '^flb-it-(fts|processor|processor_conditional|input_ingest_alloc|input_chunk|input_chunk_routes|router|router_config|task_map|input_pause|scheduler|ring_buffer)$' --output-on-failure"
+  },
+  "native_memory_checks": {
+    "status": "passed",
+    "errors": 0,
+    "live_heap_bytes": 0,
+    "commands": [
+      "valgrind --error-exitcode=99 --leak-check=full --errors-for-leak-kinds=definite,indirect,possible ./build/bin/flb-it-input_ingest_alloc",
+      "valgrind --error-exitcode=99 --leak-check=full --errors-for-leak-kinds=definite,indirect,possible ./build/bin/flb-it-fts snapshot_window partial_runtime_destruction_cancels_timers"
+    ]
+  },
+  "ingress_integration": {
+    "normal_passed": 15,
+    "strict_valgrind_passed": 15,
+    "command": "python -m pytest tests/integration/scenarios/in_opentelemetry/tests -k 'ingress_queue or shutdown_while_paused or metrics_payload_bytes or threaded_worker_safe_chain' -n 2 -q",
+    "memory_environment": {
+      "VALGRIND": "1",
+      "VALGRIND_STRICT": "1"
+    }
+  },
+  "static_link_checks": {
+    "status": "passed",
+    "compilers": [
+      "GCC",
+      "Clang"
+    ],
+    "configure_template": "cmake -S . -B BUILD_DIR -DFLB_TESTS_INTERNAL=On -DFLB_TESTS_RUNTIME=Off -DFLB_JEMALLOC=On -DFLB_SHARED_LIB=Off -DFLB_BINARY=Off",
+    "clang_options": [
+      "-DCMAKE_C_COMPILER=clang",
+      "-DCMAKE_CXX_COMPILER=clang++"
+    ],
+    "commands": [
+      "cmake --build BUILD_DIR -j8 --target flb-it-input_ingest_alloc",
+      "./BUILD_DIR/bin/flb-it-input_ingest_alloc"
+    ]
+  },
+  "example_pipelines": {
+    "pipelines": 20,
+    "normal_preflights": 20,
+    "strict_valgrind_preflights": 20,
+    "results": [
+      {
+        "mode": "normal",
+        "config": "packs/fts/logs/application-json/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "normal",
+        "config": "packs/fts/logs/cloudtrail/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "normal",
+        "config": "packs/fts/logs/event-quality/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "normal",
+        "config": "packs/fts/logs/firewall/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "normal",
+        "config": "packs/fts/logs/genai-privacy/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "normal",
+        "config": "packs/fts/logs/kubernetes-hygiene/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "normal",
+        "config": "packs/fts/logs/log-trace-correlation/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "normal",
+        "config": "packs/fts/logs/nested-labels/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "normal",
+        "config": "packs/fts/logs/pseudonyms/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "normal",
+        "config": "packs/fts/logs/service-identity/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "normal",
+        "config": "packs/fts/logs/stable-log-sampling/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "normal",
+        "config": "packs/fts/logs/structured-secrets/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "normal",
+        "config": "packs/fts/logs/successful-probes/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "normal",
+        "config": "packs/fts/logs/url-sanitization/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "normal",
+        "config": "packs/fts/logs/vpc-flow/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "normal",
+        "config": "packs/fts/logs/windows-security/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "normal",
+        "config": "packs/fts/metrics/gauge-rollup/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "normal",
+        "config": "packs/fts/metrics/metric-compatibility/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "normal",
+        "config": "packs/fts/metrics/metric-dimensions/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "normal",
+        "config": "packs/fts/traces/span-operations/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "strict",
+        "config": "packs/fts/logs/application-json/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "strict",
+        "config": "packs/fts/logs/cloudtrail/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "strict",
+        "config": "packs/fts/logs/event-quality/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "strict",
+        "config": "packs/fts/logs/firewall/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "strict",
+        "config": "packs/fts/logs/genai-privacy/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "strict",
+        "config": "packs/fts/logs/kubernetes-hygiene/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "strict",
+        "config": "packs/fts/logs/log-trace-correlation/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "strict",
+        "config": "packs/fts/logs/nested-labels/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "strict",
+        "config": "packs/fts/logs/pseudonyms/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "strict",
+        "config": "packs/fts/logs/service-identity/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "strict",
+        "config": "packs/fts/logs/stable-log-sampling/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "strict",
+        "config": "packs/fts/logs/structured-secrets/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "strict",
+        "config": "packs/fts/logs/successful-probes/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "strict",
+        "config": "packs/fts/logs/url-sanitization/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "strict",
+        "config": "packs/fts/logs/vpc-flow/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "strict",
+        "config": "packs/fts/logs/windows-security/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "strict",
+        "config": "packs/fts/metrics/gauge-rollup/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "strict",
+        "config": "packs/fts/metrics/metric-compatibility/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "strict",
+        "config": "packs/fts/metrics/metric-dimensions/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      },
+      {
+        "mode": "strict",
+        "config": "packs/fts/traces/span-operations/fluent-bit.yaml",
+        "returncode": 0,
+        "memory_clean": true
+      }
+    ],
+    "command": "Run build/bin/fluent-bit --dry-run -c fluent-bit.yaml from each pack directory, with FTS_PACKAGES_DIR set to the absolute packs/fts directory. For the pseudonyms example inject FTS_PSEUDONYM_KEY_V1 with a public synthetic fixture value. Repeat with Valgrind and --error-exitcode=99."
+  },
+  "documentation": {
+    "relative_links_checked": 312,
+    "broken_links": 0,
+    "model_check": "python tools/fts/fts_schema.py --binary build/bin/fluent-bit --check"
+  },
+  "additional_coverage": {
+    "full_functional_fts": {
+      "passed": 1307,
+      "skipped": 146,
+      "command": "python -m pytest tests/integration/scenarios/processor_fts -k 'not ten_thousand' -n 8 -q -ra",
+      "scope": "Same runtime binary; before the final exclusive-port probe adjustment. Final network/window checks below cover that test-utility adjustment."
+    },
+    "network_and_window_followup": {
+      "passed": 78,
+      "command": "python -m pytest tests/integration/scenarios/processor_fts/tests/test_fts_windows.py tests/integration/tests/test_network.py tests/integration/tests/test_fluent_bit_manager.py -n 4 -q"
+    }
+  },
+  "limits": [
+    "Verification is local Linux coverage, not certification of every producer schema or deployment.",
+    "The 146 full-suite skips are parameter combinations belonging to another signal; two ten_thousand performance cases were excluded.",
+    "Windows and macOS were not executed locally.",
+    "The local CentOS 7 container check could not run: access to /var/run/docker.sock was denied and sudo required a password. The pull-request CI provides that build.",
+    "State is volatile and instance-local. Gauge windows do not implement counter deltas or whole-trace retention."
+  ]
+}

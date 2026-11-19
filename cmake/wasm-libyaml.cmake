@@ -1,0 +1,25 @@
+# Keep host pkg-config and native libraries out of the browser build.
+set(FLB_WASM_YAML_PREFIX "${CMAKE_BINARY_DIR}/wasm-yaml")
+file(MAKE_DIRECTORY "${FLB_WASM_YAML_PREFIX}/include")
+
+ExternalProject_Add(flb-wasm-libyaml
+  EXCLUDE_FROM_ALL TRUE
+  URL https://codeload.github.com/yaml/libyaml/tar.gz/refs/tags/0.2.5
+  URL_HASH SHA256=fa240dbf262be053f3898006d502d514936c818e422afdcf33921c63bed9bf2e
+  PREFIX "${CMAKE_BINARY_DIR}/wasm-libyaml"
+  CMAKE_ARGS
+    "-DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}"
+    "-DCMAKE_INSTALL_PREFIX=${FLB_WASM_YAML_PREFIX}"
+    "-DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}"
+    "-DCMAKE_C_FLAGS=${CMAKE_C_FLAGS} -pthread"
+    -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+    -DBUILD_SHARED_LIBS=OFF -DBUILD_TESTING=OFF
+  BUILD_BYPRODUCTS "${FLB_WASM_YAML_PREFIX}/lib/libyaml.a"
+  LOG_DOWNLOAD ON LOG_CONFIGURE ON LOG_BUILD ON LOG_INSTALL ON)
+
+add_library(yaml STATIC IMPORTED GLOBAL)
+set_target_properties(yaml PROPERTIES
+  IMPORTED_LOCATION "${FLB_WASM_YAML_PREFIX}/lib/libyaml.a"
+  INTERFACE_INCLUDE_DIRECTORIES "${FLB_WASM_YAML_PREFIX}/include"
+  INTERFACE_COMPILE_DEFINITIONS YAML_DECLARE_STATIC)
+add_dependencies(yaml flb-wasm-libyaml)

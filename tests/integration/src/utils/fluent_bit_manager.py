@@ -17,22 +17,57 @@
 import datetime
 import logging
 import os
+import platform
 from pathlib import Path
+import re
+import signal
 import shutil
 import subprocess
+import sys
+import tempfile
 import time
 
 import requests
+import pytest
+import psutil
 
 from utils.network import find_available_port, wait_for_port_to_be_free
+from utils.leaks import assert_leaks_clean
+from utils.memory_check import leaks_enabled, memory_check_enabled, valgrind_enabled
 from utils.valgrind import assert_valgrind_clean
 
 ENV_FLB_HTTP_MONITORING_PORT = "FLUENT_BIT_HTTP_MONITORING_PORT"
+ENV_FLB_BINARY_PATH = "FLUENT_BIT_BINARY"
+LEAKS_TARGET_PID_TIMEOUT = 10
+LEAKS_EXIT_TIMEOUT = 120
+
+LEAKS_EXEC_SCRIPT = (
+    'printf "%s\\n" "$$" > "$1"; output_file="$2"; shift 2; '
+    'exec "$@" >> "$output_file" 2>&1'
+)
 
 logger = logging.getLogger(__name__)
+FLUENT_BIT_VERSION_PATTERN = re.compile(r"(?:Fluent Bit\s+)?v?(\d+)\.(\d+)\.(\d+)")
+_BINARY_VERSION_INFO_CACHE = {}
+_WINDOWS_ATTACH_CONSOLE_FAILED = 3
 
 class FluentBitStartupError(RuntimeError):
     pass
+
+
+def _console_options():
+    if platform.system() != "Windows":
+        return {}
+
+    # Reload broadcasts CTRL_BREAK_EVENT to its console. Give each instance a
+    # hidden console so a reload cannot interrupt pytest or sibling instances.
+    startup_info = subprocess.STARTUPINFO()
+    startup_info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    startup_info.wShowWindow = subprocess.SW_HIDE
+    return {
+        "creationflags": subprocess.CREATE_NEW_CONSOLE,
+        "startupinfo": startup_info,
+    }
 
 
 def _default_binary_path():
@@ -48,25 +83,182 @@ def _default_binary_path():
     return str(local_binary)
 
 
+def _resolve_binary_path(binary_path=None):
+    selected_path = binary_path or os.environ.get(ENV_FLB_BINARY_PATH) or _default_binary_path()
+    return shutil.which(selected_path) or os.path.abspath(selected_path)
+
+
+def parse_fluent_bit_version(version_text):
+    match = FLUENT_BIT_VERSION_PATTERN.search(version_text)
+    if not match:
+        return None
+
+    return tuple(int(component) for component in match.groups())
+
+
+def _read_binary_version_info(binary_path=None):
+    resolved_path = _resolve_binary_path(binary_path)
+
+    if resolved_path in _BINARY_VERSION_INFO_CACHE:
+        return _BINARY_VERSION_INFO_CACHE[resolved_path]
+
+    try:
+        result = subprocess.run(
+            [resolved_path, "--version"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return None
+
+    output = result.stdout.strip().splitlines()
+    if not output:
+        return None
+
+    version = output[0].replace("Fluent Bit ", "").strip()
+    commit = output[1].replace("Git commit: ", "").strip() if len(output) > 1 else "unknown"
+    version_info = (version, commit)
+    _BINARY_VERSION_INFO_CACHE[resolved_path] = version_info
+    return version_info
+
+
+def fluent_bit_binary_version(binary_path=None):
+    version_info = _read_binary_version_info(binary_path)
+    if version_info is None:
+        return None
+
+    return parse_fluent_bit_version(version_info[0])
+
+
+def fluent_bit_binary_supports_config_property(property_name, binary_path=None):
+    resolved_path = _resolve_binary_path(binary_path)
+    property_marker = property_name.lower()
+
+    try:
+        result = subprocess.run(
+            [resolved_path, "--help"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        help_output = f"{result.stdout}\n{result.stderr}".lower()
+        if property_marker in help_output:
+            return True
+    except OSError:
+        pass
+
+    try:
+        binary_contents = Path(resolved_path).read_bytes().lower()
+    except OSError:
+        return False
+
+    return property_marker.encode("utf-8") in binary_contents
+
+
+def fluent_bit_input_supports_config_property(plugin_name, property_name, binary_path=None):
+    return _plugin_supports_config_property("-i", plugin_name, property_name, binary_path)
+
+
+def fluent_bit_output_supports_config_property(plugin_name, property_name, binary_path=None):
+    return _plugin_supports_config_property("-o", plugin_name, property_name, binary_path)
+
+
+def _plugin_supports_config_property(plugin_type, plugin_name, property_name, binary_path=None):
+    resolved_path = _resolve_binary_path(binary_path)
+    property_marker = property_name.lower()
+
+    try:
+        result = subprocess.run(
+            [resolved_path, plugin_type, plugin_name, "-h"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return False
+
+    help_output = f"{result.stdout}\n{result.stderr}".lower()
+    return property_marker in help_output
+
+
 class FluentBitManager:
-    def __init__(self, config_path=None, binary_path=None):
+    def __init__(self, config_path=None, binary_path=None, *, shutdown_timeout=None):
         logger.info(f"config path {config_path}")
         self.config_path = config_path
-        self.binary_path = binary_path or os.environ.get("FLUENT_BIT_BINARY") or _default_binary_path()
-        self.binary_absolute_path = os.path.abspath(self.binary_path)
+        self.shutdown_timeout = shutdown_timeout
+        self.binary_path = binary_path or os.environ.get(ENV_FLB_BINARY_PATH) or _default_binary_path()
+        self.binary_absolute_path = _resolve_binary_path(self.binary_path)
         self.process = None
         self.http_monitoring_port = None
+        self.excluded_ports = set()
         self.results_dir = None
         self.log_file = None
         self.valgrind_log_file = None
+        self.leaks_log_file = None
+        self.leaks_target_pid_file = None
+        self.target_pid = None
         self.output_handle = None
 
     def set_http_monitoring_port(self, env_var_name, starting_port=0):
-        port = find_available_port(starting_port)
-        os.environ[env_var_name] = str(port)
-        self.http_monitoring_port = str(port)
+        if self.http_monitoring_port is None:
+            port = find_available_port(starting_port)
+            while port in self.excluded_ports:
+                port = find_available_port()
+            self.http_monitoring_port = str(port)
 
-    def start(self):
+        os.environ[env_var_name] = self.http_monitoring_port
+
+    def start(self, *, wait_for_ready=True):
+        """Launch with the selected checker; optionally wait for HTTP readiness."""
+        for attempt in range(3):
+            try:
+                return self._start(wait_for_ready=wait_for_ready)
+            except FluentBitStartupError:
+                if attempt == 2 or not self._monitoring_port_conflict():
+                    failed_process = self.process
+                    self.stop()
+                    # Callers inspect the completed child's exit status on failure.
+                    self.process = failed_process
+                    raise
+                # The probe socket cannot stay open while Fluent Bit binds it.
+                # Check the failed process before selecting another test port.
+                self.http_monitoring_port = None
+                self.stop()
+
+    def _monitoring_port_conflict(self):
+        if self.process is None or self.process.poll() is None or not self.log_file:
+            return False
+        try:
+            with open(self.log_file, encoding="utf-8", errors="replace") as log:
+                text = log.read()
+        except FileNotFoundError:
+            return False
+        return re.search(
+            rf"\[downstream\] could not bind address \S+:{re.escape(str(self.http_monitoring_port))}\. Aborting",
+            text,
+        ) is not None
+
+    def _owns_monitoring_listener(self):
+        if self.process is None:
+            return False
+        pid = self.target_pid or self.process.pid
+        try:
+            connections = psutil.Process(pid).net_connections(kind="tcp")
+        except psutil.NoSuchProcess:
+            return False
+        except psutil.AccessDenied as error:
+            # Linux can deny /proc/PID/fd access while an exited child awaits reaping.
+            if self.process.poll() is not None:
+                return False
+            raise FluentBitStartupError(
+                f"Cannot verify monitoring listener ownership for PID {pid}: {error}"
+            ) from error
+        return any(connection.status == psutil.CONN_LISTEN and connection.laddr
+                   and connection.laddr.port == int(self.http_monitoring_port)
+                   for connection in connections)
+
+    def _start(self, *, wait_for_ready):
         if not self.config_path or not os.path.exists(self.config_path):
             raise FileNotFoundError(f"Config file {self.config_path} does not exist")
         if not os.path.isfile(self.binary_absolute_path):
@@ -82,7 +274,12 @@ class FluentBitManager:
         self.results_dir = out_dir
         self.log_file = os.path.join(out_dir, "fluent_bit.log")
         self.valgrind_log_file = os.path.join(out_dir, "valgrind.log")
+        self.leaks_log_file = os.path.join(out_dir, "leaks.log")
+        self.leaks_target_pid_file = os.path.join(out_dir, "leaks_target.pid")
         self.set_http_monitoring_port(ENV_FLB_HTTP_MONITORING_PORT)
+
+        if valgrind_enabled() and leaks_enabled():
+            raise FluentBitStartupError("VALGRIND and LEAKS cannot be enabled together")
 
         version, commit = self.get_version_info()
         logger.info(f'Fluent Bit info')
@@ -92,17 +289,22 @@ class FluentBitManager:
         logger.info(f" logfile    : {self.log_file}")
         logger.info(f" http port  : {self.http_monitoring_port}")
         logger.info(f" commit     : {commit}")
-        if self.valgrind_log_file:
+        if valgrind_enabled():
             logger.info(f" valgrind   : {self.valgrind_log_file}")
+        if leaks_enabled():
+            logger.info(f" leaks      : {self.leaks_log_file}")
 
         command = [
             self.binary_absolute_path,
             "-c", self.config_path,
-            "-l", self.log_file
         ]
+        # Windows CRT append handles do not protect against another handle's
+        # writes. Capture stderr and stdout through the same inherited handle
+        # instead of letting -l open a second writer to the capture file.
+        if platform.system() != "Windows":
+            command += ["-l", self.log_file]
 
-        valgrind = os.environ.get('VALGRIND', False)
-        if valgrind:
+        if valgrind_enabled():
             command = [
                 "valgrind",
                 f"--log-file={self.valgrind_log_file}",
@@ -110,81 +312,252 @@ class FluentBitManager:
                 "--show-leak-kinds=all"
             ] + command
 
+        if leaks_enabled():
+            command = self._build_leaks_command(command)
 
         logger.info(f"Running command {command}")
 
-        self.output_handle = open(self.log_file, "a", encoding="utf-8")
+        output_path = self.leaks_log_file if leaks_enabled() else self.log_file
+        self.output_handle = open(output_path, "a", encoding="utf-8")
         self.process = subprocess.Popen(
             command,
             stdout=self.output_handle,
             stderr=subprocess.STDOUT,
-            text=True,
+            **_console_options(),
         )
-        logger.info(f"Fluent Bit started (pid: {self.process.pid})")
+
+        if leaks_enabled():
+            self.target_pid = self._wait_for_leaks_target_pid()
+        else:
+            self.target_pid = self.process.pid
+
+        logger.info(
+            f"Fluent Bit started (pid: {self.target_pid}, supervisor pid: {self.process.pid})"
+        )
 
         # wait for Fluent Bit to start
-        self.wait_for_fluent_bit()
+        if wait_for_ready:
+            self.wait_for_fluent_bit()
 
     def stop(self):
         if not self.process:
             return
 
-        pid = self.process.pid
-        if self.process.poll() is None:
-            self.process.terminate()
+        pid = self.target_pid or self.process.pid
+        shutdown_error = None
+        return_code = self.process.poll()
+        supervisor_running = self.process.poll() is None
+        if supervisor_running or (leaks_enabled() and self.target_pid):
+            if platform.system() == "Windows":
+                try:
+                    self._send_windows_shutdown(pid)
+                except subprocess.TimeoutExpired:
+                    logger.warning("Windows shutdown helper timed out; waiting for Fluent Bit")
+                except subprocess.CalledProcessError as error:
+                    if (error.returncode != _WINDOWS_ATTACH_CONSOLE_FAILED
+                            or self.process.poll() is None):
+                        shutdown_error = error
+            else:
+                self.send_signal(signal.SIGTERM)
+
+        if supervisor_running:
             try:
-                self.process.wait(timeout=10)
+                timeout = self.shutdown_timeout
+                if timeout is None:
+                    timeout = LEAKS_EXIT_TIMEOUT if leaks_enabled() else 10
+                elif leaks_enabled():
+                    timeout = max(timeout, LEAKS_EXIT_TIMEOUT)
+                return_code = self.process.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
-                self.process.kill()
-                self.process.wait(timeout=5)
+                self._force_stop()
+                return_code = self.process.returncode
         self.process = None
+        self.target_pid = None
 
         if self.output_handle:
             self.output_handle.close()
             self.output_handle = None
 
-        if self.http_monitoring_port:
-            wait_for_port_to_be_free(int(self.http_monitoring_port), timeout=10 if os.environ.get("VALGRIND") else 5)
+        if shutdown_error is not None:
+            raise shutdown_error
 
-        if os.environ.get("VALGRIND") and os.environ.get("VALGRIND_STRICT"):
+        # Exclusive Windows probes can fail during TIME_WAIT after process exit.
+        if self.http_monitoring_port and platform.system() != "Windows":
+            timeout = 10 if memory_check_enabled() else 5
+            wait_for_port_to_be_free(int(self.http_monitoring_port), timeout=timeout)
+
+        if valgrind_enabled() and os.environ.get("VALGRIND_STRICT"):
             assert_valgrind_clean(self.valgrind_log_file)
+
+        if leaks_enabled() and os.environ.get("LEAKS_STRICT"):
+            assert_leaks_clean(return_code, self.leaks_log_file)
 
         logger.info(f"Fluent Bit stopped (pid: {pid})")
 
+    @staticmethod
+    def _send_windows_shutdown(pid):
+        # Attach a helper to the child's isolated console and send Ctrl+C.
+        # CTRL_BREAK triggers Fluent Bit reload; SIGTERM forcibly kills it.
+        helper = f"""
+import ctypes
+import sys
+import time
+
+k = ctypes.WinDLL('kernel32', use_last_error=True)
+k.FreeConsole()
+if not k.AttachConsole(int(sys.argv[1])):
+    print('AttachConsole failed:', ctypes.get_last_error(), file=sys.stderr)
+    sys.exit({_WINDOWS_ATTACH_CONSOLE_FAILED})
+try:
+    if not k.SetConsoleCtrlHandler(None, True):
+        raise ctypes.WinError(ctypes.get_last_error())
+    if not k.GenerateConsoleCtrlEvent(0, 0):
+        raise ctypes.WinError(ctypes.get_last_error())
+    time.sleep(0.1)
+finally:
+    k.FreeConsole()
+"""
+        subprocess.run([sys.executable, "-c", helper, str(pid)], check=True,
+                       creationflags=subprocess.CREATE_NO_WINDOW, timeout=5)
+
+    def send_signal(self, signal_number):
+        if not self.process:
+            raise RuntimeError("Fluent Bit is not running")
+
+        if leaks_enabled():
+            if not self.target_pid:
+                raise RuntimeError("Fluent Bit target PID is unavailable")
+            try:
+                os.kill(self.target_pid, signal_number)
+            except ProcessLookupError:
+                pass
+        else:
+            self.process.send_signal(signal_number)
+
+    def send_sighup(self):
+        self.send_signal(signal.SIGHUP)
+
+    def get_reload_status(self):
+        url = f"http://127.0.0.1:{self.http_monitoring_port}/api/v2/reload"
+        response = requests.get(url, timeout=0.5)
+        response.raise_for_status()
+        return response.json()
+
+    def trigger_http_reload(self):
+        url = f"http://127.0.0.1:{self.http_monitoring_port}/api/v2/reload"
+        response = requests.post(url, timeout=0.5)
+        response.raise_for_status()
+        return response.json()
+
+    def wait_for_hot_reload_count(self, expected_count, timeout=10):
+        deadline = time.time() + timeout
+
+        while time.time() < deadline:
+            try:
+                payload = self.get_reload_status()
+                if payload.get("hot_reload_count", 0) >= expected_count:
+                    return payload
+            except requests.RequestException:
+                pass
+            time.sleep(0.1)
+
+        raise TimeoutError(f"Timed out waiting for hot reload count {expected_count}")
+
+    def _build_leaks_command(self, command):
+        if platform.system() != "Darwin":
+            raise FluentBitStartupError("LEAKS is only supported on macOS")
+
+        leaks_binary = shutil.which("leaks")
+        if not leaks_binary:
+            raise FluentBitStartupError("The macOS leaks command was not found")
+
+        return [
+            leaks_binary,
+            "-quiet",
+            "-fullStacks",
+            "-atExit",
+            "--",
+            "/bin/sh",
+            "-c",
+            LEAKS_EXEC_SCRIPT,
+            "fluent-bit-leaks-target",
+            self.leaks_target_pid_file,
+            self.log_file,
+        ] + command
+
+    def _wait_for_leaks_target_pid(self):
+        deadline = time.time() + LEAKS_TARGET_PID_TIMEOUT
+
+        while time.time() < deadline:
+            try:
+                pid_text = Path(self.leaks_target_pid_file).read_text(encoding="utf-8").strip()
+                target_pid = int(pid_text)
+                if target_pid > 0:
+                    return target_pid
+            except (FileNotFoundError, ValueError):
+                pass
+
+            if self.process.poll() is not None:
+                raise FluentBitStartupError(
+                    f"leaks exited before Fluent Bit started with code {self.process.returncode}. "
+                    f"See log file {self.leaks_log_file}"
+                )
+            time.sleep(0.05)
+
+        self._force_stop()
+        raise FluentBitStartupError(
+            f"Timed out waiting for the Fluent Bit PID from leaks. See {self.leaks_log_file}"
+        )
+
+    def _force_stop(self):
+        if leaks_enabled() and self.target_pid:
+            try:
+                os.kill(self.target_pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            try:
+                self.process.wait(timeout=10)
+                return
+            except subprocess.TimeoutExpired:
+                pass
+
+        self.process.kill()
+        self.process.wait(timeout=5)
+
     def get_version_info(self):
-        try:
-            result = subprocess.run(
-                [self.binary_absolute_path, '--version'],
-                capture_output=True,
-                text=True,
-                check=True,
+        version_info = _read_binary_version_info(self.binary_absolute_path)
+        if version_info is None:
+            raise FluentBitStartupError(
+                f"Unable to execute Fluent Bit binary {self.binary_absolute_path}"
             )
-            output = result.stdout.strip().split('\n')
-            version = output[0].replace('Fluent Bit ', '').strip()
-            commit = output[1].strip().replace('Git commit: ', '') if len(output) > 1 else "unknown"
-            return version, commit
-        except (subprocess.CalledProcessError, FileNotFoundError) as e:
-            logger.error("Error running Fluent Bit: %s", e)
-            raise FluentBitStartupError(f"Unable to execute Fluent Bit binary {self.binary_absolute_path}") from e
+
+        return version_info
 
     def create_results_directory(self, base_dir=None):
         if base_dir is None:
             suite_root = Path(__file__).resolve().parents[2]
             base_dir = suite_root / "results"
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        results_dir = os.path.join(base_dir, f"fluent_bit_results_{timestamp}")
-        os.makedirs(results_dir, exist_ok=True)
-        return results_dir
+        os.makedirs(base_dir, exist_ok=True)
+        return tempfile.mkdtemp(prefix=f"fluent_bit_results_{timestamp}_", dir=base_dir)
 
     # Check if Fluent Bit is running by trying to reach the uptime endpoint, it waits until
     # the value of `uptime_sec` is greater than 1
     def wait_for_fluent_bit(self, timeout=None):
         if timeout is None:
-            timeout = 30 if os.environ.get("VALGRIND") else 10
+            timeout = 30 if memory_check_enabled() else 10
         url = f"http://127.0.0.1:{self.http_monitoring_port}/api/v1/uptime"
         start_time = time.time()
+        ownership_error = None
         while time.time() - start_time < timeout:
             if self.process and self.process.poll() is not None:
+                if platform.system() == "Windows":
+                    try:
+                        log_text = Path(self.log_file).read_text(encoding="utf-8", errors="replace")
+                    except OSError:
+                        log_text = ""
+                    if "shared listener ports are not supported on this platform" in log_text:
+                        pytest.skip("Shared listener ports are unavailable on Windows")
                 raise FluentBitStartupError(
                     f"Fluent Bit exited early with code {self.process.returncode}. "
                     f"See log file {self.log_file}"
@@ -196,14 +569,25 @@ class FluentBitManager:
                 if response.status_code == 200:
                     uptime = response.json().get('uptime_sec', 0)
                     if uptime > 1:
-                        logger.info("Fluent Bit is running, health check OK")
-                        return True
-            except requests.ConnectionError:
-                # it's ok to fail, we are testing
+                        try:
+                            owns_listener = self._owns_monitoring_listener()
+                            ownership_error = None
+                        except FluentBitStartupError as error:
+                            # An exiting main thread can lose /proc access before
+                            # the remaining workers finish and poll() reports exit.
+                            ownership_error = error
+                            owns_listener = False
+                        if owns_listener:
+                            logger.info("Fluent Bit is running, health check OK")
+                            return True
+            except (requests.ConnectionError, requests.Timeout):
+                # Startup can temporarily delay responses, especially under Valgrind.
                 pass
 
             time.sleep(1)
 
+        if ownership_error is not None:
+            raise ownership_error
         raise FluentBitStartupError(
             f"Fluent Bit did not start within {timeout} seconds. See log file {self.log_file}"
         )

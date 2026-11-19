@@ -130,6 +130,7 @@ static int statsd_process_message(struct flb_statsd *ctx,
                     FLB_LOG_EVENT_DOUBLE_VALUE(strtod(m->value, NULL)),
                     FLB_LOG_EVENT_CSTRING_VALUE("sample_rate"),
                     FLB_LOG_EVENT_DOUBLE_VALUE(m->sample_rate));
+            break;
 
         case STATSD_TYPE_SET:
             ret = flb_log_event_encoder_append_body_values(

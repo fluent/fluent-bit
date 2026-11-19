@@ -40,11 +40,13 @@ struct mqtt_conn {
     int  buf_len;                    /* Buffer content length             */
     size_t  buf_size;                /* Buffer size                       */
     unsigned char *buf;              /* Buffer data                       */
+    uint8_t *qos2_pending;           /* QoS 2 ids waiting for a PUBREL    */
     struct flb_in_mqtt_config *ctx;  /* Plugin configuration context      */
     struct flb_connection *connection;
     struct mk_list _head;            /* Link to flb_in_mqtt_config->conns */
 };
 
+int mqtt_conn_event(void *data);
 struct mqtt_conn *mqtt_conn_add(struct flb_connection *connection, struct flb_in_mqtt_config *ctx);
 int mqtt_conn_del(struct mqtt_conn *conn);
 int mqtt_conn_destroy_all(struct flb_in_mqtt_config *ctx);

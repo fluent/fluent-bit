@@ -27,7 +27,10 @@
 
 #include <fluent-bit/http_server/flb_http_server.h>
 
-#define HTTP_BUFFER_MAX_SIZE    "4M"
+/* OTLP recommends a 64 MiB default request limit after decompression. */
+#define FLB_OTEL_REQUEST_MAX_SIZE (64 * 1024 * 1024)
+/* Allow HTTP headers and gRPC framing in addition to the payload budget. */
+#define FLB_OTEL_HTTP_OVERHEAD_SIZE (64 * 1024)
 #define HTTP_BUFFER_CHUNK_SIZE  "512K"
 
 struct flb_opentelemetry {
@@ -39,6 +42,9 @@ struct flb_opentelemetry {
     int  tag_from_uri;
     flb_sds_t logs_metadata_key;
     flb_sds_t logs_body_key;
+    size_t logs_max_size;
+    size_t protobuf_decode_max_size;
+    size_t request_max_size;
     int profile_support_enabled;
     int encode_profiles_as_log;
     struct flb_oauth2_jwt_cfg oauth2_cfg;
@@ -69,6 +75,7 @@ static inline int opentelemetry_ingest_logs(struct flb_opentelemetry *ctx,
 }
 
 static inline int opentelemetry_ingest_logs_take(struct flb_opentelemetry *ctx,
+                                                 size_t records,
                                                  const char *tag,
                                                  size_t tag_len,
                                                  void *buf,
@@ -76,12 +83,18 @@ static inline int opentelemetry_ingest_logs_take(struct flb_opentelemetry *ctx,
                                                  size_t allocation_size)
 {
     if (opentelemetry_uses_worker_ingress_queue(ctx)) {
-        return flb_input_ingress_queue_log_take(ctx->ins,
-                                                tag,
-                                                tag_len,
-                                                buf,
-                                                buf_size,
-                                                allocation_size);
+        return flb_input_ingress_queue_log_take_records(ctx->ins,
+                                                        records,
+                                                        tag,
+                                                        tag_len,
+                                                        buf,
+                                                        buf_size,
+                                                        allocation_size);
+    }
+
+    if (records > 0) {
+        return flb_input_log_append_records(ctx->ins, records,
+                                            tag, tag_len, buf, buf_size);
     }
 
     return flb_input_log_append(ctx->ins, tag, tag_len, buf, buf_size);

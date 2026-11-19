@@ -34,6 +34,7 @@
 #define LOKI_TENANT_SPLIT_PORT "18083"
 #define LOKI_TENANT_POLICY_SUCCESS_PORT "18084"
 #define LOKI_TENANT_POLICY_ERROR_PORT "18085"
+#define LOKI_MULTI_INSTANCE_PORT "18086"
 
 pthread_mutex_t result_mutex = PTHREAD_MUTEX_INITIALIZER;
 int num_output = 0;
@@ -48,8 +49,11 @@ static int tenant_policy_fail_tenant_a = FLB_FALSE;
 struct tenant_policy_server {
     struct flb_http_server server;
     struct flb_net_setup net_setup;
+    struct flb_config *config;
     struct mk_event_loop *event_loop;
     pthread_t thread;
+    int server_initialized;
+    int server_started;
     int thread_started;
     int stop;
 };
@@ -221,6 +225,7 @@ static int cb_loki_tenant_policy_server(struct flb_http_request *request,
 
 static void *tenant_policy_server_loop(void *data)
 {
+    struct flb_connection *connection;
     struct mk_event *event;
     struct tenant_policy_server *mock = data;
 
@@ -233,6 +238,18 @@ static void *tenant_policy_server_loop(void *data)
             if (event->type == FLB_ENGINE_EV_CUSTOM) {
                 event->handler(event);
             }
+            else if (event->type == FLB_ENGINE_EV_THREAD) {
+                connection = (struct flb_connection *) event;
+
+                if (connection->coroutine != NULL) {
+                    if (connection->event_coroutine != NULL) {
+                        flb_downstream_conn_event_resume(connection);
+                    }
+                    else {
+                        flb_coro_resume(connection->coroutine);
+                    }
+                }
+            }
         }
 
         if (mock->server.downstream != NULL) {
@@ -243,9 +260,40 @@ static void *tenant_policy_server_loop(void *data)
     return NULL;
 }
 
+static void stop_tenant_policy_server(struct tenant_policy_server *mock)
+{
+    if (mock->thread_started == FLB_TRUE) {
+        pthread_mutex_lock(&result_mutex);
+        mock->stop = FLB_TRUE;
+        pthread_mutex_unlock(&result_mutex);
+
+        pthread_join(mock->thread, NULL);
+        mock->thread_started = FLB_FALSE;
+    }
+
+    if (mock->server_started == FLB_TRUE) {
+        flb_http_server_stop(&mock->server);
+        mock->server_started = FLB_FALSE;
+    }
+
+    if (mock->server_initialized == FLB_TRUE) {
+        flb_http_server_destroy(&mock->server);
+        mock->server_initialized = FLB_FALSE;
+    }
+
+    if (mock->event_loop != NULL) {
+        mk_event_loop_destroy(mock->event_loop);
+        mock->event_loop = NULL;
+    }
+
+    if (mock->config != NULL) {
+        flb_config_exit(mock->config);
+        mock->config = NULL;
+    }
+}
+
 static int start_tenant_policy_server(struct tenant_policy_server *mock,
-                                      const char *port,
-                                      struct flb_config *config)
+                                      const char *port)
 {
     int ret;
     struct flb_http_server_options options;
@@ -255,8 +303,14 @@ static int start_tenant_policy_server(struct tenant_policy_server *mock,
     flb_http_server_options_init(&options);
     flb_net_setup_init(&mock->net_setup);
 
+    mock->config = flb_config_init();
+    if (mock->config == NULL) {
+        return -1;
+    }
+
     mock->event_loop = mk_event_loop_create(256);
     if (mock->event_loop == NULL) {
+        stop_tenant_policy_server(mock);
         return -1;
     }
 
@@ -267,32 +321,27 @@ static int start_tenant_policy_server(struct tenant_policy_server *mock,
     options.networking_flags = 0;
     options.networking_setup = &mock->net_setup;
     options.event_loop = mock->event_loop;
-    options.system_context = config;
+    options.system_context = mock->config;
     options.use_caller_event_loop = FLB_TRUE;
 
     ret = flb_http_server_init_with_options(&mock->server, &options);
     if (ret != 0) {
-        mk_event_loop_destroy(mock->event_loop);
-        mock->event_loop = NULL;
+        stop_tenant_policy_server(mock);
         return -1;
     }
+    mock->server_initialized = FLB_TRUE;
 
     ret = flb_http_server_start(&mock->server);
     if (ret != 0) {
-        flb_http_server_destroy(&mock->server);
-        mk_event_loop_destroy(mock->event_loop);
-        mock->event_loop = NULL;
+        stop_tenant_policy_server(mock);
         return -1;
     }
+    mock->server_started = FLB_TRUE;
 
     mock->stop = FLB_FALSE;
-    mock->thread_started = FLB_FALSE;
     ret = pthread_create(&mock->thread, NULL, tenant_policy_server_loop, mock);
     if (ret != 0) {
-        flb_http_server_stop(&mock->server);
-        flb_http_server_destroy(&mock->server);
-        mk_event_loop_destroy(mock->event_loop);
-        mock->event_loop = NULL;
+        stop_tenant_policy_server(mock);
         return -1;
     }
     mock->thread_started = FLB_TRUE;
@@ -300,25 +349,6 @@ static int start_tenant_policy_server(struct tenant_policy_server *mock,
     flb_time_msleep(500);
 
     return 0;
-}
-
-static void stop_tenant_policy_server(struct tenant_policy_server *mock)
-{
-    if (mock->event_loop == NULL) {
-        return;
-    }
-
-    pthread_mutex_lock(&result_mutex);
-    mock->stop = FLB_TRUE;
-    pthread_mutex_unlock(&result_mutex);
-
-    if (mock->thread_started == FLB_TRUE) {
-        pthread_join(mock->thread, NULL);
-    }
-    flb_http_server_stop(&mock->server);
-    flb_http_server_destroy(&mock->server);
-    mk_event_loop_destroy(mock->event_loop);
-    mock->event_loop = NULL;
 }
 
 #define JSON_BASIC "[12345678, {\"key\":\"value\"}]"
@@ -963,6 +993,120 @@ void flb_test_remove_keys_workers()
     flb_destroy(ctx);
 }
 
+/*
+ * Two 'loki' instances flushing the same records must each apply their own
+ * remove_keys set. Without a per-instance removal context they share the one
+ * created by whichever instance flushes first.
+ */
+#define JSON_MULTI_INSTANCE \
+    "[12345678, {\"msg\":\"hello\",\"alpha\":\"a\",\"beta\":\"b\"}]"
+
+static int check_instance_payload(char *marker, char *present, char *absent)
+{
+    int i;
+
+    for (i = 0; i < tenant_request_count; i++) {
+        if (tenant_payloads[i] == NULL) {
+            continue;
+        }
+
+        if (strstr(tenant_payloads[i], marker) == NULL) {
+            continue;
+        }
+
+        if (!TEST_CHECK(strstr(tenant_payloads[i], present) != NULL)) {
+            TEST_MSG("payload for %s did not contain %s: %s",
+                     marker, present, tenant_payloads[i]);
+            return -1;
+        }
+
+        if (!TEST_CHECK(strstr(tenant_payloads[i], absent) == NULL)) {
+            TEST_MSG("payload for %s contained %s: %s",
+                     marker, absent, tenant_payloads[i]);
+            return -1;
+        }
+
+        return 0;
+    }
+
+    TEST_CHECK(0);
+    TEST_MSG("no request found for %s", marker);
+
+    return -1;
+}
+
+void flb_test_remove_keys_multiple_instances()
+{
+    int ret;
+    int tries;
+    int in_ffd;
+    int out_ffd;
+    flb_ctx_t *ctx;
+    struct tenant_policy_server mock_server;
+
+    clear_tenant_requests();
+    clear_tenant_policy_requests();
+
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1",
+                    "log_level", "error",
+                    NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    /* First instance: drops 'alpha', keeps 'beta' */
+    out_ffd = flb_output(ctx, (char *) "loki", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    ret = flb_output_set(ctx, out_ffd,
+                         "match", "test",
+                         "host", LOKI_TENANT_POLICY_HOST,
+                         "port", LOKI_MULTI_INSTANCE_PORT,
+                         "labels", "instance=first",
+                         "remove_keys", "alpha",
+                         "net.keepalive", "off",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Second instance: drops 'beta', keeps 'alpha' */
+    out_ffd = flb_output(ctx, (char *) "loki", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    ret = flb_output_set(ctx, out_ffd,
+                         "match", "test",
+                         "host", LOKI_TENANT_POLICY_HOST,
+                         "port", LOKI_MULTI_INSTANCE_PORT,
+                         "labels", "instance=second",
+                         "remove_keys", "beta",
+                         "net.keepalive", "off",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    ret = start_tenant_policy_server(&mock_server, LOKI_MULTI_INSTANCE_PORT);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_lib_push(ctx, in_ffd, (char *) JSON_MULTI_INSTANCE,
+                       sizeof(JSON_MULTI_INSTANCE) - 1);
+    TEST_CHECK(ret >= 0);
+
+    for (tries = 0; tries < 20 && get_tenant_request_count() < 2; tries++) {
+        sleep(1);
+    }
+
+    TEST_CHECK(get_tenant_request_count() >= 2);
+
+    check_instance_payload("first", "beta", "alpha");
+    check_instance_payload("second", "alpha", "beta");
+
+    stop_tenant_policy_server(&mock_server);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+    clear_tenant_requests();
+}
+
 static int check_tenant_request(char *tenant, char *present, char *absent)
 {
     int i;
@@ -1035,8 +1179,7 @@ void flb_test_tenant_id_key_splits_requests()
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
 
-    ret = start_tenant_policy_server(&mock_server, LOKI_TENANT_SPLIT_PORT,
-                                     ctx->config);
+    ret = start_tenant_policy_server(&mock_server, LOKI_TENANT_SPLIT_PORT);
     TEST_CHECK(ret == 0);
 
     ret = flb_lib_push(ctx, in_ffd, tenant_a, strlen(tenant_a));
@@ -1109,7 +1252,7 @@ static void run_tenant_id_key_partial_handling(char *mode,
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
 
-    ret = start_tenant_policy_server(&mock_server, port, ctx->config);
+    ret = start_tenant_policy_server(&mock_server, port);
     TEST_CHECK(ret == 0);
 
     ret = flb_lib_push(ctx, in_ffd, tenant_a, strlen(tenant_a));
@@ -1186,6 +1329,155 @@ void flb_test_tenant_id_key_partial_error()
     run_tenant_id_key_partial_handling("partial_error",
                                        LOKI_TENANT_POLICY_ERROR_PORT,
                                        FLB_TRUE);
+}
+
+static char *create_long_unicode_input(size_t message_size, size_t *input_size)
+{
+    size_t json_prefix_len;
+    size_t message_prefix_len;
+    size_t message_suffix_len;
+    size_t json_suffix_len;
+    char *input;
+    char *message;
+    const char json_prefix[] = "[12345678,{\"seq\":0,\"msg\":\"";
+    const char message_prefix[] = "<TEST \xc2\xae>";
+    const char message_suffix[] = "</TEST>";
+    const char json_suffix[] = "\"}]";
+
+    json_prefix_len = sizeof(json_prefix) - 1;
+    message_prefix_len = sizeof(message_prefix) - 1;
+    message_suffix_len = sizeof(message_suffix) - 1;
+    json_suffix_len = sizeof(json_suffix) - 1;
+
+    if (message_size < message_prefix_len + message_suffix_len) {
+        return NULL;
+    }
+
+    *input_size = json_prefix_len + message_size + json_suffix_len;
+    input = flb_malloc(*input_size + 1);
+    if (input == NULL) {
+        return NULL;
+    }
+
+    memcpy(input, json_prefix, json_prefix_len);
+    message = input + json_prefix_len;
+    memset(message, '1', message_size);
+    memcpy(message, message_prefix, message_prefix_len);
+    memcpy(message + message_size - message_suffix_len,
+           message_suffix, message_suffix_len);
+    memcpy(message + message_size, json_suffix, json_suffix_len);
+    input[*input_size] = '\0';
+
+    return input;
+}
+
+struct long_unicode_test_result {
+    size_t message_size;
+    int callback_called;
+};
+
+static void cb_check_long_unicode_payload(void *ctx, int ffd,
+                                          int res_ret, void *res_data,
+                                          size_t res_size, void *data)
+{
+    char *ending;
+    char *removed_key;
+    flb_sds_t out_js;
+    struct long_unicode_test_result *result;
+
+    out_js = res_data;
+    result = data;
+    result->callback_called = FLB_TRUE;
+
+    TEST_CHECK(res_ret == 0);
+    if (!TEST_CHECK(out_js != NULL)) {
+        return;
+    }
+
+    ending = strstr(out_js, "</TEST>\\\"}");
+    if (!TEST_CHECK(ending != NULL)) {
+        TEST_MSG("%zu-byte message did not end at </TEST>", result->message_size);
+    }
+
+    removed_key = strstr(out_js, "\\\"seq\\\":");
+    TEST_CHECK(removed_key == NULL);
+
+    flb_sds_destroy(out_js);
+}
+
+static void run_long_unicode_payload_boundary(size_t message_size)
+{
+    int ret;
+    int in_ffd;
+    int out_ffd;
+    size_t input_size;
+    char *input;
+    flb_ctx_t *ctx;
+    struct long_unicode_test_result result;
+
+    input = create_long_unicode_input(message_size, &input_size);
+    if (!TEST_CHECK(input != NULL)) {
+        return;
+    }
+
+    ctx = flb_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        flb_free(input);
+        return;
+    }
+
+    ret = flb_service_set(ctx,
+                          "flush", "1",
+                          "grace", "1",
+                          "log_level", "error",
+                          NULL);
+    TEST_CHECK(ret == 0);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "loki", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    ret = flb_output_set(ctx, out_ffd,
+                         "match", "test",
+                         "line_format", "json",
+                         "labels", "job=mwe",
+                         "remove_keys", "seq",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    result.message_size = message_size;
+    result.callback_called = FLB_FALSE;
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_long_unicode_payload,
+                              &result, NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    if (!TEST_CHECK(ret == 0)) {
+        flb_destroy(ctx);
+        flb_free(input);
+        return;
+    }
+
+    ret = flb_lib_push(ctx, in_ffd, input, input_size);
+    TEST_CHECK(ret >= 0);
+
+    sleep(2);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+    flb_free(input);
+
+    if (!TEST_CHECK(result.callback_called == FLB_TRUE)) {
+        TEST_MSG("formatter was not called for %zu-byte message", message_size);
+    }
+}
+
+void flb_test_long_unicode_payload_boundaries()
+{
+    run_long_unicode_payload_boundary(24 * 1024);
+    run_long_unicode_payload_boundary(36 * 1024);
 }
 
 static void cb_check_label_map_path(void *ctx, int ffd,
@@ -1517,9 +1809,11 @@ TEST_LIST = {
     {"labels_ra"              , flb_test_labels_ra },
     {"remove_keys"            , flb_test_remove_keys },
     {"remove_keys_workers"    , flb_test_remove_keys_workers },
+    {"remove_keys_multiple_instances", flb_test_remove_keys_multiple_instances },
     {"tenant_id_key_splits_requests", flb_test_tenant_id_key_splits_requests },
     {"tenant_id_key_partial_success", flb_test_tenant_id_key_partial_success },
     {"tenant_id_key_partial_error", flb_test_tenant_id_key_partial_error },
+    {"long_unicode_payload_boundaries", flb_test_long_unicode_payload_boundaries },
     {"basic"                  , flb_test_basic },
     {"labels"                 , flb_test_labels },
     {"label_keys"             , flb_test_label_keys },

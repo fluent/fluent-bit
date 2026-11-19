@@ -1,0 +1,183 @@
+{
+  "catalog_version": 1,
+  "policies": [
+    {
+      "id": "application-json",
+      "title": "Application JSON onboarding",
+      "status": "fixture_verified_linux",
+      "path": "logs/application-json",
+      "signals": [
+        "logs"
+      ]
+    },
+    {
+      "id": "cloudtrail",
+      "title": "CloudTrail investigation normalization",
+      "status": "fixture_verified_linux",
+      "path": "logs/cloudtrail",
+      "signals": [
+        "logs"
+      ]
+    },
+    {
+      "id": "event-quality",
+      "title": "Required fields and message budget",
+      "status": "fixture_verified_linux",
+      "path": "logs/event-quality",
+      "signals": [
+        "logs"
+      ]
+    },
+    {
+      "id": "firewall",
+      "title": "Parsed firewall action normalization",
+      "status": "fixture_verified_linux",
+      "path": "logs/firewall",
+      "signals": [
+        "logs"
+      ]
+    },
+    {
+      "id": "genai-privacy",
+      "title": "GenAI structured content protection",
+      "status": "fixture_verified_linux",
+      "path": "logs/genai-privacy",
+      "signals": [
+        "logs"
+      ]
+    },
+    {
+      "id": "kubernetes-hygiene",
+      "title": "Kubernetes metadata hygiene",
+      "status": "fixture_verified_linux",
+      "path": "logs/kubernetes-hygiene",
+      "signals": [
+        "logs"
+      ]
+    },
+    {
+      "id": "log-trace-correlation",
+      "title": "Semantic log trace correlation",
+      "status": "fixture_verified_linux",
+      "path": "logs/log-trace-correlation",
+      "signals": [
+        "logs"
+      ]
+    },
+    {
+      "id": "pseudonyms",
+      "title": "Tenant-scoped stable pseudonyms",
+      "status": "fixture_verified_linux",
+      "path": "logs/pseudonyms",
+      "signals": [
+        "logs"
+      ]
+    },
+    {
+      "id": "service-identity",
+      "title": "Trusted service identity defaults",
+      "status": "fixture_verified_linux",
+      "path": "logs/service-identity",
+      "signals": [
+        "logs"
+      ]
+    },
+    {
+      "id": "stable-log-sampling",
+      "title": "Stable keyed log sampling",
+      "status": "fixture_verified_linux",
+      "path": "logs/stable-log-sampling",
+      "signals": [
+        "logs"
+      ]
+    },
+    {
+      "id": "structured-secrets",
+      "title": "Structured secret protection",
+      "status": "fixture_verified_linux",
+      "path": "logs/structured-secrets",
+      "signals": [
+        "logs"
+      ]
+    },
+    {
+      "id": "successful-probes",
+      "title": "Successful probe reduction",
+      "status": "fixture_verified_linux",
+      "path": "logs/successful-probes",
+      "signals": [
+        "logs"
+      ]
+    },
+    {
+      "id": "url-sanitization",
+      "title": "Structured URL credential removal",
+      "status": "fixture_verified_linux",
+      "path": "logs/url-sanitization",
+      "signals": [
+        "logs"
+      ]
+    },
+    {
+      "id": "vpc-flow",
+      "title": "AWS VPC flow v2 normalization",
+      "status": "fixture_verified_linux",
+      "path": "logs/vpc-flow",
+      "signals": [
+        "logs"
+      ]
+    },
+    {
+      "id": "windows-security",
+      "title": "Windows security authentication normalization",
+      "status": "fixture_verified_linux",
+      "path": "logs/windows-security",
+      "signals": [
+        "logs"
+      ]
+    },
+    {
+      "id": "metric-compatibility",
+      "title": "Metric name and unit compatibility",
+      "status": "fixture_verified_linux",
+      "path": "metrics/metric-compatibility",
+      "signals": [
+        "metrics"
+      ]
+    },
+    {
+      "id": "metric-dimensions",
+      "title": "Metric dimension reduction",
+      "status": "fixture_verified_linux",
+      "path": "metrics/metric-dimensions",
+      "signals": [
+        "metrics"
+      ]
+    },
+    {
+      "id": "span-operations",
+      "title": "Stable span operations",
+      "status": "fixture_verified_linux",
+      "path": "traces/span-operations",
+      "signals": [
+        "traces"
+      ]
+    },
+    {
+      "id": "ocsf",
+      "title": "Source-specific OCSF mapping",
+      "status": "pending",
+      "path": "pending/ocsf",
+      "dependency": "Requires a pinned OCSF schema/class version, reviewed source field mapping, schema validator and independent conformance fixtures. Generic field renaming is not a substitute for OCSF conformance.",
+      "signals": []
+    },
+    {
+      "id": "tenant-egress",
+      "title": "Authenticated tenant and egress governance",
+      "status": "pending",
+      "path": "pending/tenant-egress",
+      "dependency": "Requires authenticated input-to-tenant identity binding plus verified native routing/output enforcement. Setting a tenant field in Lua does not enforce isolation or egress authorization.",
+      "signals": []
+    }
+  ]
+}

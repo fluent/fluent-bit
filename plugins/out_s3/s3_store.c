@@ -20,9 +20,134 @@
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_fstore.h>
 #include <fluent-bit/flb_time.h>
+#include <cfl/cfl_atomic.h>
+
+#include <inttypes.h>
 
 #include "s3.h"
 #include "s3_store.h"
+
+static int counter_add(uint64_t *counter, uint64_t increment,
+                       uint64_t *new_value)
+{
+    uint64_t current_value;
+    uint64_t updated_value;
+
+    while (FLB_TRUE) {
+        current_value = cfl_atomic_load(counter);
+        if (increment > UINT64_MAX - current_value) {
+            return -1;
+        }
+
+        updated_value = current_value + increment;
+        if (cfl_atomic_compare_exchange(counter, current_value, updated_value)) {
+            if (new_value != NULL) {
+                *new_value = updated_value;
+            }
+            return 0;
+        }
+    }
+}
+
+static int counter_subtract(uint64_t *counter, uint64_t decrement,
+                            uint64_t *previous_value)
+{
+    int underflow;
+    uint64_t current_value;
+    uint64_t updated_value;
+
+    while (FLB_TRUE) {
+        current_value = cfl_atomic_load(counter);
+        underflow = current_value < decrement;
+        if (underflow == FLB_TRUE) {
+            updated_value = 0;
+        }
+        else {
+            updated_value = current_value - decrement;
+        }
+
+        if (cfl_atomic_compare_exchange(counter, current_value, updated_value)) {
+            if (previous_value != NULL) {
+                *previous_value = current_value;
+            }
+            return underflow == FLB_TRUE ? -1 : 0;
+        }
+    }
+}
+
+static int buffer_size_reserve(struct flb_s3 *ctx, size_t bytes,
+                               uint64_t *current_value,
+                               uint64_t *new_value)
+{
+    uint64_t buffer_size;
+    uint64_t updated_size;
+    uint64_t increment;
+
+    increment = (uint64_t) bytes;
+
+    while (FLB_TRUE) {
+        buffer_size = cfl_atomic_load(&ctx->current_buffer_size);
+        if (current_value != NULL) {
+            *current_value = buffer_size;
+        }
+
+        if (increment > UINT64_MAX - buffer_size) {
+            return -1;
+        }
+
+        updated_size = buffer_size + increment;
+        if (ctx->store_dir_limit_size > 0 &&
+            updated_size >= (uint64_t) ctx->store_dir_limit_size) {
+            return -1;
+        }
+
+        if (cfl_atomic_compare_exchange(&ctx->current_buffer_size,
+                                        buffer_size, updated_size)) {
+            if (new_value != NULL) {
+                *new_value = updated_size;
+            }
+            return 0;
+        }
+    }
+}
+
+static int quarantine_size_reserve(struct flb_s3 *ctx, uint64_t bytes)
+{
+    uint64_t buffer_size;
+    uint64_t updated_size;
+
+    while (FLB_TRUE) {
+        buffer_size = cfl_atomic_load(&ctx->quarantine_buffer_size);
+        if (bytes > UINT64_MAX - buffer_size) {
+            return -1;
+        }
+
+        updated_size = buffer_size + bytes;
+        if (ctx->quarantine_dir_limit_size > 0 &&
+            updated_size > (uint64_t) ctx->quarantine_dir_limit_size) {
+            return -1;
+        }
+
+        if (cfl_atomic_compare_exchange(&ctx->quarantine_buffer_size,
+                                        buffer_size, updated_size)) {
+            return 0;
+        }
+    }
+}
+
+static void buffer_size_release(struct flb_s3 *ctx, uint64_t bytes)
+{
+    int ret;
+    uint64_t previous_value;
+
+    ret = counter_subtract(&ctx->current_buffer_size, bytes, &previous_value);
+    if (ret < 0) {
+        flb_plg_warn(ctx->ins,
+                     "buffer accounting mismatch: current_buffer_size=%" PRIu64
+                     ", reclaim_size=%" PRIu64 "; clamping to zero",
+                     previous_value, bytes);
+    }
+}
 
 static int s3_store_under_travis_ci()
 {
@@ -92,6 +217,8 @@ struct s3_file *s3_store_file_get(struct flb_s3 *ctx, const char *tag,
         if (fsf->data == NULL) {
             flb_plg_warn(ctx->ins, "BAD: found flb_fstore_file with NULL data reference, tag=%s, file=%s, will try to delete", tag, fsf->name);
             flb_fstore_file_delete(ctx->fs, fsf);
+            fsf = NULL;
+            continue;
         }
 
         if (fsf->meta_size != tag_len) {
@@ -119,7 +246,9 @@ struct s3_file *s3_store_file_get(struct flb_s3 *ctx, const char *tag,
         return NULL;
     }
 
-    return fsf->data;
+    s3_file = fsf->data;
+
+    return s3_file;
 }
 
 /* Append data to a new or existing fstore file */
@@ -129,14 +258,21 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
                         time_t file_first_log_time)
 {
     int ret;
+    int result;
     flb_sds_t name;
     struct flb_fstore_file *fsf;
-    size_t space_remaining;
+    uint64_t current_buffer_size;
+    uint64_t new_buffer_size;
 
-    if (ctx->store_dir_limit_size > 0 && ctx->current_buffer_size + bytes >= ctx->store_dir_limit_size) {
-        flb_plg_error(ctx->ins, "Buffer is full: current_buffer_size=%zu, new_data=%zu, store_dir_limit_size=%zu bytes",
-                    ctx->current_buffer_size, bytes, ctx->store_dir_limit_size);
-        return -1;
+    result = -1;
+    ret = buffer_size_reserve(ctx, bytes, &current_buffer_size,
+                              &new_buffer_size);
+    if (ret < 0) {
+        flb_plg_error(ctx->ins,
+                      "Buffer is full: current_buffer_size=%" PRIu64
+                      ", new_data=%zu, store_dir_limit_size=%zu bytes",
+                      current_buffer_size, bytes, ctx->store_dir_limit_size);
+        goto done;
     }
 
     /* If no target file was found, create a new one */
@@ -144,7 +280,8 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
         name = gen_store_filename(tag);
         if (!name) {
             flb_plg_error(ctx->ins, "could not generate chunk file name");
-            return -1;
+            buffer_size_release(ctx, bytes);
+            goto done;
         }
 
         /* Create the file */
@@ -153,7 +290,8 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
             flb_plg_error(ctx->ins, "could not create the file '%s' in the store",
                           name);
             flb_sds_destroy(name);
-            return -1;
+            buffer_size_release(ctx, bytes);
+            goto done;
         }
         flb_sds_destroy(name);
 
@@ -163,7 +301,8 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
             flb_plg_error(ctx->ins, "error writing tag metadata");
             flb_plg_warn(ctx->ins, "Deleting buffer file because metadata could not be written");
             flb_fstore_file_delete(ctx->fs, fsf);
-            return -1;
+            buffer_size_release(ctx, bytes);
+            goto done;
         }
 
         /* Allocate local context */
@@ -173,9 +312,11 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
             flb_plg_error(ctx->ins, "cannot allocate s3 file context");
             flb_plg_warn(ctx->ins, "Deleting buffer file because S3 context creation failed");
             flb_fstore_file_delete(ctx->fs, fsf);
-            return -1;
+            buffer_size_release(ctx, bytes);
+            goto done;
         }
         s3_file->fsf = fsf;
+        s3_file->upload_scan_id = ctx->upload_scan_id;
         s3_file->first_log_time = file_first_log_time;
         s3_file->create_time = time(NULL);
 
@@ -190,22 +331,62 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
     ret = flb_fstore_file_append(fsf, data, bytes);
     if (ret != 0) {
         flb_plg_error(ctx->ins, "error writing data to local s3 file");
-        return -1;
+        buffer_size_release(ctx, bytes);
+        goto done;
     }
-    s3_file->size += bytes;
-    ctx->current_buffer_size += bytes;
+    ret = counter_add(&s3_file->size, (uint64_t) bytes, NULL);
+    if (ret < 0) {
+        flb_plg_error(ctx->ins, "local s3 file size accounting overflow");
+    }
 
     /* if buffer is 95% full, warn user */
-    if (ctx->store_dir_limit_size > 0) {
-        space_remaining = ctx->store_dir_limit_size - ctx->current_buffer_size;
-        if ((space_remaining * 20) < ctx->store_dir_limit_size) {
-            flb_plg_warn(ctx->ins, "Buffer is almost full: current_buffer_size=%zu, store_dir_limit_size=%zu bytes",
-                        ctx->current_buffer_size, ctx->store_dir_limit_size);
+    if (ctx->store_dir_limit_size > 0 &&
+        new_buffer_size > (uint64_t) ctx->store_dir_limit_size -
+                          (ctx->store_dir_limit_size / 20)) {
+        flb_plg_warn(ctx->ins,
+                     "Buffer is almost full: current_buffer_size=%" PRIu64
+                     ", store_dir_limit_size=%zu bytes",
+                     new_buffer_size, ctx->store_dir_limit_size);
+    }
+
+    result = 0;
+
+done:
+    return result;
+}
+
+static ssize_t restored_file_size_get(struct flb_s3 *ctx,
+                                      struct flb_fstore_file *fsf)
+{
+    int ret;
+    int restore_down;
+    ssize_t file_size;
+
+    restore_down = FLB_FALSE;
+
+    if (cio_chunk_is_up(fsf->chunk) == CIO_FALSE) {
+        ret = cio_chunk_up_force(fsf->chunk);
+        if (ret != CIO_OK) {
+            flb_plg_error(ctx->ins,
+                          "cannot load restored S3 chunk '%s' to determine its size",
+                          fsf->name);
             return -1;
+        }
+        restore_down = FLB_TRUE;
+    }
+
+    file_size = cio_chunk_get_content_size(fsf->chunk);
+
+    if (restore_down == FLB_TRUE) {
+        ret = cio_chunk_down(fsf->chunk);
+        if (ret != CIO_OK) {
+            flb_plg_warn(ctx->ins,
+                         "cannot return restored S3 chunk '%s' to the down state",
+                         fsf->name);
         }
     }
 
-    return 0;
+    return file_size;
 }
 
 static int set_files_context(struct flb_s3 *ctx)
@@ -219,11 +400,6 @@ static int set_files_context(struct flb_s3 *ctx)
 
     mk_list_foreach(head, &ctx->fs->streams) {
         fs_stream = mk_list_entry(head, struct flb_fstore_stream, _head);
-
-        /* skip current stream since it's new */
-        if (fs_stream == ctx->stream_active) {
-            continue;
-        }
 
         /* skip multi-upload */
         if (fs_stream == ctx->stream_upload) {
@@ -247,9 +423,21 @@ static int set_files_context(struct flb_s3 *ctx)
             s3_file->first_log_time = time(NULL);
             s3_file->create_time = time(NULL);
 
-            file_size = cio_chunk_get_real_size(fsf->chunk);
+            file_size = restored_file_size_get(ctx, fsf);
             if (file_size > 0) {
-                s3_file->size = (size_t) file_size;
+                cfl_atomic_store(&s3_file->size, (uint64_t) file_size);
+
+                if (fs_stream == ctx->stream_quarantine) {
+                    if (counter_add(&ctx->quarantine_buffer_size,
+                                    (uint64_t) file_size, NULL) < 0) {
+                        cfl_atomic_store(&ctx->quarantine_buffer_size,
+                                         UINT64_MAX);
+                    }
+                }
+                else if (counter_add(&ctx->current_buffer_size,
+                                     (uint64_t) file_size, NULL) < 0) {
+                    cfl_atomic_store(&ctx->current_buffer_size, UINT64_MAX);
+                }
             }
 
             /* Use fstore opaque 'data' reference to keep our context */
@@ -444,9 +632,16 @@ int s3_store_file_quarantine(struct flb_s3 *ctx, struct s3_file *s3_file)
         return -1;
     }
 
+    ret = quarantine_size_reserve(ctx, (uint64_t) size);
+    if (ret < 0) {
+        flb_free(buf);
+        return S3_STORE_QUARANTINE_FULL;
+    }
+
     qfsf = flb_fstore_file_create(ctx->fs, ctx->stream_quarantine, fsf->name, size);
     if (qfsf == NULL) {
         flb_free(buf);
+        counter_subtract(&ctx->quarantine_buffer_size, (uint64_t) size, NULL);
         return -1;
     }
 
@@ -455,6 +650,7 @@ int s3_store_file_quarantine(struct flb_s3 *ctx, struct s3_file *s3_file)
         if (ret < 0) {
             flb_free(buf);
             flb_fstore_file_delete(ctx->fs, qfsf);
+            counter_subtract(&ctx->quarantine_buffer_size, (uint64_t) size, NULL);
             return -1;
         }
     }
@@ -463,20 +659,29 @@ int s3_store_file_quarantine(struct flb_s3 *ctx, struct s3_file *s3_file)
     flb_free(buf);
     if (ret < 0) {
         flb_fstore_file_delete(ctx->fs, qfsf);
+        counter_subtract(&ctx->quarantine_buffer_size, (uint64_t) size, NULL);
         return -1;
     }
 
     flb_fstore_file_delete(ctx->fs, fsf);
+    buffer_size_release(ctx, s3_store_file_size_get(s3_file));
     flb_free(s3_file);
     return 0;
+}
+
+uint64_t s3_store_file_size_get(struct s3_file *s3_file)
+{
+    return cfl_atomic_load(&s3_file->size);
 }
 
 int s3_store_file_delete(struct flb_s3 *ctx, struct s3_file *s3_file)
 {
     struct flb_fstore_file *fsf;
+    uint64_t file_size;
 
     fsf = s3_file->fsf;
-    ctx->current_buffer_size -= s3_file->size;
+    file_size = s3_store_file_size_get(s3_file);
+    buffer_size_release(ctx, file_size);
 
     /* permanent deletion */
     flb_fstore_file_delete(ctx->fs, fsf);

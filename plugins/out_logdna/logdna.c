@@ -31,6 +31,7 @@
 #define LOGDNA_SEVERITY_KEY "severity"
 #define LOGDNA_FILE_KEY "file"
 #define LOGDNA_APP_KEY "app"
+#define LOGDNA_HOSTNAME_KEY "hostname"
 
 static inline int primary_key_check(msgpack_object k, char *name, int len)
 {
@@ -56,6 +57,7 @@ static inline int primary_key_check(msgpack_object k, char *name, int len)
  * - level or severity
  * - file
  * - app
+ * - hostname
  * - meta
  *
  * When line_pck is not NULL, non-primary keys are packed into it for use
@@ -73,6 +75,7 @@ static int record_append_primary_keys(struct flb_logdna *ctx,
     msgpack_object *level = NULL;
     msgpack_object *file = NULL;
     msgpack_object *app = NULL;
+    msgpack_object *hostname = NULL;
     msgpack_object *meta = NULL;
     msgpack_object k;
     msgpack_object v;
@@ -84,7 +87,8 @@ static int record_append_primary_keys(struct flb_logdna *ctx,
                 primary_key_check(k, LOGDNA_LEVEL_KEY, sizeof(LOGDNA_LEVEL_KEY) - 1) == FLB_TRUE ||
                 primary_key_check(k, LOGDNA_SEVERITY_KEY, sizeof(LOGDNA_SEVERITY_KEY) - 1) == FLB_TRUE ||
                 primary_key_check(k, LOGDNA_FILE_KEY, sizeof(LOGDNA_FILE_KEY) - 1) == FLB_TRUE ||
-                primary_key_check(k, LOGDNA_APP_KEY, sizeof(LOGDNA_APP_KEY) - 1) == FLB_TRUE) {
+                primary_key_check(k, LOGDNA_APP_KEY, sizeof(LOGDNA_APP_KEY) - 1) == FLB_TRUE ||
+                primary_key_check(k, LOGDNA_HOSTNAME_KEY, sizeof(LOGDNA_HOSTNAME_KEY) - 1) == FLB_TRUE) {
                 continue;
             }
             line_count++;
@@ -146,6 +150,18 @@ static int record_append_primary_keys(struct flb_logdna *ctx,
             }
         }
 
+        /* Hostname */
+        if (primary_key_check(k, LOGDNA_HOSTNAME_KEY, sizeof(LOGDNA_HOSTNAME_KEY) - 1) == FLB_TRUE) {
+            is_primary = FLB_TRUE;
+            if (!hostname) {
+                hostname = &k;
+                msgpack_pack_str(mp_sbuf, sizeof(LOGDNA_HOSTNAME_KEY) - 1);
+                msgpack_pack_str_body(mp_sbuf, LOGDNA_HOSTNAME_KEY, sizeof(LOGDNA_HOSTNAME_KEY) - 1);
+                msgpack_pack_object(mp_sbuf, v);
+                c++;
+            }
+        }
+
         if (line_pck && is_primary == FLB_FALSE) {
             msgpack_pack_object(line_pck, k);
             msgpack_pack_object(line_pck, v);
@@ -167,6 +183,15 @@ static int record_append_primary_keys(struct flb_logdna *ctx,
         msgpack_pack_str_body(mp_sbuf, LOGDNA_APP_KEY, sizeof(LOGDNA_APP_KEY) - 1);
         msgpack_pack_str(mp_sbuf, flb_sds_len(ctx->app));
         msgpack_pack_str_body(mp_sbuf, ctx->app, flb_sds_len(ctx->app));
+        c++;
+    }
+
+    /* If no hostname is set in the record, fall back to the resolved one */
+    if (!hostname && ctx->_hostname) {
+        msgpack_pack_str(mp_sbuf, sizeof(LOGDNA_HOSTNAME_KEY) - 1);
+        msgpack_pack_str_body(mp_sbuf, LOGDNA_HOSTNAME_KEY, sizeof(LOGDNA_HOSTNAME_KEY) - 1);
+        msgpack_pack_str(mp_sbuf, flb_sds_len(ctx->_hostname));
+        msgpack_pack_str_body(mp_sbuf, ctx->_hostname, flb_sds_len(ctx->_hostname));
         c++;
     }
 

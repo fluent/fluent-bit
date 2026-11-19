@@ -14,11 +14,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, windows-2019]
+        os: [windows-latest, windows-2022]
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           submodules: true
 
@@ -34,6 +34,9 @@ jobs:
     name: CentOS 7 build to confirm no issues once used downstream
     runs-on: ubuntu-latest
     container: centos:7
+    env:
+      # workaround required for checkout@v3, https://github.com/actions/checkout/issues/1590
+      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
     permissions:
       contents: none
     steps:
@@ -41,13 +44,19 @@ jobs:
         run: |
           sed -i -e "s/^mirrorlist=http:\/\/mirrorlist.centos.org/#mirrorlist=http:\/\/mirrorlist.centos.org/g" /etc/yum.repos.d/CentOS-Base.repo
           sed -i -e "s/^#baseurl=http:\/\/mirror.centos.org/baseurl=http:\/\/vault.centos.org/g" /etc/yum.repos.d/CentOS-Base.repo
-          yum -y update && \
-          yum install -y ca-certificates curl-devel gcc gcc-c++ git make wget && \
-          yum install -y epel-release && \
-          yum install -y python3 python3-pip
-          python3 -m pip install --user --upgrade "cmake>=3.20,<4"
-          echo "$(python3 -m site --user-base)/bin" >> "$GITHUB_PATH"
+          yum -y update
+          yum install -y ca-certificates curl-devel gcc gcc-c++ git make wget
+          yum install -y epel-release
         shell: bash
+
+      - name: Install CMake 3.20.0
+        run: |
+          CMAKE_VERSION=3.20.0
+          wget https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.sh
+          chmod +x cmake-${CMAKE_VERSION}-linux-x86_64.sh
+          ./cmake-${CMAKE_VERSION}-linux-x86_64.sh --skip-license --prefix=/usr/local
+          ln -sf /usr/local/bin/cmake /usr/bin/cmake
+          cmake --version
 
       - name: Clone repo without submodules (1.8.3 version of Git)
         run: |
@@ -83,13 +92,23 @@ jobs:
     steps:
       - name: Set up base image dependencies
         run: |
+          sed -i 's/deb.debian.org/archive.debian.org/g' /etc/apt/sources.list
+          sed -i 's/security.debian.org/archive.debian.org/g' /etc/apt/sources.list
           apt-get update
-          apt-get install -y build-essential git make python3 python3-pip
-          python3 -m pip install --user --upgrade "cmake>=3.20,<4"
-          echo "$(python3 -m site --user-base)/bin" >> "$GITHUB_PATH"
+          apt-get install -y build-essential git make wget
         shell: bash
 
-      - uses: actions/checkout@v6
+      - name: Install CMake 3.20.0
+        run: |
+          CMAKE_VERSION=3.20.0
+          wget https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.sh
+          chmod +x cmake-${CMAKE_VERSION}-linux-x86_64.sh
+          ./cmake-${CMAKE_VERSION}-linux-x86_64.sh --skip-license --prefix=/usr/local
+          echo 'export PATH=/usr/local/bin:$PATH' >> ~/.bashrc
+          export PATH="/usr/local/bin:$PATH"
+          /usr/local/bin/cmake --version
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           submodules: true
 
@@ -112,25 +131,22 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           submodules: true
 
       - name: Build on ${{ matrix.os }} with ${{ matrix.compiler }}
-        uses: uraimo/run-on-arch-action@v3.0.1
+        uses: uraimo/run-on-arch-action@460cb8e6d9f726a588fc9b5e681c8a6cab09ae41 # v3.2.0
         with:
           arch: aarch64
-          distro: ubuntu20.04
+          distro: ubuntu_latest
           run: |
             apt-get update && \
             apt-get install -y --no-install-recommends \
             build-essential \
+            cmake \
             file \
-            make \
-            python3 \
-            python3-pip
-            python3 -m pip install --user --upgrade "cmake>=3.20,<4"
-            export PATH="$(python3 -m site --user-base)/bin:$PATH"
+            make
             export CC=${{ env.compiler }}
             cd build
             cmake -DCPROF_TESTS=On ../
@@ -150,7 +166,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           submodules: true
 
@@ -181,16 +197,35 @@ jobs:
       contents: read
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           submodules: true
 
-      - uses: docker://lpenz/ghaction-cmake:0.19
-        with:
-          preset: ${{ matrix.preset }}
-          # dependencies_debian: ''
-          cmakeflags: '-DCPROF_TESTS=On -DCPROF_DEV=on .'
-          build_command: make all
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang \
+            git \
+            gcc \
+            g++ \
+            make \
+            valgrind \
+            wget
+
+      - name: Install CMake 3.20.0
+        run: |
+          CMAKE_VERSION=3.20.0
+          wget https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.sh
+          chmod +x cmake-${CMAKE_VERSION}-linux-x86_64.sh
+          sudo ./cmake-${CMAKE_VERSION}-linux-x86_64.sh --skip-license --prefix=/usr/local
+          sudo ln -sf /usr/local/bin/cmake /usr/bin/cmake
+          /usr/local/bin/cmake --version
+
+      - name: Configure and build
+        run: |
+          /usr/local/bin/cmake -DCPROF_TESTS=On -DCPROF_DEV=on .
+          make all
 
   # this job provides the single required status for PRs to be merged into main.
   # instead of updating the protected branch status in github, developers can update the needs section below

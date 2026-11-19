@@ -19,6 +19,7 @@
 
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_metric.h>
+#include <cmetrics/cmt_otlp_metadata.h>
 #include <cmetrics/cmt_map.h>
 #include <cmetrics/cmt_histogram.h>
 #include <cmetrics/cmt_exp_histogram.h>
@@ -264,6 +265,7 @@ static int pack_metric(mpack_writer_t *writer, struct cmt_map *map, struct cmt_m
         for (index = 0 ;
              index <= histogram->buckets->count ;
              index++) {
+            /* Wire buckets stay cumulative, as every released reader expects. */
             mpack_write_uint(writer, cmt_metric_hist_get_value(metric, index));
         }
 
@@ -477,14 +479,14 @@ static int pack_context_header(mpack_writer_t *writer, struct cmt *cmt)
     mpack_start_map(writer, 3);
 
     mpack_write_cstr(writer, "cmetrics");
-    result = pack_cfl_variant_kvlist(writer, cmt->internal_metadata);
+    result = cmt_otlp_metadata_pack(writer, cmt);
 
     if (result != 0) {
         return -1;
     }
 
     mpack_write_cstr(writer, "external");
-    result = pack_cfl_variant_kvlist(writer, cmt->external_metadata);
+    result = cmt_otlp_metadata_pack_external(writer, cmt);
 
     if (result != 0) {
         return -2;

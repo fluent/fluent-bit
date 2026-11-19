@@ -2,6 +2,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_simd.h>
 #include <fluent-bit/flb_utils.h>
 #include <stdarg.h>
 #include "flb_tests_internal.h"
@@ -339,6 +340,67 @@ void test_write_str()
     TEST_CHECK(ret == FLB_FALSE);
 }
 
+static void check_write_str_simd_boundary(size_t input_len)
+{
+    int off;
+    int ret;
+    size_t output_size;
+    char *input;
+    char *output;
+
+    output_size = input_len + FLB_SIMD_VEC8_INST_LEN + 8;
+
+    input = flb_malloc(input_len + FLB_SIMD_VEC8_INST_LEN);
+    output = flb_calloc(output_size, sizeof(char));
+    if (!TEST_CHECK(input != NULL && output != NULL)) {
+        flb_free(input);
+        flb_free(output);
+        return;
+    }
+
+    /*
+     * A multibyte character moves the input cursor off its original SIMD
+     * alignment. Poison the bytes beyond the declared string length to catch
+     * a subsequent vector copy that crosses that boundary.
+     */
+    memset(input, 'x', input_len + FLB_SIMD_VEC8_INST_LEN);
+    input[0] = '\xc2';
+    input[1] = '\xae';
+
+    off = 0;
+    ret = flb_utils_write_str(output, &off, output_size, input, input_len, FLB_TRUE);
+    TEST_CHECK(ret == FLB_TRUE);
+    TEST_CHECK_(off == input_len + 4, "expected %zu escaped bytes, got %d",
+                input_len + 4, off);
+    TEST_CHECK(memcmp(output, "\\u00ae", 6) == 0);
+    TEST_CHECK(memcmp(output + 6, input + 2, input_len - 2) == 0);
+
+    memset(output, 0, output_size);
+    off = 0;
+    ret = flb_utils_write_str(output, &off, output_size, input, input_len, FLB_FALSE);
+    TEST_CHECK(ret == FLB_TRUE);
+    TEST_CHECK_(off == input_len, "expected %zu raw bytes, got %d", input_len, off);
+    TEST_CHECK(memcmp(output, input, input_len) == 0);
+
+    flb_free(input);
+    flb_free(output);
+}
+
+void test_write_str_simd_boundary()
+{
+    size_t i;
+    size_t input_lengths[] = {
+        FLB_SIMD_VEC8_INST_LEN * 2,
+        /* Historical x86_64 and arm64 macOS coroutine stack sizes. */
+        24 * 1024,
+        36 * 1024
+    };
+
+    for (i = 0; i < sizeof(input_lengths) / sizeof(input_lengths[0]); i++) {
+        check_write_str_simd_boundary(input_lengths[i]);
+    }
+}
+
 void test_write_str_invalid_trailing_bytes()
 {
     struct write_str_case cases[] = {
@@ -658,8 +720,26 @@ struct proxy_url_check proxy_url_checks[] = {
     /* issue #5530. Password contains @ */
     {0, "http://example_user:example_pass_w_@_char@proxy.com:8080",
      "http", "proxy.com", "8080", "example_user", "example_pass_w_@_char"},
-    {-1, "https://proxy.com:8080",
-     NULL, NULL, NULL, NULL, NULL}
+    /* HTTPS proxy cases: accepted only when TLS support is compiled in */
+#ifdef FLB_HAVE_TLS
+    /* HTTPS proxy with explicit port */
+    {0, "https://proxy.com:8080",
+     "https", "proxy.com", "8080", NULL, NULL},
+    /* HTTPS proxy, default port 443 */
+    {0, "https://proxy.com",
+     "https", "proxy.com", "443", NULL, NULL},
+    /* HTTPS proxy with credentials */
+    {0, "https://user:pass@proxy.com:443",
+     "https", "proxy.com", "443", "user", "pass"},
+#else
+    /* Without TLS support, HTTPS proxy URLs must be rejected */
+    {-1, "https://proxy.com:8080",       NULL, NULL, NULL, NULL, NULL},
+    {-1, "https://proxy.com",            NULL, NULL, NULL, NULL, NULL},
+    {-1, "https://user:pass@proxy.com:443", NULL, NULL, NULL, NULL, NULL},
+#endif
+    /* Unsupported schemes must be rejected */
+    {-1, "ftp://proxy.com:21",  NULL, NULL, NULL, NULL, NULL},
+    {-1, "socks5://proxy.com", NULL, NULL, NULL, NULL, NULL},
 
 };
 
@@ -962,6 +1042,18 @@ void test_size_to_bytes()
 }
 
 struct size_to_bytes_check size_to_binary_bytes_checks[] = {
+    {"9223372036854774784", INT64_MAX - 1023},
+    {"9223372036854775808", -1},
+    {"-9223372036854775808", INT64_MIN},
+    {"-9223372036854777856", -1},
+    {"1e100", -1},
+    {"1e999", -1},
+    {"nan(1)", -1},
+    {"-1e100", -1},
+    {"nan", -1},
+    {"nanKiB", -1},
+    {"inf", -1},
+    {"-inf", -1},
     {"922337.63", 922337},
     {"2K",2048},
     {"5.7263K", 5863},
@@ -1000,11 +1092,31 @@ void test_size_to_binary_bytes()
     }
 }
 
+void test_time_to_seconds_strict()
+{
+    int seconds;
+
+    TEST_CHECK(flb_utils_time_to_seconds_strict("1", &seconds) == 0);
+    TEST_CHECK(seconds == 1);
+    TEST_CHECK(flb_utils_time_to_seconds_strict("60", &seconds) == 0);
+    TEST_CHECK(seconds == 60);
+    TEST_CHECK(flb_utils_time_to_seconds_strict("", &seconds) == -1);
+    TEST_CHECK(flb_utils_time_to_seconds_strict("0", &seconds) == -1);
+    TEST_CHECK(flb_utils_time_to_seconds_strict("-1", &seconds) == -1);
+    TEST_CHECK(flb_utils_time_to_seconds_strict("+1", &seconds) == -1);
+    TEST_CHECK(flb_utils_time_to_seconds_strict("1s", &seconds) == -1);
+    TEST_CHECK(flb_utils_time_to_seconds_strict("1.5", &seconds) == -1);
+    TEST_CHECK(flb_utils_time_to_seconds_strict("1foo", &seconds) == -1);
+    TEST_CHECK(flb_utils_time_to_seconds_strict("999999999999999999999", &seconds) == -1);
+    TEST_CHECK(flb_utils_time_to_seconds_strict("1", NULL) == -1);
+}
+
 TEST_LIST = {
     /* JSON maps iteration */
     { "url_split", test_url_split },
     { "url_split_sds", test_url_split_sds },
     { "write_str", test_write_str },
+    { "write_str_simd_boundary", test_write_str_simd_boundary },
     { "write_str_special_bytes", test_write_str_special_bytes },
     { "write_raw_str_special_bytes", test_write_raw_str_special_bytes },
     { "write_raw_str_invalid_bytes", test_write_raw_str_invalid_sequences},
@@ -1020,5 +1132,6 @@ TEST_LIST = {
     { "test_flb_utils_get_machine_id", test_flb_utils_get_machine_id },
     { "test_size_to_bytes", test_size_to_bytes },
     { "test_size_to_bianry_bytes", test_size_to_binary_bytes },
+    { "test_time_to_seconds_strict", test_time_to_seconds_strict },
     { 0 }
 };

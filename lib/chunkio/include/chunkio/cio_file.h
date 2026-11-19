@@ -52,6 +52,7 @@ struct cio_file {
     int crc_reset;            /* crc: must recalculate from the beginning ? */
     int auto_remap_warned;    /* has sync auto-remap warning been emitted? */
     int map_truncated_warned; /* has RO truncation warning been emitted? */
+    size_t initial_size;      /* opening capacity hint, including the file header */
 };
 
 size_t cio_file_real_size(struct cio_file *cf);

@@ -45,7 +45,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <limits.h>
-#include <assert.h>
+#ifndef FLB_SYSTEM_WINDOWS
+#include <fcntl.h>
+#endif
 
 #include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
@@ -107,6 +109,7 @@ int flb_io_net_connect(struct flb_connection *connection,
                        struct flb_coro *coro)
 {
     int ret;
+    int socket_ret;
     int async = FLB_FALSE;
     flb_sockfd_t fd = -1;
     int flags = flb_connection_get_flags(connection);
@@ -125,17 +128,86 @@ int flb_io_net_connect(struct flb_connection *connection,
         async = FLB_FALSE;
     }
 
-    /* Perform TCP connection */
-    fd = flb_net_tcp_connect(connection->upstream->tcp_host,
-                             connection->upstream->tcp_port,
-                             connection->stream->net.source_address,
-                             connection->stream->net.connect_timeout,
-                             async, coro, connection);
+    if (connection->stream->transport == FLB_TRANSPORT_UDP) {
+        fd = flb_net_udp_connect(connection->upstream->tcp_host,
+                                 connection->upstream->tcp_port,
+                                 connection->stream->net.source_address);
+
+        if (fd >= 0) {
+            if (async == FLB_TRUE) {
+                socket_ret = flb_net_socket_nonblocking(fd);
+                if (socket_ret == -1) {
+                    flb_socket_close(fd);
+                    connection->fd = -1;
+                    connection->event.fd = -1;
+                    return -1;
+                }
+            }
+
+            socket_ret = flb_net_socket_set_rcvtimeout(fd, connection->net->io_timeout);
+            if (socket_ret == -1) {
+                flb_socket_close(fd);
+                connection->fd = -1;
+                connection->event.fd = -1;
+                return -1;
+            }
+
+            connection->fd = fd;
+            connection->event.fd = fd;
+        }
+    }
+    else {
+        /* Perform TCP connection */
+        fd = flb_net_tcp_connect(connection->upstream->tcp_host,
+                                 connection->upstream->tcp_port,
+                                 connection->stream->net.source_address,
+                                 connection->stream->net.connect_timeout,
+                                 async, coro, connection);
+    }
+
     if (fd == -1) {
         return -1;
     }
 
-    if (connection->upstream->proxied_host) {
+    if (connection->stream->transport == FLB_TRANSPORT_TCP &&
+        connection->upstream->proxied_host) {
+#ifdef FLB_HAVE_TLS
+        /*
+         * When the proxy URL uses https://, the connection to the proxy
+         * itself must be TLS-wrapped before the HTTP CONNECT tunnel is
+         * established.  Use the dedicated proxy TLS context which carries
+         * the proxy hostname as the SNI (vhost).
+         */
+        if (connection->upstream->proxy_tls_context != NULL) {
+            ret = flb_tls_session_create(connection->upstream->proxy_tls_context,
+                                         connection,
+                                         coro);
+            if (ret != 0) {
+                flb_debug("[http_client] proxy TLS handshake failed for %s:%i",
+                          connection->upstream->tcp_host,
+                          connection->upstream->tcp_port);
+                flb_socket_close(fd);
+                connection->fd = -1;
+                connection->event.fd = -1;
+                return -1;
+            }
+            /*
+             * Ensure all I/O (the CONNECT request and any subsequent
+             * data) is routed through the proxy TLS session. This must be
+             * a connection-scoped flag, not a stream-level one: the
+             * stream/upstream object is shared across every connection to
+             * this destination, and flb_io_net_write/read only need a
+             * per-connection signal to decide whether to use
+             * connection->tls_session. Setting the stream's FLB_IO_TLS
+             * flag here would permanently mark the destination itself as
+             * TLS-enabled, which corrupts destination-specific behavior
+             * for plain-HTTP destinations (e.g. Host header port handling
+             * in flb_http_client.c), even though only the proxy leg uses
+             * TLS.
+             */
+            flb_connection_enable_flags(connection, FLB_IO_PROXY_TLS);
+        }
+#endif
         ret = flb_http_client_proxy_connect(connection);
 
         if (ret == -1) {
@@ -156,7 +228,8 @@ int flb_io_net_connect(struct flb_connection *connection,
     }
 
     /* set TCP keepalive and it's options */
-    if (connection->net->tcp_keepalive) {
+    if (connection->stream->transport == FLB_TRANSPORT_TCP &&
+        connection->net->tcp_keepalive) {
         ret = flb_net_socket_tcp_keepalive(connection->fd,
                                            connection->net);
 
@@ -192,6 +265,7 @@ static void net_io_propagate_critical_error(
 {
     switch (errno) {
     case EBADF:
+    case ETIMEDOUT:
     case ECONNRESET:
     case EDESTADDRREQ:
     case ENOTCONN:
@@ -243,11 +317,15 @@ static int net_io_write(struct flb_connection *connection,
     return ret;
 }
 
+/* Retry nonblocking backpressure, but return blocking send timeouts immediately. */
 static int fd_io_write(int fd, struct sockaddr_storage *address,
                        const void *data, size_t len, size_t *out_len)
 {
     int ret;
     int tries = 0;
+#ifndef FLB_SYSTEM_WINDOWS
+    int flags;
+#endif
     size_t total = 0;
 
     while (total < len) {
@@ -261,7 +339,19 @@ static int fd_io_write(int fd, struct sockaddr_storage *address,
         }
 
         if (ret == -1) {
+            *out_len = total;
             if (FLB_WOULDBLOCK()) {
+#ifndef FLB_SYSTEM_WINDOWS
+                /* EAGAIN on a blocking socket means its send timeout expired. */
+                flags = fcntl(fd, F_GETFL, 0);
+                if (flags == -1) {
+                    return -1;
+                }
+                if ((flags & O_NONBLOCK) == 0) {
+                    errno = ETIMEDOUT;
+                    return -1;
+                }
+#endif
                 /*
                  * FIXME: for now we are handling this in a very lazy way,
                  * just sleep for a second and retry (for a max of 30 tries).
@@ -270,12 +360,6 @@ static int fd_io_write(int fd, struct sockaddr_storage *address,
                 tries++;
 
                 if (tries == 30) {
-                    /* Since we're aborting after 30 failures we want the
-                     * caller to know how much data we were able to send
-                     */
-
-                    *out_len = total;
-
                     return -1;
                 }
 
@@ -302,31 +386,37 @@ static FLB_INLINE void net_io_backup_event(struct flb_connection *connection,
     }
 }
 
-static FLB_INLINE void net_io_restore_event(struct flb_connection *connection,
-                                            struct mk_event *backup)
+static FLB_INLINE int net_io_restore_event(struct flb_connection *connection,
+                                           struct mk_event *backup)
 {
     int result;
 
-    if (connection != NULL && backup != NULL) {
-        if (MK_EVENT_IS_REGISTERED((&connection->event))) {
-            result = mk_event_del(connection->evl, &connection->event);
+    if (connection == NULL || backup == NULL) {
+        return -1;
+    }
 
-            assert(result == 0);
-        }
-
-        if (MK_EVENT_IS_REGISTERED(backup)) {
-            connection->event.priority = backup->priority;
-            connection->event.handler = backup->handler;
-
-            result = mk_event_add(connection->evl,
-                                  connection->fd,
-                                  backup->type,
-                                  backup->mask,
-                                  &connection->event);
-
-            assert(result == 0);
+    if (MK_EVENT_IS_REGISTERED((&connection->event))) {
+        result = mk_event_del(connection->evl, &connection->event);
+        if (result == -1) {
+            return -1;
         }
     }
+
+    if (MK_EVENT_IS_REGISTERED(backup)) {
+        connection->event.priority = backup->priority;
+        connection->event.handler = backup->handler;
+
+        result = mk_event_add(connection->evl,
+                              connection->fd,
+                              backup->type,
+                              backup->mask,
+                              &connection->event);
+        if (result == -1) {
+            return -1;
+        }
+    }
+
+    return 0;
 }
 
 /*
@@ -415,6 +505,13 @@ retry:
              */
             connection->coroutine = NULL;
 
+            if (connection->net_error != -1) {
+                *out_len = total;
+                net_io_restore_event(connection, &event_backup);
+
+                return -1;
+            }
+
             /* Save events mask since mk_event_del() will reset it */
             mask = connection->event.mask;
 
@@ -476,6 +573,8 @@ retry:
     total += bytes;
     if (total < len) {
         if ((connection->event.mask & MK_EVENT_WRITE) == 0) {
+            event_restore_needed = FLB_TRUE;
+
             ret = mk_event_add(connection->evl,
                                connection->fd,
                                FLB_ENGINE_EV_THREAD,
@@ -506,6 +605,13 @@ retry:
          */
         connection->coroutine = NULL;
 
+        if (connection->net_error != -1) {
+            *out_len = total;
+            net_io_restore_event(connection, &event_backup);
+
+            return -1;
+        }
+
         goto retry;
     }
 
@@ -520,7 +626,12 @@ retry:
          * the same event.
          */
 
-        net_io_restore_event(connection, &event_backup);
+        ret = net_io_restore_event(connection, &event_backup);
+        if (ret == -1) {
+            *out_len = total;
+
+            return -1;
+        }
     }
 
     *out_len = total;
@@ -635,6 +746,12 @@ static FLB_INLINE ssize_t net_io_read_async(struct flb_coro *co,
              */
             connection->coroutine = NULL;
 
+            if (connection->net_error != -1) {
+                net_io_restore_event(connection, &event_backup);
+
+                return -1;
+            }
+
             goto retry_read;
         }
         else {
@@ -658,7 +775,9 @@ static FLB_INLINE ssize_t net_io_read_async(struct flb_coro *co,
          * the same event.
          */
 
-        net_io_restore_event(connection, &event_backup);
+        if (net_io_restore_event(connection, &event_backup) == -1) {
+            return -1;
+        }
     }
 
     return ret;
@@ -694,13 +813,17 @@ int flb_io_net_write(struct flb_connection *connection, const void *data,
         }
     }
 #ifdef FLB_HAVE_TLS
-    else if (flags & FLB_IO_TLS) {
+    else if (flags & (FLB_IO_TLS | FLB_IO_DTLS | FLB_IO_PROXY_TLS)) {
         if (flags & FLB_IO_ASYNC) {
             ret = flb_tls_net_write_async(coro, connection->tls_session, data, len, out_len);
         }
         else {
             ret = flb_tls_net_write(connection->tls_session, data, len, out_len);
         }
+    }
+    else {
+        flb_error("[io] TLS session set on connection #%i but transport flags are invalid (%i)",
+                  connection->fd, flags);
     }
 #endif
 
@@ -742,13 +865,17 @@ ssize_t flb_io_net_read(struct flb_connection *connection, void *buf, size_t len
         }
     }
 #ifdef FLB_HAVE_TLS
-    else if (flags & FLB_IO_TLS) {
+    else if (flags & (FLB_IO_TLS | FLB_IO_DTLS | FLB_IO_PROXY_TLS)) {
         if (flags & FLB_IO_ASYNC) {
             ret = flb_tls_net_read_async(coro, connection->tls_session, buf, len);
         }
         else {
             ret = flb_tls_net_read(connection->tls_session, buf, len);
         }
+    }
+    else {
+        flb_error("[io] TLS session set on connection #%i but transport flags are invalid (%i)",
+                  connection->fd, flags);
     }
 #endif
 

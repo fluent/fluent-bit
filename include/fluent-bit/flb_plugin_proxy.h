@@ -35,12 +35,13 @@
 
 struct flb_plugin_proxy_def {
     /* Fields populated once remote flb_cb_register() is called */
-    int type;                 /* defined by FLB_PROXY_[INPUT|OUTPUT]_PLUGIN  */
-    int proxy;                /* proxy type                                  */
+    int type;                           /* defined by FLB_PROXY_[INPUT|OUTPUT]_PLUGIN  */
+    int proxy;                          /* proxy type                                  */
     int flags;
-    char *name;               /* plugin short name                           */
-    char *description;        /* plugin description                          */
-    int event_type;           /* event type (logs/metrics/traces)            */
+    char *name;                         /* plugin short name                           */
+    char *description;                  /* plugin description                          */
+    int event_type;                     /* event type (logs/metrics/traces)            */
+    struct flb_config_map *config_map;  /* plugin's configuration                      */
 };
 
 /* Proxy context */

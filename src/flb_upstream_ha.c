@@ -361,7 +361,6 @@ struct flb_upstream_ha *flb_upstream_ha_from_file(const char *file,
     const char *cfg = NULL;
     char *tmp;
     char path[PATH_MAX + 1];
-    struct stat st;
     struct mk_list *head;
     struct mk_list *g_head;
     struct flb_upstream_ha *ups;
@@ -372,20 +371,9 @@ struct flb_upstream_ha *flb_upstream_ha_from_file(const char *file,
     struct flb_cf_section *node_section;
 
 #ifndef FLB_HAVE_STATIC_CONF
-    ret = stat(file, &st);
-    if (ret == -1 && errno == ENOENT) {
-        /* Try to resolve the real path (if exists) */
-        if (file[0] == '/') {
-            return NULL;
-        }
-
-        if (config->conf_path) {
-            snprintf(path, PATH_MAX, "%s%s", config->conf_path, file);
-            cfg = path;
-        }
-    }
-    else {
-        cfg = file;
+    cfg = flb_utils_resolve_config_path(file, config->conf_path, path, sizeof(path));
+    if (!cfg) {
+        return NULL;
     }
     flb_debug("[upstream_ha] opening file %s", cfg);
     cf = flb_cf_create_from_file(NULL, (char *) cfg);

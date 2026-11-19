@@ -1,0 +1,65 @@
+[
+  {
+    "name": "default54",
+    "binary": "/tmp/flb-jemalloc-rollback-20261031/build54/bin/fluent-bit",
+    "sha256": "820f28e719a86a82812abec09634207c1834dafe1926ef87f2e35738217ebfcc",
+    "MALLOC_CONF": "",
+    "stdout": "Fluent Bit v5.2.0\nGit commit: ad9867358257123c34b529860fe984e92a69844c\n",
+    "stderr": "PROBE version=5.4.0-0-g7a34f18502e7b222724097cdcd499b437d189acc result=0\nPROBE config.malloc_conf= result=0\nPROBE opt.thp=default result=0\nPROBE opt.metadata_thp=disabled result=0\nPROBE opt.dirty_decay_ms=10000 result=0\nPROBE opt.muzzy_decay_ms=0 result=0\nPROBE opt.background_thread=0 result=0\nPROBE background_thread=0 result=0\nPROBE opt.abort_conf=0 result=0\nPROBE opt.disable_large_size_classes=1 result=0\nPROBE opt.lg_extent_max_active_fit=6 result=0\nPROBE opt.narenas=16 result=0\n",
+    "exit_code": 0
+  },
+  {
+    "name": "old53",
+    "binary": "/tmp/flb-jemalloc-rollback-20261031/build53/bin/fluent-bit",
+    "sha256": "f8baf78754a02c229942e0ce08eabbe86633135b4e9c8fbe3a4f576410b91f1b",
+    "MALLOC_CONF": "",
+    "stdout": "Fluent Bit v5.2.0\nGit commit: d21303c249b4352a4792d373ac5d15852a189f8e\n",
+    "stderr": "PROBE version=5.3.0-0-g54eaed1d8b56b1aa528be3bdd1877e59c56fa90c result=0\nPROBE config.malloc_conf= result=0\nPROBE opt.thp=default result=0\nPROBE opt.metadata_thp=disabled result=0\nPROBE opt.dirty_decay_ms=10000 result=0\nPROBE opt.muzzy_decay_ms=0 result=0\nPROBE opt.background_thread=0 result=0\nPROBE background_thread=0 result=0\nPROBE opt.abort_conf=0 result=0\nPROBE opt.disable_large_size_classes=0 result=2\nPROBE opt.lg_extent_max_active_fit=6 result=0\nPROBE opt.narenas=16 result=0\n",
+    "exit_code": 0
+  },
+  {
+    "name": "special54",
+    "binary": "/tmp/flb-jemalloc54-special-20261101/build/bin/fluent-bit",
+    "sha256": "c4e1f252ce6608523247a604a7cc03540c95300350fb919ab18341edf7fe0aa0",
+    "MALLOC_CONF": "",
+    "stdout": "Fluent Bit v5.2.0\nGit commit: ad9867358257123c34b529860fe984e92a69844c\n",
+    "stderr": "PROBE version=5.4.0-0-g7a34f18502e7b222724097cdcd499b437d189acc result=0\nPROBE config.malloc_conf=disable_large_size_classes:false,lg_extent_max_active_fit:30 result=0\nPROBE opt.thp=default result=0\nPROBE opt.metadata_thp=disabled result=0\nPROBE opt.dirty_decay_ms=10000 result=0\nPROBE opt.muzzy_decay_ms=0 result=0\nPROBE opt.background_thread=0 result=0\nPROBE background_thread=0 result=0\nPROBE opt.abort_conf=0 result=0\nPROBE opt.disable_large_size_classes=0 result=0\nPROBE opt.lg_extent_max_active_fit=30 result=0\nPROBE opt.narenas=16 result=0\n",
+    "exit_code": 0
+  },
+  {
+    "name": "classes-only",
+    "binary": "/tmp/flb-jemalloc-rollback-20261031/build54/bin/fluent-bit",
+    "sha256": "820f28e719a86a82812abec09634207c1834dafe1926ef87f2e35738217ebfcc",
+    "MALLOC_CONF": "disable_large_size_classes:false",
+    "stdout": "Fluent Bit v5.2.0\nGit commit: ad9867358257123c34b529860fe984e92a69844c\n",
+    "stderr": "PROBE version=5.4.0-0-g7a34f18502e7b222724097cdcd499b437d189acc result=0\nPROBE config.malloc_conf= result=0\nPROBE opt.thp=default result=0\nPROBE opt.metadata_thp=disabled result=0\nPROBE opt.dirty_decay_ms=10000 result=0\nPROBE opt.muzzy_decay_ms=0 result=0\nPROBE opt.background_thread=0 result=0\nPROBE background_thread=0 result=0\nPROBE opt.abort_conf=0 result=0\nPROBE opt.disable_large_size_classes=0 result=0\nPROBE opt.lg_extent_max_active_fit=6 result=0\nPROBE opt.narenas=16 result=0\n",
+    "exit_code": 0
+  },
+  {
+    "name": "fit-only",
+    "binary": "/tmp/flb-jemalloc-rollback-20261031/build54/bin/fluent-bit",
+    "sha256": "820f28e719a86a82812abec09634207c1834dafe1926ef87f2e35738217ebfcc",
+    "MALLOC_CONF": "lg_extent_max_active_fit:30",
+    "stdout": "Fluent Bit v5.2.0\nGit commit: ad9867358257123c34b529860fe984e92a69844c\n",
+    "stderr": "PROBE version=5.4.0-0-g7a34f18502e7b222724097cdcd499b437d189acc result=0\nPROBE config.malloc_conf= result=0\nPROBE opt.thp=default result=0\nPROBE opt.metadata_thp=disabled result=0\nPROBE opt.dirty_decay_ms=10000 result=0\nPROBE opt.muzzy_decay_ms=0 result=0\nPROBE opt.background_thread=0 result=0\nPROBE background_thread=0 result=0\nPROBE opt.abort_conf=0 result=0\nPROBE opt.disable_large_size_classes=1 result=0\nPROBE opt.lg_extent_max_active_fit=30 result=0\nPROBE opt.narenas=16 result=0\n",
+    "exit_code": 0
+  },
+  {
+    "name": "both-runtime",
+    "binary": "/tmp/flb-jemalloc-rollback-20261031/build54/bin/fluent-bit",
+    "sha256": "820f28e719a86a82812abec09634207c1834dafe1926ef87f2e35738217ebfcc",
+    "MALLOC_CONF": "disable_large_size_classes:false,lg_extent_max_active_fit:30",
+    "stdout": "Fluent Bit v5.2.0\nGit commit: ad9867358257123c34b529860fe984e92a69844c\n",
+    "stderr": "PROBE version=5.4.0-0-g7a34f18502e7b222724097cdcd499b437d189acc result=0\nPROBE config.malloc_conf= result=0\nPROBE opt.thp=default result=0\nPROBE opt.metadata_thp=disabled result=0\nPROBE opt.dirty_decay_ms=10000 result=0\nPROBE opt.muzzy_decay_ms=0 result=0\nPROBE opt.background_thread=0 result=0\nPROBE background_thread=0 result=0\nPROBE opt.abort_conf=0 result=0\nPROBE opt.disable_large_size_classes=0 result=0\nPROBE opt.lg_extent_max_active_fit=30 result=0\nPROBE opt.narenas=16 result=0\n",
+    "exit_code": 0
+  },
+  {
+    "name": "special-override",
+    "binary": "/tmp/flb-jemalloc54-special-20261101/build/bin/fluent-bit",
+    "sha256": "c4e1f252ce6608523247a604a7cc03540c95300350fb919ab18341edf7fe0aa0",
+    "MALLOC_CONF": "disable_large_size_classes:true,lg_extent_max_active_fit:6",
+    "stdout": "Fluent Bit v5.2.0\nGit commit: ad9867358257123c34b529860fe984e92a69844c\n",
+    "stderr": "PROBE version=5.4.0-0-g7a34f18502e7b222724097cdcd499b437d189acc result=0\nPROBE config.malloc_conf=disable_large_size_classes:false,lg_extent_max_active_fit:30 result=0\nPROBE opt.thp=default result=0\nPROBE opt.metadata_thp=disabled result=0\nPROBE opt.dirty_decay_ms=10000 result=0\nPROBE opt.muzzy_decay_ms=0 result=0\nPROBE opt.background_thread=0 result=0\nPROBE background_thread=0 result=0\nPROBE opt.abort_conf=0 result=0\nPROBE opt.disable_large_size_classes=1 result=0\nPROBE opt.lg_extent_max_active_fit=6 result=0\nPROBE opt.narenas=16 result=0\n",
+    "exit_code": 0
+  }
+]

@@ -58,6 +58,62 @@
 
 #define FLB_TAIL_DB_OFFSET_MARKER_SIZE 32
 
+#ifdef FLB_SYSTEM_WINDOWS
+static inline int tail_file_open(struct flb_tail_config *ctx, const char *path,
+                                 int flags)
+{
+    if (ctx->windows_path_encoding == FLB_TAIL_WINDOWS_PATH_ENCODING_UTF8) {
+        return win32_open_utf8(path, flags);
+    }
+
+    return open(path, flags);
+}
+
+static inline int tail_file_stat(struct flb_tail_config *ctx, const char *path,
+                                 struct stat *st)
+{
+    if (ctx->windows_path_encoding == FLB_TAIL_WINDOWS_PATH_ENCODING_UTF8) {
+        return win32_stat_utf8(path, st);
+    }
+
+    return stat(path, st);
+}
+
+static inline int tail_file_lstat(struct flb_tail_config *ctx, const char *path,
+                                  struct stat *st)
+{
+    if (ctx->windows_path_encoding == FLB_TAIL_WINDOWS_PATH_ENCODING_UTF8) {
+        return win32_lstat_utf8(path, st);
+    }
+
+    return lstat(path, st);
+}
+#else
+static inline int tail_file_open(struct flb_tail_config *ctx, const char *path,
+                                 int flags)
+{
+    (void) ctx;
+
+    return open(path, flags);
+}
+
+static inline int tail_file_stat(struct flb_tail_config *ctx, const char *path,
+                                 struct stat *st)
+{
+    (void) ctx;
+
+    return stat(path, st);
+}
+
+static inline int tail_file_lstat(struct flb_tail_config *ctx, const char *path,
+                                  struct stat *st)
+{
+    (void) ctx;
+
+    return lstat(path, st);
+}
+#endif
+
 static inline void consume_bytes(char *buf, int bytes, int length)
 {
     memmove(buf, buf + bytes, length - bytes);
@@ -163,6 +219,31 @@ int flb_tail_file_offset_marker_matches(struct flb_tail_file *file)
     }
 
     if (marker != file->db_offset_marker) {
+        return FLB_FALSE;
+    }
+
+    return FLB_TRUE;
+}
+
+int flb_tail_file_read_offset_is_valid(struct flb_tail_file *file)
+{
+    int ret;
+    uint64_t marker;
+    size_t marker_size;
+
+    /*
+     * The saved marker covers the resumable offset, not buffered bytes.
+     * Probe through the raw read offset even when no saved marker exists.
+     * This distinguishes stale size metadata from EOF without replacing
+     * the persisted resumable-offset marker.
+     */
+    ret = compute_offset_marker(file, file->offset, &marker, &marker_size);
+    if (ret != 0) {
+        return FLB_FALSE;
+    }
+
+    if (file->db_offset_marker_size > 0 &&
+        flb_tail_file_offset_marker_matches(file) != FLB_TRUE) {
         return FLB_FALSE;
     }
 
@@ -1358,7 +1439,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     }
     #endif
 
-    fd = open(path, O_RDONLY);
+    fd = tail_file_open(ctx, path, O_RDONLY);
     if (fd == -1) {
         flb_errno();
         flb_plg_error(ctx->ins, "cannot open %s", path);
@@ -1378,7 +1459,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     file->tail_mode = mode;
 
     /* On non-windows environments check if the original path is a link */
-    ret = lstat(path, &lst);
+    ret = tail_file_lstat(ctx, path, &lst);
     if (ret == 0) {
         if (S_ISLNK(lst.st_mode)) {
             file->is_link = FLB_TRUE;
@@ -1710,6 +1791,10 @@ void flb_tail_file_remove(struct flb_tail_file *file)
     flb_plg_debug(ctx->ins, "inode=%"PRIu64" removing file name %s",
                   file->inode, file->name);
 
+    if (file->read_retry_pending) {
+        mk_list_del(&file->_retry_head);
+    }
+
     if (file->decompression_context != NULL) {
         flb_decompression_context_destroy(file->decompression_context);
     }
@@ -1807,6 +1892,7 @@ int flb_tail_file_remove_all(struct flb_tail_config *ctx)
 static int adjust_counters(struct flb_tail_config *ctx, struct flb_tail_file *file)
 {
     int ret;
+    int64_t size_delta;
     struct stat st;
 
     (void) ctx;
@@ -1817,13 +1903,15 @@ static int adjust_counters(struct flb_tail_config *ctx, struct flb_tail_file *fi
         return FLB_TAIL_ERROR;
     }
 
-    int64_t size_delta = st.st_size - file->size;
+    size_delta = st.st_size - file->size;
     if (size_delta != 0) {
         file->size = st.st_size;
     }
 
-    /* Check if the file was truncated by comparing current size with previous size */
-    if (size_delta < 0) {
+    /* Confirm a size/offset discrepancy through the raw read position. */
+    if (size_delta < 0 ||
+        (st.st_size < file->offset &&
+         flb_tail_file_read_offset_is_valid(file) != FLB_TRUE)) {
         if (flb_tail_file_reset_on_truncate(file, size_delta,
                                             "adjust_counters") == -1) {
             return FLB_TAIL_ERROR;
@@ -1858,6 +1946,10 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
 
     if (flb_input_buf_paused(ctx->ins) == FLB_TRUE) {
         return FLB_TAIL_BUSY;
+    }
+
+    if (file->read_retry_pending) {
+        return FLB_TAIL_RETRY;
     }
 
     file_buffer_capacity = (file->buf_size - file->buf_len) - 1;
@@ -2037,7 +2129,9 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
                                &file->buf_data[file->buf_len],
                                read_size);
 
-        stream_data_length = (size_t) raw_data_length;
+        if (raw_data_length > 0) {
+            stream_data_length = (size_t) raw_data_length;
+        }
     }
 
     if (stream_data_length > 0 || raw_data_length > 0) {
@@ -2086,7 +2180,17 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
         }
     }
     else {
-        /* error */
+        /* Preserve the buffer and offsets so transient failures can be retried. */
+        if (errno == EAGAIN || errno == EINTR
+#ifdef FLB_SYSTEM_WINDOWS
+            || errno == EACCES
+#endif
+           ) {
+            file->read_retry_pending = FLB_TRUE;
+            mk_list_add(&file->_retry_head, &ctx->files_retry);
+            return FLB_TAIL_RETRY;
+        }
+
         flb_errno();
         flb_plg_error(ctx->ins, "error reading %s", file->name);
         return FLB_TAIL_ERROR;
@@ -2113,7 +2217,7 @@ int flb_tail_file_is_rotated(struct flb_tail_config *ctx,
 
     /* Check if the 'original monitored file' is a link and rotated */
     if (file->is_link == FLB_TRUE) {
-        ret = lstat(file->name, &st);
+        ret = tail_file_lstat(ctx, file->name, &st);
         if (ret == -1) {
             /* Broken link or missing file */
             if (errno == ENOENT) {
@@ -2148,7 +2252,7 @@ int flb_tail_file_is_rotated(struct flb_tail_config *ctx,
 
 
     /* Get stats from the file name */
-    ret = stat(name, &st);
+    ret = tail_file_stat(ctx, name, &st);
     if (ret == -1) {
         flb_errno();
         flb_free(name);
@@ -2283,6 +2387,7 @@ char *flb_tail_file_name(struct flb_tail_file *file)
 
 #elif defined(FLB_SYSTEM_WINDOWS)
     int len;
+    wchar_t *wide_buf;
 
     h = (HANDLE) _get_osfhandle(file->fd);
     if (h == INVALID_HANDLE_VALUE) {
@@ -2294,14 +2399,41 @@ char *flb_tail_file_name(struct flb_tail_file *file)
     /* This function returns the length of the string excluding "\0"
      * and the resulting path has a "\\?\" prefix.
      */
-    len = GetFinalPathNameByHandleA(h, buf, PATH_MAX, FILE_NAME_NORMALIZED);
-    if (len == 0 || len >= PATH_MAX) {
-        flb_free(buf);
-        return NULL;
-    }
+    if (file->config->windows_path_encoding == FLB_TAIL_WINDOWS_PATH_ENCODING_UTF8) {
+        wide_buf = flb_calloc(PATH_MAX, sizeof(wchar_t));
+        if (wide_buf == NULL) {
+            flb_free(buf);
+            return NULL;
+        }
 
-    if (strstr(buf, "\\\\?\\")) {
-        memmove(buf, buf + 4, len + 1);
+        len = GetFinalPathNameByHandleW(h, wide_buf, PATH_MAX,
+                                        FILE_NAME_NORMALIZED);
+        if (len == 0 || len >= PATH_MAX) {
+            flb_free(wide_buf);
+            flb_free(buf);
+            return NULL;
+        }
+
+        len = (int) win32_remove_extended_path_prefix(wide_buf, (size_t) len);
+
+        flb_free(buf);
+        buf = win32_wide_to_utf8(wide_buf);
+        flb_free(wide_buf);
+
+        if (buf == NULL) {
+            return NULL;
+        }
+    }
+    else {
+        len = GetFinalPathNameByHandleA(h, buf, PATH_MAX, FILE_NAME_NORMALIZED);
+        if (len == 0 || len >= PATH_MAX) {
+            flb_free(buf);
+            return NULL;
+        }
+
+        if (strstr(buf, "\\\\?\\")) {
+            memmove(buf, buf + 4, len + 1);
+        }
     }
 #elif defined(FLB_SYSTEM_FREEBSD)
     if ((file_entries = kinfo_getfile(getpid(), &file_count)) == NULL) {
@@ -2396,7 +2528,7 @@ int flb_tail_file_rotated(struct flb_tail_file *file)
 #endif
 
         /* Check if a new file has been created */
-        ret = stat(tmp, &st);
+        ret = tail_file_stat(ctx, tmp, &st);
         if (ret == 0 && st.st_ino != file->inode) {
             if (flb_tail_file_exists(&st, ctx) == FLB_FALSE) {
                 ret = flb_tail_file_append(tmp, &st, FLB_TAIL_STATIC, -1, ctx);

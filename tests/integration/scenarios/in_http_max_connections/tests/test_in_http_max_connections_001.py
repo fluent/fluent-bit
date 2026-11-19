@@ -110,6 +110,64 @@ def _wait_for_accepted_request(service, payload, http_mode, timeout=10, interval
     return {"status_code": 0, "http_version": ""}
 
 
+def _hold_connection(service, initial_data, payload, http_mode, timeout=10):
+    """Acquire the only slot despite worker accept races and idle eviction."""
+    deadline = time.monotonic() + timeout
+
+    while time.monotonic() < deadline:
+        held = socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=2)
+        keep_connection = False
+        try:
+            held.sendall(initial_data)
+            try:
+                response = run_curl_request(
+                    f"http://127.0.0.1:{service.flb_listener_port}/",
+                    payload=payload,
+                    headers=["Content-Type: application/json"],
+                    http_mode=http_mode,
+                )
+                rejected = response["status_code"] != 201
+            except Exception:
+                rejected = True
+
+            if rejected:
+                # A failed probe alone is insufficient: the held socket may have
+                # lost the accept race or expired while the probe was running.
+                held.settimeout(0.1)
+                try:
+                    held.recv(1)
+                except socket.timeout:
+                    held.settimeout(5)
+                    keep_connection = True
+                    return held
+        except OSError:
+            pass
+        finally:
+            if not keep_connection:
+                held.close()
+
+        time.sleep(0.05)
+
+    raise AssertionError("could not establish a live connection occupying the only slot")
+
+
+def _wait_for_forwarded_message(service, message):
+    def find_message():
+        for payload in data_storage["payloads"]:
+            for record in payload:
+                if record.get("message") == message:
+                    return record
+
+        return None
+
+    return service.service.wait_for_condition(
+        find_message,
+        timeout=10,
+        interval=0.5,
+        description=f"forwarded payload {message}",
+    )
+
+
 def test_in_http_max_connections_blocks_and_recovers():
     service = Service()
     accepted = {"status_code": 0}
@@ -120,22 +178,11 @@ def test_in_http_max_connections_blocks_and_recovers():
     held_connection = None
     try:
         try:
-            held_connection = socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=2)
-            held_connection.settimeout(2)
-
-            overflow_rejected = False
-            try:
-                response = run_curl_request(
-                    f"http://127.0.0.1:{service.flb_listener_port}/",
-                    payload='{"message":"max-connections"}',
-                    headers=["Content-Type: application/json"],
-                    http_mode="http1.1",
-                )
-                overflow_rejected = response["status_code"] != 201
-            except Exception:
-                overflow_rejected = True
-
-            assert overflow_rejected
+            held_connection = _hold_connection(
+                service, b"POST / HTTP/1.1\r\n",
+                payload='{"message":"max-connections-probe"}',
+                http_mode="http1.1",
+            )
         finally:
             if held_connection:
                 held_connection.close()
@@ -146,17 +193,12 @@ def test_in_http_max_connections_blocks_and_recovers():
             headers=["Content-Type: application/json"],
             http_mode="http1.1",
         )
-        forwarded_payloads = service.service.wait_for_condition(
-            lambda: data_storage["payloads"] if data_storage["payloads"] else None,
-            timeout=10,
-            interval=0.5,
-            description="forwarded max-connections payload",
-        )
+        forwarded_payloads = _wait_for_forwarded_message(service, "max-connections")
     finally:
         service.stop()
 
     assert accepted["status_code"] == 201
-    assert forwarded_payloads[0][0]["message"] == "max-connections"
+    assert forwarded_payloads["message"] == "max-connections"
 
 
 def test_in_http_idle_timeout_evicts_partial_request_connection():
@@ -169,23 +211,11 @@ def test_in_http_idle_timeout_evicts_partial_request_connection():
     held_connection = None
     try:
         try:
-            held_connection = socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=2)
-            held_connection.settimeout(5)
-            held_connection.sendall(b"POST / HTTP/1.1\r\n")
-
-            overflow_rejected = False
-            try:
-                response = run_curl_request(
-                    f"http://127.0.0.1:{service.flb_listener_port}/",
-                    payload='{"message":"idle-timeout-blocked"}',
-                    headers=["Content-Type: application/json"],
-                    http_mode="http1.1",
-                )
-                overflow_rejected = response["status_code"] != 201
-            except Exception:
-                overflow_rejected = True
-
-            assert overflow_rejected
+            held_connection = _hold_connection(
+                service, b"POST / HTTP/1.1\r\n",
+                payload='{"message":"idle-timeout-blocked"}',
+                http_mode="http1.1",
+            )
 
             response = _wait_for_accepted_request(
                 service,
@@ -196,17 +226,15 @@ def test_in_http_idle_timeout_evicts_partial_request_connection():
             if held_connection:
                 held_connection.close()
                 held_connection = None
-        forwarded_payloads = service.service.wait_for_condition(
-            lambda: data_storage["payloads"] if data_storage["payloads"] else None,
-            timeout=10,
-            interval=0.5,
-            description="forwarded idle-timeout payload",
+        forwarded_payloads = _wait_for_forwarded_message(
+            service,
+            "idle-timeout-recovered",
         )
     finally:
         service.stop()
 
     assert response["status_code"] == 201
-    assert forwarded_payloads[0][0]["message"] == "idle-timeout-recovered"
+    assert forwarded_payloads["message"] == "idle-timeout-recovered"
 
 
 def test_in_http_idle_timeout_evicts_partial_http2_preface_connection():
@@ -222,23 +250,11 @@ def test_in_http_idle_timeout_evicts_partial_http2_preface_connection():
     held_connection = None
     try:
         try:
-            held_connection = socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=2)
-            held_connection.settimeout(5)
-            held_connection.sendall(b"PRI * HTTP/2.0\r\n\r\nSM\r\n")
-
-            overflow_rejected = False
-            try:
-                response = run_curl_request(
-                    f"http://127.0.0.1:{service.flb_listener_port}/",
-                    payload='{"message":"idle-timeout-http2-blocked"}',
-                    headers=["Content-Type: application/json"],
-                    http_mode="http2-prior-knowledge",
-                )
-                overflow_rejected = response["status_code"] != 201
-            except Exception:
-                overflow_rejected = True
-
-            assert overflow_rejected
+            held_connection = _hold_connection(
+                service, b"PRI * HTTP/2.0\r\n\r\nSM\r\n",
+                payload='{"message":"idle-timeout-http2-blocked"}',
+                http_mode="http2-prior-knowledge",
+            )
 
             response = _wait_for_accepted_request(
                 service,
@@ -249,15 +265,56 @@ def test_in_http_idle_timeout_evicts_partial_http2_preface_connection():
             if held_connection:
                 held_connection.close()
                 held_connection = None
-        forwarded_payloads = service.service.wait_for_condition(
-            lambda: data_storage["payloads"] if data_storage["payloads"] else None,
-            timeout=10,
-            interval=0.5,
-            description="forwarded idle-timeout http2 payload",
+        forwarded_payloads = _wait_for_forwarded_message(
+            service,
+            "idle-timeout-http2-recovered",
         )
     finally:
         service.stop()
 
     assert response["status_code"] == 201
     assert response["http_version"] == "2"
-    assert forwarded_payloads[0][0]["message"] == "idle-timeout-http2-recovered"
+    assert forwarded_payloads["message"] == "idle-timeout-http2-recovered"
+
+
+def test_in_http_hold_connection_retries_closed_preface(monkeypatch):
+    if not curl_supports_http2():
+        pytest.skip("curl was built without HTTP/2 support")
+
+    service = Service()
+    _start_service_or_skip(service, ["http_server.max_connections", "http_server.idle_timeout"])
+    original_connect = socket.create_connection
+    original_probe = run_curl_request
+    candidates = []
+    probe_calls = 0
+
+    def connect(*args, **kwargs):
+        connection = original_connect(*args, **kwargs)
+        if args[0] == ("127.0.0.1", service.flb_listener_port):
+            candidates.append(connection)
+        return connection
+
+    def probe_after_close(*args, **kwargs):
+        nonlocal probe_calls
+        probe_calls += 1
+        if probe_calls == 1:
+            # Deterministically model a rejected/expired held connection before
+            # the probe runs, without relying on CI scheduling or timer sleeps.
+            candidates[-1].close()
+        return original_probe(*args, **kwargs)
+
+    monkeypatch.setattr(socket, "create_connection", connect)
+    monkeypatch.setitem(globals(), "run_curl_request", probe_after_close)
+    held_connection = None
+    try:
+        held_connection = _hold_connection(
+            service, b"PRI * HTTP/2.0\r\n\r\nSM\r\n",
+            payload='{"message":"closed-preface-probe"}',
+            http_mode="http2-prior-knowledge",
+        )
+        assert probe_calls >= 2
+        assert len(candidates) >= 2
+    finally:
+        if held_connection:
+            held_connection.close()
+        service.stop()

@@ -19,23 +19,12 @@ import yaml
 import logging
 import pytest
 
+from utils.fluent_bit_manager import fluent_bit_binary_version
 from utils.test_service import stop_active_services
 
-# Configure logging
-def configure_logging():
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.INFO)
-
-    if not logger.handlers:
-        handler = logging.StreamHandler()
-        handler.setLevel(logging.INFO)
-        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
-
-    return logger
-
-logger = configure_logging()
+# Let pytest manage handlers so none retain a closed capture stream at shutdown.
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 def load_global_config():
     config_file = os.path.abspath(os.path.join(os.path.dirname(__file__), 'config.yaml'))
@@ -48,9 +37,11 @@ GLOBAL_CONFIG = load_global_config()
 def pytest_configure(config):
     logger.info("Configuring pytest")
 
+
 @pytest.hookimpl(tryfirst=True)
 def pytest_sessionstart(session):
     logger.info("Starting pytest session")
+    fluent_bit_binary_version()
     #flb = FluentBitManager(GLOBAL_CONFIG['fluent_bit']['config_path'])
     #flb = FluentBitManager()
 

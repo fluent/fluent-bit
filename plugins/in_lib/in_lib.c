@@ -19,6 +19,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -42,40 +43,56 @@ static int in_lib_collect(struct flb_input_instance *ins,
     int out_size;
     int capacity;
     int size;
+    int total_bytes = 0;
     char *ptr;
     char *pack;
     struct flb_log_event record;
     struct flb_log_event_decoder decoder;
     struct flb_in_lib_config *ctx = in_context;
 
-    capacity = (ctx->buf_size - ctx->buf_len);
+    while (total_bytes < LIB_MAX_READ_SIZE) {
+        capacity = (ctx->buf_size - ctx->buf_len);
 
-    /* Allocate memory as required (FIXME: this will be limited in later) */
-    if (capacity == 0) {
-        size = ctx->buf_size + LIB_BUF_CHUNK;
-        ptr = flb_realloc(ctx->buf_data, size);
-        if (!ptr) {
-            flb_errno();
-            return -1;
+        /* Allocate memory as required (FIXME: this will be limited in later) */
+        if (capacity == 0) {
+            size = ctx->buf_size + LIB_BUF_CHUNK;
+            ptr = flb_realloc(ctx->buf_data, size);
+            if (!ptr) {
+                flb_errno();
+                return -1;
+            }
+            ctx->buf_data = ptr;
+            ctx->buf_size = size;
+            capacity = LIB_BUF_CHUNK;
         }
-        ctx->buf_data = ptr;
-        ctx->buf_size = size;
-        capacity = LIB_BUF_CHUNK;
+
+        bytes = flb_pipe_r(ctx->fd,
+                           ctx->buf_data + ctx->buf_len,
+                           capacity);
+        if (bytes == -1) {
+            if (FLB_PIPE_WOULDBLOCK()) {
+                break;
+            }
+
+            perror("read");
+            flb_pipe_error();
+            if (errno == EPIPE) {
+                return -1;
+            }
+            return 0;
+        }
+        else if (bytes == 0) {
+            break;
+        }
+
+        ctx->buf_len += bytes;
+        total_bytes += bytes;
     }
 
-    bytes = flb_pipe_r(ctx->fd,
-                       ctx->buf_data + ctx->buf_len,
-                       capacity);
-    flb_plg_trace(ctx->ins, "in_lib read() = %i", bytes);
-    if (bytes == -1) {
-        perror("read");
-        flb_pipe_error();
-        if (errno == -EPIPE) {
-            return -1;
-        }
+    flb_plg_trace(ctx->ins, "in_lib read() = %i", total_bytes);
+    if (total_bytes == 0) {
         return 0;
     }
-    ctx->buf_len += bytes;
 
     /* initially we should support json input */
     ret = flb_pack_json_state(ctx->buf_data, ctx->buf_len,
@@ -90,7 +107,10 @@ static int in_lib_collect(struct flb_input_instance *ins,
         flb_pack_state_init(&ctx->state);
         return -1;
     }
-    ctx->buf_len = 0;
+    ctx->buf_len -= ctx->state.last_byte;
+    memmove(ctx->buf_data,
+            ctx->buf_data + ctx->state.last_byte,
+            ctx->buf_len);
 
     dec_ret = flb_log_event_decoder_init(&decoder, pack, out_size);
     if (dec_ret != FLB_EVENT_DECODER_SUCCESS) {
@@ -213,8 +233,23 @@ static int in_lib_init(struct flb_input_instance *in,
     }
 
     /* Init communication channel */
-    flb_input_channel_init(in);
+    ret = flb_input_channel_init(in);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "could not initialize input channel");
+        flb_free(ctx->buf_data);
+        flb_free(ctx);
+        return -1;
+    }
     ctx->fd = in->channel[0];
+
+    ret = flb_pipe_set_nonblocking(ctx->fd);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "could not set input channel to nonblocking mode");
+        flb_pipe_destroy(in->channel);
+        flb_free(ctx->buf_data);
+        flb_free(ctx);
+        return -1;
+    }
 
     /* Set the context */
     flb_input_set_context(in, ctx);

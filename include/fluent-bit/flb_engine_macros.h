@@ -47,6 +47,13 @@
 #define FLB_ENGINE_EV_STOP      FLB_BITS_U64_SET(1, 3) /* Requested to stop */
 #define FLB_ENGINE_EV_SHUTDOWN  FLB_BITS_U64_SET(1, 4) /* Engine shutdown   */
 
+#ifdef __EMSCRIPTEN__
+#define FLB_ENGINE_EV_WASM_DRAIN FLB_BITS_U64_SET(1, 5)
+#define FLB_WASM_DRAIN_CHECK   0
+#define FLB_WASM_DRAIN_BEGIN   1
+#define FLB_WASM_DRAIN_CANCEL  2
+#endif
+
 /* Similar to engine events, but used as return values */
 #define FLB_ENGINE_STARTED      FLB_BITS_U64_LOW(FLB_ENGINE_EV_STARTED)
 #define FLB_ENGINE_FAILED       FLB_BITS_U64_LOW(FLB_ENGINE_EV_FAILED)

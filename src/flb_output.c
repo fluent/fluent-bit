@@ -20,7 +20,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 
+#include <fluent-bit/flb_socket.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
@@ -35,14 +37,250 @@
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_plugin.h>
+#include <fluent-bit/flb_plugin_alias.h>
 #include <fluent-bit/flb_plugin_proxy.h>
 #include <fluent-bit/flb_http_client_debug.h>
 #include <fluent-bit/flb_output_thread.h>
+#include <fluent-bit/flb_engine_dispatch.h>
+#include <fluent-bit/flb_random.h>
+#include <fluent-bit/flb_scheduler.h>
 #include <fluent-bit/http_server/flb_http_server_config_map.h>
 #include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_pack.h>
+#ifdef __EMSCRIPTEN__
+#include <fluent-bit/wasm/flb_wasm_http.h>
+#endif
 
 FLB_TLS_DEFINE(struct flb_out_flush_params, out_flush_params);
+
+#define FLB_OUTPUT_THROTTLE_RESUME_BATCH 32
+
+int flb_output_throttle_complete(struct flb_output_flush *out_flush, int result)
+{
+    uint64_t now_ms;
+    uint64_t random_value;
+    struct flb_output_instance *ins;
+    struct flb_output_throttle_snapshot snapshot;
+
+    ins = out_flush->o_ins;
+    now_ms = flb_output_throttle_now_ms();
+
+    if (result == FLB_THROTTLE) {
+        flb_output_throttle_snapshot(&ins->throttle, &snapshot);
+        if (snapshot.enabled == FLB_FALSE) {
+            return FLB_RETRY;
+        }
+
+        random_value = 0;
+        flb_random_bytes((unsigned char *) &random_value,
+                         sizeof(random_value));
+        flb_output_throttle_publish(&ins->throttle, now_ms,
+                                    out_flush->retry_after_present,
+                                    out_flush->retry_after_ms,
+                                    random_value);
+    }
+    else if (result == FLB_OK) {
+        flb_output_throttle_success(&ins->throttle, now_ms,
+                                    out_flush->admission_generation);
+    }
+
+    return result;
+}
+
+static int output_throttle_has_pending(struct flb_output_instance *ins)
+{
+    if (ins->throttle_deferred_count > 0) {
+        return FLB_TRUE;
+    }
+
+    if ((ins->flags & FLB_OUTPUT_SYNCHRONOUS) &&
+        mk_list_is_empty(&ins->singleplex_queue->pending) != 0 &&
+        mk_list_is_empty(&ins->singleplex_queue->in_progress) == 0) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
+static void output_throttle_wakeup_callback(struct flb_config *config, void *data)
+{
+    int count;
+    int ret;
+    size_t pending_count;
+    uint64_t generation;
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct flb_task *task;
+    struct flb_task_retry *retry;
+    struct flb_task_route *route;
+    struct flb_output_instance *ins;
+
+    ins = data;
+    ins->throttle_wakeup = NULL;
+    ins->throttle_wakeup_pending = FLB_FALSE;
+    flb_output_throttle_metrics_update(ins, flb_output_throttle_now_ms());
+
+    if (flb_output_throttle_admit(&ins->throttle,
+                                  flb_output_throttle_now_ms(),
+                                  &generation) == FLB_FALSE) {
+        flb_output_throttle_wakeup_schedule(ins);
+        return;
+    }
+
+    if ((ins->flags & FLB_OUTPUT_SYNCHRONOUS) &&
+        mk_list_is_empty(&ins->singleplex_queue->in_progress) == 0) {
+        flb_output_task_singleplex_flush_next(ins->singleplex_queue);
+    }
+
+    count = 0;
+    pending_count = ins->throttle_deferred_count;
+    mk_list_foreach_safe(head, tmp, &ins->throttle_deferred_routes) {
+        if (count >= FLB_OUTPUT_THROTTLE_RESUME_BATCH ||
+            count >= pending_count) {
+            break;
+        }
+
+        if ((ins->flags & FLB_OUTPUT_NO_MULTIPLEX) &&
+            ins->dispatches_inflight > 0) {
+            /* The completing dispatch will resume the next deferred route. */
+            return;
+        }
+
+        route = mk_list_entry(head, struct flb_task_route, _deferred_head);
+        task = route->task;
+        retry = flb_task_retry_get(task, ins);
+
+        ret = flb_task_route_resume(task, ins);
+        if (ret == -1) {
+            continue;
+        }
+
+        if (retry != NULL) {
+            ret = flb_engine_dispatch_retry(retry, config);
+        }
+        else {
+            if (ins->flags & FLB_OUTPUT_SYNCHRONOUS) {
+                ret = flb_output_task_singleplex_enqueue(ins->singleplex_queue,
+                                                         NULL, task, ins, config);
+            }
+            else {
+                ret = flb_output_task_flush(task, ins, config);
+            }
+
+            if (ret == -1) {
+                if (route->dispatch_state == FLB_TASK_ROUTE_DISPATCH_QUEUED) {
+                    flb_task_route_unqueue(task, ins);
+                    flb_task_users_dec(task, FLB_FALSE);
+                }
+                flb_task_users_release(task);
+            }
+        }
+
+        count++;
+    }
+
+    if (output_throttle_has_pending(ins) == FLB_TRUE) {
+        flb_output_throttle_wakeup_schedule(ins);
+    }
+}
+
+int flb_output_throttle_wakeup_schedule(struct flb_output_instance *ins)
+{
+    int delay;
+    int ret;
+    uint64_t now_ms;
+    uint64_t remaining;
+    struct flb_output_throttle_snapshot snapshot;
+
+    if (ins == NULL || ins->throttle_wakeup != NULL) {
+        return 0;
+    }
+
+    if (ins->config == NULL || ins->config->sched == NULL) {
+        ins->throttle_wakeup_pending = FLB_TRUE;
+        return -1;
+    }
+
+    flb_output_throttle_snapshot(&ins->throttle, &snapshot);
+    if (snapshot.state == FLB_OUTPUT_THROTTLE_STOPPING) {
+        ins->throttle_wakeup_pending = FLB_FALSE;
+        return -1;
+    }
+
+    now_ms = flb_output_throttle_now_ms();
+    if (snapshot.until_ms > now_ms) {
+        remaining = snapshot.until_ms - now_ms;
+    }
+    else {
+        remaining = 1;
+    }
+
+    if (remaining > INT_MAX) {
+        delay = INT_MAX;
+    }
+    else {
+        delay = (int) remaining;
+    }
+
+    ret = flb_sched_timer_cb_create(ins->config->sched,
+                                    FLB_SCHED_TIMER_CB_ONESHOT,
+                                    delay,
+                                    output_throttle_wakeup_callback,
+                                    ins, &ins->throttle_wakeup);
+    if (ret == -1) {
+        ins->throttle_wakeup = NULL;
+        ins->throttle_wakeup_pending = FLB_TRUE;
+        return -1;
+    }
+
+    ins->throttle_wakeup_pending = FLB_FALSE;
+    return 0;
+}
+
+void flb_output_throttle_wakeup_cancel(struct flb_output_instance *ins)
+{
+    struct flb_sched_timer *timer;
+
+    if (ins == NULL || ins->throttle_wakeup == NULL) {
+        if (ins != NULL) {
+            ins->throttle_wakeup_pending = FLB_FALSE;
+        }
+        return;
+    }
+
+    timer = ins->throttle_wakeup;
+    ins->throttle_wakeup = NULL;
+    ins->throttle_wakeup_pending = FLB_FALSE;
+    flb_sched_timer_cb_destroy(timer);
+}
+
+void flb_output_throttle_wakeup_scan(struct flb_config *config)
+{
+    uint64_t now_ms;
+    struct mk_list *head;
+    struct flb_output_instance *ins;
+    struct flb_output_throttle_snapshot snapshot;
+
+    now_ms = flb_output_throttle_now_ms();
+    mk_list_foreach(head, &config->outputs) {
+        ins = mk_list_entry(head, struct flb_output_instance, _head);
+        flb_output_throttle_metrics_update(ins, now_ms);
+        if (ins->throttle_wakeup_pending == FLB_FALSE) {
+            continue;
+        }
+
+        flb_output_throttle_snapshot(&ins->throttle, &snapshot);
+        if (snapshot.state == FLB_OUTPUT_THROTTLE_STOPPING) {
+            ins->throttle_wakeup_pending = FLB_FALSE;
+        }
+        else if (snapshot.until_ms <= now_ms) {
+            output_throttle_wakeup_callback(config, ins);
+        }
+        else {
+            flb_output_throttle_wakeup_schedule(ins);
+        }
+    }
+}
 
 /* Histogram buckets for output latency in seconds */
 static const double output_latency_buckets[] = {
@@ -52,6 +290,61 @@ static const double output_latency_buckets[] = {
 static const double output_backpressure_wait_buckets[] = {
     0.010, 0.050, 0.100, 0.250, 0.500, 1.0, 2.0, 5.0, 15.0, 30.0, 60.0
 };
+
+void flb_output_throttle_metrics_update(struct flb_output_instance *ins,
+                                        uint64_t now_ms)
+{
+    uint64_t end_ms;
+    uint64_t timestamp;
+    double active;
+    double remaining_seconds;
+    char *name;
+    struct flb_output_throttle_snapshot snapshot;
+
+    if (ins == NULL || ins->cmt_throttle_active == NULL) {
+        return;
+    }
+
+    flb_output_throttle_snapshot(&ins->throttle, &snapshot);
+    timestamp = cfl_time_now();
+    name = (char *) flb_output_name(ins);
+    active = 0;
+    remaining_seconds = 0;
+
+    if (snapshot.enabled == FLB_TRUE &&
+        snapshot.state == FLB_OUTPUT_THROTTLE_COOLDOWN &&
+        snapshot.until_ms > now_ms) {
+        active = 1;
+        remaining_seconds = (double) (snapshot.until_ms - now_ms) / 1000.0;
+    }
+
+    if (snapshot.started_ms > ins->throttle_duration_accounted_ms) {
+        ins->throttle_duration_accounted_ms = snapshot.started_ms;
+    }
+
+    end_ms = now_ms;
+    if (end_ms > snapshot.until_ms) {
+        end_ms = snapshot.until_ms;
+    }
+
+    if (end_ms > ins->throttle_duration_accounted_ms) {
+        cmt_counter_add(ins->cmt_throttle_duration, timestamp,
+                        (double) (end_ms - ins->throttle_duration_accounted_ms) /
+                        1000.0,
+                        1, (char *[]) {name});
+        ins->throttle_duration_accounted_ms = end_ms;
+    }
+
+    cmt_gauge_set(ins->cmt_throttle_active, timestamp, active,
+                  1, (char *[]) {name});
+    cmt_counter_set(ins->cmt_throttle_events, timestamp,
+                    (double) snapshot.events, 1, (char *[]) {name});
+    cmt_gauge_set(ins->cmt_throttle_remaining, timestamp, remaining_seconds,
+                  1, (char *[]) {name});
+    cmt_gauge_set(ins->cmt_throttle_deferred_routes, timestamp,
+                  (double) ins->throttle_deferred_count,
+                  1, (char *[]) {name});
+}
 
 struct flb_config_map output_global_properties[] = {
     {
@@ -93,6 +386,21 @@ struct flb_config_map output_global_properties[] = {
         "Set the retry limit for the output plugin when delivery fails. "
         "Accepted values: a positive integer, 'no_limits', 'false', or 'off' to disable retry limits, "
         "or 'no_retries' to disable retries entirely."
+    },
+    {
+        FLB_CONFIG_MAP_BOOL, "throttle", "false",
+        0, FLB_FALSE, 0,
+        "Enable destination-driven cooldown for this output instance."
+    },
+    {
+        FLB_CONFIG_MAP_INT, "throttle.base", "1",
+        0, FLB_FALSE, 0,
+        "Minimum local throttle cooldown in seconds."
+    },
+    {
+        FLB_CONFIG_MAP_INT, "throttle.cap", "60",
+        0, FLB_FALSE, 0,
+        "Maximum local exponential throttle cooldown in seconds."
     },
     {
         FLB_CONFIG_MAP_STR, "tls.windows.certstore_name", NULL,
@@ -137,12 +445,9 @@ static int check_protocol(const char *prot, const char *output)
         len = strlen(output);
     }
 
-    if (strlen(prot) != len) {
-        return 0;
-    }
-
     /* Output plugin match */
-    if (strncasecmp(prot, output, len) == 0) {
+    if (strlen(prot) == (size_t) len &&
+        strncasecmp(prot, output, len) == 0) {
         return 1;
     }
 
@@ -193,6 +498,9 @@ static void flb_output_free_properties(struct flb_output_instance *ins)
     if (ins->tls_key_passwd) {
         flb_sds_destroy(ins->tls_key_passwd);
     }
+    if (ins->tls_crl_file) {
+        flb_sds_destroy(ins->tls_crl_file);
+    }
     if (ins->tls_min_version) {
         flb_sds_destroy(ins->tls_min_version);
     }
@@ -201,6 +509,12 @@ static void flb_output_free_properties(struct flb_output_instance *ins)
     }
     if (ins->tls_ciphers) {
         flb_sds_destroy(ins->tls_ciphers);
+    }
+    if (ins->tls_proxy_ca_path) {
+        flb_sds_destroy(ins->tls_proxy_ca_path);
+    }
+    if (ins->tls_proxy_ca_file) {
+        flb_sds_destroy(ins->tls_proxy_ca_file);
     }
 # if defined(FLB_SYSTEM_WINDOWS)
     if (ins->tls_win_certstore_name) {
@@ -304,25 +618,29 @@ static int flb_output_task_queue_enqueue(struct flb_task_queue *queue,
  */
 static int flb_output_task_queue_flush_one(struct flb_task_queue *queue)
 {
+    uint64_t generation;
     struct flb_task_enqueued *queued_task;
     int ret;
     int is_empty;
 
     is_empty = mk_list_is_empty(&queue->pending) == 0;
     if (is_empty) {
-        flb_error("Attempting to flush task from an empty in_progress queue");
+        flb_error("Attempting to flush task from an empty pending queue");
         return -1;
     }
 
     queued_task = mk_list_entry_first(&queue->pending, struct flb_task_enqueued, _head);
+
+    /* Keep the singleplex owner in place while its output gate is closed. */
+    if (flb_output_throttle_admit(&queued_task->out_instance->throttle,
+                                  flb_output_throttle_now_ms(),
+                                  &generation) == FLB_FALSE) {
+        flb_output_throttle_wakeup_schedule(queued_task->out_instance);
+        return 0;
+    }
+
     mk_list_del(&queued_task->_head);
     mk_list_add(&queued_task->_head, &queue->in_progress);
-
-    /*
-     * Remove temporary user now that task is out of singleplex queue.
-     * Flush will add back the user representing queued_task->out_instance if it succeeds.
-     */
-    flb_task_users_dec(queued_task->task, FLB_FALSE);
     ret = flb_output_task_flush(queued_task->task,
                                 queued_task->out_instance,
                                 queued_task->config);
@@ -333,8 +651,15 @@ static int flb_output_task_queue_flush_one(struct flb_task_queue *queue)
             flb_task_retry_destroy(queued_task->retry);
         }
         /* Flush the next task */
+        flb_output_task_singleplex_complete(queue);
         flb_output_task_singleplex_flush_next(queue);
         return -1;
+    }
+
+    /* The route now has deferred ownership; release this queue node. */
+    if (ret == FLB_OUTPUT_DEFERRED) {
+        flb_output_task_singleplex_complete(queue);
+        flb_output_task_singleplex_flush_next(queue);
     }
 
     return ret;
@@ -350,8 +675,10 @@ int flb_output_task_singleplex_enqueue(struct flb_task_queue *queue,
                                        struct flb_output_instance *out_ins,
                                        struct flb_config *config)
 {
+    int acquired_owner;
     int ret;
     int is_empty;
+    struct flb_task_route *route;
 
     /*
      * Add temporary user to preserve task while in singleplex queue.
@@ -361,11 +688,39 @@ int flb_output_task_singleplex_enqueue(struct flb_task_queue *queue,
      * deleted if the task's users go to 0 while we are waiting in the
      * queue.
      */
-    flb_task_users_inc(task);
+    route = flb_task_route_get(task, out_ins);
+    if (route == NULL) {
+        if (retry != NULL) {
+            flb_task_retry_destroy(retry);
+        }
+        return -1;
+    }
+
+    acquired_owner = FLB_FALSE;
+    if (route->dispatch_state == FLB_TASK_ROUTE_DISPATCH_UNQUEUED) {
+        ret = flb_task_route_queue(task, out_ins);
+        if (ret == -1) {
+            if (retry != NULL) {
+                flb_task_retry_destroy(retry);
+            }
+            return -1;
+        }
+        acquired_owner = FLB_TRUE;
+    }
+    else if (route->dispatch_state != FLB_TASK_ROUTE_DISPATCH_QUEUED) {
+        if (retry != NULL) {
+            flb_task_retry_destroy(retry);
+        }
+        return -1;
+    }
 
     /* Enqueue task */
     ret = flb_output_task_queue_enqueue(queue, retry, task, out_ins, config);
     if (ret == -1) {
+        if (acquired_owner == FLB_TRUE) {
+            flb_task_route_unqueue(task, out_ins);
+            flb_task_users_dec(task, FLB_FALSE);
+        }
         return -1;
     }
 
@@ -378,11 +733,8 @@ int flb_output_task_singleplex_enqueue(struct flb_task_queue *queue,
     return 0;
 }
 
-/*
- * Clear in progress task and flush a single queued task if exists
- * Deletes retry context on next flush if flush fails
- */
-int flb_output_task_singleplex_flush_next(struct flb_task_queue *queue)
+/* Retire the current synchronous queue node without dispatching another. */
+void flb_output_task_singleplex_complete(struct flb_task_queue *queue)
 {
     int is_empty;
     struct flb_task_enqueued *ended_task;
@@ -395,12 +747,75 @@ int flb_output_task_singleplex_flush_next(struct flb_task_queue *queue)
         mk_list_del(&ended_task->_head);
         flb_free(ended_task);
     }
+}
 
-    /* Flush if there is a pending task queued */
+/* Flush one pending task. The dequeue path rechecks the output gate. */
+int flb_output_task_singleplex_flush_next(struct flb_task_queue *queue)
+{
+    int ret;
+    int is_empty;
+    struct flb_task *task;
+    struct flb_task_enqueued *queued_task;
+
     is_empty = mk_list_is_empty(&queue->pending) == 0;
     if (!is_empty) {
-        return flb_output_task_queue_flush_one(queue);
+        queued_task = mk_list_entry_first(&queue->pending,
+                                          struct flb_task_enqueued, _head);
+        task = queued_task->task;
+        ret = flb_output_task_queue_flush_one(queue);
+        if (ret == -1) {
+            flb_task_users_release(task);
+        }
+        return ret;
     }
+    return 0;
+}
+
+/*
+ * No flush could be started for the task on the given output instance (e.g.
+ * flb_output_flush_create() failed because the chunk could not be decoded for
+ * the processors pipeline). The engine is waiting for a return status for the
+ * route, so report FLB_ERROR the same way a flush callback does through
+ * flb_output_return(): the engine accounts the dropped chunk and releases its
+ * reference to the task, otherwise the task and its chunk are retained forever.
+ *
+ * The caller must already hold a user reference on the task, it's released by
+ * the engine once the status is processed.
+ */
+int flb_output_task_flush_error(struct flb_task *task,
+                                struct flb_output_instance *out_ins)
+{
+    int n;
+    uint32_t set;
+    uint64_t val;
+
+    flb_error("[output] chunk '%s' could not be prepared for flushing, "
+              "dropping it: task_id=%i, input=%s > output=%s (out_id=%i)",
+              flb_input_chunk_get_name(task->ic), task->id,
+              flb_input_name(task->i_ins),
+              flb_output_name(out_ins), out_ins->id);
+
+    flb_task_acquire_lock(task);
+    flb_task_set_route_data(task, out_ins,
+                            task->event_chunk->total_events,
+                            task->event_chunk->size);
+    flb_task_deactivate_route(task, out_ins);
+    flb_task_release_lock(task);
+
+    set = FLB_TASK_SET(FLB_ERROR, task->id, out_ins->id);
+    val = FLB_BITS_U64_SET(FLB_ENGINE_TASK, set);
+
+    /*
+     * Notify the parent event loop about the return status. No coroutine was
+     * created, so there is nothing for a worker thread event loop to clean up
+     * and the status can go straight to the engine channel.
+     */
+    n = flb_pipe_w(out_ins->ch_events[1], (void *) &val, sizeof(val));
+    if (n == -1) {
+        flb_pipe_error();
+        return -1;
+    }
+
     return 0;
 }
 
@@ -413,47 +828,121 @@ int flb_output_task_flush(struct flb_task *task,
                           struct flb_config *config)
 {
     int ret;
-    struct flb_output_flush *out_flush;
+    uint64_t generation;
+    struct flb_task_route *route;
+    struct flb_output_dispatch *dispatch;
+
+    route = flb_task_route_get(task, out_ins);
+    if (route == NULL) {
+        return -1;
+    }
+
+    /* Advisory check. The receiver repeats this check authoritatively. */
+    if (flb_output_throttle_admit(&out_ins->throttle,
+                                  flb_output_throttle_now_ms(),
+                                  &generation) == FLB_FALSE) {
+        ret = flb_task_route_defer(task, out_ins,
+                                   route->dispatch_state ==
+                                   FLB_TASK_ROUTE_DISPATCH_QUEUED);
+        if (ret == -1) {
+            return -1;
+        }
+        flb_output_throttle_wakeup_schedule(out_ins);
+        return FLB_OUTPUT_DEFERRED;
+    }
+
+    if (route->dispatch_state == FLB_TASK_ROUTE_DISPATCH_UNQUEUED) {
+        ret = flb_task_route_queue(task, out_ins);
+        if (ret == -1) {
+            return -1;
+        }
+    }
+    else if (route->dispatch_state != FLB_TASK_ROUTE_DISPATCH_QUEUED) {
+        return -1;
+    }
+
+    dispatch = flb_output_dispatch_create(task, out_ins, config);
+    if (dispatch == NULL) {
+        flb_task_route_unqueue(task, out_ins);
+        flb_task_users_dec(task, FLB_FALSE);
+        return -1;
+    }
 
     if (flb_output_is_threaded(out_ins) == FLB_TRUE) {
-        flb_task_users_inc(task);
-
         /* Dispatch the task to the thread pool */
-        ret = flb_output_thread_pool_flush(task, out_ins, config);
+        ret = flb_output_thread_pool_flush(dispatch);
         if (ret == -1) {
+            flb_output_dispatch_destroy(dispatch);
+            flb_task_route_unqueue(task, out_ins);
             flb_task_users_dec(task, FLB_FALSE);
-
-            /* If we are in synchronous mode, flush one waiting task */
-            if (out_ins->flags & FLB_OUTPUT_SYNCHRONOUS) {
-                flb_output_task_singleplex_flush_next(out_ins->singleplex_queue);
-            }
+            return -1;
+        }
+        else {
+            /* released when the engine processes the return status */
+            config->flush_in_flight++;
         }
     }
     else {
-        /* Queue co-routine handling */
-        out_flush = flb_output_flush_create(task,
-                                           task->i_ins,
-                                           out_ins,
-                                           config);
-        if (!out_flush) {
-            return -1;
-        }
-
-        flb_task_users_inc(task);
-        ret = flb_pipe_w(config->ch_self_events[1], &out_flush,
-                        sizeof(struct flb_output_flush*));
-        if (ret == -1) {
+        ret = flb_pipe_write_all(config->ch_self_events[1], &dispatch,
+                                 sizeof(struct flb_output_dispatch *));
+        if (ret != sizeof(struct flb_output_dispatch *)) {
             flb_pipe_error();
-            flb_output_flush_destroy(out_flush);
+            flb_output_dispatch_destroy(dispatch);
+            flb_task_route_unqueue(task, out_ins);
             flb_task_users_dec(task, FLB_FALSE);
 
-            /* If we are in synchronous mode, flush one waiting task */
-            if (out_ins->flags & FLB_OUTPUT_SYNCHRONOUS) {
-                flb_output_task_singleplex_flush_next(out_ins->singleplex_queue);
-            }
-
             return -1;
         }
+
+        /* released when the engine processes the return status */
+        config->flush_in_flight++;
+    }
+
+    return 0;
+}
+
+struct flb_output_dispatch *flb_output_dispatch_create(
+                                struct flb_task *task,
+                                struct flb_output_instance *out,
+                                struct flb_config *config)
+{
+    struct flb_output_dispatch *dispatch;
+
+    dispatch = flb_malloc(sizeof(struct flb_output_dispatch));
+    if (dispatch == NULL) {
+        flb_errno();
+        return NULL;
+    }
+
+    dispatch->magic = FLB_OUTPUT_DISPATCH_MAGIC;
+    dispatch->type = FLB_OUTPUT_DISPATCH_TASK;
+    dispatch->result = 0;
+    dispatch->task = task;
+    dispatch->out = out;
+    dispatch->config = config;
+    mk_list_init(&dispatch->_head);
+    return dispatch;
+}
+
+void flb_output_dispatch_destroy(struct flb_output_dispatch *dispatch)
+{
+    dispatch->magic = 0;
+    flb_free(dispatch);
+}
+
+int flb_output_dispatch_post_result(struct flb_output_dispatch *dispatch,
+                                    int result, flb_pipefd_t pipe_fd)
+{
+    ssize_t written;
+    uint32_t set;
+    uint64_t value;
+
+    set = FLB_TASK_SET(result, dispatch->task->id, dispatch->out->id);
+    value = FLB_BITS_U64_SET(FLB_ENGINE_TASK, set);
+    written = flb_pipe_write_all(pipe_fd, &value, sizeof(value));
+    if (written != sizeof(value)) {
+        flb_pipe_error();
+        return -1;
     }
 
     return 0;
@@ -461,6 +950,29 @@ int flb_output_task_flush(struct flb_task *task,
 
 int flb_output_instance_destroy(struct flb_output_instance *ins)
 {
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct flb_output_flush *out_flush;
+
+    /* Unlink queued completion events before freeing their owning instance. */
+    if (ins->event.status & MK_EVENT_REGISTERED) {
+        mk_event_del(ins->config->evl, &ins->event);
+    }
+
+    /* The shutdown deadline may leave unstarted or completed flushes queued. */
+    mk_list_foreach_safe(head, tmp, &ins->flush_list) {
+        out_flush = mk_list_entry(head, struct flb_output_flush, _head);
+        flb_output_flush_destroy(out_flush);
+    }
+    mk_list_foreach_safe(head, tmp, &ins->flush_list_destroy) {
+        out_flush = mk_list_entry(head, struct flb_output_flush, _head);
+        flb_output_flush_destroy(out_flush);
+    }
+
+    flb_output_throttle_metrics_update(ins, flb_output_throttle_now_ms());
+    flb_output_throttle_stop(&ins->throttle);
+    flb_output_throttle_wakeup_cancel(ins);
+    flb_output_deferred_cancel_all(ins);
     if (ins->alias) {
         flb_sds_destroy(ins->alias);
     }
@@ -474,6 +986,9 @@ int flb_output_instance_destroy(struct flb_output_instance *ins)
     flb_sds_destroy(ins->host.address);
     flb_sds_destroy(ins->host.listen);
     flb_sds_destroy(ins->match);
+#ifdef __EMSCRIPTEN__
+    flb_sds_destroy(ins->browser_url);
+#endif
 
 #ifdef FLB_HAVE_REGEX
         if (ins->match_regex) {
@@ -530,12 +1045,18 @@ int flb_output_instance_destroy(struct flb_output_instance *ins)
         flb_config_map_destroy(ins->oauth2_config_map);
     }
 
+    if (ins->event.status & MK_EVENT_REGISTERED) {
+        mk_event_del(ins->config->evl, &ins->event);
+    }
+
     if (ins->ch_events[0] > 0) {
         mk_event_closesocket(ins->ch_events[0]);
+        ins->ch_events[0] = FLB_UNINITIALIZED_SOCKET;
     }
 
     if (ins->ch_events[1] > 0) {
         mk_event_closesocket(ins->ch_events[1]);
+        ins->ch_events[1] = FLB_UNINITIALIZED_SOCKET;
     }
 
     /* release properties */
@@ -553,6 +1074,7 @@ int flb_output_instance_destroy(struct flb_output_instance *ins)
         flb_processor_destroy(ins->processor);
     }
 
+    flb_output_throttle_destroy(&ins->throttle);
     flb_free(ins);
 
     return 0;
@@ -563,8 +1085,11 @@ void flb_output_exit(struct flb_config *config)
 {
     struct mk_list *tmp;
     struct mk_list *head;
+    struct mk_list *flush_tmp;
+    struct mk_list *flush_head;
     struct flb_output_instance *ins;
     struct flb_output_plugin *p;
+    struct flb_output_flush *out_flush;
     void *params;
 
     mk_list_foreach_safe(head, tmp, &config->outputs) {
@@ -582,10 +1107,33 @@ void flb_output_exit(struct flb_config *config)
             flb_output_thread_pool_destroy(ins);
         }
 
+        /* Release queued flushes whose output callback has not started. */
+        mk_list_foreach_safe(flush_head, flush_tmp, &ins->flush_list) {
+            out_flush = mk_list_entry(flush_head, struct flb_output_flush, _head);
+            if (flb_task_get_route_status(out_flush->task, ins) == FLB_TASK_ROUTE_ACTIVE) {
+                continue;
+            }
+            if (out_flush->processed_event_chunk) {
+                if (out_flush->processed_event_chunk->data != out_flush->task->event_chunk->data) {
+                    flb_free(out_flush->processed_event_chunk->data);
+                }
+                flb_event_chunk_destroy(out_flush->processed_event_chunk);
+                /* The flush destructor must not release this chunk again. */
+                out_flush->processed_event_chunk = NULL;
+            }
+            flb_output_flush_destroy(out_flush);
+        }
+
         /* Check a exit callback */
         if (p->cb_exit) {
             p->cb_exit(ins->context, config);
         }
+
+        mk_list_foreach_safe(flush_head, flush_tmp, &ins->flush_list_destroy) {
+            out_flush = mk_list_entry(flush_head, struct flb_output_flush, _head);
+            flb_output_flush_destroy(out_flush);
+        }
+
         flb_output_instance_destroy(ins);
     }
 
@@ -676,17 +1224,24 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
 {
     int ret = -1;
     int flags = 0;
+    size_t output_name_length;
+    const char *alias_target;
+    const char *output_name;
+    const char *separator;
     struct mk_list *head;
-    struct flb_output_plugin *plugin;
+    struct flb_output_plugin *plugin = NULL;
     struct flb_output_instance *instance = NULL;
 
     if (!output) {
         return NULL;
     }
 
+    output_name = output;
+
+    /* Prefer an exact registered plugin name over an alias with the same name. */
     mk_list_foreach(head, &config->out_plugins) {
         plugin = mk_list_entry(head, struct flb_output_plugin, _head);
-        if (!check_protocol(plugin->name, output)) {
+        if (!check_protocol(plugin->name, output_name)) {
             plugin = NULL;
             continue;
         }
@@ -695,6 +1250,34 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
             return NULL;
         }
         break;
+    }
+
+    if (plugin == NULL) {
+        separator = strstr(output, "://");
+        if (separator != NULL && separator != output) {
+            output_name_length = separator - output;
+        }
+        else {
+            output_name_length = strlen(output);
+        }
+        alias_target = flb_plugin_alias_get(FLB_PLUGIN_OUTPUT, output,
+                                            output_name_length);
+        if (alias_target != NULL) {
+            output_name = alias_target;
+
+            mk_list_foreach(head, &config->out_plugins) {
+                plugin = mk_list_entry(head, struct flb_output_plugin, _head);
+                if (!check_protocol(plugin->name, output_name)) {
+                    plugin = NULL;
+                    continue;
+                }
+
+                if (public_only && plugin->flags & FLB_OUTPUT_PRIVATE) {
+                    return NULL;
+                }
+                break;
+            }
+        }
     }
 
     if (!plugin) {
@@ -707,6 +1290,9 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
         flb_errno();
         return NULL;
     }
+
+    instance->ch_events[0] = FLB_UNINITIALIZED_SOCKET;
+    instance->ch_events[1] = FLB_UNINITIALIZED_SOCKET;
 
     instance->http_server_config = flb_calloc(1, sizeof(struct flb_http_server_config));
     if (!instance->http_server_config) {
@@ -730,6 +1316,10 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     instance->test_mode = FLB_FALSE;
     instance->is_threaded = FLB_FALSE;
     instance->tp_workers = plugin->workers;
+#ifdef __EMSCRIPTEN__
+    /* The browser engine worker executes output coroutines cooperatively. */
+    instance->tp_workers = 0;
+#endif
 
     /* Retrieve an instance id for the output instance */
     instance->id = instance_id(config);
@@ -800,6 +1390,11 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
         instance->flags |= FLB_IO_TLS;
     }
 
+#ifdef __EMSCRIPTEN__
+    if (instance->flags & FLB_OUTPUT_NET) {
+        instance->use_tls = FLB_TRUE;
+    }
+#endif
 #ifdef FLB_HAVE_TLS
     instance->tls                   = NULL;
     instance->tls_debug             = -1;
@@ -811,18 +1406,37 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     instance->tls_crt_file          = NULL;
     instance->tls_key_file          = NULL;
     instance->tls_key_passwd        = NULL;
+    instance->tls_crl_file          = NULL;
 # if defined(FLB_SYSTEM_WINDOWS)
     instance->tls_win_certstore_name = NULL;
     instance->tls_win_use_enterprise_certstore = FLB_FALSE;
     instance->tls_win_thumbprints = NULL;
 # endif
+    instance->tls_proxy_verify          = FLB_TRUE;
+    instance->tls_proxy_verify_hostname = FLB_TRUE;
+    instance->tls_proxy_ca_path         = NULL;
+    instance->tls_proxy_ca_file         = NULL;
 #endif
 
     if (plugin->flags & FLB_OUTPUT_NET) {
-        ret = flb_net_host_set(plugin->name, &instance->host, output);
+        if (strstr(output, "://") != NULL) {
+            ret = flb_net_host_set(plugin->name, &instance->host, output);
+        }
+        else {
+            ret = flb_net_host_set(plugin->name, &instance->host, output_name);
+        }
+
         if (ret != 0) {
-            if (instance->flags & FLB_OUTPUT_SYNCHRONOUS) {
+            if ((instance->flags & FLB_OUTPUT_SYNCHRONOUS) &&
+                 instance->singleplex_queue != NULL) {
                 flb_task_queue_destroy(instance->singleplex_queue);
+            }
+            if (instance->callback != NULL) {
+                flb_callback_destroy(instance->callback);
+            }
+            if (plugin->type != FLB_OUTPUT_PLUGIN_CORE &&
+                instance->context != NULL) {
+                flb_free(instance->context);
             }
             flb_free(instance->http_server_config);
             flb_free(instance);
@@ -849,6 +1463,24 @@ struct flb_output_instance *flb_output_new(struct flb_config *config,
     mk_list_init(&instance->upstreams);
     mk_list_init(&instance->flush_list);
     mk_list_init(&instance->flush_list_destroy);
+
+    mk_list_init(&instance->throttle_deferred_routes);
+    instance->throttle_deferred_count = 0;
+    instance->dispatches_inflight = 0;
+    instance->throttle_wakeup = NULL;
+    instance->throttle_wakeup_pending = FLB_FALSE;
+    instance->throttle_duration_accounted_ms = 0;
+
+    ret = flb_output_throttle_init(&instance->throttle, FLB_FALSE, 1000, 60000);
+    if (ret != 0) {
+        if (instance->singleplex_queue != NULL) {
+            flb_task_queue_destroy(instance->singleplex_queue);
+        }
+        flb_callback_destroy(instance->callback);
+        flb_free(instance->http_server_config);
+        flb_free(instance);
+        return NULL;
+    }
 
     mk_list_add(&instance->_head, &config->outputs);
 
@@ -881,6 +1513,7 @@ int flb_output_set_property(struct flb_output_instance *ins,
 {
     int len;
     int ret;
+    int seconds;
     ssize_t limit;
     flb_sds_t tmp;
     struct flb_kv *kv;
@@ -966,6 +1599,30 @@ int flb_output_set_property(struct flb_output_instance *ins,
             ins->retry_limit = 1;
         }
     }
+    else if (prop_key_check("throttle", k, len) == 0 && tmp) {
+        ret = flb_utils_bool(tmp);
+        flb_sds_destroy(tmp);
+        if (ret == -1) {
+            return -1;
+        }
+        ins->throttle.enabled = ret;
+    }
+    else if (prop_key_check("throttle.base", k, len) == 0 && tmp) {
+        ret = flb_utils_time_to_seconds_strict(tmp, &seconds);
+        flb_sds_destroy(tmp);
+        if (ret != 0) {
+            return -1;
+        }
+        ins->throttle.base_ms = (uint64_t) seconds * 1000;
+    }
+    else if (prop_key_check("throttle.cap", k, len) == 0 && tmp) {
+        ret = flb_utils_time_to_seconds_strict(tmp, &seconds);
+        flb_sds_destroy(tmp);
+        if (ret != 0) {
+            return -1;
+        }
+        ins->throttle.cap_ms = (uint64_t) seconds * 1000;
+    }
     else if (strncasecmp("net.", k, 4) == 0 && tmp) {
         kv = flb_kv_item_create(&ins->net_properties, (char *) k, NULL);
         if (!kv) {
@@ -1018,6 +1675,20 @@ int flb_output_set_property(struct flb_output_instance *ins,
         }
     }
 #endif
+#ifdef __EMSCRIPTEN__
+    else if (prop_key_check("browser.url", k, len) == 0) {
+        flb_utils_set_plugin_string_property("browser.url", &ins->browser_url, tmp);
+    }
+    else if (prop_key_check("tls", k, len) == 0 && tmp) {
+        ret = flb_utils_bool(tmp);
+        flb_sds_destroy(tmp);
+        if (ret != FLB_TRUE || !(ins->flags & FLB_OUTPUT_NET)) {
+            flb_error("[output] browser HTTP requires TLS");
+            return -1;
+        }
+        ins->use_tls = FLB_TRUE;
+    }
+#endif
 #ifdef FLB_HAVE_TLS
     else if (prop_key_check("tls", k, len) == 0 && tmp) {
         ins->use_tls = flb_utils_bool(tmp);
@@ -1058,6 +1729,9 @@ int flb_output_set_property(struct flb_output_instance *ins,
     else if (prop_key_check("tls.key_passwd", k, len) == 0) {
         flb_utils_set_plugin_string_property("tls.key_passwd", &ins->tls_key_passwd, tmp);
     }
+    else if (prop_key_check("tls.crl_file", k, len) == 0) {
+        flb_utils_set_plugin_string_property("tls.crl_file", &ins->tls_crl_file, tmp);
+    }
     else if (prop_key_check("tls.min_version", k, len) == 0) {
         flb_utils_set_plugin_string_property("tls.min_version", &ins->tls_min_version, tmp);
     }
@@ -1066,6 +1740,20 @@ int flb_output_set_property(struct flb_output_instance *ins,
     }
     else if (prop_key_check("tls.ciphers", k, len) == 0) {
         flb_utils_set_plugin_string_property("tls.ciphers", &ins->tls_ciphers, tmp);
+    }
+    else if (prop_key_check("tls.proxy.verify", k, len) == 0 && tmp) {
+        ins->tls_proxy_verify = flb_utils_bool(tmp);
+        flb_sds_destroy(tmp);
+    }
+    else if (prop_key_check("tls.proxy.verify_hostname", k, len) == 0 && tmp) {
+        ins->tls_proxy_verify_hostname = flb_utils_bool(tmp);
+        flb_sds_destroy(tmp);
+    }
+    else if (prop_key_check("tls.proxy.ca_path", k, len) == 0) {
+        flb_utils_set_plugin_string_property("tls.proxy.ca_path", &ins->tls_proxy_ca_path, tmp);
+    }
+    else if (prop_key_check("tls.proxy.ca_file", k, len) == 0) {
+        flb_utils_set_plugin_string_property("tls.proxy.ca_file", &ins->tls_proxy_ca_file, tmp);
     }
 #  if defined(FLB_SYSTEM_WINDOWS)
     else if (prop_key_check("tls.windows.certstore_name", k, len) == 0 && tmp) {
@@ -1221,6 +1909,7 @@ int flb_output_net_property_check(struct flb_output_instance *ins,
 int flb_output_oauth2_property_check(struct flb_output_instance *ins,
                                       struct flb_config *config)
 {
+#ifdef FLB_HAVE_TLS
     int ret = 0;
 
     /* Get OAuth2 configmap */
@@ -1247,6 +1936,10 @@ int flb_output_oauth2_property_check(struct flb_output_instance *ins,
     }
 
     return 0;
+#else
+    flb_error("OAuth2 requires TLS support");
+    return -1;
+#endif
 }
 
 static int flb_output_http_server_property_check(struct flb_output_instance *ins,
@@ -1336,6 +2029,36 @@ int flb_output_plugin_property_check(struct flb_output_instance *ins,
     return 0;
 }
 
+#ifdef FLB_HAVE_TLS
+/* Eagerly validate tls.proxy.ca_file/ca_path so a bad path fails init here,
+ * instead of being silently ignored later in flb_output_upstream_set(). */
+int flb_output_proxy_tls_ca_check(struct flb_output_instance *ins)
+{
+    struct flb_tls *tls_proxy_validate;
+
+    if (ins->tls_proxy_ca_file == NULL && ins->tls_proxy_ca_path == NULL) {
+        return 0;
+    }
+
+    tls_proxy_validate = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                        ins->tls_proxy_verify,
+                                        0,
+                                        NULL,
+                                        ins->tls_proxy_ca_path,
+                                        ins->tls_proxy_ca_file,
+                                        NULL, NULL, NULL);
+    if (!tls_proxy_validate) {
+        flb_error("[output %s] error initializing TLS context for "
+                  "tls.proxy.ca_file/tls.proxy.ca_path",
+                  ins->name);
+        return -1;
+    }
+
+    flb_tls_destroy(tls_proxy_validate);
+    return 0;
+}
+#endif
+
 /* Trigger the output plugins setup callbacks to prepare them. */
 int flb_output_init_all(struct flb_config *config)
 {
@@ -1353,16 +2076,21 @@ int flb_output_init_all(struct flb_config *config)
     /* Retrieve the plugin reference */
     mk_list_foreach_safe(head, tmp, &config->outputs) {
         ins = mk_list_entry(head, struct flb_output_instance, _head);
+        if (ins->throttle.cap_ms < ins->throttle.base_ms) {
+            flb_error("[output %s] throttle.cap must be greater than or equal to "
+                      "throttle.base", ins->name);
+            return -1;
+        }
         if (ins->log_level == -1) {
             ins->log_level = config->log->level;
         }
         p = ins->p;
 
         /* Output Events Channel */
-        ret = mk_event_channel_create(config->evl,
-                                      &ins->ch_events[0],
-                                      &ins->ch_events[1],
-                                      ins);
+        ret = flb_pipe_event_channel_create(config->evl,
+                                            &ins->ch_events[0],
+                                            &ins->ch_events[1],
+                                            ins);
         if (ret != 0) {
             flb_error("could not create events channels for '%s'",
                       flb_output_name(ins));
@@ -1374,7 +2102,7 @@ int flb_output_init_all(struct flb_config *config)
                   ins->ch_events[0], ins->ch_events[1]);
 
         /*
-         * Note: mk_event_channel_create() sets a type = MK_EVENT_NOTIFICATION by
+         * Note: flb_pipe_event_channel_create() sets a type = MK_EVENT_NOTIFICATION by
          * default, we need to overwrite this value so we can do a clean check
          * into the Engine when the event is triggered.
          */
@@ -1522,6 +2250,49 @@ int flb_output_init_all(struct flb_config *config)
                                                 buckets,
                                                 1, (char *[]) {"output"});
 
+        ins->cmt_throttle_events = cmt_counter_create(ins->cmt, "fluentbit",
+                                               "output", "throttle_events_total",
+                                               "Number of destination throttle reports.",
+                                               1, (char *[]) {"name"});
+        ins->cmt_throttle_active = cmt_gauge_create(ins->cmt, "fluentbit",
+                                             "output", "throttle_active",
+                                             "Whether the output throttle gate is closed.",
+                                             1, (char *[]) {"name"});
+        ins->cmt_throttle_remaining = cmt_gauge_create(ins->cmt, "fluentbit",
+                                                "output",
+                                                "throttle_remaining_seconds",
+                                                "Remaining output throttle cooldown.",
+                                                1, (char *[]) {"name"});
+        ins->cmt_throttle_deferred_routes = cmt_gauge_create(ins->cmt,
+                                                "fluentbit", "output",
+                                                "throttle_deferred_routes",
+                                                "Routes awaiting throttle admission.",
+                                                1, (char *[]) {"name"});
+        ins->cmt_throttle_duration = cmt_counter_create(ins->cmt, "fluentbit",
+                                                "output",
+                                                "throttle_duration_seconds_total",
+                                                "Union of elapsed closed-gate time.",
+                                                1, (char *[]) {"name"});
+        if (ins->cmt_throttle_events == NULL ||
+            ins->cmt_throttle_active == NULL ||
+            ins->cmt_throttle_remaining == NULL ||
+            ins->cmt_throttle_deferred_routes == NULL ||
+            ins->cmt_throttle_duration == NULL) {
+            flb_error("could not create throttle metrics for %s", name);
+            return -1;
+        }
+
+        cmt_counter_set(ins->cmt_throttle_events, ts, 0,
+                        1, (char *[]) {name});
+        cmt_gauge_set(ins->cmt_throttle_active, ts, 0,
+                      1, (char *[]) {name});
+        cmt_gauge_set(ins->cmt_throttle_remaining, ts, 0,
+                      1, (char *[]) {name});
+        cmt_gauge_set(ins->cmt_throttle_deferred_routes, ts, 0,
+                      1, (char *[]) {name});
+        cmt_counter_set(ins->cmt_throttle_duration, ts, 0,
+                        1, (char *[]) {name});
+
         /* old API */
         ins->metrics = flb_metrics_create(name);
         if (ins->metrics) {
@@ -1590,6 +2361,16 @@ int flb_output_init_all(struct flb_config *config)
                 }
             }
 
+            if (ins->tls_crl_file != NULL) {
+                ret = flb_tls_set_crl_file(ins->tls, ins->tls_crl_file);
+                if (ret != 0) {
+                    flb_error("[output %s] error setting up TLS CRL file",
+                              ins->name);
+                    flb_output_instance_destroy(ins);
+                    return -1;
+                }
+            }
+
 # if defined (FLB_SYSTEM_WINDOWS)
             if (ins->tls_win_use_enterprise_certstore) {
                 ret = flb_tls_set_use_enterprise_store(ins->tls, ins->tls_win_use_enterprise_certstore);
@@ -1633,6 +2414,11 @@ int flb_output_init_all(struct flb_config *config)
                 }
             }
 # endif
+        }
+
+        if (flb_output_proxy_tls_ca_check(ins) == -1) {
+            flb_output_instance_destroy(ins);
+            return -1;
         }
 #endif
         /*
@@ -1688,6 +2474,25 @@ int flb_output_init_all(struct flb_config *config)
             }
         }
 
+#ifdef __EMSCRIPTEN__
+        if (flb_output_get_property("grpc", ins) &&
+            flb_utils_bool(flb_output_get_property("grpc", ins)) == FLB_TRUE) {
+            flb_error("[output] browser Fetch does not support native gRPC; use OTLP/HTTP");
+            flb_output_instance_destroy(ins);
+            return -1;
+        }
+        if (ins->browser_url && flb_wasm_http_validate(ins->browser_url) != 0) {
+            flb_error("[output] browser.url must be an absolute HTTPS URL without credentials or fragments");
+            flb_output_instance_destroy(ins);
+            return -1;
+        }
+        if (ins->tp_workers != 0 || mk_list_size(&ins->oauth2_properties) > 0 ||
+            flb_output_get_property("proxy", ins)) {
+            flb_error("[output] browser transport requires workers=0; proxy and OAuth2 are unsupported");
+            flb_output_instance_destroy(ins);
+            return -1;
+        }
+#endif
         /* Initialize plugin through it 'init callback' */
         ret = p->cb_init(ins, config, ins->data);
         if (ret == -1) {
@@ -1766,6 +2571,9 @@ int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *
     if (!u) {
         return -1;
     }
+#ifdef __EMSCRIPTEN__
+    u->browser_url = ins->browser_url;
+#endif
 
     /* TLS */
 #ifdef FLB_HAVE_TLS
@@ -1847,7 +2655,30 @@ int flb_output_upstream_set(struct flb_upstream *u, struct flb_output_instance *
             flb_free(u->proxy_password);
             u->proxy_password = NULL;
         }
+
+#ifdef FLB_HAVE_TLS
+        if (u->proxy_tls_context) {
+            flb_tls_destroy(u->proxy_tls_context);
+            u->proxy_tls_context = NULL;
+        }
+#endif
     }
+
+#ifdef FLB_HAVE_TLS
+    /*
+     * If flb_upstream_create() built a proxy TLS context (HTTPS proxy in
+     * effect), reconfigure it using this instance's tls.proxy.* settings
+     * instead of the hardcoded defaults. Independent from ins->tls*
+     * (destination TLS settings) by design.
+     */
+    if (u->proxy_tls_context != NULL) {
+        flb_upstream_proxy_tls_setup(u,
+                                     ins->tls_proxy_verify,
+                                     ins->tls_proxy_verify_hostname,
+                                     ins->tls_proxy_ca_path,
+                                     ins->tls_proxy_ca_file);
+    }
+#endif
 
     return 0;
 }

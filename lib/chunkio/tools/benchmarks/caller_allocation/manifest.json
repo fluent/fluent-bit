@@ -1,0 +1,120 @@
+{
+  "kernel": "7.0.0-30-generic",
+  "machine": "x86_64",
+  "cpu_affinity": "2",
+  "warmups": 1,
+  "measured_runs": 9,
+  "baseline_commit": "027c98336c20e7a1f1cd69001c19c8a7e11c78bb",
+  "pr_commit": "0d5f1cf8cf7b33b1132d877aa30d6aca62ddb51d",
+  "build_commands": {
+    "base": [
+      "cc",
+      "-O3",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I/home/edsiper/c/chunkio-adaptive-growth/tests",
+      "-isystem",
+      "/tmp/chunkio-pr115-benchmark/base/include",
+      "-isystem",
+      "/tmp/chunkio-pr115-benchmark/base/deps",
+      "-isystem",
+      "/tmp/chunkio-pr115-benchmark/base/deps/monkey/include",
+      "-isystem",
+      "/tmp/chunkio-pr115-benchmark/base-build/include",
+      "/home/edsiper/c/chunkio-adaptive-growth/tools/benchmarks/caller_allocation/bench.c",
+      "/tmp/chunkio-pr115-benchmark/base-build/src/libchunkio-static.a",
+      "/tmp/chunkio-pr115-benchmark/base-build/deps/crc32/libcio-crc32.a",
+      "-Wl,--wrap=cio_file_native_remap",
+      "-Wl,--wrap=cio_file_native_resize",
+      "-o",
+      "/tmp/chunkio-caller-benchmark/reviewed/base"
+    ],
+    "head": [
+      "cc",
+      "-O3",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I/home/edsiper/c/chunkio-adaptive-growth/tests",
+      "-isystem",
+      "/home/edsiper/c/chunkio-adaptive-growth/include",
+      "-isystem",
+      "/home/edsiper/c/chunkio-adaptive-growth/deps",
+      "-isystem",
+      "/home/edsiper/c/chunkio-adaptive-growth/deps/monkey/include",
+      "-isystem",
+      "/tmp/chunkio-pr115-benchmark/head-build/include",
+      "/home/edsiper/c/chunkio-adaptive-growth/tools/benchmarks/caller_allocation/bench.c",
+      "/tmp/chunkio-pr115-benchmark/head-build/src/libchunkio-static.a",
+      "/tmp/chunkio-pr115-benchmark/head-build/deps/crc32/libcio-crc32.a",
+      "-Wl,--wrap=cio_file_native_remap",
+      "-Wl,--wrap=cio_file_native_resize",
+      "-o",
+      "/tmp/chunkio-caller-benchmark/reviewed/head"
+    ]
+  },
+  "source_sha256": {
+    "tools/benchmarks/caller_allocation/bench.c": "d117b666a9afe15096bcc9a77da4128bd6a1be5aee7dcc6edad317f900a1a112",
+    "tests/cio_test_caller.h": "177c3d61b181957f2b8934937256001d0e831e6db325a6414b98bc6e0e9a96ca"
+  },
+  "variants": {
+    "previous": [
+      "base",
+      "fixed"
+    ],
+    "pr_fixed_hint": [
+      "head",
+      "fixed"
+    ],
+    "pr_append_hint": [
+      "head",
+      "append"
+    ]
+  },
+  "cases": [
+    [
+      "sparse",
+      1
+    ],
+    [
+      "sparse_fragmented",
+      1
+    ],
+    [
+      "busy",
+      1
+    ],
+    [
+      "mixed",
+      1
+    ],
+    [
+      "large",
+      1
+    ],
+    [
+      "reopen",
+      1
+    ],
+    [
+      "busy",
+      0
+    ]
+  ],
+  "compiler": "cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+  "filesystem": "ext4   /dev/nvme0n1p2",
+  "page_size": 4096,
+  "library_sha256": {
+    "base": "fc17a0f602dbd5851508b874db0e279c7fea6fab69a3785e39246ac83ac19d33",
+    "head": "275c82f8ba40bdc142092009409160cea3bdffda0404ad1f8c3e6b00b539284e"
+  },
+  "fluent_bit_reference_commit": "66910c10a4d7eafa810b84229cf2dcf7b0f26f97",
+  "allocator_commit": "4a949ab4e47141f9cd6865835367521202cad7e0",
+  "cpu_model": "AMD Ryzen 9 7940HS",
+  "recorded_at_utc": "2026-09-08T14:20:51.256305+00:00",
+  "binary_sha256": {
+    "base": "03ad4ebd2f1cb853509c080ec6363ba999fdd5a758064622ca9726c2a8e06120",
+    "head": "9341d2e0eceac60d7e14bc3a31971c30100b758cb06b476964806c9f469bdad5"
+  }
+}

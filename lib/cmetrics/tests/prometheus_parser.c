@@ -1460,19 +1460,19 @@ void test_pr_168()
         "prometheus_engine_query_duration_seconds{quantile=\"0.99\",slice=\"inner_eval\"} nan 0\n"
         "prometheus_engine_query_duration_seconds_sum{slice=\"inner_eval\"} 0 0\n"
         "prometheus_engine_query_duration_seconds_count{slice=\"inner_eval\"} 0 0\n"
-        "prometheus_engine_query_duration_seconds{quantile=\"0.5\",slice=\"prepare_time\"} 0 0\n"
-        "prometheus_engine_query_duration_seconds{quantile=\"0.9\",slice=\"prepare_time\"} 0 0\n"
-        "prometheus_engine_query_duration_seconds{quantile=\"0.99\",slice=\"prepare_time\"} 0 0\n"
+        "prometheus_engine_query_duration_seconds{quantile=\"0.5\",slice=\"prepare_time\"} nan 0\n"
+        "prometheus_engine_query_duration_seconds{quantile=\"0.9\",slice=\"prepare_time\"} nan 0\n"
+        "prometheus_engine_query_duration_seconds{quantile=\"0.99\",slice=\"prepare_time\"} nan 0\n"
         "prometheus_engine_query_duration_seconds_sum{slice=\"prepare_time\"} 0 0\n"
         "prometheus_engine_query_duration_seconds_count{slice=\"prepare_time\"} 0 0\n"
-        "prometheus_engine_query_duration_seconds{quantile=\"0.5\",slice=\"queue_time\"} 0 0\n"
-        "prometheus_engine_query_duration_seconds{quantile=\"0.9\",slice=\"queue_time\"} 0 0\n"
-        "prometheus_engine_query_duration_seconds{quantile=\"0.99\",slice=\"queue_time\"} 0 0\n"
+        "prometheus_engine_query_duration_seconds{quantile=\"0.5\",slice=\"queue_time\"} nan 0\n"
+        "prometheus_engine_query_duration_seconds{quantile=\"0.9\",slice=\"queue_time\"} nan 0\n"
+        "prometheus_engine_query_duration_seconds{quantile=\"0.99\",slice=\"queue_time\"} nan 0\n"
         "prometheus_engine_query_duration_seconds_sum{slice=\"queue_time\"} 0 0\n"
         "prometheus_engine_query_duration_seconds_count{slice=\"queue_time\"} 0 0\n"
-        "prometheus_engine_query_duration_seconds{quantile=\"0.5\",slice=\"result_sort\"} 0 0\n"
-        "prometheus_engine_query_duration_seconds{quantile=\"0.9\",slice=\"result_sort\"} 0 0\n"
-        "prometheus_engine_query_duration_seconds{quantile=\"0.99\",slice=\"result_sort\"} 0 0\n"
+        "prometheus_engine_query_duration_seconds{quantile=\"0.5\",slice=\"result_sort\"} nan 0\n"
+        "prometheus_engine_query_duration_seconds{quantile=\"0.9\",slice=\"result_sort\"} nan 0\n"
+        "prometheus_engine_query_duration_seconds{quantile=\"0.99\",slice=\"result_sort\"} nan 0\n"
         "prometheus_engine_query_duration_seconds_sum{slice=\"result_sort\"} 0 0\n"
         "prometheus_engine_query_duration_seconds_count{slice=\"result_sort\"} 0 0\n";
 
@@ -1782,6 +1782,224 @@ void test_issue_274()
     cmt_decode_prometheus_destroy(cmt);
 }
 
+void test_type_redeclared_summary_histogram()
+{
+    int status;
+    struct cmt *cmt;
+    struct cmt_decode_prometheus_parse_opts opts;
+    cfl_sds_t result;
+
+    memset(&opts, 0, sizeof(opts));
+
+    /* a summary re-declared as a histogram with the same name must not
+     * reuse the summary object as a histogram */
+    status = cmt_decode_prometheus_create(&cmt,
+        "# TYPE s summary\n"
+        "s{quantile=\"0.5\"} 1\n"
+        "s_sum 1\n"
+        "s_count 1\n"
+        "# TYPE s histogram\n"
+        "s_bucket{le=\"1\"} 1\n"
+        "s_bucket{le=\"+Inf\"} 1\n"
+        "s_sum 1\n"
+        "s_count 1\n", 0, &opts);
+    TEST_CHECK(status == 0);
+    if (status == 0) {
+        result = cmt_encode_prometheus_create(cmt, CMT_FALSE);
+        TEST_CHECK(strstr(result, "# TYPE s summary\n") != NULL);
+        TEST_CHECK(strstr(result, "# TYPE s histogram\n") != NULL);
+        cfl_sds_destroy(result);
+        cmt_decode_prometheus_destroy(cmt);
+    }
+
+    /* and the other way around */
+    status = cmt_decode_prometheus_create(&cmt,
+        "# TYPE h histogram\n"
+        "h_bucket{le=\"1\"} 1\n"
+        "h_bucket{le=\"+Inf\"} 1\n"
+        "h_sum 1\n"
+        "h_count 1\n"
+        "# TYPE h summary\n"
+        "h{quantile=\"0.5\"} 1\n"
+        "h_sum 1\n"
+        "h_count 1\n", 0, &opts);
+    TEST_CHECK(status == 0);
+    if (status == 0) {
+        result = cmt_encode_prometheus_create(cmt, CMT_FALSE);
+        TEST_CHECK(strstr(result, "# TYPE h summary\n") != NULL);
+        TEST_CHECK(strstr(result, "# TYPE h histogram\n") != NULL);
+        cfl_sds_destroy(result);
+        cmt_decode_prometheus_destroy(cmt);
+    }
+}
+
+void test_summary_missing_quantile()
+{
+    int status;
+    struct cmt *cmt;
+    struct cmt_decode_prometheus_parse_opts opts;
+    cfl_sds_t result;
+
+    memset(&opts, 0, sizeof(opts));
+
+    /* quantile sample without the quantile label */
+    cmt = NULL;
+    status = cmt_decode_prometheus_create(&cmt,
+        "# TYPE foo summary\n"
+        "foo{quantile=\"0.5\",host=\"a\"} 1\n"
+        "foo{host=\"b\"} 2\n"
+        "foo_sum 3\n"
+        "foo_count 2\n", 0, &opts);
+    TEST_CHECK(status == CMT_DECODE_PROMETHEUS_SYNTAX_ERROR);
+
+    /* summary without any label */
+    cmt = NULL;
+    status = cmt_decode_prometheus_create(&cmt,
+        "# TYPE foo summary\n"
+        "foo 1\n"
+        "foo 2\n"
+        "foo_sum 3\n"
+        "foo_count 2\n", 0, &opts);
+    TEST_CHECK(status == CMT_DECODE_PROMETHEUS_SYNTAX_ERROR);
+
+    /* quantiles without sum and count */
+    cmt = NULL;
+    status = cmt_decode_prometheus_create(&cmt,
+        "# TYPE foo summary\n"
+        "foo{quantile=\"0.5\"} 1\n"
+        "foo{quantile=\"0.9\"} 2\n"
+        "foo{quantile=\"0.99\"} 3\n", 0, &opts);
+    TEST_CHECK(status == 0);
+    if (status == 0) {
+        cmt_decode_prometheus_destroy(cmt);
+    }
+
+    /* sum and count only is still valid */
+    cmt = NULL;
+    status = cmt_decode_prometheus_create(&cmt,
+        "# TYPE foo summary\n"
+        "foo_sum 3\n"
+        "foo_count 2\n", 0, &opts);
+    TEST_CHECK(status == 0);
+    if (status == 0) {
+        result = cmt_encode_prometheus_create(cmt, CMT_FALSE);
+        TEST_CHECK(strstr(result, "foo_count 2\n") != NULL);
+        cfl_sds_destroy(result);
+        cmt_decode_prometheus_destroy(cmt);
+    }
+}
+
+void test_lexer_unmatched_input()
+{
+    int i;
+    int status;
+    char errbuf[256];
+    struct cmt *cmt;
+    struct cmt_decode_prometheus_parse_opts opts;
+    const char *inputs[] = {
+        /* unknown metric type */
+        "# TYPE metric_name unknown\n"
+        "metric_name 10\n",
+        "# TYPE metric_name counters\n"
+        "metric_name 10\n",
+        "# TYPE metric_name \xe9\n"
+        "metric_name 10\n",
+        /* unknown escape sequence in a label value */
+        "metric_name{key=\"a\\tb\"} 10\n",
+        /* trailing backslash in a label value */
+        "metric_name{key=\"abc\\",
+        /* bare carriage return in a label value */
+        "metric_name{key=\"a\rb\"} 10\n",
+        /* unknown escape sequence in the docstring */
+        "# HELP metric_name C:\\Temp\n"
+        "metric_name 10\n",
+        /* bare carriage return in the docstring */
+        "# HELP metric_name some\rdocstring\n"
+        "metric_name 10\n",
+        NULL
+    };
+
+    memset(&opts, 0, sizeof(opts));
+    opts.errbuf = errbuf;
+    opts.errbuf_size = sizeof(errbuf);
+
+    for (i = 0; inputs[i] != NULL; i++) {
+        cmt = NULL;
+        status = cmt_decode_prometheus_create(&cmt, inputs[i], 0, &opts);
+        TEST_CHECK(status == CMT_DECODE_PROMETHEUS_SYNTAX_ERROR);
+        TEST_MSG("input %i", i);
+    }
+}
+
+void test_histogram_summary_shorter_instance()
+{
+    int status;
+    struct cmt *cmt;
+    struct cmt_decode_prometheus_parse_opts opts;
+    cfl_sds_t result;
+
+    memset(&opts, 0, sizeof(opts));
+
+    /* the second instance has less buckets and quantiles than the first one */
+    status = cmt_decode_prometheus_create(&cmt,
+        "# TYPE h histogram\n"
+        "h_bucket{code=\"200\",le=\"1\"} 1\n"
+        "h_bucket{code=\"200\",le=\"2\"} 2\n"
+        "h_bucket{code=\"200\",le=\"3\"} 3\n"
+        "h_bucket{code=\"200\",le=\"4\"} 4\n"
+        "h_bucket{code=\"200\",le=\"+Inf\"} 4\n"
+        "h_sum{code=\"200\"} 1\n"
+        "h_count{code=\"200\"} 4\n"
+        "h_bucket{code=\"500\",le=\"1\"} 3\n"
+        "h_bucket{code=\"500\",le=\"+Inf\"} 3\n"
+        "h_sum{code=\"500\"} 2\n"
+        "h_count{code=\"500\"} 3\n"
+        "# TYPE s summary\n"
+        "s{code=\"200\",quantile=\"0.1\"} 1\n"
+        "s{code=\"200\",quantile=\"0.5\"} 2\n"
+        "s{code=\"200\",quantile=\"0.9\"} 3\n"
+        "s_sum{code=\"200\"} 1\n"
+        "s_count{code=\"200\"} 4\n"
+        "s{code=\"500\",quantile=\"0.5\"} 7\n"
+        "s_sum{code=\"500\"} 2\n"
+        "s_count{code=\"500\"} 3\n", 0, &opts);
+    TEST_CHECK(status == 0);
+    if (status == 0) {
+        result = cmt_encode_prometheus_create(cmt, CMT_FALSE);
+        TEST_CHECK(strstr(result, "h_bucket{le=\"1.0\",code=\"500\"} 3\n") != NULL);
+        TEST_CHECK(strstr(result, "h_bucket{le=\"+Inf\",code=\"500\"} 3\n") != NULL);
+        TEST_CHECK(strstr(result, "s{quantile=\"0.5\",code=\"500\"} 7\n") != NULL);
+        TEST_MSG("%s", result);
+        cfl_sds_destroy(result);
+        cmt_decode_prometheus_destroy(cmt);
+    }
+}
+
+void test_duplicate_label_and_help()
+{
+    int status;
+    struct cmt *cmt;
+    struct cmt_decode_prometheus_parse_opts opts;
+    cfl_sds_t result;
+
+    memset(&opts, 0, sizeof(opts));
+
+    /* repeated label names and HELP lines must not leak (checked by ASan) */
+    status = cmt_decode_prometheus_create(&cmt,
+        "# HELP foo first\n"
+        "# HELP foo second\n"
+        "foo{a=\"1\",a=\"2\",a=\"3\"} 1\n", 0, &opts);
+    TEST_CHECK(status == 0);
+    if (status == 0) {
+        result = cmt_encode_prometheus_create(cmt, CMT_FALSE);
+        TEST_CHECK(strstr(result, "# HELP foo second\n") != NULL);
+        TEST_CHECK(strstr(result, "foo{a=\"3\"} 1\n") != NULL);
+        TEST_MSG("%s", result);
+        cfl_sds_destroy(result);
+        cmt_decode_prometheus_destroy(cmt);
+    }
+}
+
 TEST_LIST = {
     {"header_help", test_header_help},
     {"header_type", test_header_type},
@@ -1820,5 +2038,10 @@ TEST_LIST = {
     {"issue_fluent_bit_6534", test_issue_fluent_bit_6534},
     {"issue_fluent_bit_9267", test_issue_fluent_bit_9267},
     {"issue_274", test_issue_274},
+    {"type_redeclared_summary_histogram", test_type_redeclared_summary_histogram},
+    {"summary_missing_quantile", test_summary_missing_quantile},
+    {"lexer_unmatched_input", test_lexer_unmatched_input},
+    {"histogram_summary_shorter_instance", test_histogram_summary_shorter_instance},
+    {"duplicate_label_and_help", test_duplicate_label_and_help},
     { 0 }
 };

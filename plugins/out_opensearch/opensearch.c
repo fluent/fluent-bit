@@ -18,6 +18,7 @@
  */
 
 #include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_network.h>
 #include <fluent-bit/flb_http_client.h>
@@ -29,16 +30,204 @@
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_ra_key.h>
 #include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_search_bulk.h>
+#include <fluent-bit/flb_http_retry_after.h>
 #include <msgpack.h>
 
 #include <cfl/cfl.h>
+#include <stdint.h>
+#include <time.h>
 
 #include "opensearch.h"
 #include "os_conf.h"
 
+#define FLB_OS_TRACE_CHUNK_SIZE 3000
+#define FLB_OS_RESPONSE_PREVIEW_SIZE 512
+
 static int os_pack_array_content(msgpack_packer *tmp_pck,
                                  msgpack_object array,
                                  struct flb_opensearch *ctx);
+
+static void log_payload_chunks(struct flb_opensearch *ctx,
+                               const char *label,
+                               const char *payload, size_t payload_size,
+                               int log_level)
+{
+    size_t offset;
+    size_t part;
+    size_t part_count;
+    size_t part_size;
+
+    part_count = (payload_size + FLB_OS_TRACE_CHUNK_SIZE - 1) /
+                 FLB_OS_TRACE_CHUNK_SIZE;
+    for (offset = 0, part = 1; offset < payload_size; part++) {
+        part_size = payload_size - offset;
+        if (part_size > FLB_OS_TRACE_CHUNK_SIZE) {
+            part_size = FLB_OS_TRACE_CHUNK_SIZE;
+        }
+
+        switch (log_level) {
+        case FLB_LOG_ERROR:
+            flb_plg_error(ctx->ins, "%s part %zu/%zu: %.*s",
+                          label, part, part_count, (int) part_size,
+                          payload + offset);
+            break;
+        case FLB_LOG_WARN:
+            flb_plg_warn(ctx->ins, "%s part %zu/%zu: %.*s",
+                         label, part, part_count, (int) part_size,
+                         payload + offset);
+            break;
+        case FLB_LOG_INFO:
+            flb_plg_info(ctx->ins, "%s part %zu/%zu: %.*s",
+                         label, part, part_count, (int) part_size,
+                         payload + offset);
+            break;
+        case FLB_LOG_DEBUG:
+            flb_plg_debug(ctx->ins, "%s part %zu/%zu: %.*s",
+                          label, part, part_count, (int) part_size,
+                          payload + offset);
+            break;
+        case FLB_LOG_TRACE:
+            flb_plg_trace(ctx->ins, "%s part %zu/%zu: %.*s",
+                          label, part, part_count, (int) part_size,
+                          payload + offset);
+            break;
+        case FLB_LOG_OFF:
+        default:
+            break;
+        }
+        offset += part_size;
+    }
+}
+
+static void log_invalid_bulk_response(struct flb_opensearch *ctx,
+                                      const char *payload,
+                                      size_t payload_size)
+{
+    char character;
+    char preview[(FLB_OS_RESPONSE_PREVIEW_SIZE * 2) + 1];
+    size_t input_index;
+    size_t input_size;
+    size_t output_index;
+
+    input_size = payload_size;
+    if (input_size > FLB_OS_RESPONSE_PREVIEW_SIZE) {
+        input_size = FLB_OS_RESPONSE_PREVIEW_SIZE;
+    }
+
+    output_index = 0;
+    for (input_index = 0; input_index < input_size; input_index++) {
+        character = payload[input_index];
+        if (character == '\n' || character == '\r' || character == '\t') {
+            preview[output_index++] = '\\';
+            if (character == '\n') {
+                preview[output_index++] = 'n';
+            }
+            else if (character == '\r') {
+                preview[output_index++] = 'r';
+            }
+            else {
+                preview[output_index++] = 't';
+            }
+        }
+        else if ((unsigned char) character < 0x20 || character == 0x7f) {
+            preview[output_index++] = '.';
+        }
+        else {
+            preview[output_index++] = character;
+        }
+    }
+    preview[output_index] = '\0';
+
+    flb_plg_error(ctx->ins,
+                  "invalid OpenSearch bulk response (first %zu/%zu bytes): %s",
+                  input_size, payload_size, preview);
+}
+
+static void log_bulk_failure_summary(struct flb_opensearch *ctx,
+                                     struct flb_search_bulk_stats *stats,
+                                     size_t retry_records,
+                                     size_t dropped_records)
+{
+    if (dropped_records > 0) {
+        flb_plg_error(ctx->ins,
+                      "bulk response reported errors: %zu/%zu items failed, "
+                      "first error: status=%d type='%s' reason='%s'; "
+                      "retrying %zu record(s), dropped %zu unrecoverable record(s)",
+                      stats->failed_items, stats->total_items,
+                      stats->first_error_status, stats->first_error_type,
+                      stats->first_error_reason, retry_records,
+                      dropped_records);
+    }
+    else {
+        flb_plg_error(ctx->ins,
+                      "bulk response reported errors: %zu/%zu items failed, "
+                      "first error: status=%d type='%s' reason='%s'; "
+                      "retrying %zu record(s)",
+                      stats->failed_items, stats->total_items,
+                      stats->first_error_status, stats->first_error_type,
+                      stats->first_error_reason, retry_records);
+    }
+}
+
+static void opensearch_apply_retry_after(struct flb_opensearch *ctx,
+                                         struct flb_http_client *client,
+                                         struct flb_output_flush *out_flush)
+{
+    int status;
+    int trailer_status;
+    time_t wall_time;
+    int64_t wall_time_ms;
+    uint64_t delay_ms;
+    uint64_t trailer_delay_ms;
+    size_t invalid_count;
+    size_t trailer_invalid_count;
+
+    status = FLB_RETRY_AFTER_ABSENT;
+    delay_ms = 0;
+    invalid_count = 0;
+    wall_time = time(NULL);
+    if (wall_time < 0 || (uint64_t) wall_time > (uint64_t) INT64_MAX / 1000) {
+        wall_time_ms = 0;
+    }
+    else {
+        wall_time_ms = (int64_t) wall_time * 1000;
+    }
+
+    if (client->resp.data != NULL && client->resp.headers_end != NULL) {
+        status = flb_http_retry_after_parse_headers(
+                     client->resp.data,
+                     (size_t) (client->resp.headers_end - client->resp.data),
+                     wall_time_ms, &delay_ms, &invalid_count);
+    }
+
+    if (client->resp.trailer_buf != NULL && client->resp.trailer_size > 0) {
+        trailer_delay_ms = 0;
+        trailer_invalid_count = 0;
+        trailer_status = flb_http_retry_after_parse_headers(
+                             client->resp.trailer_buf,
+                             client->resp.trailer_size,
+                             wall_time_ms, &trailer_delay_ms,
+                             &trailer_invalid_count);
+        invalid_count += trailer_invalid_count;
+        if ((trailer_status == FLB_RETRY_AFTER_VALID ||
+             trailer_status == FLB_RETRY_AFTER_SATURATED) &&
+            ((status != FLB_RETRY_AFTER_VALID &&
+              status != FLB_RETRY_AFTER_SATURATED) ||
+             trailer_delay_ms > delay_ms)) {
+            status = trailer_status;
+            delay_ms = trailer_delay_ms;
+        }
+    }
+
+    if (invalid_count > 0) {
+        flb_plg_debug(ctx->ins, "ignored %zu malformed Retry-After field(s)",
+                      invalid_count);
+    }
+    if (status == FLB_RETRY_AFTER_VALID || status == FLB_RETRY_AFTER_SATURATED) {
+        flb_output_set_retry_after(out_flush, delay_ms);
+    }
+}
 
 #ifdef FLB_HAVE_AWS
 static flb_sds_t add_aws_auth(struct flb_http_client *c,
@@ -939,11 +1128,21 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
     size_t b_sent;
     struct flb_opensearch *ctx = out_context;
     struct flb_connection *u_conn;
-    struct flb_http_client *c;
+    struct flb_http_client *c = NULL;
     flb_sds_t signature = NULL;
     int compressed = FLB_FALSE;
     void *final_payload_buf = NULL;
     size_t final_payload_size = 0;
+    struct flb_search_bulk_retry *retry_payload;
+    struct flb_search_bulk_retry *next_retry_payload = NULL;
+    struct flb_search_bulk_stats bulk_stats;
+    size_t retry_records;
+    size_t dropped_records;
+    size_t dropped_bytes;
+    size_t successful_bytes;
+    int successful_records;
+    int retry_context_result;
+    int throttle_detected;
 
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
@@ -951,8 +1150,20 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    /* Convert format */
-    if (event_chunk->type == FLB_EVENT_TYPE_TRACES) {
+    retry_payload = flb_output_get_retry_context(out_flush, NULL, NULL);
+    throttle_detected = FLB_FALSE;
+    if (retry_payload != NULL) {
+        pack = flb_sds_create_len(retry_payload->payload,
+                                  retry_payload->size);
+        if (pack == NULL) {
+            flb_upstream_conn_release(u_conn);
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
+        ret = 0;
+        out_buf = pack;
+        out_size = flb_sds_len(pack);
+    }
+    else if (event_chunk->type == FLB_EVENT_TYPE_TRACES) {
         pack = flb_msgpack_raw_to_json_sds(event_chunk->data, event_chunk->size,
                                            config->json_escape_unicode);
         if (pack) {
@@ -1008,6 +1219,9 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
     /* Compose HTTP Client request */
     c = flb_http_client(u_conn, FLB_HTTP_POST, ctx->uri,
                         final_payload_buf, final_payload_size, NULL, 0, NULL, 0);
+    if (c == NULL) {
+        goto retry;
+    }
 
     flb_http_buffer_size(c, ctx->buffer_size);
 
@@ -1068,46 +1282,138 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
                 flb_sds_destroy(signature);
                 signature = NULL;
             }
+            if (c->resp.status == 429) {
+                opensearch_apply_retry_after(ctx, c, out_flush);
+                goto throttle;
+            }
             goto retry;
         }
 
         if (c->resp.payload_size > 0) {
-            /*
-             * OpenSearch payload should be JSON, we convert it to msgpack
-             * and lookup the 'error' field.
-             */
-            ret = opensearch_error_check(ctx, c);
-            if (ret == FLB_TRUE) {
-                /* we got an error */
-                if (ctx->trace_error) {
-                    /*
-                     * If trace_error is set, trace the actual
-                     * response from Elasticsearch explaining the problem.
-                     * Trace_Output can be used to see the request.
-                     */
-                    if (pack_size < 4000) {
-                        flb_plg_debug(ctx->ins, "error caused by: Input\n%.*s\n",
-                                      (int) pack_size, pack);
+            memset(&bulk_stats, 0, sizeof(struct flb_search_bulk_stats));
+            if (event_chunk->type == FLB_EVENT_TYPE_LOGS) {
+                /* Preserve the existing behavior that acknowledges all conflicts. */
+                ret = flb_search_bulk_process_response(c->resp.payload,
+                                                       c->resp.payload_size,
+                                                       pack, pack_size,
+                                                       FLB_SEARCH_BULK_ACK_ALL_CONFLICTS,
+                                                       ctx->drop_unrecoverable_records,
+                                                       &bulk_stats,
+                                                       &throttle_detected,
+                                                       &next_retry_payload);
+            }
+            else if (opensearch_error_check(ctx, c) == FLB_TRUE) {
+                ret = FLB_SEARCH_BULK_INVALID;
+            }
+            else {
+                ret = FLB_SEARCH_BULK_COMPLETE;
+            }
+            retry_records = 0;
+            if (next_retry_payload != NULL) {
+                retry_records = next_retry_payload->records;
+            }
+            dropped_records = 0;
+            dropped_bytes = 0;
+
+            if (ret == FLB_SEARCH_BULK_RETRY) {
+                retry_context_result = flb_output_set_retry_context(
+                                           out_flush, next_retry_payload,
+                                           flb_search_bulk_retry_destroy,
+                                           next_retry_payload->records,
+                                           next_retry_payload->size);
+                if (retry_context_result != 0) {
+                    flb_search_bulk_retry_destroy(next_retry_payload);
+                    next_retry_payload = NULL;
+                    retry_records = bulk_stats.total_items;
+                    flb_plg_error(ctx->ins,
+                                  "could not preserve filtered bulk retry payload; "
+                                  "retrying the full batch");
+                }
+                else {
+                    next_retry_payload = NULL;
+                    if (ctx->drop_unrecoverable_records == FLB_TRUE) {
+                        dropped_records = bulk_stats.unrecoverable_items;
+                        dropped_bytes = bulk_stats.unrecoverable_bytes;
                     }
-                    if (c->resp.payload_size < 4000) {
-                        flb_plg_error(ctx->ins, "error: Output\n%s",
-                                      c->resp.payload);
-                    } else {
-                        /*
-                        * We must use fwrite since the flb_log functions
-                        * will truncate data at 4KB
-                        */
-                        fwrite(c->resp.payload, 1, c->resp.payload_size, stderr);
-                        fflush(stderr);
+                }
+            }
+            else if (ret == FLB_SEARCH_BULK_COMPLETE &&
+                     ctx->drop_unrecoverable_records == FLB_TRUE) {
+                dropped_records = bulk_stats.unrecoverable_items;
+                dropped_bytes = bulk_stats.unrecoverable_bytes;
+            }
+
+            if ((ret == FLB_SEARCH_BULK_COMPLETE ||
+                 ret == FLB_SEARCH_BULK_RETRY) &&
+                bulk_stats.failed_items > 0) {
+                log_bulk_failure_summary(ctx, &bulk_stats, retry_records,
+                                         dropped_records);
+#ifdef FLB_HAVE_METRICS
+                if (dropped_records > 0) {
+                    cmt_counter_add(ctx->ins->cmt_dropped_records,
+                                    cfl_time_now(),
+                                    dropped_records,
+                                    1, (char *[]) {
+                                        (char *) flb_output_name(ctx->ins)
+                                    });
+
+                    if (out_flush->config->router != NULL &&
+                        event_chunk->type == FLB_EVENT_TYPE_LOGS) {
+                        cmt_counter_add(out_flush->config->router->logs_drop_records_total,
+                                        cfl_time_now(), dropped_records,
+                                        2, (char *[]) {
+                                            (char *) flb_input_name(out_flush->task->i_ins),
+                                            (char *) flb_output_name(ctx->ins)
+                                        });
+                        cmt_counter_add(out_flush->config->router->logs_drop_bytes_total,
+                                        cfl_time_now(), dropped_bytes,
+                                        2, (char *[]) {
+                                            (char *) flb_input_name(out_flush->task->i_ins),
+                                            (char *) flb_output_name(ctx->ins)
+                                        });
                     }
+                }
+#endif
+            }
+
+            if (ctx->trace_error == FLB_TRUE &&
+                (ret != FLB_SEARCH_BULK_COMPLETE || bulk_stats.failed_items > 0)) {
+                log_payload_chunks(ctx, "error caused by: Input", pack, pack_size,
+                                   FLB_LOG_DEBUG);
+                log_payload_chunks(ctx, "error: Output", c->resp.payload,
+                                   c->resp.payload_size, FLB_LOG_ERROR);
+            }
+
+            if (ret != FLB_SEARCH_BULK_COMPLETE) {
+                if (ret != FLB_SEARCH_BULK_RETRY) {
+                    log_invalid_bulk_response(ctx, c->resp.payload,
+                                              c->resp.payload_size);
                 }
                 if (signature) {
                     flb_sds_destroy(signature);
                     signature = NULL;
                 }
+                if (throttle_detected == FLB_TRUE) {
+                    opensearch_apply_retry_after(ctx, c, out_flush);
+                    goto throttle;
+                }
                 goto retry;
             }
             else {
+                if (bulk_stats.total_items > 0 &&
+                    (dropped_records > 0 || retry_payload != NULL)) {
+                    successful_records = (int) bulk_stats.successful_items;
+                    successful_bytes = bulk_stats.successful_bytes;
+                    flb_output_set_successful_route_data(out_flush,
+                                                         successful_records,
+                                                         successful_bytes);
+                }
+                else if (retry_payload != NULL) {
+                    flb_output_set_successful_route_data(out_flush,
+                                                         retry_payload->records,
+                                                         retry_payload->size);
+                }
+                flb_output_clear_retry_context(out_flush);
                 flb_plg_debug(ctx->ins, "OpenSearch response\n%s",
                               c->resp.payload);
             }
@@ -1122,7 +1428,9 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
     }
 
     /* Cleanup */
-    flb_http_client_destroy(c);
+    if (c != NULL) {
+        flb_http_client_destroy(c);
+    }
 
     if (final_payload_buf != pack) {
         flb_free(final_payload_buf);
@@ -1135,9 +1443,18 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
     }
     FLB_OUTPUT_RETURN(FLB_OK);
 
+ throttle:
+    ret = FLB_THROTTLE;
+    goto failure;
+
     /* Issue a retry */
  retry:
-    flb_http_client_destroy(c);
+    ret = FLB_RETRY;
+
+ failure:
+    if (c != NULL) {
+        flb_http_client_destroy(c);
+    }
     flb_sds_destroy(pack);
 
     if (final_payload_buf != pack) {
@@ -1145,7 +1462,7 @@ static void cb_opensearch_flush(struct flb_event_chunk *event_chunk,
     }
 
     flb_upstream_conn_release(u_conn);
-    FLB_OUTPUT_RETURN(FLB_RETRY);
+    FLB_OUTPUT_RETURN(ret);
 }
 
 static int cb_opensearch_exit(void *data, struct flb_config *config)
@@ -1327,6 +1644,11 @@ static struct flb_config_map config_map[] = {
      "Operation to use to write in bulk requests"
     },
     {
+     FLB_CONFIG_MAP_BOOL, "drop_unrecoverable_records", "false",
+     0, FLB_TRUE, offsetof(struct flb_opensearch, drop_unrecoverable_records),
+     "Drop records rejected by non-retryable bulk 4xx errors; may cause data loss"
+    },
+    {
      FLB_CONFIG_MAP_STR, "id_key", NULL,
      0, FLB_TRUE, offsetof(struct flb_opensearch, id_key),
      "If set, _id will be the value of the key from incoming record."
@@ -1352,7 +1674,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_BOOL, "trace_error", "false",
      0, FLB_TRUE, offsetof(struct flb_opensearch, trace_error),
-     "When enabled print the OpenSearch exception to stderr (for diag only)"
+     "Log failed requests at debug and OpenSearch responses at error level"
     },
 
     /* HTTP Compression */

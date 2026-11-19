@@ -1,0 +1,34 @@
+{
+  "pack_version": 1,
+  "fts_api_version": 1,
+  "id": "org.fluentbit.policy.successful-probes",
+  "version": "1.0.1",
+  "title": "Successful probe reduction",
+  "description": "Drop only exact configured probe paths with integer status 200 and known latency below the threshold. Preserve failures, slow requests, missing fields and near-matching paths. Units must be milliseconds.",
+  "blocks": [
+    {
+      "name": "apply",
+      "signals": [
+        "logs"
+      ],
+      "source": "blocks/apply.lua",
+      "parameters": {
+        "paths": {
+          "type": "strings",
+          "default": [
+            "/health",
+            "/ready"
+          ]
+        },
+        "max_duration_ms": {
+          "type": "number",
+          "default": 100
+        }
+      },
+      "privacy": false
+    }
+  ],
+  "fixtures": [
+    "tests/policy.yaml"
+  ]
+}

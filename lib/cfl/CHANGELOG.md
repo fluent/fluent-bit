@@ -6,6 +6,15 @@ This file records the notable changes in each CFL release.
 
 - Added public request-lifetime arena allocation, duplication helpers,
   allocator callbacks, and optional bounded geometric chunk growth.
+- Reduced arena memory for CFL object graphs: objects use their natural
+  alignment instead of the raw allocation alignment, and owned SDS strings use
+  finer size classes. Decoded log records use 27 to 31 percent less arena
+  memory. Owned SDS blocks are no longer zeroed before initialization.
+- Added a bump-allocation fast path for the current arena chunk.
+- Fixed the alignment of external arena allocations, which returned storage
+  at a misaligned offset for large owned SDS strings.
+- Added the `cfl-benchmark-arena-records` benchmark for decoded record
+  batches.
 
 ## 1.0.0 - 2026-07-11
 

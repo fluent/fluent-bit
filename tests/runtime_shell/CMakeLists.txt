@@ -57,6 +57,7 @@ if(WIN32)
       set_tests_properties(${script} PROPERTIES
         ENVIRONMENT "${RUNTIME_SHELL_ENVIRONMENT}"
         LABELS "runtime_shell"
+        TIMEOUT 90
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         )
     endforeach()
@@ -73,6 +74,7 @@ else()
   set(UNIT_TESTS_SH
     custom_calyptia.sh
     dry_run_invalid_property.sh
+    generate_config.sh
     in_dummy_expect.sh
     in_tail_expect.sh
     in_http_tls_expect.sh
@@ -90,6 +92,11 @@ else()
       message(STATUS
         "We don't test Golang plugins on RISC-V 64bit platform for now")
     else()
+      find_program(FLB_TEST_FLOCK_PROGRAM flock)
+      if(NOT FLB_TEST_FLOCK_PROGRAM)
+        message(FATAL_ERROR
+          "Linux Go runtime tests require flock; install util-linux before configuring tests")
+      endif()
       list(APPEND UNIT_TESTS_SH proxy_logs_expect.sh)
     endif()
   endif()
@@ -102,6 +109,10 @@ else()
     set_tests_properties(${script} PROPERTIES
       ENVIRONMENT "${RUNTIME_SHELL_ENVIRONMENT}"
       LABELS "runtime_shell"
+      TIMEOUT 90
       )
   endforeach()
+  if(TEST proxy_logs_expect.sh)
+    set_tests_properties(proxy_logs_expect.sh PROPERTIES TIMEOUT 900)
+  endif()
 endif()

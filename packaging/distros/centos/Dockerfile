@@ -203,6 +203,8 @@ ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 
 ARG FLB_OUT_PGSQL=On
 ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
+ARG FLB_KAFKA=On
+ENV FLB_KAFKA=$FLB_KAFKA
 ARG FLB_PREFER_SYSTEM_LIB_ZSTD=Off
 ENV FLB_PREFER_SYSTEM_LIB_ZSTD=$FLB_PREFER_SYSTEM_LIB_ZSTD
 
@@ -258,7 +260,7 @@ ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-enabled crb && \
     dnf -y install rpm-build ca-certificates gcc gcc-c++ make bash \
     wget unzip systemd-devel wget flex bison \
-    postgresql-libs postgresql-devel postgresql-server postgresql \
+    libpq libpq-devel \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libcurl-devel pkgconf-pkg-config \
     libyaml-devel zlib-devel libzstd-devel \
     tar gzip && \
@@ -272,6 +274,8 @@ ENV PATH="${CMAKE_HOME}/bin:${PATH}"
 
 ARG FLB_OUT_PGSQL=On
 ENV FLB_OUT_PGSQL=$FLB_OUT_PGSQL
+ARG FLB_KAFKA=On
+ENV FLB_KAFKA=$FLB_KAFKA
 # Use system installed libzstd library.
 ARG FLB_PREFER_SYSTEM_LIB_ZSTD=On
 ENV FLB_PREFER_SYSTEM_LIB_ZSTD=$FLB_PREFER_SYSTEM_LIB_ZSTD
@@ -290,7 +294,7 @@ ARG CMAKE_URL="https://github.com/Kitware/CMake/releases/download"
 RUN dnf -y install 'dnf-command(config-manager)' && dnf -y config-manager --set-enabled crb && \
     dnf -y install rpm-build ca-certificates gcc gcc-c++ make bash \
     wget unzip systemd-devel wget flex bison \
-    postgresql-libs postgresql-devel postgresql-server postgresql \
+    libpq libpq-devel \
     cyrus-sasl-lib cyrus-sasl-devel openssl openssl-libs openssl-devel libcurl-devel pkgconf-pkg-config \
     libyaml-devel zlib-devel libzstd-devel \
     tar gzip && \

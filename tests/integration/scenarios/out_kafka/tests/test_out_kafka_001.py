@@ -12,13 +12,28 @@ from opentelemetry.proto.collector.metrics.v1.metrics_service_pb2 import ExportM
 from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
 
 from server.kafka_server import data_storage, kafka_server_run, kafka_server_stop
+from server.schema_registry_server import (
+    SCHEMA_ID,
+    SCHEMA_SUBJECT,
+    SCHEMA_VERSION,
+    data_storage as schema_registry_data_storage,
+    schema_registry_server_run,
+    schema_registry_server_stop,
+)
 from utils.data_utils import read_json_file
+from utils.memory_check import memory_check_enabled
+from utils.fluent_bit_manager import FluentBitStartupError
 from utils.test_service import FluentBitTestService
 
 
+EMPTY_MAP_RECORD_ID = "97789a11215b54828d2c3f50b864afed42543ff8"
+
+
 class Service:
-    def __init__(self, config_file):
+    def __init__(self, config_file, *, use_schema_registry=False, schema_registry_options=None):
         self.config_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "../config", config_file))
+        self.use_schema_registry = use_schema_registry
+        self.schema_registry_options = schema_registry_options or {}
         self.service = FluentBitTestService(
             self.config_file,
             data_storage=data_storage,
@@ -30,8 +45,13 @@ class Service:
     def _start_receiver(self, service):
         self.kafka_port = service.allocate_port_env("TEST_SUITE_KAFKA_PORT")
         kafka_server_run(self.kafka_port)
+        if self.use_schema_registry:
+            self.schema_registry_port = service.allocate_port_env("TEST_SUITE_SCHEMA_REGISTRY_PORT")
+            schema_registry_server_run(self.schema_registry_port, **self.schema_registry_options)
 
     def _stop_receiver(self, service):
+        if self.use_schema_registry:
+            schema_registry_server_stop()
         kafka_server_stop()
 
     def start(self):
@@ -165,6 +185,42 @@ def _decode_simple_msgpack(data, offset=0):
         return data[offset:end].decode("utf-8"), end
 
     raise ValueError(f"Unsupported MessagePack type 0x{first:02x}")
+
+
+def _decode_avro_long(data, offset=0):
+    encoded = 0
+    shift = 0
+
+    while True:
+        if offset >= len(data):
+            raise ValueError("Truncated Avro long")
+
+        byte = data[offset]
+        offset += 1
+
+        if shift == 63 and byte & 0x7E:
+            raise ValueError("Invalid Avro long")
+
+        encoded |= (byte & 0x7F) << shift
+
+        if byte & 0x80 == 0:
+            break
+
+        shift += 7
+        if shift >= 64:
+            raise ValueError("Invalid Avro long")
+
+    return (encoded >> 1) ^ -(encoded & 1), offset
+
+
+def _decode_avro_string(data, offset=0):
+    size, offset = _decode_avro_long(data, offset)
+    end = offset + size
+
+    if size < 0 or end > len(data):
+        raise ValueError("Invalid Avro string")
+
+    return data[offset:end].decode("utf-8"), end
 
 
 def _decode_otlp_proto(data, signal_type):
@@ -442,6 +498,82 @@ def _wait_for_log_text(log_file, pattern, timeout=10):
     raise TimeoutError(f"Timed out waiting for log pattern {pattern!r}")
 
 
+def _read_fluent_bit_log(service):
+    if not service.service.flb or not service.service.flb.log_file:
+        return ""
+
+    try:
+        with open(service.service.flb.log_file, "r", encoding="utf-8", errors="replace") as log:
+            return log.read()
+    except FileNotFoundError:
+        return ""
+
+
+def _start_or_skip_without_avro_encoder(service):
+    try:
+        service.start()
+    except FluentBitStartupError as error:
+        log_contents = _read_fluent_bit_log(service)
+        error_message = str(error)
+        unsupported_markers = [
+            "unknown configuration property 'schema_str'",
+            "unknown configuration property 'schema_id'",
+            "unknown configuration property 'schema_registry_url'",
+            "unknown configuration property 'schema_registry_subject'",
+            "unknown configuration property 'schema_registry_version'",
+        ]
+
+        if any(marker in log_contents or marker in error_message
+               for marker in unsupported_markers):
+            try:
+                service.stop()
+            except Exception:
+                pass
+            pytest.skip("Kafka Avro Schema Registry requires FLB_AVRO_ENCODER=On")
+
+        try:
+            service.stop()
+        except Exception:
+            pass
+        raise
+
+
+def test_decode_avro_long_rejects_out_of_range_terminal_bits():
+    payload = b"\x80" * 9 + b"\x02"
+
+    with pytest.raises(ValueError, match="Invalid Avro long"):
+        _decode_avro_long(payload)
+
+
+def _create_shutdown_grace_service(ensure_thread_safe_reload):
+    config_file = os.path.abspath(
+        os.path.join(
+            os.path.dirname(__file__),
+            "../config",
+            "out_kafka_shutdown_grace.yaml",
+        )
+    )
+    service = FluentBitTestService(
+        config_file,
+        extra_env={
+            "TEST_HOT_RELOAD_ENSURE_THREAD_SAFETY": (
+                "on" if ensure_thread_safe_reload else "off"
+            ),
+        },
+    )
+    service.allocate_port_env("TEST_SUITE_KAFKA_PORT")
+    return service
+
+
+def _send_shutdown_grace_record(service):
+    response = requests.post(
+        f"http://127.0.0.1:{service.flb_listener_port}/",
+        json={"message": "pending during reload"},
+        timeout=5,
+    )
+    response.raise_for_status()
+
+
 def test_out_kafka_sends_json_payload():
     service = Service("out_kafka_basic.yaml")
     service.start()
@@ -459,6 +591,63 @@ def test_out_kafka_sends_json_payload():
     assert payload["source"] == "dummy"
     assert any(request["api_key"] == 3 for request in data_storage["requests"])
     assert any(request["api_key"] == 0 for request in data_storage["requests"])
+
+
+def test_out_kafka_hot_reload_waits_for_pending_delivery_with_infinite_grace():
+    service = _create_shutdown_grace_service(ensure_thread_safe_reload=True)
+    service.start()
+
+    try:
+        _send_shutdown_grace_record(service)
+        _wait_for_log_text(service.flb.log_file, "enqueued message")
+        service.flb.trigger_http_reload()
+        service.flb.wait_for_hot_reload_count(
+            1,
+            timeout=30 if memory_check_enabled() else 10,
+        )
+        log_text = _wait_for_log_text(
+            service.flb.log_file,
+            "[reload] start everything",
+            timeout=30 if memory_check_enabled() else 10,
+        )
+
+        delivery_failure = "message delivery failed: Local: Message timed out"
+        reload_start = "[reload] start everything"
+        assert delivery_failure in log_text
+        assert "Failed to force flush" not in log_text
+        assert log_text.index(delivery_failure) < log_text.index(reload_start)
+    finally:
+        service.stop()
+
+
+def test_out_kafka_hot_reload_times_out_pending_delivery_with_finite_grace():
+    service = _create_shutdown_grace_service(ensure_thread_safe_reload=False)
+    service.start()
+
+    try:
+        _send_shutdown_grace_record(service)
+        _wait_for_log_text(service.flb.log_file, "enqueued message")
+        reload_started_at = time.monotonic()
+        service.flb.trigger_http_reload()
+        service.flb.wait_for_hot_reload_count(
+            1,
+            timeout=30 if memory_check_enabled() else 10,
+        )
+        log_text = _wait_for_log_text(
+            service.flb.log_file,
+            "Failed to force flush: Local: Timed out",
+        )
+
+        reload_elapsed_seconds = time.monotonic() - reload_started_at
+        force_flush_failure = "Failed to force flush: Local: Timed out"
+        reload_start = "[reload] start everything"
+
+        # Allow scheduling margin around the configured two-second grace.
+        assert reload_elapsed_seconds >= 1.5
+        assert reload_start in log_text
+        assert log_text.index(force_flush_failure) < log_text.index(reload_start)
+    finally:
+        service.stop()
 
 
 def test_out_kafka_raw_format_uses_selected_field():
@@ -520,6 +709,53 @@ def test_out_kafka_msgpack_format_sends_msgpack_payload():
     assert payload["message"] == "hello msgpack"
     assert payload["count"] == 7
     assert payload["source"] == "dummy"
+
+
+def test_out_kafka_avro_resolves_schema_registry_subject():
+    service = Service("out_kafka_avro_schema_registry.yaml", use_schema_registry=True)
+    _start_or_skip_without_avro_encoder(service)
+    try:
+        messages = service.wait_for_messages(3, timeout=30)
+    finally:
+        service.stop()
+
+    for message in messages:
+        value = message["value"]
+        assert message["topic"] == "test"
+        assert value[0] == 0
+        assert int.from_bytes(value[1:5], "big") == SCHEMA_ID
+        body, offset = _decode_avro_string(value, 5)
+        source, offset = _decode_avro_string(value, offset)
+        assert (body, source) == ("hello avro", "dummy")
+        assert offset == len(value)
+
+    requests_seen = schema_registry_data_storage["requests"]
+    assert len(requests_seen) == 1
+    assert requests_seen[0]["method"] == "GET"
+    assert requests_seen[0]["path"] == f"/subjects/{SCHEMA_SUBJECT}/versions/{SCHEMA_VERSION}"
+    assert "application/vnd.schemaregistry.v1+json" in requests_seen[0]["headers"]["Accept"]
+
+
+def test_out_kafka_avro_encodes_empty_map():
+    service = Service("out_kafka_avro_empty_map.yaml")
+    _start_or_skip_without_avro_encoder(service)
+
+    messages = service.wait_for_messages(1)
+    service.stop()
+
+    message = messages[0]
+    value = message["value"]
+
+    assert message["topic"] == "test"
+    assert value[0] == 0
+    assert int.from_bytes(value[1:5], "big") == SCHEMA_ID
+
+    record_id, offset = _decode_avro_string(value, 5)
+    map_size, offset = _decode_avro_long(value, offset)
+
+    assert record_id == EMPTY_MAP_RECORD_ID
+    assert map_size == 0
+    assert offset == len(value)
 
 
 def test_out_kafka_otlp_json_logs():
@@ -930,7 +1166,7 @@ def test_out_kafka_otlp_json_partition_by_resource_rejects_oversized_message():
     service.start()
     service.send_payload_dict(_build_monolithic_logs_payload(512), "logs")
 
-    timeout = 30 if os.environ.get("VALGRIND") else 10
+    timeout = 30 if memory_check_enabled() else 10
     log_text = _wait_for_log_text(
         service.flb.log_file,
         "Broker: Message size too large",

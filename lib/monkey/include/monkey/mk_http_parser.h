@@ -24,6 +24,7 @@
 #include <ctype.h>
 
 #include <monkey/mk_core.h>
+#include <monkey/mk_http_protocol.h>
 #include <monkey/mk_http.h>
 #include <monkey/mk_http_internal.h>
 
@@ -91,18 +92,6 @@ enum {
     MK_ST_HEADER_VALUE      ,
     MK_ST_HEADER_END        ,
     MK_ST_BLOCK_END
-};
-
-/* Known HTTP Methods */
-enum mk_request_methods {
-    MK_METHOD_GET     = 0,
-    MK_METHOD_POST       ,
-    MK_METHOD_HEAD       ,
-    MK_METHOD_PUT        ,
-    MK_METHOD_DELETE     ,
-    MK_METHOD_OPTIONS    ,
-    MK_METHOD_SIZEOF     ,
-    MK_METHOD_UNKNOWN
 };
 
 /*
@@ -389,7 +378,11 @@ int mk_http_parser_chunked_decode_buf(struct mk_http_parser *p,
 
 static inline int mk_http_parser_more(struct mk_http_parser *p, int len)
 {
-    if (abs(len - p->i) - 1 > 0) {
+    if (len <= 0 || p->i < 0) {
+        return MK_FALSE;
+    }
+
+    if ((p->i + 1) < len) {
         return MK_TRUE;
     }
 

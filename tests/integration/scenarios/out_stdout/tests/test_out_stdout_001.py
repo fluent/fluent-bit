@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from pathlib import Path
 
 import pytest
@@ -200,6 +201,27 @@ def test_out_stdout_logs_accepts_otlp_json_ingestion():
     assert "This is another example log message." in log_text
 
 
+def test_out_stdout_processor_chains_with_four_output_workers():
+    service = Service("out_stdout_processor_workers.yaml")
+    service.start()
+    service.wait_for_log_contains("output worker single")
+    service.wait_for_log_contains("output worker chain")
+    log_text = service.read_log()
+    service.stop()
+
+    # Concurrent stdout workers can interleave writes at byte granularity, so
+    # validate the complete captured stream rather than individual lines.
+    assert "] output_single:" in log_text
+    assert "] output_chain:" in log_text
+    assert log_text.count('"native_one"=>"yes"') == 2
+    assert '"filter_middle"=>"yes"' in log_text
+    assert log_text.count('"native_two"=>"yes"') == 1
+    for output_index in (0, 1):
+        for worker_index in range(4):
+            assert (f"[output:stdout:stdout.{output_index}] worker "
+                    f"#{worker_index} started") in log_text
+
+
 def test_out_stdout_preserves_post_2038_otlp_timestamp():
     service = Service("out_stdout_otel.yaml")
     service.start()
@@ -347,3 +369,28 @@ def test_out_stdout_conditional_routing_corner_cases(mode, label, config_file):
     )
     assert _stdout_lines_for_tag(log_text, f"{mode}_default_topic1") == []
     assert _stdout_lines_for_tag(log_text, f"{mode}_miss_topic1") == []
+
+
+def test_out_stdout_single_pair_conditional_route_matches():
+    """With one input and one output, a matching route still delivers."""
+    service = Service("out_stdout_single_pair_conditional_match.yaml")
+    service.start()
+    log_text = service.wait_for_log_contains("[0] single_pair_topic1:", timeout=10)
+    service.stop()
+
+    assert "connected input 'single_pair_dummy' route 'single_pair_topic1'" in log_text
+    assert "\"message\"=>\"single pair record\"" in log_text
+
+
+def test_out_stdout_single_pair_conditional_route_drops_unmatched():
+    """With one input and one output, records matching no route are not delivered."""
+    service = Service("out_stdout_single_pair_conditional_miss.yaml")
+    service.start()
+    service.wait_for_log_contains(
+        "connected input 'single_pair_dummy' route 'single_pair_topic1'", timeout=10)
+    # several flushes for the sample to reach the output if it were routed
+    time.sleep(4)
+    log_text = service.read_log()
+    service.stop()
+
+    assert "single pair record" not in log_text

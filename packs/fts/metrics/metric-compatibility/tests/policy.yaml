@@ -1,0 +1,132 @@
+fixture_version: 1
+signal: metrics
+processor:
+  name: fts
+  packs:
+  - ../pack.json
+  recipe_version: 1
+  error_mode: drop
+  recipe:
+  - id: policy
+    use: org.fluentbit.policy.metric-compatibility/apply
+cases:
+- name: explicit-gauge-conversion
+  input:
+    resourceMetrics:
+    - resource:
+        attributes:
+        - key: service.name
+          value:
+            stringValue: checkout
+      scopeMetrics:
+      - scope:
+          name: fixture
+        metrics:
+        - name: latency
+          description: Synthetic fixture
+          unit: ms
+          gauge:
+            dataPoints:
+            - timeUnixNano: '1700000000000000000'
+              asInt: '1000'
+              attributes: []
+  expected:
+    otlp:
+      resourceMetrics:
+      - resource:
+          attributes:
+          - key: service.name
+            value:
+              stringValue: checkout
+        scopeMetrics:
+        - scope:
+            name: fixture
+          metrics:
+          - name: latency_seconds
+            description: Synthetic fixture
+            unit: s
+            gauge:
+              dataPoints:
+              - timeUnixNano: '1700000000000000000'
+                asDouble: 1.0
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0
+- name: reject-undeclared-unit
+  input:
+    resourceMetrics:
+    - resource:
+        attributes:
+        - key: service.name
+          value:
+            stringValue: checkout
+      scopeMetrics:
+      - scope:
+          name: fixture
+        metrics:
+        - name: latency
+          description: Synthetic fixture
+          unit: unknown
+          gauge:
+            dataPoints:
+            - timeUnixNano: '1700000000000000000'
+              asInt: '1000'
+              attributes: []
+  expected:
+    otlp: {}
+    outcomes:
+      kept: 0
+      dropped: 1
+      errors: 1
+    error:
+      step: policy
+      class: wrong_type
+- name: non-gauge-passthrough
+  input:
+    resourceMetrics:
+    - resource:
+        attributes:
+        - key: service.name
+          value:
+            stringValue: checkout
+      scopeMetrics:
+      - scope:
+          name: fixture
+        metrics:
+        - name: latency
+          description: Synthetic fixture
+          unit: ms
+          sum:
+            dataPoints:
+            - timeUnixNano: '1700000000000000000'
+              asInt: '1000'
+              attributes: []
+            aggregationTemporality: 2
+            isMonotonic: true
+  expected:
+    otlp:
+      resourceMetrics:
+      - resource:
+          attributes:
+          - key: service.name
+            value:
+              stringValue: checkout
+        scopeMetrics:
+        - scope:
+            name: fixture
+          metrics:
+          - name: latency
+            description: Synthetic fixture
+            unit: ms
+            sum:
+              dataPoints:
+              - timeUnixNano: '1700000000000000000'
+                asInt: '1000'
+                attributes: []
+              aggregationTemporality: 2
+              isMonotonic: true
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0

@@ -1,16 +1,84 @@
 #include <fluent-bit.h>
 #include <fluent-bit/flb_time.h>
+#include <cmetrics/cmt_decode_msgpack.h>
+#include <cmetrics/cmt_gauge.h>
 #include "flb_tests_runtime.h"
 
 #define DPATH_PROM_TEXTFILE FLB_TESTS_DATA_PATH "/data/prometheus_textfile"
 #ifdef _WIN32
 #define PROM_TEXTFILE_GLOB DPATH_PROM_TEXTFILE "\\*.prom"
+#define PROM_TEXTFILE_CHUNK_GLOB DPATH_PROM_TEXTFILE "/chunking\\*.prom"
+#define PROM_TEXTFILE_INVALID_GLOB DPATH_PROM_TEXTFILE "/chunking\\invalid*.prom"
 #else
 #define PROM_TEXTFILE_GLOB DPATH_PROM_TEXTFILE "/*.prom"
+#define PROM_TEXTFILE_CHUNK_GLOB DPATH_PROM_TEXTFILE "/chunking/*.prom"
+#define PROM_TEXTFILE_INVALID_GLOB DPATH_PROM_TEXTFILE "/chunking/invalid*.prom"
 #endif
 
 static pthread_mutex_t result_mutex = PTHREAD_MUTEX_INITIALIZER;
 static int num_output = 0;
+
+struct chunk_result {
+    int chunks;
+    int invalid_chunks;
+    int expect_empty;
+};
+
+static int cb_chunk(void *record, size_t size, void *data)
+{
+    int ret = CMT_DECODE_MSGPACK_SUCCESS;
+    int contexts = 0;
+    int valid = FLB_TRUE;
+    double value;
+    char *first[] = {"first"};
+    char *second[] = {"second"};
+    char *input[] = {"prometheus_textfile.0"};
+    size_t offset = 0;
+    struct cmt *cmt;
+    struct cmt_gauge *gauge;
+    struct cfl_list *head;
+    struct chunk_result *result = data;
+
+    while (offset < size) {
+        ret = cmt_decode_msgpack_create(&cmt, record, size, &offset);
+        if (ret != CMT_DECODE_MSGPACK_SUCCESS) {
+            break;
+        }
+        contexts++;
+        if (cfl_list_size(&cmt->gauges) != (result->expect_empty ? 1 : 2)) {
+            valid = FLB_FALSE;
+        }
+        cfl_list_foreach(head, &cmt->gauges) {
+            gauge = cfl_list_entry(head, struct cmt_gauge, _head);
+            if (strcmp(gauge->opts.fqname, "file_marker") == 0 && !result->expect_empty) {
+                if (cmt_gauge_get_val(gauge, 1, first, &value) != 0 || value != 1.0 ||
+                    cmt_gauge_get_val(gauge, 1, second, &value) != 0 || value != 1.0) {
+                    valid = FLB_FALSE;
+                }
+            }
+            else if (strcmp(gauge->opts.fqname, "fluentbit_textfile_scrape_error") == 0) {
+                /* Both fixture sets contain a malformed file. */
+                if (cmt_gauge_get_val(gauge, 1, input, &value) != 0 || value != 1.0) {
+                    valid = FLB_FALSE;
+                }
+            }
+            else {
+                valid = FLB_FALSE;
+            }
+        }
+        cmt_decode_msgpack_destroy(cmt);
+    }
+
+    pthread_mutex_lock(&result_mutex);
+    result->chunks++;
+    if (ret != CMT_DECODE_MSGPACK_SUCCESS || contexts != 1 || offset != size || !valid) {
+        result->invalid_chunks++;
+    }
+    pthread_mutex_unlock(&result_mutex);
+
+    /* Chunk mode borrows the engine's buffer. */
+    return 0;
+}
 
 static int cb_count(void *record, size_t size, void *data)
 {
@@ -117,8 +185,73 @@ static void test_prometheus_textfile(void)
     test_ctx_destroy(ctx);
 }
 
+static void test_scrape_chunks(const char *path, int expect_empty)
+{
+    struct flb_lib_out_cb cb = {0};
+    struct chunk_result result = {0};
+    struct test_ctx *ctx;
+    int ret;
+    int count = 0;
+    struct flb_time start, end, diff;
+    uint64_t ms = 0;
+
+    cb.cb = cb_chunk;
+    cb.data = &result;
+    result.expect_empty = expect_empty;
+
+    ctx = test_ctx_create(&cb);
+    if (!TEST_CHECK(ctx != NULL)) {
+        return;
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd, "data_mode", "chunk", NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Each scrape is exactly one context, even when every file is invalid. */
+    ctx->i_ffd = flb_input(ctx->flb, (char *)"prometheus_textfile", NULL);
+    TEST_CHECK(ctx->i_ffd >= 0);
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "scrape_interval", "1s",
+                        "path", path,
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    /* Observe repeated scrapes and validate each chunk, not just the total. */
+    flb_time_get(&start);
+    while (ms < 8000) {
+        pthread_mutex_lock(&result_mutex);
+        count = result.chunks;
+        pthread_mutex_unlock(&result_mutex);
+        if (count >= 2) {
+            break;
+        }
+        flb_time_msleep(200);
+        flb_time_get(&end);
+        flb_time_diff(&end, &start, &diff);
+        ms = flb_time_to_nanosec(&diff) / 1000000;
+    }
+
+    test_ctx_destroy(ctx);
+    TEST_CHECK(result.chunks >= 2);
+    TEST_CHECK(result.invalid_chunks == 0);
+}
+
+static void test_prometheus_textfile_chunking(void)
+{
+    test_scrape_chunks(PROM_TEXTFILE_CHUNK_GLOB, FLB_FALSE);
+}
+
+static void test_prometheus_textfile_empty(void)
+{
+    test_scrape_chunks(PROM_TEXTFILE_INVALID_GLOB, FLB_TRUE);
+}
+
 TEST_LIST = {
     {"prometheus_textfile", test_prometheus_textfile},
+    {"prometheus_textfile_chunking", test_prometheus_textfile_chunking},
+    {"prometheus_textfile_empty", test_prometheus_textfile_empty},
     {NULL, NULL}
 };
-

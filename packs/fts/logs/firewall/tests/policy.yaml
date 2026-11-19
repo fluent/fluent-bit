@@ -1,0 +1,43 @@
+fixture_version: 1
+signal: logs
+processor:
+  name: fts
+  packs:
+  - ../pack.json
+  recipe_version: 1
+  error_mode: keep
+  recipe:
+  - id: policy
+    use: org.fluentbit.policy.firewall/apply
+cases:
+- name: retain-denial
+  input:
+  - body:
+      Type: TRAFFIC
+      Action: deny
+      SourceAddress: 192.0.2.1
+  expected:
+    records:
+    - body:
+        Type: TRAFFIC
+        Action: deny
+        SourceAddress: 192.0.2.1
+        network.action: deny
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0
+- name: unknown-class-control
+  input:
+  - body:
+      Type: SYSTEM
+      Action: restart
+  expected:
+    records:
+    - body:
+        Type: SYSTEM
+        Action: restart
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0

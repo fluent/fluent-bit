@@ -26,6 +26,76 @@
 #include <fluent-bit/flb_time.h>
 
 #include <ctype.h>
+#include <fluent-bit/flb_base64.h>
+
+/*
+ * OTLP/JSON encodes bytesValue as base64 (standard or URL safe alphabet, with
+ * or without padding). Decode it into a newly allocated buffer owned by the
+ * caller. Returns 0 on success and -1 for invalid input or allocation errors.
+ */
+static int otlp_json_bytes_decode(const char *src, size_t src_size,
+                                  unsigned char **out_buf, size_t *out_size)
+{
+    int            ret;
+    char           c;
+    char          *normalized;
+    size_t         index;
+    size_t         padded_size;
+    size_t         decoded_size;
+    unsigned char *decoded;
+
+    *out_buf = NULL;
+    *out_size = 0;
+
+    if (src_size % 4 == 1) {
+        return -1;
+    }
+
+    padded_size = src_size + ((4 - (src_size % 4)) % 4);
+
+    normalized = flb_malloc(padded_size + 1);
+    if (normalized == NULL) {
+        flb_errno();
+        return -1;
+    }
+
+    for (index = 0; index < src_size; index++) {
+        c = src[index];
+        if (c == '-') {
+            c = '+';
+        }
+        else if (c == '_') {
+            c = '/';
+        }
+        normalized[index] = c;
+    }
+
+    for (; index < padded_size; index++) {
+        normalized[index] = '=';
+    }
+    normalized[padded_size] = '\0';
+
+    decoded = flb_malloc((padded_size / 4) * 3 + 1);
+    if (decoded == NULL) {
+        flb_errno();
+        flb_free(normalized);
+        return -1;
+    }
+
+    ret = flb_base64_decode(decoded, (padded_size / 4) * 3 + 1, &decoded_size,
+                            (unsigned char *) normalized, padded_size);
+    flb_free(normalized);
+
+    if (ret != 0) {
+        flb_free(decoded);
+        return -1;
+    }
+
+    *out_buf = decoded;
+    *out_size = decoded_size;
+
+    return 0;
+}
 
 int flb_otel_utils_find_map_entry_by_key(msgpack_object_map *map,
                                          char *key,
@@ -132,7 +202,8 @@ int flb_otel_utils_json_payload_get_wrapped_value(msgpack_object *wrapper,
                 internal_type = MSGPACK_OBJECT_FLOAT;
             }
             else if (strncasecmp(kv_key->ptr, "bytesValue",  kv_key->size) == 0) {
-                if (kv_value->type != MSGPACK_OBJECT_BIN) {
+                if (kv_value->type != MSGPACK_OBJECT_BIN &&
+                    kv_value->type != MSGPACK_OBJECT_STR) {
                     /* If the value is not binary, we cannot process it */
                     return -2;
                 }
@@ -164,30 +235,47 @@ int flb_otel_utils_json_payload_get_wrapped_value(msgpack_object *wrapper,
             *type  = internal_type;
         }
 
-        if (value != NULL) {
-            *value = kv_value;
-        }
-
         if (kv_value->type == MSGPACK_OBJECT_MAP) {
             map = &kv_value->via.map;
 
-            if (map->size == 1) {
+            if (map->size == 1)
+            {
+                if (map->ptr[0].key.type != MSGPACK_OBJECT_STR)
+                {
+                    return -3;
+                }
+
                 kv_value = &map->ptr[0].val;
                 kv_key = &map->ptr[0].key.via.str;
 
-                if (strncasecmp(kv_key->ptr, "values", kv_key->size) == 0) {
-                    if (value != NULL) {
-                        *value = kv_value;
-                    }
-                }
-                else {
+                if (kv_key->size != 6 ||
+                    strncasecmp(kv_key->ptr, "values", 6) != 0)
+                {
                     return -3;
                 }
             }
         }
+
+        if (internal_type == MSGPACK_OBJECT_ARRAY &&
+            kv_value->type != MSGPACK_OBJECT_ARRAY &&
+            (kv_value->type != MSGPACK_OBJECT_MAP ||
+             kv_value->via.map.size != 0))
+        {
+            return -2;
+        }
+        else if (internal_type == MSGPACK_OBJECT_MAP &&
+                 kv_value->type != MSGPACK_OBJECT_ARRAY &&
+                 kv_value->type != MSGPACK_OBJECT_MAP)
+        {
+            return -2;
+        }
+
+        if (value != NULL) {
+            *value = kv_value;
+        }
     }
     else {
-        return -2;
+        return -1;
     }
 
     return 0;
@@ -283,6 +371,8 @@ int flb_otel_utils_json_payload_append_unwrapped_value(
     char            temporary_buffer[33];
     int             unwrap_value;
     int             result;
+    size_t          bytes_size;
+    unsigned char  *bytes;
     msgpack_object *value;
     int             type;
 
@@ -327,19 +417,67 @@ int flb_otel_utils_json_payload_append_unwrapped_value(
             unwrap_value = FLB_TRUE;
         }
         else if (type == MSGPACK_OBJECT_BIN) {
-            unwrap_value = FLB_TRUE;
+            if (value->type == MSGPACK_OBJECT_STR) {
+                if (otlp_json_bytes_decode(value->via.str.ptr, value->via.str.size,
+                                           &bytes, &bytes_size) != 0) {
+                    return -2;
+                }
+
+                result = flb_log_event_encoder_append_binary(encoder, target_field,
+                                                             (char *) bytes, bytes_size);
+                flb_free(bytes);
+            }
+            else {
+                unwrap_value = FLB_TRUE;
+            }
         }
-        else if (type == MSGPACK_OBJECT_ARRAY) {
-            result = flb_otel_utils_json_payload_append_converted_array(encoder,
-                                                         target_field,
-                                                         value);
+        else if (type == MSGPACK_OBJECT_ARRAY)
+        {
+            if (value->type == MSGPACK_OBJECT_ARRAY)
+            {
+                result = flb_otel_utils_json_payload_append_converted_array(
+                            encoder,
+                            target_field,
+                            value);
+            }
+            else if (value->type == MSGPACK_OBJECT_MAP &&
+                     value->via.map.size == 0)
+            {
+                result = flb_log_event_encoder_begin_array(encoder, target_field);
+
+                if (result == FLB_EVENT_ENCODER_SUCCESS)
+                {
+                    result = flb_log_event_encoder_commit_array(encoder, target_field);
+                }
+            }
+            else
+            {
+                return -2;
+            }
         }
-        else if (type == MSGPACK_OBJECT_MAP) {
-            result = flb_otel_utils_json_payload_append_converted_kvlist(encoder,
-                                                          target_field,
-                                                          value);
+        else if (type == MSGPACK_OBJECT_MAP)
+        {
+            if (value->type == MSGPACK_OBJECT_ARRAY)
+            {
+                result = flb_otel_utils_json_payload_append_converted_kvlist(
+                            encoder,
+                            target_field,
+                            value);
+            }
+            else if (value->type == MSGPACK_OBJECT_MAP)
+            {
+                result = flb_otel_utils_json_payload_append_converted_map(
+                            encoder,
+                            target_field,
+                            value);
+            }
+            else
+            {
+                return -2;
+            }
         }
-        else {
+        else
+        {
             return -2;
         }
 
@@ -353,11 +491,7 @@ int flb_otel_utils_json_payload_append_unwrapped_value(
 
         return 0;
     }
-    else {
-        return -1;
-    }
-
-    return -1;
+    return result;
 }
 
 int flb_otel_utils_json_payload_append_converted_map(
@@ -370,6 +504,11 @@ int flb_otel_utils_json_payload_append_converted_map(
     size_t              index;
     msgpack_object_map *map;
 
+    if (encoder == NULL || object == NULL ||
+        object->type != MSGPACK_OBJECT_MAP) {
+        return FLB_EVENT_ENCODER_ERROR_INVALID_ARGUMENT;
+    }
+
     map = &object->via.map;
 
     result = flb_otel_utils_json_payload_append_unwrapped_value(
@@ -378,8 +517,13 @@ int flb_otel_utils_json_payload_append_converted_map(
                 object,
                 &encoder_result);
 
-    if (result == 0) {
+    if (result == 0)
+    {
         return encoder_result;
+    }
+    else if (result != -1)
+    {
+        return FLB_EVENT_ENCODER_ERROR_INVALID_VALUE_TYPE;
     }
 
     result = flb_log_event_encoder_begin_map(encoder, target_field);
@@ -419,6 +563,12 @@ int flb_otel_utils_json_payload_append_converted_array(struct flb_log_event_enco
     size_t                index;
     msgpack_object_array *array;
 
+    if (encoder == NULL || object == NULL ||
+        object->type != MSGPACK_OBJECT_ARRAY)
+    {
+        return FLB_EVENT_ENCODER_ERROR_INVALID_ARGUMENT;
+    }
+
     array = &object->via.array;
 
     result = flb_log_event_encoder_begin_array(encoder, target_field);
@@ -457,6 +607,12 @@ int flb_otel_utils_json_payload_append_converted_kvlist(
     size_t                index;
     msgpack_object_array *array;
     msgpack_object_map   *entry;
+
+    if (encoder == NULL || object == NULL ||
+        object->type != MSGPACK_OBJECT_ARRAY)
+    {
+        return FLB_EVENT_ENCODER_ERROR_INVALID_ARGUMENT;
+    }
 
     array = &object->via.array;
 
@@ -623,58 +779,6 @@ uint64_t flb_otel_utils_convert_string_number_to_u64(char *str, size_t len)
     return val;
 }
 
-static int parse_u64_from_numeric_string(const char *str,
-                                         size_t len,
-                                         uint64_t *value)
-{
-    size_t index;
-
-    if (str == NULL || value == NULL || len == 0) {
-        return -1;
-    }
-
-    if (str[0] == '-' || len > 31) {
-        return -1;
-    }
-
-    for (index = 0; index < len; index++) {
-        if (!isdigit((unsigned char) str[index])) {
-            return -1;
-        }
-    }
-
-    *value = flb_otel_utils_convert_string_number_to_u64((char *) str, len);
-
-    return 0;
-}
-
-static int parse_u64_from_msgpack_object(msgpack_object *object, uint64_t *value)
-{
-    if (object == NULL || value == NULL) {
-        return -1;
-    }
-
-    if (object->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
-        *value = object->via.u64;
-        return 0;
-    }
-    else if (object->type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
-        if (object->via.i64 < 0) {
-            return -1;
-        }
-
-        *value = (uint64_t) object->via.i64;
-        return 0;
-    }
-    else if (object->type == MSGPACK_OBJECT_STR) {
-        return parse_u64_from_numeric_string(object->via.str.ptr,
-                                             object->via.str.size,
-                                             value);
-    }
-
-    return -1;
-}
-
 static int parse_double_from_msgpack_object(msgpack_object *object, double *value)
 {
     char     *end;
@@ -719,6 +823,9 @@ static int parse_double_from_msgpack_object(msgpack_object *object, double *valu
     return 0;
 }
 
+static struct cfl_variant *convert_otlp_anyvalue_wrapper_to_cfl_variant(
+                        msgpack_object *wrapper_object);
+
 static int clone_kvlist_entry_from_otlp_json(struct cfl_kvlist *target,
                                              msgpack_object *entry_object)
 {
@@ -750,7 +857,7 @@ static int clone_kvlist_entry_from_otlp_json(struct cfl_kvlist *target,
         return -1;
     }
 
-    value_instance = flb_otel_utils_msgpack_object_to_cfl_variant(value_object);
+    value_instance = convert_otlp_anyvalue_wrapper_to_cfl_variant(value_object);
     if (value_instance == NULL) {
         return -1;
     }
@@ -766,12 +873,58 @@ static int clone_kvlist_entry_from_otlp_json(struct cfl_kvlist *target,
     return 0;
 }
 
+static int parse_i64_from_msgpack_object(msgpack_object *object, int64_t *value)
+{
+    uint64_t magnitude = 0;
+    uint64_t limit;
+    size_t index = 0;
+    unsigned int digit;
+    int negative = 0;
+
+    if (object->type == MSGPACK_OBJECT_NEGATIVE_INTEGER) {
+        *value = object->via.i64;
+        return 0;
+    }
+    if (object->type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
+        if (object->via.u64 > INT64_MAX) {
+            return -1;
+        }
+        *value = (int64_t) object->via.u64;
+        return 0;
+    }
+    if (object->type != MSGPACK_OBJECT_STR || object->via.str.size == 0) {
+        return -1;
+    }
+    if (object->via.str.ptr[0] == '-') {
+        negative = 1;
+        index = 1;
+    }
+    if (index == object->via.str.size) {
+        return -1;
+    }
+    limit = (uint64_t) INT64_MAX + negative;
+    for (; index < object->via.str.size; index++) {
+        if (object->via.str.ptr[index] < '0' || object->via.str.ptr[index] > '9') {
+            return -1;
+        }
+        digit = object->via.str.ptr[index] - '0';
+        if (magnitude > (limit - digit) / 10) {
+            return -1;
+        }
+        magnitude = magnitude * 10 + digit;
+    }
+    *value = negative ? (magnitude == (uint64_t) INT64_MAX + 1 ? INT64_MIN :
+                        -(int64_t) magnitude) : (int64_t) magnitude;
+    return 0;
+}
+
 static struct cfl_variant *convert_otlp_anyvalue_wrapper_to_cfl_variant(
                         msgpack_object *wrapper_object)
 {
     int                  value_type;
     int64_t              signed_value;
-    uint64_t             unsigned_value;
+    unsigned char       *bytes;
+    size_t               bytes_size;
     double               double_value;
     size_t               index;
     msgpack_object      *value_object;
@@ -812,19 +965,10 @@ static struct cfl_variant *convert_otlp_anyvalue_wrapper_to_cfl_variant(
         return cfl_variant_create_from_bool(value_object->via.boolean);
     }
     else if (value_type == MSGPACK_OBJECT_POSITIVE_INTEGER) {
-        if (parse_u64_from_msgpack_object(value_object, &unsigned_value) != 0) {
+        if (parse_i64_from_msgpack_object(value_object, &signed_value) != 0) {
             return NULL;
         }
-
-        if (value_object->type == MSGPACK_OBJECT_NEGATIVE_INTEGER ||
-            (value_object->type == MSGPACK_OBJECT_STR &&
-             value_object->via.str.size > 0 &&
-             value_object->via.str.ptr[0] == '-')) {
-            signed_value = (int64_t) unsigned_value;
-            return cfl_variant_create_from_int64(signed_value);
-        }
-
-        return cfl_variant_create_from_uint64(unsigned_value);
+        return cfl_variant_create_from_int64(signed_value);
     }
     else if (value_type == MSGPACK_OBJECT_FLOAT) {
         if (parse_double_from_msgpack_object(value_object, &double_value) != 0) {
@@ -834,6 +978,17 @@ static struct cfl_variant *convert_otlp_anyvalue_wrapper_to_cfl_variant(
         return cfl_variant_create_from_double(double_value);
     }
     else if (value_type == MSGPACK_OBJECT_BIN) {
+        if (value_object->type == MSGPACK_OBJECT_STR) {
+            if (otlp_json_bytes_decode(value_object->via.str.ptr,
+                                       value_object->via.str.size,
+                                       &bytes, &bytes_size) != 0) {
+                return NULL;
+            }
+            result_variant = cfl_variant_create_from_bytes((char *) bytes, bytes_size,
+                                                           CFL_FALSE);
+            flb_free(bytes);
+            return result_variant;
+        }
         if (value_object->type != MSGPACK_OBJECT_BIN) {
             return NULL;
         }
@@ -842,26 +997,42 @@ static struct cfl_variant *convert_otlp_anyvalue_wrapper_to_cfl_variant(
                                              value_object->via.bin.size,
                                              CFL_FALSE);
     }
-    else if (value_type == MSGPACK_OBJECT_ARRAY) {
-        if (value_object->type != MSGPACK_OBJECT_ARRAY) {
+    else if (value_type == MSGPACK_OBJECT_ARRAY)
+    {
+        if (value_object->type == MSGPACK_OBJECT_MAP &&
+            value_object->via.map.size == 0)
+        {
+            value_array = NULL;
+            array_instance = cfl_array_create(0);
+        }
+        else if (value_object->type == MSGPACK_OBJECT_ARRAY)
+        {
+            value_array = &value_object->via.array;
+            array_instance = cfl_array_create(value_array->size);
+        }
+        else
+        {
             return NULL;
         }
 
-        value_array = &value_object->via.array;
-        array_instance = cfl_array_create(value_array->size);
-        if (array_instance == NULL) {
+        if (array_instance == NULL)
+        {
             return NULL;
         }
 
-        for (index = 0 ; index < value_array->size ; index++) {
+        for (index = 0 ;
+             value_array != NULL && index < value_array->size ;
+             index++) {
             child_variant = flb_otel_utils_msgpack_object_to_cfl_variant(
                               &value_array->ptr[index]);
-            if (child_variant == NULL) {
+            if (child_variant == NULL)
+            {
                 cfl_array_destroy(array_instance);
                 return NULL;
             }
 
-            if (cfl_array_append(array_instance, child_variant) != 0) {
+            if (cfl_array_append(array_instance, child_variant) != 0)
+            {
                 cfl_variant_destroy(child_variant);
                 cfl_array_destroy(array_instance);
                 return NULL;
@@ -1047,6 +1218,8 @@ int flb_otel_utils_clone_kvlist_from_otlp_json_array(struct cfl_kvlist *target,
                                                       msgpack_object *attributes_object)
 {
     size_t               index;
+    size_t               invalid_count;
+    size_t               first_invalid;
     msgpack_object_array *attributes_array;
 
     if (target == NULL || attributes_object == NULL) {
@@ -1058,12 +1231,25 @@ int flb_otel_utils_clone_kvlist_from_otlp_json_array(struct cfl_kvlist *target,
     }
 
     attributes_array = &attributes_object->via.array;
+    invalid_count = 0;
+    first_invalid = 0;
 
     for (index = 0 ; index < attributes_array->size ; index++) {
         if (clone_kvlist_entry_from_otlp_json(target,
                                               &attributes_array->ptr[index]) != 0) {
-            return -1;
+            /* An invalid attribute must not discard its healthy siblings. */
+            if (invalid_count == 0) {
+                first_invalid = index;
+            }
+            invalid_count++;
         }
+    }
+
+    /* report once per attribute list to avoid flooding the log */
+    if (invalid_count > 0) {
+        flb_warn("ignoring %zu invalid OTLP JSON attribute(s) out of %zu "
+                 "(first at index %zu)",
+                 invalid_count, (size_t) attributes_array->size, first_invalid);
     }
 
     return 0;

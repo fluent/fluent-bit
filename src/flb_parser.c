@@ -763,6 +763,10 @@ int flb_parser_logfmt_do(struct flb_parser *parser,
                          void **out_buf, size_t *out_size,
                          struct flb_time *out_time);
 
+int flb_parser_cri_do(struct flb_parser *parser,
+                         const char *buf, size_t length,
+                         void **out_buf, size_t *out_size,
+                         struct flb_time *out_time);
 /*
  * This function is used to free all aspects of a parser
  * which is provided by the caller of flb_create_parser.
@@ -861,6 +865,9 @@ struct flb_parser *flb_parser_create_with_time_zone(const char *name,
     }
     else if (strcasecmp(format, "logfmt") == 0) {
         p->type = FLB_PARSER_LOGFMT;
+    }
+    else if (strcasecmp(format, "cri") == 0) {
+        p->type = FLB_PARSER_CRI;
     }
     else {
         flb_error("[parser:%s] Invalid format %s", name, format);
@@ -1689,25 +1696,22 @@ int flb_parser_load_multiline_parser_definitions(const char *cfg, struct flb_cf 
 int flb_parser_conf_file_stat(const char *file, struct flb_config *config)
 {
     int ret;
+    char tmp[PATH_MAX + 1];
+    const char *cfg;
     struct stat st;
 
-    ret = stat(file, &st);
-    if (ret == -1 && errno == ENOENT) {
-        /* Try to resolve the real path (if exists) */
-        if (file[0] == '/') {
-            flb_utils_error(FLB_ERR_CFG_PARSER_FILE);
-            return -1;
-        }
-
-        if (config->conf_path) {
-            /* Handle as special case here. */
-            return -2;
-        }
-
+    cfg = flb_utils_resolve_config_path(file, config->conf_path, tmp, sizeof(tmp));
+    if (!cfg) {
         return -1;
     }
 
-    return 0;
+    ret = stat(cfg, &st);
+    if (ret == -1) {
+        flb_utils_error(FLB_ERR_CFG_PARSER_FILE);
+        return -1;
+    }
+
+    return cfg == file ? 0 : -2;
 }
 
 /* Load parsers from a configuration file */
@@ -1724,7 +1728,7 @@ int flb_parser_conf_file(const char *file, struct flb_config *config)
         return -1;
     }
     else if (ret == -2) {
-        snprintf(tmp, PATH_MAX, "%s%s", config->conf_path, file);
+        snprintf(tmp, sizeof(tmp), "%s%s", config->conf_path, file);
         cfg = tmp;
     }
     else {
@@ -1799,6 +1803,10 @@ int flb_parser_do(struct flb_parser *parser, const char *buf, size_t length,
     }
     else if (parser->type == FLB_PARSER_LOGFMT) {
         return flb_parser_logfmt_do(parser, buf, length,
+                                  out_buf, out_size, out_time);
+    }
+    else if (parser->type == FLB_PARSER_CRI) {
+        return flb_parser_cri_do(parser, buf, length,
                                   out_buf, out_size, out_time);
     }
 
@@ -1905,16 +1913,36 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
     time_t time_now;
     char *p = NULL;
     char *fmt;
-    int time_len = tsize;
+    char *buf;
+    char *time_buf = NULL;
+    int time_len;
     const char *time_ptr = time_str;
     char tmp[64];
+    size_t buf_size = sizeof(tmp);
     struct tm tmy;
 
     *ns = 0;
 
-    if (tsize > sizeof(tmp) - 1) {
-        flb_error("[parser] time string length is too long");
+    if (tsize > INT_MAX) {
+        flb_error("[parser] time string length exceeds supported range");
         return -1;
+    }
+
+    time_len = (int) tsize;
+    buf = tmp;
+
+    if (tsize > sizeof(tmp) - 1) {
+        if (tsize > (SIZE_MAX - 8)) {
+            flb_error("[parser] time string length is too long");
+            return -1;
+        }
+        buf_size = tsize + 8;
+        time_buf = flb_malloc(buf_size);
+        if (time_buf == NULL) {
+            flb_errno();
+            return -1;
+        }
+        buf = time_buf;
     }
 
     /*
@@ -1924,7 +1952,8 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
      */
     if (parser->time_with_year == FLB_FALSE) {
         /* Given time string is too long */
-        if (time_len + 6 >= sizeof(tmp)) {
+        if (time_len + 6 >= buf_size) {
+            flb_free(time_buf);
             return -1;
         }
 
@@ -1965,7 +1994,7 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
 
         uint64_t t = tmy.tm_year + 1900;
 
-        fmt = tmp;
+        fmt = buf;
         u64_to_str(t, fmt);
         fmt += 4;
         *fmt++ = ' ';
@@ -1974,8 +2003,8 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
         fmt += time_len;
         *fmt++ = '\0';
 
-        time_ptr = tmp;
-        time_len = strlen(tmp);
+        time_ptr = buf;
+        time_len = strlen(buf);
         p = flb_strptime(time_ptr, parser->time_fmt_year, tm);
     }
     else {
@@ -1984,13 +2013,14 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
          * null-terminated, which time_ptr is not guaranteed
          * to be. So we use tmp to hold our string.
          */
-        if (time_len >= sizeof(tmp)) {
+        if (time_len >= buf_size) {
+            flb_free(time_buf);
             return -1;
         }
-        memcpy(tmp, time_ptr, time_len);
-        tmp[time_len] = '\0';
-        time_ptr = tmp;
-        time_len = strlen(tmp);
+        memcpy(buf, time_ptr, time_len);
+        buf[time_len] = '\0';
+        time_ptr = buf;
+        time_len = strlen(buf);
 
         p = flb_strptime(time_ptr, parser->time_fmt, tm);
     }
@@ -1998,9 +2028,11 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
     if (p == NULL) {
         if (parser->time_strict) {
             flb_error("[parser] cannot parse '%.*s'", (int)tsize, time_str);
+            flb_free(time_buf);
             return -1;
         }
         flb_debug("[parser] non-exact match '%.*s'", (int)tsize, time_str);
+        flb_free(time_buf);
         return 0;
     }
 
@@ -2009,9 +2041,11 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
         if (ret < 0) {
             if (parser->time_strict) {
                 flb_error("[parser] cannot parse %%L for '%.*s'", (int)tsize, time_str);
+                flb_free(time_buf);
                 return -1;
             }
             flb_debug("[parser] non-exact match on %%L '%.*s'", (int)tsize, time_str);
+            flb_free(time_buf);
             return 0;
         }
         p += ret;
@@ -2021,9 +2055,11 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
         if (p == NULL) {
             if (parser->time_strict) {
                 flb_error("[parser] cannot parse '%.*s' after %%L", (int)tsize, time_str);
+                flb_free(time_buf);
                 return -1;
             }
             flb_debug("[parser] non-exact match after %%L '%.*s'", (int)tsize, time_str);
+            flb_free(time_buf);
             return 0;
         }
     }
@@ -2032,6 +2068,7 @@ int flb_parser_time_lookup(const char *time_str, size_t tsize,
         flb_tm_gmtoff(tm) = parser->time_offset;
     }
 
+    flb_free(time_buf);
     return 0;
 }
 

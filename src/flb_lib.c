@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_engine.h>
+#include <fluent-bit/flb_fips.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_filter.h>
@@ -128,7 +129,9 @@ static inline struct flb_filter_instance *filter_instance_get(flb_ctx_t *ctx,
 
 void flb_init_env()
 {
+#ifdef FLB_HAVE_TLS
     flb_tls_init();
+#endif
     flb_coro_init();
     flb_upstream_init();
     flb_downstream_init();
@@ -205,10 +208,10 @@ flb_ctx_t *flb_create()
 
     MK_EVENT_ZERO(ctx->event_channel);
 
-    ret = mk_event_channel_create(config->ch_evl,
-                                  &config->ch_notif[0],
-                                  &config->ch_notif[1],
-                                  ctx->event_channel);
+    ret = flb_pipe_event_channel_create(config->ch_evl,
+                                        &config->ch_notif[0],
+                                        &config->ch_notif[1],
+                                        ctx->event_channel);
     if (ret != 0) {
         flb_error("[lib] could not create notification channels");
         flb_stop(ctx);
@@ -591,6 +594,21 @@ int flb_output_set_test(flb_ctx_t *ctx, int ffd, char *test_name,
                         void *out_callback_data,
                         void *test_ctx)
 {
+    return flb_output_set_test_with_ctx_callback(ctx, ffd, test_name,
+                                                 out_callback,
+                                                 out_callback_data,
+                                                 test_ctx, NULL);
+}
+
+int flb_output_set_test_with_ctx_callback(flb_ctx_t *ctx, int ffd,
+                                          char *test_name,
+                                          void (*out_callback) (void *, int, int, void *, size_t, void *),
+                                          void *out_callback_data,
+                                          void *test_ctx,
+                                          void *(*test_ctx_callback) (struct flb_config *,
+                                                                      struct flb_input_instance *,
+                                                                      void *, void *))
+{
     struct flb_output_instance *o_ins;
 
     o_ins = out_instance_get(ctx, ffd);
@@ -611,6 +629,7 @@ int flb_output_set_test(flb_ctx_t *ctx, int ffd, char *test_name,
         o_ins->test_formatter.rt_out_callback = out_callback;
         o_ins->test_formatter.rt_data = out_callback_data;
         o_ins->test_formatter.flush_ctx = test_ctx;
+        o_ins->test_formatter.flush_ctx_callback = test_ctx_callback;
     }
     else {
         return -1;
@@ -691,27 +710,12 @@ int flb_lib_config_file(struct flb_lib_ctx *ctx, const char *path)
     char *cfg = NULL;
     char *end;
     char *real_path;
-    struct stat st;
 
-    /* Check if file exists and resolve path */
-    ret = stat(path, &st);
-    if (ret == -1 && errno == ENOENT) {
-        /* Try to resolve the real path (if exists) */
-        if (path[0] == '/') {
-            fprintf(stderr, "Error: configuration file not found: %s\n", path);
-            return -1;
-        }
-
-        if (ctx->config->conf_path) {
-            snprintf(tmp, PATH_MAX, "%s%s", ctx->config->conf_path, path);
-            cfg = tmp;
-        }
-        else {
-            cfg = (char *) path;
-        }
-    }
-    else {
-        cfg = (char *) path;
+    cfg = (char *) flb_utils_resolve_config_path(path, ctx->config->conf_path,
+                                                 tmp, sizeof(tmp));
+    if (!cfg) {
+        fprintf(stderr, "Error: configuration file path is too long: %s\n", path);
+        return -1;
     }
 
     if (access(cfg, R_OK) != 0) {
@@ -940,8 +944,15 @@ int static do_start(flb_ctx_t *ctx)
 
     /* set context as the last active one */
 
-    /* spawn worker thread */
     config = ctx->config;
+
+    /* OpenSSL default properties must be configured before worker threads start. */
+    ret = flb_fips_init(config);
+    if (ret != 0) {
+        return -1;
+    }
+
+    /* spawn worker thread */
     ret = mk_utils_worker_spawn(flb_lib_worker, ctx, &tid);
     if (ret == -1) {
         return -1;
@@ -969,9 +980,6 @@ int static do_start(flb_ctx_t *ctx)
         }
         else if (val == FLB_ENGINE_FAILED) {
             flb_debug("[lib] backend failed");
-#if defined(FLB_SYSTEM_MACOS)
-            pthread_cancel(tid);
-#endif
             pthread_join(tid, NULL);
             ctx->status = FLB_LIB_ERROR;
             return -1;
@@ -1028,9 +1036,6 @@ int flb_stop(flb_ctx_t *ctx)
          * the service exited for some reason (plugin action). Always
          * wait and double check that the child thread is not running.
          */
-#if defined(FLB_SYSTEM_MACOS)
-        pthread_cancel(tid);
-#endif
         pthread_join(tid, NULL);
         return 0;
     }
@@ -1047,9 +1052,7 @@ int flb_stop(flb_ctx_t *ctx)
     flb_debug("[lib] sending STOP signal to the engine");
 
     flb_engine_exit(ctx->config);
-#if defined(FLB_SYSTEM_MACOS)
-    pthread_cancel(tid);
-#endif
+    /* Let engine cleanup join output workers before releasing their state. */
     ret = pthread_join(tid, NULL);
     if (ret != 0) {
         flb_errno();

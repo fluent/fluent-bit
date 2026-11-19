@@ -15,6 +15,9 @@
 #include <limits.h>
 #include <stdio.h>
 #endif
+#include <math.h>
+#include <float.h>
+#include <limits.h>
 #include "flb_tests_internal.h"
 
 /* Parsers configuration */
@@ -891,6 +894,63 @@ void test_parser_time_zone_conflicts(void)
     flb_config_exit(config);
 }
 
+void test_parser_time_lookup_long_fraction()
+{
+    int ret;
+    double ns;
+    time_t epoch;
+    struct flb_tm tm;
+    struct flb_parser *parser;
+    struct flb_config *config;
+    const char *time_string = "10/03/2016 12:21:08.123456789123456789123456789123456789123456789123456789";
+
+    config = flb_config_init();
+    load_json_parsers(config);
+
+    parser = flb_parser_get("generic_N", config);
+    TEST_CHECK(parser != NULL);
+    if (parser == NULL) {
+        flb_parser_exit(config);
+        flb_config_exit(config);
+        return;
+    }
+
+    ret = flb_parser_time_lookup(time_string, strlen(time_string), 0, parser, &tm, &ns);
+    TEST_CHECK(ret == 0);
+
+    epoch = flb_parser_tm2time(&tm, FLB_FALSE);
+    TEST_CHECK(epoch == 1475497268);
+    TEST_CHECK(fabs(ns - 0.123456789) <= DBL_EPSILON);
+
+    flb_parser_exit(config);
+    flb_config_exit(config);
+}
+
+void test_parser_time_lookup_reject_oversized_length()
+{
+    int ret;
+    double ns;
+    struct flb_tm tm;
+    struct flb_parser *parser;
+    struct flb_config *config;
+
+    config = flb_config_init();
+    load_json_parsers(config);
+
+    parser = flb_parser_get("generic_N", config);
+    TEST_CHECK(parser != NULL);
+    if (parser == NULL) {
+        flb_parser_exit(config);
+        flb_config_exit(config);
+        return;
+    }
+
+    ret = flb_parser_time_lookup("x", (size_t) INT_MAX + 1, 0, parser, &tm, &ns);
+    TEST_CHECK(ret == -1);
+
+    flb_parser_exit(config);
+    flb_config_exit(config);
+}
 
 TEST_LIST = {
     { "tzone_offset", test_parser_tzone_offset},
@@ -902,6 +962,8 @@ TEST_LIST = {
     { "time_zone_iana_australia", test_parser_time_zone_iana_australia },
     { "time_zone_missing_year", test_parser_time_zone_missing_year },
     { "time_zone_conflicts", test_parser_time_zone_conflicts },
+    { "time_lookup_long_fraction", test_parser_time_lookup_long_fraction},
+    { "time_lookup_reject_oversized_length", test_parser_time_lookup_reject_oversized_length},
     { "mysql_unquoted" , test_mysql_unquoted },
     { 0 }
 };

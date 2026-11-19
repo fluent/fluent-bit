@@ -41,6 +41,9 @@ void sampling_span_registry_destroy(struct sampling_span_registry *reg);
 int sampling_span_registry_delete_entry(struct sampling *ctx, struct sampling_span_registry *reg,
                                         struct trace_entry *t_entry, int delete_spans);
 int sampling_span_registry_add_trace(struct sampling *ctx, struct sampling_span_registry *reg, struct ctrace *ctr);
+void sampling_span_registry_remove_trace(struct sampling *ctx,
+                                         struct sampling_span_registry *reg,
+                                         struct ctrace *ctr);
 int sampling_span_registry_print(struct sampling *ctx, struct sampling_span_registry *reg, char *title);
 
 #endif

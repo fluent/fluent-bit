@@ -1,0 +1,6 @@
+{
+  "catalog_version": 1,
+  "id": "tenant-egress",
+  "status": "pending",
+  "dependency": "Requires authenticated input-to-tenant identity binding plus verified native routing/output enforcement. Setting a tenant field in Lua does not enforce isolation or egress authorization."
+}

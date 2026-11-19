@@ -171,6 +171,7 @@ static void mk_lib_worker(void *data)
     }
 
     mk_event_loop_destroy(server->lib_evl);
+    server->lib_evl = NULL;
     mk_exit_all(server);
     pthread_kill(pthread_self(), 0);
 
@@ -226,6 +227,7 @@ int mk_start(mk_ctx_t *ctx)
     }
 
     mk_event_loop_destroy(server->lib_evl_start);
+    server->lib_evl_start = NULL;
     if (ret == -1) {
         mk_stop(ctx);
     } 

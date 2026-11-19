@@ -2,6 +2,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_router.h>
+#include <fluent-bit/flb_regex.h>
 
 #include "flb_tests_internal.h"
 
@@ -116,7 +117,28 @@ void test_router_edge_cases()
     }
 }
 
+#ifdef FLB_HAVE_REGEX
+static void test_router_regex_limit(void)
+{
+    struct flb_regex *regex;
+    char tag[65];
+
+    TEST_CHECK(flb_regex_init() == 0);
+    memset(tag, 'a', sizeof(tag) - 2);
+    tag[sizeof(tag) - 2] = '!';
+    tag[sizeof(tag) - 1] = '\0';
+    regex = flb_regex_create("^(a+)+\\1$");
+    TEST_ASSERT(regex != NULL);
+    TEST_CHECK(flb_router_match(tag, strlen(tag), "*", regex) == FLB_FALSE);
+    TEST_CHECK(flb_router_match("aaaa", 4, NULL, regex) == FLB_TRUE);
+    flb_regex_destroy(regex);
+}
+#endif
+
 TEST_LIST = {
+#ifdef FLB_HAVE_REGEX
+    { "regex_limit", test_router_regex_limit},
+#endif
     { "wildcard", test_router_wildcard},
     { "edge_cases", test_router_edge_cases},
     { 0 }

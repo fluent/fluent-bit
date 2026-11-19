@@ -1,0 +1,41 @@
+{
+  "pack_version": 1,
+  "fts_api_version": 1,
+  "id": "org.fluentbit.policy.stable-log-sampling",
+  "version": "1.0.0",
+  "title": "Stable keyed log sampling",
+  "description": "Stable keyed log sampling",
+  "blocks": [
+    {
+      "name": "apply",
+      "signals": [
+        "logs"
+      ],
+      "source": "blocks/apply.lua",
+      "privacy": false,
+      "parameters": {
+        "field": {
+          "type": "string",
+          "default": "request_id"
+        },
+        "tenant": {
+          "type": "string",
+          "default": "default"
+        },
+        "domain": {
+          "type": "string",
+          "default": "logs"
+        },
+        "basis_points": {
+          "type": "number",
+          "default": 1000
+        }
+      }
+    }
+  ],
+  "fixtures": [
+    "tests/policy.yaml",
+    "tests/keep-all.yaml",
+    "tests/half-budget.yaml"
+  ]
+}

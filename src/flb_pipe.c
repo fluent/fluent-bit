@@ -41,6 +41,7 @@
 #include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_time.h>
+#include <monkey/mk_core/mk_event.h>
 
 #ifdef _WIN32
 
@@ -131,6 +132,24 @@ int flb_pipe_set_nonblocking(flb_pipefd_t fd)
     return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 }
 #endif
+
+/* The event backend uses int descriptors; Windows pipe storage is wider. */
+int flb_pipe_event_channel_create(struct mk_event_loop *loop,
+                                  flb_pipefd_t *read_fd, flb_pipefd_t *write_fd,
+                                  void *event)
+{
+    int channel_read;
+    int channel_write;
+    int ret;
+
+    ret = mk_event_channel_create(loop, &channel_read, &channel_write, event);
+    if (ret == 0) {
+        *read_fd = channel_read;
+        *write_fd = channel_write;
+    }
+
+    return ret;
+}
 
 /* Blocking read until receive 'count' bytes */
 ssize_t flb_pipe_read_all(int fd, void *buf, size_t count)

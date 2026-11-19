@@ -1,0 +1,36 @@
+{
+  "pack_version": 1,
+  "fts_api_version": 1,
+  "id": "org.fluentbit.policy.genai-privacy",
+  "version": "1.0.1",
+  "title": "GenAI structured content protection",
+  "description": "Redact configured structured keys in log bodies and OTLP log attributes for declared application logging profiles. Replace full message/prompt content while retaining existing usage/latency values; never fabricate token counts. Does not inspect arbitrary raw transcript strings, attachments or unknown SDK schema versions.",
+  "blocks": [
+    {
+      "name": "apply",
+      "signals": [
+        "logs"
+      ],
+      "source": "blocks/apply.lua",
+      "parameters": {
+        "keys": {
+          "type": "strings",
+          "default": [
+            "prompt",
+            "completion",
+            "content",
+            "gen_ai.prompt",
+            "gen_ai.completion",
+            "gen_ai.input.messages",
+            "gen_ai.output.messages"
+          ]
+        }
+      },
+      "privacy": true
+    }
+  ],
+  "fixtures": [
+    "tests/policy.yaml",
+    "tests/otlp-privacy.yaml"
+  ]
+}

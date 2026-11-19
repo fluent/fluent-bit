@@ -4,6 +4,7 @@ add_definitions(-DFLB_CORE=1)
 set(src
   ${src}
   flb_mp.c
+  flb_mp_preflight.c
   flb_kv.c
   flb_api.c
   flb_csv.c
@@ -36,8 +37,10 @@ set(src
   flb_input_thread.c
   flb_filter.c
   flb_output.c
+  flb_output_throttle.c
   flb_output_thread.c
   flb_config.c
+  flb_fips.c
   flb_config_map.c
   flb_socket.c
   flb_network.c
@@ -46,6 +49,7 @@ set(src
   flb_engine.c
   flb_engine_dispatch.c
   flb_task.c
+  flb_search_bulk.c
   flb_unescape.c
   flb_scheduler.c
   flb_io.c
@@ -68,14 +72,13 @@ set(src
   flb_crypto.c
   flb_random.c
   flb_plugin.c
+  flb_plugin_alias.c
   flb_gzip.c
   flb_snappy.c
   flb_zstd.c
   flb_compression.c
-  flb_http_common.c
-  flb_http_client_http1.c
-  flb_http_client_http2.c
-  flb_http_client.c
+  http_server/flb_http_server_config_map.c
+  flb_http_retry_after.c
   flb_callback.c
   flb_strptime.c
   flb_fstore.c
@@ -103,6 +106,15 @@ set(src
   )
 
 # Config format
+if(NOT FLB_WASM_BROWSER)
+  # Browser HTTP needs a Fetch transport; native socket clients cannot be used.
+  list(APPEND src flb_http_common.c flb_http_client_http1.c
+    flb_http_client_http2.c flb_http_client.c)
+else()
+  list(APPEND src flb_http_common.c flb_http_client.c wasm/http.c wasm/http_client.c
+    wasm/inspect.c)
+endif()
+
 set(src
   ${src}
   config_format/flb_config_format.c
@@ -119,7 +131,10 @@ endif()
 set(src
   ${src}
   opentelemetry/flb_opentelemetry_logs.c
+  opentelemetry/flb_opentelemetry_logs_json.c
+  opentelemetry/flb_opentelemetry_logs_proto.c
   opentelemetry/flb_opentelemetry_metrics.c
+  opentelemetry/flb_opentelemetry_protobuf.c
   opentelemetry/flb_opentelemetry_otlp_json.c
   opentelemetry/flb_opentelemetry_otlp_proto.c
   opentelemetry/flb_opentelemetry_traces.c
@@ -148,6 +163,7 @@ if(FLB_PARSER)
     flb_parser_regex.c
     flb_parser_json.c
     flb_parser_decoder.c
+    flb_parser_cri.c
     flb_parser_ltsv.c
     flb_parser_logfmt.c
     )
@@ -213,7 +229,7 @@ if (FLB_AWS_ERROR_REPORTER)
     )
 endif()
 
-if(FLB_LUAJIT)
+if(FLB_LUAJIT OR FLB_WASM_LUA)
   set(src
     ${src}
     "flb_lua.c"
@@ -253,7 +269,7 @@ if(FLB_REGEX)
     )
 endif()
 
-if(FLB_LUAJIT)
+if(FLB_LUAJIT OR FLB_WASM_LUA)
   set(extra_libs
     ${extra_libs}
     ${LUAJIT_LIBRARIES})
@@ -447,7 +463,7 @@ endif()
 if(FLB_HAVE_LIBYAML)
 set(FLB_DEPS
   ${FLB_DEPS}
-  yaml
+  ${FLB_LIBYAML_LINK}
   )
 endif()
 
@@ -523,18 +539,43 @@ set(flb_rc_files
   )
 endif()
 
+# Compile the core once for both library variants. Keep one real source on the
+# archive and shared-library targets for native generators and sanitizer setup.
+set(flb_core_sources ${src})
+set(flb_core_objects "")
+if(NOT FLB_SYSTEM_WINDOWS AND NOT FLB_WASM_BROWSER)
+  list(REMOVE_ITEM flb_core_sources flb_api.c)
+  add_library(fluent-bit-core OBJECT ${flb_core_sources})
+  add_sanitizers(fluent-bit-core)
+
+  # Plugins and HTTP APIs link back to the static core. Their implementation
+  # archives are link dependencies, not requirements for compiling core objects.
+  set(flb_core_compile_deps ${FLB_DEPS})
+  list(REMOVE_ITEM flb_core_compile_deps ${FLB_PLUGINS} ${FLB_PROXY_PLUGINS} flb-http-server)
+  target_link_libraries(fluent-bit-core PRIVATE ${flb_core_compile_deps})
+  if(KAFKA_FOUND)
+    # System librdkafka installs its headers below the pkg-config include root.
+    target_include_directories(fluent-bit-core PRIVATE ${KAFKA_INCLUDEDIR}/librdkafka)
+  endif()
+
+  set(flb_core_sources flb_api.c)
+  set(flb_core_objects fluent-bit-core)
+endif()
+
 # Shared Library
-if(FLB_SHARED_LIB)
-  add_library(fluent-bit-shared SHARED ${src})
+if(FLB_SHARED_LIB OR
+   (NOT MSVC AND NOT FLB_JEMALLOC AND
+    (FLB_TESTS_RUNTIME OR FLB_TESTS_INTERNAL OR FLB_TESTS_INTERNAL_FUZZ)))
+  add_library(fluent-bit-shared SHARED ${flb_core_sources})
   add_sanitizers(fluent-bit-shared)
   set_target_properties(fluent-bit-shared
     PROPERTIES OUTPUT_NAME fluent-bit)
 
   # Windows doesn't provide pthread (see winpthreads.c in mk_core).
   if(CMAKE_SYSTEM_NAME MATCHES "Windows")
-    target_link_libraries(fluent-bit-shared ${FLB_DEPS})
+    target_link_libraries(fluent-bit-shared ${flb_core_objects} ${FLB_DEPS})
   else()
-    target_link_libraries(fluent-bit-shared ${FLB_DEPS} -lpthread)
+    target_link_libraries(fluent-bit-shared ${flb_core_objects} ${FLB_DEPS} -lpthread)
   endif()
 
   if (MSVC)
@@ -542,17 +583,29 @@ if(FLB_SHARED_LIB)
       PROPERTIES PDB_NAME fluent-bit.dll)
   endif()
 
-  # Library install routines
-  install(TARGETS fluent-bit-shared
-    LIBRARY DESTINATION ${FLB_INSTALL_LIBDIR}
-    COMPONENT library
-    RUNTIME DESTINATION ${FLB_INSTALL_BINDIR})
+  if(FLB_SHARED_LIB)
+    # Library install routines
+    install(TARGETS fluent-bit-shared
+      LIBRARY DESTINATION ${FLB_INSTALL_LIBDIR}
+      COMPONENT library
+      RUNTIME DESTINATION ${FLB_INSTALL_BINDIR})
+  endif()
 endif()
 
 # Static Library
-add_library(fluent-bit-static STATIC ${src})
+add_library(fluent-bit-static STATIC ${flb_core_sources})
 add_sanitizers(fluent-bit-static)
-target_link_libraries(fluent-bit-static ${FLB_DEPS})
+target_link_libraries(fluent-bit-static ${flb_core_objects} ${FLB_DEPS})
+if(flb_core_objects)
+  # Object files must exist before archiving even with dependency optimization.
+  add_dependencies(fluent-bit-static ${flb_core_objects})
+endif()
+if(FLB_WASM_BROWSER)
+  target_link_libraries(fluent-bit-static flb-wasm-crypto flb-wasm-filesystem)
+  target_link_libraries(fluent-bit-static "--pre-js=${PROJECT_SOURCE_DIR}/src/wasm/http.js")
+  set_property(TARGET fluent-bit-static APPEND PROPERTY INTERFACE_LINK_DEPENDS
+    "${PROJECT_SOURCE_DIR}/src/wasm/http.js")
+endif()
 
 if(MSVC)
   # Rename the output for Windows environment to avoid naming issues

@@ -1,0 +1,21 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: error
+  telemetry:
+    metrics:
+      logs:
+        # tag_records must be a map with an 'enabled' key; the bare boolean
+        # short form is intentionally not accepted.
+        tag_records: true
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: bad.boolform
+      dummy: '{"message":"x"}'
+      samples: 1
+
+  outputs:
+    - name: 'null'
+      match: '*'

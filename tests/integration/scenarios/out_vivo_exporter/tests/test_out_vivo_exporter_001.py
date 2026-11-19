@@ -69,7 +69,7 @@ def test_out_vivo_exporter_endpoints():
             pytest.skip("Unified exporter headers are not available in this Fluent Bit binary")
         assert headers["server"] == "Fluent Bit"
         assert headers["x-http-engine"] == "Monkey heritage"
-        assert headers["content-type"].startswith("application/json")
+        assert headers["content-type"].startswith("application/x-ndjson")
         assert headers["access-control-allow-origin"] == "*"
         assert "vivo-stream-next-id" in headers
 

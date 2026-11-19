@@ -93,6 +93,24 @@ static inline char *flb_test_mkdtemp(char *template_path)
 #define mkdtemp flb_test_mkdtemp
 #endif
 
+static inline int flb_test_mkdir(const char *path)
+{
+#ifdef _WIN32
+    return _mkdir(path);
+#else
+    return mkdir(path, 0755);
+#endif
+}
+
+static inline int flb_test_rmdir(const char *path)
+{
+#ifdef _WIN32
+    return _rmdir(path);
+#else
+    return remove(path);
+#endif
+}
+
 static inline int wait_for_file(char *path, 
                                 size_t minimum_size, 
                                 int time_limit)

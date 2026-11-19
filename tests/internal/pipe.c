@@ -2,6 +2,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_pipe.h>
+#include <monkey/mk_core.h>
 #ifdef FLB_SYSTEM_WINDOWS
 #include <fluent-bit/flb_compat.h>
 #endif
@@ -83,7 +84,45 @@ static void test_pipe_usage()
 #endif
 }
 
+static void test_event_channel_descriptor_width(void)
+{
+    struct mk_event_loop *loop;
+    struct mk_event event = {0};
+    flb_pipefd_t channels[2] = {-1, -1};
+    uint64_t sent = 42;
+    uint64_t received = 0;
+    int ret;
+#ifdef FLB_SYSTEM_WINDOWS
+    WSADATA wsa_data;
+
+    TEST_ASSERT(WSAStartup(0x0201, &wsa_data) == 0);
+#endif
+
+    loop = mk_event_loop_create(8);
+    TEST_ASSERT(loop != NULL);
+    MK_EVENT_ZERO(&event);
+
+    ret = flb_pipe_event_channel_create(loop, &channels[0], &channels[1], &event);
+    TEST_ASSERT(ret == 0);
+    /* Replacing -1 must clear every byte of native-width descriptor storage. */
+    TEST_ASSERT(channels[0] >= 0);
+    TEST_ASSERT(channels[1] >= 0);
+    TEST_CHECK(channels[0] == event.fd);
+    TEST_ASSERT(flb_pipe_w(channels[1], &sent, sizeof(sent)) == sizeof(sent));
+    TEST_ASSERT(mk_event_wait_2(loop, 1000) == 1);
+    TEST_CHECK(flb_pipe_r(channels[0], &received, sizeof(received)) == sizeof(received));
+    TEST_CHECK(received == sent);
+
+    mk_event_del(loop, &event);
+    flb_pipe_destroy(channels);
+    mk_event_loop_destroy(loop);
+#ifdef FLB_SYSTEM_WINDOWS
+    WSACleanup();
+#endif
+}
+
 TEST_LIST = {
     { "pipe_usage", test_pipe_usage},
+    { "event_channel_descriptor_width", test_event_channel_descriptor_width},
     { 0 }
 };

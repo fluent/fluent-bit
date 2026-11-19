@@ -318,7 +318,7 @@ static struct flb_ml_rule *try_start_state(struct flb_ml_parser *ml_parser,
 
         /* Matched a start_state. Check if we have a regex match */
         ret = flb_regex_match(rule->regex, (unsigned char *) buf_data, buf_size);
-        if (ret) {
+        if (ret > 0) {
             return rule;
         }
     }
@@ -369,7 +369,7 @@ int flb_ml_rule_process(struct flb_ml_parser *ml_parser,
             /* Try regex match */
             ret = flb_regex_match(st->rule->regex,
                                   (unsigned char *) buf_data, buf_size);
-            if (ret) {
+            if (ret > 0) {
                 /* Regex matched */
                 len = flb_sds_len(group->buf);
                 if (len >= 1 && group->buf[len - 1] != '\n') {

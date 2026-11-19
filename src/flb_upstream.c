@@ -287,11 +287,12 @@ void flb_upstream_init()
 }
 
 /* Creates a new upstream context */
-struct flb_upstream *flb_upstream_create(struct flb_config *config,
-                                         const char *host, int port, int flags,
-                                         struct flb_tls *tls)
+static struct flb_upstream *upstream_create(struct flb_config *config,
+                                            const char *host, int port, int flags,
+                                            struct flb_tls *tls, int thread_safe)
 {
     int ret;
+    int transport;
     char *proxy_protocol = NULL;
     char *proxy_host = NULL;
     char *proxy_port = NULL;
@@ -299,6 +300,12 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
     char *proxy_password = NULL;
     struct flb_upstream *u;
 
+#ifdef __EMSCRIPTEN__
+    if ((flags & (FLB_IO_UDP | FLB_IO_DTLS)) || config->http_proxy) {
+        flb_error("[upstream] browser transport does not support UDP or proxies");
+        return NULL;
+    }
+#endif
     u = flb_calloc(1, sizeof(struct flb_upstream));
     if (!u) {
         flb_errno();
@@ -307,16 +314,26 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
 
     u->base.dynamically_allocated = FLB_TRUE;
 
+    transport = FLB_TRANSPORT_TCP;
+    if ((flags & FLB_IO_UDP) || (flags & FLB_IO_DTLS)) {
+        transport = FLB_TRANSPORT_UDP;
+    }
+
     flb_stream_setup(&u->base,
                      FLB_UPSTREAM,
-                     FLB_TRANSPORT_TCP,
+                     transport,
                      flags,
                      tls,
                      config,
                      NULL);
 
+    /* Initialize queues early so all error paths can safely call
+     * flb_upstream_destroy(u) for centralised cleanup. */
+    flb_upstream_queue_init(&u->queue);
+
     /* Set upstream to the http_proxy if it is specified. */
-    if (flb_upstream_needs_proxy(host, config->http_proxy, config->no_proxy) == FLB_TRUE) {
+    if (transport == FLB_TRANSPORT_TCP &&
+        flb_upstream_needs_proxy(host, config->http_proxy, config->no_proxy) == FLB_TRUE) {
         flb_debug("[upstream] config->http_proxy: %s", config->http_proxy);
         ret = flb_utils_proxy_url_split(config->http_proxy, &proxy_protocol,
                                         &proxy_username, &proxy_password,
@@ -336,6 +353,35 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
             u->proxy_password = flb_strdup(proxy_password);
         }
 
+#ifdef FLB_HAVE_TLS
+        if (strcmp(proxy_protocol, "https") == 0) {
+            /*
+             * The proxy connection itself is TLS. Create a dedicated TLS
+             * context using the proxy hostname as the SNI (vhost).  This
+             * context is separate from the destination TLS context so that
+             * each handshake uses the correct hostname.
+             */
+            u->proxy_tls_context = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                                                   FLB_TRUE, 0,
+                                                   proxy_host,
+                                                   NULL, NULL,
+                                                   NULL, NULL, NULL);
+            if (!u->proxy_tls_context) {
+                flb_error("[upstream] could not create TLS context for HTTPS proxy %s",
+                          proxy_host);
+                flb_free(proxy_protocol);
+                flb_free(proxy_host);
+                flb_free(proxy_port);
+                flb_free(proxy_username);
+                flb_free(proxy_password);
+                flb_upstream_destroy(u);
+                return NULL;
+            }
+
+            flb_tls_set_verify_hostname(u->proxy_tls_context, FLB_TRUE);
+        }
+#endif
+
         flb_free(proxy_protocol);
         flb_free(proxy_host);
         flb_free(proxy_port);
@@ -348,19 +394,82 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
     }
 
     if (!u->tcp_host) {
-        flb_free(u);
+        flb_upstream_destroy(u);
         return NULL;
     }
 
     flb_stream_enable_flags(&u->base, FLB_IO_ASYNC);
 
-    /* Initialize queues */
-    flb_upstream_queue_init(&u->queue);
-
-    mk_list_add(&u->base._head, &config->upstreams);
+    if (thread_safe) {
+        /* Worker-owned upstreams must never enter the engine's shared list. */
+        flb_upstream_thread_safe(u);
+    }
+    else {
+        mk_list_add(&u->base._head, &config->upstreams);
+    }
 
     return u;
 }
+
+struct flb_upstream *flb_upstream_create(struct flb_config *config,
+                                         const char *host, int port, int flags,
+                                         struct flb_tls *tls)
+{
+    return upstream_create(config, host, port, flags, tls, FLB_FALSE);
+}
+
+struct flb_upstream *flb_upstream_create_thread_safe(struct flb_config *config,
+                                                     const char *host, int port, int flags,
+                                                     struct flb_tls *tls)
+{
+    return upstream_create(config, host, port, flags, tls, FLB_TRUE);
+}
+
+#ifdef FLB_HAVE_TLS
+/*
+ * Reconfigure the HTTPS proxy TLS context (if any) created by
+ * flb_upstream_create() using caller-provided verification settings. This is
+ * intentionally independent from the destination TLS context: proxy and
+ * destination are different TLS peers and must not share ca_file/ca_path/
+ * verify settings.
+ *
+ * If the upstream has no proxy_tls_context (no HTTPS proxy in effect), this
+ * is a no-op.
+ */
+int flb_upstream_proxy_tls_setup(struct flb_upstream *u,
+                                 int verify, int verify_hostname,
+                                 const char *ca_path, const char *ca_file)
+{
+    struct flb_tls *tls;
+
+    if (!u || !u->proxy_tls_context) {
+        return 0;
+    }
+
+    /*
+     * u->tcp_host already holds the proxy hostname at this point (set by
+     * flb_upstream_create() when a proxy is in effect), so reuse it as the
+     * SNI vhost for the rebuilt context.
+     */
+    tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
+                         verify, 0,
+                         u->tcp_host,
+                         ca_path, ca_file,
+                         NULL, NULL, NULL);
+    if (!tls) {
+        flb_error("[upstream] could not reconfigure TLS context for HTTPS proxy %s",
+                  u->tcp_host);
+        return -1;
+    }
+
+    flb_tls_set_verify_hostname(tls, verify_hostname);
+
+    flb_tls_destroy(u->proxy_tls_context);
+    u->proxy_tls_context = tls;
+
+    return 0;
+}
+#endif
 
 /*
  * Checks whehter a destinate URL should be proxied.
@@ -437,6 +546,15 @@ struct flb_upstream *flb_upstream_create_url(struct flb_config *config,
         goto out;
     }
 
+    /* Transport is determined by the scheme, even when the URL has a port. */
+    if (strcasecmp(prot, "https") == 0) {
+        flags |= FLB_IO_TLS;
+        if (tls == NULL) {
+            flb_error("[upstream] TLS context required for URL: %s", url);
+            goto out;
+        }
+    }
+
     /* Manage some default ports */
     if (!port) {
         if (strcasecmp(prot, "http") == 0) {
@@ -444,9 +562,6 @@ struct flb_upstream *flb_upstream_create_url(struct flb_config *config,
         }
         else if (strcasecmp(prot, "https") == 0) {
             tmp_port = 443;
-            if ((flags & FLB_IO_TLS) == 0) {
-                flags |= FLB_IO_TLS;
-            }
         }
     }
     else {
@@ -626,7 +741,13 @@ static struct flb_connection *create_conn(struct flb_upstream *u)
     flb_connection_reset_connection_timeout(conn);
 
     /* Start connection */
+#ifdef __EMSCRIPTEN__
+    /* A browser connection is a request context, never a socket. */
+    ret = 0;
+    conn->recycle = FLB_FALSE;
+#else
     ret = flb_io_net_connect(conn, coro);
+#endif
     if (ret == -1) {
         flb_connection_unset_connection_timeout(conn);
 
@@ -688,10 +809,21 @@ int flb_upstream_destroy(struct flb_upstream *u)
     flb_free(u->proxy_username);
     flb_free(u->proxy_password);
 
+#ifdef FLB_HAVE_TLS
+    if (u->proxy_tls_context) {
+        flb_tls_destroy(u->proxy_tls_context);
+        u->proxy_tls_context = NULL;
+    }
+#endif
+
     if (mk_list_is_set(&u->base._head) == 0) {
         mk_list_del(&u->base._head);
     }
-    
+
+    if (flb_stream_is_thread_safe(&u->base)) {
+        pthread_mutex_destroy(&u->base.list_mutex);
+    }
+
     flb_free(u);
 
     return 0;
@@ -959,6 +1091,10 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
     struct flb_upstream_queue *uq;
     int elapsed_time;
 
+#ifdef __EMSCRIPTEN__
+    /* Fetch enforces request deadlines; these contexts have no socket events. */
+    return 0;
+#endif
     now = time(NULL);
 
     /* Iterate all upstream contexts */
@@ -993,18 +1129,18 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
             if (drop) {
                 if (!flb_upstream_is_shutting_down(u)) {
                     if (u->base.net.connect_timeout_log_error) {
-                        flb_error("[upstream] connection #%i to %s timed "
+                        flb_error("[upstream] connection #%i to %s:%i timed "
                                   "out after %i seconds (%s)",
                                   u_conn->fd,
-                                  flb_connection_get_remote_address(u_conn),
+                                  u->tcp_host, u->tcp_port,
                                   elapsed_time,
                                   reason);
                     }
                     else {
-                        flb_debug("[upstream] connection #%i to %s timed "
+                        flb_debug("[upstream] connection #%i to %s:%i timed "
                                   "out after %i seconds (%s)",
                                   u_conn->fd,
-                                  flb_connection_get_remote_address(u_conn),
+                                  u->tcp_host, u->tcp_port,
                                   elapsed_time,
                                   reason);
                     }

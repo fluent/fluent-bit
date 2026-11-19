@@ -1,0 +1,31 @@
+{
+  "pack_version": 1,
+  "fts_api_version": 1,
+  "id": "org.fluentbit.policy.service-identity",
+  "version": "1.0.0",
+  "title": "Trusted service identity defaults",
+  "description": "Fill absent native-log identity fields from trusted deployment parameters. Preserve existing values, including explicit null. Does not authenticate tenants or move per-request attributes into shared resource identity.",
+  "blocks": [
+    {
+      "name": "apply",
+      "signals": [
+        "logs"
+      ],
+      "source": "blocks/apply.lua",
+      "parameters": {
+        "service": {
+          "type": "string",
+          "default": "checkout"
+        },
+        "environment": {
+          "type": "string",
+          "default": "production"
+        }
+      },
+      "privacy": false
+    }
+  ],
+  "fixtures": [
+    "tests/policy.yaml"
+  ]
+}

@@ -1,0 +1,4 @@
+{"request_id":"request-with-error","level":"DEBUG","message":"request started","password":"synthetic-secret"}
+{"request_id":"successful-request","level":"DEBUG","message":"verbose diagnostic","password":"synthetic-secret"}
+{"request_id":"request-with-error","level":"ERROR","message":"request failed","password":"synthetic-secret"}
+{"request_id":"successful-request","level":"INFO","message":"request completed","password":"synthetic-secret"}

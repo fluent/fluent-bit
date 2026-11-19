@@ -1,0 +1,23 @@
+service:
+  flush: 30
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: rate_gate.idle
+      dummy: '{"message":"idle recovery"}'
+      samples: 1
+      copies: 3
+      rate: 100
+      rate_gate: true
+      rate_gate.max_bytes: 0
+      rate_gate.max_records: 1
+      rate_window: 2s
+      rate_gate.backpressure: false
+
+  outputs:
+    - name: stdout
+      match: "*"

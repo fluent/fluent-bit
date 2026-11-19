@@ -1,0 +1,54 @@
+fixture_version: 1
+signal: logs
+processor:
+  name: fts
+  packs:
+  - ../pack.json
+  recipe_version: 1
+  error_mode: keep
+  recipe:
+  - id: policy
+    use: org.fluentbit.policy.cloudtrail/apply
+cases:
+- name: preserve-investigation-fields
+  input:
+  - body:
+      eventVersion: '1.11'
+      eventTime: '2023-11-14T22:13:20Z'
+      eventName: GetObject
+      eventSource: s3.amazonaws.com
+      readOnly: true
+    timestamp:
+      sec: 1600000000
+      nsec: 0
+  expected:
+    records:
+    - body:
+        eventVersion: '1.11'
+        eventTime: '2023-11-14T22:13:20Z'
+        eventName: GetObject
+        eventSource: s3.amazonaws.com
+        readOnly: true
+        cloud.provider: aws
+        event.action: GetObject
+      timestamp:
+        sec: 1700000000
+        nsec: 0
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0
+- name: future-major-control
+  input:
+  - body:
+      eventVersion: '2.0'
+      message: future
+  expected:
+    records:
+    - body:
+        eventVersion: '2.0'
+        message: future
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0

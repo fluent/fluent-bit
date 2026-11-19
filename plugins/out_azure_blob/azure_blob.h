@@ -125,6 +125,9 @@ struct flb_azure_blob {
     unsigned char *decoded_sk;        /* decoded shared key */
     size_t decoded_sk_size;           /* size of decoded shared key */
 
+    /* Protect buffered files shared by flush workers and the upload timer. */
+    pthread_mutex_t buffer_mutex;
+
 #ifdef FLB_HAVE_SQLDB
     /*
      * SQLite by default is not built with multi-threading enabled, and

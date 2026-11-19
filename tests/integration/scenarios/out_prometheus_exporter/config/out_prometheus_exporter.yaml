@@ -16,3 +16,4 @@ pipeline:
       match: "*"
       host: 127.0.0.1
       port: ${EXPORTER_PORT}
+      http_server.idle_timeout: ${EXPORTER_IDLE_TIMEOUT}

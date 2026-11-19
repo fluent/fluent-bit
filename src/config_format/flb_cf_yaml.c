@@ -17,6 +17,10 @@
  *  limitations under the License.
  */
 
+#if defined(FLB_SYSTEM_LINUX) && !defined(_LARGEFILE64_SOURCE)
+#define _LARGEFILE64_SOURCE
+#endif
+
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_config_format.h>
 #include <fluent-bit/flb_sds.h>
@@ -35,19 +39,23 @@
 #include <yaml.h>
 
 #include <ctype.h>
+#include <errno.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #ifndef _MSC_VER
 #include <glob.h>
 #endif
 
-#ifdef _WIN32
+#ifdef FLB_SYSTEM_WINDOWS
 #include <Windows.h>
+#include <io.h>
 #include <strsafe.h>
 #define PATH_MAX MAX_PATH
 #endif
 
 #include <stdio.h>
+
+#define FLB_CF_YAML_MAX_INCLUDE_DEPTH 256
 
 enum section {
     SECTION_ENV,
@@ -65,6 +73,7 @@ enum section {
     SECTION_STREAM_PROCESSOR,
     SECTION_PLUGINS,
     SECTION_UPSTREAM_SERVERS,
+    SECTION_EXTENSIONS,
     SECTION_OTHER,
 };
 
@@ -84,13 +93,28 @@ static char *section_names[] = {
     "stream_processor",
     "plugins",
     "upstream_servers",
+    "extensions",
     "other"
 };
 
+struct file_identity {
+    uint64_t device;
+    uint64_t inode;
+#ifdef FLB_SYSTEM_WINDOWS
+    FILE_ID_INFO windows_identity;
+    int has_windows_identity;
+#endif
+};
+
 struct file_state {
-    /* file */
-    flb_sds_t name;                /* file name */
-    flb_sds_t path;           /* file root path */
+    flb_sds_t name;                /* borrowed file name */
+    flb_sds_t path;                /* borrowed include directory */
+
+    /* Relative includes make the containing directory part of the parse identity. */
+    struct file_identity identity;
+    struct file_identity directory_identity;
+    char *directory_context;       /* path preserves mount and junction context */
+    struct file_state *include_parent;
 
     /* parent file state */
     struct file_state *parent;
@@ -123,6 +147,7 @@ enum state {
 
     STATE_SERVICE,         /* 'service' section */
     STATE_INCLUDE,         /* 'includes' section */
+    STATE_EXTENSIONS,      /* 'extensions' section */
     STATE_OTHER,           /* any other unknown section */
 
     STATE_CUSTOM,          /* custom plugins */
@@ -272,6 +297,8 @@ static char *state_str(enum state val)
         return "service";
     case STATE_INCLUDE:
         return "include";
+    case STATE_EXTENSIONS:
+        return "extensions";
     case STATE_OTHER:
         return "other";
     case STATE_CUSTOM:
@@ -479,7 +506,11 @@ static int is_file_included(struct local_ctx *ctx, const char *path)
     mk_list_foreach(head, &ctx->includes) {
         entry = mk_list_entry(head, struct flb_slist_entry, _head);
 
+#ifdef FLB_SYSTEM_WINDOWS
+        if (strcasecmp(entry->str, path) == 0) {
+#else
         if (strcmp(entry->str, path) == 0) {
+#endif
             return FLB_TRUE;
         }
     }
@@ -487,7 +518,7 @@ static int is_file_included(struct local_ctx *ctx, const char *path)
     return FLB_FALSE;
 }
 
-#ifndef _WIN32
+#ifndef FLB_SYSTEM_WINDOWS
 static int read_glob(struct flb_cf *conf, struct local_ctx *ctx,
                      struct parser_state *state, const char *path)
 {
@@ -545,9 +576,13 @@ static int read_glob(struct flb_cf *conf, struct local_ctx *ctx,
 static char *dirname(char *path)
 {
     char *ptr;
-
+    char *slash;
 
     ptr = strrchr(path, '\\');
+    slash = strrchr(path, '/');
+    if (slash != NULL && (ptr == NULL || slash > ptr)) {
+        ptr = slash;
+    }
 
     if (ptr == NULL) {
         /* No directory component */
@@ -564,10 +599,27 @@ static int read_glob(struct flb_cf *conf, struct local_ctx *ctx,
     char *star, *p0, *p1;
     char pattern[MAX_PATH];
     char buf[MAX_PATH];
+    char full_path[MAX_PATH];
     int ret;
     struct stat st;
     HANDLE hnd;
     WIN32_FIND_DATA data;
+
+    if (state->file->path && path[0] != '/' && path[0] != '\\' &&
+        !(path[0] != '\0' && path[1] == ':')) {
+        ret = snprintf(buf, sizeof(buf), "%s\\%s", state->file->path, path);
+        if (ret < 0 || ret >= sizeof(buf)) {
+            return -1;
+        }
+        path = buf;
+    }
+
+    /* Resolve relative includes against the config directory and normalize
+     * forward slashes before splitting the Windows wildcard components. */
+    if (_fullpath(full_path, path, sizeof(full_path)) == NULL) {
+        return -1;
+    }
+    path = full_path;
 
     if (strlen(path) > MAX_PATH - 1) {
         return -1;
@@ -630,7 +682,11 @@ static int read_glob(struct flb_cf *conf, struct local_ctx *ctx,
         }
 
         if (strchr(p1, '*')) {
-            read_glob(conf, ctx, state, buf); /* recursive */
+            ret = read_glob(conf, ctx, state, buf);
+            if (ret < 0) {
+                FindClose(hnd);
+                return -1;
+            }
             continue;
         }
 
@@ -639,6 +695,7 @@ static int read_glob(struct flb_cf *conf, struct local_ctx *ctx,
         if (ret == 0 && (st.st_mode & S_IFMT) == S_IFREG) {
 
             if (read_config(conf, ctx, state->file, buf) < 0) {
+                FindClose(hnd);
                 return -1;
             }
         }
@@ -1803,9 +1860,22 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
                     return YAML_FAILURE;
                 }
             }
+            else if (strcasecmp(value, "extensions") == 0) {
+                state = state_push_section(ctx, STATE_EXTENSIONS, SECTION_EXTENSIONS);
+
+                if (state == NULL) {
+                    flb_error("unable to allocate state");
+                    return YAML_FAILURE;
+                }
+
+                if (state_create_section(conf, state, value) == -1) {
+                    flb_error("unable to allocate section: %s", value);
+                    return YAML_FAILURE;
+                }
+            }
             else {
                 /* any other main section definition (e.g: similar to STATE_SERVICE) */
-                state = state_push(ctx, STATE_OTHER);
+                state = state_push_section(ctx, STATE_OTHER, SECTION_OTHER);
 
                 if (state == NULL) {
                     flb_error("unable to allocate state");
@@ -1843,6 +1913,7 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
     /* service or others */
     case STATE_ENV:
     case STATE_SERVICE:
+    case STATE_EXTENSIONS:
     case STATE_OTHER:
         switch(event->type) {
         case YAML_MAPPING_START_EVENT:
@@ -1901,6 +1972,7 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
             switch (state->state) {
             case STATE_SERVICE:
             case STATE_ENV:
+            case STATE_EXTENSIONS:
             case STATE_OTHER:
                 break;
             default:
@@ -1923,6 +1995,40 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
 
     case STATE_SECTION_VAL:
         switch(event->type) {
+        case YAML_MAPPING_START_EVENT:
+            if (state->section == SECTION_ENV) {
+                flb_error("nested maps are not allowed in env section");
+                yaml_error_event(ctx, state, event);
+                return YAML_FAILURE;
+            }
+            if (state->section != SECTION_SERVICE &&
+                state->section != SECTION_EXTENSIONS) {
+                yaml_error_event(ctx, state, event);
+                return YAML_FAILURE;
+            }
+
+            state = state_push_variant(ctx, state, 1);
+            if (state == NULL) {
+                flb_error("unable to allocate state");
+                return YAML_FAILURE;
+            }
+            break;
+        case YAML_SEQUENCE_START_EVENT:
+            if (state->section == SECTION_ENV) {
+                yaml_error_event(ctx, state, event);
+                return YAML_FAILURE;
+            }
+            if (state->section != SECTION_EXTENSIONS) {
+                yaml_error_event(ctx, state, event);
+                return YAML_FAILURE;
+            }
+
+            state = state_push_variant(ctx, state, event->type == YAML_MAPPING_START_EVENT);
+            if (state == NULL) {
+                flb_error("unable to allocate state");
+                return YAML_FAILURE;
+            }
+            break;
         case YAML_SCALAR_EVENT:
             value = (char *) event->data.scalar.value;
 
@@ -1935,6 +2041,23 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
 
                 if (keyval == NULL) {
                     flb_error("unable to add key value");
+                    return YAML_FAILURE;
+                }
+            }
+            else if (state->section == SECTION_EXTENSIONS) {
+                variant = state_variant_parse_scalar(event);
+                if (variant == NULL) {
+                    flb_error("unable to allocate memory for variant");
+                    return YAML_FAILURE;
+                }
+
+                if (flb_cf_section_property_add_variant(conf,
+                                                        state->cf_section->properties,
+                                                        state->key,
+                                                        flb_sds_len(state->key),
+                                                        variant) == NULL) {
+                    cfl_variant_destroy(variant);
+                    flb_error("unable to insert variant");
                     return YAML_FAILURE;
                 }
             }
@@ -2238,6 +2361,21 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
                 break;
             }
 
+            if (state->section == SECTION_INPUT &&
+                strcmp(state->key, "telemetry") == 0) {
+                /*
+                 * Input telemetry is consumed structurally at load time. Other
+                 * nested input maps keep the legacy group behavior.
+                 */
+                state = state_push_variant(ctx, state, 1);
+
+                if (state == NULL) {
+                    flb_error("unable to allocate state");
+                    return YAML_FAILURE;
+                }
+                break;
+            }
+
             state = state_push(ctx, STATE_GROUP_KEY);
 
             if (state == NULL) {
@@ -2400,6 +2538,35 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
                 }
 
                 state = state_pop(ctx);
+
+                break;
+            }
+            else if (state->state == STATE_SECTION_VAL) {
+                if (state->section == SECTION_ENV) {
+                    flb_error("invalid type for env entry");
+                    return YAML_FAILURE;
+                }
+                if (state->section != SECTION_SERVICE &&
+                    state->section != SECTION_EXTENSIONS) {
+                    flb_error("variant values are only valid in service and extensions sections");
+                    return YAML_FAILURE;
+                }
+
+                if (flb_cf_section_property_add_variant(conf,
+                                                        state->cf_section->properties,
+                                                        state->key,
+                                                        flb_sds_len(state->key),
+                                                        variant) == NULL) {
+                    cfl_variant_destroy(variant);
+                    flb_error("unable to insert variant");
+                    return YAML_FAILURE;
+                }
+
+                state = state_pop(ctx);
+                if (state == NULL) {
+                    flb_error("no state left");
+                    return YAML_FAILURE;
+                }
 
                 break;
             }
@@ -2988,12 +3155,139 @@ static struct parser_state *state_create(struct file_state *parent, struct file_
 
 #else
 
-    state->file->name = flb_sds_create("***static***");
-    state->file->path = flb_sds_create("***static***");
+    state->file->name = "***static***";
+    state->file->path = "***static***";
 
 #endif
 
     return state;
+}
+
+#ifdef FLB_SYSTEM_WINDOWS
+static int get_handle_identity(HANDLE handle, struct file_identity *state)
+{
+    BY_HANDLE_FILE_INFORMATION identity;
+
+    if (handle == INVALID_HANDLE_VALUE) {
+        return -1;
+    }
+    state->has_windows_identity = GetFileInformationByHandleEx(handle, FileIdInfo,
+                                                               &state->windows_identity,
+                                                               sizeof(FILE_ID_INFO));
+    if (state->has_windows_identity) {
+        return 0;
+    }
+    if (!GetFileInformationByHandle(handle, &identity)) {
+        return -1;
+    }
+    state->device = identity.dwVolumeSerialNumber;
+    state->inode = ((uint64_t) identity.nFileIndexHigh << 32) | identity.nFileIndexLow;
+    return 0;
+}
+#endif
+
+/* Capture identities once, independently of path aliases or replacements. */
+static int get_file_identity(FILE *file, struct file_identity *state)
+{
+#ifdef FLB_SYSTEM_WINDOWS
+    return get_handle_identity((HANDLE) _get_osfhandle(_fileno(file)), state);
+#else
+#ifdef FLB_SYSTEM_LINUX
+    struct stat64 identity;
+
+    if (fstat64(fileno(file), &identity) != 0) {
+#else
+    struct stat identity;
+
+    if (fstat(fileno(file), &identity) != 0) {
+#endif
+        return -1;
+    }
+    state->device = identity.st_dev;
+    state->inode = identity.st_ino;
+    return 0;
+#endif
+}
+
+static int get_directory_identity(const char *path, struct file_identity *state)
+{
+#ifdef FLB_SYSTEM_WINDOWS
+    HANDLE handle;
+    int ret;
+    char drive_root[4];
+
+    if (path[0] != '\0' && path[1] == ':' && path[2] == '\0') {
+        drive_root[0] = path[0];
+        drive_root[1] = ':';
+        drive_root[2] = '\\';
+        drive_root[3] = '\0';
+        path = drive_root;
+    }
+
+    handle = CreateFileA(path, 0,
+                         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                         NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    if (handle == INVALID_HANDLE_VALUE) {
+        return -1;
+    }
+    ret = get_handle_identity(handle, state);
+    CloseHandle(handle);
+    return ret;
+#else
+#ifdef FLB_SYSTEM_LINUX
+    struct stat64 identity;
+
+    if (stat64(path, &identity) != 0) {
+#else
+    struct stat identity;
+
+    if (stat(path, &identity) != 0) {
+#endif
+        return -1;
+    }
+    state->device = identity.st_dev;
+    state->inode = identity.st_ino;
+    return 0;
+#endif
+}
+
+static int file_identity_equal(struct file_identity *left, struct file_identity *right)
+{
+#ifdef FLB_SYSTEM_WINDOWS
+    const FILE_ID_INFO *left_identity;
+    const FILE_ID_INFO *right_identity;
+
+    if (left->has_windows_identity || right->has_windows_identity) {
+        if (!left->has_windows_identity || !right->has_windows_identity) {
+            return FLB_FALSE;
+        }
+
+        left_identity = &left->windows_identity;
+        right_identity = &right->windows_identity;
+        if (left_identity->VolumeSerialNumber != right_identity->VolumeSerialNumber) {
+            return FLB_FALSE;
+        }
+
+        return memcmp(left_identity->FileId.Identifier, right_identity->FileId.Identifier,
+                      sizeof(left_identity->FileId.Identifier)) == 0;
+    }
+#endif
+    return left->device == right->device && left->inode == right->inode;
+}
+
+static int file_context_equal(struct file_state *left, struct file_state *right)
+{
+    if (!file_identity_equal(&left->identity, &right->identity) ||
+        !file_identity_equal(&left->directory_identity, &right->directory_identity)) {
+        return FLB_FALSE;
+    }
+    if (left->directory_context == NULL && right->directory_context == NULL) {
+        return FLB_TRUE;
+    }
+    if (left->directory_context == NULL || right->directory_context == NULL) {
+        return FLB_FALSE;
+    }
+    return strcmp(left->directory_context, right->directory_context) == 0;
 }
 
 static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
@@ -3002,6 +3296,9 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
     int ret;
     int status;
     int code = 0;
+    int path_is_absolute;
+    int include_depth;
+    struct stat st;
     struct parser_state *state;
     flb_sds_t include_dir = NULL;
     flb_sds_t include_file = NULL;
@@ -3009,8 +3306,28 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
     yaml_event_t event;
     FILE *fh;
     struct file_state fstate;
+    struct file_state *ancestor;
+#ifdef FLB_SYSTEM_WINDOWS
+    char *full_path;
+#endif
 
-    if (parent && cfg_file[0] != '/') {
+    memset(&fstate, 0, sizeof(fstate));
+    include_depth = 0;
+    for (ancestor = parent; ancestor != NULL; ancestor = ancestor->include_parent) {
+        if (++include_depth >= FLB_CF_YAML_MAX_INCLUDE_DEPTH) {
+            flb_error("[config] maximum YAML include depth (%d) exceeded at '%s'",
+                      FLB_CF_YAML_MAX_INCLUDE_DEPTH, cfg_file);
+            return -1;
+        }
+    }
+    path_is_absolute = cfg_file[0] == '/';
+#ifdef FLB_SYSTEM_WINDOWS
+    path_is_absolute = path_is_absolute || cfg_file[0] == '\\' ||
+                       (isalpha((unsigned char) cfg_file[0]) && cfg_file[1] == ':' &&
+                        (cfg_file[2] == '/' || cfg_file[2] == '\\'));
+#endif
+
+    if (parent && !path_is_absolute) {
 
         include_dir = flb_sds_create_size(strlen(cfg_file) + strlen(parent->path));
 
@@ -3019,17 +3336,27 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
             return -1;
         }
 
-#ifdef _WIN32
+#ifdef FLB_SYSTEM_WINDOWS
 #define PATH_CONCAT_TEMPLATE "%s\\%s"
 #else
 #define PATH_CONCAT_TEMPLATE "%s/%s"
 #endif
         if (flb_sds_printf(&include_dir, PATH_CONCAT_TEMPLATE, parent->path, cfg_file) == NULL) {
             flb_error("unable to create full filename");
+            flb_sds_destroy(include_dir);
             return -1;
         }
 #undef PATH_CONCAT_TEMPLATE
 
+        /* Keep parent-relative precedence, then try the working directory. */
+        if (stat(include_dir, &st) == -1 && (errno == ENOENT || errno == ENOTDIR)) {
+            flb_sds_destroy(include_dir);
+            include_dir = flb_sds_create(cfg_file);
+            if (include_dir == NULL) {
+                flb_error("unable to create include filename");
+                return -1;
+            }
+        }
     }
     else {
 
@@ -3040,6 +3367,21 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
             return -1;
         }
     }
+
+#ifdef FLB_SYSTEM_WINDOWS
+    /* Use the same absolute identity for direct and wildcard includes. */
+    full_path = realpath(include_dir, NULL);
+    if (full_path == NULL) {
+        flb_sds_destroy(include_dir);
+        return -1;
+    }
+    flb_sds_destroy(include_dir);
+    include_dir = flb_sds_create(full_path);
+    flb_free(full_path);
+    if (include_dir == NULL) {
+        return -1;
+    }
+#endif
 
     include_file = flb_sds_create(include_dir);
 
@@ -3053,15 +3395,7 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
     fstate.path = dirname(include_dir);
 
     fstate.parent = parent;
-
-    state = state_start(ctx, &fstate);
-
-    if (!state) {
-        flb_error("unable to push initial include file state: %s", cfg_file);
-        flb_sds_destroy(include_dir);
-        flb_sds_destroy(include_file);
-        return -1;
-    }
+    fstate.include_parent = parent;
 
     /* check if this file has been included before */
     ret = is_file_included(ctx, include_file);
@@ -3083,12 +3417,54 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
         return -1;
     }
 
+    ret = get_file_identity(fh, &fstate.identity);
+    if (ret == 0) {
+        ret = get_directory_identity(fstate.path, &fstate.directory_identity);
+    }
+    if (ret == 0) {
+        fstate.directory_context = realpath(fstate.path, NULL);
+        if (fstate.directory_context == NULL) {
+            ret = -1;
+        }
+    }
+    if (ret != 0) {
+        flb_error("[config] could not identify file '%s'", cfg_file);
+        fclose(fh);
+        flb_free(fstate.directory_context);
+        flb_sds_destroy(include_dir);
+        flb_sds_destroy(include_file);
+        return -1;
+    }
+
+    /* A linked template in another directory can have different relative children. */
+    for (ancestor = parent; ancestor != NULL; ancestor = ancestor->include_parent) {
+        if (file_context_equal(&fstate, ancestor)) {
+            flb_error("[config] file '%s' is already included", cfg_file);
+            fclose(fh);
+            flb_free(fstate.directory_context);
+            flb_sds_destroy(include_dir);
+            flb_sds_destroy(include_file);
+            return -1;
+        }
+    }
+
+    state = state_start(ctx, &fstate);
+    if (!state) {
+        flb_error("unable to push initial include file state: %s", cfg_file);
+        fclose(fh);
+        flb_free(fstate.directory_context);
+        flb_sds_destroy(include_dir);
+        flb_sds_destroy(include_file);
+        return -1;
+    }
+
     /* add file to the list of included files */
     ret = flb_slist_add(&ctx->includes, include_file);
 
     if (ret == -1) {
         flb_error("[config] could not register file %s", cfg_file);
         fclose(fh);
+        flb_free(fstate.directory_context);
         flb_sds_destroy(include_dir);
         flb_sds_destroy(include_file);
         return -1;
@@ -3163,6 +3539,7 @@ done:
     ctx->level--;
 
     flb_sds_destroy(include_file);
+    flb_free(fstate.directory_context);
     flb_sds_destroy(include_dir);
 
     return code;

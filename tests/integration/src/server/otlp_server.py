@@ -23,7 +23,11 @@ from concurrent import futures
 
 import grpc
 from flask import Flask, Response, jsonify, request
+from google.protobuf.any_pb2 import Any
+from google.protobuf.duration_pb2 import Duration
 from google.protobuf.message import DecodeError
+from google.rpc.error_details_pb2 import RetryInfo
+from google.rpc.status_pb2 import Status
 from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import (
     ExportLogsServiceRequest,
     ExportLogsServiceResponse,
@@ -42,10 +46,13 @@ app = Flask(__name__)
 data_storage = {"traces": [], "metrics": [], "logs": [], "requests": []}
 response_config = {
     "status_code": 200,
+    "status_codes": [],
     "body": {"status": "received"},
     "content_type": "application/json",
     "delay_seconds": 0,
+    "headers": [],
 }
+grpc_response_config = {"responses": []}
 grpc_method_paths = {
     "logs": "/opentelemetry.proto.collector.logs.v1.LogsService/Export",
     "metrics": "/opentelemetry.proto.collector.metrics.v1.MetricsService/Export",
@@ -65,11 +72,14 @@ def reset_otlp_server_state():
     response_config.update(
         {
             "status_code": 200,
+            "status_codes": [],
             "body": {"status": "received"},
             "content_type": "application/json",
             "delay_seconds": 0,
+            "headers": [],
         }
     )
+    grpc_response_config["responses"] = []
     grpc_method_paths.update(
         {
             "logs": "/opentelemetry.proto.collector.logs.v1.LogsService/Export",
@@ -80,15 +90,31 @@ def reset_otlp_server_state():
     shutdown_flag.clear()
 
 
-def configure_otlp_response(*, status_code=None, body=None, content_type=None, delay_seconds=None):
+def configure_otlp_response(
+    *,
+    status_code=None,
+    status_codes=None,
+    body=None,
+    content_type=None,
+    headers=None,
+    delay_seconds=None,
+):
     if status_code is not None:
         response_config["status_code"] = status_code
+    if status_codes is not None:
+        response_config["status_codes"] = list(status_codes)
     if body is not None:
         response_config["body"] = body
     if content_type is not None:
         response_config["content_type"] = content_type
     if delay_seconds is not None:
         response_config["delay_seconds"] = delay_seconds
+    if headers is not None:
+        response_config["headers"] = list(headers.items() if isinstance(headers, dict) else headers)
+
+
+def configure_otlp_grpc_responses(responses):
+    grpc_response_config["responses"] = list(responses)
 
 
 def configure_otlp_grpc_methods(*, logs=None, metrics=None, traces=None):
@@ -101,18 +127,28 @@ def configure_otlp_grpc_methods(*, logs=None, metrics=None, traces=None):
 
 
 def _build_response():
+    status_code = response_config["status_code"]
+
     if response_config["delay_seconds"]:
         time.sleep(response_config["delay_seconds"])
 
+    if response_config["status_codes"]:
+        status_code = response_config["status_codes"].pop(0)
+
     body = response_config["body"]
     if isinstance(body, (dict, list)):
-        return jsonify(body), response_config["status_code"]
+        response = jsonify(body)
+        response.status_code = status_code
+    else:
+        response = Response(
+            body,
+            status=status_code,
+            content_type=response_config["content_type"],
+        )
+    for name, value in response_config["headers"]:
+        response.headers.add(name, value)
 
-    return Response(
-        body,
-        status=response_config["status_code"],
-        content_type=response_config["content_type"],
-    )
+    return response
 
 
 def _record_request(*, path, headers, raw_payload, transport):
@@ -123,6 +159,7 @@ def _record_request(*, path, headers, raw_payload, transport):
             "raw_size": len(raw_payload),
             "raw_payload": raw_payload,
             "transport": transport,
+            "received_at": time.monotonic(),
         }
     )
 
@@ -220,6 +257,8 @@ def run_server(port=4317, *, use_tls=False, tls_crt_file=None, tls_key_file=None
 
 def _build_grpc_handler(signal_name, message_type, response_type):
     def _handler(request_message, context):
+        response_spec = None
+
         data_storage[signal_name].append(request_message)
         _record_request(
             path=context._rpc_event.call_details.method.decode(),
@@ -227,6 +266,30 @@ def _build_grpc_handler(signal_name, message_type, response_type):
             raw_payload=request_message.SerializeToString(),
             transport="grpc",
         )
+        if grpc_response_config["responses"]:
+            response_spec = grpc_response_config["responses"].pop(0)
+        if response_spec is not None:
+            status_code = response_spec["status"]
+            retry_delay = response_spec.get("retry_delay")
+            if retry_delay == "invalid":
+                context.set_trailing_metadata(
+                    (("grpc-status-details-bin", b"invalid-status-details"),)
+                )
+            elif retry_delay is not None:
+                retry_info = RetryInfo(
+                    retry_delay=Duration(seconds=retry_delay)
+                )
+                detail = Any()
+                detail.Pack(retry_info)
+                status = Status(
+                    code=status_code.value[0],
+                    message="scripted OTLP response",
+                    details=[detail],
+                )
+                context.set_trailing_metadata(
+                    (("grpc-status-details-bin", status.SerializeToString()),)
+                )
+            context.abort(status_code, "scripted OTLP response")
         return response_type()
 
     return grpc.unary_unary_rpc_method_handler(
@@ -280,6 +343,9 @@ def run_grpc_server(port=4317, *, use_tls=False, tls_crt_file=None, tls_key_file
 def stop_otlp_server():
     global grpc_server_instance
     global http_server_instance
+    global server_thread
+
+    stop_event = None
 
     shutdown_flag.set()
 
@@ -288,8 +354,18 @@ def stop_otlp_server():
         http_server_instance = None
 
     if grpc_server_instance is not None:
-        grpc_server_instance.stop(grace=0)
+        stop_event = grpc_server_instance.stop(grace=0)
         grpc_server_instance = None
+
+    if stop_event is not None:
+        stop_event.wait(timeout=5)
+
+    if server_thread is not None and server_thread is not threading.current_thread():
+        server_thread.join(timeout=5)
+        if server_thread.is_alive():
+            raise RuntimeError("OTLP server thread did not stop")
+
+    server_thread = None
 
 
 def otlp_server_run(port, *, use_tls=False, tls_crt_file=None, tls_key_file=None, use_grpc=False):

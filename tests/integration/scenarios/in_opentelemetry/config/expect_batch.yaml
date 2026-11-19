@@ -1,0 +1,25 @@
+service:
+  flush: 0.2
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: opentelemetry
+      listen: 127.0.0.1
+      port: ${FLUENT_BIT_TEST_LISTENER_PORT}
+
+  filters:
+    - name: expect
+      match: "*"
+      key_exists:
+        - field1
+        - field2
+        - field3
+        - field4
+      action: warn
+
+  outputs:
+    - name: null
+      match: "*"

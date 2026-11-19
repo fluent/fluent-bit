@@ -1,0 +1,33 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+  telemetry:
+    metrics:
+      logs:
+        tag_records:
+          enabled: true
+
+pipeline:
+  inputs:
+    - name: dummy
+      alias: tag_records_nested_off
+      tag: tag.records.nested.off
+      telemetry:
+        metrics:
+          logs:
+            tag_records:
+              enabled: false
+      dummy: '{"message":"nested off"}'
+      samples: 1
+    - name: dummy
+      alias: tag_records_nested_control
+      tag: tag.records.nested.on
+      dummy: '{"message":"control"}'
+      samples: 1
+
+  outputs:
+    - name: stdout
+      match: '*'

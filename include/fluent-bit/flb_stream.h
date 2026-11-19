@@ -136,7 +136,8 @@ static inline int flb_stream_is_keepalive(struct flb_stream *stream)
 
 static inline int flb_stream_is_secure(struct flb_stream *stream)
 {
-    return flb_stream_get_flag_status(stream, FLB_IO_TLS);
+    return flb_stream_get_flag_status(stream, FLB_IO_TLS) ||
+           flb_stream_get_flag_status(stream, FLB_IO_DTLS);
 }
 
 static inline int flb_stream_is_thread_safe(struct flb_stream *stream)

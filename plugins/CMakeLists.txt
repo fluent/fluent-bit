@@ -347,9 +347,13 @@ REGISTER_IN_PLUGIN("in_random")
 # ==========
 REGISTER_PROCESSOR_PLUGIN("processor_content_modifier")
 REGISTER_PROCESSOR_PLUGIN("processor_cumulative_to_delta")
+if((FLB_LUAJIT OR FLB_WASM_LUA) AND FLB_YYJSON)
+  REGISTER_PROCESSOR_PLUGIN("processor_fts")
+endif()
 REGISTER_PROCESSOR_PLUGIN("processor_labels")
 REGISTER_PROCESSOR_PLUGIN("processor_metrics_selector")
 REGISTER_PROCESSOR_PLUGIN("processor_opentelemetry_envelope")
+REGISTER_PROCESSOR_PLUGIN("processor_journald_otel")
 REGISTER_PROCESSOR_PLUGIN("processor_sampling")
 REGISTER_PROCESSOR_PLUGIN("processor_sql")
 if (FLB_RIPSER)
@@ -403,6 +407,7 @@ REGISTER_OUT_PLUGIN("out_udp")
 REGISTER_OUT_PLUGIN("out_td")
 REGISTER_OUT_PLUGIN("out_lib")
 REGISTER_OUT_PLUGIN("out_flowcounter")
+REGISTER_OUT_PLUGIN("out_gcs")
 REGISTER_OUT_PLUGIN("out_gelf")
 REGISTER_OUT_PLUGIN("out_websocket")
 REGISTER_OUT_PLUGIN("out_cloudwatch_logs")
@@ -414,6 +419,7 @@ REGISTER_OUT_PLUGIN("out_prometheus_remote_write")
 REGISTER_OUT_PLUGIN("out_s3")
 REGISTER_OUT_PLUGIN("out_vivo_exporter")
 REGISTER_OUT_PLUGIN("out_chronicle")
+REGISTER_OUT_PLUGIN("out_arvancloud_cloudlogs")
 
 if(FLB_ZIG)
 REGISTER_OUT_PLUGIN("out_zig_demo" "zig")
@@ -450,7 +456,7 @@ if(FLB_METRICS)
   REGISTER_FILTER_PLUGIN("filter_log_to_metrics")
 endif()
 
-if(FLB_LUAJIT)
+if(FLB_LUAJIT OR FLB_WASM_LUA)
   REGISTER_FILTER_PLUGIN("filter_lua")
 endif()
 
@@ -492,10 +498,11 @@ if(EXT_FILTER_PLUGINS)
   endforeach()
 endif()
 
-# Generate the header from the template
+# Keep the generated plugin registry local to each build configuration.
+file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/generated/include/fluent-bit")
 configure_file(
   "${PROJECT_SOURCE_DIR}/include/fluent-bit/flb_plugins.h.in"
-  "${PROJECT_SOURCE_DIR}/include/fluent-bit/flb_plugins.h"
+  "${PROJECT_BINARY_DIR}/generated/include/fluent-bit/flb_plugins.h"
   )
 
 set(FLB_PLUGINS "${flb_plugins}" PARENT_SCOPE)

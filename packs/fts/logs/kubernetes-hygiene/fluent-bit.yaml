@@ -1,0 +1,26 @@
+service:
+  flush: 1
+  grace: 1
+  parsers_file: parsers.conf
+pipeline:
+  inputs:
+  - name: tail
+    path: events.jsonl
+    read_from_head: true
+    parser: json
+    tag: fts.catalog
+    processors:
+      logs:
+      - name: fts
+        packs:
+        - logs/kubernetes-hygiene/pack.json
+        recipe_version: 1
+        error_mode: drop
+        recipe:
+        - id: policy
+          use: org.fluentbit.policy.kubernetes-hygiene/apply
+        packages_dir: ${FTS_PACKAGES_DIR}
+  outputs:
+  - name: stdout
+    match: '*'
+    format: json_lines

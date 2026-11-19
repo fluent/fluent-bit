@@ -37,6 +37,7 @@ int destroy_gauge(struct flb_in_metrics *ctx, struct cmt_gauge **g);
 uint64_t read_from_file(struct flb_in_metrics *ctx, flb_sds_t path);
 uint64_t read_key_value_from_file(struct flb_in_metrics *ctx, flb_sds_t path, flb_sds_t key);
 uint64_t get_data_from_sysfs(struct flb_in_metrics *ctx, flb_sds_t dir, flb_sds_t name, flb_sds_t key);
+void read_io_stat(struct flb_in_metrics *ctx, flb_sds_t dir, flb_sds_t name, struct container *cnt);
 
 int get_container_sysfs_subdirectory(struct flb_in_metrics *ctx, flb_sds_t id, flb_sds_t subsystem, flb_sds_t *path);
 int get_net_data_from_proc(struct flb_in_metrics *ctx, struct container *cnt, uint64_t pid);
