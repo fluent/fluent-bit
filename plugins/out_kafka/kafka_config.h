@@ -27,6 +27,7 @@
 #endif
 
 #include <fluent-bit/flb_pthread.h>
+#include <cfl/cfl_atomic.h>
 #ifdef FLB_HAVE_PROTOBUF_ENCODER
 #include "kafka_protobuf.h"
 #endif
@@ -114,6 +115,7 @@ struct flb_out_kafka {
 
     /* Head of defined topics by configuration */
     struct mk_list topics;
+    pthread_mutex_t topics_lock;
 
     /*
      * Blocked Status: since rdkafka have it own buffering queue, there is a
@@ -125,7 +127,7 @@ struct flb_out_kafka {
      * - when flushing more records and blocked == FLB_TRUE, issue
      *   a retry.
      */
-    int blocked;
+    uint64_t blocked;
 
     int dynamic_topic;
 
