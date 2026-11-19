@@ -802,7 +802,7 @@ static int send_all_requests(struct flb_out_http *ctx,
 
         free_headers(headers);
 
-        if (ret == FLB_THROTTLE) {
+        if (ret == FLB_THROTTLE || ret == FLB_RETRY) {
             break;
         }
     }
