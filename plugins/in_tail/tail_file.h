@@ -134,6 +134,32 @@ int flb_tail_pack_line_map(struct flb_time *time, char **data,
                            size_t processed_bytes);
 int flb_tail_file_pack_line(struct flb_time *time, char *data, size_t data_size,
                             struct flb_tail_file *file, size_t processed_bytes);
+static inline void flb_tail_file_refresh_pending(struct flb_tail_file *file, struct stat *st)
+{
+    if (st != NULL) {
+        if (file->offset < st->st_size) {
+            file->pending_bytes = (st->st_size - file->offset);
+        }
+        else {
+            file->pending_bytes = 0;
+        }
+    }
+}
+
+static inline int flb_tail_file_has_pending(struct flb_tail_file *file)
+{
+    if (file->pending_bytes > 0) {
+        return FLB_TRUE;
+    }
+
+    if (file->decompression_context != NULL &&
+        file->decompression_context->input_buffer_length > 0) {
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+
 static inline off_t flb_tail_file_db_offset(struct flb_tail_file *file)
 {
     /*

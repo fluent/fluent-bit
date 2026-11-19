@@ -118,19 +118,6 @@ static int tail_fs_check(struct flb_input_instance *ins,
             continue;
         }
 
-        /* Check if the file have been deleted */
-        if (st.st_nlink == 0) {
-            flb_plg_debug(ctx->ins, "file has been deleted: %s", file->name);
-#ifdef FLB_HAVE_SQLDB
-            if (ctx->db) {
-                /* Remove file entry from the database */
-                flb_tail_db_file_delete(file, ctx);
-            }
-#endif
-            flb_tail_file_remove(file);
-            continue;
-        }
-
         size_delta = st.st_size - file->size;
         if (size_delta != 0) {
             file->size = st.st_size;
@@ -145,6 +132,31 @@ static int tail_fs_check(struct flb_input_instance *ins,
                 return -1;
             }
             memcpy(&fst->st, &st, sizeof(struct stat));
+        }
+
+        /* Check if the file has been deleted */
+        if (st.st_nlink == 0) {
+            flb_tail_file_refresh_pending(file, &st);
+            if (flb_tail_file_has_pending(file) == FLB_TRUE) {
+                tail_signal_pending(ctx);
+                continue;
+            }
+
+            if (file->buf_len > 0) {
+                flb_plg_warn(ctx->ins,
+                             "inode=%"PRIu64" purged deleted file %s with %zu unparsed partial bytes at EOF",
+                             file->inode, file->name, file->buf_len);
+            }
+
+            flb_plg_debug(ctx->ins, "file has been deleted: %s", file->name);
+#ifdef FLB_HAVE_SQLDB
+            if (ctx->db) {
+                /* Remove file entry from the database */
+                flb_tail_db_file_delete(file, ctx);
+            }
+#endif
+            flb_tail_file_remove(file);
+            continue;
         }
 
         if (file->offset < st.st_size) {
