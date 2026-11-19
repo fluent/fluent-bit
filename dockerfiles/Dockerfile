@@ -72,8 +72,11 @@ ARG WAMR_BUILD_TARGET \
 
 ENV EXTRA_CMAKE_FLAGS=${EXTRA_CMAKE_FLAGS}
 
-# Optional: jemalloc configure flags (e.g., page size). Leave unset to keep defaults.
-ARG FLB_JEMALLOC_OPTIONS
+# Need larger page size: jemalloc detects the page size of the build host at
+# compile time, which breaks on systems with 64KB pages (e.g. some ARM64
+# servers) with "<jemalloc>: Unsupported system page size". Pin lg-page to 16
+# (64KB) so the resulting image also works on those systems.
+ARG FLB_JEMALLOC_OPTIONS="--with-lg-page=16 --with-lg-quantum=3"
 ENV FLB_JEMALLOC_OPTIONS=${FLB_JEMALLOC_OPTIONS}
 
 # We do not want word splitting for EXTRA_CMAKE_FLAGS in case multiple are defined
