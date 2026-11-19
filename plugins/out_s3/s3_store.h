@@ -22,19 +22,31 @@
 
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_fstore.h>
+#include "s3.h"
+
+/* Durable chunk state: remote work is finished and only local removal remains. */
+#define S3_CHUNK_RETIRING (-1)
 
 struct s3_file {
     int locked;                      /* locked chunk is busy, cannot write to it */
     int failures;                    /* delivery failures */
     uint64_t upload_scan_id;
+    uint64_t restore_retry_at;
+    int size_unknown;
     uint64_t size;                   /* file size */
     time_t create_time;              /* creation time */
     time_t first_log_time;           /* first log time */
     flb_sds_t file_path;             /* file path */
     struct flb_fstore_file *fsf;     /* reference to parent flb_fstore_file */
+    struct s3_retry_state retry;
+    flb_sds_t part_upload_id;
+    int part_number;
+    int sealed;
+    uint64_t order;
 };
 
 #define S3_STORE_QUARANTINE_FULL -2
+#define S3_STORE_BUFFER_FULL -3
 
 /*
  * Runtime callers must hold ctx->files_mutex across store operations and use
@@ -46,6 +58,8 @@ int s3_store_buffer_put(struct flb_s3 *ctx, struct s3_file *s3_file,
                         char *data, size_t bytes,
                         time_t file_first_log_time);
 
+int s3_store_retry_restore(struct flb_s3 *ctx, struct s3_file *file);
+int s3_store_recover_append(struct flb_s3 *ctx);
 int s3_store_init(struct flb_s3 *ctx);
 int s3_store_exit(struct flb_s3 *ctx);
 
@@ -67,7 +81,7 @@ struct flb_fstore_file *s3_store_file_upload_get(struct flb_s3 *ctx,
 
 int s3_store_file_upload_put(struct flb_s3 *ctx,
                              struct flb_fstore_file *fsf, flb_sds_t key,
-                             flb_sds_t data);
+                             flb_sds_t data, int *needs_sync);
 int s3_store_file_upload_delete(struct flb_s3 *ctx, struct flb_fstore_file *fsf);
 
 int s3_store_file_meta_get(struct flb_s3 *ctx, struct flb_fstore_file *fsf);
