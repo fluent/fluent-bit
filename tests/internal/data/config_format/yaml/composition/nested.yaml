@@ -1,0 +1,6 @@
+includes:
+  - base.yaml
+defaults:
+  service: &nested
+    <<: *service_defaults
+    grace: 3

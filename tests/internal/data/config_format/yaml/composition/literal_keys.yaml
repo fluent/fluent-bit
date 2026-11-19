@@ -1,0 +1,7 @@
+defaults:
+  base: &base {flush: 9}
+service:
+  '<<': literal
+  !!merge '<<': *base
+  grace: &one '1'
+  log_file: *one

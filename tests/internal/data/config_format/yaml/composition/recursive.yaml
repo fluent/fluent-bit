@@ -1,0 +1,2 @@
+defaults:
+  self: &self {child: *self}

@@ -1,0 +1,14 @@
+defaults:
+  service: &service_defaults
+    flush: 5
+    grace: 2
+    log_level: error
+  output: &output_defaults
+    name: stdout
+    match: '*'
+  first: &first {flush: 9, grace: 4}
+  second: &second {flush: 8, log_level: info}
+  old: &reused first
+  frozen: &frozen {log_file: *reused}
+  new: &reused second
+  quoted: &quoted 'true'
