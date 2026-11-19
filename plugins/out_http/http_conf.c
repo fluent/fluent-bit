@@ -46,6 +46,9 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
     char *uri = NULL;
     char *tmp_uri = NULL;
     const char *tmp;
+    struct mk_list *head;
+    struct flb_slist_entry *hdr_key;
+    struct flb_config_map_val *mv;
     struct flb_upstream *upstream;
     struct flb_out_http *ctx = NULL;
 
@@ -84,6 +87,33 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
         if (tmp) {
             /* Store pointer directly - config map owns this string and will free it */
             ctx->oauth2_auth_method = (flb_sds_t) tmp;
+        }
+    }
+
+    if (ctx->http_bearer_token_file) {
+        if (ctx->http_user) {
+            flb_plg_error(ctx->ins, "http_bearer_token_file cannot be used together with "
+                          "http_user/http_passwd (Basic Auth); configure exactly one "
+                          "authentication mechanism");
+            flb_free(ctx);
+            return NULL;
+        }
+        if (ctx->oauth2_config.enabled == FLB_TRUE) {
+            flb_plg_error(ctx->ins, "http_bearer_token_file cannot be used together with "
+                          "oauth2.enable; configure exactly one authentication mechanism");
+            flb_free(ctx);
+            return NULL;
+        }
+
+        /* A configured Authorization header would compete with the file token */
+        flb_config_map_foreach(head, mv, ctx->headers) {
+            hdr_key = mk_list_entry_first(mv->val.list, struct flb_slist_entry, _head);
+            if (strcasecmp(hdr_key->str, "Authorization") == 0) {
+                flb_plg_error(ctx->ins, "http_bearer_token_file cannot be used together "
+                              "with a configured 'Authorization' header");
+                flb_free(ctx);
+                return NULL;
+            }
         }
     }
 

@@ -41,6 +41,7 @@ struct flb_out_http {
     /* HTTP Auth */
     char *http_user;
     char *http_passwd;
+    char *http_bearer_token_file;
 
     /* AWS Auth */
 #ifdef FLB_HAVE_SIGNV4
