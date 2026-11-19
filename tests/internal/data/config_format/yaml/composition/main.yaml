@@ -1,0 +1,21 @@
+includes:
+  - nested.yaml
+service:
+  flush: 1
+  <<:
+    - *nested
+    - *first
+    - *second
+    - *frozen
+  log_level: debug
+  daemon: *quoted
+  log_file: *reused
+pipeline:
+  inputs:
+    - &input {name: dummy, tag: first}
+    - <<: *input
+      tag: second
+  outputs:
+    - *output_defaults
+    - <<: *output_defaults
+      match: second
