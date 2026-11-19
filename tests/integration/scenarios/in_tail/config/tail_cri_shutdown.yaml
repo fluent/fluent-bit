@@ -1,0 +1,30 @@
+service:
+  flush: ${TAIL_SHUTDOWN_FLUSH}
+  grace: 3
+  log_level: debug
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+  parsers_file: ${PARSERS_FILE_TEST}
+
+pipeline:
+  inputs:
+    - name: tail
+      tag: tail.integration
+      path: ${TAIL_TEST_PATH}
+      db: ${TAIL_TEST_DB}
+      read_from_head: true
+      refresh_interval: 1
+      multiline.parser: cri_test_ml
+      mem_buf_limit: ${TAIL_SHUTDOWN_MEM_LIMIT}
+      threaded: ${TAIL_SHUTDOWN_THREADED}
+      path_key: file
+      offset_key: offset
+
+  outputs:
+    - name: http
+      match: tail.integration
+      host: 127.0.0.1
+      port: ${TEST_SUITE_HTTP_PORT}
+      uri: /data
+      format: json
+      json_date_key: false

@@ -15,6 +15,73 @@ from server.http_server import data_storage, http_server_run
 from utils.fluent_bit_manager import fluent_bit_input_supports_config_property
 from utils.test_service import FluentBitTestService
 
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="subprocess SIGTERM uses TerminateProcess on Windows; use the in_tail runtime shutdown test",
+)
+@pytest.mark.parametrize("mode", ["normal", "prepaused", "threaded"])
+@pytest.mark.parametrize("fragment", ["partial", "empty", "complete"])
+def test_in_tail_cri_shutdown(workspace, monkeypatch, mode, fragment):
+    log_file = workspace / "shutdown.log"
+    db_path = workspace / "shutdown.db"
+    log_file.touch()
+    monkeypatch.setenv("TAIL_SHUTDOWN_FLUSH", "60" if mode == "prepaused" else "0.05")
+    monkeypatch.setenv("TAIL_SHUTDOWN_MEM_LIMIT", "1K" if mode == "prepaused" else "10M")
+    monkeypatch.setenv("TAIL_SHUTDOWN_THREADED", "true" if mode == "threaded" else "false")
+    service = Service("tail_cri_shutdown.yaml", tail_path=log_file, db_path=db_path)
+    timestamp = "2026-10-23T01:00:00.000000000Z"
+    barrier = "shutdown-barrier-" + "x" * 2048
+    if fragment == "partial":
+        content = f"{timestamp} stdout P shutdown-one..\n{timestamp} stdout P two\n"
+        expected = ["shutdown-one..two", barrier]
+    elif fragment == "empty":
+        content = f"{timestamp} stdout P \n"
+        expected = ["", barrier]
+    else:
+        content = f"{timestamp} stdout F shutdown-complete\n"
+        expected = ["shutdown-complete", barrier]
+    content += f"{timestamp} stderr F {barrier}\n"
+
+    def consumed():
+        if not db_path.exists():
+            return False
+        try:
+            with sqlite3.connect(db_path) as connection:
+                row = connection.execute("SELECT offset FROM in_tail_files").fetchone()
+            return row is not None and row[0] == len(content.encode("utf-8"))
+        except sqlite3.OperationalError:
+            return False
+
+    process = None
+    try:
+        service.start()
+        process = service.flb.process
+        write_and_sync(log_file, content)
+        service.service.wait_for_condition(
+            consumed, timeout=10, interval=0.02, description="CRI input consumed before shutdown"
+        )
+        if mode == "prepaused":
+            service.service.wait_for_condition(
+                lambda: "paused (mem buf overlimit" in Path(service.flb.log_file).read_text(
+                    encoding="utf-8", errors="replace"
+                ),
+                timeout=5, interval=0.02, description="Tail paused before shutdown",
+            )
+        if fragment == "partial":
+            assert all(
+                record.get("log") != "shutdown-one..two"
+                for record in flatten_records(data_storage["payloads"])
+            )
+    finally:
+        service.stop()
+
+    assert process is not None and process.returncode == 0
+    records = flatten_records(data_storage["payloads"])
+    assert sorted(record["log"] for record in records) == sorted(expected)
+    assert all(record["file"] == str(log_file) for record in records)
+    assert all(isinstance(record["offset"], int) for record in records)
+
 skip_on_windows = pytest.mark.skipif(
     sys.platform == "win32",
     reason="scenario relies on POSIX rotation, symlink, permissions, or inode semantics",
