@@ -47,8 +47,14 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
         flb_errno();
         return NULL;
     }
+    ret = pthread_mutex_init(&ctx->topics_lock, NULL);
+    if (ret != 0) {
+        flb_plg_error(ins, "unable to initialize Kafka topics lock: %d", ret);
+        flb_free(ctx);
+        return NULL;
+    }
     ctx->ins = ins;
-    ctx->blocked = FLB_FALSE;
+    cfl_atomic_store(&ctx->blocked, FLB_FALSE);
     mk_list_init(&ctx->topics);
 #ifdef FLB_HAVE_KAFKA_SCHEMA_REGISTRY
     mk_list_init(&ctx->schema_registry_endpoints);
@@ -57,6 +63,7 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
     ret = flb_output_config_map_set(ins, (void*) ctx);
     if (ret == -1) {
         flb_plg_error(ins, "unable to load configuration.");
+        pthread_mutex_destroy(&ctx->topics_lock);
         flb_free(ctx);
 
         return NULL;
@@ -99,6 +106,7 @@ struct flb_out_kafka *flb_out_kafka_create(struct flb_output_instance *ins,
     if (!ctx->conf) {
         flb_plg_error(ctx->ins, "error creating context");
         flb_sds_destroy(ctx->sasl_mechanism);
+        pthread_mutex_destroy(&ctx->topics_lock);
         flb_free(ctx);
         return NULL;
     }
@@ -362,6 +370,7 @@ int flb_out_kafka_destroy(struct flb_out_kafka *ctx)
     flb_kafka_schema_registry_destroy(ctx);
 #endif
 
+    pthread_mutex_destroy(&ctx->topics_lock);
     flb_free(ctx);
     return 0;
 }

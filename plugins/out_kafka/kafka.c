@@ -158,10 +158,6 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
     int queue_full_retries = 0;
     char *out_buf;
     size_t out_size;
-    struct mk_list *head;
-    struct mk_list *topics;
-    struct flb_split_entry *entry;
-    char *dynamic_topic;
     char *message_key = NULL;
     size_t message_key_len = 0;
     flb_sds_t raw_key = NULL;
@@ -295,55 +291,6 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
                 strncmp(key.via.str.ptr, ctx->topic_key, ctx->topic_key_len) == 0) {
                 topic = flb_kafka_topic_lookup((char *) val.via.str.ptr,
                                                val.via.str.size, ctx);
-                /* Add extracted topic on the fly to topiclist */
-                if (ctx->dynamic_topic) {
-                    /* Only if default topic is set and this topicname is not set for this message */
-                    if (strncmp(topic->name, flb_kafka_topic_default(ctx)->name, val.via.str.size) == 0 &&
-                        (strncmp(topic->name, val.via.str.ptr, val.via.str.size) != 0) ) {
-                        if (memchr(val.via.str.ptr, ',', val.via.str.size)) {
-                            /* Don't allow commas in kafkatopic name */
-                            flb_warn("',' not allowed in dynamic_kafka topic names");
-                            continue;
-                        }
-                        if (val.via.str.size > 249) {
-                            /* Don't allow length of dynamic kafka topics > 249 */
-                            flb_warn(" dynamic kafka topic length > 249 not allowed");
-                            continue;
-                        }
-                        dynamic_topic = flb_malloc(val.via.str.size + 1);
-                        if (!dynamic_topic) {
-                            /* Use default topic */
-                            flb_errno();
-                            continue;
-                        }
-                        strncpy(dynamic_topic, val.via.str.ptr, val.via.str.size);
-                        dynamic_topic[val.via.str.size] = '\0';
-                        topics = flb_utils_split(dynamic_topic, ',', 0);
-                        if (!topics) {
-                            /* Use the default topic */
-                            flb_errno();
-                            flb_free(dynamic_topic);
-                            continue;
-                        }
-                        mk_list_foreach(head, topics) {
-                            /* Add the (one) found topicname to the topic configuration */
-                            entry = mk_list_entry(head, struct flb_split_entry, _head);
-                            topic = flb_kafka_topic_create(entry->value, ctx);
-                            if (!topic) {
-                                /* Use default topic  */
-                                flb_error("[out_kafka] cannot register topic '%s'",
-                                          entry->value);
-                                topic = flb_kafka_topic_lookup((char *) val.via.str.ptr,
-                                                               val.via.str.size, ctx);
-                            }
-                            else {
-                                flb_info("[out_kafka] new topic added: %s", dynamic_topic);
-                            }
-                        }
-                        flb_utils_split_free(topics);
-                        flb_free(dynamic_topic);
-                    }
-                }
             }
         }
     }
@@ -514,7 +461,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
          * Unblock the flush requests so that the
          * engine could try sending data again.
          */
-        ctx->blocked = FLB_FALSE;
+        cfl_atomic_store(&ctx->blocked, FLB_FALSE);
         return FLB_RETRY;
     }
 
@@ -544,7 +491,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
              * flush request from the engine. This means 'the caller will
              * issue a retry at a later time'.
              */
-            ctx->blocked = FLB_TRUE;
+            cfl_atomic_store(&ctx->blocked, FLB_TRUE);
 
             /*
              * Next step is to give it some time to the background rdkafka
@@ -563,7 +510,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
             goto retry;
         }
 
-        ctx->blocked = FLB_FALSE;
+        cfl_atomic_store(&ctx->blocked, FLB_FALSE);
         if (ctx->format == FLB_KAFKA_FMT_JSON ||
             ctx->format == FLB_KAFKA_FMT_GELF ||
             ctx->format == FLB_KAFKA_FMT_PROTOBUF) {
@@ -582,7 +529,7 @@ int produce_message(struct flb_time *tm, msgpack_object *map,
         flb_plg_debug(ctx->ins, "enqueued message (%zd bytes) for topic '%s'",
                       out_size, rd_kafka_topic_name(topic->tp));
     }
-    ctx->blocked = FLB_FALSE;
+    cfl_atomic_store(&ctx->blocked, FLB_FALSE);
 
     rd_kafka_poll(ctx->kafka.rk, 0);
     if (ctx->format == FLB_KAFKA_FMT_JSON || ctx->format == FLB_KAFKA_FMT_PROTOBUF) {
@@ -650,7 +597,7 @@ static int produce_raw_payload_with_key_retry_control(const void *payload,
 retry:
     if (queue_full_retry_limit > 0 &&
         queue_full_retries >= queue_full_retry_limit) {
-        ctx->blocked = FLB_FALSE;
+        cfl_atomic_store(&ctx->blocked, FLB_FALSE);
         if (allow_engine_retry == FLB_TRUE) {
             return FLB_RETRY;
         }
@@ -673,14 +620,14 @@ retry:
                            ctx);
     if (ret == -1) {
         if (rd_kafka_last_error() == RD_KAFKA_RESP_ERR__QUEUE_FULL) {
-            ctx->blocked = FLB_TRUE;
+            cfl_atomic_store(&ctx->blocked, FLB_TRUE);
             flb_time_sleep(1000);
             rd_kafka_poll(ctx->kafka.rk, 0);
             queue_full_retries++;
             goto retry;
         }
 
-        ctx->blocked = FLB_FALSE;
+        cfl_atomic_store(&ctx->blocked, FLB_FALSE);
         flb_plg_error(ctx->ins,
                       "failed to produce OTLP payload to topic %s: %s",
                       rd_kafka_topic_name(topic->tp),
@@ -688,7 +635,7 @@ retry:
         return FLB_ERROR;
     }
 
-    ctx->blocked = FLB_FALSE;
+    cfl_atomic_store(&ctx->blocked, FLB_FALSE);
     rd_kafka_poll(ctx->kafka.rk, 0);
 
     return FLB_OK;
@@ -1400,7 +1347,7 @@ static void cb_kafka_flush(struct flb_event_chunk *event_chunk,
      * messages can be appended. For our called (Fluent Bit engine) means
      * that is not possible to work on this now and it need to 'retry'.
      */
-    if (ctx->blocked == FLB_TRUE) {
+    if (cfl_atomic_load(&ctx->blocked) == FLB_TRUE) {
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
