@@ -15,8 +15,12 @@
 #include <fluent-bit/http_server/flb_hs.h>
 #include <msgpack.h>
 
+#include <fluent-bit/flb_time.h>
 #include <string.h>
 #include <cfl/cfl_atomic.h>
+#ifndef _WIN32
+#include <sys/select.h>
+#endif
 
 #include "flb_tests_internal.h"
 
@@ -1324,6 +1328,267 @@ static void test_http_request_compression_roundtrip(void)
     }
 }
 
+
+static int test_http_server_response_has_connection_close(const char *response)
+{
+    const char *cursor;
+    const char *headers_end;
+    const char *line_end;
+    size_t name_len;
+
+    headers_end = strstr(response, "\r\n\r\n");
+    if (headers_end == NULL) {
+        return FLB_FALSE;
+    }
+
+    cursor = response;
+    name_len = strlen("Connection:");
+    while (cursor < headers_end) {
+        line_end = strstr(cursor, "\r\n");
+        if (line_end == NULL || line_end > headers_end) {
+            break;
+        }
+        if ((size_t) (line_end - cursor) > name_len &&
+            strncasecmp(cursor, "Connection:", name_len) == 0) {
+            cursor += name_len;
+            while (cursor < line_end && (*cursor == ' ' || *cursor == '\t')) {
+                cursor++;
+            }
+            if ((size_t) (line_end - cursor) >= 5 &&
+                strncasecmp(cursor, "close", 5) == 0) {
+                return FLB_TRUE;
+            }
+            return FLB_FALSE;
+        }
+        cursor = line_end + 2;
+    }
+
+    return FLB_FALSE;
+}
+
+/* Start a one-worker server, send one request, and check whether the
+ * response advertises Connection: close and whether the server actually
+ * closes (EOF) without waiting for the idle timeout.
+ */
+static void test_http1_connection_header(const char *request, int expect_close)
+{
+    char response[1024];
+    struct sockaddr_in address;
+    struct test_http_server_context context;
+    struct flb_http_server_options options;
+    struct flb_http_server server;
+    struct flb_net_setup net_setup;
+    struct flb_config *config;
+    struct timeval timeout;
+    fd_set read_fds;
+    flb_sockfd_t fd;
+    size_t request_length;
+    size_t request_offset;
+    size_t response_length;
+    int got_eof;
+    int attempt;
+    int port;
+    int ret;
+    int written;
+    int received;
+
+    fd = FLB_INVALID_SOCKET;
+    got_eof = FLB_FALSE;
+    response_length = 0;
+    memset(response, 0, sizeof(response));
+
+    ret = test_http_server_network_init();
+    if (ret != 0) {
+        return;
+    }
+
+    config = flb_config_init();
+    if (!TEST_CHECK(config != NULL)) {
+        test_http_server_network_cleanup();
+        return;
+    }
+
+    test_http_server_context_init(&context);
+    context.expected_idle_timeout = HTTP_SERVER_DEFAULT_IDLE_TIMEOUT;
+
+    port = test_http_server_reserve_port();
+    if (!TEST_CHECK(port > 0)) {
+        test_http_server_context_destroy(&context);
+        flb_config_exit(config);
+        test_http_server_network_cleanup();
+        return;
+    }
+
+    flb_net_setup_init(&net_setup);
+    flb_http_server_options_init(&options);
+
+    options.protocol_version = HTTP_PROTOCOL_VERSION_AUTODETECT;
+    options.request_callback = test_http_server_request_handler;
+    options.user_data = &context;
+    options.address = (char *) TEST_HTTP_SERVER_HOST;
+    options.port = port;
+    options.networking_flags = FLB_IO_TCP;
+    options.networking_setup = &net_setup;
+    options.system_context = config;
+    options.workers = 1;
+    options.use_caller_event_loop = FLB_FALSE;
+
+    ret = flb_http_server_init_with_options(&server, &options);
+    if (!TEST_CHECK(ret == 0)) {
+        test_http_server_context_destroy(&context);
+        flb_config_exit(config);
+        test_http_server_network_cleanup();
+        return;
+    }
+
+    ret = flb_http_server_start(&server);
+    if (!TEST_CHECK(ret == 0)) {
+        flb_http_server_destroy(&server);
+        test_http_server_context_destroy(&context);
+        flb_config_exit(config);
+        test_http_server_network_cleanup();
+        return;
+    }
+
+    memset(&address, 0, sizeof(address));
+    address.sin_family = AF_INET;
+    address.sin_port = htons(port);
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+    for (attempt = 0; attempt < 50; attempt++) {
+        fd = flb_net_socket_create(AF_INET, FLB_FALSE);
+        if (fd == FLB_INVALID_SOCKET) {
+            break;
+        }
+        ret = connect(fd, (struct sockaddr *) &address, sizeof(address));
+        if (ret == 0) {
+            break;
+        }
+        flb_socket_close(fd);
+        fd = FLB_INVALID_SOCKET;
+        flb_time_msleep(20);
+    }
+
+    if (!TEST_CHECK(fd != FLB_INVALID_SOCKET)) {
+        flb_http_server_destroy(&server);
+        test_http_server_context_destroy(&context);
+        flb_config_exit(config);
+        test_http_server_network_cleanup();
+        return;
+    }
+
+    request_length = strlen(request);
+    request_offset = 0;
+    while (request_offset < request_length) {
+        written = send(fd, request + request_offset,
+                       (int) (request_length - request_offset), 0);
+        if (written <= 0) {
+            break;
+        }
+        request_offset += (size_t) written;
+    }
+    TEST_CHECK(request_offset == request_length);
+
+    while (response_length < sizeof(response) - 1) {
+        FD_ZERO(&read_fds);
+        FD_SET(fd, &read_fds);
+        timeout.tv_sec = 2;
+        timeout.tv_usec = 0;
+        ret = select((int) (fd + 1), &read_fds, NULL, NULL, &timeout);
+        if (ret <= 0) {
+            break;
+        }
+        received = recv(fd, response + response_length,
+                        (int) (sizeof(response) - 1 - response_length), 0);
+        if (received < 0) {
+            break;
+        }
+        if (received == 0) {
+            got_eof = FLB_TRUE;
+            break;
+        }
+        response_length += (size_t) received;
+        response[response_length] = '\0';
+        if (strstr(response, "\r\n\r\nok") != NULL) {
+            break;
+        }
+    }
+
+    if (got_eof == FLB_FALSE) {
+        FD_ZERO(&read_fds);
+        FD_SET(fd, &read_fds);
+        timeout.tv_sec = 0;
+        timeout.tv_usec = 300000;
+        ret = select((int) (fd + 1), &read_fds, NULL, NULL, &timeout);
+        if (ret > 0) {
+            received = recv(fd, response + response_length,
+                            (int) (sizeof(response) - 1 - response_length), 0);
+            if (received == 0) {
+                got_eof = FLB_TRUE;
+            }
+            else if (received > 0) {
+                response_length += (size_t) received;
+                response[response_length] = '\0';
+            }
+        }
+    }
+
+    TEST_CHECK(strstr(response, "200") != NULL);
+    TEST_CHECK(strstr(response, "\r\n\r\nok") != NULL);
+    if (expect_close) {
+        TEST_CHECK_(test_http_server_response_has_connection_close(response),
+                    "expected Connection: close in: %s", response);
+        TEST_CHECK_(got_eof == FLB_TRUE,
+                    "expected server close after Connection: close, got: %s",
+                    response);
+    }
+    else {
+        TEST_CHECK_(test_http_server_response_has_connection_close(response) == FLB_FALSE,
+                    "unexpected Connection: close in: %s", response);
+        TEST_CHECK_(got_eof == FLB_FALSE,
+                    "server closed a keep-alive HTTP/1.1 connection: %s",
+                    response);
+    }
+
+    flb_socket_close(fd);
+    flb_http_server_destroy(&server);
+    test_http_server_context_destroy(&context);
+    flb_config_exit(config);
+    test_http_server_network_cleanup();
+}
+
+void test_http1_connection_close_closes_and_echoes_header(void)
+{
+    const char *request =
+        "GET / HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Connection: close\r\n"
+        "\r\n";
+
+    test_http1_connection_header(request, FLB_TRUE);
+}
+
+void test_http1_default_keepalive_leaves_connection_open(void)
+{
+    const char *request =
+        "GET / HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "\r\n";
+
+    test_http1_connection_header(request, FLB_FALSE);
+}
+
+void test_http1_connection_close_token_list(void)
+{
+    const char *request =
+        "GET / HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Connection: keep-alive, close\r\n"
+        "\r\n";
+
+    test_http1_connection_header(request, FLB_TRUE);
+}
+
 TEST_LIST = {
     { "http_request_compression_roundtrip", test_http_request_compression_roundtrip },
     { "http_server_rejects_invalid_decoded_body_limit",
@@ -1364,5 +1629,11 @@ TEST_LIST = {
       test_http_server_session_destroy_is_reentrant_safe },
     { "http_server_hs_buf_push_during_read_keeps_payload",
       test_http_server_hs_buf_push_during_read_keeps_payload },
+    { "http1_connection_close_closes_and_echoes_header",
+      test_http1_connection_close_closes_and_echoes_header },
+    { "http1_default_keepalive_leaves_connection_open",
+      test_http1_default_keepalive_leaves_connection_open },
+    { "http1_connection_close_token_list",
+      test_http1_connection_close_token_list },
     { 0 }
 };
