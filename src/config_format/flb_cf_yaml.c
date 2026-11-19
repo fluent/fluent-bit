@@ -17,9 +17,14 @@
  *  limitations under the License.
  */
 
+#if defined(FLB_SYSTEM_LINUX) && !defined(_LARGEFILE64_SOURCE)
+#define _LARGEFILE64_SOURCE
+#endif
+
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_config_format.h>
 #include <fluent-bit/flb_sds.h>
+#include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_kv.h>
@@ -42,13 +47,16 @@
 #include <glob.h>
 #endif
 
-#ifdef _WIN32
+#ifdef FLB_SYSTEM_WINDOWS
 #include <Windows.h>
+#include <io.h>
 #include <strsafe.h>
 #define PATH_MAX MAX_PATH
 #endif
 
 #include <stdio.h>
+
+#define FLB_CF_YAML_MAX_INCLUDE_DEPTH 256
 
 enum section {
     SECTION_ENV,
@@ -90,10 +98,24 @@ static char *section_names[] = {
     "other"
 };
 
+struct file_identity {
+    uint64_t device;
+    uint64_t inode;
+#ifdef FLB_SYSTEM_WINDOWS
+    FILE_ID_INFO windows_identity;
+    int has_windows_identity;
+#endif
+};
+
 struct file_state {
-    /* file */
-    flb_sds_t name;                /* file name */
-    flb_sds_t path;           /* file root path */
+    flb_sds_t name;                /* borrowed file name */
+    flb_sds_t path;                /* borrowed include directory */
+
+    /* Relative includes make the containing directory part of the parse identity. */
+    struct file_identity identity;
+    struct file_identity directory_identity;
+    char *directory_context;       /* path preserves mount and junction context */
+    struct file_state *include_parent;
 
     /* parent file state */
     struct file_state *parent;
@@ -107,6 +129,8 @@ struct local_ctx {
     struct mk_list includes;
 
     int service_set;
+    struct yaml_composition *composition;
+    const char *event_file;
 };
 
 /* yaml_* functions return 1 on success and 0 on failure. */
@@ -255,7 +279,7 @@ static void state_destroy(struct parser_state *s);
 
 
 static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
-                       struct file_state *parent, char *cfg_file);
+                       struct file_state *parent, char *cfg_file, int resolved_path);
 
 static char *state_str(enum state val)
 {
@@ -450,7 +474,8 @@ static void yaml_error_event_line(struct local_ctx *ctx, struct parser_state *st
 
     flb_error("[config] YAML error found in file \"%s\", line %zu, column %zu: "
               "unexpected event '%s' (%d) in state '%s' (%d).",
-              entry->str, event->start_mark.line + 1, event->start_mark.column,
+              ctx->event_file ? ctx->event_file : entry->str,
+              event->start_mark.line + 1, event->start_mark.column,
               event_type_str(event), event->type, state_str(state->state), state->state);
 }
 
@@ -463,7 +488,8 @@ static void yaml_error_definition(struct local_ctx *ctx, struct parser_state *st
 {
     flb_error("[config] YAML error found in file \"%s\", line %zu, column %zu: "
               "duplicated definition of '%s'",
-              state->file->name, event->start_mark.line + 1, event->start_mark.column,
+              ctx->event_file ? ctx->event_file : state->file->name,
+              event->start_mark.line + 1, event->start_mark.column,
               value);
 }
 
@@ -473,7 +499,8 @@ static void yaml_error_plugin_category(struct local_ctx *ctx, struct parser_stat
     flb_error("[config] YAML error found in file \"%s\", line %zu, column %zu: "
               "the pipeline component '%s' is not valid. Try one of these values: "
               "customs, inputs, filters or outputs.",
-              state->file->name, event->start_mark.line + 1, event->start_mark.column,
+              ctx->event_file ? ctx->event_file : state->file->name,
+              event->start_mark.line + 1, event->start_mark.column,
               value);
 }
 
@@ -485,7 +512,11 @@ static int is_file_included(struct local_ctx *ctx, const char *path)
     mk_list_foreach(head, &ctx->includes) {
         entry = mk_list_entry(head, struct flb_slist_entry, _head);
 
+#ifdef FLB_SYSTEM_WINDOWS
+        if (strcasecmp(entry->str, path) == 0) {
+#else
         if (strcmp(entry->str, path) == 0) {
+#endif
             return FLB_TRUE;
         }
     }
@@ -493,7 +524,16 @@ static int is_file_included(struct local_ctx *ctx, const char *path)
     return FLB_FALSE;
 }
 
-#ifndef _WIN32
+#ifndef FLB_SYSTEM_WINDOWS
+static int glob_directory_error(const char *path, int error)
+{
+    if (error == ENOENT || error == ENOTDIR) {
+        return 0;
+    }
+    flb_error("[config] cannot read glob directory '%s': %s", path, strerror(error));
+    return 1;
+}
+
 static int read_glob(struct flb_cf *conf, struct local_ctx *ctx,
                      struct parser_state *state, const char *path)
 {
@@ -506,9 +546,9 @@ static int read_glob(struct flb_cf *conf, struct local_ctx *ctx,
     int ret_glb = -1;
 
     if (state->file->path && path[0] != '/') {
-        ret = snprintf(tmp, PATH_MAX, "%s/%s", state->file->path, path);
+        ret = snprintf(tmp, sizeof(tmp), "%s/%s", state->file->path, path);
 
-        if (ret > PATH_MAX) {
+        if (ret < 0 || (size_t) ret >= sizeof(tmp)) {
             return -1;
         }
         glb_path = tmp;
@@ -517,7 +557,8 @@ static int read_glob(struct flb_cf *conf, struct local_ctx *ctx,
         glb_path = path;
     }
 
-    ret_glb = glob(glb_path, GLOB_NOSORT, NULL, &glb);
+    memset(&glb, 0, sizeof(glb));
+    ret_glb = glob(glb_path, GLOB_NOSORT, glob_directory_error, &glb);
 
     if (ret_glb != 0) {
         switch(ret_glb){
@@ -533,11 +574,16 @@ static int read_glob(struct flb_cf *conf, struct local_ctx *ctx,
         default:
             flb_warn("[%s] glob: [%s] other error", __FUNCTION__, glb_path);
         }
-        return ret;
+        globfree(&glb);
+        /* Preserve optional relative globs, but never hide allocation/I/O errors. */
+        if (ret_glb == GLOB_NOMATCH && glb_path == tmp) {
+            return 0;
+        }
+        return -1;
     }
 
     for (idx = 0; idx < glb.gl_pathc; idx++) {
-        ret = read_config(conf, ctx, state->file, glb.gl_pathv[idx]);
+        ret = read_config(conf, ctx, state->file, glb.gl_pathv[idx], FLB_TRUE);
 
         if (ret < 0) {
             break;
@@ -574,10 +620,27 @@ static int read_glob(struct flb_cf *conf, struct local_ctx *ctx,
     char *star, *p0, *p1;
     char pattern[MAX_PATH];
     char buf[MAX_PATH];
+    char full_path[MAX_PATH];
     int ret;
     struct stat st;
     HANDLE hnd;
     WIN32_FIND_DATA data;
+
+    if (state->file->path && path[0] != '/' && path[0] != '\\' &&
+        !(path[0] != '\0' && path[1] == ':')) {
+        ret = snprintf(buf, sizeof(buf), "%s\\%s", state->file->path, path);
+        if (ret < 0 || ret >= sizeof(buf)) {
+            return -1;
+        }
+        path = buf;
+    }
+
+    /* Resolve relative includes against the config directory and normalize
+     * forward slashes before splitting the Windows wildcard components. */
+    if (_fullpath(full_path, path, sizeof(full_path)) == NULL) {
+        return -1;
+    }
+    path = full_path;
 
     if (strlen(path) > MAX_PATH - 1) {
         return -1;
@@ -640,7 +703,11 @@ static int read_glob(struct flb_cf *conf, struct local_ctx *ctx,
         }
 
         if (strchr(p1, '*')) {
-            read_glob(conf, ctx, state, buf); /* recursive */
+            ret = read_glob(conf, ctx, state, buf);
+            if (ret < 0) {
+                FindClose(hnd);
+                return -1;
+            }
             continue;
         }
 
@@ -648,7 +715,8 @@ static int read_glob(struct flb_cf *conf, struct local_ctx *ctx,
 
         if (ret == 0 && (st.st_mode & S_IFMT) == S_IFREG) {
 
-            if (read_config(conf, ctx, state->file, buf) < 0) {
+            if (read_config(conf, ctx, state->file, buf, FLB_TRUE) < 0) {
+                FindClose(hnd);
                 return -1;
             }
         }
@@ -1114,7 +1182,7 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
                 ret = read_glob(conf, ctx, state, value);
             }
             else {
-                ret = read_config(conf, ctx, state->file, value);
+                ret = read_config(conf, ctx, state->file, value, FLB_FALSE);
             }
 
             if (ret == -1) {
@@ -3108,38 +3176,858 @@ static struct parser_state *state_create(struct file_state *parent, struct file_
 
 #else
 
-    state->file->name = flb_sds_create("***static***");
-    state->file->path = flb_sds_create("***static***");
+    state->file->name = "***static***";
+    state->file->path = "***static***";
 
 #endif
 
     return state;
 }
 
+#ifdef FLB_SYSTEM_WINDOWS
+static int get_handle_identity(HANDLE handle, struct file_identity *state)
+{
+    BY_HANDLE_FILE_INFORMATION identity;
+
+    if (handle == INVALID_HANDLE_VALUE) {
+        return -1;
+    }
+    state->has_windows_identity = GetFileInformationByHandleEx(handle, FileIdInfo,
+                                                               &state->windows_identity,
+                                                               sizeof(FILE_ID_INFO));
+    if (state->has_windows_identity) {
+        return 0;
+    }
+    if (!GetFileInformationByHandle(handle, &identity)) {
+        return -1;
+    }
+    state->device = identity.dwVolumeSerialNumber;
+    state->inode = ((uint64_t) identity.nFileIndexHigh << 32) | identity.nFileIndexLow;
+    return 0;
+}
+#endif
+
+/* Capture identities once, independently of path aliases or replacements. */
+static int get_file_identity(FILE *file, struct file_identity *state)
+{
+#ifdef FLB_SYSTEM_WINDOWS
+    return get_handle_identity((HANDLE) _get_osfhandle(_fileno(file)), state);
+#else
+#ifdef FLB_SYSTEM_LINUX
+    struct stat64 identity;
+
+    if (fstat64(fileno(file), &identity) != 0) {
+#else
+    struct stat identity;
+
+    if (fstat(fileno(file), &identity) != 0) {
+#endif
+        return -1;
+    }
+    state->device = identity.st_dev;
+    state->inode = identity.st_ino;
+    return 0;
+#endif
+}
+
+static int get_directory_identity(const char *path, struct file_identity *state)
+{
+#ifdef FLB_SYSTEM_WINDOWS
+    HANDLE handle;
+    int ret;
+    char drive_root[4];
+
+    if (path[0] != '\0' && path[1] == ':' && path[2] == '\0') {
+        drive_root[0] = path[0];
+        drive_root[1] = ':';
+        drive_root[2] = '\\';
+        drive_root[3] = '\0';
+        path = drive_root;
+    }
+
+    handle = CreateFileA(path, 0,
+                         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                         NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    if (handle == INVALID_HANDLE_VALUE) {
+        return -1;
+    }
+    ret = get_handle_identity(handle, state);
+    CloseHandle(handle);
+    return ret;
+#else
+#ifdef FLB_SYSTEM_LINUX
+    struct stat64 identity;
+
+    if (stat64(path, &identity) != 0) {
+#else
+    struct stat identity;
+
+    if (stat(path, &identity) != 0) {
+#endif
+        return -1;
+    }
+    state->device = identity.st_dev;
+    state->inode = identity.st_ino;
+    return 0;
+#endif
+}
+
+static int file_identity_equal(struct file_identity *left, struct file_identity *right)
+{
+#ifdef FLB_SYSTEM_WINDOWS
+    const FILE_ID_INFO *left_identity;
+    const FILE_ID_INFO *right_identity;
+
+    if (left->has_windows_identity || right->has_windows_identity) {
+        if (!left->has_windows_identity || !right->has_windows_identity) {
+            return FLB_FALSE;
+        }
+
+        left_identity = &left->windows_identity;
+        right_identity = &right->windows_identity;
+        if (left_identity->VolumeSerialNumber != right_identity->VolumeSerialNumber) {
+            return FLB_FALSE;
+        }
+
+        return memcmp(left_identity->FileId.Identifier, right_identity->FileId.Identifier,
+                      sizeof(left_identity->FileId.Identifier)) == 0;
+    }
+#endif
+    return left->device == right->device && left->inode == right->inode;
+}
+
+static int file_context_equal(struct file_state *left, struct file_state *right)
+{
+    if (!file_identity_equal(&left->identity, &right->identity) ||
+        !file_identity_equal(&left->directory_identity, &right->directory_identity)) {
+        return FLB_FALSE;
+    }
+    if (left->directory_context == NULL && right->directory_context == NULL) {
+        return FLB_TRUE;
+    }
+    if (left->directory_context == NULL || right->directory_context == NULL) {
+        return FLB_FALSE;
+    }
+    return strcmp(left->directory_context, right->directory_context) == 0;
+}
+
+/* The event graph owns libyaml events; edges and aliases only borrow nodes.
+ * Includes splice root pairs at the include site, before section interpretation.
+ * Keeping alias edges (rather than copying trees) preserves anchor rebinding and
+ * lets the resolver reject cycles and bound expansion independently of input size.
+ */
+#define YAML_COMPOSE_DEPTH 128
+#define YAML_COMPOSE_NODES 65536
+#define YAML_COMPOSE_FILES 4096
+#define YAML_COMPOSE_WORK 1048576
+#define YAML_COMPOSE_BYTES (64 * 1024 * 1024)
+
+struct yaml_node {
+    yaml_event_t event;
+    yaml_event_t end;
+    char *file;
+    struct yaml_node **children;
+    size_t count;
+    size_t capacity;
+    size_t explicit_count;
+    flb_sds_t service_key;
+    struct yaml_node *alias;
+    struct yaml_node *next;
+    struct yaml_node *anchor_next;
+    int resolved;
+    int complete;
+    size_t expanded_nodes;
+    size_t expanded_bytes;
+    size_t height;
+};
+
+struct yaml_composition {
+    struct yaml_node root;
+    struct yaml_node *nodes;
+    struct yaml_node *anchors;
+    size_t node_count;
+    size_t file_count;
+    size_t bytes;
+    size_t work;
+    size_t emitted_bytes;
+    size_t input_bytes;
+};
+
+struct yaml_composition_input {
+    FILE *file;
+    char *name;
+    struct yaml_composition *composition;
+};
+
+/* Bound parser input too: comments and tag directives need not create nodes. */
+static int compose_input(void *data, unsigned char *buffer, size_t size, size_t *size_read)
+{
+    struct yaml_composition_input *input = data;
+
+    *size_read = fread(buffer, 1, size, input->file);
+    if (*size_read > YAML_COMPOSE_BYTES - input->composition->input_bytes) {
+        flb_error("[config] YAML input byte limit exceeded in %s", input->name);
+        return 0;
+    }
+    input->composition->input_bytes += *size_read;
+    return !ferror(input->file);
+}
+
+static int compose_error(struct yaml_node *node, const char *message)
+{
+    flb_error("[config] YAML composition error in %s:%zu:%zu: %s",
+              node->file ? node->file : "<configuration>",
+              node->event.start_mark.line + 1,
+              node->event.start_mark.column + 1, message);
+    return -1;
+}
+
+static int compose_work(struct yaml_composition *composition, struct yaml_node *node)
+{
+    if (++composition->work > YAML_COMPOSE_WORK) {
+        return compose_error(node, "composition work limit exceeded");
+    }
+    return 0;
+}
+
+static int compose_append(struct yaml_composition *composition, struct yaml_node *parent,
+                          struct yaml_node *child)
+{
+    struct yaml_node **children;
+    size_t capacity;
+
+    if (compose_work(composition, child) != 0) {
+        return -1;
+    }
+    if (parent->count == parent->capacity) {
+        capacity = parent->capacity ? parent->capacity * 2 : 8;
+        children = flb_realloc(parent->children, capacity * sizeof(*children));
+        if (children == NULL) {
+            return -1;
+        }
+        parent->children = children;
+        parent->capacity = capacity;
+    }
+    parent->children[parent->count++] = child;
+    return 0;
+}
+
+static yaml_char_t *compose_anchor(struct yaml_node *node)
+{
+    switch (node->event.type) {
+    case YAML_SCALAR_EVENT:
+        return node->event.data.scalar.anchor;
+    case YAML_MAPPING_START_EVENT:
+        return node->event.data.mapping_start.anchor;
+    case YAML_SEQUENCE_START_EVENT:
+        return node->event.data.sequence_start.anchor;
+    default:
+        return NULL;
+    }
+}
+
+static int compose_parse_event(yaml_parser_t *parser, yaml_event_t *event, char *file)
+{
+    if (!yaml_parser_parse(parser, event)) {
+        flb_error("[config] invalid YAML in file %s at line %zu, column %zu: %s",
+                  file, parser->problem_mark.line + 1, parser->problem_mark.column + 1,
+                  parser->problem ? parser->problem : "parse failure");
+        return -1;
+    }
+    return 0;
+}
+
+static int compose_scalar_is(struct yaml_node *node, const char *value)
+{
+    return node->event.type == YAML_SCALAR_EVENT &&
+           strcmp((char *) node->event.data.scalar.value, value) == 0;
+}
+
+static int compose_resolve(struct yaml_composition *, struct yaml_node *, int);
+static struct yaml_node *compose_target(struct yaml_node *);
+
+/* Literal include lists are expanded one item at a time. Resolving the entire
+ * list first would bind aliases before preceding includes can define/rebind them.
+ * Aliased lists have already bound their members at their definition site.
+ */
+static int compose_include(struct flb_cf *conf, struct local_ctx *ctx,
+                           struct file_state *file, struct yaml_node *path)
+{
+    struct parser_state state = {0};
+    int ret;
+
+    if (compose_resolve(ctx->composition, path, 0) != 0) {
+        return -1;
+    }
+    path = compose_target(path);
+    if (path->event.type != YAML_SCALAR_EVENT) {
+        return compose_error(path, "include path must be a scalar");
+    }
+    state.file = file;
+    if (strchr((char *) path->event.data.scalar.value, '*')) {
+        ret = read_glob(conf, ctx, &state, (char *) path->event.data.scalar.value);
+    }
+    else {
+        ret = read_config(conf, ctx, file, (char *) path->event.data.scalar.value, FLB_FALSE);
+    }
+    if (ret < 0) {
+        flb_error("[config] including file '%s' at %s:%zu",
+                  path->event.data.scalar.value, path->file, path->event.start_mark.line + 1);
+        return compose_error(path, "could not compose included file");
+    }
+    return 0;
+}
+
+/* mode: ordinary node (0), document root (1), literal include list (2). */
+static struct yaml_node *compose_node(struct flb_cf *conf, struct local_ctx *ctx,
+                                     struct file_state *file, yaml_parser_t *parser,
+                                     yaml_event_t *event, int depth, int mode)
+{
+    struct yaml_composition *composition;
+    struct yaml_node *node;
+    struct yaml_node *child;
+    struct yaml_node *key;
+    struct yaml_node *anchor;
+    yaml_event_t next;
+    yaml_event_type_t end_type;
+    size_t i;
+    size_t bytes;
+    yaml_char_t *tag = NULL;
+    int child_mode;
+
+    composition = ctx->composition;
+    node = flb_calloc(1, sizeof(*node));
+    if (node == NULL) {
+        yaml_event_delete(event);
+        return NULL;
+    }
+    node->event = *event;
+    memset(event, 0, sizeof(*event));
+    node->next = composition->nodes;
+    composition->nodes = node;
+    node->file = flb_strdup(file->name);
+    if (node->file == NULL) {
+        return NULL;
+    }
+    bytes = strlen(node->file);
+    if (node->event.type == YAML_SCALAR_EVENT) {
+        bytes += node->event.data.scalar.length;
+        tag = node->event.data.scalar.tag;
+    }
+    else if (node->event.type == YAML_MAPPING_START_EVENT) {
+        tag = node->event.data.mapping_start.tag;
+    }
+    else if (node->event.type == YAML_SEQUENCE_START_EVENT) {
+        tag = node->event.data.sequence_start.tag;
+    }
+    if (tag) {
+        bytes += strlen((char *) tag);
+    }
+    if (compose_anchor(node)) {
+        bytes += strlen((char *) compose_anchor(node));
+    }
+    if (node->event.type == YAML_ALIAS_EVENT) {
+        bytes += strlen((char *) node->event.data.alias.anchor);
+    }
+    composition->bytes += bytes;
+    if (++composition->node_count > YAML_COMPOSE_NODES ||
+        composition->bytes > YAML_COMPOSE_BYTES || depth > YAML_COMPOSE_DEPTH) {
+        compose_error(node, "YAML input size or nesting limit exceeded");
+        return NULL;
+    }
+    if (compose_anchor(node)) {
+        node->anchor_next = composition->anchors;
+        composition->anchors = node;
+    }
+    if (node->event.type == YAML_ALIAS_EVENT) {
+        for (anchor = composition->anchors; anchor; anchor = anchor->anchor_next) {
+            if (compose_work(composition, node) != 0) {
+                return NULL;
+            }
+            if (strcmp((char *) compose_anchor(anchor),
+                       (char *) node->event.data.alias.anchor) == 0) {
+                node->alias = anchor;
+                node->complete = 1;
+                return node;
+            }
+        }
+        compose_error(node, "unresolved alias (anchors must precede aliases)");
+        return NULL;
+    }
+    if (node->event.type == YAML_SCALAR_EVENT) {
+        node->complete = 1;
+        return node;
+    }
+    if (node->event.type != YAML_MAPPING_START_EVENT &&
+        node->event.type != YAML_SEQUENCE_START_EVENT) {
+        compose_error(node, "expected a scalar, mapping, sequence or alias");
+        return NULL;
+    }
+    end_type = node->event.type == YAML_MAPPING_START_EVENT ?
+               YAML_MAPPING_END_EVENT : YAML_SEQUENCE_END_EVENT;
+    while (1) {
+        if (compose_parse_event(parser, &next, file->name) != 0) {
+            return NULL;
+        }
+        if (next.type == end_type) {
+            node->end = next;
+            node->complete = 1;
+            break;
+        }
+        child_mode = 0;
+        if (mode == 1 && node->count % 2 == 1) {
+            key = node->children[node->count - 1];
+            if (key->event.type == YAML_SCALAR_EVENT &&
+                strcasecmp((char *) key->event.data.scalar.value, "includes") == 0) {
+                child_mode = 2;
+            }
+        }
+        child = compose_node(conf, ctx, file, parser, &next, depth + 1, child_mode);
+        if (child == NULL || compose_append(composition, node, child) != 0) {
+            return NULL;
+        }
+        if (mode == 2 && node->event.type == YAML_SEQUENCE_START_EVENT) {
+            if (compose_include(conf, ctx, file, child) != 0) {
+                return NULL;
+            }
+        }
+        if (mode != 1 || node->count % 2 != 0) {
+            continue;
+        }
+        key = node->children[node->count - 2];
+        if (compose_scalar_is(key, "defaults")) {
+            if (compose_target(child)->event.type != YAML_MAPPING_START_EVENT) {
+                compose_error(child, "defaults must be a mapping");
+                return NULL;
+            }
+        }
+        else if (key->event.type == YAML_SCALAR_EVENT &&
+                 strcasecmp((char *) key->event.data.scalar.value, "includes") == 0) {
+            if (child->event.type == YAML_SEQUENCE_START_EVENT) {
+                /* Literal list items were composed while parsing the sequence. */
+                continue;
+            }
+            if (compose_resolve(composition, child, 0) != 0) {
+                return NULL;
+            }
+            child = compose_target(child);
+            if (child->event.type != YAML_SEQUENCE_START_EVENT) {
+                compose_error(child, "includes must be a sequence");
+                return NULL;
+            }
+            for (i = 0; i < child->count; i++) {
+                if (compose_include(conf, ctx, file, child->children[i]) != 0) {
+                    return NULL;
+                }
+            }
+        }
+        else if (compose_append(composition, &composition->root, key) != 0 ||
+                 compose_append(composition, &composition->root, child) != 0) {
+            return NULL;
+        }
+    }
+    return node;
+}
+
+static int compose_merge_key(struct yaml_node *node)
+{
+    yaml_char_t *tag;
+
+    if (node->event.type != YAML_SCALAR_EVENT) {
+        return 0;
+    }
+    tag = node->event.data.scalar.tag;
+    return (tag && strcmp((char *) tag, "tag:yaml.org,2002:merge") == 0) ||
+           (!tag && node->event.data.scalar.style == YAML_PLAIN_SCALAR_STYLE &&
+            compose_scalar_is(node, "<<"));
+}
+
+static struct yaml_node *compose_target(struct yaml_node *node)
+{
+    return node->alias ? node->alias : node;
+}
+
+static int compose_has_key(struct yaml_composition *composition, struct yaml_node *map,
+                           struct yaml_node *key)
+{
+    size_t i;
+
+    for (i = 0; i < map->count; i += 2) {
+        if (compose_work(composition, key) != 0) {
+            return -1;
+        }
+        if (compose_scalar_is(map->children[i], (char *) key->event.data.scalar.value)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int compose_merge(struct yaml_composition *composition, struct yaml_node *result,
+                         struct yaml_node *source)
+{
+    size_t i;
+    int found;
+
+    source = compose_target(source);
+    if (source->event.type != YAML_MAPPING_START_EVENT) {
+        return compose_error(source, "merge operand must be a mapping or a sequence of mappings");
+    }
+    for (i = 0; i < source->count; i += 2) {
+        found = compose_has_key(composition, result, source->children[i]);
+        if (found < 0) {
+            return -1;
+        }
+        if (!found &&
+            (compose_append(composition, result, source->children[i]) != 0 ||
+             compose_append(composition, result, source->children[i + 1]) != 0)) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static int compose_resolve(struct yaml_composition *composition, struct yaml_node *node, int depth)
+{
+    struct yaml_node result = {0};
+    struct yaml_node *source;
+    size_t i;
+    size_t j;
+    int ret = -1;
+
+    if (node->resolved == 2) {
+        return 0;
+    }
+    if (!node->complete || node->resolved == 1 || depth > YAML_COMPOSE_DEPTH) {
+        return compose_error(node, "recursive alias or excessive expansion depth");
+    }
+    node->resolved = 1;
+    if (node->alias) {
+        if (compose_resolve(composition, node->alias, depth + 1) != 0) {
+            return -1;
+        }
+        node->alias = compose_target(node->alias);
+    }
+    for (i = 0; i < node->count; i++) {
+        if (compose_resolve(composition, node->children[i], depth + 1) != 0) {
+            return -1;
+        }
+        node->children[i] = compose_target(node->children[i]);
+    }
+    if (node->event.type == YAML_MAPPING_START_EVENT) {
+        /* Explicit entries win regardless of the position of the merge key.
+         * Preserve duplicate explicit entries for the existing section parser.
+         */
+        for (i = 0; i < node->count; i += 2) {
+            if (node->children[i]->event.type != YAML_SCALAR_EVENT) {
+                compose_error(node->children[i], "configuration mapping keys must be scalars");
+                goto done;
+            }
+            if (!compose_merge_key(node->children[i]) &&
+                (compose_append(composition, &result, node->children[i]) != 0 ||
+                 compose_append(composition, &result, node->children[i + 1]) != 0)) {
+                goto done;
+            }
+        }
+        node->explicit_count = result.count;
+        for (i = 0; i < node->count; i += 2) {
+            if (!compose_merge_key(node->children[i])) {
+                continue;
+            }
+            source = node->children[i + 1];
+            if (source->event.type == YAML_SEQUENCE_START_EVENT) {
+                for (j = 0; j < source->count; j++) {
+                    if (compose_merge(composition, &result, source->children[j]) != 0) {
+                        goto done;
+                    }
+                }
+            }
+            else if (compose_merge(composition, &result, source) != 0) {
+                goto done;
+            }
+        }
+        flb_free(node->children);
+        node->children = result.children;
+        node->count = result.count;
+        node->capacity = result.capacity;
+        result.children = NULL;
+    }
+    /* Compute expansion cost once per graph node, before allocating runtime
+     * variants. Saturating checks reject exponential DAGs without expanding them.
+     */
+    if (node->alias) {
+        node->expanded_nodes = node->alias->expanded_nodes;
+        node->expanded_bytes = node->alias->expanded_bytes;
+        node->height = node->alias->height;
+    }
+    else {
+        node->expanded_nodes = node->end.type ? 2 : 1;
+        node->expanded_bytes = node->event.type == YAML_SCALAR_EVENT ?
+                               node->event.data.scalar.length : 0;
+        node->height = 1;
+        for (i = 0; i < node->count; i++) {
+            source = node->children[i];
+            if (source->expanded_nodes > YAML_COMPOSE_WORK - node->expanded_nodes ||
+                source->expanded_bytes > YAML_COMPOSE_BYTES - node->expanded_bytes ||
+                source->height >= YAML_COMPOSE_DEPTH) {
+                compose_error(node, "YAML expansion limit exceeded");
+                goto done;
+            }
+            node->expanded_nodes += source->expanded_nodes;
+            node->expanded_bytes += source->expanded_bytes;
+            if (node->height <= source->height) {
+                node->height = source->height + 1;
+            }
+        }
+    }
+    node->resolved = 2;
+    ret = 0;
+done:
+    flb_free(result.children);
+    return ret;
+}
+
+/* Generic mapping resolution puts explicit pairs first, followed by inherited
+ * pairs in merge precedence order. Apply the consumer's key comparison only
+ * when emitting a section: an alias can share this map with other consumers.
+ */
+static int compose_shadowed(struct flb_cf *conf, struct yaml_composition *composition,
+                            struct yaml_node *map, size_t index, int service)
+{
+    struct yaml_node *key;
+    const char *candidate = NULL;
+    const char *name;
+    size_t i;
+
+    for (i = index; ; i -= 2) {
+        key = map->children[i];
+        name = (char *) key->event.data.scalar.value;
+        if (compose_work(composition, key) != 0) {
+            return -1;
+        }
+        if (service && key->event.data.scalar.length > 0) {
+            if (!key->service_key) {
+                key->service_key = flb_cf_key_translate(conf, (char *) name, key->event.data.scalar.length);
+                if (!key->service_key) {
+                    return -1;
+                }
+            }
+            name = key->service_key;
+        }
+        if (candidate && strcasecmp(name, candidate) == 0) {
+            return 1;
+        }
+        if (i == 0) {
+            break;
+        }
+        if (i == index) {
+            candidate = name;
+        }
+    }
+    return 0;
+}
+
+static int compose_emit(struct flb_cf *conf, struct local_ctx *ctx,
+                        struct yaml_node *node, int depth, int service)
+{
+    size_t i;
+    int skip;
+    int child_service;
+    int root = node == &ctx->composition->root;
+
+    node = compose_target(node);
+    if (depth > YAML_COMPOSE_DEPTH || compose_work(ctx->composition, node) != 0) {
+        return compose_error(node, "YAML expansion limit exceeded");
+    }
+    if (node->event.type == YAML_SCALAR_EVENT) {
+        ctx->composition->emitted_bytes += node->event.data.scalar.length;
+        if (ctx->composition->emitted_bytes > YAML_COMPOSE_BYTES) {
+            return compose_error(node, "expanded scalar size limit exceeded");
+        }
+    }
+    ctx->event_file = node->file;
+    if (!consume_event(conf, ctx, &node->event)) {
+        return -1;
+    }
+    for (i = 0; i < node->count; i++) {
+        if ((root || service) && node->event.type == YAML_MAPPING_START_EVENT &&
+            i % 2 == 0 && i >= node->explicit_count) {
+            skip = compose_shadowed(conf, ctx->composition, node, i, service);
+            if (skip < 0) {
+                return -1;
+            }
+            if (skip) {
+                i++;
+                continue;
+            }
+        }
+        child_service = root && i % 2 == 1 &&
+                        strcasecmp((char *) node->children[i - 1]->event.data.scalar.value, "service") == 0;
+        if (compose_emit(conf, ctx, node->children[i], depth + 1, child_service) != 0) {
+            return -1;
+        }
+    }
+    ctx->event_file = node->file;
+    if (node->end.type && !consume_event(conf, ctx, &node->end)) {
+        return -1;
+    }
+    return 0;
+}
+
+static void compose_destroy(struct yaml_composition *composition)
+{
+    struct yaml_node *node;
+    struct yaml_node *next;
+
+    for (node = composition->nodes; node; node = next) {
+        next = node->next;
+        yaml_event_delete(&node->event);
+        yaml_event_delete(&node->end);
+        flb_sds_destroy(node->service_key);
+        flb_free(node->file);
+        flb_free(node->children);
+        flb_free(node);
+    }
+    flb_free(composition->root.children);
+}
+
+/* Parse one stream. The root must be a mapping; multiple documents retain the
+ * existing parser's shared service uniqueness constraint and anchor namespace.
+ */
+static int compose_read(struct flb_cf *conf, struct local_ctx *ctx,
+                        struct file_state *file, yaml_parser_t *parser)
+{
+    yaml_event_t event;
+    struct yaml_node *root;
+    int in_document = 0;
+
+    while (1) {
+        if (compose_parse_event(parser, &event, file->name) != 0) {
+            return -1;
+        }
+        if (event.type == YAML_STREAM_END_EVENT) {
+            yaml_event_delete(&event);
+            return 0;
+        }
+        if (event.type == YAML_DOCUMENT_START_EVENT) {
+            in_document = 1;
+        }
+        else if (in_document) {
+            if (event.type != YAML_MAPPING_START_EVENT) {
+                flb_error("[config] YAML root must be a mapping in %s:%zu",
+                          file->name, event.start_mark.line + 1);
+                yaml_event_delete(&event);
+                return -1;
+            }
+            root = compose_node(conf, ctx, file, parser, &event, 0, 1);
+            if (root == NULL) {
+                return -1;
+            }
+            in_document = 0;
+        }
+        yaml_event_delete(&event);
+    }
+}
+
+static int compose_interpret(struct flb_cf *conf, struct local_ctx *ctx, char *file_path)
+{
+    struct yaml_composition *composition = ctx->composition;
+    struct yaml_node *node;
+    struct file_state file = {0};
+    yaml_event_t event = {0};
+    int ret = -1;
+    size_t i;
+
+    composition->root.complete = 1;
+    composition->root.event.type = YAML_MAPPING_START_EVENT;
+    composition->root.end.type = YAML_MAPPING_END_EVENT;
+    composition->root.file = file_path;
+    /* Validate unused defaults too, including recursive graphs. */
+    for (node = composition->nodes; node; node = node->next) {
+        if (compose_resolve(composition, node, 0) != 0) {
+            return -1;
+        }
+    }
+    if (compose_resolve(composition, &composition->root, 0) != 0) {
+        return -1;
+    }
+    for (i = 0; i < composition->root.count; i += 2) {
+        node = composition->root.children[i];
+        if (strcasecmp((char *) node->event.data.scalar.value, "includes") == 0 ||
+            compose_scalar_is(node, "defaults")) {
+            return compose_error(node, "includes and defaults must be literal root entries");
+        }
+    }
+    file.name = file_path;
+    if (state_start(ctx, &file) == NULL) {
+        return -1;
+    }
+    event.type = YAML_STREAM_START_EVENT;
+    if (!consume_event(conf, ctx, &event)) {
+        goto done;
+    }
+    event.type = YAML_DOCUMENT_START_EVENT;
+    if (!consume_event(conf, ctx, &event) ||
+        compose_emit(conf, ctx, &composition->root, 0, FLB_FALSE) != 0) {
+        goto done;
+    }
+    event.type = YAML_DOCUMENT_END_EVENT;
+    if (!consume_event(conf, ctx, &event)) {
+        goto done;
+    }
+    event.type = YAML_STREAM_END_EVENT;
+    if (!consume_event(conf, ctx, &event)) {
+        goto done;
+    }
+    ret = 0;
+done:
+    while (state_pop_with_cleanup(ctx, FLB_TRUE)) {
+    }
+    return ret;
+}
+
 static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
-                       struct file_state *parent, char *cfg_file)
+                       struct file_state *parent, char *cfg_file, int resolved_path)
 {
     int ret;
-    int status;
     int code = 0;
     int path_is_absolute;
+    int include_depth;
     struct stat st;
-    struct parser_state *state;
     flb_sds_t include_dir = NULL;
     flb_sds_t include_file = NULL;
     yaml_parser_t parser;
-    yaml_event_t event;
+    struct yaml_composition_input input;
     FILE *fh;
+    FILE *entry_file = parent == NULL ? conf->entry_file : NULL;
     struct file_state fstate;
+    struct file_state *ancestor;
+#ifdef FLB_SYSTEM_WINDOWS
+    char *full_path;
+#endif
 
+    if (++ctx->composition->file_count > YAML_COMPOSE_FILES) {
+        flb_error("[config] YAML included file limit (%d) exceeded at '%s'",
+                  YAML_COMPOSE_FILES, cfg_file);
+        return -1;
+    }
+    memset(&fstate, 0, sizeof(fstate));
+    include_depth = 0;
+    for (ancestor = parent; ancestor != NULL; ancestor = ancestor->include_parent) {
+        if (++include_depth >= FLB_CF_YAML_MAX_INCLUDE_DEPTH) {
+            flb_error("[config] maximum YAML include depth (%d) exceeded at '%s'",
+                      FLB_CF_YAML_MAX_INCLUDE_DEPTH, cfg_file);
+            return -1;
+        }
+    }
     path_is_absolute = cfg_file[0] == '/';
-#ifdef _WIN32
+#ifdef FLB_SYSTEM_WINDOWS
     path_is_absolute = path_is_absolute || cfg_file[0] == '\\' ||
                        (isalpha((unsigned char) cfg_file[0]) && cfg_file[1] == ':' &&
                         (cfg_file[2] == '/' || cfg_file[2] == '\\'));
 #endif
 
-    if (parent && !path_is_absolute) {
+    if (parent && !resolved_path && !path_is_absolute) {
 
         include_dir = flb_sds_create_size(strlen(cfg_file) + strlen(parent->path));
 
@@ -3148,7 +4036,7 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
             return -1;
         }
 
-#ifdef _WIN32
+#ifdef FLB_SYSTEM_WINDOWS
 #define PATH_CONCAT_TEMPLATE "%s\\%s"
 #else
 #define PATH_CONCAT_TEMPLATE "%s/%s"
@@ -3180,6 +4068,21 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
         }
     }
 
+#ifdef FLB_SYSTEM_WINDOWS
+    /* Use the same absolute identity for direct and wildcard includes. */
+    full_path = realpath(include_dir, NULL);
+    if (full_path == NULL) {
+        flb_sds_destroy(include_dir);
+        return -1;
+    }
+    flb_sds_destroy(include_dir);
+    include_dir = flb_sds_create(full_path);
+    flb_free(full_path);
+    if (include_dir == NULL) {
+        return -1;
+    }
+#endif
+
     include_file = flb_sds_create(include_dir);
 
     if (include_file == NULL) {
@@ -3188,19 +4091,11 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
         return -1;
     }
 
-    fstate.name = basename(include_dir);
+    fstate.name = include_file;
     fstate.path = dirname(include_dir);
 
     fstate.parent = parent;
-
-    state = state_start(ctx, &fstate);
-
-    if (!state) {
-        flb_error("unable to push initial include file state: %s", cfg_file);
-        flb_sds_destroy(include_dir);
-        flb_sds_destroy(include_file);
-        return -1;
-    }
+    fstate.include_parent = parent;
 
     /* check if this file has been included before */
     ret = is_file_included(ctx, include_file);
@@ -3213,7 +4108,7 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
     }
 
     flb_debug("============ %s ============", cfg_file);
-    fh = fopen(include_file, "r");
+    fh = entry_file ? entry_file : fopen(include_file, "r");
 
     if (!fh) {
         flb_errno();
@@ -3222,86 +4117,75 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
         return -1;
     }
 
+    ret = get_file_identity(fh, &fstate.identity);
+    if (ret == 0) {
+        ret = get_directory_identity(fstate.path, &fstate.directory_identity);
+    }
+    if (ret == 0) {
+        fstate.directory_context = realpath(fstate.path, NULL);
+        if (fstate.directory_context == NULL) {
+            ret = -1;
+        }
+    }
+    if (ret != 0) {
+        flb_error("[config] could not identify file '%s'", cfg_file);
+        if (fh != entry_file) {
+            fclose(fh);
+        }
+        flb_free(fstate.directory_context);
+        flb_sds_destroy(include_dir);
+        flb_sds_destroy(include_file);
+        return -1;
+    }
+
+    /* A linked template in another directory can have different relative children. */
+    for (ancestor = parent; ancestor != NULL; ancestor = ancestor->include_parent) {
+        if (file_context_equal(&fstate, ancestor)) {
+            flb_error("[config] file '%s' is already included", cfg_file);
+            if (fh != entry_file) {
+                fclose(fh);
+            }
+            flb_free(fstate.directory_context);
+            flb_sds_destroy(include_dir);
+            flb_sds_destroy(include_file);
+            return -1;
+        }
+    }
+
     /* add file to the list of included files */
     ret = flb_slist_add(&ctx->includes, include_file);
 
     if (ret == -1) {
         flb_error("[config] could not register file %s", cfg_file);
-        fclose(fh);
+        if (fh != entry_file) {
+            fclose(fh);
+        }
+        flb_free(fstate.directory_context);
         flb_sds_destroy(include_dir);
         flb_sds_destroy(include_file);
         return -1;
     }
     ctx->level++;
 
-    yaml_parser_initialize(&parser);
-    yaml_parser_set_input_file(&parser, fh);
-
-    do {
-        status = yaml_parser_parse(&parser, &event);
-
-        if (status == YAML_FAILURE) {
-            if (parser.problem) {
-                flb_error("[config] invalid YAML in file %s at line %zu, column %zu: %s",
-                          cfg_file,
-                          parser.problem_mark.line + 1,
-                          parser.problem_mark.column + 1,
-                          parser.problem);
-
-                /* Provide contextual hint if the error is not on the first line */
-                if (parser.problem_mark.line > 0) {
-                    flb_error("[config] hint: check line %zu (above) for missing ':' or incorrect indentation",
-                              parser.problem_mark.line);
-                }
-            }
-            else {
-                flb_error("[config] invalid YAML format in file %s at line %zu, column %zu",
-                          cfg_file,
-                          parser.problem_mark.line + 1,
-                          parser.problem_mark.column + 1);
-
-                if (parser.problem_mark.line > 0) {
-                    flb_error("[config] hint: check line %zu for syntax issues", parser.problem_mark.line);
-                }
-            }
-            code = -1;
-            goto done;
-        }
-
-        status = consume_event(conf, ctx, &event);
-
-        if (status == YAML_FAILURE) {
-            flb_error("yaml error");
-            code = -1;
-            goto done;
-        }
-
-        yaml_event_delete(&event);
-        state = cfl_list_entry_last(&ctx->states, struct parser_state, _head);
-
-    } while (state->state != STATE_STOP);
-
-    flb_debug("==============================");
-done:
-
-    if (code == -1) {
-        yaml_event_delete(&event);
-    }
-
-    yaml_parser_delete(&parser);
-
-    /* free all remaining states */
-    if (code == -1) {
-        while ((state = state_pop_with_cleanup(ctx, FLB_TRUE)));
+    if (!yaml_parser_initialize(&parser)) {
+        code = -1;
     }
     else {
-        state = state_pop(ctx);
+        input.file = fh;
+        input.name = include_file;
+        input.composition = ctx->composition;
+        yaml_parser_set_input(&parser, compose_input, &input);
+        code = compose_read(conf, ctx, &fstate, &parser);
+        yaml_parser_delete(&parser);
     }
 
-    fclose(fh);
+    if (fh != entry_file) {
+        fclose(fh);
+    }
     ctx->level--;
 
     flb_sds_destroy(include_file);
+    flb_free(fstate.directory_context);
     flb_sds_destroy(include_dir);
 
     return code;
@@ -3329,6 +4213,7 @@ struct flb_cf *flb_cf_yaml_create(struct flb_cf *conf, char *file_path,
     int ret;
     int conf_created = FLB_FALSE;
     struct local_ctx ctx;
+    struct yaml_composition composition = {0};
 
     if (!conf) {
         conf = flb_cf_create();
@@ -3352,8 +4237,14 @@ struct flb_cf *flb_cf_yaml_create(struct flb_cf *conf, char *file_path,
         return NULL;
     }
 
-    /* process the entry poing config file */
-    ret = read_config(conf, &ctx, NULL, file_path);
+    ctx.composition = &composition;
+
+    /* Compose and resolve before interpreting runtime sections. */
+    ret = read_config(conf, &ctx, NULL, file_path, FLB_FALSE);
+    if (ret == 0) {
+        ret = compose_interpret(conf, &ctx, file_path);
+    }
+    compose_destroy(&composition);
 
     if (ret == -1) {
         if (conf_created == FLB_TRUE) {

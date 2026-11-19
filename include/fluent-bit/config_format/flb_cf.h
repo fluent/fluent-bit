@@ -20,6 +20,8 @@
 #ifndef FLB_CONFIG_FORMAT_MAIN_H
 #define FLB_CONFIG_FORMAT_MAIN_H
 
+#include <stdio.h>
+
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_sds.h>
 #include <monkey/mk_core.h>
@@ -86,6 +88,9 @@ struct flb_cf_section {
 struct flb_cf {
     /* origin format */
     int format;
+
+    /* Borrowed stream for the entry file while parsing a Fleet reload. */
+    FILE *entry_file;
 
     /* global service */
     struct flb_cf_section *service;
