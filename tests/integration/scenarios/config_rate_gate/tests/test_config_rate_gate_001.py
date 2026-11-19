@@ -103,6 +103,63 @@ def test_rate_gate_recovers_after_input_becomes_idle():
         service.stop()
 
 
+def test_rate_gate_observes_throttle_deferred_routes():
+    service = Service("config_rate_gate_output_throttle.yaml", with_receiver=True)
+    configure_http_response(status_code=429, headers=[("Retry-After", "5")])
+
+    def gauge(metrics, name, input_name):
+        series = f'fluentbit_input_rate_gate_{name}{{name="{input_name}"}} '
+        return next(float(line.split()[1]) for line in metrics.splitlines()
+                    if line.startswith(series))
+
+    def sample():
+        response = requests.get(metrics_url, timeout=2)
+        response.raise_for_status()
+        return response.text
+
+    def deferred_metrics():
+        metrics = sample()
+        if gauge(metrics, "deferred_routes", "routed") > 0:
+            return metrics
+        return None
+
+    try:
+        service.start()
+        metrics_url = (
+            f"http://127.0.0.1:{service.flb.http_monitoring_port}/api/v2/metrics/prometheus"
+        )
+        service.wait_for_requests(1)
+        service.service.wait_for_http_endpoint(metrics_url)
+        metrics = service.service.wait_for_condition(
+            deferred_metrics, interval=0.1, description="deferred routes for the routed input"
+        )
+        assert gauge(metrics, "retry_attempts", "routed") == 0
+        assert gauge(metrics, "deferred_routes", "independent") == 0
+        offset = len(read_file(service.flb.log_file))
+
+        def new_deliveries():
+            logs = read_file(service.flb.log_file)[offset:]
+            if "independent input" in logs and "fanout during cooldown" in logs:
+                return logs
+            return None
+
+        logs = service.service.wait_for_condition(
+            new_deliveries, interval=0.1, description="both inputs deliver during cooldown",
+        )
+        assert gauge(sample(), "deferred_routes", "routed") > 0
+        assert "independent paused" not in logs
+        attempts = list(data_storage["requests"])
+        configure_http_response(status_code=200, headers=[])
+        service.wait_for_requests(len(attempts) + 1)
+        service.service.wait_for_condition(
+            lambda: gauge(sample(), "deferred_routes", "routed") == 0,
+            interval=0.1,
+            description="deferred routes to drain after cooldown",
+        )
+    finally:
+        service.stop()
+
+
 @pytest.mark.parametrize(
     "config_file, expected_message",
     [
