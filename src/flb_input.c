@@ -249,7 +249,8 @@ struct flb_config_map input_global_properties[] = {
     {
         FLB_CONFIG_MAP_BOOL, "rate_gate.backpressure", "true",
         0, FLB_FALSE, 0,
-        "Apply retry and busy chunk pressure when computing effective limits."
+        "Apply retry, busy chunk, and throttle-deferred route pressure "
+        "when computing effective limits."
     },
     {
         FLB_CONFIG_MAP_DOUBLE, "rate_gate.resume_ratio", "0.80",
@@ -699,6 +700,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->rate_gate_max_records = 0;
         instance->rate_gate_busy_chunks = 0;
         instance->rate_gate_retry_attempts = 0;
+        instance->rate_gate_deferred_routes = 0;
         instance->rate_gate_timer = NULL;
 #endif
         instance->storage_buf_status = FLB_INPUT_RUNNING;
@@ -1707,6 +1709,16 @@ int flb_input_instance_init(struct flb_input_instance *ins,
                          "Retry attempts considered by the input rate gate.",
                          1, (char *[]) {"name"});
     cmt_gauge_set(ins->cmt_rate_gate_retry_attempts, ts, 0, 1, (char *[]) {name});
+
+    ins->cmt_rate_gate_deferred_routes =
+        cmt_gauge_create(ins->cmt,
+                         "fluentbit", "input", "rate_gate_deferred_routes",
+                         "Throttle-deferred output routes considered by the input rate gate.",
+                         1, (char *[]) {"name"});
+    if (ins->cmt_rate_gate_deferred_routes != NULL) {
+        cmt_gauge_set(ins->cmt_rate_gate_deferred_routes, ts, 0, 1, (char *[]) {name});
+    }
+
     if (logs_tag_records_enabled == FLB_TRUE) {
         /* fluentbit_input_logs_tag_records_total */
         ins->cmt_logs_tag_records = \
@@ -2464,22 +2476,15 @@ static void flb_input_rate_gate_effective_limit(struct flb_input_instance *ins,
                                                 int for_resume,
                                                 double *effective_limit)
 {
-    size_t pressure;
+    double pressure;
     double limit;
 
     limit = max_limit;
-    pressure = 0;
-    if (ins->rate_gate_use_backpressure == FLB_TRUE) {
-        if (ins->rate_gate_busy_chunks > SIZE_MAX - ins->rate_gate_retry_attempts) {
-            pressure = SIZE_MAX;
-        }
-        else {
-            pressure = ins->rate_gate_busy_chunks + ins->rate_gate_retry_attempts;
-        }
-    }
-
-    if (pressure > 0 && limit > 0.0) {
-        limit = limit / ((double) pressure + 1.0);
+    if (ins->rate_gate_use_backpressure == FLB_TRUE && limit > 0.0) {
+        pressure = (double) (ins->rate_gate_busy_chunks - ins->rate_gate_busy_deferred_chunks) +
+                   (double) ins->rate_gate_retry_attempts +
+                   (double) ins->rate_gate_deferred_routes;
+        limit /= pressure + 1.0;
     }
 
     if (for_resume == FLB_TRUE) {
@@ -2634,7 +2639,9 @@ static void flb_input_rate_gate_collect_backpressure(struct flb_input_instance *
     }
 
     ins->rate_gate_busy_chunks = 0;
+    ins->rate_gate_busy_deferred_chunks = 0;
     ins->rate_gate_retry_attempts = 0;
+    ins->rate_gate_deferred_routes = 0;
 
     if (ins->rate_gate_use_backpressure != FLB_TRUE) {
         return;
@@ -2645,12 +2652,24 @@ static void flb_input_rate_gate_collect_backpressure(struct flb_input_instance *
         if (ic->busy == FLB_TRUE) {
             if (ins->rate_gate_busy_chunks < SIZE_MAX) {
                 ins->rate_gate_busy_chunks++;
+                if (ic->task && ic->task->deferred_routes > 0) {
+                    ins->rate_gate_busy_deferred_chunks++;
+                }
             }
         }
     }
 
     mk_list_foreach(head, &ins->tasks) {
         task = mk_list_entry(head, struct flb_task, _head);
+
+        /* Deferred routes retain backlog without recording a failed attempt. */
+        if ((size_t) task->deferred_routes > SIZE_MAX - ins->rate_gate_deferred_routes) {
+            ins->rate_gate_deferred_routes = SIZE_MAX;
+        }
+        else {
+            ins->rate_gate_deferred_routes += (size_t) task->deferred_routes;
+        }
+
         mk_list_foreach(retry_head, &task->retries) {
             retry = mk_list_entry(retry_head, struct flb_task_retry, _head);
             if (retry->attempts > 0 &&
@@ -2661,6 +2680,29 @@ static void flb_input_rate_gate_collect_backpressure(struct flb_input_instance *
                 ins->rate_gate_retry_attempts += (size_t) retry->attempts;
             }
         }
+    }
+}
+
+static void flb_input_rate_gate_report(struct flb_input_instance *ins, uint64_t ts)
+{
+    char *name;
+
+    name = (char *) flb_input_name(ins);
+    if (ins->cmt_rate_gate_limited != NULL) {
+        cmt_gauge_set(ins->cmt_rate_gate_limited, ts,
+                      ins->rate_gate_status == FLB_INPUT_PAUSED, 1, (char *[]) {name});
+    }
+    if (ins->cmt_rate_gate_busy_chunks != NULL) {
+        cmt_gauge_set(ins->cmt_rate_gate_busy_chunks, ts,
+                      (double) ins->rate_gate_busy_chunks, 1, (char *[]) {name});
+    }
+    if (ins->cmt_rate_gate_retry_attempts != NULL) {
+        cmt_gauge_set(ins->cmt_rate_gate_retry_attempts, ts,
+                      (double) ins->rate_gate_retry_attempts, 1, (char *[]) {name});
+    }
+    if (ins->cmt_rate_gate_deferred_routes != NULL) {
+        cmt_gauge_set(ins->cmt_rate_gate_deferred_routes, ts,
+                      (double) ins->rate_gate_deferred_routes, 1, (char *[]) {name});
     }
 }
 
@@ -2776,7 +2818,6 @@ int flb_input_rate_gate_protect(struct flb_input_instance *ins)
 {
     int ret;
     uint64_t ts;
-    char *name;
 
     if (ins == NULL || ins->rate_gate_enabled != FLB_TRUE) {
         return FLB_FALSE;
@@ -2787,6 +2828,7 @@ int flb_input_rate_gate_protect(struct flb_input_instance *ins)
     flb_input_rate_gate_collect_backpressure(ins);
 
     if (flb_input_rate_gate_is_limited(ins) == FLB_FALSE) {
+        flb_input_rate_gate_report(ins, ts);
         return FLB_FALSE;
     }
 
@@ -2795,6 +2837,7 @@ int flb_input_rate_gate_protect(struct flb_input_instance *ins)
         if (ret == -1) {
             flb_error("[input] %s could not schedule rate gate recovery; "
                       "continuing ingestion", flb_input_name(ins));
+            flb_input_rate_gate_report(ins, ts);
             return FLB_FALSE;
         }
 
@@ -2804,18 +2847,7 @@ int flb_input_rate_gate_protect(struct flb_input_instance *ins)
         ins->rate_gate_status = FLB_INPUT_PAUSED;
     }
 
-    name = (char *) flb_input_name(ins);
-    if (ins->cmt_rate_gate_limited != NULL) {
-        cmt_gauge_set(ins->cmt_rate_gate_limited, ts, 1, 1, (char *[]) {name});
-    }
-    if (ins->cmt_rate_gate_busy_chunks != NULL) {
-        cmt_gauge_set(ins->cmt_rate_gate_busy_chunks, ts,
-                      (double) ins->rate_gate_busy_chunks, 1, (char *[]) {name});
-    }
-    if (ins->cmt_rate_gate_retry_attempts != NULL) {
-        cmt_gauge_set(ins->cmt_rate_gate_retry_attempts, ts,
-                      (double) ins->rate_gate_retry_attempts, 1, (char *[]) {name});
-    }
+    flb_input_rate_gate_report(ins, ts);
 
     return FLB_TRUE;
 }
@@ -2824,7 +2856,6 @@ void flb_input_rate_gate_maybe_resume(struct flb_input_instance *ins)
 {
     int can_resume;
     uint64_t ts;
-    char *name;
 
     if (ins == NULL || ins->rate_gate_enabled != FLB_TRUE) {
         return;
@@ -2850,22 +2881,7 @@ void flb_input_rate_gate_maybe_resume(struct flb_input_instance *ins)
         }
     }
 
-    name = (char *) flb_input_name(ins);
-    if (ins->cmt_rate_gate_limited != NULL &&
-        ins->rate_gate_status == FLB_INPUT_RUNNING) {
-        cmt_gauge_set(ins->cmt_rate_gate_limited, ts, 0, 1, (char *[]) {name});
-    }
-    else if (ins->cmt_rate_gate_limited != NULL) {
-        cmt_gauge_set(ins->cmt_rate_gate_limited, ts, 1, 1, (char *[]) {name});
-    }
-    if (ins->cmt_rate_gate_busy_chunks != NULL) {
-        cmt_gauge_set(ins->cmt_rate_gate_busy_chunks, ts,
-                      (double) ins->rate_gate_busy_chunks, 1, (char *[]) {name});
-    }
-    if (ins->cmt_rate_gate_retry_attempts != NULL) {
-        cmt_gauge_set(ins->cmt_rate_gate_retry_attempts, ts,
-                      (double) ins->rate_gate_retry_attempts, 1, (char *[]) {name});
-    }
+    flb_input_rate_gate_report(ins, ts);
 }
 
 void flb_input_rate_update(struct flb_input_instance *ins,
