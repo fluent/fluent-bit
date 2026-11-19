@@ -451,12 +451,19 @@ def test_out_http_bearer_token_file_missing_retries(tmp_path):
 
     try:
         log_text = service.wait_for_log_message("could not read http_bearer_token_file", timeout=15)
+
+        assert str(missing_token_path) in log_text
+        assert "test-token-value" not in log_text
+        assert not data_storage["requests"]
+
+        # The retry must succeed once the token file becomes valid.
+        configure_http_response(status_code=200, body={"status": "received"})
+        missing_token_path.write_text("recovered-token", encoding="utf-8")
+        requests_seen = service.wait_for_requests(1, timeout=30)
     finally:
         service.stop()
 
-    assert str(missing_token_path) in log_text
-    assert "test-token-value" not in log_text
-    assert not data_storage["requests"]
+    assert requests_seen[0]["headers"].get("Authorization") == "Bearer recovered-token"
 
 
 def test_out_http_bearer_token_file_empty_retries(tmp_path):
@@ -472,11 +479,48 @@ def test_out_http_bearer_token_file_empty_retries(tmp_path):
 
     try:
         log_text = service.wait_for_log_message("is empty after trimming", timeout=15)
+
+        assert str(empty_token_path) in log_text
+        assert not data_storage["requests"]
+
+        # The retry must succeed once the token file becomes valid.
+        configure_http_response(status_code=200, body={"status": "received"})
+        empty_token_path.write_text("recovered-token\n", encoding="utf-8")
+        requests_seen = service.wait_for_requests(1, timeout=30)
     finally:
         service.stop()
 
-    assert str(empty_token_path) in log_text
-    assert not data_storage["requests"]
+    assert requests_seen[0]["headers"].get("Authorization") == "Bearer recovered-token"
+
+
+def test_out_http_bearer_token_file_body_key_stops_after_auth_failure(tmp_path):
+    """Verify a token file failure stops the body_key loop so no later record masks the retry."""
+    empty_token_path = tmp_path / "bearer_token_file_body_key.token"
+    empty_token_path.write_text("\n", encoding="utf-8")
+
+    service = Service(
+        "out_http_bearer_token_file_body_key.yaml",
+        extra_env={"BEARER_TOKEN_FILE_TEST": str(empty_token_path)},
+    )
+    service.start()
+
+    try:
+        service.wait_for_log_message("is empty after trimming", timeout=15)
+
+        # Two records share the chunk. The first attempt must stop at the first failure, and
+        # the retry backoff is longer than this wait, so only one error may be logged.
+        time.sleep(1)
+        log_text = service.wait_for_log_message("is empty after trimming", timeout=5)
+        assert log_text.count("is empty after trimming") == 1
+        assert not data_storage["requests"]
+
+        configure_http_response(status_code=200, body={"status": "received"})
+        empty_token_path.write_text("recovered-token", encoding="utf-8")
+        requests_seen = service.wait_for_requests(1, timeout=30)
+    finally:
+        service.stop()
+
+    assert requests_seen[0]["headers"].get("Authorization") == "Bearer recovered-token"
 
 
 def test_out_http_oauth2_timeout_retries_hung_token_endpoint():
