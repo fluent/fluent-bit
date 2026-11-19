@@ -113,3 +113,46 @@ def test_yaml_include_failure(tmp_path, monkeypatch, invalid_parent):
         assert "extra.yaml" in read_file(service.flb.log_file)
     finally:
         service.stop()
+
+
+def test_relative_glob_match_is_opened_once(tmp_path, monkeypatch):
+    config = tmp_path / "cfg"
+    parts = config / "parts"
+    shadow = config / "cfg" / "parts"
+    parts.mkdir(parents=True)
+    shadow.mkdir(parents=True)
+    (parts / "input.yaml").write_text(INPUT, encoding="utf-8")
+    (shadow / "input.yaml").write_text("invalid: [", encoding="utf-8")
+    write_master(config / "main.yaml", "parts/*.yaml")
+    monkeypatch.chdir(tmp_path)
+    service = FluentBitTestService("cfg/main.yaml")
+    try:
+        service.start()
+        service.wait_for_condition(
+            lambda: "include-selected" in read_file(service.flb.log_file),
+            timeout=15,
+            description="record from the matched file",
+        )
+    finally:
+        service.stop()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX directory permissions")
+def test_inaccessible_relative_glob(tmp_path):
+    directory = tmp_path / "parts"
+    directory.mkdir()
+    master = tmp_path / "main.yaml"
+    write_master(master, "parts/*.yaml")
+    directory.chmod(0)
+    try:
+        if os.access(directory, os.R_OK):
+            pytest.skip("process can read directories with mode 000")
+        service = FluentBitTestService(str(master))
+        try:
+            with pytest.raises(FluentBitStartupError):
+                service.start()
+            assert "cannot read glob directory" in read_file(service.flb.log_file)
+        finally:
+            service.stop()
+    finally:
+        directory.chmod(0o700)
