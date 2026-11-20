@@ -1025,6 +1025,44 @@ static void test_ec2_imds_create_and_destroy()
     flb_config_exit(config_fluent);
 }
 
+static void test_ec2_provider_custom_endpoint()
+{
+    setenv("AWS_EC2_METADATA_SERVICE_ENDPOINT", "http://127.0.0.1:9911", 1);
+    
+    setup_test(FLB_AWS_CLIENT_MOCK(
+        response(
+            expect(URI, "/latest/api/token"),
+            expect(METHOD, FLB_HTTP_PUT),
+            set(STATUS, 200),
+            set(PAYLOAD, "TESTTOKEN")
+        ),
+        response(
+            expect(URI, "/latest/meta-data/iam/security-credentials/"),
+            expect(HEADER, "X-aws-ec2-metadata-token", "TESTTOKEN"),
+            expect(METHOD, FLB_HTTP_GET),
+            set(STATUS, 200),
+            set(PAYLOAD, "test-role")
+        ),
+        response(
+            expect(URI, "/latest/meta-data/iam/security-credentials/test-role"),
+            expect(HEADER, "X-aws-ec2-metadata-token", "TESTTOKEN"),
+            expect(METHOD, FLB_HTTP_GET),
+            set(STATUS, 200),
+            set(PAYLOAD, "{\"AccessKeyId\":\"AKIATEST\",\"SecretAccessKey\":\"SECRET\",\"Token\":\"TOKEN\"}")
+        )
+    ));
+
+    creds = provider->provider_vtable->get_credentials(provider);
+    TEST_CHECK(creds != NULL);
+    TEST_CHECK(strcmp("AKIATEST", creds->access_key_id) == 0);
+    TEST_CHECK(strcmp("SECRET", creds->secret_access_key) == 0);
+    TEST_CHECK(strcmp("TOKEN", creds->session_token) == 0);
+
+    flb_aws_credentials_destroy(creds);
+    unsetenv("AWS_EC2_METADATA_SERVICE_ENDPOINT");
+    cleanup_test();
+}
+
 TEST_LIST = {
     { "test_ec2_provider_v2" , test_ec2_provider_v2},
     { "test_ec2_provider_v1" , test_ec2_provider_v1},
@@ -1033,5 +1071,6 @@ TEST_LIST = {
     { "test_ec2_provider_acquire_token_error" , test_ec2_provider_acquire_token_error},
     { "test_ec2_provider_metadata_request_error" , test_ec2_provider_metadata_request_error},
     { "test_ec2_imds_create_and_destroy" , test_ec2_imds_create_and_destroy},
+    { "test_ec2_provider_custom_endpoint" , test_ec2_provider_custom_endpoint},
     { 0 }
 };

@@ -23,7 +23,11 @@
 #define FLB_AWS_IMDS_HOST "169.254.169.254"
 #define FLB_AWS_IMDS_HOST_LEN 15
 #define FLB_AWS_IMDS_PORT 80
-#define FLB_AWS_IMDS_TIMEOUT 1  /* 1 second */
+#define FLB_AWS_IMDS_TIMEOUT 1  /* 1 second - for standard AWS IMDS */
+#define FLB_AWS_IMDS_TIMEOUT_CUSTOM 10  /* 10 seconds - for custom IMDS endpoints like IAM Roles Anywhere */
+
+/* Environment variable for custom IMDS endpoint */
+#define AWS_EC2_METADATA_SERVICE_ENDPOINT_ENV "AWS_EC2_METADATA_SERVICE_ENDPOINT"
 
 #define FLB_AWS_IMDS_VERSION_EVALUATE 0
 #define FLB_AWS_IMDS_VERSION_1 1
