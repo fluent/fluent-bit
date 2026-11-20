@@ -361,6 +361,10 @@ static int in_tail_watcher_callback(struct flb_input_instance *ins,
             flb_tail_file_rotated(file);
         }
     }
+
+    /* Files that replaced a rotated file after the rotation was handled */
+    flb_tail_file_discover_rotated_replacements(ctx);
+
     return ret;
 }
 
@@ -631,7 +635,8 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_TIME, "watcher_interval", "2s",
      0, FLB_TRUE, offsetof(struct flb_tail_config, watcher_interval),
-     "interval to check symbolic link rotation and retry transient file read failures."
+     "interval to check symbolic link rotation, files that replaced a rotated "
+     "file and retry transient file read failures."
     },
     {
      FLB_CONFIG_MAP_TIME, "progress_check_interval", "2s",
