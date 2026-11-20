@@ -700,6 +700,9 @@ void flb_config_exit(struct flb_config *config)
     if (config->conf_path_file) {
         flb_sds_destroy(config->conf_path_file);
     }
+    if (config->hot_reload_config_file) {
+        fclose(config->hot_reload_config_file);
+    }
 
     /* Working directory */
     if (config->workdir) {
