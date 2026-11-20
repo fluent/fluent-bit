@@ -1961,9 +1961,6 @@ static int flb_main_run(int argc, char **argv)
     if (exit_signal) {
         flb_signal_exit(exit_signal);
     }
-    if (flb_bin_restarting != FLB_RELOAD_ABORTED) {
-        ret = ctx->config->exit_status_code;
-    }
 
     cf_opts = flb_cf_context_get();
 
@@ -1990,6 +1987,7 @@ static int flb_main_run(int argc, char **argv)
      }
      else {
          flb_stop(ctx);
+         ret = ctx->config->exit_status_code;
          flb_destroy(ctx);
      }
 
