@@ -33,6 +33,12 @@
 #define FLB_AZ_LI_TLS_MODE          FLB_IO_TLS
 /* refresh token every 60 minutes */
 #define FLB_AZ_LI_TOKEN_TIMEOUT 3600
+/*
+ * maximum request body accepted by the Logs Ingestion API. The service limits
+ * list 1 MB, for compressed and uncompressed data, without a byte count, so
+ * the smaller reading is used.
+ */
+#define FLB_AZ_LI_MAX_PAYLOAD_SIZE  1000000
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_output.h>
