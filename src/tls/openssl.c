@@ -23,6 +23,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_str.h>
+#include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/tls/flb_tls.h>
 #include <fluent-bit/tls/flb_tls_info.h>
@@ -61,6 +62,10 @@
  */
 #define OPENSSL_1_1_0 0x010100000L
 
+#ifdef _MSC_VER
+#define WINDOWS_ROOT_LOOKUP_INTERVAL_MS 60000
+#endif
+
 /* OpenSSL library context */
 struct tls_context {
     int debug_level;
@@ -68,6 +73,9 @@ struct tls_context {
     int mode;
     char *alpn;
 #if defined(FLB_SYSTEM_WINDOWS)
+    HANDLE root_worker;
+    ULONGLONG next_root_lookup;
+    int auto_root_update;
     char *certstore_name;
     int use_enterprise_store;
     CRYPT_HASH_BLOB *allowed_thumbprints;
@@ -244,6 +252,10 @@ static void tls_context_destroy(void *ctx_backend)
     }
 
 #if defined(FLB_SYSTEM_WINDOWS)
+    if (ctx->root_worker != NULL) {
+        WaitForSingleObject(ctx->root_worker, INFINITE);
+        CloseHandle(ctx->root_worker);
+    }
     if (ctx->certstore_name != NULL) {
         flb_free(ctx->certstore_name);
 
@@ -638,7 +650,137 @@ static int windows_resolve_certstore_location(const char *configured_name,
     return FLB_TRUE;
 }
 
-static int windows_load_system_certificates(struct tls_context *ctx)
+/* The worker owns the end certificate and its memory store. It never touches
+ * OpenSSL, a connection, or the TLS context. Windows policy governs root updates.
+ */
+static DWORD WINAPI windows_resolve_peer_chain(void *arg)
+{
+    PCCERT_CONTEXT leaf = arg;
+    HCERTSTORE peers = leaf->hCertStore;
+    CERT_CHAIN_PARA params = {0};
+    PCCERT_CHAIN_CONTEXT chain;
+    DWORD status;
+
+    params.cbSize = sizeof(params);
+    if (CertGetCertificateChain(NULL, leaf, NULL, peers, &params, CERT_CHAIN_DISABLE_AIA,
+                                NULL, &chain)) {
+        status = chain->TrustStatus.dwErrorStatus;
+        CertFreeCertificateChain(chain);
+    }
+    else {
+        status = GetLastError();
+    }
+    CertFreeCertificateContext(leaf);
+    CertCloseStore(peers, 0);
+    return status;
+}
+
+static int windows_add_peer(HCERTSTORE peers, X509 *cert, PCCERT_CONTEXT *result)
+{
+    unsigned char *der = NULL;
+    int length;
+    int ret;
+
+    length = i2d_X509(cert, &der);
+    ret = length > 0 && CertAddEncodedCertificateToStore(peers, X509_ASN_ENCODING, der,
+                                                         length, CERT_STORE_ADD_ALWAYS, result);
+    OPENSSL_free(der);
+    return ret;
+}
+
+/* Called under the TLS mutex. Retain OpenSSL's verdict and only schedule work
+ * when the chain lacks a trusted issuer. Each context has at most one worker.
+ */
+static int windows_verify_peer(int ok, X509_STORE_CTX *store_ctx)
+{
+    int i;
+    int error;
+    SSL *ssl;
+    struct tls_context *ctx;
+    ULONGLONG now;
+    HCERTSTORE peers;
+    PCCERT_CONTEXT leaf = NULL;
+    STACK_OF(X509) *untrusted;
+    X509 *target;
+
+    if (ok) {
+        return ok;
+    }
+    error = X509_STORE_CTX_get_error(store_ctx);
+    if (error != X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY &&
+        error != X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT &&
+        error != X509_V_ERR_SELF_SIGNED_CERT_IN_CHAIN &&
+        error != X509_V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT) {
+        return ok;
+    }
+
+    ssl = X509_STORE_CTX_get_ex_data(store_ctx, SSL_get_ex_data_X509_STORE_CTX_idx());
+    if (ssl == NULL) {
+        return ok;
+    }
+    ctx = SSL_get_app_data(ssl);
+    now = GetTickCount64();
+    if (ctx == NULL || ctx->root_worker != NULL || now < ctx->next_root_lookup) {
+        return ok;
+    }
+    ctx->next_root_lookup = now + WINDOWS_ROOT_LOOKUP_INTERVAL_MS;
+#if OPENSSL_VERSION_NUMBER < OPENSSL_1_1_0
+    untrusted = store_ctx->untrusted;
+    target = store_ctx->cert;
+#else
+    untrusted = X509_STORE_CTX_get0_untrusted(store_ctx);
+    target = X509_STORE_CTX_get0_cert(store_ctx);
+#endif
+    ERR_set_mark();
+    peers = CertOpenStore(CERT_STORE_PROV_MEMORY, 0, 0, 0, NULL);
+    if (peers != NULL && windows_add_peer(peers, target, &leaf)) {
+        for (i = 0; i < sk_X509_num(untrusted); i++) {
+            if (sk_X509_value(untrusted, i) != target &&
+                !windows_add_peer(peers, sk_X509_value(untrusted, i), NULL)) {
+                break;
+            }
+        }
+        if (i >= sk_X509_num(untrusted)) {
+            ctx->root_worker = CreateThread(NULL, 0, windows_resolve_peer_chain, (void *) leaf,
+                                            0, NULL);
+        }
+    }
+    ERR_pop_to_mark();
+    if (ctx->root_worker == NULL) {
+        flb_warn("[tls] could not start Windows certificate chain lookup");
+        if (leaf != NULL) {
+            CertFreeCertificateContext(leaf);
+        }
+        if (peers != NULL) {
+            CertCloseStore(peers, 0);
+        }
+    }
+    else {
+        flb_debug("[tls] scheduled Windows certificate chain lookup");
+    }
+    return ok;
+}
+
+static int windows_cert_disallowed(HCERTSTORE disallowed, PCCERT_CONTEXT cert)
+{
+    PCCERT_CONTEXT match;
+    DWORD error;
+
+    match = CertFindCertificateInStore(disallowed, X509_ASN_ENCODING, 0,
+                                       CERT_FIND_EXISTING, cert, NULL);
+    if (match != NULL) {
+        CertFreeCertificateContext(match);
+        return FLB_TRUE;
+    }
+    error = GetLastError();
+    if (error != CRYPT_E_NOT_FOUND) {
+        flb_warn("[tls] failed to check the Windows Disallowed store: %lu", error);
+        return FLB_TRUE;
+    }
+    return FLB_FALSE;
+}
+
+static int windows_import_system_certificates(struct tls_context *ctx, HCERTSTORE disallowed)
 {
     int ret;
     HANDLE win_store;
@@ -714,6 +856,9 @@ static int windows_load_system_certificates(struct tls_context *ctx)
                                                           &ctx->allowed_thumbprints[i],
                                                           win_cert)) != NULL) {
 
+                if (windows_cert_disallowed(disallowed, win_cert)) {
+                    continue;
+                }
                 win_cert_data = win_cert->pbCertEncoded;
                 ossl_cert = d2i_X509(NULL, &win_cert_data, win_cert->cbCertEncoded);
                 if (!ossl_cert) {
@@ -754,6 +899,9 @@ static int windows_load_system_certificates(struct tls_context *ctx)
 
     /* Iterate over certificates in the store */
     while ((win_cert = CertEnumCertificatesInStore(win_store, win_cert)) != NULL) {
+        if (windows_cert_disallowed(disallowed, win_cert)) {
+            continue;
+        }
         /* Check if the certificate is encoded in ASN.1 DER format */
         if (win_cert->dwCertEncodingType & X509_ASN_ENCODING) {
             /*
@@ -802,6 +950,21 @@ static int windows_load_system_certificates(struct tls_context *ctx)
     flb_debug("[tls] successfully loaded certificates from windows system %s store.",
               configured_name);
     return 0;
+}
+
+static int windows_load_system_certificates(struct tls_context *ctx)
+{
+    int ret;
+    HCERTSTORE disallowed;
+
+    disallowed = CertOpenSystemStoreA(0, "Disallowed");
+    if (disallowed == NULL) {
+        flb_error("[tls] cannot open Windows Disallowed store: %lu", GetLastError());
+        return -1;
+    }
+    ret = windows_import_system_certificates(ctx, disallowed);
+    CertCloseStore(disallowed, 0);
+    return ret;
 }
 #endif
 
@@ -955,19 +1118,23 @@ static void ssl_key_logger(const SSL *ssl, const char *line)
 }
 #endif
 
-static void *tls_context_create(int verify,
-                                int debug,
-                                int mode,
-                                const char *vhost,
-                                const char *ca_path,
-                                const char *ca_file,
-                                const char *crt_file,
-                                const char *key_file,
-                                const char *key_passwd)
+static void *tls_context_create_with_ca(int verify,
+                                        int debug,
+                                        int mode,
+                                        const char *vhost,
+                                        const char *ca_path,
+                                        const char *ca_file,
+                                        const char *crt_file,
+                                        const char *key_file,
+                                        const char *key_passwd,
+                                        int load_default_ca)
 {
     int ret;
     SSL_CTX *ssl_ctx;
     struct tls_context *ctx;
+#ifdef _MSC_VER
+    const char *auto_root_update;
+#endif
     char err_buf[256];
     char *key_log_filename;
 
@@ -1048,6 +1215,10 @@ static void *tls_context_create(int verify,
     ctx->mode = mode;
     ctx->alpn = NULL;
     ctx->debug_level = debug;
+#ifdef _MSC_VER
+    auto_root_update = getenv("FLB_WINDOWS_AUTO_ROOT_UPDATE");
+    ctx->auto_root_update = auto_root_update == NULL || flb_utils_bool(auto_root_update) == FLB_TRUE;
+#endif
 #if defined(FLB_SYSTEM_WINDOWS)
     ctx->certstore_name = NULL;
     ctx->use_enterprise_store = 0;
@@ -1084,7 +1255,7 @@ static void *tls_context_create(int verify,
             goto error;
         }
     }
-    else {
+    else if (load_default_ca) {
         load_system_certificates(ctx);
     }
 
@@ -1126,6 +1297,14 @@ static void *tls_context_create(int verify,
  error:
     tls_context_destroy(ctx);
     return NULL;
+}
+
+static void *tls_context_create(int verify, int debug, int mode, const char *vhost,
+                                const char *ca_path, const char *ca_file, const char *crt_file,
+                                const char *key_file, const char *key_passwd)
+{
+    return tls_context_create_with_ca(verify, debug, mode, vhost, ca_path, ca_file,
+                                      crt_file, key_file, key_passwd, FLB_TRUE);
 }
 
 #if !defined(TLS1_3_VERSION)
@@ -1251,11 +1430,15 @@ static int tls_set_ciphers(struct flb_tls *tls, const char *ciphers)
 static int tls_set_certstore_name(struct flb_tls *tls, const char *certstore_name)
 {
     struct tls_context *ctx = tls->ctx;
+    char *name;
 
+    name = flb_strdup(certstore_name);
+    if (name == NULL) {
+        return -1;
+    }
     pthread_mutex_lock(&ctx->mutex);
-
-    ctx->certstore_name = flb_strdup(certstore_name);
-
+    flb_free(ctx->certstore_name);
+    ctx->certstore_name = name;
     pthread_mutex_unlock(&ctx->mutex);
 
     return 0;
@@ -1430,15 +1613,17 @@ static int tls_context_reload(struct flb_tls *tls)
 
     ctx = tls->ctx;
 
-    new_ctx = tls_context_create(tls->verify,
-                                 tls->debug,
-                                 tls->mode,
-                                 tls->vhost,
-                                 tls->ca_path,
-                                 tls->ca_file,
-                                 tls->crt_file,
-                                 tls->key_file,
-                                 tls->key_passwd);
+    /* The configured system store is loaded below, after applying its settings. */
+    new_ctx = tls_context_create_with_ca(tls->verify,
+                                         tls->debug,
+                                         tls->mode,
+                                         tls->vhost,
+                                         tls->ca_path,
+                                         tls->ca_file,
+                                         tls->crt_file,
+                                         tls->key_file,
+                                         tls->key_passwd,
+                                         !tls->system_certificates_loaded);
     if (new_ctx == NULL) {
         return -1;
     }
@@ -1526,6 +1711,9 @@ static void *tls_session_create(struct flb_tls *tls,
     struct tls_session *session;
     struct tls_context *ctx = tls->ctx;
     SSL *ssl;
+#ifdef _MSC_VER
+    DWORD status;
+#endif
 
     session = flb_calloc(1, sizeof(struct tls_session));
     if (!session) {
@@ -1548,6 +1736,30 @@ static void *tls_session_create(struct flb_tls *tls,
     session->ssl = ssl;
     session->fd = fd;
     SSL_set_fd(ssl, fd);
+#ifdef _MSC_VER
+    if (ctx->root_worker != NULL && WaitForSingleObject(ctx->root_worker, 0) == WAIT_OBJECT_0) {
+        if (GetExitCodeThread(ctx->root_worker, &status)) {
+            if (status == 0) {
+                flb_info("[tls] Windows resolved the peer certificate chain");
+            }
+            else {
+                flb_debug("[tls] Windows certificate chain lookup returned 0x%08lx", status);
+            }
+        }
+        CloseHandle(ctx->root_worker);
+        ctx->root_worker = NULL;
+    }
+    if (ctx->auto_root_update && tls->system_certificates_loaded && !tls->ca_file && !tls->ca_path &&
+        (SSL_get_verify_mode(ssl) & SSL_VERIFY_PEER)) {
+        if (SSL_set_app_data(ssl, ctx) != 1) {
+            SSL_free(ssl);
+            flb_free(session);
+            pthread_mutex_unlock(&ctx->mutex);
+            return NULL;
+        }
+        SSL_set_verify(ssl, SSL_get_verify_mode(ssl), windows_verify_peer);
+    }
+#endif
 
     /*
      * TLS Debug Levels:
