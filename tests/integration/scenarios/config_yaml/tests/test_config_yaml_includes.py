@@ -102,7 +102,7 @@ def test_yaml_include_failure(tmp_path, monkeypatch, invalid_parent):
     write_master(master, "extra.yaml")
     if invalid_parent:
         # An existing but malformed parent-relative file must not be bypassed.
-        (config_dir / "extra.yaml").write_text("invalid: [", encoding="utf-8")
+        (config_dir / "extra.yaml").write_text("service:\n  invalid: [\n", encoding="utf-8")
         (working_dir / "extra.yaml").write_text(INPUT, encoding="utf-8")
 
     monkeypatch.chdir(working_dir)
@@ -110,7 +110,10 @@ def test_yaml_include_failure(tmp_path, monkeypatch, invalid_parent):
     try:
         with pytest.raises(FluentBitStartupError):
             service.start()
-        assert "extra.yaml" in read_file(service.flb.log_file)
+        log = read_file(service.flb.log_file)
+        assert "extra.yaml" in log
+        if invalid_parent:
+            assert "hint: check line 2" in log
     finally:
         service.stop()
 
