@@ -1,6 +1,8 @@
 # Fluent Bit Maintenance Policy
 
 This document outlines the maintenance strategy and version support for Fluent Bit.
+For how releases, backports and container image rebuilds are carried out, see the
+[Maintainers Guide](MAINTAINERS_GUIDE.md).
 
 ## Active Branches and Maintainers
 
