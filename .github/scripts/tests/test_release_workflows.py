@@ -141,6 +141,20 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("--image \"$IMAGE@$DIGEST\"", str(generate["steps"]))
         self.assertNotIn("*.json", str(generate["steps"]))
 
+    def test_source_release_fetches_staged_windows_packages_before_packaging(self):
+        build_jobs = workflow("call-build-windows.yaml")["jobs"]
+        upload = build_jobs["call-build-windows-s3-upload"]["steps"][-1]
+        self.assertEqual(upload["with"]["bucket-directory"], "${{ inputs.version }}/windows/")
+
+        steps = self.release["staging-release-source-s3"]["steps"]
+        sync = next(step for step in steps if step["name"] == "Sync packages from buckets on S3")
+        package = next(step for step in steps if "update-source-packages.sh" in step.get("run", ""))
+        self.assertEqual(sync["env"]["AWS_S3_BUCKET_STAGING"], "${{ secrets.AWS_S3_BUCKET_STAGING }}")
+        self.assertEqual(sync["env"]["RELEASE_VERSION"], "${{ inputs.version }}")
+        self.assertIn('"s3://$AWS_S3_BUCKET_STAGING/$RELEASE_VERSION/windows/" staging/windows/', sync["run"])
+        self.assertEqual(package["env"]["SOURCE_DIR"], "staging")
+        self.assertLess(steps.index(sync), steps.index(package))
+
     def test_manual_recovery_uses_same_gate_before_sync(self):
         script = (ROOT / "packaging/update-repos.sh").read_text()
         self.assertIn("RELEASE_VERSION:?", script)
