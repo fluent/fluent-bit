@@ -232,6 +232,8 @@ pipeline:
         await rejected(() => fluent.pushOtlp({input: 'app', signal: 'traces', payload: 'null'}), 'E_ARGUMENT');
         const from = logs.length;
         for (const [signal, payload] of [['metrics', metrics], ['traces', JSON.stringify(traces)]]) {
+            await rejected(() => fluent.pushOtlp({input: 'app', signal, payload: ' \t\r\n'}),
+                           'E_ARGUMENT');
             for (const suffix of [`\n${payload}`, '\n{}', '\n{"partial":', '\ntrailing', '\u0000']) {
                 await rejected(() => fluent.pushOtlp({input: 'app', signal, payload: payload + suffix}),
                                'E_ARGUMENT');
