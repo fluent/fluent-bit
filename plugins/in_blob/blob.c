@@ -40,8 +40,11 @@
 #include <stdio.h>
 
 #include "blob.h"
-#include "blob_db.h"
 #include "blob_file.h"
+
+#ifdef FLB_HAVE_SQLDB
+#include "blob_db.h"
+#endif
 
 #include "win32_glob.c"
 
@@ -739,7 +742,10 @@ static int in_blob_exit(void *in_context, struct flb_config *config)
         return 0;
     }
 
+#ifdef FLB_HAVE_SQLDB
     blob_db_close(ctx);
+#endif
+
     blob_file_list_remove_all(ctx);
     flb_log_event_encoder_destroy(ctx->log_encoder);
     flb_free(ctx);
