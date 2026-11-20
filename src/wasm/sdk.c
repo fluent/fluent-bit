@@ -371,7 +371,8 @@ static int sdk_otlp_json_valid(const unsigned char *data, size_t size)
     result = flb_pack_json_recs((const char *) data, size, &packed, &packed_size,
                                &root_type, &records, &consumed);
     flb_free(packed);
-    if (result != 0 || root_type != JSMN_OBJECT || records != 1) {
+    /* The packer only sets root_type when it parsed a record. */
+    if (result != 0 || records != 1 || root_type != JSMN_OBJECT) {
         return FLB_FALSE;
     }
     while (consumed < size && (data[consumed] == ' ' || data[consumed] == '\t' ||
