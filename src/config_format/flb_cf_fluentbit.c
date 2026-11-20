@@ -289,7 +289,7 @@ static int read_glob(struct flb_cf *cf, struct local_ctx *ctx, const char *path,
 }
 #endif
 
-static int local_init(struct local_ctx *ctx, char *file)
+static int local_init(struct local_ctx *ctx, char *file, int held_entry)
 {
     char *end;
     char path[PATH_MAX + 1] = {0};
@@ -301,7 +301,12 @@ static int local_init(struct local_ctx *ctx, char *file)
 #ifdef _MSC_VER
         p = _fullpath(path, file, PATH_MAX + 1);
 #else
-        p = realpath(file, path);
+        if (held_entry) {
+            p = strlen(file) < sizeof(path) ? strcpy(path, file) : NULL;
+        }
+        else {
+            p = realpath(file, path);
+        }
 #endif
         if (!p) {
             flb_errno();
@@ -456,6 +461,7 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
     line_hard_limit = 32 * 1024 * 1024; /* 32MiB */
 
     FILE *f = NULL;
+    FILE *entry_file = ctx->level == 0 ? cf->entry_file : NULL;
 
     if (*ino_num >= FLB_CF_FILE_NUM_LIMIT) {
         return -1;
@@ -471,7 +477,7 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
                 return -1;
             }
         }
-        ret = stat(cfg_file, &st);
+        ret = entry_file ? fstat(fileno(entry_file), &st) : stat(cfg_file, &st);
         if (ret < 0) {
             flb_errno();
             return -1;
@@ -508,7 +514,8 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
 
 #ifndef FLB_HAVE_STATIC_CONF
     /* Open configuration file */
-    if ((f = fopen(cfg_file, "rb")) == NULL) {
+    f = entry_file ? entry_file : fopen(cfg_file, "rb");
+    if (f == NULL) {
         flb_warn("[config] I cannot open %s file", cfg_file);
         flb_free(full_path);
         return -1;
@@ -775,7 +782,7 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
         /* No key, no warning */
     }
 
-    if (f) {
+    if (f && f != entry_file) {
         fclose(f);
     }
 
@@ -799,7 +806,7 @@ error:
         flb_free(file);
     }
     ctx->level--;
-    if (f) {
+    if (f && f != entry_file) {
         fclose(f);
     }
     if (indent) {
@@ -828,7 +835,7 @@ struct flb_cf *flb_cf_fluentbit_create(struct flb_cf *cf,
         flb_cf_set_origin_format(cf, FLB_CF_CLASSIC);
     }
 
-    ret = local_init(&ctx, file_path);
+    ret = local_init(&ctx, file_path, cf->entry_file != NULL);
     if (ret != 0) {
         if (cf_created == FLB_TRUE) {
             flb_cf_destroy(cf);
