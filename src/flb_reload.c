@@ -676,6 +676,7 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
 
     flb_info("[reload] stop everything of the old context");
     flb_stop(ctx);
+    new_config->prior_reload_exit_status = old_config->exit_status_code;
     flb_destroy(ctx);
 
     flb_info("[reload] start everything");
