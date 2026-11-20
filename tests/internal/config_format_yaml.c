@@ -1090,7 +1090,28 @@ static void test_include_hardlink_cycle()
 }
 #endif
 
+static void test_entry_stream(void)
+{
+    struct flb_cf *cf;
+    struct flb_cf *parsed;
+    FILE *stream;
+
+    stream = fopen(FLB_BASIC, "rb");
+    TEST_ASSERT(stream != NULL);
+    cf = flb_cf_create();
+    TEST_ASSERT(cf != NULL);
+    cf->entry_file = stream;
+    /* The named fixture fails on its own; the opened entry supplies the data. */
+    parsed = flb_cf_create_from_file(cf, FLB_007);
+    TEST_CHECK(parsed == cf);
+    TEST_CHECK(mk_list_size(&cf->inputs) > 0);
+    cf->entry_file = NULL;
+    TEST_CHECK(fclose(stream) == 0);
+    flb_cf_destroy(cf);
+}
+
 TEST_LIST = {
+    {"entry_stream", test_entry_stream},
 #ifdef FLB_SYSTEM_WINDOWS
     { "include_hardlink_cycle", test_include_hardlink_cycle},
 #endif
