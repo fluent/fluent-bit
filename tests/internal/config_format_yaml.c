@@ -1123,6 +1123,30 @@ static void test_composition_property(struct flb_cf *cf, char *key, char *expect
     }
 }
 
+static void test_composition_entry_stream(void)
+{
+    struct flb_cf *cf;
+    struct flb_cf *parsed;
+    FILE *stream;
+
+    stream = fopen(FLB_TESTS_CONF_PATH "/composition/main.yaml", "rb");
+    TEST_ASSERT(stream != NULL);
+    cf = flb_cf_create();
+    TEST_ASSERT(cf != NULL);
+    cf->entry_file = stream;
+
+    /* Resolve the stream's relative includes using the supplied path. */
+    parsed = flb_cf_create_from_file(cf, FLB_TESTS_CONF_PATH "/composition/open_root.yaml");
+    if (TEST_CHECK(parsed == cf)) {
+        test_composition_property(cf, "flush", "1");
+        test_composition_property(cf, "grace", "3");
+        TEST_CHECK(mk_list_size(&cf->inputs) == 2);
+    }
+    cf->entry_file = NULL;
+    TEST_CHECK(fclose(stream) == 0);
+    flb_cf_destroy(cf);
+}
+
 static void test_composition()
 {
     struct flb_cf *cf;
@@ -1253,6 +1277,7 @@ static void test_composition_errors()
 TEST_LIST = {
     {"entry_stream", test_entry_stream},
     { "composition", test_composition},
+    { "composition_entry_stream", test_composition_entry_stream},
     { "composition_include_order", test_composition_include_order},
     { "composition_errors", test_composition_errors},
 #ifdef FLB_SYSTEM_WINDOWS
