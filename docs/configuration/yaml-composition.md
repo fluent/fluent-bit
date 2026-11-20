@@ -50,9 +50,10 @@ Includes do not implicitly merge service sections.
   aliased include list retains the bindings made when that list was defined.
 - Relative paths resolve against the including file's directory. Plain file
   paths fall back to the working directory. On POSIX, a relative wildcard
-  searches only the including file's directory. An unmatched pattern is optional.
-  An inaccessible directory is an error. Repeated-file and file-identity cycle
-  checks and the 256-file include-depth limit still apply.
+  searches only the including file's directory and may have no matches. An
+  absolute wildcard must match on POSIX, where an inaccessible glob directory
+  is also an error. Repeated-file and file-identity cycle checks and the 256-file
+  include-depth limit still apply.
 - Anchors must precede their aliases in this composed order. Reusing an anchor
   name is allowed: subsequent aliases bind to the new definition; earlier
   aliases keep their original target. Included files share this namespace.
