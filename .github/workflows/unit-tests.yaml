@@ -79,7 +79,7 @@ jobs:
             const ignoredDirectories = [
               '.github/', 'dockerfiles/', 'docker_compose/', 'packaging/', 'examples/'
             ];
-            const ignoredFiles = new Set(['.gitignore', 'appveyor.yml']);
+            const ignoredFiles = new Set(['.gitignore']);
             const paths = files.flatMap(file => [file.filename, file.previous_filename])
               .filter(Boolean);
             // An empty or truncated API response must not silently skip coverage.
