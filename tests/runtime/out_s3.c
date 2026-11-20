@@ -2494,10 +2494,17 @@ static struct flb_http_client *s3_test_concurrent_request(struct flb_aws_client 
 
 static void *s3_test_request_worker(void *data)
 {
+#ifdef S3_UPLOAD_DEFERRED
+    int deferred;
+#endif
     struct flb_s3 *ctx = data;
 
     pthread_mutex_lock(&ctx->files_mutex);
+#ifdef S3_UPLOAD_DEFERRED
+    s3_request(ctx, FLB_HTTP_PUT, "/test", NULL, 0, NULL, 0, &deferred);
+#else
     s3_request(ctx, FLB_HTTP_PUT, "/test", NULL, 0, NULL, 0);
+#endif
     pthread_mutex_unlock(&ctx->files_mutex);
     return NULL;
 }
