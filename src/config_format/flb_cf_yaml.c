@@ -3429,9 +3429,23 @@ static yaml_char_t *compose_anchor(struct yaml_node *node)
 static int compose_parse_event(yaml_parser_t *parser, yaml_event_t *event, char *file)
 {
     if (!yaml_parser_parse(parser, event)) {
-        flb_error("[config] invalid YAML in file %s at line %zu, column %zu: %s",
-                  file, parser->problem_mark.line + 1, parser->problem_mark.column + 1,
-                  parser->problem ? parser->problem : "parse failure");
+        if (parser->problem) {
+            flb_error("[config] invalid YAML in file %s at line %zu, column %zu: %s",
+                      file, parser->problem_mark.line + 1, parser->problem_mark.column + 1,
+                      parser->problem);
+            if (parser->problem_mark.line > 0) {
+                flb_error("[config] hint: check line %zu (above) for missing ':' "
+                          "or incorrect indentation", parser->problem_mark.line);
+            }
+        }
+        else {
+            flb_error("[config] invalid YAML format in file %s at line %zu, column %zu",
+                      file, parser->problem_mark.line + 1, parser->problem_mark.column + 1);
+            if (parser->problem_mark.line > 0) {
+                flb_error("[config] hint: check line %zu for syntax issues",
+                          parser->problem_mark.line);
+            }
+        }
         return -1;
     }
     return 0;
