@@ -230,6 +230,7 @@ struct flb_config {
 
     /* Exit status code */
     int exit_status_code;
+    int prior_reload_exit_status;
 
     /* Workers: threads spawn using flb_worker_create() */
     struct mk_list workers;

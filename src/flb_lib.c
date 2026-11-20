@@ -915,7 +915,7 @@ static void flb_lib_worker(void *data)
         flb_engine_failed(config);
         flb_engine_shutdown(config);
     }
-    config->exit_status_code = ret;
+    config->exit_status_code = ret != 0 ? ret : config->prior_reload_exit_status;
     ctx->status = FLB_LIB_NONE;
 }
 
