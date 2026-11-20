@@ -384,6 +384,7 @@ if(FLB_KAFKA)
 endif()
 
 REGISTER_OUT_PLUGIN("out_kafka_rest")
+REGISTER_OUT_PLUGIN("out_mqtt")
 REGISTER_OUT_PLUGIN("out_nats")
 REGISTER_OUT_PLUGIN("out_nrlogs")
 REGISTER_OUT_PLUGIN("out_null")
