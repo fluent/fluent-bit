@@ -592,6 +592,53 @@ static int send_response_ng(struct flb_http_response *response,
     return 0;
 }
 
+/*
+ * Check every top-level value of a packed JSON payload before any record is
+ * emitted. A value must be a map, or an array whose elements are all maps.
+ * process_pack_ng() stops at the first array, so values after it are not
+ * checked. Validating up front keeps a payload like [1, 2], [{"a": 1}, 2] or
+ * {"a": 1} [1] from being partially ingested and then answered with an error.
+ */
+static int validate_pack_ng(struct flb_http *ctx, char *buf, size_t size)
+{
+    int i;
+    int ret = 0;
+    size_t off = 0;
+    msgpack_object *obj;
+    msgpack_unpacked result;
+
+    msgpack_unpacked_init(&result);
+    while (msgpack_unpack_next(&result, buf, size, &off) == MSGPACK_UNPACK_SUCCESS) {
+        obj = &result.data;
+
+        if (obj->type == MSGPACK_OBJECT_MAP) {
+            continue;
+        }
+
+        if (obj->type != MSGPACK_OBJECT_ARRAY) {
+            flb_plg_error(ctx->ins, "skip record from invalid type: %i",
+                          obj->type);
+            ret = -1;
+            break;
+        }
+
+        for (i = 0; i < obj->via.array.size; i++) {
+            if (obj->via.array.ptr[i].type != MSGPACK_OBJECT_MAP) {
+                flb_plg_error(ctx->ins,
+                              "skip array with invalid record type: %i "
+                              "(index %i)",
+                              obj->via.array.ptr[i].type, i);
+                ret = -1;
+                break;
+            }
+        }
+        break;
+    }
+    msgpack_unpacked_destroy(&result);
+
+    return ret;
+}
+
 static int process_pack_ng(struct flb_http *ctx, flb_sds_t tag, char *buf,
                            size_t size, void *request,
                            struct flb_log_event_encoder *encoder)
@@ -609,6 +656,10 @@ static int process_pack_ng(struct flb_http *ctx, flb_sds_t tag, char *buf,
     msgpack_unpacked appended_result;
     msgpack_sbuffer appended_sbuf;
     int appended_initialized = 0;
+
+    if (validate_pack_ng(ctx, buf, size) != 0) {
+        return -1;
+    }
 
     flb_time_get(&tm);
 
@@ -667,11 +718,11 @@ static int process_pack_ng(struct flb_http *ctx, flb_sds_t tag, char *buf,
         }
         else if (result.data.type == MSGPACK_OBJECT_ARRAY) {
             obj = &result.data;
+
             for (i = 0; i < obj->via.array.size; i++)
             {
                 record = obj->via.array.ptr[i];
-                if (record.type == MSGPACK_OBJECT_MAP &&
-                    remote_addr != NULL && flb_sds_len(remote_addr) > 0) {
+                if (remote_addr != NULL && flb_sds_len(remote_addr) > 0) {
                     if (!appended_initialized) {
                         /* doing this only once, since it can be cleared and reused */
                         msgpack_sbuffer_init(&appended_sbuf);
@@ -763,6 +814,7 @@ ingress_busy:
 
 log_event_error:
     flb_plg_error(ctx->ins, "Error encoding record : %d", ret);
+
     msgpack_unpacked_destroy(&result);
     if (appended_initialized) {
         msgpack_unpacked_destroy(&appended_result);
