@@ -3305,6 +3305,7 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
     yaml_parser_t parser;
     yaml_event_t event;
     FILE *fh;
+    FILE *entry_file = parent == NULL ? conf->entry_file : NULL;
     struct file_state fstate;
     struct file_state *ancestor;
 #ifdef FLB_SYSTEM_WINDOWS
@@ -3408,7 +3409,7 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
     }
 
     flb_debug("============ %s ============", cfg_file);
-    fh = fopen(include_file, "r");
+    fh = entry_file ? entry_file : fopen(include_file, "r");
 
     if (!fh) {
         flb_errno();
@@ -3429,7 +3430,9 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
     }
     if (ret != 0) {
         flb_error("[config] could not identify file '%s'", cfg_file);
-        fclose(fh);
+        if (fh != entry_file) {
+            fclose(fh);
+        }
         flb_free(fstate.directory_context);
         flb_sds_destroy(include_dir);
         flb_sds_destroy(include_file);
@@ -3440,7 +3443,9 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
     for (ancestor = parent; ancestor != NULL; ancestor = ancestor->include_parent) {
         if (file_context_equal(&fstate, ancestor)) {
             flb_error("[config] file '%s' is already included", cfg_file);
-            fclose(fh);
+            if (fh != entry_file) {
+                fclose(fh);
+            }
             flb_free(fstate.directory_context);
             flb_sds_destroy(include_dir);
             flb_sds_destroy(include_file);
@@ -3451,7 +3456,9 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
     state = state_start(ctx, &fstate);
     if (!state) {
         flb_error("unable to push initial include file state: %s", cfg_file);
-        fclose(fh);
+        if (fh != entry_file) {
+            fclose(fh);
+        }
         flb_free(fstate.directory_context);
         flb_sds_destroy(include_dir);
         flb_sds_destroy(include_file);
@@ -3463,7 +3470,9 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
 
     if (ret == -1) {
         flb_error("[config] could not register file %s", cfg_file);
-        fclose(fh);
+        if (fh != entry_file) {
+            fclose(fh);
+        }
         flb_free(fstate.directory_context);
         flb_sds_destroy(include_dir);
         flb_sds_destroy(include_file);
@@ -3535,7 +3544,9 @@ done:
         state = state_pop(ctx);
     }
 
-    fclose(fh);
+    if (fh != entry_file) {
+        fclose(fh);
+    }
     ctx->level--;
 
     flb_sds_destroy(include_file);
