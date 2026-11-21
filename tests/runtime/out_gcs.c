@@ -2141,7 +2141,8 @@ static int date_test_run(struct gcs_date_test *t, const char *key, const char *v
 
 #define DATE_TEST_RECORD        "[1700000000.5, {\"message\":\"hello\"}]"
 #define DATE_TEST_RECORD_NEXT   "[1700000001.25, {\"message\":\"world\"}]"
-#define DATE_TEST_BODY          "\"message\":\"hello\""
+/* Wait needles end with '}' so the poll returns only once the whole object is buffered */
+#define DATE_TEST_BODY          "\"message\":\"hello\"}"
 #define DATE_TEST_ISO8601       "2023-11-14T22:13:20.500000Z"
 
 void flb_test_gcs_record_includes_event_timestamp(void)
@@ -2150,7 +2151,7 @@ void flb_test_gcs_record_includes_event_timestamp(void)
     struct gcs_date_test t;
 
     ret = date_test_run(&t, NULL, NULL, DATE_TEST_RECORD, DATE_TEST_RECORD_NEXT,
-                        "\"message\":\"world\"");
+                        "\"message\":\"world\"}");
     if (ret != 0) {
         return;
     }
