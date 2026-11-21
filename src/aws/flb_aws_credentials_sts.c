@@ -170,13 +170,25 @@ error:
     return NULL;
 }
 
+/**
+ * Trigger an immediate refresh of STS credentials for the given provider.
+ *
+ * Sets the provider's next_refresh to epoch start to force an immediate AssumeRole
+ * request and attempts to perform the STS AssumeRole call to update cached credentials.
+ *
+ * @param provider The AWS provider instance whose STS implementation will be refreshed.
+ * @returns `0` if the credentials were successfully refreshed; `-1` on failure or if the provider lock could not be acquired.
+ */
 int refresh_fn_sts(struct flb_aws_provider *provider) {
     int ret = -1;
     struct flb_aws_provider_sts *implementation = provider->implementation;
 
     flb_debug("[aws_credentials] Refresh called on the STS provider");
-
+    
     if (try_lock_provider(provider)) {
+        /* Set to 1 (epoch start) to trigger immediate refresh via time check */
+        implementation->next_refresh = 1;
+        
         ret = sts_assume_role_request(implementation->sts_client,
                                       &implementation->creds, implementation->uri,
                                       &implementation->next_refresh);
@@ -475,12 +487,24 @@ error:
     return NULL;
 }
 
+/**
+ * Trigger a credentials refresh for the EKS provider.
+ *
+ * Attempts to acquire the provider lock, forces an immediate refresh window, and requests new credentials using the web-identity flow.
+ *
+ * @param provider EKS provider instance.
+ * @returns 0 on success, -1 on failure or if the provider lock could not be acquired.
+ */
 int refresh_fn_eks(struct flb_aws_provider *provider) {
     int ret = -1;
     struct flb_aws_provider_eks *implementation = provider->implementation;
 
     flb_debug("[aws_credentials] Refresh called on the EKS provider");
+    
     if (try_lock_provider(provider)) {
+        /* Set to 1 (epoch start) to trigger immediate refresh via time check */
+        implementation->next_refresh = 1;
+        
         ret = assume_with_web_identity(implementation);
         unlock_provider(provider);
     }
