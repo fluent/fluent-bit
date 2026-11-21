@@ -1,0 +1,3 @@
+defaults:
+  first: &snapshot_first {log_file: *path}
+  path: &path changed

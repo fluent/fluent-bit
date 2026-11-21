@@ -1,0 +1,9 @@
+defaults:
+  first: &first {flush: 9, GRACE: 4, logLevel: debug}
+  second: &second {flush: 8, log_level: warn}
+service:
+  <<:
+    - *first
+    - *second
+  grace: 1
+  log_level: info
