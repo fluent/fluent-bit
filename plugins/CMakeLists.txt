@@ -345,6 +345,7 @@ REGISTER_IN_PLUGIN("in_random")
 
 # PROCESSORS
 # ==========
+REGISTER_PROCESSOR_PLUGIN("processor_adaptive")
 REGISTER_PROCESSOR_PLUGIN("processor_content_modifier")
 REGISTER_PROCESSOR_PLUGIN("processor_cumulative_to_delta")
 if((FLB_LUAJIT OR FLB_WASM_LUA) AND FLB_YYJSON)

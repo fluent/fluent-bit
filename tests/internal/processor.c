@@ -1711,6 +1711,159 @@ static void processor_native_chain_counters(void)
     }
 }
 
+static int raw_filter_calls;
+static int raw_filter_drop_all;
+
+/* Keeps the first record of the buffer, or nothing at all */
+static int raw_filter_callback(struct flb_processor_instance **instances, size_t count,
+                               const void *data, size_t bytes,
+                               void **out_buf, size_t *out_size,
+                               const char *tag, int tag_len)
+{
+    char *buf;
+    struct flb_log_event event;
+    struct flb_log_event_decoder decoder;
+
+    (void) instances;
+    (void) tag;
+    (void) tag_len;
+
+    raw_filter_calls++;
+    TEST_CHECK(count == 1);
+
+    if (raw_filter_drop_all) {
+        *out_buf = flb_malloc(1);
+        *out_size = 0;
+        return *out_buf ? FLB_PROCESSOR_RAW_MODIFIED : FLB_PROCESSOR_FAILURE;
+    }
+
+    if (flb_log_event_decoder_init(&decoder, (char *) data, bytes) != 0 ||
+        flb_log_event_decoder_next(&decoder, &event) != FLB_EVENT_DECODER_SUCCESS) {
+        return FLB_PROCESSOR_FAILURE;
+    }
+
+    buf = flb_malloc(decoder.record_length);
+    if (!buf) {
+        flb_log_event_decoder_destroy(&decoder);
+        return FLB_PROCESSOR_FAILURE;
+    }
+    memcpy(buf, decoder.record_base, decoder.record_length);
+    *out_buf = buf;
+    *out_size = decoder.record_length;
+    flb_log_event_decoder_destroy(&decoder);
+
+    return FLB_PROCESSOR_RAW_MODIFIED;
+}
+
+/*
+ * A raw callback flagged as a filter may change the number of records. Its
+ * units run one at a time so each one is accounted for what it removed.
+ */
+static void processor_raw_filter_changes_cardinality(void)
+{
+    int root_type;
+    int records;
+    char *data;
+    size_t bytes;
+    size_t out_size;
+    void *out;
+    double value;
+    struct flb_config *config;
+    struct flb_processor *proc;
+    struct flb_processor_unit *first;
+    struct flb_processor_unit *second;
+    struct flb_processor_instance *ins;
+    struct flb_processor_plugin *original;
+    struct flb_processor_plugin filter;
+    struct flb_input_instance owner;
+    const char *json = "[[1700000000,{}],{\"message\":\"first\"}]"
+                       "[[1700000001,{}],{\"message\":\"second\"}]";
+
+    flb_init_env();
+    for (raw_filter_drop_all = 0; raw_filter_drop_all <= 1; raw_filter_drop_all++) {
+        config = flb_config_init();
+        TEST_CHECK(config != NULL);
+        memset(&owner, 0, sizeof(owner));
+        snprintf(owner.name, sizeof(owner.name), "unit_input.0");
+        owner.cmt = cmt_create();
+        TEST_CHECK(owner.cmt != NULL);
+        proc = flb_processor_create(config, "raw_filter", &owner, FLB_PLUGIN_INPUT);
+        TEST_CHECK(proc != NULL);
+        first = flb_processor_unit_create(proc, FLB_PROCESSOR_LOGS, "content_modifier");
+        second = flb_processor_unit_create(proc, FLB_PROCESSOR_LOGS, "content_modifier");
+        TEST_CHECK(first != NULL && second != NULL);
+        TEST_CHECK(flb_processor_unit_set_property_str(first, "action", "insert") == 0);
+        TEST_CHECK(flb_processor_unit_set_property_str(first, "key", "unused") == 0);
+        TEST_CHECK(flb_processor_unit_set_property_str(first, "value", "unused") == 0);
+        TEST_CHECK(flb_processor_unit_set_property_str(second, "action", "insert") == 0);
+        TEST_CHECK(flb_processor_unit_set_property_str(second, "key", "unused") == 0);
+        TEST_CHECK(flb_processor_unit_set_property_str(second, "value", "unused") == 0);
+        TEST_CHECK(flb_processor_init(proc) == 0);
+
+        ins = first->ctx;
+        original = ins->p;
+        filter = *original;
+        filter.cb_process_logs_raw = raw_filter_callback;
+        filter.flags |= FLB_PROCESSOR_FLAG_LOGS_RAW_FILTER;
+        ins->p = &filter;
+        ins->logs_raw_enabled = FLB_TRUE;
+        ins = second->ctx;
+        ins->p = &filter;
+        ins->logs_raw_enabled = FLB_TRUE;
+
+        TEST_CHECK(flb_pack_json(json, strlen(json), &data, &bytes, &root_type, NULL) == 0);
+        raw_filter_calls = 0;
+        out = NULL;
+        out_size = 0;
+        records = -1;
+        TEST_CHECK(flb_processor_run_with_count(proc, 0, FLB_PROCESSOR_LOGS, "test", 4,
+                                                data, bytes, &out, &out_size,
+                                                2, &records) == 0);
+
+        TEST_CHECK(get_counter_value_5(proc->cmt_items_in, "input", "unit_input.0",
+                                       "content_modifier", "0", "logs", &value) == 0);
+        TEST_CHECK(value == 2.0);
+
+        if (raw_filter_drop_all) {
+            /* nothing is left for the second unit */
+            TEST_CHECK(raw_filter_calls == 1);
+            TEST_CHECK(out == NULL && out_size == 0);
+            TEST_CHECK(records == 0);
+            TEST_CHECK(get_counter_value_5(proc->cmt_items_drop, "input", "unit_input.0",
+                                           "content_modifier", "0", "logs", &value) == 0);
+            TEST_CHECK(value == 2.0);
+        }
+        else {
+            TEST_CHECK(raw_filter_calls == 2);
+            TEST_CHECK(records == 1);
+            TEST_CHECK(flb_mp_count_log_records(out, out_size) == 1);
+            TEST_CHECK(get_counter_value_5(proc->cmt_items_out, "input", "unit_input.0",
+                                           "content_modifier", "0", "logs", &value) == 0);
+            TEST_CHECK(value == 1.0);
+            TEST_CHECK(get_counter_value_5(proc->cmt_items_drop, "input", "unit_input.0",
+                                           "content_modifier", "0", "logs", &value) == 0);
+            TEST_CHECK(value == 1.0);
+            TEST_CHECK(get_counter_value_5(proc->cmt_items_in, "input", "unit_input.0",
+                                           "content_modifier", "1", "logs", &value) == 0);
+            TEST_CHECK(value == 1.0);
+            TEST_CHECK(get_counter_value_5(proc->cmt_items_out, "input", "unit_input.0",
+                                           "content_modifier", "1", "logs", &value) == 0);
+            TEST_CHECK(value == 1.0);
+        }
+
+        ((struct flb_processor_instance *) first->ctx)->p = original;
+        ((struct flb_processor_instance *) second->ctx)->p = original;
+        if (out != data) {
+            flb_free(out);
+        }
+        flb_free(data);
+        flb_processor_destroy(proc);
+        cmt_destroy(owner.cmt);
+        flb_config_exit(config);
+    }
+    raw_filter_drop_all = 0;
+}
+
 struct preflight_probe_config {
     struct cfl_variant *rules;
 };
@@ -2082,6 +2235,7 @@ TEST_LIST = {
     {"processor_preflight_repeatable_variants", processor_preflight_is_repeatable_and_preserves_variants},
     {"processor_preflight_filter_properties", processor_preflight_rejects_filter_properties},
     { "processor_native_chain_counters", processor_native_chain_counters },
+    { "processor_raw_filter_cardinality", processor_raw_filter_changes_cardinality },
     {"processor_metrics_failure_clears_output", processor_metrics_failure_clears_output},
     { "processor_private_inputs_use_main_loop", processor_private_inputs_use_main_loop },
     { "processor", processor },

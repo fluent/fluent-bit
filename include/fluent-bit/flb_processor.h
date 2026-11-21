@@ -44,6 +44,11 @@
  * MODIFIED transfers a separately allocated output buffer to the caller.
  * NOTOUCH, UNSUPPORTED and FAILURE leave output NULL/zero. UNSUPPORTED must
  * discard any partial output and invoke no externally visible side effects.
+ *
+ * A plugin that sets FLB_PROCESSOR_FLAG_LOGS_RAW_FILTER may also remove or add
+ * records. Its units never share a segment, so the difference is accounted to
+ * the unit that made it. MODIFIED with a size of zero then means that every
+ * record was removed; the output pointer must still be an allocation.
  */
 #define FLB_PROCESSOR_RAW_NOTOUCH      0
 #define FLB_PROCESSOR_RAW_MODIFIED     1
@@ -71,12 +76,17 @@
  * loop, scheduler, coroutine or thread-local state, emit records through
  * thread-bound APIs, or require ordering between independently received
  * batches.
+ *
+ * FLB_PROCESSOR_FLAG_LOGS_RAW_FILTER: the raw logs callback does not preserve
+ * the number of records. Each unit of such a plugin runs as a raw segment of
+ * its own.
  */
 #define FLB_PROCESSOR_FLAG_LOG_WINDOWS 1
 #define FLB_PROCESSOR_FLAG_LOGS_WORKER_SAFE (1 << 1)
 /* Declares the appended cb_preflight descriptor extension. */
 #define FLB_PROCESSOR_FLAG_PREFLIGHT (1 << 2)
 #define FLB_PROCESSOR_FLAG_INPUT_STOP (1 << 3)
+#define FLB_PROCESSOR_FLAG_LOGS_RAW_FILTER (1 << 4)
 
 
 /* The current values mean the processor stack will
