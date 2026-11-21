@@ -398,6 +398,15 @@ static int in_tail_init(struct flb_input_instance *in,
     }
     ctx->ins = in;
 
+    /*
+     * The multiline core can hold unfinished records. If the plugin is
+     * already paused by a buffer limit when the shutdown starts, it still
+     * needs its pause callback and the permission to ingest that content.
+     */
+    if (ctx->ml_ctx) {
+        in->flags |= FLB_INPUT_SHUTDOWN_FLUSH;
+    }
+
     /* Initialize file-system watcher */
     ret = flb_tail_fs_init(in, ctx, config);
     if (ret == -1) {
@@ -498,6 +507,20 @@ static int in_tail_init(struct flb_input_instance *in,
         }
         ctx->coll_fd_dmode_flush = ret;
     }
+#ifdef FLB_HAVE_PARSER
+    else if (ctx->docker_mode_ml == FLB_TRUE) {
+        /* Docker mode served by the multiline core, same flush period */
+        ret = flb_input_set_collector_time(in, flb_tail_dmode_ml_pending_flush,
+                                           ctx->docker_mode_flush, 0,
+                                           config);
+        if (ret == -1) {
+            ctx->docker_mode_ml = FLB_FALSE;
+            flb_tail_config_destroy(ctx);
+            return -1;
+        }
+        ctx->coll_fd_dmode_flush = ret;
+    }
+#endif
 
 #ifdef FLB_HAVE_PARSER
     /* Register callback to process multiline queued buffer */
@@ -567,6 +590,25 @@ static void in_tail_pause(void *data, struct flb_config *config)
         }
     }
 
+    if (ctx->docker_mode_ml == FLB_TRUE) {
+        flb_input_collector_pause(ctx->coll_fd_dmode_flush, ctx->ins);
+    }
+
+    /*
+     * Multiline core: on shutdown the pending content must be ingested now,
+     * once the plugin exits there are no outputs left to deliver it.
+     *
+     * Ingesting the content can pause the plugin again if a buffer limit is
+     * reached, do not start a new flush on top of the one that is running.
+     */
+    if (ctx->ml_ctx && config->is_ingestion_active == FLB_FALSE &&
+        ctx->ml_shutdown_flush == FLB_FALSE) {
+        ctx->ml_shutdown_flush = FLB_TRUE;
+        flb_plg_debug(ctx->ins, "flushing pending multiline core data...");
+        flb_ml_flush_pending_now(ctx->ml_ctx);
+        ctx->ml_shutdown_flush = FLB_FALSE;
+    }
+
     /* Pause file system backend handlers */
     flb_tail_fs_pause(ctx);
 }
@@ -578,7 +620,7 @@ static void in_tail_resume(void *data, struct flb_config *config)
     flb_input_collector_resume(ctx->coll_fd_static, ctx->ins);
     flb_input_collector_resume(ctx->coll_fd_pending, ctx->ins);
 
-    if (ctx->docker_mode == FLB_TRUE) {
+    if (ctx->docker_mode == FLB_TRUE || ctx->docker_mode_ml == FLB_TRUE) {
         flb_input_collector_resume(ctx->coll_fd_dmode_flush, ctx->ins);
     }
 
@@ -659,21 +701,26 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_BOOL, "docker_mode", "false",
      0, FLB_TRUE, offsetof(struct flb_tail_config, docker_mode),
-     "If enabled, the plugin will recombine split Docker log lines before "
-     "passing them to any parser as configured above. This mode cannot be "
-     "used at the same time as Multiline."
+     "Deprecated, use 'multiline.parser docker' instead. If enabled, the "
+     "plugin will recombine split Docker log lines. When 'parser' is a JSON "
+     "parser without decoders and 'ignore_older' is not set, the lines are "
+     "joined by the multiline core, otherwise the legacy implementation is "
+     "used. This mode cannot be used at the same time as Multiline and it is "
+     "ignored if 'multiline.parser' is set."
     },
     {
      FLB_CONFIG_MAP_INT, "docker_mode_flush", "4",
      0, FLB_TRUE, offsetof(struct flb_tail_config, docker_mode_flush),
-     "wait period time in seconds to flush queued unfinished split lines."
-
+     "Deprecated. Wait period time in seconds to flush queued unfinished "
+     "split lines when 'docker_mode' is enabled."
     },
 #ifdef FLB_HAVE_REGEX
     {
      FLB_CONFIG_MAP_STR, "docker_mode_parser", NULL,
      0, FLB_FALSE, 0,
-     "specify the parser name to fetch log first line for muliline log"
+     "Deprecated, use a 'multiline' filter instead. Specify the parser name "
+     "to fetch the first line of a multiline log when 'docker_mode' is "
+     "enabled."
     },
 #endif
     {

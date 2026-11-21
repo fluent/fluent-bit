@@ -16,6 +16,7 @@ pipeline:
       rotate_wait: 6
       parser: docker
       docker_mode: on
+      docker_mode_flush: ${TAIL_DOCKER_MODE_FLUSH}
       path_key: file
       offset_key: offset
 

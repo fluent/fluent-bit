@@ -1,4 +1,5 @@
 import gzip
+import json
 import os
 import shutil
 import sqlite3
@@ -57,7 +58,7 @@ class PersistentWriter:
 
 
 class Service:
-    def __init__(self, config_file, *, tail_path, db_path):
+    def __init__(self, config_file, *, tail_path, db_path, extra_env=None):
         self.config_name = config_file
         self.config_file = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "../config", config_file)
@@ -75,6 +76,7 @@ class Service:
                 "TAIL_TEST_PATH": self.tail_path,
                 "TAIL_TEST_DB": self.db_path,
                 "PARSERS_FILE_TEST": self.parsers_file,
+                **(extra_env or {}),
             },
             pre_start=self._start_receiver,
             post_stop=self._stop_receiver,
@@ -1180,39 +1182,286 @@ def test_in_tail_ignore_active_older_files_resumes_updated_file(workspace):
     assert_log_set(records, ["first-line", "second-line"])
 
 
-def test_in_tail_docker_mode_parses_and_flushes_docker_json_stream(workspace):
+def docker_json_line(log, stream, ts):
+    return json.dumps({"log": log, "stream": stream, "time": ts}, separators=(",", ":")) + "\n"
+
+
+def docker_mode_timestamp():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "+0000"
+
+
+def docker_mode_service(config_file, docker_file, db_path, *, flush):
+    return Service(
+        config_file,
+        tail_path=docker_file,
+        db_path=db_path,
+        extra_env={"TAIL_DOCKER_MODE_FLUSH": str(flush)},
+    )
+
+
+def wait_for_fluent_bit_log(service, needle, timeout=20):
+    def has_log_line():
+        log_file = service.flb.log_file
+
+        if not log_file or not os.path.exists(log_file):
+            return None
+
+        with open(log_file, "r", encoding="utf-8", errors="replace") as handle:
+            content = handle.read()
+
+        if needle in content:
+            return content
+
+        return None
+
+    return service.service.wait_for_condition(
+        has_log_line,
+        timeout=timeout,
+        interval=0.5,
+        description=f"log line containing {needle!r}",
+    )
+
+
+def test_in_tail_docker_mode_joins_split_lines_per_stream(workspace):
     docker_file = workspace / "docker.log"
     db_path = workspace / "tail.db"
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "+0000"
+    ts = docker_mode_timestamp()
 
+    # Partial lines of both streams are mixed in the file
     payload = (
-        f'{{"log":"docker hello\\\\n","stream":"stdout","time":"{ts}"}}'
-        "\n"
-        f'{{"log":"docker bye\\\\n","stream":"stderr","time":"{ts}"}}'
-        "\n"
+        docker_json_line("out part1 ", "stdout", ts)
+        + docker_json_line("err part1 ", "stderr", ts)
+        + docker_json_line("out part2\n", "stdout", ts)
+        + docker_json_line("err part2\n", "stderr", ts)
+        + docker_json_line("docker bye\n", "stdout", ts)
     )
     docker_file.write_text(payload, encoding="utf-8")
 
-    service = Service("tail_docker_mode.yaml", tail_path=docker_file, db_path=db_path)
+    service = docker_mode_service("tail_docker_mode.yaml", docker_file, db_path, flush=1)
 
     try:
         service.start()
-        service.service.wait_for_condition(
-            lambda: len(data_storage["requests"]) >= 1,
-            timeout=20,
-            interval=0.5,
-            description="docker mode request",
-        )
-        records = flatten_records(data_storage["payloads"])
+        records = service.wait_for_records(3, timeout=20)
+        service.assert_no_new_records_for(3, quiet_period=2)
+        log = wait_for_fluent_bit_log(service, "'docker_mode' is deprecated")
     finally:
         service.stop()
 
-    assert len(records) == 1
-    record = records[0]
-    assert record["log"] == "docker hello\\ndocker bye\\n"
-    assert record["stream"] == "stderr"
-    assert record["file"] == str(docker_file)
-    assert record["offset"] > 0
+    assert "split lines are now joined by the multiline core" in log
+    assert "Using the legacy implementation" not in log
+
+    by_log = {record["log"]: record for record in records}
+    assert set(by_log) == {"out part1 out part2\n", "err part1 err part2\n", "docker bye\n"}
+    assert by_log["out part1 out part2\n"]["stream"] == "stdout"
+    assert by_log["err part1 err part2\n"]["stream"] == "stderr"
+
+    for record in records:
+        assert record["file"] == str(docker_file)
+        assert "time" not in record
+
+    # The offset belongs to the line that completed every record
+    lines = payload.splitlines(keepends=True)
+    offsets = [sum(len(line) for line in lines[:index]) for index in range(len(lines))]
+    assert by_log["out part1 out part2\n"]["offset"] == offsets[2]
+    assert by_log["err part1 err part2\n"]["offset"] == offsets[3]
+    assert by_log["docker bye\n"]["offset"] == offsets[4]
+
+
+def test_in_tail_docker_mode_flushes_unfinished_line(workspace):
+    docker_file = workspace / "docker.log"
+    db_path = workspace / "tail.db"
+    ts = docker_mode_timestamp()
+
+    docker_file.write_text(
+        docker_json_line("docker hello\n", "stdout", ts)
+        + docker_json_line("never finished", "stdout", ts),
+        encoding="utf-8",
+    )
+
+    service = docker_mode_service("tail_docker_mode.yaml", docker_file, db_path, flush=1)
+
+    try:
+        service.start()
+        # docker_mode_flush is 1 second, the default would take 4 seconds
+        records = service.wait_for_records(2, timeout=3)
+    finally:
+        service.stop()
+
+    assert [record["log"] for record in records] == ["docker hello\n", "never finished"]
+
+
+def test_in_tail_docker_mode_delivers_unfinished_line_on_shutdown(workspace):
+    docker_file = workspace / "docker.log"
+    db_path = workspace / "tail.db"
+    ts = docker_mode_timestamp()
+
+    docker_file.write_text(
+        docker_json_line("docker hello\n", "stdout", ts)
+        + docker_json_line("never finished", "stdout", ts),
+        encoding="utf-8",
+    )
+
+    # docker_mode_flush is 60 seconds: only the shutdown can flush the last line
+    service = docker_mode_service("tail_docker_mode.yaml", docker_file, db_path, flush=60)
+
+    try:
+        service.start()
+        records = service.wait_for_records(1, timeout=20)
+        assert [record["log"] for record in records] == ["docker hello\n"]
+    finally:
+        service.stop()
+
+    records = flatten_records(data_storage["payloads"])
+    assert [record["log"] for record in records] == ["docker hello\n", "never finished"]
+
+
+def test_in_tail_docker_mode_delivers_unfinished_line_on_shutdown_when_paused(workspace):
+    docker_file = workspace / "docker.log"
+    db_path = workspace / "tail.db"
+    ts = docker_mode_timestamp()
+
+    docker_file.write_text(
+        docker_json_line("docker hello\n", "stdout", ts)
+        + docker_json_line("never finished", "stdout", ts),
+        encoding="utf-8",
+    )
+
+    # mem_buf_limit is 1 byte: the first record pauses the input, the shutdown
+    # still has to deliver the unfinished line and it must do it only once
+    service = docker_mode_service("tail_docker_mode_mem_limit.yaml", docker_file, db_path, flush=60)
+
+    try:
+        service.start()
+        records = service.wait_for_records(1, timeout=20)
+        assert [record["log"] for record in records] == ["docker hello\n"]
+    finally:
+        service.stop()
+
+    records = flatten_records(data_storage["payloads"])
+    assert [record["log"] for record in records] == ["docker hello\n", "never finished"]
+
+
+def test_in_tail_docker_mode_waits_for_slow_fragments(workspace):
+    docker_file = workspace / "docker.log"
+    db_path = workspace / "tail.db"
+    ts = docker_mode_timestamp()
+
+    docker_file.write_text("", encoding="utf-8")
+    service = docker_mode_service("tail_docker_mode.yaml", docker_file, db_path, flush=3)
+
+    try:
+        service.start()
+
+        # Fragments keep arriving for longer than docker_mode_flush, but the
+        # gap between them is always shorter: nothing can be flushed in between
+        with open(docker_file, "a", encoding="utf-8") as handle:
+            for index in range(6):
+                handle.write(docker_json_line(f"part{index} ", "stdout", ts))
+                handle.flush()
+                os.fsync(handle.fileno())
+                time.sleep(1)
+            handle.write(docker_json_line("end\n", "stdout", ts))
+            handle.flush()
+            os.fsync(handle.fileno())
+
+        records = service.wait_for_records(1, timeout=20)
+        service.assert_no_new_records_for(1, quiet_period=2)
+    finally:
+        service.stop()
+
+    assert [record["log"] for record in records] == [
+        "part0 part1 part2 part3 part4 part5 end\n"
+    ]
+
+
+def test_in_tail_docker_mode_with_ignore_older_uses_legacy_mode(workspace):
+    docker_file = workspace / "docker.log"
+    db_path = workspace / "tail.db"
+    ts = docker_mode_timestamp()
+
+    # The file is new, the first record is older than ignore_older (1h)
+    docker_file.write_text(
+        docker_json_line("old record\n", "stdout", "2020-01-01T00:00:00.000+0000")
+        + docker_json_line("new record\n", "stdout", ts),
+        encoding="utf-8",
+    )
+
+    service = docker_mode_service(
+        "tail_docker_mode_ignore_older.yaml", docker_file, db_path, flush=1
+    )
+
+    try:
+        service.start()
+        records = service.wait_for_records(1, timeout=20)
+        service.assert_no_new_records_for(1, quiet_period=2)
+        log = wait_for_fluent_bit_log(service, "'docker_mode' is deprecated")
+    finally:
+        service.stop()
+
+    assert "Using the legacy implementation: 'ignore_older'" in log
+    assert [record["log"] for record in records] == ["new record\n"]
+
+
+def test_in_tail_docker_mode_without_parser_uses_legacy_mode(workspace):
+    docker_file = workspace / "docker.log"
+    db_path = workspace / "tail.db"
+    ts = docker_mode_timestamp()
+
+    docker_file.write_text(
+        docker_json_line("docker ", "stdout", ts)
+        + docker_json_line("hello\n", "stdout", ts)
+        + docker_json_line("docker bye\n", "stdout", ts),
+        encoding="utf-8",
+    )
+
+    service = docker_mode_service("tail_docker_mode_legacy.yaml", docker_file, db_path, flush=1)
+
+    try:
+        service.start()
+        records = service.wait_for_records(2, timeout=20)
+        service.assert_no_new_records_for(2, quiet_period=2)
+        log = wait_for_fluent_bit_log(service, "'docker_mode' is deprecated")
+    finally:
+        service.stop()
+
+    assert "Using the legacy implementation: no 'parser' is set" in log
+    assert "multiline core started" not in log
+
+    # The record is the raw JSON line with the split content joined
+    assert [json.loads(record["log"])["log"] for record in records] == [
+        "docker hello\n",
+        "docker bye\n",
+    ]
+    for record in records:
+        assert "stream" not in record
+        assert record["file"] == str(docker_file)
+
+
+def test_in_tail_docker_mode_is_ignored_with_multiline_parser(workspace):
+    docker_file = workspace / "docker.log"
+    db_path = workspace / "tail.db"
+    ts = docker_mode_timestamp()
+
+    docker_file.write_text(
+        docker_json_line("docker ", "stdout", ts)
+        + docker_json_line("hello\n", "stdout", ts),
+        encoding="utf-8",
+    )
+
+    service = docker_mode_service(
+        "tail_docker_mode_multiline_parser.yaml", docker_file, db_path, flush=1
+    )
+
+    try:
+        service.start()
+        records = service.wait_for_records(1, timeout=20)
+        log = wait_for_fluent_bit_log(service, "'docker_mode' is deprecated")
+    finally:
+        service.stop()
+
+    assert "it is ignored when 'multiline.parser' is set" in log
+    assert [record["log"] for record in records] == ["docker hello\n"]
+    assert records[0]["stream"] == "stdout"
 
 
 def test_in_tail_generic_encoding_shiftjis(workspace):

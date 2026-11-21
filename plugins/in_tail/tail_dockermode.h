@@ -25,6 +25,9 @@
 
 int flb_tail_dmode_create(struct flb_tail_config *ctx,
                           struct flb_input_instance *ins, struct flb_config *config);
+int flb_tail_dmode_ml_create(struct flb_tail_config *ctx);
+int flb_tail_dmode_ml_pending_flush(struct flb_input_instance *ins,
+                                    struct flb_config *config, void *context);
 int flb_tail_dmode_process_content(time_t now,
                                    char* line, size_t line_len,
                                    char **repl_line, size_t *repl_line_len,

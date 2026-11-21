@@ -1,0 +1,3 @@
+{"log":"out part1 out part2\n","stream":"stdout"}
+{"log":"err part1 err part2\n","stream":"stderr"}
+{"log":"single\n","stream":"stdout"}
