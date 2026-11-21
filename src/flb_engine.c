@@ -1077,6 +1077,10 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
         config->cb_wasm_drain(config, FLB_WASM_DRAIN_BEGIN);
         return 0;
     }
+    if (val == FLB_ENGINE_EV_WASM_INGEST && config->cb_wasm_drain != NULL) {
+        config->cb_wasm_drain(config, FLB_WASM_INGEST);
+        return 0;
+    }
 #endif
 
     /* Flush all remaining data */

@@ -100,7 +100,8 @@ class FluentBit {
                 this.#detachAbort = () => options.signal.removeEventListener('abort', abort);
                 if (options.signal.aborted) { abort(); return; }
             }
-            this.#worker.postMessage({abi: ABI, type: 'init', options: {storage: options.storage}});
+            this.#worker.postMessage({abi: ABI, type: 'init', options: {storage: options.storage,
+                lineLimit: options.outputLineLimit}});
         }
         catch (cause) { this.#fatal(error('E_WORKER', `Unable to create SDK worker: ${cause.message}`)); }
     }
@@ -167,7 +168,8 @@ class FluentBit {
             if (!Array.isArray(message.entries) || message.entries.length > 256 ||
                 !Number.isSafeInteger(message.dropped) || message.dropped < 0 ||
                 message.entries.some(entry => !entry || !['stdout', 'stderr'].includes(entry.stream) ||
-                    typeof entry.text !== 'string' || entry.text.length > 4120)) {
+                    typeof entry.text !== 'string' ||
+                    entry.text.length > this.#options.outputLineLimit + 24)) {
                 this.#fatal(error('E_PROTOCOL', 'Invalid SDK log batch'));
                 return;
             }
@@ -355,6 +357,29 @@ class FluentBit {
         });
     }
 
+    async pushOtlp(options) {
+        object(options, 'pushOtlp options');
+        if (typeof options.input !== 'string' || !/^[A-Za-z0-9_.-]{1,128}$/.test(options.input)) {
+            throw error('E_ARGUMENT', 'input must be a lib input alias');
+        }
+        if (options.signal !== 'metrics' && options.signal !== 'traces') {
+            throw error('E_ARGUMENT', 'signal must be metrics or traces');
+        }
+        if (!this.#info.features.includes('otlp')) {
+            throw error('E_UNSUPPORTED', 'This runtime does not accept OTLP metrics or traces');
+        }
+        // Text is passed as written, so 64-bit values keep every digit.
+        let json = options.payload;
+        if (typeof json !== 'string') {
+            object(json, 'payload');
+            try { json = JSON.stringify(json); }
+            catch (cause) { throw error('E_ARGUMENT', 'payload must be JSON-serializable'); }
+        }
+        const data = bytes(json, MAX_PAYLOAD, 'payload');
+        const {input, signal} = options;
+        return this.#enqueue(() => this.#send('pushOtlp', {input, signal, data}), data.byteLength);
+    }
+
     async push(options) {
         object(options, 'push options');
         if (typeof options.input !== 'string' || !/^[A-Za-z0-9_.-]{1,128}$/.test(options.input)) {
@@ -479,7 +504,8 @@ export async function createFluentBit(options = {}) {
         storage: {persistent: storage.persistent === true, namespace: storage.namespace},
         initTimeoutMs: integer(options.initTimeoutMs ?? 45000, 100, 120000, 'initTimeoutMs'),
         operationTimeoutMs: integer(options.operationTimeoutMs ?? 45000, 100, 120000, 'operationTimeoutMs'),
-        destroyTimeoutMs: integer(options.destroyTimeoutMs ?? 15000, 100, 60000, 'destroyTimeoutMs')
+        destroyTimeoutMs: integer(options.destroyTimeoutMs ?? 15000, 100, 60000, 'destroyTimeoutMs'),
+        outputLineLimit: integer(options.outputLineLimit ?? 4096, 4096, 1048576, 'outputLineLimit')
     }, workerUrl);
     return instance.ready();
 }
