@@ -1,5 +1,15 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+#include <limits.h>
+#include <ctype.h>
+#include <time.h>
 #include <fluent-bit.h>
+#ifdef FLB_SYSTEM_WINDOWS
+#include <windows.h>
+#else
+#include <dirent.h>
+#include <sys/stat.h>
+#endif
+#include <fluent-bit/flb_time.h>
 #include "flb_tests_runtime.h"
 #include "../include/flb_tests_tmpdir.h"
 
@@ -1273,13 +1283,18 @@ static void check_total_file_size_boundary(size_t file_size, int record_count)
 
     out_ffd = flb_output(ctx, (char *) "gcs", NULL);
     TEST_CHECK(out_ffd >= 0);
+    /*
+     * Payloads are sized byte-exactly here: keep the date field out of them,
+     * date output is covered by the dedicated json_date_* tests.
+     */
     flb_output_set(ctx, out_ffd,
                    "match", "*",
                    "bucket", "fluent",
                    "google_service_credentials", SERVICE_CREDENTIALS,
                    "store_dir", store_dir,
                    "upload_timeout", "10m",
-                   "total_file_size", "1M", NULL);
+                   "total_file_size", "1M",
+                   "json_date_key", "false", NULL);
 
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
@@ -1371,6 +1386,10 @@ static void check_total_file_size_queue(int preserve_ordering, int fail_upload, 
         flb_input_set(ctx, in_ffd[i], "tag", fail_upload || i == 0 ? "first" : "second", NULL);
     }
     out_ffd = flb_output(ctx, (char *) "gcs", NULL);
+    /*
+     * Payloads are sized byte-exactly here: keep the date field out of them,
+     * date output is covered by the dedicated json_date_* tests.
+     */
     flb_output_set(ctx, out_ffd,
                    "match", "*",
                    "bucket", "fluent",
@@ -1378,6 +1397,7 @@ static void check_total_file_size_queue(int preserve_ordering, int fail_upload, 
                    "store_dir", store_dir,
                    "upload_timeout", "10m",
                    "total_file_size", "1M",
+                   "json_date_key", "false",
                    "preserve_data_ordering", preserve_ordering ? "true" : "false", NULL);
 
     ret = flb_start(ctx);
@@ -1865,6 +1885,514 @@ void flb_test_gcs_total_file_size_zero_disables_size_trigger(void)
     flb_free(store_dir);
 }
 
+/*
+ * Recursively append the content of every regular file under 'path' to
+ * '*buf'. Used to inspect what the plugin buffered in store_dir.
+ */
+static void read_store_dir_files(const char *path, char **buf, size_t *len)
+{
+#ifdef FLB_SYSTEM_WINDOWS
+    WIN32_FIND_DATAA data;
+    HANDLE handle;
+    char pattern[PATH_MAX];
+    char child[PATH_MAX];
+    FILE *fp;
+    char *tmp;
+    size_t n;
+    long size;
+
+    snprintf(pattern, sizeof(pattern), "%s\\*", path);
+    handle = FindFirstFileA(pattern, &data);
+    if (handle == INVALID_HANDLE_VALUE) {
+        return;
+    }
+
+    do {
+        if (strcmp(data.cFileName, ".") == 0 || strcmp(data.cFileName, "..") == 0) {
+            continue;
+        }
+
+        snprintf(child, sizeof(child), "%s\\%s", path, data.cFileName);
+        if (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            read_store_dir_files(child, buf, len);
+            continue;
+        }
+
+        fp = fopen(child, "rb");
+        if (!fp) {
+            continue;
+        }
+
+        if (fseek(fp, 0, SEEK_END) != 0 || (size = ftell(fp)) < 0 ||
+            fseek(fp, 0, SEEK_SET) != 0) {
+            fclose(fp);
+            continue;
+        }
+
+        tmp = flb_realloc(*buf, *len + (size_t) size + 1);
+        if (!tmp) {
+            fclose(fp);
+            break;
+        }
+        *buf = tmp;
+        n = fread(*buf + *len, 1, (size_t) size, fp);
+        *len += n;
+        (*buf)[*len] = '\0';
+        fclose(fp);
+    } while (FindNextFileA(handle, &data) != 0);
+
+    FindClose(handle);
+#else
+    DIR *dir;
+    struct dirent *entry;
+    struct stat st;
+    char child[PATH_MAX];
+    FILE *fp;
+    char *tmp;
+    size_t n;
+
+    dir = opendir(path);
+    if (!dir) {
+        return;
+    }
+
+    while ((entry = readdir(dir)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0 ||
+            strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+
+        snprintf(child, sizeof(child), "%s/%s", path, entry->d_name);
+        if (stat(child, &st) != 0) {
+            continue;
+        }
+
+        if (S_ISDIR(st.st_mode)) {
+            read_store_dir_files(child, buf, len);
+            continue;
+        }
+        if (!S_ISREG(st.st_mode)) {
+            continue;
+        }
+
+        fp = fopen(child, "rb");
+        if (!fp) {
+            continue;
+        }
+
+        tmp = flb_realloc(*buf, *len + (size_t) st.st_size + 1);
+        if (!tmp) {
+            fclose(fp);
+            break;
+        }
+        *buf = tmp;
+        n = fread(*buf + *len, 1, (size_t) st.st_size, fp);
+        *len += n;
+        (*buf)[*len] = '\0';
+        fclose(fp);
+    }
+
+    closedir(dir);
+#endif
+}
+
+/* Byte search: buffered files carry a binary header before the JSON lines */
+static int buffer_contains(const char *buf, size_t len, const char *needle)
+{
+    size_t i;
+    size_t needle_len;
+
+    needle_len = strlen(needle);
+    if (!buf || needle_len == 0 || needle_len > len) {
+        return FLB_FALSE;
+    }
+
+    for (i = 0; i + needle_len <= len; i++) {
+        if (memcmp(buf + i, needle, needle_len) == 0) {
+            return FLB_TRUE;
+        }
+    }
+
+    return FLB_FALSE;
+}
+
+#define DATE_TEST_WAIT_STEP_MS   100
+#define DATE_TEST_WAIT_STEPS     100
+#define DATE_TEST_PREVIEW_SIZE   512
+
+struct gcs_date_test {
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    int started;
+    char *store_dir;
+    char *data;
+    size_t data_len;
+};
+
+/*
+ * Read the files under store_dir until 'needle' shows up or ~10 seconds
+ * pass. The last content read is kept in t->data either way, so the caller
+ * can run more assertions (or print it) on the same buffer.
+ */
+static int date_test_wait_for(struct gcs_date_test *t, const char *needle)
+{
+    int i;
+
+    for (i = 0; i < DATE_TEST_WAIT_STEPS; i++) {
+        if (t->data) {
+            flb_free(t->data);
+            t->data = NULL;
+        }
+        t->data_len = 0;
+
+        read_store_dir_files(t->store_dir, &t->data, &t->data_len);
+        if (buffer_contains(t->data, t->data_len, needle)) {
+            return FLB_TRUE;
+        }
+
+        flb_time_msleep(DATE_TEST_WAIT_STEP_MS);
+    }
+
+    return FLB_FALSE;
+}
+
+/* Printable copy of the buffered content for failure messages */
+static void date_test_preview(struct gcs_date_test *t, char *out, size_t size)
+{
+    size_t i;
+    size_t len;
+
+    len = t->data_len < size - 1 ? t->data_len : size - 1;
+    for (i = 0; i < len; i++) {
+        out[i] = isprint((unsigned char) t->data[i]) ? t->data[i] : '.';
+    }
+    out[len] = '\0';
+}
+
+static void date_test_expect(struct gcs_date_test *t, const char *needle, int present)
+{
+    char preview[DATE_TEST_PREVIEW_SIZE];
+    int found;
+
+    found = buffer_contains(t->data, t->data_len, needle);
+    date_test_preview(t, preview, sizeof(preview));
+
+    if (present) {
+        TEST_CHECK_(found == FLB_TRUE,
+                    "expected '%s' in the buffered object, got: %s", needle, preview);
+    }
+    else {
+        TEST_CHECK_(found == FLB_FALSE,
+                    "expected no '%s' in the buffered object, got: %s", needle, preview);
+    }
+}
+
+/*
+ * Create a lib -> gcs pipeline that only buffers into its own store_dir
+ * (long upload_timeout, large total_file_size). 'key'/'value' is an optional
+ * extra output property. The pipeline is not started.
+ */
+static int date_test_create(struct gcs_date_test *t, const char *key, const char *value)
+{
+    memset(t, 0, sizeof(struct gcs_date_test));
+
+    t->store_dir = create_test_store_directory("/flb-gcs-test-date-XXXXXX");
+    TEST_CHECK(t->store_dir != NULL);
+    if (!t->store_dir) {
+        return -1;
+    }
+
+    setenv("FLB_GCS_PLUGIN_UNDER_TEST", "true", 1);
+
+    t->ctx = flb_create();
+
+    t->in_ffd = flb_input(t->ctx, (char *) "lib", NULL);
+    TEST_CHECK(t->in_ffd >= 0);
+    flb_input_set(t->ctx, t->in_ffd, "tag", "test", NULL);
+
+    t->out_ffd = flb_output(t->ctx, (char *) "gcs", NULL);
+    TEST_CHECK(t->out_ffd >= 0);
+    flb_output_set(t->ctx, t->out_ffd, "match", "*", NULL);
+    flb_output_set(t->ctx, t->out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(t->ctx, t->out_ffd, "google_service_credentials", SERVICE_CREDENTIALS, NULL);
+    flb_output_set(t->ctx, t->out_ffd, "upload_timeout", "1h", NULL);
+    flb_output_set(t->ctx, t->out_ffd, "total_file_size", "100M", NULL);
+    flb_output_set(t->ctx, t->out_ffd, "store_dir", t->store_dir, NULL);
+    flb_output_set(t->ctx, t->out_ffd, "compression", "none", NULL);
+    if (key) {
+        flb_output_set(t->ctx, t->out_ffd, key, value, NULL);
+    }
+
+    return 0;
+}
+
+static void date_test_destroy(struct gcs_date_test *t)
+{
+    if (t->data) {
+        flb_free(t->data);
+    }
+
+    if (t->ctx) {
+        if (t->started) {
+            flb_stop(t->ctx);
+        }
+        flb_destroy(t->ctx);
+    }
+
+    unsetenv("FLB_GCS_PLUGIN_UNDER_TEST");
+    unsetenv("TEST_GCS_UploadObject_CALL_COUNT");
+    unsetenv("TEST_GCS_LAST_URI");
+    unsetenv("TEST_GCS_LAST_BODY_GZIP");
+    unsetenv("TEST_GCS_LAST_BODY_PARQUET");
+    unsetenv("TEST_GCS_LAST_CONTENT_TYPE");
+
+    if (t->store_dir) {
+        flb_free(t->store_dir);
+    }
+}
+
+/*
+ * Start a pipeline with the optional 'key'/'value' property, push 'record'
+ * (and 'record2' when set) and wait until 'wait_needle' is buffered. Returns
+ * 0 with the buffered content in t->data; on failure everything is released.
+ */
+static int date_test_run(struct gcs_date_test *t, const char *key, const char *value,
+                         const char *record, const char *record2, const char *wait_needle)
+{
+    int ret;
+    char preview[DATE_TEST_PREVIEW_SIZE];
+
+    ret = date_test_create(t, key, value);
+    if (ret != 0) {
+        return -1;
+    }
+
+    ret = flb_start(t->ctx);
+    TEST_CHECK_(ret == 0, "expected flb_start to succeed with %s=%s, got %d",
+                key ? key : "(defaults)", value ? value : "", ret);
+    if (ret != 0) {
+        date_test_destroy(t);
+        return -1;
+    }
+    t->started = FLB_TRUE;
+
+    flb_lib_push(t->ctx, t->in_ffd, (char *) record, (int) strlen(record));
+    if (record2) {
+        flb_lib_push(t->ctx, t->in_ffd, (char *) record2, (int) strlen(record2));
+    }
+
+    /* Inspect the buffered object before shutdown uploads or removes it */
+    ret = date_test_wait_for(t, wait_needle);
+    date_test_preview(t, preview, sizeof(preview));
+    TEST_CHECK_(ret == FLB_TRUE,
+                "expected '%s' in the buffered object within 10 seconds, got: %s",
+                wait_needle, preview);
+    if (ret != FLB_TRUE) {
+        date_test_destroy(t);
+        return -1;
+    }
+
+    return 0;
+}
+
+#define DATE_TEST_RECORD        "[1700000000.5, {\"message\":\"hello\"}]"
+#define DATE_TEST_RECORD_NEXT   "[1700000001.25, {\"message\":\"world\"}]"
+/* Wait needles end with '}' so the poll returns only once the whole object is buffered */
+#define DATE_TEST_BODY          "\"message\":\"hello\"}"
+#define DATE_TEST_ISO8601       "2023-11-14T22:13:20.500000Z"
+
+void flb_test_gcs_record_includes_event_timestamp(void)
+{
+    int ret;
+    struct gcs_date_test t;
+
+    ret = date_test_run(&t, NULL, NULL, DATE_TEST_RECORD, DATE_TEST_RECORD_NEXT,
+                        "\"message\":\"world\"}");
+    if (ret != 0) {
+        return;
+    }
+
+    /* Each record carries its own event time, with the date key first */
+    date_test_expect(&t, "{\"date\":\"" DATE_TEST_ISO8601 "\",\"message\":\"hello\"}",
+                     FLB_TRUE);
+    date_test_expect(&t, "{\"date\":\"2023-11-14T22:13:21.250000Z\",\"message\":\"world\"}",
+                     FLB_TRUE);
+
+    date_test_destroy(&t);
+}
+
+void flb_test_gcs_json_date_key_custom(void)
+{
+    int ret;
+    struct gcs_date_test t;
+
+    ret = date_test_run(&t, "json_date_key", "timestamp", DATE_TEST_RECORD, NULL,
+                        DATE_TEST_BODY);
+    if (ret != 0) {
+        return;
+    }
+
+    date_test_expect(&t, "{\"timestamp\":\"" DATE_TEST_ISO8601 "\",\"message\":\"hello\"}",
+                     FLB_TRUE);
+    date_test_expect(&t, "\"date\"", FLB_FALSE);
+
+    date_test_destroy(&t);
+}
+
+void flb_test_gcs_json_date_key_disabled(void)
+{
+    int ret;
+    size_t i;
+    struct gcs_date_test t;
+    const char *values[] = {"false", "off", "no"};
+
+    for (i = 0; i < sizeof(values) / sizeof(values[0]); i++) {
+        TEST_CASE(values[i]);
+
+        ret = date_test_run(&t, "json_date_key", values[i], DATE_TEST_RECORD, NULL,
+                            DATE_TEST_BODY);
+        if (ret != 0) {
+            continue;
+        }
+
+        date_test_expect(&t, "{\"message\":\"hello\"}", FLB_TRUE);
+        date_test_expect(&t, "\"date\"", FLB_FALSE);
+        date_test_expect(&t, "2023-11-14", FLB_FALSE);
+
+        date_test_destroy(&t);
+    }
+}
+
+void flb_test_gcs_json_date_format_variants(void)
+{
+    int ret;
+    size_t i;
+    struct gcs_date_test t;
+    struct {
+        const char *format;
+        const char *expected;
+    } cases[] = {
+        {"iso8601",            "\"date\":\"" DATE_TEST_ISO8601 "\""},
+        {"ISO8601",            "\"date\":\"" DATE_TEST_ISO8601 "\""},
+        {"double",             "\"date\":1700000000.5,"},
+        {"epoch",              "\"date\":1700000000,"},
+        {"epoch_ms",           "\"date\":1700000000500,"},
+        {"epoch_millis",       "\"date\":1700000000500,"},
+        {"java_sql_timestamp", "\"date\":\"2023-11-14 22:13:20.500000\""}
+    };
+
+    for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        TEST_CASE(cases[i].format);
+
+        ret = date_test_run(&t, "json_date_format", cases[i].format, DATE_TEST_RECORD,
+                            NULL, DATE_TEST_BODY);
+        if (ret != 0) {
+            continue;
+        }
+
+        date_test_expect(&t, cases[i].expected, FLB_TRUE);
+
+        date_test_destroy(&t);
+    }
+}
+
+void flb_test_gcs_timestamp_zero_is_emitted(void)
+{
+    int ret;
+    time_t now;
+    struct tm tm_now;
+    char current_year[32];
+    struct gcs_date_test t;
+
+    ret = date_test_run(&t, NULL, NULL, "[0, {\"message\":\"hello\"}]", NULL,
+                        DATE_TEST_BODY);
+    if (ret != 0) {
+        return;
+    }
+
+    /* A zero event time is a valid timestamp, not a request for "now" */
+    now = time(NULL);
+    gmtime_r(&now, &tm_now);
+    snprintf(current_year, sizeof(current_year), "\"date\":\"%04d-", tm_now.tm_year + 1900);
+
+    date_test_expect(&t, "\"date\":\"1970-01-01T00:00:00.000000Z\"", FLB_TRUE);
+    date_test_expect(&t, current_year, FLB_FALSE);
+
+    date_test_destroy(&t);
+}
+
+#define DATE_TEST_RECORD_OWN_DATE \
+    "[1700000000.5, {\"date\":\"mine\",\"message\":\"hello\"}]"
+
+void flb_test_gcs_existing_date_field_overrides_event_time(void)
+{
+    int ret;
+    struct gcs_date_test t;
+
+    /*
+     * The record's own field wins over the event time: the JSON serializer
+     * keeps the last occurrence of a duplicated key.
+     */
+    TEST_CASE("same key");
+    ret = date_test_run(&t, NULL, NULL, DATE_TEST_RECORD_OWN_DATE, NULL, DATE_TEST_BODY);
+    if (ret == 0) {
+        date_test_expect(&t, "{\"date\":\"mine\",\"message\":\"hello\"}", FLB_TRUE);
+        date_test_expect(&t, "2023-11-14", FLB_FALSE);
+
+        date_test_destroy(&t);
+    }
+
+    /* Set json_date_key to another name to keep both */
+    TEST_CASE("other key");
+    ret = date_test_run(&t, "json_date_key", "event_time", DATE_TEST_RECORD_OWN_DATE, NULL,
+                        DATE_TEST_BODY);
+    if (ret == 0) {
+        date_test_expect(&t,
+                         "{\"event_time\":\"" DATE_TEST_ISO8601 "\",\"date\":\"mine\","
+                         "\"message\":\"hello\"}",
+                         FLB_TRUE);
+
+        date_test_destroy(&t);
+    }
+}
+
+void flb_test_gcs_rejects_invalid_json_date_format(void)
+{
+    int ret;
+    struct gcs_date_test t;
+
+    ret = date_test_create(&t, "json_date_format", "bogus");
+    if (ret != 0) {
+        return;
+    }
+
+    ret = flb_start(t.ctx);
+    TEST_CHECK_(ret != 0, "expected flb_start to fail with json_date_format=bogus, got %d",
+                ret);
+    if (ret == 0) {
+        t.started = FLB_TRUE;
+    }
+
+    date_test_destroy(&t);
+}
+
+void flb_test_gcs_empty_json_date_format_uses_iso8601(void)
+{
+    int ret;
+    struct gcs_date_test t;
+
+    ret = date_test_run(&t, "json_date_format", "", DATE_TEST_RECORD, NULL,
+                        DATE_TEST_BODY);
+    if (ret != 0) {
+        return;
+    }
+
+    date_test_expect(&t, "\"date\":\"" DATE_TEST_ISO8601 "\"", FLB_TRUE);
+
+    date_test_destroy(&t);
+}
+
 TEST_LIST = {
     {"jwt_signing", flb_test_gcs_jwt_signing},
     {"net_settings_applied_to_upstream", flb_test_gcs_net_settings_applied_to_upstream},
@@ -1908,5 +2436,15 @@ TEST_LIST = {
     {"shutdown_preserves_pending_upload", flb_test_gcs_shutdown_preserves_pending_upload},
     {"unify_tag_buffers_multiple_tags", flb_test_gcs_unify_tag_buffers_multiple_tags},
     {"unify_tag_disabled_by_default", flb_test_gcs_unify_tag_disabled_by_default},
+    {"record_includes_event_timestamp", flb_test_gcs_record_includes_event_timestamp},
+    {"json_date_key_custom", flb_test_gcs_json_date_key_custom},
+    {"json_date_key_disabled", flb_test_gcs_json_date_key_disabled},
+    {"json_date_format_variants", flb_test_gcs_json_date_format_variants},
+    {"timestamp_zero_is_emitted", flb_test_gcs_timestamp_zero_is_emitted},
+    {"existing_date_field_overrides_event_time",
+     flb_test_gcs_existing_date_field_overrides_event_time},
+    {"rejects_invalid_json_date_format", flb_test_gcs_rejects_invalid_json_date_format},
+    {"empty_json_date_format_uses_iso8601",
+     flb_test_gcs_empty_json_date_format_uses_iso8601},
     {NULL, NULL}
 };

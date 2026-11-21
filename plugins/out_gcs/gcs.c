@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_random.h>
 #include <fluent-bit/flb_unescape.h>
+#include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_aws_util.h>
 #include <fluent-bit/aws/flb_aws_compress.h>
 
@@ -2006,7 +2007,24 @@ static int cb_gcs_init(struct flb_output_instance *ins, struct flb_config *confi
     }
     ctx->out_format = FLB_PACK_JSON_FORMAT_LINES;
     ctx->gcs_format = FLB_GCS_FORMAT_JSON_LINES;
-    ctx->json_date_format = FLB_PACK_JSON_DATE_DOUBLE;
+    ctx->json_date_format = FLB_PACK_JSON_DATE_ISO8601;
+    tmp = flb_output_get_property("json_date_format", ins);
+    if (tmp) {
+        ret = flb_pack_to_json_date_type(tmp);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "invalid json_date_format '%s'", tmp);
+            goto error;
+        }
+        ctx->json_date_format = ret;
+    }
+
+    /* The date key is written unless it is set to a false boolean value */
+    ctx->date_key = ctx->json_date_key;
+    tmp = flb_output_get_property("json_date_key", ins);
+    if (tmp && flb_utils_bool(tmp) == FLB_FALSE) {
+        ctx->date_key = NULL;
+    }
+
     if (ctx->content_type == NULL) {
         ctx->content_type = flb_sds_create("application/json");
         if (!ctx->content_type) {
@@ -2189,7 +2207,7 @@ static void cb_gcs_flush(struct flb_event_chunk *event_chunk, struct flb_output_
 
     payload = flb_pack_msgpack_to_json_format(event_chunk->data, event_chunk->size,
                                               ctx->out_format, ctx->json_date_format,
-                                              ctx->json_date_key, config->json_escape_unicode);
+                                              ctx->date_key, config->json_escape_unicode);
     if (!payload) {
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
@@ -2295,6 +2313,17 @@ static struct flb_config_map config_map[] = {
      0, FLB_FALSE, 0,
      "Output format. Supported values: json_lines and parquet. When format is "
      "parquet, compression selects the page-level codec."
+    },
+    {
+     FLB_CONFIG_MAP_STR, "json_date_format", NULL,
+     0, FLB_FALSE, 0,
+     FBL_PACK_JSON_DATE_FORMAT_DESCRIPTION
+    },
+    {
+     FLB_CONFIG_MAP_STR, "json_date_key", "date",
+     0, FLB_TRUE, offsetof(struct flb_gcs, json_date_key),
+     "Specifies the name of the date field in output. Set to false, off or no "
+     "to disable it."
     },
     {
      FLB_CONFIG_MAP_STR, "bucket", NULL,
