@@ -118,6 +118,7 @@ struct flb_gcs {
     int gcs_format;
     int json_date_format;
     flb_sds_t json_date_key;
+    flb_sds_t date_key;
     int compression_type;
     struct flb_fstore *fs;
     struct flb_fstore_stream *fs_stream;
