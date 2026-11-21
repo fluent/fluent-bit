@@ -38,6 +38,12 @@
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_sds.h>
 
+#ifdef FLB_HAVE_METRICS
+#include <cmetrics/cmt_histogram.h>
+#endif
+
+struct flb_az_li_batch;
+
 /* Context structure for Azure Logs Ingestion API */
 struct flb_az_li {
     /* log ingestion account setup */
@@ -56,6 +62,11 @@ struct flb_az_li {
     /* compress payload */
     int compress_enabled;
 
+    /* optional deferred whole-chunk batching */
+    int batch_chunk_count;
+    int batch_timeout;
+    struct flb_az_li_batch *batch;
+
     /* mangement auth */
     flb_sds_t auth_url_override;
     flb_sds_t auth_url;
@@ -67,9 +78,17 @@ struct flb_az_li {
     struct flb_upstream *u_dce;
     flb_sds_t dce_u_url;
 
+#ifdef FLB_HAVE_METRICS
+    struct cmt_histogram *cmt_uncompressed_payload_size;
+    struct cmt_histogram *cmt_http_payload_size;
+#endif
+
     /* plugin output and config instance reference */
     struct flb_output_instance *ins;
     struct flb_config *config;
 };
+
+int az_li_send_payload(struct flb_az_li *ctx, const void *payload,
+                       size_t payload_size, struct flb_config *config);
 
 #endif
