@@ -33,6 +33,9 @@
 #include <fluent-bit/flb_file.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input_plugin.h>
+#ifdef __QNXNTO__
+#include <sys/iomgr.h>
+#endif
 #include <fluent-bit/flb_parser.h>
 #ifdef FLB_HAVE_REGEX
 #include <fluent-bit/flb_regex.h>
@@ -2357,6 +2360,8 @@ char *flb_tail_file_name(struct flb_tail_file *file)
     char path[PATH_MAX];
 #elif defined(FLB_SYSTEM_WINDOWS)
     HANDLE h;
+#elif defined(__QNXNTO__)
+    int len;
 #elif defined(FLB_SYSTEM_FREEBSD)
     struct kinfo_file *file_entries;
     int file_count;
@@ -2451,6 +2456,19 @@ char *flb_tail_file_name(struct flb_tail_file *file)
         if (strstr(buf, "\\\\?\\")) {
             memmove(buf, buf + 4, len + 1);
         }
+    }
+#elif defined(__QNXNTO__)
+    /* QNX has no /proc/<pid>/fd: ask the resource manager for the path */
+    len = iofdinfo(file->fd, _FDINFO_FLAG_LOCALPATH, NULL, buf, PATH_MAX);
+    if (len == -1) {
+        flb_errno();
+        flb_free(buf);
+        return NULL;
+    }
+    /* len counts the terminating NUL, which iofdinfo() always writes */
+    if (len > PATH_MAX) {
+        flb_free(buf);
+        return NULL;
     }
 #elif defined(FLB_SYSTEM_FREEBSD)
     if ((file_entries = kinfo_getfile(getpid(), &file_count)) == NULL) {

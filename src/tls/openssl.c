@@ -28,6 +28,11 @@
 #include <fluent-bit/tls/flb_tls.h>
 #include <fluent-bit/tls/flb_tls_info.h>
 
+#ifdef __QNXNTO__
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#endif
+
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/opensslv.h>

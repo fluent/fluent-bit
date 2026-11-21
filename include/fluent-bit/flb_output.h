@@ -20,7 +20,8 @@
 #ifndef FLB_OUTPUT_H
 #define FLB_OUTPUT_H
 
-#ifndef _XOPEN_SOURCE
+/* QNX rejects a valueless _XOPEN_SOURCE and needs none */
+#if !defined(_XOPEN_SOURCE) && !defined(__QNXNTO__)
 #define _XOPEN_SOURCE
 #endif
 
