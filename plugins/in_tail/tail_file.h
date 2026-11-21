@@ -94,6 +94,20 @@ static inline int flb_tail_target_file_name_cmp(char *name,
 
     base_b = basename(name_b);
     ret = _stricmp(base_a, base_b);
+
+    /*
+     * Fallback: when monitoring symlinks the DB stores the symlink path
+     * (file->name) while real_name resolves to the target.  Compare
+     * against the original path so the entry is still recognised.
+     */
+    if (ret != 0 && file->name) {
+        flb_free(name_b);
+        name_b = flb_strdup(file->name);
+        if (name_b) {
+            base_b = basename(name_b);
+            ret = _stricmp(base_a, base_b);
+        }
+    }
 #else
     name_b = flb_strdup(file->real_name);
     if (!name_b) {
@@ -103,6 +117,20 @@ static inline int flb_tail_target_file_name_cmp(char *name,
     }
     base_b = basename(name_b);
     ret = strcmp(base_a, base_b);
+
+    /*
+     * Fallback: when monitoring symlinks the DB stores the symlink path
+     * (file->name) while real_name resolves to the target.  Compare
+     * against the original path so the entry is still recognised.
+     */
+    if (ret != 0 && file->name) {
+        flb_free(name_b);
+        name_b = flb_strdup(file->name);
+        if (name_b) {
+            base_b = basename(name_b);
+            ret = strcmp(base_a, base_b);
+        }
+    }
 #endif
 
  out:
