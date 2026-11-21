@@ -589,6 +589,9 @@ void test_parser_timestamp_timezone(char *tz,
     int bytes;
     char *output, *original_tz = NULL;
     char *saved_tz = NULL;
+#ifdef _WIN32
+    long saved_dstbias = _dstbias;
+#endif
     char p[256];
     char expected[256];
     flb_ctx_t *ctx;
@@ -624,6 +627,12 @@ void test_parser_timestamp_timezone(char *tz,
         ret = setenv("TZ", tz, 1);
         TEST_CHECK(ret == 0);
         tzset(); /* Make sure timezone changes take effect */
+#ifdef _WIN32
+        /* UCRT retains the host's DST bias when TZ is set. Both test zones
+         * advance clocks by one hour during daylight saving time.
+         */
+        _dstbias = -3600;
+#endif
     }
 
     ctx = flb_create();
@@ -711,6 +720,9 @@ void test_parser_timestamp_timezone(char *tz,
         unsetenv("TZ");
     }
     tzset();
+#ifdef _WIN32
+    _dstbias = saved_dstbias;
+#endif
 }
 
 void flb_test_filter_parser_use_system_timezone()
@@ -723,19 +735,18 @@ void flb_test_filter_parser_use_system_timezone()
     } test_cases[] = {
         /* Confirm that daylight savings time is properly detected. */
         {"EST5EDT", "2023-02-14 12:00:00", "1676394000"}, /* Should be ST */
-#ifdef _WIN32
-        /* Verify the Windows runtime applies daylight saving time. */
         {"EST5EDT", "2023-10-17 05:00:00", "1697533200"}, /* Should be DST */
 
         /* Examples from https://github.com/fluent/fluent-bit/issues/9197. */
+#ifdef _WIN32
+        /* UCRT accepts abbreviation/offset TZ strings and uses US DST rules.
+         * These dates are well inside winter and summer in both countries.
+         */
+        {"GMT0BST", "2024-01-20 10:00:00", "1705744800"}, /* Should be ST */
+        {"GMT0BST", "2024-08-20 11:00:00", "1724148000"}, /* Should be DST */
+#else
         {"Europe/London", "2024-01-20 10:00:00", "1705744800"}, /* Should be ST */
         {"Europe/London", "2024-08-20 11:00:00", "1724148000"}, /* Should be DST */
-#else
-        {"EST5EDT", "2023-10-17 05:00:00", "1697533200"}, /* Should be DST */
-
-        /* Examples from https://github.com/fluent/fluent-bit/issues/9197. */
-        {"Europe/London", "2024-01-20 10:00:00", "1705744800"}, /* Should be ST */
-        {"Europe/London", "2024-08-20 11:00:00", "1724148000"},
 #endif
 
         {NULL, NULL, NULL}
