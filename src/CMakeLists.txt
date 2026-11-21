@@ -95,6 +95,7 @@ set(src
   flb_processor.c
   flb_reload.c
   flb_supervisor.c
+  flb_mem_monitor.c
   flb_msgpack_append_message.c
   flb_notification.c
   flb_lock.c

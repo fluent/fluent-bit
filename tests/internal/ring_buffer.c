@@ -210,6 +210,7 @@ static void test_collector_bounded_pass(void)
     mk_list_init(&config.inputs);
     first.mem_buf_status = second.mem_buf_status = FLB_INPUT_RUNNING;
     first.storage_buf_status = second.storage_buf_status = FLB_INPUT_RUNNING;
+    first.mem_monitor_status = second.mem_monitor_status = FLB_INPUT_RUNNING;
 #ifdef FLB_HAVE_METRICS
     first.rate_gate_status = second.rate_gate_status = FLB_INPUT_RUNNING;
 #endif

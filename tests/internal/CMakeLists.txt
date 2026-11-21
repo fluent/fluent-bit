@@ -15,6 +15,7 @@ set(UNIT_TESTS_FILES
   kv.c
   slist.c
   router.c
+  mem_monitor.c
   router_config.c
   network.c
   network_dns.c

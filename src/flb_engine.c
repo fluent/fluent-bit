@@ -53,6 +53,7 @@
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_sosreport.h>
 #include <fluent-bit/flb_storage.h>
+#include <fluent-bit/flb_mem_monitor.h>
 #include <fluent-bit/flb_http_server.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_metrics.h>
@@ -1476,6 +1477,18 @@ int flb_engine_start(struct flb_config *config)
     }
 #endif
 
+    /* Memory monitor: enforces 'memory.limit' if it has been set */
+    config->mem_monitor = flb_mem_monitor_create(config);
+    if (config->mem_monitor == NULL) {
+        flb_error("[engine] could not initialize the memory monitor");
+        return -1;
+    }
+
+    ret = flb_mem_monitor_start(config->mem_monitor);
+    if (ret == -1) {
+        return -1;
+    }
+
     /* Prepare routing paths */
     ret = flb_router_io_set(config);
     if (ret == -1) {
@@ -1975,6 +1988,12 @@ int flb_engine_shutdown(struct flb_config *config)
     flb_output_exit(config);
     flb_custom_exit(config);
     flb_input_exit_all(config);
+
+    /* memory monitor */
+    if (config->mem_monitor) {
+        flb_mem_monitor_destroy(config->mem_monitor);
+        config->mem_monitor = NULL;
+    }
 
     /* scheduler */
     sched_params = (struct flb_sched_timer_coro_cb_params *) FLB_TLS_GET(sched_timer_coro_cb_params);
