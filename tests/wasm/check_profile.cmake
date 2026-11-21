@@ -35,6 +35,11 @@ check_profile(defaults "" -DEXPECT_FTS=ON)
 check_profile(old_sdk "FLB_WASM_BROWSER requires Emscripten 6.0.9" -DEMSCRIPTEN_VERSION=5.0.7)
 check_profile(unvalidated_sdk "FLB_WASM_BROWSER requires Emscripten 6.0.9" -DEMSCRIPTEN_VERSION=6.0.10)
 check_profile(minimal "" -DFLB_MINIMAL=ON -DEXPECT_FTS=OFF)
+check_profile(disable_sqlite "" -DFLB_SQLDB=OFF)
+check_profile(disable_ripser "" -DFLB_RIPSER=OFF)
+check_profile(reject_tda_without_backend "FLB_PROCESSOR_TDA is not supported by the browser build profile"
+  -DFLB_RIPSER=OFF -DFLB_PROCESSOR_TDA=ON)
+check_profile(disable_tests "" -DFLB_TESTS_INTERNAL=OFF -DFLB_TESTS_RUNTIME=OFF)
 check_profile(disable_filter "" -DFLB_FILTER_GREP=OFF)
 check_profile(disable_lua "" -DFLB_WASM_LUA=OFF -DFLB_FILTER_LUA=OFF -DFLB_PROCESSOR_FTS=OFF -DEXPECT_FTS=OFF)
 check_profile(disable_fts "" -DFLB_PROCESSOR_FTS=OFF -DEXPECT_FTS=OFF)
@@ -44,9 +49,9 @@ check_profile(reject_lua_without_backend "FLB_FILTER_LUA is not supported by the
   -DFLB_WASM_LUA=OFF -DFLB_FILTER_LUA=ON)
 check_profile(native_defaults "" -DPROFILE_TEST_MODE=native)
 check_profile(wrong_toolchain "FLB_WASM_BROWSER requires Emscripten" -DPROFILE_TEST_MODE=wrong_toolchain)
-foreach(incompatible IN ITEMS FLB_IN_HTTP FLB_OUT_TCP FLB_FILTER_WASM FLB_FILTER_CHECKLIST
+foreach(incompatible IN ITEMS FLB_IN_HTTP FLB_OUT_TCP FLB_FILTER_WASM
     FLB_WASM FLB_TLS FLB_ALL FLB_DEV FLB_SHARED_LIB FLB_PREFER_SYSTEM_LIBS FLB_LUAJIT
-    FLB_RIPSER FLB_PROCESSOR_TDA)
+    FLB_OUT_GCS FLB_FILTER_NIGHTFALL)
   check_profile(reject_${incompatible}
     "${incompatible} is not supported by the browser build profile" -D${incompatible}=ON)
 endforeach()

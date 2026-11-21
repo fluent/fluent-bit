@@ -14,6 +14,70 @@ features, current startup measurements, and remaining release gates.
 `FLB_WASM_BROWSER=ON` selects this profile. The existing `FLB_WASM` option
 embeds WAMR inside native Fluent Bit and is disabled here.
 
+## Expanded plugin profile
+
+The default browser profile enables 69 plugin options: 14 inputs, 19 filters,
+10 processors and 26 outputs, plus SQLite, Ripser and Unicode conversion. Plugins still obey their
+usual feature dependencies. `FLB_MINIMAL=ON` and explicit plugin `OFF` overrides
+remain available. Use a fresh build directory to pick up changed defaults;
+existing CMake caches retain explicit and previously selected values.
+
+- Inputs: `blob`, `dummy`, `emitter`, `event_type`, `fluentbit_logs`, `fluentbit_metrics`, `head`, `lib`, `nginx_exporter_metrics`, `prometheus_scrape`, `prometheus_textfile`, `random`, `storage_backlog`, `tail`.
+- Filters: `alter_size`, `checklist`, `ecs`, `expect`, `geoip2`, `grep`, `log_to_metrics`, `lua`, `modify`, `multiline`, `nest`, `parser`, `record_modifier`, `rewrite_tag`, `stdout`, `sysinfo`, `throttle`, `throttle_size`, `type_converter`.
+- Processors: `content_modifier`, `cumulative_to_delta`, `fts`, `journald_otel`, `labels`, `metrics_selector`, `opentelemetry_envelope`, `sampling`, `sql`, `tda`.
+- Outputs: `arvancloud_cloudlogs`, `azure`, `counter`, `datadog`, `es`, `exit`, `file`, `flowcounter`, `http`, `influxdb`, `kafka_rest`, `lib`, `logdna`, `loki`, `nrlogs`, `null`, `opensearch`, `opentelemetry`, `oracle_log_analytics`, `plot`, `prometheus_remote_write`, `skywalking`, `slack`, `splunk`, `stdout`, `td`.
+
+These are browser builds of the original plugins. Inclusion establishes build
+compatibility; it does not certify every remote service or configuration.
+`browser.url` selects the Fetch destination for HTTP clients. HTTP requests
+remain subject to CORS, browser-controlled headers, HTTPS and response-size
+limits. AWS signing/authentication, native TLS and OAuth-dependent plugins
+remain unavailable. Kafka REST uses HTTP; the Kafka broker plugins require
+librdkafka and remain disabled.
+
+File paths refer to Emscripten's virtual filesystem, not host files. SDK callers
+can populate assets under `/config/`. Tail uses stat polling and can keep its
+SQLite database there. SQLite and memory files under `/config/` are local to the
+runtime; the SDK's chunk-storage persistence does not persist these assets or
+SQLite databases. GeoIP2 requires an uploaded MaxMind database. System-info
+fields describe the WASM runtime, not host OS telemetry. Configure
+`prometheus_textfile` with `threaded: false`; dedicated input threads are not
+supported by the SDK. HTTP scrape inputs also require accessible, CORS-enabled
+endpoints. ECS metadata is useful only through a browser-accessible endpoint.
+
+The remaining native-only groups are:
+
+| Group | Why it remains disabled |
+| --- | --- |
+| TCP/UDP/Unix listeners, HTTP servers and exporters | Browsers cannot listen on native sockets. |
+| Forward, GELF, NATS, syslog, TCP/UDP and native WebSocket outputs | Their existing implementations use raw socket I/O rather than Fetch. |
+| Host telemetry, systemd, Windows collectors, serial and eBPF | Require host devices, kernel APIs or process information. |
+| Exec, WASI exec and WAMR filters | Require process execution or the separate native WAMR integration. |
+| AWS outputs/filter, BigQuery, GCS, Azure Blob/Kusto/Logs Ingestion, Chronicle, Stackdriver, Kubernetes and Nightfall filters | Existing code requires native TLS contexts, OAuth helpers or AWS credential/signing providers. |
+| Calyptia Fleet/custom integration | Native fleet/process management is not exposed by the browser SDK. |
+| PostgreSQL, TensorFlow, Go/Zig proxy plugins and Arrow | Need additional native dependencies or a separate runtime port. |
+| stdin and test-only event/retry plugins | No interactive stdin API in the SDK; diagnostic plugins are excluded from production defaults. |
+
+`FLB_TESTS_INTERNAL` and `FLB_TESTS_RUNTIME` now default to `ON` in the
+browser profile. They select portable existing C tests, execute under Node
+without process isolation, embed their fixtures into the virtual filesystem,
+and use the static core. Native test suites and shell tests retain their
+existing behavior. Both options can be disabled independently. The ring-buffer
+suite runs its basic and bounded-collector cases; its native notification-pipe
+drain case is excluded. Browser acceptance also covers head/tail delivery,
+SQLite creation, UTF-16 tail conversion, textfile metrics, file output, and Elasticsearch/Datadog
+requests to a local HTTPS receiver. The CI matrix runs optimized and
+AddressSanitizer builds, including C++ code.
+
+```sh
+emcmake cmake -S . -B build-wasm -DFLB_WASM_BROWSER=ON \
+  -DFLB_TESTS_INTERNAL=ON -DFLB_TESTS_RUNTIME=ON \
+  -DFLB_DEBUG=OFF -DFLB_RELEASE=OFF -DCMAKE_BUILD_TYPE=MinSizeRel
+cmake --build build-wasm -j8
+ctest --test-dir build-wasm --output-on-failure
+python3 tests/wasm/sdk_test.py --build-dir build-wasm --browser /path/to/chromium
+```
+
 ## Required dependency updates
 
 The browser build requires the following upstream changes, all merged as of
