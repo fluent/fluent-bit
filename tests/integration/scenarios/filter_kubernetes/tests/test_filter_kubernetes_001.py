@@ -405,6 +405,57 @@ def test_filter_kubernetes_token_command_rejects_multiline_output_over_limit(tmp
     assert "kube token command test" in log_text
 
 
+@pytest.mark.parametrize("source", [
+    pytest.param("command", marks=pytest.mark.skipif(
+        sys.platform != "linux", reason="Kube_Token_Command test is Linux-only")),
+    "file",
+])
+@pytest.mark.parametrize("ending", ["", "\n", "\r\n"], ids=["none", "lf", "crlf"])
+def test_filter_kubernetes_token_trailing_line_break_is_trimmed(tmp_path, source, ending):
+    requests = []
+    pod = json.dumps({"metadata": {"name": "testpod", "namespace": "default",
+                                   "uid": "token-test-pod"}}).encode()
+
+    class Handler(_KubeApiHandler):
+        def do_GET(self):
+            requests.append((self.path, self.headers.get("Authorization")))
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(pod)))
+            self.end_headers()
+            self.wfile.write(pod)
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    token_file = tmp_path / "token"
+    token_file.write_bytes(b"regression-token" + ending.encode())
+    config = _probe_config(tmp_path, use_kubelet=False)
+    kube_filter = config["pipeline"]["filters"][0]
+    del kube_filter["kube_meta_preload_cache_dir"]
+    kube_filter["kube_url"] = f"http://127.0.0.1:{server.server_address[1]}"
+    kube_filter["kube_namespace_file"] = str(tmp_path / "no-namespace")
+    if source == "command":
+        kube_filter["kube_token_command"] = f"cat {shlex.quote(str(token_file))}"
+    else:
+        kube_filter["kube_token_file"] = str(token_file)
+    config_file = tmp_path / "token-trim.yaml"
+    config_file.write_text(yaml.safe_dump(config), encoding="utf-8")
+    service = Service(str(config_file))
+    try:
+        service.start()
+        log_text = service.wait_for_log_contains('"malformed-pod-regression"')
+    finally:
+        service.stop()
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+    assert requests == [("/api/v1/namespaces/default/pods/testpod", "Bearer regression-token")]
+    assert _probe_records(log_text)[0]["kubernetes"]["pod_id"] == "token-test-pod"
+
+
 @pytest.mark.parametrize("instances_per_host", [1, 8])
 def test_filter_kubernetes_pod_association_is_independent_per_instance(tmp_path, instances_per_host):
     cert_dir = os.path.abspath(

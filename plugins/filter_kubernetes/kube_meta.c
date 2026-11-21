@@ -202,6 +202,20 @@ static int get_http_auth_header(struct flb_kube *ctx)
         return -1;
     }
 
+    /*
+     * Token commands (e.g. aws-iam-authenticator token --token-only) and
+     * token files commonly end with a newline.
+     */
+    while (tk_size > 0 && (tk[tk_size - 1] == '\n' || tk[tk_size - 1] == '\r')) {
+        tk[--tk_size] = '\0';
+    }
+
+    if (tk_size == 0) {
+        flb_plg_warn(ctx->ins, "kubernetes token is empty");
+        flb_free(tk);
+        return -1;
+    }
+
     flb_plg_info(ctx->ins, " token updated");
     ctx->kube_token_create = time(NULL);
 
