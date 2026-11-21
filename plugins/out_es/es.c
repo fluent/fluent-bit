@@ -1383,6 +1383,22 @@ static int elasticsearch_error_check(struct flb_elasticsearch *ctx,
     return check;
 }
 
+/*
+ * The node a partial retry payload was pinned to could not take the request
+ * at all (connection error or a non-200 answer). Drop the saved payload so
+ * the next attempt formats the whole chunk for the next node in the rotation
+ * instead of retrying a node that may stay down until retry_limit. Documents
+ * the pinned node already accepted can be sent again, the same as any other
+ * full-chunk retry.
+ */
+static void es_drop_pinned_retry(struct flb_elasticsearch *ctx,
+                                 struct flb_output_flush *out_flush)
+{
+    flb_plg_debug(ctx->ins, "pinned upstream node failed, the next retry "
+                  "goes through the node rotation");
+    flb_output_clear_retry_context(out_flush);
+}
+
 static void cb_es_flush(struct flb_event_chunk *event_chunk,
                         struct flb_output_flush *out_flush,
                         struct flb_input_instance *ins, void *out_context,
@@ -1422,6 +1438,8 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     size_t successful_bytes;
     int successful_records;
     int retry_context_result;
+    int pinned_node;
+    int node_failed;
 #ifdef FLB_HAVE_AWS
     struct flb_aws_provider *aws_provider;
     const char *aws_region;
@@ -1435,10 +1453,26 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     final_payload_size = 0;
     next_retry_payload = NULL;
     throttle_detected = FLB_FALSE;
+    pinned_node = FLB_FALSE;
+    node_failed = FLB_FALSE;
+
+    retry_payload = flb_output_get_retry_context(out_flush, NULL, NULL);
 
     node_ctx = NULL;
     if (ctx->ha_mode == FLB_TRUE) {
-        node = flb_upstream_ha_node_get(ctx->ha);
+        /*
+         * A saved partial retry payload was formatted for the node that
+         * answered it, with that node's index, write_operation and id
+         * settings, so send it back there instead of to the next node in
+         * the rotation.
+         */
+        if (retry_payload != NULL && retry_payload->node != NULL) {
+            node = retry_payload->node;
+            pinned_node = FLB_TRUE;
+        }
+        else {
+            node = flb_upstream_ha_node_get(ctx->ha);
+        }
         if (node == NULL) {
             FLB_OUTPUT_RETURN(FLB_RETRY);
         }
@@ -1456,10 +1490,12 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(upstream);
     if (!u_conn) {
+        if (pinned_node == FLB_TRUE) {
+            es_drop_pinned_retry(ctx, out_flush);
+        }
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    retry_payload = flb_output_get_retry_context(out_flush, NULL, NULL);
     if (retry_payload != NULL) {
         out_buf = flb_malloc(retry_payload->size);
         if (out_buf == NULL) {
@@ -1616,6 +1652,7 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     ret = flb_http_do(c, &b_sent);
     if (ret != 0) {
         flb_plg_warn(ctx->ins, "http_do=%i URI=%s", ret, uri);
+        node_failed = FLB_TRUE;
         goto retry;
     }
     else {
@@ -1634,6 +1671,7 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
                 es_apply_retry_after(ctx, c, out_flush);
                 goto throttle;
             }
+            node_failed = FLB_TRUE;
             goto retry;
         }
 
@@ -1650,6 +1688,8 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
             retry_records = 0;
             if (next_retry_payload != NULL) {
                 retry_records = next_retry_payload->records;
+                /* NULL unless upstream mode picked a node */
+                next_retry_payload->node = node;
             }
             dropped_records = 0;
             dropped_bytes = 0;
@@ -1780,6 +1820,9 @@ static void cb_es_flush(struct flb_event_chunk *event_chunk,
     /* Issue a retry */
  retry:
     ret = FLB_RETRY;
+    if (pinned_node == FLB_TRUE && node_failed == FLB_TRUE) {
+        es_drop_pinned_retry(ctx, out_flush);
+    }
 
  failure:
     if (c != NULL) {

@@ -42,6 +42,11 @@ struct flb_search_bulk_retry {
     char *payload;
     size_t size;
     int records;
+    /*
+     * Upstream node the payload was formatted for, or NULL. Set by the
+     * caller and not owned by the retry context.
+     */
+    void *node;
 };
 
 /*
