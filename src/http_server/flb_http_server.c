@@ -544,6 +544,7 @@ static int flb_http_server_client_activity_event_handler(void *data)
 
     close_connection = FLB_FALSE;
 
+dispatch_requests:
     cfl_list_foreach_safe(iterator,
                             backup_iterator,
                             &session->request_queue) {
@@ -599,6 +600,31 @@ request_complete:
         else {
             flb_http_request_destroy(&stream->request);
             flb_http_response_destroy(&stream->response);
+        }
+    }
+
+    /*
+     * An HTTP/1.x session parses one request at a time, and the bytes of a
+     * pipelined request that arrived in the same read stay in incoming_data.
+     * No read event will come for them, so parse them now instead of
+     * leaving the client waiting until it sends more data.
+     */
+    if (!close_connection &&
+        session->version != HTTP_PROTOCOL_VERSION_AUTODETECT &&
+        session->version <= HTTP_PROTOCOL_VERSION_11 &&
+        cfl_sds_len(session->incoming_data) > 0) {
+        result = flb_http1_server_session_ingest(&session->http1, NULL, 0);
+
+        if (result < 0) {
+            /* Send the responses of the requests already handled */
+            flb_http_server_session_write(session);
+            flb_http_server_session_destroy(session);
+
+            return -1;
+        }
+
+        if (!cfl_list_is_empty(&session->request_queue)) {
+            goto dispatch_requests;
         }
     }
 
