@@ -1,10 +1,14 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-#include <dirent.h>
 #include <limits.h>
-#include <sys/stat.h>
 #include <ctype.h>
 #include <time.h>
 #include <fluent-bit.h>
+#ifdef FLB_SYSTEM_WINDOWS
+#include <windows.h>
+#else
+#include <dirent.h>
+#include <sys/stat.h>
+#endif
 #include <fluent-bit/flb_time.h>
 #include "flb_tests_runtime.h"
 #include "../include/flb_tests_tmpdir.h"
@@ -1887,6 +1891,58 @@ void flb_test_gcs_total_file_size_zero_disables_size_trigger(void)
  */
 static void read_store_dir_files(const char *path, char **buf, size_t *len)
 {
+#ifdef FLB_SYSTEM_WINDOWS
+    WIN32_FIND_DATAA data;
+    HANDLE handle;
+    char pattern[PATH_MAX];
+    char child[PATH_MAX];
+    FILE *fp;
+    char *tmp;
+    size_t n;
+    long size;
+
+    snprintf(pattern, sizeof(pattern), "%s\\*", path);
+    handle = FindFirstFileA(pattern, &data);
+    if (handle == INVALID_HANDLE_VALUE) {
+        return;
+    }
+
+    do {
+        if (strcmp(data.cFileName, ".") == 0 || strcmp(data.cFileName, "..") == 0) {
+            continue;
+        }
+
+        snprintf(child, sizeof(child), "%s\\%s", path, data.cFileName);
+        if (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            read_store_dir_files(child, buf, len);
+            continue;
+        }
+
+        fp = fopen(child, "rb");
+        if (!fp) {
+            continue;
+        }
+
+        if (fseek(fp, 0, SEEK_END) != 0 || (size = ftell(fp)) < 0 ||
+            fseek(fp, 0, SEEK_SET) != 0) {
+            fclose(fp);
+            continue;
+        }
+
+        tmp = flb_realloc(*buf, *len + (size_t) size + 1);
+        if (!tmp) {
+            fclose(fp);
+            break;
+        }
+        *buf = tmp;
+        n = fread(*buf + *len, 1, (size_t) size, fp);
+        *len += n;
+        (*buf)[*len] = '\0';
+        fclose(fp);
+    } while (FindNextFileA(handle, &data) != 0);
+
+    FindClose(handle);
+#else
     DIR *dir;
     struct dirent *entry;
     struct stat st;
@@ -1937,6 +1993,7 @@ static void read_store_dir_files(const char *path, char **buf, size_t *len)
     }
 
     closedir(dir);
+#endif
 }
 
 /* Byte search: buffered files carry a binary header before the JSON lines */
