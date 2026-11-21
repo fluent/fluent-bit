@@ -759,6 +759,11 @@ static struct flb_config_map config_map[] = {
       "Read the journal from the end (tail)"
     },
     {
+      FLB_CONFIG_MAP_TIME, "read_since", "0",
+      0, FLB_TRUE, offsetof(struct flb_systemd_config, read_since),
+      "Read the journal starting from this duration ago, e.g. 30m, 1h, 2d"
+    },
+    {
       FLB_CONFIG_MAP_BOOL, "lowercase", "false",
       0, FLB_TRUE, offsetof(struct flb_systemd_config, lowercase),
       "Lowercase the fields"

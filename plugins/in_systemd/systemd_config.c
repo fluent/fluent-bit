@@ -237,7 +237,11 @@ struct flb_systemd_config *flb_systemd_config_create(struct flb_input_instance *
         }
     }
 
-    if (ctx->read_from_tail == FLB_TRUE) {
+    if (ctx->read_since > 0) {
+        sd_journal_seek_realtime_usec(ctx->j,
+                                      ((uint64_t) time(NULL) - ctx->read_since) * 1000000ULL);
+    }
+    else if (ctx->read_from_tail == FLB_TRUE) {
         sd_journal_seek_tail(ctx->j);
         sd_journal_previous(ctx->j);
         /*
