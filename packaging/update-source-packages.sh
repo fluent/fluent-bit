@@ -1,10 +1,9 @@
 #!/bin/bash
 set -eux
 
-# We provide the source code as a standalone checksummed package along with the JSON schema and AppVeyor binaries.
+# We provide the source code as a standalone checksummed package along with the JSON schema and Windows binaries.
 # This is hosted at releases.fluentbit.io
 
-WINDOWS_SOURCE_DIR=${WINDOWS_SOURCE_DIR:-ignore}
 VERSION=${VERSION:-$1}
 MAJOR_VERSION=${MAJOR_VERSION:-}
 SOURCE_DIR=${SOURCE_DIR:?}
@@ -35,33 +34,13 @@ mkdir -p "$TARGET_DIR/$MAJOR_VERSION"
 echo "Updating JSON schema"
 find "$SOURCE_DIR/" -iname "fluent-bit-schema*$VERSION*.json" -exec cp -vf "{}" "$TARGET_DIR/$MAJOR_VERSION/" \;
 
-# Intended for AppVeyor usage
-if [[ -d "$WINDOWS_SOURCE_DIR" ]]; then
-    echo "Using overridden Windows directory: $WINDOWS_SOURCE_DIR"
-    pushd "$WINDOWS_SOURCE_DIR"
-        for i in *.exe
-        do
-            echo "$i"
-            sha256sum "$i" > "$i".sha256
-        done
-
-        for i in *.zip
-        do
-            echo "$i"
-            sha256sum "$i" > "$i".sha256
-        done
-    popd
+# Windows - we do want word splitting and ensure some files exist
+if compgen -G "$SOURCE_DIR/windows/*$VERSION*" > /dev/null; then
+    echo "Copying Windows artefacts"
     # shellcheck disable=SC2086
-    cp -vf "$WINDOWS_SOURCE_DIR"/*$VERSION* "$TARGET_DIR/$MAJOR_VERSION/"
+    cp -vf "$SOURCE_DIR"/windows/*$VERSION* "$TARGET_DIR/$MAJOR_VERSION/"
 else
-    # Windows - we do want word splitting and ensure some files exist
-    if compgen -G "$SOURCE_DIR/windows/*$VERSION*" > /dev/null; then
-        echo "Copying Windows artefacts"
-        # shellcheck disable=SC2086
-        cp -vf "$SOURCE_DIR"/windows/*$VERSION* "$TARGET_DIR/$MAJOR_VERSION/"
-    else
-        echo "Missing Windows builds"
-    fi
+    echo "Missing Windows builds"
 fi
 
 # Source - we do want word splitting and ensure some files exist

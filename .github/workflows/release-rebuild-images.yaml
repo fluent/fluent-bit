@@ -31,8 +31,10 @@ on:
         type: boolean
         default: true
 
-# Different versions can be rebuilt in parallel, the same version cannot.
-concurrency: release-rebuild-images-${{ inputs.version || 'newest' }}
+# An omitted version can resolve to the same release as an explicit version.
+concurrency:
+  group: release-rebuild-images
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -293,6 +295,22 @@ jobs:
     permissions:
       packages: write
     steps:
+      # A retry can reuse the build id from an earlier planning attempt. If another run already
+      # published that id while this run was stopped, stop here before any publishing job runs.
+      - name: Check the build id is still free
+        run: |
+          docker run --rm quay.io/skopeo/stable:latest list-tags --retry-times 10 \
+            --creds "$GHCR_CREDS" "docker://$GHCR_RELEASE_IMAGE_NAME" > published-tags.json
+          if jq -e --arg tag "$VERSION-$BUILD" '.Tags | index($tag)' published-tags.json > /dev/null; then
+            echo "::error::$VERSION-$BUILD was published by another run after this one was planned. Start a new run."
+            exit 1
+          fi
+        env:
+          VERSION: ${{ needs.rebuild-plan.outputs.version }}
+          BUILD: ${{ needs.rebuild-plan.outputs.build }}
+          GHCR_CREDS: ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+
       - name: Tag the original images
         run: |
           keep() {

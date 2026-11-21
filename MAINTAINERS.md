@@ -15,6 +15,8 @@ Fluent Bit is developed and supported by many individuals and companies.  The fo
 | [Shelby Hagman](https://github.com/ShelbyZ)          | Amazon Plugins (AWS)     | [Amazon Web Services](https://aws.amazon.com/)    |
 | [Tanmaya Panda](https://github.com/tanmaya-panda1)    | Azure Plugins            | [Microsoft](https://www.microsoft.com/)           |
 
+How maintainer tasks are carried out is described in the [Maintainers Guide](MAINTAINERS_GUIDE.md).
+
 ## Emeritus Maintainers
 
 The following people served as Fluent Bit maintainers in the past. We thank them for their contributions to the project.

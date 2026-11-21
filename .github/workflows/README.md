@@ -3,9 +3,9 @@
 | Workflow file                                         | Description               | Run event                                         |
 | :---------------------------------------------------- | ------------------------  | ------------------------------------------------- |
 | [build-master-packages](./build-master-packages.yaml) | Builds packages using `master` for certain targets | on new commit/push on master / manual |
-| [cron-unstable-build](./cron-unstable-build.yaml) | Automated nightly builds of each supported branch | Scheduled/manual trigger |
+| [cron-unstable-build](./cron-unstable-build.yaml) | Scheduled builds of `master` and `3.2`, with manual builds for other branches | Scheduled/manual trigger |
 | [master-integration-test](./master-integration-test.yaml)     | Runs the integration testing suite on master | on new commit/push on master |
-| [staging-build](./staging-build.yaml)            | Builds the distro packages and docker images from a tagged release into staging (S3 and GHCR) | on new release/tag |
+| [staging-build](./staging-build.yaml)            | Builds the distro packages and docker images from a tagged release into staging (S3 and GHCR) | on any new tag / manual |
 | [staging-test](./staging-test.yaml)            | Test the staging distro packages and docker images| manually or when `staging-build` completes successfully |
 | [staging-release](./staging-release.yaml)        | Publishes the docker images/manifest on hub.docker.io/fluent/ and the distro packages | manual approval |
 | [release-rebuild-images](./release-rebuild-images.yaml) | Rebuilds the container images of a released version on updated base images and refreshes the wiki image index and status pages | manually |
@@ -13,8 +13,7 @@
 | [pr-compile-check](./pr-compile-check.yaml)      | Runs some compilation sanity checks on a PR |
 | [pr-integration-test](./pr-integration-test.yaml)     | Runs the integration testing suite on a PR branch | pr opened / label created 'ok-to-test' / on new commit/push on PR(s) |
 | [pr-package-tests](./pr-package-tests.yaml)     | Runs the package build for all targets on a PR branch | pr opened / label created 'ok-package-test' / on new commit/push on PR(s) |
-| [pr-perf-test](./pr-integration-test.yaml)     | Runs the performance testing suite on a PR branch | pr opened / label created 'ok-to-performance-test' / on new commit/push on PR(s) |
-| [pr-stale](./pr-stale.yaml)                      | Closes stale PR(s) with no activity in 30 days | scheduled daily 01:30 AM UTC|
+| [cron-stale](./cron-stale.yaml)                  | Marks issues and PR(s) stale after 90 days with no activity and closes stale issues 5 days later; PR(s) are not closed | scheduled daily 01:30 AM UTC|
 | [unit-tests](./unit-tests.yaml)     | Runs the unit tests suite on master push or new PR | PR opened, merge in master branch |
 
 ## Available labels
@@ -26,23 +25,50 @@
 | ok-to-test | run all integration tests |
 | ok-to-merge | run mergebot and merge (rebase) current PR |
 | ci/integration-docker-ok | integration test is able to build docker image |
-| ci/integration-gcp-ok | integration test is able to run on GCP |
+| ci/integration-test-ok | integration tests passed |
+| ci:qemu | also run the unit tests under QEMU on a PR |
 | long-term | long running pull request, don't close |
 | exempt-stale | prevent stale checks running |
 
 ## Required secrets
 
+Building and publishing packages:
+
 * AWS_ACCESS_KEY_ID
 * AWS_SECRET_ACCESS_KEY
 * AWS_S3_BUCKET_STAGING
 * AWS_S3_BUCKET_RELEASE
+* AWS_S3_BUCKET_RELEASE_SOURCES
 * GPG_PRIVATE_KEY
 * GPG_PRIVATE_KEY_PASSPHRASE
 
-These are only required for Cosign of the container images, will be skipped if not present:
+Publishing container images to Docker Hub (GHCR uses the workflow token):
+
+* DOCKERHUB_ORGANIZATION
+* DOCKERHUB_USERNAME
+* DOCKERHUB_TOKEN
+
+Signing container images with Cosign:
 
 * COSIGN_PRIVATE_KEY
-* COSIGN_PRIVATE_KEY_PASSWORD - if set otherwise not required
+* COSIGN_PASSWORD or COSIGN_PRIVATE_KEY_PASSWORD - if set otherwise not required
+* COSIGN_PUBLIC_KEY
+
+Creating releases and pull requests in this and other repositories (documentation, nightly
+releases):
+
+* GH_PA_TOKEN
+* RELEASE_REPO
+* RELEASE_TOKEN
+
+Integration tests:
+
+* GCP_SA_KEY
+* TF_API_TOKEN
+* OPENSEARCH_AWS_ACCESS_ID
+* OPENSEARCH_AWS_SECRET_KEY
+* OPENSEARCH_ADMIN_PASSWORD
+* CALYPTIA_FLEET_TOKEN
 
 ## Environments
 
@@ -50,7 +76,9 @@ These environments are used:
 
 * `unstable` for all nightly builds
 * `staging` for all staging builds
-* `release` for running the promotion of staging to release, this can have additional approvals added
+* `release` for running the promotion of staging to release and the rebuilds of released container images, this can have additional approvals added
+* `pr` for the on-demand package build of a PR
+* `integration` for the integration tests
 
 If an environment is not present then it will be created but this may not have the appropriate permissions then.
 
@@ -80,17 +108,21 @@ The process at a high level is as follows:
 2. [Deploy to staging](https://github.com/fluent/fluent-bit/actions/workflows/staging-build.yaml) workflow runs.
 3. [Test staging](https://github.com/fluent/fluent-bit/actions/workflows/staging-test.yaml) workflow runs.
 4. Manually initiate [release from staging](https://github.com/fluent/fluent-bit/actions/workflows/staging-release.yaml) workflow.
-5. A PR is auto-created to increment the minor version now for Fluent Bit using the [`update_version.sh`](../../update_version.sh) script.
-6. Create PRs for doc updates - Windows & container versions. (WIP to automate).
+5. A PR is auto-created to move the source tree to the next patch version using the [`update_version.sh`](../../update_version.sh) script.
+6. A PR is auto-created in <https://github.com/fluent/fluent-bit-docs> with the Windows checksums and container versions.
+
+Before the first release of a new series, add that series to the per-series steps of the [release workflow](./staging-release.yaml): the GitHub release, the documentation PR, the version update PR and the `latest` tags.
+A series that is not listed gets no GitHub release and neither PR, and that only shows after the packages and images are already published.
 
 Breaking the steps down.
 
 ### Deploy to staging and test
 
-This should run automatically when a tag is created matching the `v*` regex.
-It currently copes with 1.8+ builds although automation is only exercised for 1.9+ releases.
+This should run automatically when a tag is created. Release tags use the `v` prefix, for example `v5.2.1`.
+It can also be started manually for a version.
 
 Once this is completed successfully the staging tests should also run automatically.
+The release workflow does not check their result, so wait for them to pass before releasing.
 
 ![Workflows for staging and test example](./resources/auto-build-test-workflow.png "Example of workflows for build and test")
 
@@ -99,15 +131,13 @@ If both complete successfully then we are good to go.
 Occasional failures are seen with package builds not downloading dependencies (CentOS 7 in particular seems bad for this).
 A re-run of failed jobs should resolve this.
 
-The workflow builds all Linux, macOS and Windows targets to a staging S3 bucket plus the container images to ghcr.io.
+The workflow builds all Linux, macOS and Windows targets to a staging S3 bucket plus the Linux and Windows container images to ghcr.io.
 
 ### Release from staging workflow
 
 This is a manually initiated workflow, the intention is multiple staging builds can happen but we only release one.
-Note that currently we do not support parallel staging builds of different versions, e.g. master and 1.9 branches.
+Note that currently we do not support parallel staging builds of different versions, e.g. `master` and a maintenance branch.
 **We can only release the previous staging build and there is a check to confirm version.**
-
-Ensure AppVeyor build for the tag has completed successfully as well.
 
 To trigger: <https://github.com/fluent/fluent-bit/actions/workflows/staging-release.yaml>
 
@@ -313,21 +343,16 @@ and Valgrind/Leaks are not applicable to this workflow/Python-only change.
 The parallel publishing of multiple container tags for the same image seems to fail occasionally with network errors, particularly more for ghcr.io than DockerHub.
 This can be resolved by just re-running the failed jobs.
 
-#### Windows builds from AppVeyor
+#### Windows builds
 
-This is automated, however confirm that the actual build is successful for the tag: <https://ci.appveyor.com/project/fluent/fluent-bit-2e87g/history>
-If not then ask a maintainer to retrigger.
-
-It can take a while to find the one for the specific tag...
+Windows packages are built by the [reusable Windows workflow](./call-build-windows.yaml) on GitHub hosted Windows runners as part of the staging build, for the targets listed under `windows_targets` in the [build configuration](../../packaging/build-config.json).
+The Windows container images are built by the [reusable image workflow](./call-build-images.yaml).
+No external CI service is involved.
 
 #### ARM builds
 
-All builds are carried out in containers and intended to be run on a valid Ubuntu host to match a standard Github Actions runner.
-This can take some time for ARM as we have to emulate the architecture via QEMU.
-
-<https://github.com/fluent/fluent-bit/pull/7527> introduces support to run ARM builds on a dedicated [actuated.dev](https://docs.actuated.dev/) ephemeral VM runner.
-A self-hosted ARM runner is sponsored by [Equinix Metal](https://deploy.equinix.com/metal/) and provisioned for this per the [documentation](https://docs.actuated.dev/provision-server/).
-For fork workflows, this should all be skipped and run on a normal Ubuntu Github hosted runner but be aware this may take some time.
+Linux packages and container images for ARM are built on GitHub hosted ARM runners.
+The `arm/v7` container image build needs a runner that can execute 32-bit ARM binaries, it checks that first and fails with a clear message otherwise.
 
 ### Manual release
 
@@ -335,30 +360,30 @@ As long as it is built to staging we can manually publish packages as well via t
 
 Containers can be promoted manually too, ensure to include all architectures and signatures.
 
-### Create PRs
+### Documentation PRs
 
-Once releases are published we need to provide PRs for the following documentation updates:
+Once the release is published the release workflow computes the Windows checksums from the released files and opens a PR in <https://github.com/fluent/fluent-bit-docs> that updates:
 
 1. Windows checksums: <https://docs.fluentbit.io/manual/installation/windows#installation-packages>
 2. Container versions: <https://docs.fluentbit.io/manual/installation/docker#tags-and-versions>
 
-<https://github.com/fluent/fluent-bit-docs> is the repo for updates to docs.
-
-Take the checksums from the release process above, the AppVeyor stage provides them all and we attempt to auto-create the PR with it.
+Review and merge that PR. It also opens the PR in this repository that moves the source tree to the next patch version.
 
 ## Unstable/nightly builds
 
-These happen every 24 hours and [reuse the same workflow](./cron-unstable-build.yaml) as the staging build so are identical except they skip the upload to S3 step.
-This means all targets are built nightly for `master` and `2.1` branches including container images and Linux, macOS and Windows packages.
+These run on a schedule and [reuse the same workflows](./cron-unstable-build.yaml) as the staging build.
+The schedule in that workflow decides the branches: currently `master` at 06:00 and 18:00 UTC and `3.2` at 12:00 UTC.
+A manual run can build another branch. The branch name becomes part of file names, so it must not contain a `/`.
+All targets are built, including container images and Linux, macOS and Windows packages.
 
-The container images are available here (the tag refers to the branch):
+The container images are tagged with the branch, for example:
 
-* [ghcr.io/fluent/fluent-bit/unstable:2.1](ghcr.io/fluent/fluent-bit/unstable:2.1)
-* [ghcr.io/fluent/fluent-bit/unstable:master](ghcr.io/fluent/fluent-bit/unstable:master)
-* [ghcr.io/fluent/fluent-bit/unstable:windows-2022-2.1](ghcr.io/fluent/fluent-bit/unstable:windows-2022-2.1)
-* [ghcr.io/fluent/fluent-bit/unstable:windows-2022-master](ghcr.io/fluent/fluent-bit/unstable:windows-2022-master)
+* `ghcr.io/fluent/fluent-bit/unstable:master`
+* `ghcr.io/fluent/fluent-bit/unstable:windows-2022-master`
 
-The Linux, macOS and Windows packages are available to download from the specific workflow run.
+The packages are attached to the `unstable-<branch>` prerelease.
+Every build deletes that prerelease and creates it again, and the job does not fail when either step fails.
+A green run is therefore no proof that the prerelease exists: check it when the packages matter, and re-run the `unstable-release` job if it is missing.
 
 ## Integration tests
 
@@ -386,7 +411,6 @@ We try to guard these to only trigger when relevant files are changed to reduce 
 The following workflows can be triggered manually for specific PRs too:
 
 * [Integration tests](./pr-integration-test.yaml): Build a container image and run the integration tests as per commits to `master`.
-* [Performance tests](./pr-perf-test.yaml): WIP to trigger a performance test on a dedicated VM and collect the results as a PR comment.
 * [Full package build](./pr-package-tests.yaml): builds all Linux, macOs and Windows packages as well as container images.
 
 To trigger these, apply the relevant label.
@@ -447,7 +471,8 @@ gh run watch "$(gh run list --workflow release-rebuild-images.yaml --limit 1 --j
    layer cache, then runs the usual image tests.
 3. Scans the rebuilt images and publishes them only when they have fewer fixable findings than the
    published ones and no partial multi-arch manifest (`always` also accepts an equal count).
-4. Before the version tags move for the first time, gives every image of the original release a
+4. Checks that no other run published the same build id since this one was planned, and stops
+   if one did. Then, before the version tags move for the first time, gives every image of the original release a
    dated tag from its own build date, so that build stays listed and pullable. Existing dated tags
    are never written again, so a run that failed half way is completed by the next one.
 5. Promotes by digest to `<version>` and a dated `<version>-<YYYYMMDD>` tag, plus the `-debug`,

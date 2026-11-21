@@ -704,7 +704,6 @@ In lieu of full Windows dev environment setup instructions, see these CI automat
 resources for how to set up a Windows build of fluent-bit:
 
 * [`dockerfiles/Dockerfile.windows`](./dockerfiles/Dockerfile.windows) - only build-able using Docker for Windows
-* [`appveyor.yml`](./appveyor.yml)
 * [`.github/workflows/call-build-windows.yaml`](.github/workflows/call-build-windows.yaml) - github automation that runs the build on a Windows worker.
 
 The dependencies must be present:

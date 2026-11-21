@@ -551,7 +551,10 @@ jobs:
         mkdir -p release staging
         aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_RELEASE_SOURCES }}" release/ --no-progress
         aws s3 sync "s3://${{ secrets.AWS_S3_BUCKET_STAGING }}/source/" staging/ --no-progress
+        aws s3 sync "s3://$AWS_S3_BUCKET_STAGING/$RELEASE_VERSION/windows/" staging/windows/ --no-progress
       env:
+        AWS_S3_BUCKET_STAGING: ${{ secrets.AWS_S3_BUCKET_STAGING }}
+        RELEASE_VERSION: ${{ inputs.version }}
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         AWS_REGION: "us-east-1"
@@ -565,7 +568,6 @@ jobs:
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         AWS_REGION: "us-east-1"
         SOURCE_DIR: staging
-        WINDOWS_SOURCE_DIR: appveyor
         TARGET_DIR: release
         VERSION: ${{ github.event.inputs.version }}
         MAJOR_VERSION: ${{ needs.staging-release-version-check.outputs.major-version }}

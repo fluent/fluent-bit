@@ -261,6 +261,12 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(list(self.workflow[True]), ["workflow_dispatch"])
         self.assertEqual(self.workflow["permissions"], {"contents": "read"})
 
+    def test_implicit_and_explicit_release_versions_share_a_concurrency_group(self):
+        self.assertEqual(self.workflow["concurrency"], {
+            "group": "release-rebuild-images",
+            "cancel-in-progress": False,
+        })
+
     def test_rebuild_uses_release_tag_and_fresh_base_images(self):
         build = self.jobs["rebuild-build"]
         self.assertEqual(build["with"]["ref"], "${{ needs.rebuild-plan.outputs.ref }}")
@@ -307,7 +313,12 @@ class WorkflowTests(unittest.TestCase):
     def test_original_release_is_kept_before_any_tag_moves(self):
         keep = self.jobs["rebuild-release-preserve-original"]
         self.assertEqual(keep["if"], "inputs.promote && needs.rebuild-verify.outputs.promote == 'true'")
-        run = keep["steps"][0]["run"]
+        # A run planned in between must not publish the same build id.
+        guard = keep["steps"][0]
+        self.assertIn("'.Tags | index($tag)' published-tags.json", guard["run"])
+        self.assertIn("exit 1", guard["run"])
+        self.assertEqual(guard["env"]["BUILD"], "${{ needs.rebuild-plan.outputs.build }}")
+        run = keep["steps"][1]["run"]
         self.assertIn("--preserve-digests", run)
         # Completeness is checked per registry and image, and a kept build is never overwritten.
         self.assertEqual(run.count("list-tags"), 1)
@@ -315,7 +326,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertLess(run.index("is already kept"), run.index("copy --all"))
         self.assertIn('keep "$GHCR_RELEASE_IMAGE_NAME" "$GHCR_CREDS"', run)
         self.assertIn('keep "$DH_RELEASE_IMAGE_NAME" "$DH_CREDS"', run)
-        self.assertEqual(keep["steps"][0]["env"]["PRESERVE"], "${{ needs.rebuild-plan.outputs.preserve }}")
+        self.assertEqual(keep["steps"][1]["env"]["PRESERVE"], "${{ needs.rebuild-plan.outputs.preserve }}")
         for name in ("rebuild-release-images", "rebuild-release-images-windows"):
             self.assertIn("rebuild-release-preserve-original", self.jobs[name]["needs"])
         windows = "\n".join(step.get("run", "") for step in self.jobs["rebuild-release-images-windows"]["steps"])
