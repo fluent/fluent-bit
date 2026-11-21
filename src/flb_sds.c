@@ -363,7 +363,7 @@ flb_sds_t flb_sds_printf(flb_sds_t *sds, const char *fmt, ...)
 
         va_start(ap, fmt);
         size = vsnprintf((char *) (s + flb_sds_len(s)), flb_sds_avail(s), fmt, ap);
-        if (size > flb_sds_avail(s)) {
+        if (size >= flb_sds_avail(s)) {
             flb_warn("[%s] vsnprintf is insatiable ", __FUNCTION__);
             va_end(ap);
             return NULL;
@@ -403,13 +403,19 @@ int flb_sds_snprintf(flb_sds_t *str, size_t size, const char *fmt, ...)
  retry_snprintf:
     va_start(va, fmt);
     ret = vsnprintf(*str, size, fmt, va);
-    if (ret > size) {
-        tmp = flb_sds_increase(*str, ret-size);
+    if (ret < 0) {
+        va_end(va);
+        return -1;
+    }
+    if ((size_t) ret >= size) {
+        /* +1 for NUL terminator; vsnprintf writes at most size-1 chars. */
+        tmp = flb_sds_increase(*str, (size_t) ret - size + 1);
         if (tmp == NULL) {
+            va_end(va);
             return -1;
         }
         *str = tmp;
-        size = ret;
+        size = (size_t) ret + 1;
         va_end(va);
         goto retry_snprintf;
     }
