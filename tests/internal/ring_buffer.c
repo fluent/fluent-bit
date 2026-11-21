@@ -247,8 +247,49 @@ static void test_collector_bounded_pass(void)
     flb_ring_buffer_destroy(second.rb);
 }
 
+static void test_get_used()
+{
+    int i;
+    int ret;
+    int elements;
+    struct check *c;
+    struct flb_ring_buffer *rb;
+
+    elements = sizeof(checks) / sizeof(struct check);
+
+    rb = flb_ring_buffer_create(sizeof(struct check *) * elements);
+    TEST_CHECK(rb != NULL);
+    if (!rb) {
+        exit(EXIT_FAILURE);
+    }
+
+    /* an empty ring buffer has no pending data */
+    TEST_CHECK(flb_ring_buffer_get_used(rb) == 0);
+
+    for (i = 0; i < elements; i++) {
+        c = &checks[i];
+        ret = flb_ring_buffer_write(rb, (void *) &c, sizeof(c));
+        TEST_CHECK(ret == 0);
+        TEST_CHECK(flb_ring_buffer_get_used(rb) == sizeof(c) * (i + 1));
+    }
+
+    /* a rejected write must not change the used size */
+    ret = flb_ring_buffer_write(rb, (void *) &c, sizeof(c));
+    TEST_CHECK(ret == -1);
+    TEST_CHECK(flb_ring_buffer_get_used(rb) == sizeof(c) * elements);
+
+    for (i = elements; i > 0; i--) {
+        ret = flb_ring_buffer_read(rb, (void *) &c, sizeof(c));
+        TEST_CHECK(ret == 0);
+        TEST_CHECK(flb_ring_buffer_get_used(rb) == sizeof(c) * (i - 1));
+    }
+
+    flb_ring_buffer_destroy(rb);
+}
+
 TEST_LIST = {
     { "basic",       test_basic},
+    { "get_used",    test_get_used},
     { "smart_flush", test_smart_flush},
     { "collector_bounded_pass", test_collector_bounded_pass},
     { 0 }
