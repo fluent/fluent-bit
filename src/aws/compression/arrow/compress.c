@@ -268,11 +268,12 @@ static GArrowResizableBuffer* table_to_parquet_buffer(GArrowTable *table,
 }
 #endif
 
+/* data is JSON lines when schema is NULL, otherwise Fluent Bit MessagePack events. */
 static int compress_columnar(int columnar_format,
-                                          void *json, size_t size,
-                                          void **out_buf, size_t *out_size,
-                                          int compression_type,
-                                          struct flb_arrow_schema *schema)
+                             void *data, size_t size,
+                             void **out_buf, size_t *out_size,
+                             int compression_type,
+                             struct flb_arrow_schema *schema)
 {
         GArrowTable *table;
         GArrowResizableBuffer *buffer;
@@ -290,10 +291,10 @@ static int compress_columnar(int columnar_format,
         }
 
         if (schema != NULL) {
-            table = flb_arrow_schema_table(schema, json, size);
+            table = flb_arrow_schema_table(schema, data, size);
         }
         else {
-            table = parse_json((uint8_t *) json, size);
+            table = parse_json((uint8_t *) data, size);
         }
         if (table == NULL) {
             flb_error("[aws][compress] Failed to build Arrow Table");
