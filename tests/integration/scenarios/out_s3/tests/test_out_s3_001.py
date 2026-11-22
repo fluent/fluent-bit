@@ -1728,3 +1728,38 @@ def test_out_s3_schema_accepts_arrow_metadata(tmp_path, metadata):
     assert table.to_pylist() == [{"x": True}]
     assert not table.schema.metadata
     assert not table.schema.field("x").metadata
+
+
+@pytest.mark.parametrize("modes", [(True, True), (True, False, True)])
+def test_out_s3_schema_restart_preserves_seq_index(tmp_path, modes):
+    # $INDEX keys have no random suffix, so a sequence index that restarts at
+    # zero across schema restarts or a schema toggle would overwrite objects.
+    fields = [_arrow_field("x", "int", False, bitWidth=32, isSigned=True)]
+    config_file, config = _schema_config(tmp_path, "arrow", fields, {"x": 42})
+    output = config["pipeline"]["outputs"][0]
+    output["s3_key_format"] = "/$TAG/$INDEX"
+    schema_file = output.pop("parquet.schema_file")
+
+    keys = []
+    for use_schema in modes:
+        if use_schema:
+            output["parquet.schema_file"] = schema_file
+        else:
+            output.pop("parquet.schema_file", None)
+        config_file.write_text(yaml.safe_dump(config))
+        service = Service(str(config_file))
+        _start_or_skip_unsupported_columnar_format(service, "requires arrow-glib")
+        try:
+            request = service.wait_for_request()
+            log = Path(service.service.flb.log_file).read_text()
+        finally:
+            service.stop()
+        assert request["method"] == "PUT"
+        # The shared $INDEX metadata directory must not look like pending
+        # JSON-lines buffers when the schema is enabled.
+        if use_schema:
+            assert "JSON-lines buffer directory exists" not in log
+        keys.append(request["path"])
+
+    indexes = [int(key.rsplit("/", 1)[1]) for key in keys]
+    assert indexes == list(range(len(modes))), f"Unexpected S3 key sequence: {keys}"
