@@ -784,6 +784,7 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
 
     if (f && f != entry_file) {
         fclose(f);
+        f = NULL;
     }
 
     if (indent) {
