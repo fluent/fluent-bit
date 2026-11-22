@@ -61,6 +61,7 @@
 #include <fluent-bit/flb_config_format.h>
 #include <fluent-bit/flb_supervisor.h>
 #include <fluent-bit/flb_fips.h>
+#include <fluent-bit/flb_atomic.h>
 
 #ifdef FLB_HAVE_MTRACE
 #include <mcheck.h>
@@ -1885,8 +1886,9 @@ static int flb_main_run(int argc, char **argv)
     ctx = flb_context_get();
 
     if (ctx != NULL && ctx->config != NULL) {
+        /* grace_input is published by the engine thread (flb_engine_start) */
         flb_supervisor_child_update_grace(ctx->config->grace,
-                                          ctx->config->grace_input);
+                                          flb_atomic_load(&ctx->config->grace_input));
     }
 
 #ifdef FLB_HAVE_CHUNK_TRACE
@@ -1926,7 +1928,7 @@ static int flb_main_run(int argc, char **argv)
             if (supervisor_reload_notified == FLB_FALSE &&
                 ctx != NULL && ctx->config != NULL) {
                 flb_supervisor_child_signal_shutdown(ctx->config->grace,
-                                                     ctx->config->grace_input);
+                                                     flb_atomic_load(&ctx->config->grace_input));
                 supervisor_reload_notified = FLB_TRUE;
             }
 
@@ -1938,7 +1940,7 @@ static int flb_main_run(int argc, char **argv)
                 supervisor_reload_notified = FLB_FALSE;
                 if (ctx != NULL && ctx->config != NULL) {
                     flb_supervisor_child_update_grace(ctx->config->grace,
-                                                      ctx->config->grace_input);
+                                                      flb_atomic_load(&ctx->config->grace_input));
                 }
             }
             else {
