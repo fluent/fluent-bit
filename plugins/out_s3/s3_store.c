@@ -752,7 +752,7 @@ int s3_store_exit(struct flb_s3 *ctx)
         fs_stream = mk_list_entry(head, struct flb_fstore_stream, _head);
         /* The sequence allocator lives in a subdirectory outside the chunk list.
          * An empty fstore stream would otherwise be deleted recursively on exit. */
-        if (ctx->uploader_gate_initialized && strcmp(fs_stream->name, "sequence") == 0 &&
+        if (strcmp(fs_stream->name, "sequence") == 0 &&
             mk_list_is_empty(&fs_stream->files) == 0) {
             flb_fstore_stream_destroy(fs_stream, FLB_FALSE);
             ctx->stream_metadata = NULL;
