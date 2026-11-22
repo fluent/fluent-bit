@@ -388,19 +388,25 @@ struct unix_socket_conn *unix_socket_conn_add(struct flb_connection *connection,
         conn->pack_state.multiple = FLB_TRUE;
     }
 
-    /* Register instance into the event loop */
-    ret = mk_event_add(flb_engine_evl_get(),
-                       connection->fd,
-                       FLB_ENGINE_EV_CUSTOM,
-                       MK_EVENT_READ,
-                       &connection->event);
-    if (ret == -1) {
-        flb_plg_error(ctx->ins, "could not register new connection");
+    /*
+     * Register instance into the event loop. In datagram mode the connection
+     * wraps the server socket, which the collector registers and reads
+     * through (ctx->collector_event), so only stream connections need it.
+     */
+    if (!ctx->dgram_mode_flag) {
+        ret = mk_event_add(flb_engine_evl_get(),
+                           connection->fd,
+                           FLB_ENGINE_EV_CUSTOM,
+                           MK_EVENT_READ,
+                           &connection->event);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "could not register new connection");
 
-        flb_free(conn->buf_data);
-        flb_free(conn);
+            flb_free(conn->buf_data);
+            flb_free(conn);
 
-        return NULL;
+            return NULL;
+        }
     }
 
     mk_list_add(&conn->_head, &ctx->connections);
