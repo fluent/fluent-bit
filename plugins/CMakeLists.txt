@@ -249,6 +249,7 @@ REGISTER_IN_PLUGIN("in_blob")
 
 # These plugins works only on Linux
 if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+  REGISTER_IN_PLUGIN("in_aegisbpf")
   REGISTER_IN_PLUGIN("in_cpu")
   REGISTER_IN_PLUGIN("in_mem")
   REGISTER_IN_PLUGIN("in_thermal")
