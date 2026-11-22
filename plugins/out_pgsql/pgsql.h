@@ -21,33 +21,35 @@
 #define FLB_OUT_PGSQL_H
 
 #include <fluent-bit/flb_output.h>
+#include <fluent-bit/flb_pack.h>
+#include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_output_plugin.h>
 
 #include <libpq-fe.h>
+#include <msgpack.h>
 
 #define FLB_PGSQL_HOST "127.0.0.1"
 #define FLB_PGSQL_PORT 5432
 #define FLB_PGSQL_DBNAME "fluentbit"
 #define FLB_PGSQL_TABLE "fluentbit"
-#define FLB_PGSQL_TIMESTAMP_KEY "date"
-#define FLB_PGSQL_POOL_SIZE 4
-#define FLB_PGSQL_MIN_POOL_SIZE 1
-#define FLB_PGSQL_SYNC FLB_FALSE
 #define FLB_PGSQL_COCKROACH FLB_FALSE
+#define FLB_PGSQL_INSERT_STMT_NAME "flb_pgsql_insert"
 
-#define FLB_PGSQL_INSERT "INSERT INTO %s SELECT %s, "   \
-    "to_timestamp(CAST(value->>'%s' as FLOAT)),"        \
-    " * FROM json_array_elements(%s);"
-#define FLB_PGSQL_INSERT_COCKROACH "INSERT INTO %s SELECT %s,"  \
-    "CAST(value->>'%s' AS INTERVAL) + DATE'1970-01-01',"        \
-    " * FROM json_array_elements(%s);"
+#define PGSQL_CONN_STATUS_CASE(name) \
+    case name:                       \
+        return #name;
 
-struct flb_pgsql_conn {
-    struct mk_list _head;
-    PGconn *conn;
-    int number;
-};
+#define PGSQL_CONN_STATUS_MAP(ENTRY)     \
+    ENTRY(CONNECTION_OK)                 \
+    ENTRY(CONNECTION_BAD)                \
+    ENTRY(CONNECTION_STARTED)            \
+    ENTRY(CONNECTION_MADE)               \
+    ENTRY(CONNECTION_AWAITING_RESPONSE)  \
+    ENTRY(CONNECTION_AUTH_OK)            \
+    ENTRY(CONNECTION_SETENV)             \
+    ENTRY(CONNECTION_SSL_STARTUP)        \
+    ENTRY(CONNECTION_NEEDED)
 
 struct flb_pgsql_config {
 
@@ -56,13 +58,11 @@ struct flb_pgsql_config {
     char db_port[8];
     const char *db_name;
     flb_sds_t db_table;
+    flb_sds_t db_table_escaped;
 
     /* auth */
     const char *db_user;
     const char *db_passwd;
-
-    /* time key */
-    flb_sds_t timestamp_key;
 
     /* instance reference */
     struct flb_output_instance *ins;
@@ -70,22 +70,25 @@ struct flb_pgsql_config {
     /* connections options */
     const char *conn_options;
 
-    /* connections pool */
-    struct mk_list conn_queue;
-    struct mk_list _head;
-
-    struct flb_pgsql_conn *conn_current;
-    int max_pool_size;
-    int min_pool_size;
-    int active_conn;
-
-    /* async mode or sync mode */
-    int async;
+    PGconn *conn_current;
+    flb_sds_t insert_query;
+    int insert_statement_prepared;
 
     /* cockroachdb */
     int cockroachdb;
 };
 
+flb_sds_t pgsql_build_insert_query(const char *table_name, int cockroachdb);
+int pgsql_format_timestamp(char *buffer, size_t size, struct flb_time *timestamp);
+char *pgsql_format_body_json(msgpack_object *body, int escape_unicode);
+void pgsql_free_body_json(char *json);
+int pgsql_translate_decoder_result(int decoder_result);
+const char *pgsql_conn_status_string(ConnStatusType status);
+void pgsql_log_conn_error(struct flb_pgsql_config *ctx, const char *action, PGconn *conn);
+void pgsql_log_result_error(struct flb_pgsql_config *ctx,
+                            const char *action,
+                            PGconn *conn,
+                            PGresult *res);
 void pgsql_conf_destroy(struct flb_pgsql_config *ctx);
 
 #endif
