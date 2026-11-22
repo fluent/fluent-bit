@@ -64,6 +64,26 @@ static int config_add_labels(struct flb_output_instance *ins,
     return 0;
 }
 
+/* Validate the 'compression' property */
+static int config_validate_compression(struct flb_output_instance *ins,
+                                       struct prometheus_remote_write_context *ctx)
+{
+    if (!ctx->compression) {
+        return 0;
+    }
+
+    if (strcasecmp(ctx->compression, "snappy") == 0 ||
+        strcasecmp(ctx->compression, "gzip") == 0 ||
+        strcasecmp(ctx->compression, "zstd") == 0) {
+        return 0;
+    }
+
+    flb_plg_error(ins, "invalid 'compression' value '%s', it must be one of "
+                  "'snappy', 'gzip' or 'zstd'", ctx->compression);
+
+    return -1;
+}
+
 struct prometheus_remote_write_context *flb_prometheus_remote_write_context_create(
     struct flb_output_instance *ins, struct flb_config *config)
 {
@@ -89,6 +109,13 @@ struct prometheus_remote_write_context *flb_prometheus_remote_write_context_crea
     mk_list_init(&ctx->kv_labels);
 
     ret = flb_output_config_map_set(ins, (void *) ctx);
+    if (ret == -1) {
+        flb_free(ctx);
+        return NULL;
+    }
+
+    /* Validate 'compression' */
+    ret = config_validate_compression(ins, ctx);
     if (ret == -1) {
         flb_free(ctx);
         return NULL;
