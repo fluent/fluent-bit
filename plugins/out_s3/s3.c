@@ -812,6 +812,10 @@ static void s3_warn_other_buffer_mode(struct flb_s3 *ctx, char *root)
         if (entry->d_name[0] == '.') {
             continue;
         }
+        /* $INDEX metadata is shared by both modes; it is not buffered data. */
+        if (strcmp(entry->d_name, "sequence") == 0) {
+            continue;
+        }
         is_msgpack = strcmp(entry->d_name, "msgpack") == 0;
         if ((ctx->arrow_schema != NULL) == is_msgpack) {
             continue;
@@ -932,16 +936,44 @@ static int init_seq_index(void *context) {
 
     ctx->key_fmt_has_seq_index = FLB_TRUE;
 
-    ctx->stream_metadata = flb_fstore_stream_create(ctx->fs, "sequence");
-    if (!ctx->stream_metadata) {
-        flb_plg_error(ctx->ins, "could not initialize metadata stream");
-        flb_fstore_destroy(ctx->fs);
-        ctx->fs = NULL;
-        return -1;
+    /*
+     * Keep the index under the mode-independent buffer root. With a schema the
+     * file store is rooted at <root>/msgpack; putting the index there would
+     * restart it at zero whenever parquet.schema_file is toggled, and with
+     * $INDEX keys (no random suffix) that can overwrite existing S3 objects.
+     */
+    if (ctx->arrow_schema == NULL) {
+        ctx->stream_metadata = flb_fstore_stream_create(ctx->fs, "sequence");
+        if (!ctx->stream_metadata) {
+            flb_plg_error(ctx->ins, "could not initialize metadata stream");
+            flb_fstore_destroy(ctx->fs);
+            ctx->fs = NULL;
+            return -1;
+        }
+        ctx->metadata_dir = flb_sds_create(ctx->stream_metadata->path);
+    }
+    else {
+        tmp = "/sequence";
+        ctx->metadata_dir = flb_sds_create(ctx->buffer_root);
+        if (ctx->metadata_dir != NULL &&
+            flb_sds_cat_safe(&ctx->metadata_dir, tmp, strlen(tmp)) < 0) {
+            flb_sds_destroy(ctx->metadata_dir);
+            ctx->metadata_dir = NULL;
+        }
+        if (ctx->metadata_dir != NULL) {
+#ifdef FLB_SYSTEM_WINDOWS
+            ret = mkdir(ctx->metadata_dir);
+#else
+            ret = mkdir(ctx->metadata_dir, 0700);
+#endif
+            if (ret < 0 && errno != EEXIST) {
+                flb_plg_error(ctx->ins, "Failed to create metadata directory");
+                return -1;
+            }
+        }
     }
 
     /* Construct directories and file path names */
-    ctx->metadata_dir = flb_sds_create(ctx->stream_metadata->path);
     if (ctx->metadata_dir == NULL) {
         flb_plg_error(ctx->ins, "Failed to create metadata path");
         flb_errno();
@@ -1084,6 +1116,10 @@ static void s3_context_destroy(struct flb_s3 *ctx)
 
     if (ctx->buffer_dir) {
         flb_sds_destroy(ctx->buffer_dir);
+    }
+
+    if (ctx->buffer_root) {
+        flb_sds_destroy(ctx->buffer_root);
     }
 
     if (ctx->metadata_dir) {
@@ -1344,6 +1380,11 @@ static int s3_init(struct flb_output_instance *ins,
     }
     s3_warn_other_buffer_mode(ctx, tmp_sds);
     ctx->buffer_dir = tmp_sds;
+    ctx->buffer_root = flb_sds_create(tmp_sds);
+    if (ctx->buffer_root == NULL) {
+        flb_errno();
+        return -1;
+    }
     if (ctx->arrow_schema != NULL) {
         tmp_sds = flb_sds_cat(ctx->buffer_dir, "/msgpack", 8);
         if (tmp_sds == NULL) {

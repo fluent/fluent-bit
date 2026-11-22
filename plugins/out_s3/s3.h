@@ -186,6 +186,7 @@ struct flb_s3 {
     flb_sds_t date_key;
 
     flb_sds_t buffer_dir;
+    flb_sds_t buffer_root;      /* bucket buffer path, same in every buffer mode */
 
     char *store_dir;
     struct flb_fstore *fs;
