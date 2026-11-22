@@ -130,6 +130,8 @@ struct flb_gcs {
     int upload_queue_processing;
     int timer_created;
     int timer_ms;
+    int upload_on_shutdown;
+    int upload_on_shutdown_timeout;
 
     struct flb_gcs_oauth_credentials *oauth_credentials;
 
