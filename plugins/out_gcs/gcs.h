@@ -40,10 +40,18 @@
 /* refresh federation tokens this many seconds before their server-stated expiry */
 #define FLB_GCS_TOKEN_EXPIRY_SAFETY 300
 
-/* Workload Identity Federation (external account, OIDC token file source) */
+/*
+ * Workload Identity Federation (external account, OIDC token file or X.509
+ * certificate source)
+ */
 #define FLB_GCS_GOOGLE_STS_URL           "https://sts.googleapis.com"
+#define FLB_GCS_GOOGLE_STS_MTLS_URL      "https://sts.mtls.googleapis.com"
 #define FLB_GCS_GOOGLE_IAM_URL           "https://iamcredentials.googleapis.com"
 #define FLB_GCS_STS_TOKEN_ENDPOINT       "/v1/token"
+
+/* identity_federation_source values */
+#define FLB_GCS_FEDERATION_SOURCE_OIDC_FILE "oidc_file"
+#define FLB_GCS_FEDERATION_SOURCE_X509      "x509"
 
 #define FLB_GCS_TARGET_RESOURCE_TEMPLATE \
     "//iam.googleapis.com/projects/%s/locations/global/workloadIdentityPools/%s/providers/%s"
@@ -51,6 +59,7 @@
 #define FLB_GCS_STS_GRANT_TYPE            "urn:ietf:params:oauth:grant-type:token-exchange"
 #define FLB_GCS_STS_REQUESTED_TOKEN_TYPE  "urn:ietf:params:oauth:token-type:access_token"
 #define FLB_GCS_STS_SUBJECT_TOKEN_TYPE    "urn:ietf:params:oauth:token-type:jwt"
+#define FLB_GCS_STS_SUBJECT_TOKEN_TYPE_MTLS "urn:ietf:params:oauth:token-type:mtls"
 #define FLB_GCS_STS_SCOPE                 "https://www.googleapis.com/auth/cloud-platform"
 
 #define FLB_GCS_GEN_ACCESS_TOKEN_ENDPOINT \
@@ -142,6 +151,9 @@ struct flb_gcs {
     flb_sds_t pool_id;
     flb_sds_t provider_id;
     flb_sds_t identity_token_file;
+    flb_sds_t identity_federation_source;
+    int identity_federation_x509;
+    flb_sds_t x509_trust_chain_file;
     flb_sds_t google_service_account;
     flb_sds_t subject_token_type;
     flb_sds_t sts_audience;
