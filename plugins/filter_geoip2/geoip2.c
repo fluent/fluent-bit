@@ -165,8 +165,7 @@ static struct flb_hash_table *prepare_lookup_keys(msgpack_object *map,
         }
         
         flb_config_map_foreach(head, lookup_key, ctx->lookup_keys) {
-            if (strncasecmp(key->via.str.ptr, lookup_key->val.str, 
-                flb_sds_len(lookup_key->val.str)) == 0) {
+            if (flb_sds_casecmp(lookup_key->val.str, key->via.str.ptr, key->via.str.size) == 0) {
                 flb_hash_table_add(ht, lookup_key->val.str, flb_sds_len(lookup_key->val.str),
                                    (void *) val->via.str.ptr, val->via.str.size);
             }
