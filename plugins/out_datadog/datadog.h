@@ -61,6 +61,7 @@ struct flb_out_datadog {
     flb_sds_t tag_key;
     struct mk_list *headers;
     bool remap;
+    flb_sds_t site;
 
     /* final result */
     flb_sds_t json_date_key;
