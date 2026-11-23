@@ -3,6 +3,7 @@ include_directories(lib/acutest)
 set(UNIT_TESTS_FILES
   context.c
   memfs.c
+  crc32.c
   )
 if(CIO_BACKEND_FILESYSTEM)
   set(UNIT_TESTS_FILES

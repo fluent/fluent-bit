@@ -334,7 +334,20 @@ static const crc_t crc_table[8][256] = {
 };
 
 
-crc_t crc_update(crc_t crc, const void *data, size_t data_len)
+/* Patch by Fluent Bit Authors */
+#if (defined(__BYTE_ORDER__) && defined(__ORDER_BIG_ENDIAN__) && \
+     __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__) || \
+    (defined(__BYTE_ORDER) && defined(__BIG_ENDIAN) && \
+     __BYTE_ORDER == __BIG_ENDIAN)
+#define CRC_HOST_BIG_ENDIAN
+#endif
+
+#define CRC_SWAP32(x) ((((x) & 0x000000ffu) << 24) | \
+                       (((x) & 0x0000ff00u) << 8)  | \
+                       (((x) & 0x00ff0000u) >> 8)  | \
+                       (((x) & 0xff000000u) >> 24))
+
+crc_t crc_update_table(crc_t crc, const void *data, size_t data_len)
 {
     const unsigned char *d = (const unsigned char *)data;
     unsigned int tbl_idx;
@@ -350,8 +363,12 @@ crc_t crc_update(crc_t crc, const void *data, size_t data_len)
     const uint32_t *d32 = (const uint32_t *)d;
     while (data_len >= 8)
     {
-#if defined(__BYTE_ORDER) && __BYTE_ORDER == __BIG_ENDIAN
-        crc_t d1 = *d32++ ^ le16toh(crc);
+#if defined(CRC_HOST_BIG_ENDIAN)
+        /*
+         * Patch by Fluent Bit Authors: the generated code used le16toh() on
+         * the 32-bit crc here, see crc_update_legacy_big_endian() below.
+         */
+        crc_t d1 = *d32++ ^ CRC_SWAP32(crc);
         crc_t d2 = *d32++;
         crc  =
             crc_table[0][d2 & 0xffu] ^
@@ -386,5 +403,61 @@ crc_t crc_update(crc_t crc, const void *data, size_t data_len)
         crc = (crc_table[0][tbl_idx] ^ (crc >> 8)) & 0xffffffff;
         d++;
     }
+    return crc & 0xffffffff;
+}
+
+/*
+ * Patch by Fluent Bit Authors.
+ *
+ * What crc_update() computed on big-endian hosts before the fix above. The
+ * 8-byte step byte-swapped only the low 16 bits of the crc, so the result is
+ * not a CRC-32, and because blocks start at the first 8-byte aligned address
+ * it also depends on where the buffer is in memory.
+ *
+ * It is kept so checksums written by those builds can still be recognized.
+ * The words are read byte by byte, which gives the same value on any host.
+ */
+crc_t crc_update_legacy_big_endian(crc_t crc, const void *data,
+                                   size_t data_len)
+{
+    const unsigned char *d = (const unsigned char *)data;
+    unsigned int tbl_idx;
+    crc_t d1;
+    crc_t d2;
+
+    while (data_len && (((uintptr_t)(const void *)d) % 8 != 0)) {
+        tbl_idx = (crc ^ *d) & 0xff;
+        crc = (crc_table[0][tbl_idx] ^ (crc >> 8)) & 0xffffffff;
+        d++;
+        data_len--;
+    }
+
+    while (data_len >= 8) {
+        d1 = ((crc_t) d[0] << 24) | ((crc_t) d[1] << 16) |
+             ((crc_t) d[2] << 8) | (crc_t) d[3];
+        d2 = ((crc_t) d[4] << 24) | ((crc_t) d[5] << 16) |
+             ((crc_t) d[6] << 8) | (crc_t) d[7];
+        d1 ^= ((crc & 0xff) << 8) | ((crc >> 8) & 0xff);
+
+        crc =
+            crc_table[0][d2 & 0xffu] ^
+            crc_table[1][(d2 >> 8) & 0xffu] ^
+            crc_table[2][(d2 >> 16) & 0xffu] ^
+            crc_table[3][(d2 >> 24) & 0xffu] ^
+            crc_table[4][d1 & 0xffu] ^
+            crc_table[5][(d1 >> 8) & 0xffu] ^
+            crc_table[6][(d1 >> 16) & 0xffu] ^
+            crc_table[7][(d1 >> 24) & 0xffu];
+
+        d += 8;
+        data_len -= 8;
+    }
+
+    while (data_len--) {
+        tbl_idx = (crc ^ *d) & 0xff;
+        crc = (crc_table[0][tbl_idx] ^ (crc >> 8)) & 0xffffffff;
+        d++;
+    }
+
     return crc & 0xffffffff;
 }

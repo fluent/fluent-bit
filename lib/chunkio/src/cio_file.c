@@ -181,6 +181,26 @@ static void write_shadow_header(struct cio_file *cf, uint32_t crc)
     set_header_u32(cf->map, CIO_FILE_SHADOW_HASH_OFFSET, crc);
 }
 
+/*
+ * Publish the current content length and checksum in the header.
+ *
+ * The map is shared with the page cache, so what is stored here survives the
+ * end of the process even when no sync was issued. The shadow tuple goes
+ * first: if the process stops between the two updates the primary tuple still
+ * describes the previous content, and if it stops in the middle of the primary
+ * update the loader falls back to the shadow one.
+ */
+static void write_checksum_header(struct cio_file *cf)
+{
+    uint32_t crc;
+
+    crc = finalize_checksum_value(cf->crc_cur);
+
+    write_shadow_header(cf, crc);
+    cio_file_st_set_content_len(cf->map, (uint32_t) cf->data_size);
+    write_checksum(cf, crc);
+}
+
 static int recover_unfinalized_checksum(struct cio_chunk *ch,
                                         struct cio_file *cf,
                                         unsigned char *hash,
@@ -355,6 +375,96 @@ static int recover_legacy_wide_checksum(struct cio_chunk *ch,
     return CIO_TRUE;
 }
 
+static int host_is_big_endian(void)
+{
+    const uint32_t probe = 1;
+
+    return *(const unsigned char *) &probe == 0;
+}
+
+/*
+ * Big-endian builds used to compute a value that is not the standard CRC-32
+ * (see crc_update_legacy_big_endian()). That value depended on how the data
+ * was aligned in memory, so for most chunks the checksum accumulated across
+ * appends did not match the one recomputed here over the map, and the chunk
+ * was already rejected. Chunks that did match were accepted, and must keep
+ * loading now that the checksum is the standard one.
+ *
+ * Reproduce what those builds verified: one pass of the old function over
+ * the mapped content, compared with the stored value in each layout they
+ * used. The content sits at the same offset of a page aligned map as it did
+ * then, so the old function returns what it returned then.
+ *
+ *  - finalized, 4 bytes at offset 2 (portable layout)
+ *  - finalized, 8 bytes at offset 2 with the value in the last 4 (LP64)
+ *  - not finalized, raw crc_t at offset 2
+ *
+ * When matched the chunk is accepted and, if writable, its checksum is
+ * rewritten as the standard CRC-32 in the portable layout.
+ */
+static int recover_legacy_big_endian_checksum(struct cio_chunk *ch,
+                                              struct cio_file *cf,
+                                              unsigned char *hash,
+                                              crc_t crc)
+{
+    int ret;
+    size_t len;
+    crc_t legacy_crc;
+    uint32_t legacy_check;
+    unsigned char *in_data;
+
+    if (!host_is_big_endian()) {
+        return CIO_FALSE;
+    }
+
+    /* Same span as calculate_checksum_len() */
+    len  = 2;
+    len += cio_file_st_get_meta_len(cf->map);
+    len += cf->data_size;
+
+    in_data = (unsigned char *) cf->map + CIO_FILE_CONTENT_OFFSET;
+
+    legacy_crc = crc_update_legacy_big_endian(cio_crc32_init(), in_data, len);
+    legacy_check = finalize_checksum_value(legacy_crc);
+
+    if (get_header_u32(cf->map, 2) != legacy_check &&
+        !(get_header_u32(cf->map, 2) == 0 && legacy_check != 0 &&
+          get_header_u32(cf->map, CIO_FILE_LEGACY_CRC_PADDING_OFFSET) ==
+          legacy_check) &&
+        memcmp(hash, &legacy_crc, sizeof(legacy_crc)) != 0) {
+        return CIO_FALSE;
+    }
+
+    /* From here on the chunk carries the standard checksum */
+    cf->crc_cur = crc;
+
+    if (!(cf->flags & CIO_OPEN_RW)) {
+        cio_log_info(ch->ctx,
+                     "[cio file] accepted legacy big-endian crc32 value at "
+                     "%s/%s (read-only)", ch->name, cf->path);
+
+        return CIO_TRUE;
+    }
+
+    finalize_checksum(cf);
+    cf->synced = CIO_FALSE;
+
+    ret = cio_file_native_sync(cf, CIO_FULL_SYNC);
+    if (ret == CIO_OK) {
+        cf->synced = CIO_TRUE;
+        cio_log_info(ch->ctx,
+                     "[cio file] migrated legacy big-endian crc32 value at "
+                     "%s/%s", ch->name, cf->path);
+    }
+    else {
+        cio_log_warn(ch->ctx,
+                     "[cio file] could not persist migrated crc32 at %s/%s",
+                     ch->name, cf->path);
+    }
+
+    return CIO_TRUE;
+}
+
 /*
  * adjust_layout: if metadata has changed, we need to adjust the content
  * data and reference pointers.
@@ -369,6 +479,7 @@ static int adjust_layout(struct cio_chunk *ch,
         /* reset current crc since we are calculating from zero */
         cf->crc_cur = cio_crc32_init();
         cio_file_calculate_checksum(cf, &cf->crc_cur);
+        write_checksum_header(cf);
     }
 
     /* Sync changes to disk */
@@ -417,7 +528,7 @@ static size_t get_available_size(struct cio_file *cf, int *meta_len)
  * and validate relevant fields.
  */
 static int cio_file_format_check(struct cio_chunk *ch,
-                                 struct cio_file *cf, int flags)
+                                 struct cio_file *cf, int trusted)
 {
     int ret;
     size_t metadata_length;
@@ -427,8 +538,6 @@ static int cio_file_format_check(struct cio_chunk *ch,
     uint32_t crc_check;
     uint32_t stored_crc;
     crc_t crc;
-
-    (void) flags;
 
     p = (unsigned char *) cf->map;
 
@@ -504,12 +613,26 @@ static int cio_file_format_check(struct cio_chunk *ch,
 
         /* Checksum */
         if (ch->ctx->options.flags & CIO_CHECKSUM) {
+            stored_crc = get_header_u32(cf->map, 2);
+
+            /*
+             * The caller is about to append and this context put the chunk
+             * down itself: the running checksum is still valid as long as the
+             * header carries the same checksum and length that were synced.
+             * Reading the whole content again would only confirm what the
+             * next full verification is going to check anyway.
+             */
+            if (trusted == CIO_TRUE &&
+                (size_t) content_length == cf->crc_down_size &&
+                stored_crc == finalize_checksum_value(cf->crc_cur)) {
+                return 0;
+            }
+
             /* Initialize CRC variable */
             cf->crc_cur = cio_crc32_init();
 
             /* Get checksum stored in the mmap */
             p = (unsigned char *) cio_file_st_get_hash(cf->map);
-            stored_crc = get_header_u32(cf->map, 2);
 
             /* Calculate content checksum */
             cio_file_calculate_checksum(cf, &crc);
@@ -524,6 +647,11 @@ static int cio_file_format_check(struct cio_chunk *ch,
                     if (ret == CIO_FALSE) {
                         ret = recover_legacy_wide_checksum(ch, cf, crc,
                                                            crc_check);
+                    }
+
+                    if (ret == CIO_FALSE) {
+                        ret = recover_legacy_big_endian_checksum(ch, cf, p,
+                                                                 crc);
                     }
 
                     if (ret == CIO_FALSE) {
@@ -581,9 +709,22 @@ static int munmap_file(struct cio_ctx *ctx, struct cio_chunk *ch)
         }
     }
 
+    /*
+     * If the header on disk matches the running checksum, remember it: an
+     * append that brings this chunk up again can continue from it.
+     */
+    cf->crc_down_valid = CIO_FALSE;
+    if ((ctx->options.flags & CIO_CHECKSUM) && (cf->flags & CIO_OPEN_RW) &&
+        cf->synced == CIO_TRUE && cf->crc_reset == CIO_FALSE) {
+        cf->crc_down_valid = CIO_TRUE;
+        cf->crc_down_size = cf->data_size;
+    }
+
     /* Unmap file */
     ret = cio_file_native_unmap(cf);
     if (ret != CIO_OK) {
+        cf->crc_down_valid = CIO_FALSE;
+
         return -1;
     }
 
@@ -600,7 +741,8 @@ static int munmap_file(struct cio_ctx *ctx, struct cio_chunk *ch)
  * This function creates the memory map for the open file descriptor plus
  * setup the chunk structure reference.
  */
-static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
+static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size,
+                     int trusted)
 {
     ssize_t          content_size;
     size_t           fs_size;
@@ -613,6 +755,12 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
     if (cf->map != NULL) {
         return CIO_OK;
     }
+
+    /* The state saved when the chunk went down is good for one mapping */
+    if (cf->crc_down_valid == CIO_FALSE) {
+        trusted = CIO_FALSE;
+    }
+    cf->crc_down_valid = CIO_FALSE;
 
     cf->taint_flag = CIO_FALSE;
 
@@ -753,7 +901,7 @@ static int mmap_file(struct cio_ctx *ctx, struct cio_chunk *ch, size_t size)
         cf->fs_size = 0;
     }
 
-    ret = cio_file_format_check(ch, cf, cf->flags);
+    ret = cio_file_format_check(ch, cf, trusted);
 
     if (ret != 0) {
         cio_log_error(ctx, "format check failed: %s/%s",
@@ -789,7 +937,7 @@ int cio_file_lookup_group(char *group, void **result)
 
 int cio_file_read_prepare(struct cio_ctx *ctx, struct cio_chunk *ch)
 {
-    return mmap_file(ctx, ch, 0);
+    return mmap_file(ctx, ch, 0, CIO_FALSE);
 }
 
 int cio_file_content_copy(struct cio_chunk *ch,
@@ -1049,7 +1197,7 @@ struct cio_file *cio_file_open(struct cio_ctx *ctx,
     }
 
     /* Map the file */
-    ret = mmap_file(ctx, ch, cf->fs_size);
+    ret = mmap_file(ctx, ch, cf->fs_size, CIO_FALSE);
     if (ret == CIO_ERROR || ret == CIO_CORRUPTED || ret == CIO_RETRY) {
         cio_file_native_close(cf);
 
@@ -1098,7 +1246,7 @@ int cio_file_delete(struct cio_ctx *ctx, struct cio_stream *st, const char *name
  * Put a file content back into memory, only IF it has been set 'down'
  * before.
  */
-static int _cio_file_up(struct cio_chunk *ch, int enforced)
+static int _cio_file_up(struct cio_chunk *ch, int enforced, int trusted)
 {
     int ret;
     struct cio_file *cf = (struct cio_file *) ch->backend;
@@ -1146,7 +1294,7 @@ static int _cio_file_up(struct cio_chunk *ch, int enforced)
      *
      * return values = CIO_OK, CIO_ERROR, CIO_CORRUPTED or CIO_RETRY
      */
-    ret = mmap_file(ch->ctx, ch, cf->fs_size);
+    ret = mmap_file(ch->ctx, ch, cf->fs_size, trusted);
     if (ret == CIO_ERROR) {
         cio_log_error(ch->ctx, "[cio file] cannot map chunk: %s/%s",
                       ch->st->name, ch->name);
@@ -1174,7 +1322,7 @@ static int _cio_file_up(struct cio_chunk *ch, int enforced)
  */
 int cio_file_up(struct cio_chunk *ch)
 {
-    return _cio_file_up(ch, CIO_TRUE);
+    return _cio_file_up(ch, CIO_TRUE, CIO_FALSE);
 }
 
 /* Load a file in non-enforced mode. This means it will load the file
@@ -1186,7 +1334,24 @@ int cio_file_up(struct cio_chunk *ch)
  */
 int cio_file_up_force(struct cio_chunk *ch)
 {
-    return _cio_file_up(ch, CIO_FALSE);
+    return _cio_file_up(ch, CIO_FALSE, CIO_FALSE);
+}
+
+/*
+ * Load a file in non-enforced mode for a caller that is going to append to
+ * it. If this context put the chunk down and the header still carries the
+ * checksum and length it synced, the content is not read again to verify it:
+ * the running checksum continues from where it was. Any other chunk gets the
+ * same verification as cio_file_up_force().
+ *
+ * What is skipped is the detection of content that changed on disk while the
+ * chunk was down. The stored checksum keeps describing the bytes that were
+ * written, so such a change is still reported by the next load that verifies
+ * the content: cio_file_up(), cio_file_up_force() or a new context.
+ */
+int cio_file_up_append(struct cio_chunk *ch)
+{
+    return _cio_file_up(ch, CIO_FALSE, CIO_TRUE);
 }
 
 int cio_file_update_size(struct cio_file *cf)
@@ -1310,7 +1475,10 @@ int cio_file_write(struct cio_chunk *ch, const void *buf, size_t count)
             cf->synced = CIO_FALSE;
             cf->taint_flag = CIO_TRUE;
 
-            if (!(ch->ctx->options.flags & CIO_CHECKSUM)) {
+            if (ch->ctx->options.flags & CIO_CHECKSUM) {
+                write_checksum_header(cf);
+            }
+            else {
                 cio_file_st_set_content_len(cf->map, cf->data_size);
             }
         }
@@ -1375,7 +1543,16 @@ int cio_file_write(struct cio_chunk *ch, const void *buf, size_t count)
 
     cf->taint_flag = CIO_TRUE;
 
-    if (!(ch->ctx->options.flags & CIO_CHECKSUM)) {
+    /*
+     * Keep the header current on every append. A chunk that is being written
+     * is not synced until it goes down or gets locked, and a process that
+     * stops before that point must not leave a header that no longer matches
+     * the content.
+     */
+    if (ch->ctx->options.flags & CIO_CHECKSUM) {
+        write_checksum_header(cf);
+    }
+    else {
         cio_file_st_set_content_len(cf->map, cf->data_size);
     }
 
@@ -1473,7 +1650,6 @@ int cio_file_sync(struct cio_chunk *ch)
     size_t desired_size;
     size_t file_size;
     size_t av_size;
-    uint32_t crc;
     struct cio_file *cf;
 
     if (ch == NULL) {
@@ -1551,10 +1727,7 @@ int cio_file_sync(struct cio_chunk *ch)
 
     /* Finalize CRC32 checksum */
     if (ch->ctx->options.flags & CIO_CHECKSUM) {
-        crc = finalize_checksum_value(cf->crc_cur);
-        write_shadow_header(cf, crc);
-        cio_file_st_set_content_len(cf->map, (uint32_t) cf->data_size);
-        write_checksum(cf, crc);
+        write_checksum_header(cf);
     }
     else {
         /* Persist the logical length after appends, truncation or rollback. */

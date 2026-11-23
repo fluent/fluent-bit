@@ -27,6 +27,9 @@
 #include <limits.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
+#include <signal.h>
+#include <unistd.h>
 
 #include <chunkio/chunkio.h>
 #include <chunkio/cio_log.h>
@@ -227,6 +230,19 @@ static void test_fs_write()
  * Create one file chunk and check it updated sha1 after a couple of writes
  * and sync.
  */
+/*
+ * The expected checksums below are spelled as the bytes of the value in
+ * little-endian order; turn them into a number so the comparison does not
+ * depend on the byte order of the host.
+ */
+static uint32_t expected_crc32(const char *bytes)
+{
+    const unsigned char *b = (const unsigned char *) bytes;
+
+    return ((uint32_t) b[0]) | ((uint32_t) b[1] << 8) |
+           ((uint32_t) b[2] << 16) | ((uint32_t) b[3] << 24);
+}
+
 static void test_fs_checksum()
 {
     int ret;
@@ -307,8 +323,7 @@ static void test_fs_checksum()
     memcpy(&val, f_hash, sizeof(val));
     val = ntohl(val);
 
-    ret = memcmp(&val, crc32_test1, 4);
-    TEST_CHECK(ret == 0);
+    TEST_CHECK(val == expected_crc32(crc32_test1));
 
     /*
      * Test 2:
@@ -327,8 +342,7 @@ static void test_fs_checksum()
     memcpy(&val, f_hash, sizeof(val));
     val = ntohl(val);
 
-    ret = memcmp(&val, crc32_test2, 4);
-    TEST_CHECK(ret == 0);
+    TEST_CHECK(val == expected_crc32(crc32_test2));
 
     /* Release */
     cio_destroy(ctx);
@@ -432,8 +446,7 @@ static void test_fs_up_down()
     memcpy(&val, f_hash, sizeof(val));
     val = ntohl(val);
 
-    ret = memcmp(&val, crc32_test1, 4);
-    TEST_CHECK(ret == 0);
+    TEST_CHECK(val == expected_crc32(crc32_test1));
 
     /*
      * Test 2:
@@ -472,8 +485,7 @@ static void test_fs_up_down()
     memcpy(&val, f_hash, sizeof(val));
     val = ntohl(val);
 
-    ret = memcmp(&val, crc32_test2, 4);
-    TEST_CHECK(ret == 0);
+    TEST_CHECK(val == expected_crc32(crc32_test2));
 
     /* Release */
     cio_destroy(ctx);
@@ -1119,6 +1131,7 @@ static void test_fs_valid_primary_precedes_newer_shadow()
     struct cio_options cio_opts;
     char line[] = "shadow checksum payload\n";
     char tail[] = "after recovery\n";
+    char header[CIO_FILE_HEADER_MIN];
 
     cio_utils_recursive_delete(CIO_ENV);
 
@@ -1147,11 +1160,17 @@ static void test_fs_valid_primary_precedes_newer_shadow()
     ret = cio_chunk_sync(chunk);
     TEST_CHECK(ret == CIO_OK);
 
+    /* Appends publish both tuples, keep the primary one of the first write */
+    cf = (struct cio_file *) chunk->backend;
+    memcpy(header, cf->map, sizeof(header));
+
     ret = cio_chunk_write(chunk, tail, strlen(tail));
     TEST_CHECK(ret == CIO_OK);
 
-    /* Both tuples validate: without a generation marker the primary wins. */
     cf = (struct cio_file *) chunk->backend;
+    memcpy(cf->map, header, sizeof(header));
+
+    /* Both tuples validate: without a generation marker the primary wins. */
     cf->crc_cur = cio_crc32_init();
     cio_file_calculate_checksum(cf, &crc);
     cf->crc_cur = crc;
@@ -1182,6 +1201,226 @@ static void test_fs_valid_primary_precedes_newer_shadow()
 
     cio_destroy(ctx);
 }
+
+static void check_checksum_header(struct cio_chunk *chunk)
+{
+    crc_t crc;
+    crc_t saved;
+    uint32_t expected;
+    struct cio_file *cf;
+
+    cf = (struct cio_file *) chunk->backend;
+
+    /* Compute the checksum from the mapped bytes, not from the running state */
+    saved = cf->crc_cur;
+    cf->crc_cur = cio_crc32_init();
+    cio_file_calculate_checksum(cf, &crc);
+    cf->crc_cur = saved;
+
+    expected = (uint32_t) cio_crc32_finalize(crc);
+
+    TEST_CHECK(get_test_header_u32(cf->map, 2) == expected);
+    TEST_CHECK(get_test_header_u32(cf->map, CIO_FILE_CONTENT_LENGTH_OFFSET) ==
+               (uint32_t) cf->data_size);
+    TEST_CHECK(get_test_header_u32(cf->map, CIO_FILE_SHADOW_HASH_OFFSET) ==
+               expected);
+    TEST_CHECK(get_test_header_u32(cf->map,
+                                   CIO_FILE_SHADOW_CONTENT_LENGTH_OFFSET) ==
+               (uint32_t) cf->data_size);
+}
+
+/* The header must describe the content after every change, without a sync */
+static void test_fs_checksum_header_follows_writes()
+{
+    int ret;
+    int err;
+    struct cio_ctx *ctx;
+    struct cio_chunk *chunk;
+    struct cio_stream *stream;
+    struct cio_options cio_opts;
+    char meta[] = "tag.one";
+    char meta_long[] = "a.much.longer.tag.name";
+    char line[] = "checksum header payload\n";
+
+    cio_utils_recursive_delete(CIO_ENV);
+
+    cio_options_init(&cio_opts);
+
+    cio_opts.root_path = CIO_ENV;
+    cio_opts.log_cb = log_cb;
+    cio_opts.log_level = CIO_LOG_INFO;
+    cio_opts.flags = CIO_CHECKSUM;
+
+    ctx = cio_create(&cio_opts);
+    TEST_CHECK(ctx != NULL);
+
+    stream = cio_stream_create(ctx, "test_header_writes", CIO_STORE_FS);
+    TEST_CHECK(stream != NULL);
+
+    chunk = cio_chunk_open(ctx, stream, "test", CIO_OPEN, 1000, &err);
+    TEST_CHECK(chunk != NULL);
+    if (!chunk) {
+        exit(1);
+    }
+
+    ret = cio_meta_write(chunk, meta, sizeof(meta) - 1);
+    TEST_CHECK(ret == CIO_OK);
+    check_checksum_header(chunk);
+
+    ret = cio_chunk_write(chunk, line, strlen(line));
+    TEST_CHECK(ret == CIO_OK);
+    check_checksum_header(chunk);
+
+    ret = cio_chunk_write(chunk, line, strlen(line));
+    TEST_CHECK(ret == CIO_OK);
+    check_checksum_header(chunk);
+
+    /* Metadata that moves the content */
+    ret = cio_meta_write(chunk, meta_long, sizeof(meta_long) - 1);
+    TEST_CHECK(ret == CIO_OK);
+    check_checksum_header(chunk);
+
+    /* Overwrite the second record, then drop everything */
+    ret = cio_chunk_write_at(chunk, strlen(line), line, strlen(line) - 4);
+    TEST_CHECK(ret == CIO_OK);
+    check_checksum_header(chunk);
+
+    ret = cio_chunk_write_at(chunk, 0, NULL, 0);
+    TEST_CHECK(ret == CIO_OK);
+    check_checksum_header(chunk);
+
+    cio_destroy(ctx);
+}
+
+#ifndef __EMSCRIPTEN__
+/*
+ * A process that is killed while it appends never syncs the chunk. Its
+ * content stays in the page cache, so the next process must be able to load
+ * every record that was appended.
+ */
+static void check_killed_writer(int flags)
+{
+    int i;
+    int ret;
+    int err;
+    int status;
+    int records = 100;
+    int meta_len;
+    pid_t pid;
+    char *meta_buf;
+    char *out_buf;
+    size_t out_size;
+    struct cio_ctx *ctx;
+    struct cio_chunk *chunk;
+    struct cio_stream *stream;
+    struct cio_options cio_opts;
+    char meta[] = "killed.writer";
+    char line[] = "record appended by a process that gets killed\n";
+
+    cio_utils_recursive_delete(CIO_ENV);
+
+    cio_options_init(&cio_opts);
+
+    cio_opts.root_path = CIO_ENV;
+    cio_opts.log_cb = log_cb;
+    cio_opts.log_level = CIO_LOG_INFO;
+    cio_opts.flags = flags;
+
+    pid = fork();
+    TEST_CHECK(pid >= 0);
+    if (pid < 0) {
+        return;
+    }
+
+    if (pid == 0) {
+        ctx = cio_create(&cio_opts);
+        if (!ctx) {
+            _exit(1);
+        }
+
+        stream = cio_stream_create(ctx, "test_killed_writer", CIO_STORE_FS);
+        if (!stream) {
+            _exit(1);
+        }
+
+        chunk = cio_chunk_open(ctx, stream, "test", CIO_OPEN, 1000, &err);
+        if (!chunk) {
+            _exit(1);
+        }
+
+        ret = cio_meta_write(chunk, meta, sizeof(meta) - 1);
+        if (ret != CIO_OK) {
+            _exit(1);
+        }
+
+        for (i = 0; i < records; i++) {
+            ret = cio_chunk_write(chunk, line, strlen(line));
+            if (ret != CIO_OK) {
+                _exit(1);
+            }
+        }
+
+        /* No sync, no down, no close */
+        kill(getpid(), SIGKILL);
+        _exit(1);
+    }
+
+    ret = waitpid(pid, &status, 0);
+    TEST_CHECK(ret == pid);
+    TEST_CHECK(WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL);
+
+    ctx = cio_create(&cio_opts);
+    TEST_CHECK(ctx != NULL);
+
+    stream = cio_stream_create(ctx, "test_killed_writer", CIO_STORE_FS);
+    TEST_CHECK(stream != NULL);
+
+    chunk = cio_chunk_open(ctx, stream, "test", CIO_OPEN, 1000, &err);
+    TEST_CHECK(chunk != NULL);
+    if (!chunk) {
+        cio_destroy(ctx);
+        return;
+    }
+
+    ret = cio_meta_read(chunk, &meta_buf, &meta_len);
+    TEST_CHECK(ret == CIO_OK);
+    TEST_CHECK(meta_len == sizeof(meta) - 1);
+    TEST_CHECK(memcmp(meta_buf, meta, sizeof(meta) - 1) == 0);
+
+    ret = cio_chunk_get_content_copy(chunk, (void **) &out_buf, &out_size);
+    TEST_CHECK(ret == CIO_OK);
+    TEST_CHECK(out_size == strlen(line) * records);
+    if (ret == CIO_OK) {
+        for (i = 0; i < records && out_size == strlen(line) * records; i++) {
+            TEST_CHECK(memcmp(out_buf + (i * strlen(line)), line,
+                              strlen(line)) == 0);
+        }
+        free(out_buf);
+    }
+
+    /* The recovered chunk keeps accepting data */
+    ret = cio_chunk_write(chunk, line, strlen(line));
+    TEST_CHECK(ret == CIO_OK);
+
+    ret = cio_chunk_down(chunk);
+    TEST_CHECK(ret == CIO_OK);
+
+    ret = cio_chunk_up(chunk);
+    TEST_CHECK(ret == CIO_OK);
+
+    cio_destroy(ctx);
+}
+
+static void test_fs_checksum_killed_writer()
+{
+    check_killed_writer(CIO_CHECKSUM);
+}
+
+static void test_fs_killed_writer()
+{
+    check_killed_writer(0);
+}
+#endif
 
 /* Older writers update the primary tuple but leave shadow padding untouched. */
 static void check_stale_shadow_after_legacy_write(int truncate, int read_only)
@@ -2383,6 +2622,282 @@ void test_fs_up_down_up_append()
     cio_destroy(ctx);
 }
 
+/* Flip one byte of the content area of a chunk that is down */
+static void corrupt_down_chunk(struct cio_chunk *chunk, int meta_len)
+{
+    int fd;
+    char byte;
+    off_t offset;
+    ssize_t bytes;
+    struct cio_file *cf;
+
+    cf = (struct cio_file *) chunk->backend;
+
+    fd = open(cf->path, O_RDWR);
+    TEST_CHECK(fd != -1);
+    if (fd == -1) {
+        return;
+    }
+
+    offset = CIO_FILE_HEADER_MIN + meta_len + 3;
+
+    bytes = pread(fd, &byte, 1, offset);
+    TEST_CHECK(bytes == 1);
+
+    byte ^= 0x5a;
+
+    bytes = pwrite(fd, &byte, 1, offset);
+    TEST_CHECK(bytes == 1);
+
+    close(fd);
+}
+
+static struct cio_chunk *up_append_chunk(struct cio_ctx **out_ctx, int flags,
+                                         int cleanup)
+{
+    int err;
+    struct cio_ctx *ctx;
+    struct cio_chunk *chunk;
+    struct cio_stream *stream;
+    struct cio_options cio_opts;
+
+    if (cleanup) {
+        cio_utils_recursive_delete(CIO_ENV);
+    }
+
+    cio_options_init(&cio_opts);
+
+    cio_opts.root_path = CIO_ENV;
+    cio_opts.log_cb = log_cb;
+    cio_opts.log_level = CIO_LOG_INFO;
+    cio_opts.flags = flags;
+
+    ctx = cio_create(&cio_opts);
+    TEST_CHECK(ctx != NULL);
+
+    stream = cio_stream_create(ctx, "test_up_append", CIO_STORE_FS);
+    TEST_CHECK(stream != NULL);
+
+    chunk = cio_chunk_open(ctx, stream, "test", CIO_OPEN, 1000, &err);
+
+    *out_ctx = ctx;
+
+    return chunk;
+}
+
+/* Appends through cio_chunk_up_append() produce a chunk that verifies */
+static void check_up_append(int flags)
+{
+    int i;
+    int ret;
+    int rounds = 20;
+    char *out_buf;
+    size_t out_size;
+    size_t line_len;
+    struct cio_ctx *ctx;
+    struct cio_chunk *chunk;
+    char meta[] = "up.append";
+    char line[] = "record appended while the chunk was down\n";
+
+    line_len = strlen(line);
+
+    chunk = up_append_chunk(&ctx, flags, CIO_TRUE);
+    TEST_CHECK(chunk != NULL);
+    if (!chunk) {
+        exit(1);
+    }
+
+    ret = cio_meta_write(chunk, meta, sizeof(meta) - 1);
+    TEST_CHECK(ret == CIO_OK);
+
+    ret = cio_chunk_write(chunk, line, line_len);
+    TEST_CHECK(ret == CIO_OK);
+
+    for (i = 1; i < rounds; i++) {
+        ret = cio_chunk_down(chunk);
+        TEST_CHECK(ret == CIO_OK);
+
+        ret = cio_chunk_up_append(chunk);
+        TEST_CHECK(ret == CIO_OK);
+        TEST_CHECK(cio_chunk_is_up(chunk) == CIO_TRUE);
+
+        ret = cio_chunk_write(chunk, line, line_len);
+        TEST_CHECK(ret == CIO_OK);
+    }
+
+    /* An append up followed by no write keeps the chunk valid too */
+    ret = cio_chunk_down(chunk);
+    TEST_CHECK(ret == CIO_OK);
+
+    ret = cio_chunk_up_append(chunk);
+    TEST_CHECK(ret == CIO_OK);
+
+    ret = cio_chunk_down(chunk);
+    TEST_CHECK(ret == CIO_OK);
+
+    /* Full verification in this context */
+    ret = cio_chunk_up(chunk);
+    TEST_CHECK(ret == CIO_OK);
+
+    ret = cio_chunk_get_content_copy(chunk, (void **) &out_buf, &out_size);
+    TEST_CHECK(ret == CIO_OK);
+    TEST_CHECK(out_size == line_len * rounds);
+    free(out_buf);
+
+    cio_destroy(ctx);
+
+    /* And in a new one */
+    chunk = up_append_chunk(&ctx, flags, CIO_FALSE);
+    TEST_CHECK(chunk != NULL);
+    if (!chunk) {
+        cio_destroy(ctx);
+        return;
+    }
+
+    ret = cio_chunk_get_content_copy(chunk, (void **) &out_buf, &out_size);
+    TEST_CHECK(ret == CIO_OK);
+    TEST_CHECK(out_size == line_len * rounds);
+    if (ret == CIO_OK) {
+        for (i = 0; i < rounds && out_size == line_len * rounds; i++) {
+            TEST_CHECK(memcmp(out_buf + (i * line_len), line, line_len) == 0);
+        }
+        free(out_buf);
+    }
+
+    cio_destroy(ctx);
+}
+
+static void test_fs_up_append_checksum()
+{
+    check_up_append(CIO_CHECKSUM);
+}
+
+static void test_fs_up_append_no_checksum()
+{
+    check_up_append(0);
+}
+
+/*
+ * Content that changes on disk while the chunk is down is not noticed by an
+ * append up, and must be reported by the next load that verifies the content.
+ */
+static void test_fs_up_append_defers_verification()
+{
+    int ret;
+    struct cio_ctx *ctx;
+    struct cio_chunk *chunk;
+    char line[] = "record appended while the chunk was down\n";
+
+    chunk = up_append_chunk(&ctx, CIO_CHECKSUM, CIO_TRUE);
+    TEST_CHECK(chunk != NULL);
+    if (!chunk) {
+        exit(1);
+    }
+
+    ret = cio_chunk_write(chunk, line, strlen(line));
+    TEST_CHECK(ret == CIO_OK);
+
+    ret = cio_chunk_down(chunk);
+    TEST_CHECK(ret == CIO_OK);
+
+    corrupt_down_chunk(chunk, 0);
+
+    ret = cio_chunk_up_append(chunk);
+    TEST_CHECK(ret == CIO_OK);
+
+    ret = cio_chunk_write(chunk, line, strlen(line));
+    TEST_CHECK(ret == CIO_OK);
+
+    ret = cio_chunk_down(chunk);
+    TEST_CHECK(ret == CIO_OK);
+
+    ret = cio_chunk_up(chunk);
+    TEST_CHECK(ret == CIO_CORRUPTED);
+    TEST_CHECK(cio_chunk_is_up(chunk) == CIO_FALSE);
+
+    ret = cio_chunk_up_force(chunk);
+    TEST_CHECK(ret == CIO_CORRUPTED);
+
+    /* The saved state is good for one mapping only */
+    ret = cio_chunk_up_append(chunk);
+    TEST_CHECK(ret == CIO_CORRUPTED);
+
+    cio_destroy(ctx);
+
+    /* A new context has no saved state */
+    chunk = up_append_chunk(&ctx, CIO_CHECKSUM, CIO_FALSE);
+    TEST_CHECK(chunk == NULL);
+
+    cio_destroy(ctx);
+}
+
+/* A header that is not the one this context synced gets a full verification */
+static void test_fs_up_append_verifies_changed_header()
+{
+    int fd;
+    int ret;
+    ssize_t bytes;
+    unsigned char field[4];
+    struct cio_ctx *ctx;
+    struct cio_file *cf;
+    struct cio_chunk *chunk;
+    char line[] = "record appended while the chunk was down\n";
+
+    /* Stored checksum changed */
+    chunk = up_append_chunk(&ctx, CIO_CHECKSUM, CIO_TRUE);
+    TEST_CHECK(chunk != NULL);
+    if (!chunk) {
+        exit(1);
+    }
+
+    ret = cio_chunk_write(chunk, line, strlen(line));
+    TEST_CHECK(ret == CIO_OK);
+
+    ret = cio_chunk_down(chunk);
+    TEST_CHECK(ret == CIO_OK);
+
+    cf = (struct cio_file *) chunk->backend;
+
+    fd = open(cf->path, O_RDWR);
+    TEST_CHECK(fd != -1);
+
+    /* Primary and shadow checksums */
+    memset(field, 0xa5, sizeof(field));
+    bytes = pwrite(fd, field, sizeof(field), 2);
+    TEST_CHECK(bytes == sizeof(field));
+    bytes = pwrite(fd, field, sizeof(field), CIO_FILE_SHADOW_HASH_OFFSET);
+    TEST_CHECK(bytes == sizeof(field));
+    close(fd);
+
+    ret = cio_chunk_up_append(chunk);
+    TEST_CHECK(ret == CIO_CORRUPTED);
+
+    cio_destroy(ctx);
+
+    /* Content changed, then the chunk went through a failed load */
+    chunk = up_append_chunk(&ctx, CIO_CHECKSUM, CIO_TRUE);
+    TEST_CHECK(chunk != NULL);
+    if (!chunk) {
+        exit(1);
+    }
+
+    ret = cio_chunk_write(chunk, line, strlen(line));
+    TEST_CHECK(ret == CIO_OK);
+
+    ret = cio_chunk_down(chunk);
+    TEST_CHECK(ret == CIO_OK);
+
+    corrupt_down_chunk(chunk, 0);
+
+    ret = cio_chunk_up(chunk);
+    TEST_CHECK(ret == CIO_CORRUPTED);
+
+    ret = cio_chunk_up_append(chunk);
+    TEST_CHECK(ret == CIO_CORRUPTED);
+
+    cio_destroy(ctx);
+}
+
 static void test_deep_hierarchy()
 {
     int i;
@@ -3024,6 +3539,11 @@ TEST_LIST = {
     {"fs_shadow_checksum_recovers_read_only", test_fs_shadow_checksum_recovers_read_only},
     {"fs_shadow_checksum_recovers_primary_length", test_fs_shadow_checksum_recovers_primary_length},
     {"fs_valid_primary_precedes_newer_shadow", test_fs_valid_primary_precedes_newer_shadow},
+    {"fs_checksum_header_follows_writes", test_fs_checksum_header_follows_writes},
+#ifndef __EMSCRIPTEN__
+    {"fs_checksum_killed_writer", test_fs_checksum_killed_writer},
+    {"fs_killed_writer", test_fs_killed_writer},
+#endif
     {"fs_valid_primary_with_stale_shadow_read_only_truncate", test_fs_valid_primary_with_stale_shadow_read_only_truncate},
     {"fs_valid_primary_with_stale_shadow_read_only_append", test_fs_valid_primary_with_stale_shadow_read_only_append},
     {"fs_valid_primary_with_stale_shadow_truncate", test_fs_valid_primary_with_stale_shadow_truncate},
@@ -3042,6 +3562,10 @@ TEST_LIST = {
     {"fs_fluent_bit_storage_lifecycle", test_fs_fluent_bit_storage_lifecycle},
     {"fs_fluent_bit_delete_irrecoverable_on_load", test_fs_fluent_bit_delete_irrecoverable_on_load},
     {"fs_up_down_up_append", test_fs_up_down_up_append},
+    {"fs_up_append_checksum", test_fs_up_append_checksum},
+    {"fs_up_append_no_checksum", test_fs_up_append_no_checksum},
+    {"fs_up_append_defers_verification", test_fs_up_append_defers_verification},
+    {"fs_up_append_verifies_changed_header", test_fs_up_append_verifies_changed_header},
     {"fs_deep_hierachy", test_deep_hierarchy},
     {"legacy_success", test_legacy_success},
     {"legacy_failure", test_legacy_failure},
