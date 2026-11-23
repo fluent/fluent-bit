@@ -2,10 +2,12 @@ import json
 import os
 import struct
 import time
+from collections import Counter
 from copy import deepcopy
 
 import requests
 import pytest
+import yaml
 from google.protobuf import json_format
 from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import ExportLogsServiceRequest
 from opentelemetry.proto.collector.metrics.v1.metrics_service_pb2 import ExportMetricsServiceRequest
@@ -15,6 +17,7 @@ from server.kafka_server import data_storage, kafka_server_run, kafka_server_sto
 from server.schema_registry_server import (
     SCHEMA_ID,
     SCHEMA_SUBJECT,
+    SCHEMA_VERSION,
     data_storage as schema_registry_data_storage,
     schema_registry_server_run,
     schema_registry_server_stop,
@@ -29,9 +32,10 @@ EMPTY_MAP_RECORD_ID = "97789a11215b54828d2c3f50b864afed42543ff8"
 
 
 class Service:
-    def __init__(self, config_file, *, use_schema_registry=False):
+    def __init__(self, config_file, *, use_schema_registry=False, schema_registry_options=None):
         self.config_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "../config", config_file))
         self.use_schema_registry = use_schema_registry
+        self.schema_registry_options = schema_registry_options or {}
         self.service = FluentBitTestService(
             self.config_file,
             data_storage=data_storage,
@@ -45,7 +49,7 @@ class Service:
         kafka_server_run(self.kafka_port)
         if self.use_schema_registry:
             self.schema_registry_port = service.allocate_port_env("TEST_SUITE_SCHEMA_REGISTRY_PORT")
-            schema_registry_server_run(self.schema_registry_port)
+            schema_registry_server_run(self.schema_registry_port, **self.schema_registry_options)
 
     def _stop_receiver(self, service):
         if self.use_schema_registry:
@@ -543,6 +547,35 @@ def test_decode_avro_long_rejects_out_of_range_terminal_bits():
         _decode_avro_long(payload)
 
 
+def _create_shutdown_grace_service(ensure_thread_safe_reload):
+    config_file = os.path.abspath(
+        os.path.join(
+            os.path.dirname(__file__),
+            "../config",
+            "out_kafka_shutdown_grace.yaml",
+        )
+    )
+    service = FluentBitTestService(
+        config_file,
+        extra_env={
+            "TEST_HOT_RELOAD_ENSURE_THREAD_SAFETY": (
+                "on" if ensure_thread_safe_reload else "off"
+            ),
+        },
+    )
+    service.allocate_port_env("TEST_SUITE_KAFKA_PORT")
+    return service
+
+
+def _send_shutdown_grace_record(service):
+    response = requests.post(
+        f"http://127.0.0.1:{service.flb_listener_port}/",
+        json={"message": "pending during reload"},
+        timeout=5,
+    )
+    response.raise_for_status()
+
+
 def test_out_kafka_sends_json_payload():
     service = Service("out_kafka_basic.yaml")
     service.start()
@@ -560,6 +593,63 @@ def test_out_kafka_sends_json_payload():
     assert payload["source"] == "dummy"
     assert any(request["api_key"] == 3 for request in data_storage["requests"])
     assert any(request["api_key"] == 0 for request in data_storage["requests"])
+
+
+def test_out_kafka_hot_reload_waits_for_pending_delivery_with_infinite_grace():
+    service = _create_shutdown_grace_service(ensure_thread_safe_reload=True)
+    service.start()
+
+    try:
+        _send_shutdown_grace_record(service)
+        _wait_for_log_text(service.flb.log_file, "enqueued message")
+        service.flb.trigger_http_reload()
+        service.flb.wait_for_hot_reload_count(
+            1,
+            timeout=30 if memory_check_enabled() else 10,
+        )
+        log_text = _wait_for_log_text(
+            service.flb.log_file,
+            "[reload] start everything",
+            timeout=30 if memory_check_enabled() else 10,
+        )
+
+        delivery_failure = "message delivery failed: Local: Message timed out"
+        reload_start = "[reload] start everything"
+        assert delivery_failure in log_text
+        assert "Failed to force flush" not in log_text
+        assert log_text.index(delivery_failure) < log_text.index(reload_start)
+    finally:
+        service.stop()
+
+
+def test_out_kafka_hot_reload_times_out_pending_delivery_with_finite_grace():
+    service = _create_shutdown_grace_service(ensure_thread_safe_reload=False)
+    service.start()
+
+    try:
+        _send_shutdown_grace_record(service)
+        _wait_for_log_text(service.flb.log_file, "enqueued message")
+        reload_started_at = time.monotonic()
+        service.flb.trigger_http_reload()
+        service.flb.wait_for_hot_reload_count(
+            1,
+            timeout=30 if memory_check_enabled() else 10,
+        )
+        log_text = _wait_for_log_text(
+            service.flb.log_file,
+            "Failed to force flush: Local: Timed out",
+        )
+
+        reload_elapsed_seconds = time.monotonic() - reload_started_at
+        force_flush_failure = "Failed to force flush: Local: Timed out"
+        reload_start = "[reload] start everything"
+
+        # Allow scheduling margin around the configured two-second grace.
+        assert reload_elapsed_seconds >= 1.5
+        assert reload_start in log_text
+        assert log_text.index(force_flush_failure) < log_text.index(reload_start)
+    finally:
+        service.stop()
 
 
 def test_out_kafka_raw_format_uses_selected_field():
@@ -605,6 +695,56 @@ def test_out_kafka_dynamic_topic_routes_to_record_topic():
     assert payload["topic_name"] == "topic-dynamic"
 
 
+@pytest.mark.parametrize("dynamic", [True, False])
+def test_out_kafka_dynamic_topic_workers(tmp_path, dynamic):
+    template = os.path.join(os.path.dirname(__file__), "../config/out_kafka_dynamic_topic.yaml")
+    with open(template, encoding="utf-8") as config_file:
+        config = yaml.safe_load(config_file)
+
+    # Separate tags produce separate chunks that compete for the same topics.
+    names = ["test", "test-default", "topic-other", "x" * 249,
+             "", "invalid,topic", "x" * 250, "invalid\0topic"]
+    valid = set(names[:4])
+    config["pipeline"]["inputs"] = [
+        {
+            "name": "dummy",
+            "tag": f"kafka.workers.{index}",
+            "dummy": json.dumps({"topic_name": name, "source_id": index}),
+            "samples": 3,
+        }
+        for index, name in enumerate(names * 8)
+    ]
+    output = config["pipeline"]["outputs"][0]
+    output.update({"match": "kafka.workers.*", "workers": 4,
+                   "topics": "test-default", "dynamic_topic": dynamic})
+    config_path = tmp_path / "dynamic-workers.yaml"
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+    service = Service(str(config_path))
+    service.start()
+    try:
+        messages = service.wait_for_messages(192, timeout=60)
+    finally:
+        service.stop()
+
+    assert len(messages) == 192
+    counts = Counter()
+    for message in messages:
+        payload = json.loads(message["value"].decode("utf-8"))
+        name = payload["topic_name"]
+        expected = name if dynamic and name in valid else "test-default"
+        assert message["topic"] == expected
+        counts[payload["source_id"]] += 1
+    assert counts == Counter({index: 3 for index in range(64)})
+
+    with open(service.flb.log_file, encoding="utf-8") as log_file:
+        registrations = Counter(
+            line.split("new topic added: ", 1)[1].strip()
+            for line in log_file if "new topic added: " in line
+        )
+    expected = Counter({name: 1 for name in valid - {"test-default"}}) if dynamic else Counter()
+    assert registrations == expected
+
+
 def test_out_kafka_msgpack_format_sends_msgpack_payload():
     service = Service("out_kafka_msgpack.yaml")
     service.start()
@@ -626,22 +766,25 @@ def test_out_kafka_msgpack_format_sends_msgpack_payload():
 def test_out_kafka_avro_resolves_schema_registry_subject():
     service = Service("out_kafka_avro_schema_registry.yaml", use_schema_registry=True)
     _start_or_skip_without_avro_encoder(service)
+    try:
+        messages = service.wait_for_messages(3, timeout=30)
+    finally:
+        service.stop()
 
-    messages = service.wait_for_messages(1)
-    service.stop()
-
-    message = messages[0]
-    value = message["value"]
-
-    assert message["topic"] == "test"
-    assert value[0] == 0
-    assert int.from_bytes(value[1:5], "big") == SCHEMA_ID
-    assert len(value) > 5
+    for message in messages:
+        value = message["value"]
+        assert message["topic"] == "test"
+        assert value[0] == 0
+        assert int.from_bytes(value[1:5], "big") == SCHEMA_ID
+        body, offset = _decode_avro_string(value, 5)
+        source, offset = _decode_avro_string(value, offset)
+        assert (body, source) == ("hello avro", "dummy")
+        assert offset == len(value)
 
     requests_seen = schema_registry_data_storage["requests"]
     assert len(requests_seen) == 1
     assert requests_seen[0]["method"] == "GET"
-    assert requests_seen[0]["path"] == f"/subjects/{SCHEMA_SUBJECT}/versions/latest"
+    assert requests_seen[0]["path"] == f"/subjects/{SCHEMA_SUBJECT}/versions/{SCHEMA_VERSION}"
     assert "application/vnd.schemaregistry.v1+json" in requests_seen[0]["headers"]["Accept"]
 
 

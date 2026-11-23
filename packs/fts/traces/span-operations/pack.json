@@ -1,0 +1,22 @@
+{
+  "pack_version": 1,
+  "fts_api_version": 1,
+  "id": "org.fluentbit.policy.span-operations",
+  "version": "1.0.0",
+  "title": "Stable span operations",
+  "description": "Name server spans from trusted http.route and HTTP method, preserving IDs, parent, timestamps, attributes and resource/scope. Does not infer templates from raw URLs or intentionally filter spans. Callback errors can drop spans with error_mode=drop.",
+  "blocks": [
+    {
+      "name": "apply",
+      "signals": [
+        "traces"
+      ],
+      "source": "blocks/apply.lua",
+      "parameters": {},
+      "privacy": false
+    }
+  ],
+  "fixtures": [
+    "tests/policy.yaml"
+  ]
+}

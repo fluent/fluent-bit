@@ -52,8 +52,18 @@ void test_options()
     ctr_opts_exit(&opts);
 }
 
+void test_destroy_null()
+{
+    /* ctr_destroy(NULL) must be a safe no-op so callers don't need to
+     * branch on allocation failures of ctr_create().
+     */
+    ctr_destroy(NULL);
+    TEST_CHECK(1);
+}
+
 TEST_LIST = {
     {"basic", test_basic},
     {"options", test_options},
+    {"destroy_null", test_destroy_null},
     { 0 }
 };

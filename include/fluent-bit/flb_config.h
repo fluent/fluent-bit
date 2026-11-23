@@ -21,6 +21,7 @@
 #define FLB_CONFIG_H
 
 #include <time.h>
+#include <stdio.h>
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_pipe.h>
@@ -56,6 +57,27 @@ struct flb_hash_table;
  * pointers.
  */
 
+/*
+ * Maximum number of flush requests in flight (dispatched to an output and
+ * whose return status has not been processed by the engine yet).
+ *
+ * Flush requests and their return status travel through pipes written with
+ * blocking calls: the engine hands the task to the output (worker
+ * 'ch_parent_events' or engine 'ch_self_events') and the output reports the
+ * status back through the instance 'ch_events' channel, which is only drained
+ * by the engine event loop. Each request takes an 8 bytes slot and pipes can
+ * hold 64KiB on Linux (8192 slots) but only 16KiB on other systems, so if more
+ * requests than that are dispatched at once the engine and the output
+ * workers end up blocked on each other forever. Keep the number of requests
+ * in flight below the pipe capacity, the remaining tasks are started on the
+ * next flush cycle.
+ */
+#ifdef __linux__
+#define FLB_CONFIG_FLUSH_IN_FLIGHT_LIMIT  4096
+#else
+#define FLB_CONFIG_FLUSH_IN_FLIGHT_LIMIT  1024
+#endif
+
 /* Main struct to hold the configuration of the runtime service */
 struct flb_config {
     struct mk_event ch_event;
@@ -78,6 +100,12 @@ struct flb_config {
     int flush_adaptive_direction;
     double flush_adaptive_current_interval;
 
+    size_t http_client_max_response_size;
+    size_t http_client_max_header_size;
+    size_t http_client_max_wire_size;
+    int http_client_max_header_count;
+    int http_client_response_timeout;
+
     /*
      * Maximum grace time on shutdown. If set to -1, the engine will
      * shutdown when all remaining tasks are flushed
@@ -93,6 +121,11 @@ struct flb_config {
 
     int verbose;           /* Verbose mode (default OFF)     */
     time_t init_time;      /* Time when Fluent Bit started   */
+
+#ifdef __EMSCRIPTEN__
+    /* Browser SDK hook, invoked exclusively by the engine thread. */
+    void (*cb_wasm_drain)(struct flb_config *, int);
+#endif
 
     /* Used in library mode */
     pthread_t worker;               /* worker tid */
@@ -197,6 +230,7 @@ struct flb_config {
 
     /* Exit status code */
     int exit_status_code;
+    int prior_reload_exit_status;
 
     /* Workers: threads spawn using flb_worker_create() */
     struct mk_list workers;
@@ -290,7 +324,7 @@ struct flb_config {
 #endif
 
     /* LuaJIT environment's context */
-#ifdef FLB_HAVE_LUAJIT
+#ifdef FLB_HAVE_LUA
     struct mk_list luajit_list;
 #endif
 
@@ -319,6 +353,7 @@ struct flb_config {
     int fips_mode_active;
 
     int enable_hot_reload;
+    FILE *hot_reload_config_file;
     int ensure_thread_safety_on_hot_reloading;
     unsigned int hot_reloaded_count;
     int shutdown_by_hot_reloading;
@@ -356,6 +391,10 @@ struct flb_config {
     struct flb_task_map *task_map;
     size_t task_map_size;
 
+    /* flush requests dispatched to outputs whose status is pending */
+    int flush_in_flight;
+    int flush_in_flight_limit;
+
     int json_escape_unicode;
 
     int dry_run;
@@ -369,6 +408,7 @@ struct flb_config {
 struct flb_config *flb_config_init();
 void flb_config_exit(struct flb_config *config);
 const char *flb_config_prop_get(const char *key, struct mk_list *list);
+int flb_config_service_property_is_valid(const char *k);
 int flb_config_set_property(struct flb_config *config,
                             const char *k, const char *v);
 int flb_config_set_program_name(struct flb_config *config, char *name);
@@ -389,6 +429,7 @@ struct flb_service_config {
 
 enum conf_type {
     FLB_CONF_TYPE_INT,
+    FLB_CONF_TYPE_SIZE,
     FLB_CONF_TYPE_DOUBLE,
     FLB_CONF_TYPE_BOOL,
     FLB_CONF_TYPE_STR,
@@ -396,6 +437,11 @@ enum conf_type {
 };
 
 #define FLB_CONF_STR_FLUSH        "Flush"
+#define FLB_CONF_STR_HTTP_CLIENT_MAX_RESPONSE_SIZE "http_client.max_response_size"
+#define FLB_CONF_STR_HTTP_CLIENT_MAX_HEADER_SIZE   "http_client.max_header_size"
+#define FLB_CONF_STR_HTTP_CLIENT_MAX_WIRE_SIZE     "http_client.max_wire_size"
+#define FLB_CONF_STR_HTTP_CLIENT_MAX_HEADER_COUNT  "http_client.max_header_count"
+#define FLB_CONF_STR_HTTP_CLIENT_RESPONSE_TIMEOUT  "http_client.response_timeout"
 #define FLB_CONF_STR_FLUSH_ADAPTIVE "flush.adaptive"
 #define FLB_CONF_STR_FLUSH_ADAPTIVE_MIN "flush.adaptive.min_interval"
 #define FLB_CONF_STR_FLUSH_ADAPTIVE_MAX "flush.adaptive.max_interval"

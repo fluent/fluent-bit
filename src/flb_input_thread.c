@@ -18,6 +18,7 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_socket.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_pipe.h>
 #include <fluent-bit/flb_engine.h>
@@ -209,17 +210,21 @@ static void input_thread_instance_destroy(struct flb_input_thread_instance *thi)
     /* ch_parent_events */
     if (thi->ch_parent_events[0] > 0) {
         mk_event_closesocket(thi->ch_parent_events[0]);
+        thi->ch_parent_events[0] = FLB_UNINITIALIZED_SOCKET;
     }
     if (thi->ch_parent_events[1] > 0) {
         mk_event_closesocket(thi->ch_parent_events[1]);
+        thi->ch_parent_events[1] = FLB_UNINITIALIZED_SOCKET;
     }
 
     /* ch_thread_events */
     if (thi->ch_thread_events[0] > 0) {
         mk_event_closesocket(thi->ch_thread_events[0]);
+        thi->ch_thread_events[0] = FLB_UNINITIALIZED_SOCKET;
     }
     if (thi->ch_thread_events[1] > 0) {
         mk_event_closesocket(thi->ch_thread_events[1]);
+        thi->ch_thread_events[1] = FLB_UNINITIALIZED_SOCKET;
     }
 
     flb_tp_destroy(thi->tp);
@@ -237,6 +242,11 @@ static struct flb_input_thread_instance *input_thread_instance_create(struct flb
         flb_errno();
         return NULL;
     }
+    thi->ch_parent_events[0] = FLB_UNINITIALIZED_SOCKET;
+    thi->ch_parent_events[1] = FLB_UNINITIALIZED_SOCKET;
+    thi->ch_thread_events[0] = FLB_UNINITIALIZED_SOCKET;
+    thi->ch_thread_events[1] = FLB_UNINITIALIZED_SOCKET;
+
     thi->ins = ins;
     thi->config = ins->config;
 
@@ -259,10 +269,10 @@ static struct flb_input_thread_instance *input_thread_instance_create(struct flb
     }
 
     /* channel to receive parent (engine) notifications */
-    ret = mk_event_channel_create(thi->evl,
-                                  &thi->ch_parent_events[0],
-                                  &thi->ch_parent_events[1],
-                                  &thi->event);
+    ret = flb_pipe_event_channel_create(thi->evl,
+                                        &thi->ch_parent_events[0],
+                                        &thi->ch_parent_events[1],
+                                        &thi->event);
     if (ret == -1) {
         flb_error("could not initialize parent channels for %s",
                   flb_input_name(ins));
@@ -272,10 +282,10 @@ static struct flb_input_thread_instance *input_thread_instance_create(struct flb
     thi->event.type = FLB_ENGINE_EV_INPUT;
 
     /* channel to send messages to local event loop */
-    ret = mk_event_channel_create(thi->evl,
-                                  &thi->ch_thread_events[0],
-                                  &thi->ch_thread_events[1],
-                                  &thi->event_local);
+    ret = flb_pipe_event_channel_create(thi->evl,
+                                        &thi->ch_thread_events[0],
+                                        &thi->ch_thread_events[1],
+                                        &thi->event_local);
     if (ret == -1) {
         flb_error("could not initialize parent channels for %s",
                   flb_input_name(ins));
@@ -284,10 +294,10 @@ static struct flb_input_thread_instance *input_thread_instance_create(struct flb
     }
     thi->event_local.type = FLB_ENGINE_EV_THREAD_INPUT;
 
-    ret = mk_event_channel_create(thi->evl,
-                                  &thi->notification_channels[0],
-                                  &thi->notification_channels[1],
-                                  &thi->notification_event);
+    ret = flb_pipe_event_channel_create(thi->evl,
+                                        &thi->notification_channels[0],
+                                        &thi->notification_channels[1],
+                                        &thi->notification_event);
     if (ret == -1) {
         flb_error("could not create notification channel for %s",
                   flb_input_name(ins));
@@ -321,6 +331,7 @@ static void input_thread(void *data)
     int thread_id;
     char tmp[64];
     int instance_exit = FLB_FALSE;
+    int input_initialized = FLB_FALSE;
     struct mk_event *event;
     struct flb_input_instance *ins;
     struct flb_bucket_queue *evl_bktq = NULL;
@@ -369,19 +380,17 @@ static void input_thread(void *data)
     ret = p->cb_init(ins, ins->config, ins->data);
     if (ret == -1) {
         flb_error("failed initialize input %s", flb_input_name(ins));
-        /* message the parent thread that this thread could not be initialized */
-        input_thread_instance_set_status(ins, FLB_INPUT_THREAD_ERROR);
-        return;
+        goto init_error;
     }
 
+    input_initialized = FLB_TRUE;
     ins->processor->notification_channel = ins->notification_channel;
 
     ret = flb_processor_init(ins->processor);
     if (ret == -1) {
         flb_error("failed initialize processors for input %s",
                   flb_input_name(ins));
-        input_thread_instance_set_status(ins, FLB_INPUT_THREAD_ERROR);
-        return;
+        goto init_error;
     }
 
     flb_plg_debug(ins, "[thread init] initialization OK");
@@ -395,7 +404,7 @@ static void input_thread(void *data)
     if (ret == -1) {
         flb_error("could not retrieve collectors signal from parent thread on '%s'",
                   flb_input_name(ins));
-        return;
+        goto init_error;
     }
 
     /* event loop queue */
@@ -502,6 +511,7 @@ static void input_thread(void *data)
 
         /* Check if the instance must exit */
         if (instance_exit) {
+            flb_processor_input_stop(ins->processor);
             /* Invoke exit callback */
             if (ins->p->cb_exit && ins->context) {
                 ins->p->cb_exit(ins->context, ins->config);
@@ -516,6 +526,17 @@ static void input_thread(void *data)
     flb_bucket_queue_destroy(evl_bktq);
     flb_sched_destroy(sched);
     input_thread_instance_destroy(thi);
+    return;
+
+init_error:
+    flb_processor_input_stop(ins->processor);
+    if (input_initialized && p->cb_exit && ins->context) {
+        p->cb_exit(ins->context, ins->config);
+        ins->context = NULL;
+    }
+    flb_net_dns_lookup_context_cleanup(&dns_ctx);
+    flb_sched_destroy(sched);
+    input_thread_instance_set_status(ins, FLB_INPUT_THREAD_ERROR);
 }
 
 
@@ -647,6 +668,9 @@ int flb_input_thread_instance_init(struct flb_config *config, struct flb_input_i
     }
     else if (ret == FLB_FALSE) {
         flb_plg_error(ins, "could not initialize threaded plugin instance");
+        pthread_join(th->tid, NULL);
+        input_thread_instance_destroy(thi);
+        ins->thi = NULL;
         return -1;
     }
     else if (ret == FLB_TRUE) {

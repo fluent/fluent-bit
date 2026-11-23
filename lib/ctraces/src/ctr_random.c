@@ -29,6 +29,7 @@
 #endif
 
 #ifdef ITS_A_UNIX_FRIEND
+#include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
 #else
@@ -41,22 +42,30 @@
 
 #endif
 
-#include <time.h>
-
 ssize_t ctr_random_get(void *buf, size_t len)
 {
-    int i;
-    ssize_t ret = 0;
-    unsigned int s;
-    char *tmp;
+    size_t offset;
+    ssize_t ret;
+
+    if (buf == NULL || len == 0) {
+        return -1;
+    }
 
 #ifdef CTR_HAVE_GETRANDOM
-    /*
-     * On Linux systems getrandom() is preferred, note that our use case it's pretty
-     * simple (no security stuff).
-     */
-    ret = getrandom(buf, len, GRND_NONBLOCK);
-    return ret;
+    offset = 0;
+    while (offset < len) {
+        ret = getrandom((char *) buf + offset, len - offset, 0);
+        if (ret > 0) {
+            offset += ret;
+        }
+        else if (ret < 0 && errno == EINTR) {
+            continue;
+        }
+        else {
+            return -1;
+        }
+    }
+    return (ssize_t) offset;
 #endif
 
     /* if getrandom() is not available and we are on Linux, macOS or BSD, try out /dev/urandom */
@@ -64,23 +73,29 @@ ssize_t ctr_random_get(void *buf, size_t len)
     int fd;
 
     fd = open("/dev/urandom",  O_RDONLY);
-    if (fd > 0) {
-        ret = read(fd, buf, len);
+    if (fd >= 0) {
+        offset = 0;
+        while (offset < len) {
+            ret = read(fd, (char *) buf + offset, len - offset);
+            if (ret > 0) {
+                offset += ret;
+            }
+            else if (ret < 0 && errno == EINTR) {
+                continue;
+            }
+            else {
+                close(fd);
+                return -1;
+            }
+        }
         close(fd);
-        return ret;
+        return (ssize_t) offset;
     }
-
-    s = time(NULL);
-
-    /* fallback... a very slow way to compose a random buffer */
-    tmp = buf;
-    for (i = 0; i < len; i++) {
-        /* fixme: we need a good entropy here */
-        tmp[i] = rand_r(&s);
-    }
+    return -1;
 #else /* Windows ? */
-    ret = RtlGenRandom(buf, len);
+    if (RtlGenRandom(buf, len)) {
+        return (ssize_t) len;
+    }
+    return -1;
 #endif
-
-    return ret;
 }

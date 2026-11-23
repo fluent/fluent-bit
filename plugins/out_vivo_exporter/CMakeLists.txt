@@ -7,6 +7,8 @@ if(NOT FLB_HTTP_SERVER)
 endif()
 
 set(src
+  vivo_otlp.c
+  vivo_json.c
   vivo_http.c
   vivo_stream.c
   vivo.c

@@ -363,7 +363,27 @@ static void test_snake_case_key()
     TEST_CHECK(check_snake_case("interval_Sec", "interval_sec") == FLB_TRUE);
 }
 
+static void test_entry_stream(void)
+{
+    struct flb_cf *cf;
+    struct flb_cf *parsed;
+    FILE *stream;
+
+    stream = fopen(FLB_000, "rb");
+    TEST_ASSERT(stream != NULL);
+    cf = flb_cf_create();
+    TEST_ASSERT(cf != NULL);
+    cf->entry_file = stream;
+    parsed = flb_cf_create_from_file(cf, FLB_006);
+    TEST_CHECK(parsed == cf);
+    TEST_CHECK(mk_list_size(&cf->inputs) == 1);
+    cf->entry_file = NULL;
+    TEST_CHECK(fclose(stream) == 0);
+    flb_cf_destroy(cf);
+}
+
 TEST_LIST = {
+    {"entry_stream", test_entry_stream},
     { "basic"    , test_basic},
     { "missing_value_issue5880" , missing_value},
     { "indent_level_error" , indent_level_error},

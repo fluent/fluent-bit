@@ -1,0 +1,41 @@
+fixture_version: 1
+signal: logs
+processor:
+  name: fts
+  packs:
+  - ../pack.json
+  recipe_version: 1
+  error_mode: drop
+  recipe:
+  - id: policy
+    use: org.fluentbit.policy.application-json/apply
+cases:
+- name: parse-redact-remove-raw
+  input:
+  - body:
+      log: '{"level":"warn","password":"synthetic","count":1}'
+  expected:
+    records:
+    - body:
+        app:
+          level: warn
+          password: '[REDACTED]'
+          count: 1
+        severity: WARN
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0
+- name: invalid-json
+  input:
+  - body:
+      log: broken
+  expected:
+    records: []
+    outcomes:
+      kept: 0
+      dropped: 1
+      errors: 1
+    error:
+      step: policy
+      class: invalid_json

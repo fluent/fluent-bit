@@ -107,6 +107,24 @@ static void flb_downstream_conn_event_coro(void)
     flb_downstream_conn_event_loop(connection, coro);
 }
 
+/* Complete the setup of a socket that was accepted outside this coroutine */
+static int downstream_conn_adopted_setup(struct flb_connection *connection,
+                                         struct flb_coro *coro)
+{
+#ifdef FLB_HAVE_TLS
+    if (flb_stream_is_secure(connection->stream) &&
+        connection->stream->tls_context != NULL) {
+        return flb_tls_session_create(connection->stream->tls_context,
+                                      connection, coro);
+    }
+#else
+    (void) connection;
+    (void) coro;
+#endif
+
+    return 0;
+}
+
 static void flb_downstream_conn_accept_event_coro(void)
 {
     int result;
@@ -117,7 +135,13 @@ static void flb_downstream_conn_accept_event_coro(void)
     connection = coro->data;
 
     flb_connection_reset_connection_timeout(connection);
-    result = flb_io_net_accept(connection, coro);
+    if (connection->fd == FLB_INVALID_SOCKET) {
+        result = flb_io_net_accept(connection, coro);
+    }
+    else {
+        /* the socket was accepted by another worker and handed over */
+        result = downstream_conn_adopted_setup(connection, coro);
+    }
     flb_connection_unset_connection_timeout(connection);
 
     if (result == 0 &&
@@ -461,9 +485,11 @@ static int destroy_conn(struct flb_connection *connection, int force)
         connection->coroutine = NULL;
     }
 
+#ifdef FLB_HAVE_TLS
     if (connection->tls_session != NULL) {
         flb_tls_session_destroy(connection->tls_session);
     }
+#endif
 
     mk_list_del(&connection->_head);
 
@@ -659,7 +685,11 @@ int flb_downstream_conn_release(struct flb_connection *connection)
 
         if (flb_coro_get() != connection->event_coroutine) {
             wake_event_coroutine(connection, ECANCELED);
-            resume = flb_stream_is_thread_safe(connection->stream);
+
+            /* an active parent callback resumes the coroutine on return */
+            if (connection->event_parent_active == FLB_FALSE) {
+                resume = flb_stream_is_thread_safe(connection->stream);
+            }
         }
 
         ret = FLB_DOWNSTREAM_CONN_DEFERRED;
@@ -715,8 +745,14 @@ int flb_downstream_conn_release_all(struct flb_downstream *stream)
     return 0;
 }
 
-int flb_downstream_conn_event_accept(
+/*
+ * Start the accept coroutine of a connection. With an invalid 'fd' the
+ * coroutine accepts from the listener, otherwise it adopts 'fd'. An adopted
+ * socket is owned by the connection once this function is entered.
+ */
+static int downstream_conn_event_start(
         struct flb_downstream *stream,
+        flb_sockfd_t fd,
         flb_connection_accept_callback accept_callback,
         void *accept_callback_data,
         flb_connection_event_callback event_callback,
@@ -733,10 +769,18 @@ int flb_downstream_conn_event_accept(
         (mask & (MK_EVENT_READ | MK_EVENT_WRITE)) == 0 ||
         (stream->base.transport != FLB_TRANSPORT_TCP &&
          stream->base.transport != FLB_TRANSPORT_UNIX_STREAM)) {
+        if (fd != FLB_INVALID_SOCKET) {
+            flb_socket_close(fd);
+        }
         return -1;
     }
 
     if (stream->paused == FLB_TRUE) {
+        if (fd != FLB_INVALID_SOCKET) {
+            flb_socket_close(fd);
+            return 0;
+        }
+
         connection_fd = flb_net_accept(stream->server_fd);
         if (connection_fd >= 0) {
             flb_socket_close(connection_fd);
@@ -749,20 +793,29 @@ int flb_downstream_conn_event_accept(
 
     config = stream->base.config;
     if (config == NULL || flb_downstream_is_async(stream) == FLB_FALSE) {
+        if (fd != FLB_INVALID_SOCKET) {
+            flb_socket_close(fd);
+        }
         return -1;
     }
 
-    connection = flb_connection_create(FLB_INVALID_SOCKET,
+    connection = flb_connection_create(fd,
                                        FLB_DOWNSTREAM_CONNECTION,
                                        stream,
                                        flb_engine_evl_get(),
                                        NULL);
     if (connection == NULL) {
+        if (fd != FLB_INVALID_SOCKET) {
+            flb_socket_close(fd);
+        }
         return -1;
     }
 
     coro = flb_coro_create(connection);
     if (coro == NULL) {
+        if (fd != FLB_INVALID_SOCKET) {
+            flb_socket_close(fd);
+        }
         flb_connection_destroy(connection);
         return -1;
     }
@@ -773,6 +826,9 @@ int flb_downstream_conn_event_accept(
                              &stack_size);
     if (coro->callee == NULL) {
         flb_coro_destroy(coro);
+        if (fd != FLB_INVALID_SOCKET) {
+            flb_socket_close(fd);
+        }
         flb_connection_destroy(connection);
         return -1;
     }
@@ -805,6 +861,35 @@ int flb_downstream_conn_event_accept(
     }
 
     return ret;
+}
+
+int flb_downstream_conn_event_accept(
+        struct flb_downstream *stream,
+        flb_connection_accept_callback accept_callback,
+        void *accept_callback_data,
+        flb_connection_event_callback event_callback,
+        int mask)
+{
+    return downstream_conn_event_start(stream, FLB_INVALID_SOCKET,
+                                       accept_callback, accept_callback_data,
+                                       event_callback, mask);
+}
+
+int flb_downstream_conn_event_adopt(
+        struct flb_downstream *stream,
+        flb_sockfd_t fd,
+        flb_connection_accept_callback accept_callback,
+        void *accept_callback_data,
+        flb_connection_event_callback event_callback,
+        int mask)
+{
+    if (fd == FLB_INVALID_SOCKET) {
+        return -1;
+    }
+
+    return downstream_conn_event_start(stream, fd,
+                                       accept_callback, accept_callback_data,
+                                       event_callback, mask);
 }
 
 int flb_downstream_conn_event_register(struct flb_connection *connection,
@@ -929,7 +1014,16 @@ void flb_downstream_conn_event_resume(struct flb_connection *connection)
         connection->event_parent_callback = NULL;
         connection->event_parent_callback_data = NULL;
 
+        /*
+         * The callback runs on this stack while the event coroutine is
+         * suspended in flb_downstream_conn_event_call_parent() and it can
+         * request the release of this connection (e.g. a pause triggered by
+         * ingestion). The coroutine must not be resumed until the callback
+         * returns, otherwise the plugin wrapper it uses could be dropped.
+         */
+        connection->event_parent_active = FLB_TRUE;
         result = callback(callback_data);
+        connection->event_parent_active = FLB_FALSE;
         connection->event_parent_callback_result = result;
         connection->event_wakeup_pending = FLB_FALSE;
     }
@@ -950,7 +1044,9 @@ static void resume_pending_event_coroutines(struct flb_downstream *stream)
         mk_list_foreach(head, &stream->busy_queue) {
             connection = mk_list_entry(head, struct flb_connection, _head);
 
+            /* an active parent callback resumes the coroutine on return */
             if (connection->event_coroutine != NULL &&
+                connection->event_parent_active == FLB_FALSE &&
                 connection->event_wakeup_pending == FLB_TRUE) {
                 connection->event_wakeup_pending = FLB_FALSE;
                 break;
@@ -974,9 +1070,11 @@ int flb_downstream_conn_timeouts_stream(struct flb_downstream *stream)
     int                    elapsed_time;
     struct flb_connection *connection;
     const char            *reason;
+    const char            *remote_address;
     struct mk_list        *s_head;
     int                    drop;
     int                    inject;
+    int                    log_error;
     struct mk_list        *tmp;
     time_t                 now;
 
@@ -994,6 +1092,7 @@ int flb_downstream_conn_timeouts_stream(struct flb_downstream *stream)
         connection = mk_list_entry(s_head, struct flb_connection, _head);
 
         drop = FLB_FALSE;
+        log_error = FLB_TRUE;
 
         /* Connect timeouts */
         if (connection->net->accept_timeout > 0 &&
@@ -1002,6 +1101,7 @@ int flb_downstream_conn_timeouts_stream(struct flb_downstream *stream)
             drop = FLB_TRUE;
             reason = "connection timeout";
             elapsed_time = connection->net->accept_timeout;
+            log_error = connection->net->accept_timeout_log_error;
         }
         else if (connection->net->io_timeout > 0 &&
                  connection->ts_io_timeout > 0 &&
@@ -1009,15 +1109,19 @@ int flb_downstream_conn_timeouts_stream(struct flb_downstream *stream)
             drop = FLB_TRUE;
             reason = "IO timeout";
             elapsed_time = connection->net->io_timeout;
+            log_error = connection->net->accept_timeout_log_error &&
+                        connection->io_timeout_log_error;
         }
 
         if (drop) {
             if (!flb_downstream_is_shutting_down(stream)) {
-                if (connection->net->accept_timeout_log_error) {
+                remote_address = flb_connection_get_remote_address(connection);
+
+                if (log_error) {
                     flb_error("[downstream] connection #%i from %s timed "
                               "out after %i seconds (%s)",
                               connection->fd,
-                              connection->user_friendly_remote_host,
+                              remote_address,
                               elapsed_time,
                               reason);
                 }
@@ -1025,7 +1129,7 @@ int flb_downstream_conn_timeouts_stream(struct flb_downstream *stream)
                     flb_debug("[downstream] connection #%i from %s timed "
                               "out after %i seconds (%s)",
                               connection->fd,
-                              connection->user_friendly_remote_host,
+                              remote_address,
                               elapsed_time,
                               reason);
                 }

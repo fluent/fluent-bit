@@ -20,6 +20,9 @@
 #ifndef FLB_SQLDB_H
 #define FLB_SQLDB_H
 
+#include <fluent-bit/flb_info.h>
+
+#ifdef FLB_HAVE_SQLDB
 #include <sqlite3.h>
 #include <fluent-bit.h>
 #include <fluent-bit/flb_lock.h>
@@ -48,5 +51,7 @@ int64_t flb_sqldb_last_id(struct flb_sqldb *db);
 int flb_sqldb_lock(struct flb_sqldb *db);
 
 int flb_sqldb_unlock(struct flb_sqldb *db);
+
+#endif /* FLB_HAVE_SQLDB */
 
 #endif

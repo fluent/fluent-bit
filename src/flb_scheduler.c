@@ -791,10 +791,10 @@ struct flb_sched *flb_sched_create(struct flb_config *config,
     sched->frame_fd = fd;
 
     /* Creates a channel to handle notifications */
-    ret = mk_event_channel_create(sched->evl,
-                                  &sched->ch_events[0],
-                                  &sched->ch_events[1],
-                                  &sched->event);
+    ret = flb_pipe_event_channel_create(sched->evl,
+                                        &sched->ch_events[0],
+                                        &sched->ch_events[1],
+                                        &sched->event);
     if (ret == -1) {
         flb_sched_destroy(sched);
         return NULL;

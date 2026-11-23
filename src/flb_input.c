@@ -23,6 +23,7 @@
 #include <string.h>
 
 #include <monkey/mk_core.h>
+#include <fluent-bit/flb_socket.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_str.h>
@@ -65,6 +66,30 @@ static void flb_input_rate_gate_timer_cancel(struct flb_input_instance *ins);
 
 struct flb_libco_in_params libco_in_param;
 pthread_key_t libco_in_param_key;
+static pthread_once_t libco_in_param_once = PTHREAD_ONCE_INIT;
+static int libco_in_param_init_result = -1;
+
+static void libco_in_param_key_destroy(void *data)
+{
+    flb_free(data);
+}
+
+static void libco_in_param_key_create()
+{
+    libco_in_param_init_result = pthread_key_create(&libco_in_param_key,
+                                                    libco_in_param_key_destroy);
+}
+
+int flb_input_coro_params_init()
+{
+    int ret;
+
+    ret = pthread_once(&libco_in_param_once, libco_in_param_key_create);
+    if (ret != 0 || libco_in_param_init_result != 0) {
+        return -1;
+    }
+    return 0;
+}
 
 #define protcmp(a, b)  strncasecmp(a, b, strlen(a))
 
@@ -224,7 +249,8 @@ struct flb_config_map input_global_properties[] = {
     {
         FLB_CONFIG_MAP_BOOL, "rate_gate.backpressure", "true",
         0, FLB_FALSE, 0,
-        "Apply retry and busy chunk pressure when computing effective limits."
+        "Apply retry, busy chunk, and throttle-deferred route pressure "
+        "when computing effective limits."
     },
     {
         FLB_CONFIG_MAP_DOUBLE, "rate_gate.resume_ratio", "0.80",
@@ -396,6 +422,9 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
             flb_errno();
             return NULL;
         }
+
+        instance->ch_events[0] = FLB_UNINITIALIZED_SOCKET;
+        instance->ch_events[1] = FLB_UNINITIALIZED_SOCKET;
 
         instance->http_server_config = flb_calloc(1, sizeof(struct flb_http_server_config));
         if (!instance->http_server_config) {
@@ -618,6 +647,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->tls_crt_file          = NULL;
         instance->tls_key_file          = NULL;
         instance->tls_key_passwd        = NULL;
+        instance->tls_crl_file          = NULL;
 #endif
 
         /* Plugin requires a co-routine context ? */
@@ -670,6 +700,7 @@ struct flb_input_instance *flb_input_new(struct flb_config *config,
         instance->rate_gate_max_records = 0;
         instance->rate_gate_busy_chunks = 0;
         instance->rate_gate_retry_attempts = 0;
+        instance->rate_gate_deferred_routes = 0;
         instance->rate_gate_timer = NULL;
 #endif
         instance->storage_buf_status = FLB_INPUT_RUNNING;
@@ -952,6 +983,9 @@ int flb_input_set_property(struct flb_input_instance *ins,
     else if (prop_key_check("tls.key_passwd", k, len) == 0) {
         flb_utils_set_plugin_string_property("tls.key_passwd", &ins->tls_key_passwd, tmp);
     }
+    else if (prop_key_check("tls.crl_file", k, len) == 0) {
+        flb_utils_set_plugin_string_property("tls.crl_file", &ins->tls_crl_file, tmp);
+    }
     else if (prop_key_check("tls.min_version", k, len) == 0) {
         flb_utils_set_plugin_string_property("tls.min_version", &ins->tls_min_version, tmp);
     }
@@ -1151,6 +1185,10 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
     struct mk_list *head;
     struct flb_input_collector *collector;
 
+    /* Threaded owners already stopped their processors before joining. */
+    if (!flb_input_is_threaded(ins)) {
+        flb_processor_input_stop(ins->processor);
+    }
     flb_input_ingress_destroy(ins);
 
 #ifdef FLB_HAVE_METRICS
@@ -1206,6 +1244,10 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
 
     if (ins->tls_key_file) {
         flb_sds_destroy(ins->tls_key_file);
+    }
+
+    if (ins->tls_crl_file) {
+        flb_sds_destroy(ins->tls_crl_file);
     }
 
     if (ins->tls_key_passwd) {
@@ -1302,18 +1344,22 @@ void flb_input_instance_destroy(struct flb_input_instance *ins)
 
     if (ins->ch_events[0] > 0) {
         mk_event_closesocket(ins->ch_events[0]);
+        ins->ch_events[0] = FLB_UNINITIALIZED_SOCKET;
     }
 
     if (ins->ch_events[1] > 0) {
         mk_event_closesocket(ins->ch_events[1]);
+        ins->ch_events[1] = FLB_UNINITIALIZED_SOCKET;
     }
 
     if (ins->ingress_queue_channels[0] > 0) {
         mk_event_closesocket(ins->ingress_queue_channels[0]);
+        ins->ingress_queue_channels[0] = FLB_UNINITIALIZED_SOCKET;
     }
 
     if (ins->ingress_queue_channels[1] > 0) {
         mk_event_closesocket(ins->ingress_queue_channels[1]);
+        ins->ingress_queue_channels[1] = FLB_UNINITIALIZED_SOCKET;
     }
 
     /* Collectors */
@@ -1369,10 +1415,10 @@ static int input_instance_channel_events_init(struct flb_input_instance *ins)
     evl = flb_input_event_loop_get(ins);
 
     /* Input event channel: used for co-routines to report return status */
-    ret = mk_event_channel_create(evl,
-                                  &ins->ch_events[0],
-                                  &ins->ch_events[1],
-                                  ins);
+    ret = flb_pipe_event_channel_create(evl,
+                                        &ins->ch_events[0],
+                                        &ins->ch_events[1],
+                                        ins);
     if (ret != 0) {
         flb_error("could not create events channels for '%s'",
                   flb_input_name(ins));
@@ -1384,7 +1430,7 @@ static int input_instance_channel_events_init(struct flb_input_instance *ins)
               ins->ch_events[0], ins->ch_events[1]);
 
     /*
-     * Note: mk_event_channel_create() sets a type = MK_EVENT_NOTIFICATION by
+     * Note: flb_pipe_event_channel_create() sets a type = MK_EVENT_NOTIFICATION by
      * default, we need to overwrite this value so we can do a clean check
      * into the Engine when the event is triggered.
      */
@@ -1497,6 +1543,7 @@ int flb_input_plugin_property_check(struct flb_input_instance *ins,
 int flb_input_oauth2_jwt_property_check(struct flb_input_instance *ins,
                                         struct flb_config *config)
 {
+#ifdef FLB_HAVE_TLS
     int ret = 0;
 
     /* Get OAuth2 JWT configmap */
@@ -1524,6 +1571,10 @@ int flb_input_oauth2_jwt_property_check(struct flb_input_instance *ins,
     }
 
     return 0;
+#else
+    flb_error("OAuth2 JWT requires TLS support");
+    return -1;
+#endif
 }
 
 static int flb_input_http_server_property_check(struct flb_input_instance *ins,
@@ -1562,6 +1613,11 @@ int flb_input_instance_init(struct flb_input_instance *ins,
     struct flb_config *ctx = ins->config;
     struct flb_input_plugin *p = ins->p;
     int tls_session_mode;
+
+    /* Private inputs can be initialized while another input initializes. */
+    if (ins->initialized == FLB_TRUE) {
+        return 0;
+    }
 
     if (ins->log_level == -1 && config->log != NULL) {
         ins->log_level = config->log->level;
@@ -1653,6 +1709,16 @@ int flb_input_instance_init(struct flb_input_instance *ins,
                          "Retry attempts considered by the input rate gate.",
                          1, (char *[]) {"name"});
     cmt_gauge_set(ins->cmt_rate_gate_retry_attempts, ts, 0, 1, (char *[]) {name});
+
+    ins->cmt_rate_gate_deferred_routes =
+        cmt_gauge_create(ins->cmt,
+                         "fluentbit", "input", "rate_gate_deferred_routes",
+                         "Throttle-deferred output routes considered by the input rate gate.",
+                         1, (char *[]) {"name"});
+    if (ins->cmt_rate_gate_deferred_routes != NULL) {
+        cmt_gauge_set(ins->cmt_rate_gate_deferred_routes, ts, 0, 1, (char *[]) {name});
+    }
+
     if (logs_tag_records_enabled == FLB_TRUE) {
         /* fluentbit_input_logs_tag_records_total */
         ins->cmt_logs_tag_records = \
@@ -1920,6 +1986,16 @@ int flb_input_instance_init(struct flb_input_instance *ins,
                 return -1;
             }
         }
+
+        if (ins->tls_crl_file != NULL) {
+            ret = flb_tls_set_crl_file(ins->tls, ins->tls_crl_file);
+            if (ret != 0) {
+                flb_error("[input %s] error setting up TLS CRL file",
+                          ins->name);
+
+                return -1;
+            }
+        }
     }
 
     struct flb_config_map *m;
@@ -1947,6 +2023,14 @@ int flb_input_instance_init(struct flb_input_instance *ins,
     if (flb_input_net_property_check(ins, config) == -1) {
         return -1;
     }
+
+#ifdef __EMSCRIPTEN__
+    /* Dedicated input threads are not supported by the browser runtime. */
+    if (flb_input_is_threaded(ins)) {
+        flb_plg_error(ins, "threaded inputs are unsupported in the browser; set threaded: false");
+        return -1;
+    }
+#endif
 
     /* Initialize the input */
     if (p->cb_init) {
@@ -2009,11 +2093,16 @@ int flb_input_instance_init(struct flb_input_instance *ins,
             if (ret == -1) {
                 flb_error("failed initialize processors for input %s",
                           ins->name);
+                /* cb_init succeeded; release plugin-owned resources before
+                 * the caller destroys the input instance on this failure. */
+                flb_input_instance_exit(ins, config);
+                ins->context = NULL;
                 return -1;
             }
         }
     }
 
+    ins->initialized = FLB_TRUE;
     return 0;
 }
 
@@ -2064,6 +2153,7 @@ int flb_input_init_all(struct flb_config *config)
             return -1;
         }
 
+#ifdef FLB_HAVE_TLS
         if (ins->tls_min_version != NULL || ins->tls_max_version != NULL) {
             ret = flb_tls_set_minmax_proto(ins->tls, ins->tls_min_version, ins->tls_max_version);
             if (ret != 0) {
@@ -2083,6 +2173,7 @@ int flb_input_init_all(struct flb_config *config)
                 return -1;
             }
         }
+#endif
     }
 
     return 0;
@@ -2117,6 +2208,7 @@ void flb_input_instance_exit(struct flb_input_instance *ins,
         return;
     }
 
+    flb_processor_input_stop(ins->processor);
     p = ins->p;
     if (p->cb_exit && ins->context) {
         /* Multi-threaded input plugins use the same function signature for exit callbacks. */
@@ -2384,22 +2476,15 @@ static void flb_input_rate_gate_effective_limit(struct flb_input_instance *ins,
                                                 int for_resume,
                                                 double *effective_limit)
 {
-    size_t pressure;
+    double pressure;
     double limit;
 
     limit = max_limit;
-    pressure = 0;
-    if (ins->rate_gate_use_backpressure == FLB_TRUE) {
-        if (ins->rate_gate_busy_chunks > SIZE_MAX - ins->rate_gate_retry_attempts) {
-            pressure = SIZE_MAX;
-        }
-        else {
-            pressure = ins->rate_gate_busy_chunks + ins->rate_gate_retry_attempts;
-        }
-    }
-
-    if (pressure > 0 && limit > 0.0) {
-        limit = limit / ((double) pressure + 1.0);
+    if (ins->rate_gate_use_backpressure == FLB_TRUE && limit > 0.0) {
+        pressure = (double) (ins->rate_gate_busy_chunks - ins->rate_gate_busy_deferred_chunks) +
+                   (double) ins->rate_gate_retry_attempts +
+                   (double) ins->rate_gate_deferred_routes;
+        limit /= pressure + 1.0;
     }
 
     if (for_resume == FLB_TRUE) {
@@ -2554,7 +2639,9 @@ static void flb_input_rate_gate_collect_backpressure(struct flb_input_instance *
     }
 
     ins->rate_gate_busy_chunks = 0;
+    ins->rate_gate_busy_deferred_chunks = 0;
     ins->rate_gate_retry_attempts = 0;
+    ins->rate_gate_deferred_routes = 0;
 
     if (ins->rate_gate_use_backpressure != FLB_TRUE) {
         return;
@@ -2565,12 +2652,24 @@ static void flb_input_rate_gate_collect_backpressure(struct flb_input_instance *
         if (ic->busy == FLB_TRUE) {
             if (ins->rate_gate_busy_chunks < SIZE_MAX) {
                 ins->rate_gate_busy_chunks++;
+                if (ic->task && ic->task->deferred_routes > 0) {
+                    ins->rate_gate_busy_deferred_chunks++;
+                }
             }
         }
     }
 
     mk_list_foreach(head, &ins->tasks) {
         task = mk_list_entry(head, struct flb_task, _head);
+
+        /* Deferred routes retain backlog without recording a failed attempt. */
+        if ((size_t) task->deferred_routes > SIZE_MAX - ins->rate_gate_deferred_routes) {
+            ins->rate_gate_deferred_routes = SIZE_MAX;
+        }
+        else {
+            ins->rate_gate_deferred_routes += (size_t) task->deferred_routes;
+        }
+
         mk_list_foreach(retry_head, &task->retries) {
             retry = mk_list_entry(retry_head, struct flb_task_retry, _head);
             if (retry->attempts > 0 &&
@@ -2581,6 +2680,29 @@ static void flb_input_rate_gate_collect_backpressure(struct flb_input_instance *
                 ins->rate_gate_retry_attempts += (size_t) retry->attempts;
             }
         }
+    }
+}
+
+static void flb_input_rate_gate_report(struct flb_input_instance *ins, uint64_t ts)
+{
+    char *name;
+
+    name = (char *) flb_input_name(ins);
+    if (ins->cmt_rate_gate_limited != NULL) {
+        cmt_gauge_set(ins->cmt_rate_gate_limited, ts,
+                      ins->rate_gate_status == FLB_INPUT_PAUSED, 1, (char *[]) {name});
+    }
+    if (ins->cmt_rate_gate_busy_chunks != NULL) {
+        cmt_gauge_set(ins->cmt_rate_gate_busy_chunks, ts,
+                      (double) ins->rate_gate_busy_chunks, 1, (char *[]) {name});
+    }
+    if (ins->cmt_rate_gate_retry_attempts != NULL) {
+        cmt_gauge_set(ins->cmt_rate_gate_retry_attempts, ts,
+                      (double) ins->rate_gate_retry_attempts, 1, (char *[]) {name});
+    }
+    if (ins->cmt_rate_gate_deferred_routes != NULL) {
+        cmt_gauge_set(ins->cmt_rate_gate_deferred_routes, ts,
+                      (double) ins->rate_gate_deferred_routes, 1, (char *[]) {name});
     }
 }
 
@@ -2696,7 +2818,6 @@ int flb_input_rate_gate_protect(struct flb_input_instance *ins)
 {
     int ret;
     uint64_t ts;
-    char *name;
 
     if (ins == NULL || ins->rate_gate_enabled != FLB_TRUE) {
         return FLB_FALSE;
@@ -2707,6 +2828,7 @@ int flb_input_rate_gate_protect(struct flb_input_instance *ins)
     flb_input_rate_gate_collect_backpressure(ins);
 
     if (flb_input_rate_gate_is_limited(ins) == FLB_FALSE) {
+        flb_input_rate_gate_report(ins, ts);
         return FLB_FALSE;
     }
 
@@ -2715,6 +2837,7 @@ int flb_input_rate_gate_protect(struct flb_input_instance *ins)
         if (ret == -1) {
             flb_error("[input] %s could not schedule rate gate recovery; "
                       "continuing ingestion", flb_input_name(ins));
+            flb_input_rate_gate_report(ins, ts);
             return FLB_FALSE;
         }
 
@@ -2724,18 +2847,7 @@ int flb_input_rate_gate_protect(struct flb_input_instance *ins)
         ins->rate_gate_status = FLB_INPUT_PAUSED;
     }
 
-    name = (char *) flb_input_name(ins);
-    if (ins->cmt_rate_gate_limited != NULL) {
-        cmt_gauge_set(ins->cmt_rate_gate_limited, ts, 1, 1, (char *[]) {name});
-    }
-    if (ins->cmt_rate_gate_busy_chunks != NULL) {
-        cmt_gauge_set(ins->cmt_rate_gate_busy_chunks, ts,
-                      (double) ins->rate_gate_busy_chunks, 1, (char *[]) {name});
-    }
-    if (ins->cmt_rate_gate_retry_attempts != NULL) {
-        cmt_gauge_set(ins->cmt_rate_gate_retry_attempts, ts,
-                      (double) ins->rate_gate_retry_attempts, 1, (char *[]) {name});
-    }
+    flb_input_rate_gate_report(ins, ts);
 
     return FLB_TRUE;
 }
@@ -2744,7 +2856,6 @@ void flb_input_rate_gate_maybe_resume(struct flb_input_instance *ins)
 {
     int can_resume;
     uint64_t ts;
-    char *name;
 
     if (ins == NULL || ins->rate_gate_enabled != FLB_TRUE) {
         return;
@@ -2770,22 +2881,7 @@ void flb_input_rate_gate_maybe_resume(struct flb_input_instance *ins)
         }
     }
 
-    name = (char *) flb_input_name(ins);
-    if (ins->cmt_rate_gate_limited != NULL &&
-        ins->rate_gate_status == FLB_INPUT_RUNNING) {
-        cmt_gauge_set(ins->cmt_rate_gate_limited, ts, 0, 1, (char *[]) {name});
-    }
-    else if (ins->cmt_rate_gate_limited != NULL) {
-        cmt_gauge_set(ins->cmt_rate_gate_limited, ts, 1, 1, (char *[]) {name});
-    }
-    if (ins->cmt_rate_gate_busy_chunks != NULL) {
-        cmt_gauge_set(ins->cmt_rate_gate_busy_chunks, ts,
-                      (double) ins->rate_gate_busy_chunks, 1, (char *[]) {name});
-    }
-    if (ins->cmt_rate_gate_retry_attempts != NULL) {
-        cmt_gauge_set(ins->cmt_rate_gate_retry_attempts, ts,
-                      (double) ins->rate_gate_retry_attempts, 1, (char *[]) {name});
-    }
+    flb_input_rate_gate_report(ins, ts);
 }
 
 void flb_input_rate_update(struct flb_input_instance *ins,
@@ -2997,6 +3093,9 @@ int flb_input_test_pause_resume(struct flb_input_instance *ins, int sleep_second
 
 static void flb_input_ingestion_paused(struct flb_input_instance *ins)
 {
+    if (ins->ingress_queue_enabled == FLB_TRUE && ins->ingress_queue_collector_id >= 0) {
+        flb_input_collector_pause(ins->ingress_queue_collector_id, ins);
+    }
     if (ins->cmt_ingestion_paused != NULL) {
         /* cmetrics */
         cmt_gauge_set(ins->cmt_ingestion_paused, cfl_time_now(), 1,
@@ -3006,6 +3105,9 @@ static void flb_input_ingestion_paused(struct flb_input_instance *ins)
 
 static void flb_input_ingestion_resumed(struct flb_input_instance *ins)
 {
+    if (ins->ingress_queue_enabled == FLB_TRUE && ins->ingress_queue_collector_id >= 0) {
+        flb_input_collector_resume(ins->ingress_queue_collector_id, ins);
+    }
     if (ins->cmt_ingestion_paused != NULL) {
         /* cmetrics */
         cmt_gauge_set(ins->cmt_ingestion_paused, cfl_time_now(), 0,
@@ -3019,10 +3121,10 @@ int flb_input_plugin_pause(struct flb_input_instance *ins)
 
     ret = 0;
 
-    if (ins->p->cb_pause_checked != NULL) {
+    if (ins->context != NULL && ins->p->cb_pause_checked != NULL) {
         ret = ins->p->cb_pause_checked(ins->context, ins->config);
     }
-    else if (ins->p->cb_pause != NULL) {
+    else if (ins->context != NULL && ins->p->cb_pause != NULL) {
         ins->p->cb_pause(ins->context, ins->config);
     }
 
@@ -3039,10 +3141,10 @@ int flb_input_plugin_resume(struct flb_input_instance *ins)
 
     ret = 0;
 
-    if (ins->p->cb_resume_checked != NULL) {
+    if (ins->context != NULL && ins->p->cb_resume_checked != NULL) {
         ret = ins->p->cb_resume_checked(ins->context, ins->config);
     }
-    else if (ins->p->cb_resume != NULL) {
+    else if (ins->context != NULL && ins->p->cb_resume != NULL) {
         ins->p->cb_resume(ins->context, ins->config);
     }
 
@@ -3056,8 +3158,14 @@ int flb_input_plugin_resume(struct flb_input_instance *ins)
 int flb_input_pause(struct flb_input_instance *ins)
 {
     /* if the instance is already paused, just return */
-    if (flb_input_buf_paused(ins)) {
+    if (flb_input_buf_paused(ins) &&
+        (ins->config == NULL || ins->config->is_shutting_down == FLB_FALSE ||
+         (ins->flags & FLB_INPUT_SHUTDOWN_FLUSH) == 0)) {
         return -1;
+    }
+
+    if (ins->ingress_queue_enabled == FLB_TRUE && flb_input_is_threaded(ins)) {
+        return flb_input_thread_instance_pause(ins);
     }
 
     /* Pause only if a callback is set and a local context exists */
@@ -3079,6 +3187,9 @@ int flb_input_pause(struct flb_input_instance *ins)
 
 int flb_input_resume(struct flb_input_instance *ins)
 {
+    if (ins->ingress_queue_enabled == FLB_TRUE && flb_input_is_threaded(ins)) {
+        return flb_input_thread_instance_resume(ins);
+    }
     if ((ins->p->cb_resume || ins->p->cb_resume_checked) && ins->context) {
         if (flb_input_is_threaded(ins)) {
             /* signal the thread event loop about the 'resume' operation */

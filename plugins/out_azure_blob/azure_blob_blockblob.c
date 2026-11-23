@@ -320,11 +320,6 @@ int azb_block_blob_put_block_list(struct flb_azure_blob *ctx, flb_sds_t uri, flb
     struct flb_http_client *c;
     struct flb_connection *u_conn;
 
-    if (ctx->buffering_enabled == FLB_TRUE){
-        ctx->u->base.flags &= ~(FLB_IO_ASYNC);
-        ctx->u->base.net.io_timeout = ctx->io_timeout;
-    }
-
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {

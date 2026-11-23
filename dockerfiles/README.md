@@ -10,6 +10,19 @@ There are also images for ARM32 and ARM64 architectures but no debug versions of
 
 For a detailed list of installation, usage and versions available, please refer to the the official documentation: https://docs.fluentbit.io/manual/installation/docker
 
+## Security updates
+
+Released images are rebuilt on updated base images when a base image security fix is available,
+without a new Fluent Bit release. The version tag, for example `5.2.0`, moves to the newest build
+and every build keeps a dated tag that never moves, for example `5.2.0-20261117`.
+
+- [Container images](https://github.com/fluent/fluent-bit/wiki/Container-Images): every published
+  build with its tags, digests and build date.
+- [Container image security status](https://github.com/fluent/fluent-bit/wiki/Container-Image-Security-Status):
+  known critical and high findings of the current images.
+- [Security policy](https://github.com/fluent/fluent-bit/blob/master/SECURITY.md#-container-images):
+  what to do when a scanner reports a finding in an image.
+
 ## Multiple architecture support
 
 A good introduction to the available approaches is here: https://www.docker.com/blog/multi-arch-build-and-images-the-simple-way/

@@ -1,9 +1,15 @@
+import ctypes
 import json
 import logging
 import os
+import subprocess
 import time
+import uuid
+from pathlib import Path
 
+import pytest
 import requests
+import yaml
 
 from server.http_server import (
     configure_http_response,
@@ -59,6 +65,7 @@ class Service:
         cert_dir = os.path.abspath(os.path.join(test_path, "../../in_splunk/certificate"))
         self.tls_crt_file = os.path.join(cert_dir, "certificate.pem")
         self.tls_key_file = os.path.join(cert_dir, "private_key.pem")
+        self.tls_ca_file = None
         self.response_setup = response_setup
         self.use_tls = use_tls
         self.service = FluentBitTestService(
@@ -89,7 +96,7 @@ class Service:
                     response = requests.get(
                         f"https://localhost:{service.test_suite_http_port}/ping",
                         timeout=1,
-                        verify=self.tls_crt_file,
+                        verify=self.tls_ca_file or self.tls_crt_file,
                     )
                     return response.status_code == 200
                 except requests.RequestException:
@@ -114,7 +121,7 @@ class Service:
                 requests.post(
                     f"https://localhost:{service.test_suite_http_port}/shutdown",
                     timeout=2,
-                    verify=self.tls_crt_file,
+                    verify=self.tls_ca_file or self.tls_crt_file,
                 )
             else:
                 requests.post(
@@ -190,6 +197,152 @@ def test_out_http_receiver_error_is_observable():
     service.stop()
 
     assert len(requests_seen) >= 1
+
+
+def test_out_http_429_uses_largest_retry_after_field():
+    service = Service(
+        "out_http_throttle.yaml",
+        response_setup=lambda: configure_http_response(
+            status_code=429,
+            headers=[
+                ("Retry-After", "1"),
+                ("retry-after", "invalid"),
+                ("RETRY-AFTER", "2"),
+            ],
+        ),
+    )
+    service.start()
+
+    requests_seen = service.wait_for_requests(2, timeout=10)
+    log_text = service.wait_for_log_message("ignored 1 malformed Retry-After field(s)")
+    service.stop()
+
+    assert requests_seen[1]["received_at"] - requests_seen[0]["received_at"] >= 1.8
+    assert "ignored 1 malformed Retry-After field(s)" in log_text
+
+
+def test_out_http_429_without_hint_uses_local_throttle_delay():
+    service = Service(
+        "out_http_throttle.yaml",
+        response_setup=lambda: configure_http_response(status_code=429),
+    )
+    service.start()
+
+    requests_seen = service.wait_for_requests(2, timeout=8)
+    service.stop()
+
+    assert requests_seen[1]["received_at"] - requests_seen[0]["received_at"] >= 0.8
+
+
+def test_out_http_503_with_retry_after_throttles():
+    service = Service(
+        "out_http_throttle.yaml",
+        response_setup=lambda: configure_http_response(
+            status_code=503,
+            headers=[("Retry-After", "2")],
+        ),
+    )
+    service.start()
+
+    requests_seen = service.wait_for_requests(2, timeout=10)
+    service.stop()
+
+    assert requests_seen[1]["received_at"] - requests_seen[0]["received_at"] >= 1.8
+
+
+def test_out_http_503_without_valid_hint_preserves_retry_behavior():
+    service = Service(
+        "out_http_throttle.yaml",
+        response_setup=lambda: configure_http_response(
+            status_code=503,
+            headers=[("Retry-After", "not-a-delay")],
+        ),
+    )
+    service.start()
+
+    requests_seen = service.wait_for_requests(2, timeout=8)
+    service.stop()
+
+    assert len(requests_seen) == 2
+
+
+def test_out_http_408_preserves_retry_behavior():
+    service = Service(
+        "out_http_throttle.yaml",
+        response_setup=lambda: configure_http_response(status_code=408),
+    )
+    service.start()
+
+    requests_seen = service.wait_for_requests(2, timeout=15)
+    service.stop()
+
+    assert len(requests_seen) == 2
+
+
+def test_out_http_permanent_4xx_is_not_retried():
+    service = Service(
+        "out_http_throttle.yaml",
+        response_setup=lambda: configure_http_response(status_code=400),
+    )
+    service.start()
+
+    service.wait_for_requests(1)
+    time.sleep(2)
+    requests_seen = list(data_storage["requests"])
+    service.stop()
+
+    assert len(requests_seen) == 1
+
+
+def test_out_http_accepts_205_without_retry():
+    service = Service(
+        "out_http_throttle.yaml",
+        response_setup=lambda: configure_http_response(status_code=205),
+    )
+    service.start()
+
+    service.wait_for_requests(1)
+    time.sleep(2)
+    requests_seen = list(data_storage["requests"])
+    service.stop()
+
+    assert len(requests_seen) == 1
+
+
+def test_out_http_disabled_throttle_ignores_retry_after_cooldown():
+    service = Service(
+        "out_http_throttle_disabled.yaml",
+        response_setup=lambda: configure_http_response(
+            status_code=429,
+            headers=[("Retry-After", "15")],
+        ),
+    )
+    service.start()
+
+    requests_seen = service.wait_for_requests(2, timeout=12)
+    service.stop()
+
+    if not memory_check_enabled():
+        assert requests_seen[1]["received_at"] - requests_seen[0]["received_at"] < 12
+
+
+def test_out_http_body_key_stops_each_attempt_after_throttle():
+    service = Service(
+        "out_http_throttle_body_key.yaml",
+        response_setup=lambda: configure_http_response(
+            status_code=429,
+            headers=[("Retry-After", "4")],
+        ),
+    )
+    service.start()
+
+    try:
+        requests_seen = service.wait_for_requests(3, timeout=18)
+    finally:
+        service.stop()
+
+    request_times = [request["received_at"] for request in requests_seen[:3]]
+    assert all(later - earlier >= 3.8 for earlier, later in zip(request_times, request_times[1:]))
 
 
 def test_out_http_oauth2_basic_adds_bearer_token():
@@ -318,6 +471,86 @@ def test_out_http_tls_read_idle_timeout_retries_partial_response():
 
     assert len(requests_seen) >= 2
     assert "read idle timeout reached" in log_text
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows certificate store")
+@pytest.mark.parametrize(("ca_source", "chain_order"), [
+    ("system", "root"), ("system", "root_first"), ("system", "cross_first"),
+    ("system", "cross_only"), ("unrelated_ca", "root_first"), ("issuer", "root_first"),
+    ("late_store", "root_first"), ("removed", "root_first"), ("disabled", "root_first"),
+])
+def test_out_http_windows_certstore_missing_root(tmp_path, monkeypatch, ca_source, chain_order):
+    scenario = Path(__file__).resolve().parents[1]
+    issuer = scenario.parents[2] / "internal/data/tls/proxy_stub_certificate.pem"
+    # This leaf uses the receiver's existing private key and is signed by the proxy test CA.
+    leaf = scenario / "certificate/certstore_server.pem"
+    chain = tmp_path / "chain.pem"
+    root = issuer.read_bytes()
+    cross = (scenario / "certificate/certstore_cross_signed.pem").read_bytes()
+    chains = {"root": root, "root_first": root + cross, "cross_first": cross + root,
+              "cross_only": cross}
+    chain.write_bytes(leaf.read_bytes() + chains[chain_order])
+
+    config = yaml.safe_load((scenario / "config/out_http_basic.yaml").read_text())
+    config["service"]["log_level"] = "debug"
+    output = config["pipeline"]["outputs"][0]
+    output.update({"tls": "on", "tls.verify": "on", "tls.verify_hostname": "on",
+                   "retry_limit": "no_retries"})
+    if ca_source == "issuer":
+        output["tls.ca_file"] = issuer.as_posix()
+    elif ca_source == "unrelated_ca":
+        unrelated_ca = scenario.parent / "in_splunk/certificate/certificate.pem"
+        output["tls.ca_file"] = unrelated_ca.as_posix()
+
+    config_file = tmp_path / "out_http.yaml"
+    if ca_source in ("late_store", "removed"):
+        store = "FluentBitTest-" + uuid.uuid4().hex
+        output["tls.windows.certstore_name"] = store
+        output["retry_limit"] = "no_limits"
+        config["service"].update({"scheduler.base": 1, "scheduler.cap": 2})
+    if ca_source == "removed":
+        config["pipeline"]["inputs"][0]["samples"] = 0
+        output["net.keepalive"] = "off"
+    config_file.write_text(yaml.safe_dump(config), encoding="utf-8")
+    service = Service(config_file, use_tls=True)
+    service.tls_crt_file = str(chain)
+    service.tls_ca_file = str(issuer)
+    monkeypatch.setenv("FLB_WINDOWS_AUTO_ROOT_UPDATE", "off" if ca_source == "disabled" else "on")
+    if ca_source in ("late_store", "removed"):
+        # CERT_SYSTEM_STORE_CURRENT_USER
+        store_name = ctypes.c_wchar_p(store)
+        assert ctypes.windll.crypt32.CertRegisterSystemStore(store_name, 0x10000, None, None)
+    try:
+        if ca_source == "removed":
+            subprocess.run(["certutil", "-user", "-addstore", store, str(issuer)], check=True)
+        service.start()
+        if ca_source == "late_store":
+            service.wait_for_log_message("scheduled Windows certificate chain lookup")
+            service.service.wait_for_condition(
+                lambda: Path(service.flb.log_file).read_text(errors="replace").count(
+                    "certificate verify failed") >= 2,
+                timeout=20, description="two failed TLS handshakes before issuer import")
+            assert not data_storage["requests"]
+            # Publish the issuer only to this test's custom store after startup.
+            subprocess.run(["certutil", "-user", "-addstore", store, str(issuer)], check=True)
+        if ca_source == "removed":
+            assert service.wait_for_requests(1)[0]["path"] == "/data"
+            subprocess.run(["certutil", "-user", "-delstore", store, "flb-proxy-stub"], check=True)
+            service.wait_for_log_message("certificate verify failed")
+        elif ca_source in ("issuer", "late_store"):
+            assert service.wait_for_requests(1)[0]["path"] == "/data"
+        else:
+            service.wait_for_log_message("certificate verify failed", timeout=30)
+            assert not data_storage["requests"]
+    finally:
+        service.stop()
+        if ca_source in ("late_store", "removed"):
+            # CERT_SYSTEM_STORE_CURRENT_USER | CERT_STORE_DELETE_FLAG
+            assert ctypes.windll.crypt32.CertUnregisterSystemStore(store_name, 0x10010)
+
+    log_text = Path(service.flb.log_file).read_text(encoding="utf-8", errors="replace")
+    lookup_count = log_text.count("scheduled Windows certificate chain lookup")
+    assert lookup_count == (1 if ca_source in ("system", "late_store", "removed") else 0)
 
 
 def test_http_server_configure_helpers_allow_clearing_nullable_fields():

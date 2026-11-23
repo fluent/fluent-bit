@@ -188,6 +188,7 @@ static int cb_firehose_init(struct flb_output_instance *ins,
         flb_plg_error(ctx->ins, "Failed to create tls context");
         goto error;
     }
+    flb_tls_set_verify_hostname(ctx->cred_tls, ins->tls_verify_hostname);
 
     ctx->client_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
                                      FLB_TRUE,
@@ -202,6 +203,7 @@ static int cb_firehose_init(struct flb_output_instance *ins,
         flb_plg_error(ctx->ins, "Failed to create tls context");
         goto error;
     }
+    flb_tls_set_verify_hostname(ctx->client_tls, ins->tls_verify_hostname);
 
     ctx->aws_provider = flb_standard_chain_provider_create(config,
                                                            ctx->cred_tls,
@@ -238,6 +240,7 @@ static int cb_firehose_init(struct flb_output_instance *ins,
             flb_errno();
             goto error;
         }
+        flb_tls_set_verify_hostname(ctx->sts_tls, ins->tls_verify_hostname);
 
         ctx->base_aws_provider = ctx->aws_provider;
 

@@ -121,6 +121,9 @@ static int get_stream(msgpack_object_map map)
 
         if (k.type == MSGPACK_OBJECT_STR &&
             strncmp(k.via.str.ptr, "stream", k.via.str.size) == 0) {
+            if (v.type != MSGPACK_OBJECT_STR) {
+                return FLB_KUBE_PROP_STREAM_UNKNOWN;
+            }
             if (strncmp(v.via.str.ptr, "stdout", v.via.str.size) == 0) {
                 return FLB_KUBE_PROP_STREAM_STDOUT;
             }
@@ -177,7 +180,7 @@ static int merge_log_handler(msgpack_object o,
 {
     int ret;
     int new_size;
-    int root_type;
+    int root_type = FLB_PACK_JSON_UNDEFINED;
     int records = 0;
     char *tmp;
 
@@ -359,7 +362,8 @@ static int pack_map_content(struct flb_log_event_encoder *log_encoder,
             k = source_map.via.map.ptr[i].key;
 
             /* Validate 'log' field */
-            if (k.via.str.size == 3 &&
+            if (k.type == MSGPACK_OBJECT_STR &&
+                k.via.str.size == 3 &&
                 strncmp(k.via.str.ptr, "log", 3) == 0) {
                 log_index = i;
                 break;

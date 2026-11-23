@@ -133,6 +133,8 @@ struct flb_tail_file {
 
     /* reference */
     int tail_mode;
+    int read_retry_pending;
+    struct mk_list _retry_head;
     struct flb_tail_config *config;
     struct mk_list _head;
     struct mk_list _rotate_head;

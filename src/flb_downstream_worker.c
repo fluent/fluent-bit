@@ -245,10 +245,10 @@ static void *downstream_worker_thread(void *data)
     }
 
     MK_EVENT_NEW(&worker->control_event);
-    ret = mk_event_channel_create(worker->event_loop,
-                                  &worker->control_channel[0],
-                                  &worker->control_channel[1],
-                                  &worker->control_event);
+    ret = flb_pipe_event_channel_create(worker->event_loop,
+                                        &worker->control_channel[0],
+                                        &worker->control_channel[1],
+                                        &worker->control_event);
     if (ret != 0) {
         ret = -1;
         goto signal_and_exit;

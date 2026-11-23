@@ -388,9 +388,329 @@ void flb_test_payload_key()
     test_ctx_destroy(ctx);
 }
 
+/* Send raw bytes and check that all of them were written */
+static int send_raw(flb_sockfd_t fd, const unsigned char *buf, size_t size)
+{
+    ssize_t w_size;
+
+    w_size = send(fd, (const char *) buf, size, 0);
+    if (!TEST_CHECK(w_size == (ssize_t) size)) {
+        TEST_MSG("failed to send, errno=%d", errno);
+        return -1;
+    }
+    return 0;
+}
+
+/*
+ * Receive exactly 'size' bytes with a timeout. Returns the number of bytes
+ * received, 0 if the peer closed the connection and -1 on error or timeout.
+ */
+static int recv_exact(flb_sockfd_t fd, unsigned char *buf, size_t size)
+{
+    int ret;
+    size_t total = 0;
+    ssize_t r_size;
+    fd_set rfds;
+    struct timeval tv;
+
+    while (total < size) {
+        FD_ZERO(&rfds);
+        FD_SET(fd, &rfds);
+        tv.tv_sec = 2;
+        tv.tv_usec = 0;
+
+        ret = select(fd + 1, &rfds, NULL, NULL, &tv);
+        if (ret <= 0) {
+            return -1;
+        }
+
+        r_size = recv(fd, (char *) buf + total, size - total, 0);
+        if (r_size == 0) {
+            return 0;
+        }
+        else if (r_size < 0) {
+            return -1;
+        }
+        total += r_size;
+    }
+
+    return (int) total;
+}
+
+/* Connect, send a CONNECT with CleanSession=1 and return the CONNACK flags */
+static flb_sockfd_t mqtt_session_start(int *session_present)
+{
+    flb_sockfd_t fd;
+    unsigned char connack[4] = {0};
+    const unsigned char connect[] = {
+        0x10, 0x0d, 0x00, 0x04, 'M', 'Q', 'T', 'T', 0x04, 0x02, 0x00, 0x3c,
+        0x00, 0x01, 'c'
+    };
+
+    fd = connect_tcp(NULL, -1);
+    if (!TEST_CHECK(fd >= 0)) {
+        return -1;
+    }
+
+    if (!TEST_CHECK(send_raw(fd, connect, sizeof(connect)) == 0) ||
+        !TEST_CHECK(recv_exact(fd, connack, sizeof(connack)) == 4)) {
+        flb_socket_close(fd);
+        return -1;
+    }
+
+    TEST_CHECK(connack[0] == 0x20 && connack[1] == 0x02 && connack[3] == 0x00);
+    *session_present = connack[2];
+
+    return fd;
+}
+
+/* CONNACK must not claim a resumed session */
+void flb_test_connack_session_present()
+{
+    struct flb_lib_out_cb cb_data = {0};
+    struct test_ctx *ctx;
+    flb_sockfd_t fd;
+    int session_present = -1;
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        exit(EXIT_FAILURE);
+    }
+    TEST_CHECK(flb_start(ctx->flb) == 0);
+
+    fd = mqtt_session_start(&session_present);
+    if (!TEST_CHECK(fd >= 0)) {
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+    TEST_CHECK(session_present == 0);
+
+    flb_socket_close(fd);
+    test_ctx_destroy(ctx);
+}
+
+/* A QoS 2 PUBLISH must be completed with PUBCOMP after the PUBREL */
+void flb_test_qos2_pubcomp()
+{
+    struct flb_lib_out_cb cb_data = {0};
+    char *expected_strs[] = {"\"a\":1"};
+    struct str_list expected = {
+                                .size = sizeof(expected_strs)/sizeof(char*),
+                                .lists = &expected_strs[0],
+    };
+    struct test_ctx *ctx;
+    flb_sockfd_t fd;
+    int session_present;
+    unsigned char reply[4] = {0};
+    const unsigned char publish[] = {
+        0x34, 0x0e, 0x00, 0x03, 'a', '/', 'b', 0x00, 0x07,
+        '{', '"', 'a', '"', ':', '1', '}'
+    };
+    /* the same PUBLISH retransmitted with the DUP flag set */
+    const unsigned char publish_dup[] = {
+        0x3c, 0x0e, 0x00, 0x03, 'a', '/', 'b', 0x00, 0x07,
+        '{', '"', 'a', '"', ':', '1', '}'
+    };
+    const unsigned char pubrel[] = {0x62, 0x02, 0x00, 0x07};
+    const unsigned char pubrec[] = {0x50, 0x02, 0x00, 0x07};
+    const unsigned char pubcomp[] = {0x70, 0x02, 0x00, 0x07};
+
+    clear_output_num();
+    cb_data.cb = cb_check_json_str_list;
+    cb_data.data = &expected;
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        exit(EXIT_FAILURE);
+    }
+    TEST_CHECK(flb_start(ctx->flb) == 0);
+
+    fd = mqtt_session_start(&session_present);
+    if (!TEST_CHECK(fd >= 0)) {
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    TEST_CHECK(send_raw(fd, publish, sizeof(publish)) == 0);
+    TEST_CHECK(recv_exact(fd, reply, 4) == 4);
+    TEST_CHECK(memcmp(reply, pubrec, 4) == 0);
+
+    /* a retransmission is acknowledged again but must not be ingested again */
+    TEST_CHECK(send_raw(fd, publish_dup, sizeof(publish_dup)) == 0);
+    memset(reply, 0, sizeof(reply));
+    TEST_CHECK(recv_exact(fd, reply, 4) == 4);
+    TEST_CHECK(memcmp(reply, pubrec, 4) == 0);
+
+    TEST_CHECK(send_raw(fd, pubrel, sizeof(pubrel)) == 0);
+    memset(reply, 0, sizeof(reply));
+    TEST_CHECK(recv_exact(fd, reply, 4) == 4);
+    TEST_CHECK(memcmp(reply, pubcomp, 4) == 0);
+
+    /* the message is still ingested exactly once */
+    flb_time_msleep(500);
+    TEST_CHECK(get_output_num() == 1);
+
+    flb_socket_close(fd);
+    test_ctx_destroy(ctx);
+}
+
+/* SUBSCRIBE and UNSUBSCRIBE must be answered */
+void flb_test_subscribe_suback()
+{
+    struct flb_lib_out_cb cb_data = {0};
+    struct test_ctx *ctx;
+    flb_sockfd_t fd;
+    int session_present;
+    unsigned char reply[4] = {0};
+    const unsigned char subscribe[] = {
+        0x82, 0x0a, 0x00, 0x01, 0x00, 0x01, 't', 0x00,
+        0x00, 0x01, 'u', 0x01
+    };
+    const unsigned char suback[] = {0x90, 0x04, 0x00, 0x01, 0x80, 0x80};
+    const unsigned char unsubscribe[] = {0xa2, 0x05, 0x00, 0x02, 0x00, 0x01, 't'};
+    const unsigned char unsuback[] = {0xb0, 0x02, 0x00, 0x02};
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        exit(EXIT_FAILURE);
+    }
+    TEST_CHECK(flb_start(ctx->flb) == 0);
+
+    fd = mqtt_session_start(&session_present);
+    if (!TEST_CHECK(fd >= 0)) {
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    TEST_CHECK(send_raw(fd, subscribe, sizeof(subscribe)) == 0);
+    {
+        unsigned char sub_reply[6] = {0};
+
+        TEST_CHECK(recv_exact(fd, sub_reply, sizeof(sub_reply)) == 6);
+        TEST_CHECK(memcmp(sub_reply, suback, sizeof(suback)) == 0);
+    }
+
+    TEST_CHECK(send_raw(fd, unsubscribe, sizeof(unsubscribe)) == 0);
+    TEST_CHECK(recv_exact(fd, reply, 4) == 4);
+    TEST_CHECK(memcmp(reply, unsuback, sizeof(unsuback)) == 0);
+
+    /* more filters than any fixed reply buffer: one return code for each */
+    {
+        int i;
+        int pos = 0;
+        unsigned char many[3 + 2 + 33 * 4] = {0};
+        unsigned char many_reply[2 + 2 + 33] = {0};
+
+        many[pos++] = 0x82;
+        many[pos++] = 0x80 | ((2 + 33 * 4) & 0x7f);
+        many[pos++] = (2 + 33 * 4) >> 7;
+        many[pos++] = 0x00;
+        many[pos++] = 0x03;
+        for (i = 0; i < 33; i++) {
+            many[pos++] = 0x00;
+            many[pos++] = 0x01;
+            many[pos++] = 'f';
+            many[pos++] = 0x00;
+        }
+        TEST_CHECK(send_raw(fd, many, pos) == 0);
+        TEST_CHECK(recv_exact(fd, many_reply, sizeof(many_reply)) ==
+                   (int) sizeof(many_reply));
+        TEST_CHECK(many_reply[0] == 0x90 && many_reply[1] == 2 + 33);
+        TEST_CHECK(many_reply[2] == 0x00 && many_reply[3] == 0x03);
+        for (i = 0; i < 33; i++) {
+            TEST_CHECK(many_reply[4 + i] == 0x80);
+        }
+    }
+
+    /* a SUBACK whose remaining length needs two bytes */
+    {
+        int i;
+        int pos = 0;
+        unsigned char many[3 + 2 + 130 * 4] = {0};
+        unsigned char many_reply[3 + 2 + 130] = {0};
+
+        many[pos++] = 0x82;
+        many[pos++] = 0x80 | ((2 + 130 * 4) & 0x7f);
+        many[pos++] = (2 + 130 * 4) >> 7;
+        many[pos++] = 0x00;
+        many[pos++] = 0x04;
+        for (i = 0; i < 130; i++) {
+            many[pos++] = 0x00;
+            many[pos++] = 0x01;
+            many[pos++] = 'f';
+            many[pos++] = 0x00;
+        }
+        TEST_CHECK(send_raw(fd, many, pos) == 0);
+        TEST_CHECK(recv_exact(fd, many_reply, sizeof(many_reply)) ==
+                   (int) sizeof(many_reply));
+        TEST_CHECK(many_reply[0] == 0x90);
+        TEST_CHECK(many_reply[1] == (0x80 | ((2 + 130) & 0x7f)));
+        TEST_CHECK(many_reply[2] == (2 + 130) >> 7);
+        TEST_CHECK(many_reply[3] == 0x00 && many_reply[4] == 0x04);
+        for (i = 0; i < 130; i++) {
+            TEST_CHECK(many_reply[5 + i] == 0x80);
+        }
+    }
+
+    flb_socket_close(fd);
+
+    /* an UNSUBSCRIBE with an empty topic filter closes the connection */
+    fd = mqtt_session_start(&session_present);
+    if (!TEST_CHECK(fd >= 0)) {
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+    {
+        const unsigned char bad_unsubscribe[] = {0xa2, 0x04, 0x00, 0x03, 0x00, 0x00};
+
+        TEST_CHECK(send_raw(fd, bad_unsubscribe, sizeof(bad_unsubscribe)) == 0);
+        TEST_CHECK(recv_exact(fd, reply, 4) == 0);
+    }
+
+    flb_socket_close(fd);
+    test_ctx_destroy(ctx);
+}
+
+/* A second CONNECT on the same connection closes the connection */
+void flb_test_duplicated_connect()
+{
+    struct flb_lib_out_cb cb_data = {0};
+    struct test_ctx *ctx;
+    flb_sockfd_t fd;
+    int session_present;
+    unsigned char reply[4] = {0};
+    const unsigned char connect[] = {
+        0x10, 0x0d, 0x00, 0x04, 'M', 'Q', 'T', 'T', 0x04, 0x02, 0x00, 0x3c,
+        0x00, 0x01, 'c'
+    };
+
+    ctx = test_ctx_create(&cb_data);
+    if (!TEST_CHECK(ctx != NULL)) {
+        exit(EXIT_FAILURE);
+    }
+    TEST_CHECK(flb_start(ctx->flb) == 0);
+
+    fd = mqtt_session_start(&session_present);
+    if (!TEST_CHECK(fd >= 0)) {
+        test_ctx_destroy(ctx);
+        exit(EXIT_FAILURE);
+    }
+
+    TEST_CHECK(send_raw(fd, connect, sizeof(connect)) == 0);
+    /* the server closes the connection instead of sending another CONNACK */
+    TEST_CHECK(recv_exact(fd, reply, 4) == 0);
+
+    flb_socket_close(fd);
+    test_ctx_destroy(ctx);
+}
+
 TEST_LIST = {
     {"mqtt", flb_test_mqtt},
     {"payload_key", flb_test_payload_key},
+    {"connack_session_present", flb_test_connack_session_present},
+    {"qos2_pubcomp", flb_test_qos2_pubcomp},
+    {"subscribe_suback", flb_test_subscribe_suback},
+    {"duplicated_connect", flb_test_duplicated_connect},
     {NULL, NULL}
 };
 

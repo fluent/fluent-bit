@@ -14,6 +14,11 @@ func FLBPluginRegister(def unsafe.Pointer) int {
 	return output.FLBPluginRegister(def, "test_logs_go", "Test Go Output Plugin for Logs")
 }
 
+//export FLBPluginUnregister
+func FLBPluginUnregister(def unsafe.Pointer) {
+	output.FLBPluginUnregister(def)
+}
+
 //export FLBPluginInit
 func FLBPluginInit(plugin unsafe.Pointer) int {
 	return output.FLB_OK

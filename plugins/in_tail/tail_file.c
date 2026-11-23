@@ -30,6 +30,7 @@
 #endif
 
 #include <fluent-bit/flb_compat.h>
+#include <fluent-bit/flb_file.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_parser.h>
@@ -63,9 +64,15 @@ static inline int tail_file_open(struct flb_tail_config *ctx, const char *path,
                                  int flags)
 {
     if (ctx->windows_path_encoding == FLB_TAIL_WINDOWS_PATH_ENCODING_UTF8) {
+        if (!ctx->follow_symlinks) {
+            return flb_file_open_safe_utf8(path, flags);
+        }
         return win32_open_utf8(path, flags);
     }
 
+    if (!ctx->follow_symlinks) {
+        return flb_file_open_safe(NULL, path, flags, 0, 0);
+    }
     return open(path, flags);
 }
 
@@ -92,9 +99,10 @@ static inline int tail_file_lstat(struct flb_tail_config *ctx, const char *path,
 static inline int tail_file_open(struct flb_tail_config *ctx, const char *path,
                                  int flags)
 {
-    (void) ctx;
-
-    return open(path, flags);
+    if (ctx->follow_symlinks) {
+        return open(path, flags);
+    }
+    return flb_file_open_safe(NULL, path, flags, 0, 0);
 }
 
 static inline int tail_file_stat(struct flb_tail_config *ctx, const char *path,
@@ -219,6 +227,31 @@ int flb_tail_file_offset_marker_matches(struct flb_tail_file *file)
     }
 
     if (marker != file->db_offset_marker) {
+        return FLB_FALSE;
+    }
+
+    return FLB_TRUE;
+}
+
+int flb_tail_file_read_offset_is_valid(struct flb_tail_file *file)
+{
+    int ret;
+    uint64_t marker;
+    size_t marker_size;
+
+    /*
+     * The saved marker covers the resumable offset, not buffered bytes.
+     * Probe through the raw read offset even when no saved marker exists.
+     * This distinguishes stale size metadata from EOF without replacing
+     * the persisted resumable-offset marker.
+     */
+    ret = compute_offset_marker(file, file->offset, &marker, &marker_size);
+    if (ret != 0) {
+        return FLB_FALSE;
+    }
+
+    if (file->db_offset_marker_size > 0 &&
+        flb_tail_file_offset_marker_matches(file) != FLB_TRUE) {
         return FLB_FALSE;
     }
 
@@ -1421,6 +1454,12 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
         return -1;
     }
 
+    /* Use the opened inode, not metadata collected before the open. */
+    if (fstat(fd, st) != 0 || !S_ISREG(st->st_mode) ||
+        flb_tail_file_exists(st, ctx) == FLB_TRUE) {
+        goto err_close_fd;
+    }
+
     file = flb_calloc(1, sizeof(struct flb_tail_file));
     if (!file) {
         flb_errno();
@@ -1766,6 +1805,10 @@ void flb_tail_file_remove(struct flb_tail_file *file)
     flb_plg_debug(ctx->ins, "inode=%"PRIu64" removing file name %s",
                   file->inode, file->name);
 
+    if (file->read_retry_pending) {
+        mk_list_del(&file->_retry_head);
+    }
+
     if (file->decompression_context != NULL) {
         flb_decompression_context_destroy(file->decompression_context);
     }
@@ -1863,6 +1906,7 @@ int flb_tail_file_remove_all(struct flb_tail_config *ctx)
 static int adjust_counters(struct flb_tail_config *ctx, struct flb_tail_file *file)
 {
     int ret;
+    int64_t size_delta;
     struct stat st;
 
     (void) ctx;
@@ -1873,13 +1917,15 @@ static int adjust_counters(struct flb_tail_config *ctx, struct flb_tail_file *fi
         return FLB_TAIL_ERROR;
     }
 
-    int64_t size_delta = st.st_size - file->size;
+    size_delta = st.st_size - file->size;
     if (size_delta != 0) {
         file->size = st.st_size;
     }
 
-    /* Check if the file was truncated by comparing current size with previous size */
-    if (size_delta < 0) {
+    /* Confirm a size/offset discrepancy through the raw read position. */
+    if (size_delta < 0 ||
+        (st.st_size < file->offset &&
+         flb_tail_file_read_offset_is_valid(file) != FLB_TRUE)) {
         if (flb_tail_file_reset_on_truncate(file, size_delta,
                                             "adjust_counters") == -1) {
             return FLB_TAIL_ERROR;
@@ -1914,6 +1960,10 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
 
     if (flb_input_buf_paused(ctx->ins) == FLB_TRUE) {
         return FLB_TAIL_BUSY;
+    }
+
+    if (file->read_retry_pending) {
+        return FLB_TAIL_RETRY;
     }
 
     file_buffer_capacity = (file->buf_size - file->buf_len) - 1;
@@ -2093,7 +2143,9 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
                                &file->buf_data[file->buf_len],
                                read_size);
 
-        stream_data_length = (size_t) raw_data_length;
+        if (raw_data_length > 0) {
+            stream_data_length = (size_t) raw_data_length;
+        }
     }
 
     if (stream_data_length > 0 || raw_data_length > 0) {
@@ -2142,7 +2194,17 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
         }
     }
     else {
-        /* error */
+        /* Preserve the buffer and offsets so transient failures can be retried. */
+        if (errno == EAGAIN || errno == EINTR
+#ifdef FLB_SYSTEM_WINDOWS
+            || errno == EACCES
+#endif
+           ) {
+            file->read_retry_pending = FLB_TRUE;
+            mk_list_add(&file->_retry_head, &ctx->files_retry);
+            return FLB_TAIL_RETRY;
+        }
+
         flb_errno();
         flb_plg_error(ctx->ins, "error reading %s", file->name);
         return FLB_TAIL_ERROR;
@@ -2316,7 +2378,10 @@ char *flb_tail_file_name(struct flb_tail_file *file)
     }
 
     s = readlink(tmp, buf, PATH_MAX);
-    if (s == -1) {
+    if (s < 0 || s >= PATH_MAX) {
+        if (s >= PATH_MAX) {
+            errno = ENAMETOOLONG;
+        }
         flb_free(buf);
         flb_errno();
         return NULL;

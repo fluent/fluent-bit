@@ -12,7 +12,27 @@ jobs:
       # We may need a specific token here with `packages:admin` privileges which is not available to GITHUB_TOKEN
       packages: write
     steps:
+      - name: Check whether PR images exist
+        id: package
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            try {
+              await github.rest.packages.getPackageForOrganization({
+                org: 'fluent',
+                package_type: 'container',
+                package_name: `fluent-bit/pr-${context.issue.number}`
+              });
+              return true;
+            } catch (error) {
+              if (error.status !== 404) {
+                throw error;
+              }
+              core.info('No container images were published for this PR.');
+              return false;
+            }
       - uses: vlaurin/action-ghcr-prune@0cf7d39f88546edd31965acba78cdcb0be14d641 # v0.6.0
+        if: steps.package.outputs.result == 'true'
         with:
           organization: fluent
           container: fluent-bit/pr-${{ github.event.number }}

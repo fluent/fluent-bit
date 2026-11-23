@@ -173,6 +173,11 @@ if (LLVM_FOUND)
   message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
   message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 
+  # LLVM 16 and later require C++17 to consume their headers.
+  if (LLVM_PACKAGE_VERSION VERSION_GREATER_EQUAL 16)
+    set (CMAKE_CXX_STANDARD 17)
+  endif ()
+
   set (WAMR_ROOT_DIR ../../${FLB_PATH_LIB_WASM_MICRO_RUNTIME})
   set (SHARED_DIR ${WAMR_ROOT_DIR}/core/shared)
   set (IWASM_DIR ${WAMR_ROOT_DIR}/core/iwasm)
@@ -224,10 +229,35 @@ if (LLVM_FOUND)
     ${IWASM_INTERP_SOURCE}
     ${IWASM_AOT_SOURCE})
   add_library (aotclib-static STATIC ${IWASM_COMPL_SOURCE})
+
+  # LLVM 17 and older headers don't compile with GCC 14+ when assertions are
+  # enabled: the assert() in llvm::cast_if_present<> instantiates
+  # isa<llvm::Metadata>() and fails with
+  # "'classof' is not a member of 'llvm::Metadata'".
+  # Keep this narrowed to the affected compiler so that debug builds elsewhere
+  # keep their assertions.
+  if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
+      AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 14
+      AND LLVM_PACKAGE_VERSION VERSION_LESS 18)
+    target_compile_definitions (aotclib-static
+      PRIVATE $<$<COMPILE_LANGUAGE:CXX>:NDEBUG>)
+  endif ()
   add_executable (flb-wamrc-bin ${WAMR_ROOT_DIR}/wamr-compiler/main.c)
 
+  # Debian/Ubuntu's llvm-<N>-dev packages export the omptarget imported targets
+  # in LLVM_AVAILABLE_LIBS although their shared objects are shipped by the
+  # libomp-<N>-dev package, which may not be installed. Linking against them
+  # then breaks the build with:
+  #
+  #   No rule to make target '/usr/lib/llvm-17/lib/libomptarget.so.17',
+  #   needed by 'bin/flb-wamrc'
+  #
+  # wamrc doesn't need them, so drop them.
+  set (FLB_WAMRC_LLVM_LIBS ${LLVM_AVAILABLE_LIBS})
+  list (FILTER FLB_WAMRC_LLVM_LIBS EXCLUDE REGEX "^omptarget")
+
   if (NOT MSVC)
-    target_link_libraries (flb-wamrc-bin aotclib-static vmlib-wamrc-static LLVMDemangle ${LLVM_AVAILABLE_LIBS} ${lib_ubsan}
+    target_link_libraries (flb-wamrc-bin aotclib-static vmlib-wamrc-static LLVMDemangle ${FLB_WAMRC_LLVM_LIBS} ${lib_ubsan}
       -lm -lpthread ${lib_lldb} ${UV_A_LIBS})
     if (MINGW)
       target_link_libraries (flb-wamrc-bin -lssp -lWs2_32)
@@ -235,7 +265,7 @@ if (LLVM_FOUND)
       target_link_libraries (flb-wamrc-bin -ldl)
     endif()
   else()
-    target_link_libraries (flb-wamrc-bin aotclib-static vmlib-wamrc-static  ${lib_lldb} ${LLVM_AVAILABLE_LIBS} ${lib_ubsan}
+    target_link_libraries (flb-wamrc-bin aotclib-static vmlib-wamrc-static  ${lib_lldb} ${FLB_WAMRC_LLVM_LIBS} ${lib_ubsan}
       ${UV_A_LIBS})
   endif()
 

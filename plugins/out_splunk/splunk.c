@@ -186,7 +186,8 @@ static int pack_otel_data(struct flb_splunk *ctx,
     if (source_map != NULL) {
         source_map  = local_msgpack_map_lookup(source_map, "attributes");
 
-        if (source_map != NULL) {
+        if (source_map != NULL &&
+            source_map->type == MSGPACK_OBJECT_MAP) {
             source_map_resource_attributes = FLB_TRUE;
             value = local_msgpack_map_lookup(source_map, "host.name");
 

@@ -26,7 +26,8 @@ Fluent Bit supports a wide array of platforms, including Linux, Windows, MacOS, 
 ## 📌 Roadmap & Maintenance
 
 We follow a fast-paced development cycle, with major releases every 3–4 months.
-The `master` branch currently tracks **v5.1**, the current stable release series.
+The `master` branch tracks development of **v5.2.0**. The current stable release
+series, **v5.1**, is tracked in the `5.1` branch.
 
 For version-specific maintenance timelines and policies, see our [MAINTENANCE.md](https://github.com/fluent/fluent-bit/blob/master/MAINTENANCE.md).
 
@@ -79,7 +80,10 @@ More details: [Build & Install](https://docs.fluentbit.io/manual/installation/do
 ## Install Fluent Bit
 
 - [Linux packages (Debian, Ubuntu, RHEL, etc.)](https://docs.fluentbit.io/manual/installation/downloads/linux)
-- [Docker images](https://docs.fluentbit.io/manual/installation/downloads/docker)
+- [Docker images](https://docs.fluentbit.io/manual/installation/downloads/docker):
+  see the [container image index](https://github.com/fluent/fluent-bit/wiki/Container-Images)
+  for every published build and the [security policy](SECURITY.md#-container-images) for how
+  images are rebuilt on updated base images
 - [Windows binaries](https://docs.fluentbit.io/manual/installation/downloads/windows)
 
 ---

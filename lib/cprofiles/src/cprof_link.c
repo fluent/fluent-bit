@@ -38,6 +38,10 @@ struct cprof_link *cprof_link_create(struct cprof_profile *profile)
 void cprof_link_destroy(struct cprof_link *instance)
 {
     if (instance != NULL) {
+        if (cfl_list_entry_is_orphan(&instance->_head) == CFL_FALSE) {
+            cfl_list_del(&instance->_head);
+        }
+
         free(instance);
     }
 }

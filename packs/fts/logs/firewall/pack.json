@@ -1,0 +1,22 @@
+{
+  "pack_version": 1,
+  "fts_api_version": 1,
+  "id": "org.fluentbit.policy.firewall",
+  "version": "1.0.0",
+  "title": "Parsed firewall action normalization",
+  "description": "Small post-parser PAN-style field contract: Type and Action strings from an explicitly configured upstream parser. Normalize known allow/deny/drop without suppressing threats, denials or unknown classes. Not a universal PAN-OS CSV parser or vendor-certified integration; validate the field mapping for your version.",
+  "blocks": [
+    {
+      "name": "apply",
+      "signals": [
+        "logs"
+      ],
+      "source": "blocks/apply.lua",
+      "parameters": {},
+      "privacy": false
+    }
+  ],
+  "fixtures": [
+    "tests/policy.yaml"
+  ]
+}

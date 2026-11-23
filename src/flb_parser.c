@@ -763,6 +763,10 @@ int flb_parser_logfmt_do(struct flb_parser *parser,
                          void **out_buf, size_t *out_size,
                          struct flb_time *out_time);
 
+int flb_parser_cri_do(struct flb_parser *parser,
+                         const char *buf, size_t length,
+                         void **out_buf, size_t *out_size,
+                         struct flb_time *out_time);
 /*
  * This function is used to free all aspects of a parser
  * which is provided by the caller of flb_create_parser.
@@ -861,6 +865,9 @@ struct flb_parser *flb_parser_create_with_time_zone(const char *name,
     }
     else if (strcasecmp(format, "logfmt") == 0) {
         p->type = FLB_PARSER_LOGFMT;
+    }
+    else if (strcasecmp(format, "cri") == 0) {
+        p->type = FLB_PARSER_CRI;
     }
     else {
         flb_error("[parser:%s] Invalid format %s", name, format);
@@ -1689,25 +1696,22 @@ int flb_parser_load_multiline_parser_definitions(const char *cfg, struct flb_cf 
 int flb_parser_conf_file_stat(const char *file, struct flb_config *config)
 {
     int ret;
+    char tmp[PATH_MAX + 1];
+    const char *cfg;
     struct stat st;
 
-    ret = stat(file, &st);
-    if (ret == -1 && errno == ENOENT) {
-        /* Try to resolve the real path (if exists) */
-        if (file[0] == '/') {
-            flb_utils_error(FLB_ERR_CFG_PARSER_FILE);
-            return -1;
-        }
-
-        if (config->conf_path) {
-            /* Handle as special case here. */
-            return -2;
-        }
-
+    cfg = flb_utils_resolve_config_path(file, config->conf_path, tmp, sizeof(tmp));
+    if (!cfg) {
         return -1;
     }
 
-    return 0;
+    ret = stat(cfg, &st);
+    if (ret == -1) {
+        flb_utils_error(FLB_ERR_CFG_PARSER_FILE);
+        return -1;
+    }
+
+    return cfg == file ? 0 : -2;
 }
 
 /* Load parsers from a configuration file */
@@ -1724,7 +1728,7 @@ int flb_parser_conf_file(const char *file, struct flb_config *config)
         return -1;
     }
     else if (ret == -2) {
-        snprintf(tmp, PATH_MAX, "%s%s", config->conf_path, file);
+        snprintf(tmp, sizeof(tmp), "%s%s", config->conf_path, file);
         cfg = tmp;
     }
     else {
@@ -1799,6 +1803,10 @@ int flb_parser_do(struct flb_parser *parser, const char *buf, size_t length,
     }
     else if (parser->type == FLB_PARSER_LOGFMT) {
         return flb_parser_logfmt_do(parser, buf, length,
+                                  out_buf, out_size, out_time);
+    }
+    else if (parser->type == FLB_PARSER_CRI) {
+        return flb_parser_cri_do(parser, buf, length,
                                   out_buf, out_size, out_time);
     }
 

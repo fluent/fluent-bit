@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_input_chunk.h>
 #include <fluent-bit/flb_output.h>
+#include <fluent-bit/wasm/flb_wasm_inspect.h>
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_task.h>
 #include <fluent-bit/flb_mem.h>
@@ -36,6 +37,20 @@
 #include <fluent-bit/flb_metrics.h>
 #endif
 #include <string.h>
+
+static void task_route_init(struct flb_task_route *route,
+                            struct flb_task *task,
+                            struct flb_output_instance *out,
+                            int records, size_t bytes)
+{
+    route->status = FLB_TASK_ROUTE_INACTIVE;
+    route->dispatch_state = FLB_TASK_ROUTE_DISPATCH_UNQUEUED;
+    route->records = records;
+    route->bytes = bytes;
+    route->out = out;
+    route->task = task;
+    mk_list_init(&route->_deferred_head);
+}
 
 /*
  * Every task created must have an unique ID, this function lookup the
@@ -301,7 +316,7 @@ int flb_task_retry_reschedule(struct flb_task_retry *retry, struct flb_config *c
          * resides only in memory, it will be lost.  */
         flb_warn("[task] retry for task %i could not be re-scheduled", task->id);
         flb_task_retry_destroy(retry);
-        if (task->users == 0 && mk_list_size(&task->retries) == 0) {
+        if (flb_task_is_releasable(task) == FLB_TRUE) {
             flb_task_destroy(task, FLB_TRUE);
         }
         return -1;
@@ -381,6 +396,22 @@ struct flb_task_retry *flb_task_retry_create(struct flb_task *task,
     }
 
     return retry;
+}
+
+struct flb_task_retry *flb_task_retry_get(struct flb_task *task,
+                                          struct flb_output_instance *ins)
+{
+    struct mk_list *head;
+    struct flb_task_retry *retry;
+
+    mk_list_foreach(head, &task->retries) {
+        retry = mk_list_entry(head, struct flb_task_retry, _head);
+        if (retry->o_ins == ins) {
+            return retry;
+        }
+    }
+
+    return NULL;
 }
 
 /*
@@ -465,6 +496,7 @@ struct flb_task *task_alloc(struct flb_config *config)
     task->config    = config;
     task->status    = FLB_TASK_NEW;
     task->users     = 0;
+    task->deferred_routes = 0;
     mk_list_init(&task->routes);
     mk_list_init(&task->retries);
 
@@ -486,7 +518,8 @@ int flb_task_running_count(struct flb_config *config)
         ins = mk_list_entry(head, struct flb_input_instance, _head);
         mk_list_foreach(t_head, &ins->tasks) {
             task = mk_list_entry(t_head, struct flb_task, _head);
-            if (task->users > 0 || mk_list_size(&task->retries) > 0) {
+            if (task->users > 0 || task->deferred_routes > 0 ||
+                mk_list_size(&task->retries) > 0) {
                 count++;
             }
         }
@@ -711,12 +744,15 @@ struct flb_task *flb_task_create(uint64_t ref_id,
                             break;
                         }
 
-                        route->status = FLB_TASK_ROUTE_INACTIVE;
-                        route->records = evc->total_events;
-                        route->bytes = evc->size;
-                        route->out = stored_matches[stored_match_index];
+                        task_route_init(route, task,
+                                        stored_matches[stored_match_index],
+                                        evc->total_events, evc->size);
                         mk_list_add(&route->_head, &task->routes);
                         direct_count++;
+                        FLB_WASM_TRACE(flb_wasm_trace_output(
+                                           stored_matches[stored_match_index], i_ins,
+                                           evc->tag, flb_sds_len(evc->tag),
+                                           evc->total_events));
                     }
 
                     flb_free(stored_matches);
@@ -815,15 +851,19 @@ struct flb_task *flb_task_create(uint64_t ref_id,
                 return NULL;
             }
 
-            route->status = FLB_TASK_ROUTE_INACTIVE;
-            route->records = evc->total_events;
-            route->bytes = evc->size;
-            route->out = o_ins;
+            task_route_init(route, task, o_ins,
+                            evc->total_events, evc->size);
             mk_list_add(&route->_head, &task->routes);
             direct_count++;
+            FLB_WASM_TRACE(flb_wasm_trace_output(o_ins, i_ins, evc->tag,
+                                                 flb_sds_len(evc->tag),
+                                                 evc->total_events));
         }
 
         if (direct_count == 0) {
+            FLB_WASM_TRACE(flb_wasm_trace_undelivered(i_ins, evc->tag,
+                                                      flb_sds_len(evc->tag),
+                                                      evc->total_events));
             flb_debug("[task] dropping direct task=%p id=%i without matching routes",
                       task, task->id);
             if (router_context_initialized) {
@@ -863,17 +903,21 @@ struct flb_task *flb_task_create(uint64_t ref_id,
                 continue;
             }
 
-            route->status = FLB_TASK_ROUTE_INACTIVE;
-            route->records = evc->total_events;
-            route->bytes = evc->size;
-            route->out = o_ins;
+            task_route_init(route, task, o_ins,
+                            evc->total_events, evc->size);
             mk_list_add(&route->_head, &task->routes);
             count++;
+            FLB_WASM_TRACE(flb_wasm_trace_output(o_ins, i_ins, evc->tag,
+                                                 flb_sds_len(evc->tag),
+                                                 evc->total_events));
         }
     }
 
     /* no destinations ?, useless task. */
     if (count == 0) {
+        FLB_WASM_TRACE(flb_wasm_trace_undelivered(i_ins, evc->tag,
+                                                  flb_sds_len(evc->tag),
+                                                  evc->total_events));
 #ifdef FLB_HAVE_METRICS
         record_unmatched_route_drop_metrics(i_ins, task_ic, size);
 #endif
@@ -896,8 +940,25 @@ struct flb_task *flb_task_create(uint64_t ref_id,
     return task;
 }
 
+static int task_output_is_registered(struct flb_task *task,
+                                     struct flb_output_instance *output)
+{
+    struct mk_list *head;
+    struct flb_output_instance *instance;
+
+    mk_list_foreach(head, &task->config->outputs) {
+        instance = mk_list_entry(head, struct flb_output_instance, _head);
+        if (instance == output) {
+            return FLB_TRUE;
+        }
+    }
+
+    return FLB_FALSE;
+}
+
 void flb_task_destroy(struct flb_task *task, int del)
 {
+    int output_is_registered;
     struct mk_list *tmp;
     struct mk_list *head;
     struct flb_task_route *route;
@@ -911,6 +972,21 @@ void flb_task_destroy(struct flb_task *task, int del)
     /* Remove routes */
     mk_list_foreach_safe(head, tmp, &task->routes) {
         route = mk_list_entry(head, struct flb_task_route, _head);
+        if (route->dispatch_state == FLB_TASK_ROUTE_DISPATCH_DEFERRED) {
+            output_is_registered = task_output_is_registered(task, route->out);
+            if (output_is_registered == FLB_TRUE) {
+                mk_list_del(&route->_deferred_head);
+                route->out->throttle_deferred_count--;
+            }
+            task->deferred_routes--;
+        }
+        else if (route->dispatch_state == FLB_TASK_ROUTE_DISPATCH_QUEUED ||
+                 route->dispatch_state == FLB_TASK_ROUTE_DISPATCH_COMPLETING) {
+            output_is_registered = task_output_is_registered(task, route->out);
+            if (output_is_registered == FLB_TRUE) {
+                route->out->dispatches_inflight--;
+            }
+        }
         if (route->retry_context != NULL &&
             route->retry_context_destroy != NULL) {
             route->retry_context_destroy(route->retry_context);
@@ -947,6 +1023,168 @@ void flb_task_destroy(struct flb_task *task, int del)
     flb_free(task);
 }
 
+struct flb_task_route *flb_task_route_get(struct flb_task *task,
+                                          struct flb_output_instance *ins)
+{
+    struct mk_list *head;
+    struct flb_task_route *route;
+
+    mk_list_foreach(head, &task->routes) {
+        route = mk_list_entry(head, struct flb_task_route, _head);
+        if (route->out == ins) {
+            return route;
+        }
+    }
+
+    return NULL;
+}
+
+int flb_task_route_defer(struct flb_task *task,
+                         struct flb_output_instance *ins,
+                         int transfer_queued_owner)
+{
+    struct flb_task_route *route;
+
+    route = flb_task_route_get(task, ins);
+    if (route == NULL || route->status == FLB_TASK_ROUTE_DROPPED) {
+        return -1;
+    }
+
+    if (route->dispatch_state == FLB_TASK_ROUTE_DISPATCH_DEFERRED) {
+        return transfer_queued_owner == FLB_FALSE ? 0 : -1;
+    }
+
+    if (transfer_queued_owner == FLB_TRUE) {
+        if (route->dispatch_state != FLB_TASK_ROUTE_DISPATCH_QUEUED ||
+            task->users <= 0) {
+            return -1;
+        }
+    }
+    else if (route->dispatch_state != FLB_TASK_ROUTE_DISPATCH_UNQUEUED) {
+        return -1;
+    }
+
+    /* Acquire deferred ownership before releasing a queued execution owner. */
+    route->dispatch_state = FLB_TASK_ROUTE_DISPATCH_DEFERRED;
+    mk_list_add(&route->_deferred_head, &ins->throttle_deferred_routes);
+    task->deferred_routes++;
+    ins->throttle_deferred_count++;
+
+    if (transfer_queued_owner == FLB_TRUE) {
+        ins->dispatches_inflight--;
+        flb_task_users_dec(task, FLB_FALSE);
+    }
+
+    return 0;
+}
+
+int flb_task_route_resume(struct flb_task *task,
+                          struct flb_output_instance *ins)
+{
+    struct flb_task_route *route;
+
+    route = flb_task_route_get(task, ins);
+    if (route == NULL ||
+        route->dispatch_state != FLB_TASK_ROUTE_DISPATCH_DEFERRED) {
+        return -1;
+    }
+
+    /* Acquire queued ownership before releasing deferred ownership. */
+    flb_task_users_inc(task);
+    ins->dispatches_inflight++;
+    mk_list_del(&route->_deferred_head);
+    mk_list_init(&route->_deferred_head);
+    task->deferred_routes--;
+    ins->throttle_deferred_count--;
+    route->dispatch_state = FLB_TASK_ROUTE_DISPATCH_QUEUED;
+
+    return 0;
+}
+
+int flb_task_route_cancel_deferred(struct flb_task *task,
+                                   struct flb_output_instance *ins)
+{
+    struct flb_task_route *route;
+
+    route = flb_task_route_get(task, ins);
+    if (route == NULL ||
+        route->dispatch_state != FLB_TASK_ROUTE_DISPATCH_DEFERRED) {
+        return -1;
+    }
+
+    mk_list_del(&route->_deferred_head);
+    mk_list_init(&route->_deferred_head);
+    task->deferred_routes--;
+    ins->throttle_deferred_count--;
+    route->dispatch_state = FLB_TASK_ROUTE_DISPATCH_UNQUEUED;
+
+    return 0;
+}
+
+int flb_task_route_queue(struct flb_task *task,
+                         struct flb_output_instance *ins)
+{
+    struct flb_task_route *route;
+
+    route = flb_task_route_get(task, ins);
+    if (route == NULL || route->status == FLB_TASK_ROUTE_DROPPED ||
+        route->dispatch_state != FLB_TASK_ROUTE_DISPATCH_UNQUEUED) {
+        return -1;
+    }
+
+    flb_task_users_inc(task);
+    ins->dispatches_inflight++;
+    route->dispatch_state = FLB_TASK_ROUTE_DISPATCH_QUEUED;
+    return 0;
+}
+
+int flb_task_route_complete(struct flb_task *task,
+                            struct flb_output_instance *ins)
+{
+    struct flb_task_route *route;
+
+    route = flb_task_route_get(task, ins);
+    if (route == NULL ||
+        route->dispatch_state != FLB_TASK_ROUTE_DISPATCH_QUEUED) {
+        return -1;
+    }
+
+    route->dispatch_state = FLB_TASK_ROUTE_DISPATCH_COMPLETING;
+    return 0;
+}
+
+int flb_task_route_unqueue(struct flb_task *task,
+                           struct flb_output_instance *ins)
+{
+    struct flb_task_route *route;
+
+    route = flb_task_route_get(task, ins);
+    if (route == NULL ||
+        (route->dispatch_state != FLB_TASK_ROUTE_DISPATCH_QUEUED &&
+         route->dispatch_state != FLB_TASK_ROUTE_DISPATCH_COMPLETING)) {
+        return -1;
+    }
+
+    route->dispatch_state = FLB_TASK_ROUTE_DISPATCH_UNQUEUED;
+    ins->dispatches_inflight--;
+    return 0;
+}
+
+void flb_output_deferred_cancel_all(struct flb_output_instance *ins)
+{
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct flb_task *task;
+    struct flb_task_route *route;
+
+    mk_list_foreach_safe(head, tmp, &ins->throttle_deferred_routes) {
+        route = mk_list_entry(head, struct flb_task_route, _deferred_head);
+        task = route->task;
+        flb_task_route_cancel_deferred(task, ins);
+        flb_task_users_release(task);
+    }
+}
+
 struct flb_task_queue* flb_task_queue_create() {
     struct flb_task_queue *tq;
     tq = flb_malloc(sizeof(struct flb_task_queue));
@@ -959,7 +1197,8 @@ struct flb_task_queue* flb_task_queue_create() {
     return tq;
 }
 
-void flb_task_queue_destroy(struct flb_task_queue *queue) {
+void flb_task_queue_destroy(struct flb_task_queue *queue)
+{
     struct flb_task_enqueued *queued_task;
     struct mk_list *tmp;
     struct mk_list *head;
@@ -967,12 +1206,26 @@ void flb_task_queue_destroy(struct flb_task_queue *queue) {
     mk_list_foreach_safe(head, tmp, &queue->pending) {
         queued_task = mk_list_entry(head, struct flb_task_enqueued, _head);
         mk_list_del(&queued_task->_head);
+        if (flb_task_route_unqueue(queued_task->task,
+                                   queued_task->out_instance) == 0) {
+            flb_task_users_dec(queued_task->task, FLB_FALSE);
+        }
+        if (queued_task->retry != NULL) {
+            flb_task_retry_destroy(queued_task->retry);
+        }
         flb_free(queued_task);
     }
 
     mk_list_foreach_safe(head, tmp, &queue->in_progress) {
         queued_task = mk_list_entry(head, struct flb_task_enqueued, _head);
         mk_list_del(&queued_task->_head);
+        if (flb_task_route_unqueue(queued_task->task,
+                                   queued_task->out_instance) == 0) {
+            flb_task_users_dec(queued_task->task, FLB_FALSE);
+        }
+        if (queued_task->retry != NULL) {
+            flb_task_retry_destroy(queued_task->retry);
+        }
         flb_free(queued_task);
     }
 

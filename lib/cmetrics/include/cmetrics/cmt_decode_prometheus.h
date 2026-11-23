@@ -64,6 +64,11 @@ struct cmt_decode_prometheus_context_metric {
     char *name;
     int type;
     int current_sample_type;
+    /* kind of samples collected so far for the current histogram/summary,
+     * updated in sample_start() */
+    bool sum_found;
+    bool count_found;
+    bool has_buckets;
     cfl_sds_t docstring;
     size_t label_count;
     cfl_sds_t labels[CMT_DECODE_PROMETHEUS_MAX_LABEL_COUNT];

@@ -50,12 +50,26 @@ struct cio_chunk {
     struct mk_list _head;     /* head link to stream->files */
 };
 
+/*
+ * size is an initial capacity hint, not a content length or maximum size.
+ * New/empty filesystem chunks include the header in that capacity and round
+ * to pages, falling back to one page if reservation/mapping fails. Nonempty
+ * existing files retain their size. Memory chunks reserve size content bytes.
+ */
 struct cio_chunk *cio_chunk_open(struct cio_ctx *ctx, struct cio_stream *st,
                                  const char *name, int flags, size_t size,
                                  int *err);
 void cio_chunk_close(struct cio_chunk *ch, int delete);
 int cio_chunk_delete(struct cio_ctx *ctx, struct cio_stream *st, const char *name);
 int cio_chunk_write(struct cio_chunk *ch, const void *buf, size_t count);
+/*
+ * Project an upper bound on capacity after an append to an up chunk, without
+ * modifying it. Filesystem projections also cover outstanding disk reservation.
+ * Filesystem capacity includes the header and metadata; memory capacity does not.
+ * A successful allocation fallback may use less than the projected capacity.
+ * The caller must serialize projection and write with other chunk mutations.
+ */
+int cio_chunk_get_projected_size(struct cio_chunk *ch, size_t count, size_t *size);
 int cio_chunk_write_at(struct cio_chunk *ch, off_t offset,
                        const void *buf, size_t count);
 int cio_chunk_sync(struct cio_chunk *ch);

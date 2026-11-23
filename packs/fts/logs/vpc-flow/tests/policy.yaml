@@ -1,0 +1,106 @@
+fixture_version: 1
+signal: logs
+processor:
+  name: fts
+  packs:
+  - ../pack.json
+  recipe_version: 1
+  error_mode: keep
+  recipe:
+  - id: policy
+    use: org.fluentbit.policy.vpc-flow/apply
+    with:
+      layout: aws-default-v2
+cases:
+- name: retain-rejected-flow
+  input:
+  - body:
+      message: 2 123456789012 eni-synthetic 192.0.2.1 198.51.100.2 443 49152 6 2 100 1700000000 1700000001
+        REJECT OK
+  expected:
+    records:
+    - body:
+        message: 2 123456789012 eni-synthetic 192.0.2.1 198.51.100.2 443 49152 6 2 100 1700000000 1700000001
+          REJECT OK
+        flow:
+          version: 2
+          account_id: '123456789012'
+          interface_id: eni-synthetic
+          srcaddr: 192.0.2.1
+          dstaddr: 198.51.100.2
+          srcport: 443
+          dstport: 49152
+          protocol: 6
+          packets: 2
+          bytes: 100
+          start: 1700000000
+          end: 1700000001
+          action: REJECT
+          log_status: OK
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0
+- name: unsupported-layout-preserved
+  input:
+  - body:
+      message: 5 custom layout
+  expected:
+    records:
+    - body:
+        message: 5 custom layout
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0
+- name: preserve-skipdata-missing-values
+  input:
+  - body:
+      message: 2 123456789012 eni-synthetic - - - - - - - - - - SKIPDATA
+  expected:
+    records:
+    - body:
+        message: 2 123456789012 eni-synthetic - - - - - - - - - - SKIPDATA
+        flow:
+          version: 2
+          account_id: '123456789012'
+          interface_id: eni-synthetic
+          log_status: SKIPDATA
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0
+- name: invalid-action
+  input:
+  - body:
+      message: 2 123456789012 eni-synthetic 192.0.2.1 198.51.100.2 443 49152 6 2 100 1700000000 1700000001
+        DROP OK
+  expected:
+    records:
+    - body:
+        message: 2 123456789012 eni-synthetic 192.0.2.1 198.51.100.2 443 49152 6 2 100 1700000000 1700000001
+          DROP OK
+    outcomes:
+      kept: 0
+      dropped: 0
+      errors: 1
+    error:
+      step: policy
+      class: invalid_parameter
+- name: invalid-status
+  input:
+  - body:
+      message: 2 123456789012 eni-synthetic 192.0.2.1 198.51.100.2 443 49152 6 2 100 1700000000 1700000001
+        REJECT INVALID
+  expected:
+    records:
+    - body:
+        message: 2 123456789012 eni-synthetic 192.0.2.1 198.51.100.2 443 49152 6 2 100 1700000000 1700000001
+          REJECT INVALID
+    outcomes:
+      kept: 0
+      dropped: 0
+      errors: 1
+    error:
+      step: policy
+      class: invalid_parameter

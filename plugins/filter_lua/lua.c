@@ -63,9 +63,10 @@ static int get_callback_args(lua_State *l, const char *name)
         lua_Debug ar;
 
         if (lua_getinfo(l, ">u", &ar) && ar.nparams >= 5) {
-            lua_pop(l, 1);
-            return 5;
+            nargs = 5;
         }
+        /* The '>' query already consumes the function from the stack. */
+        return nargs;
     }
 #else
     {
@@ -214,9 +215,7 @@ static int cb_lua_init(struct flb_filter_instance *f_ins,
     }
 
     if (ret == -1) {
-        flb_luajit_destroy(ctx->lua);
-        lua_config_destroy(ctx);
-        return -1;
+        goto error;
     }
 
     err = lua_pcall(ctx->lua->state, 0, 0, 0);
@@ -224,15 +223,13 @@ static int cb_lua_init(struct flb_filter_instance *f_ins,
         flb_error("[luajit] invalid lua content, error=%d: %s",
                   err, lua_tostring(lj->state, -1));
         lua_pop(lj->state, 1);
-        lua_config_destroy(ctx);
-        return -1;
+        goto error;
     }
 
 
     if (flb_lua_is_valid_func(ctx->lua->state, ctx->call) != FLB_TRUE) {
         flb_plg_error(ctx->ins, "function %s is not found", ctx->call);
-        lua_config_destroy(ctx);
-        return -1;
+        goto error;
     }
 
     /* determine number of expected arguments */
@@ -242,8 +239,7 @@ static int cb_lua_init(struct flb_filter_instance *f_ins,
     if (ctx->cb_args != 3 && ctx->cb_args != 5) {
         flb_plg_error(ctx->ins, "invalid number of arguments for function '%s': %d",
                       ctx->call, ctx->cb_args);
-        lua_config_destroy(ctx);
-        return -1;
+        goto error;
     }
 
     if (ctx->cb_args == 5) {
@@ -258,13 +254,18 @@ static int cb_lua_init(struct flb_filter_instance *f_ins,
     ctx->packbuf = flb_sds_create_size(1024);
     if (!ctx->packbuf) {
         flb_error("[filter_lua] failed to allocate packbuf");
-        return -1;
+        goto error;
     }
 
     /* Set context */
     flb_filter_set_context(f_ins, ctx);
 
     return 0;
+
+error:
+    flb_luajit_destroy(ctx->lua);
+    lua_config_destroy(ctx);
+    return -1;
 }
 
 
@@ -430,6 +431,7 @@ static int pack_result(struct lua_filter *ctx, struct flb_time *ts,
     return FLB_FALSE;
 }
 
+/* Apply callbacks in record order; protected errors drop only the failing record. */
 static int cb_lua_filter(const void *data, size_t bytes,
                          const char *tag, int tag_len,
                          void **out_buf, size_t *out_bytes,
@@ -440,6 +442,7 @@ static int cb_lua_filter(const void *data, size_t bytes,
 {
     int ret;
     int record_type;
+    const char *error_message;
     double ts = 0;
     struct flb_time t_orig;
     struct flb_time t;
@@ -576,15 +579,16 @@ static int cb_lua_filter(const void *data, size_t bytes,
                             ctx->cb_expected_returns,
                             0);
             if (ret != 0) {
-                flb_plg_error(ctx->ins, "error code %d: %s",
-                              ret, lua_tostring(ctx->lua->state, -1));
+                error_message = lua_tostring(ctx->lua->state, -1);
+                if (error_message == NULL) {
+                    error_message = "(non-string error)";
+                }
+                flb_plg_error(ctx->ins, "error code %d, dropping record: %s",
+                              ret, error_message);
                 lua_pop(ctx->lua->state, 1);
 
                 msgpack_sbuffer_destroy(&data_sbuf);
-                flb_log_event_decoder_destroy(&log_decoder);
-                flb_log_event_encoder_destroy(&log_encoder);
-
-                return FLB_FILTER_NOTOUCH;
+                continue;
             }
         }
         else {
@@ -801,7 +805,8 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "protected_mode", "true",
      0, FLB_TRUE, offsetof(struct lua_filter, protected_mode),
      "If enabled, Lua script will be executed in protected mode. "
-     "It prevents to crash when invalid Lua script is executed."
+     "It prevents to crash when invalid Lua script is executed. "
+     "Records that raise a Lua error are dropped; other records continue to be processed."
     },
     {
      FLB_CONFIG_MAP_BOOL, "time_as_table", "false",

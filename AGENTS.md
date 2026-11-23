@@ -1,5 +1,13 @@
 # Repository Guidelines
 
+## Skills
+- Task-specific guidance lives in `skills/`. Before changing code, read
+  `skills/fluent-bit/SKILL.md` and follow its reading order for the task:
+  plugin authoring, testing, verification with the real binary, patch and
+  review workflow, and pipeline architecture.
+- This file states the repository rules. When a skill and this file disagree,
+  this file wins; fix the skill.
+
 ## Preferred Commands
 - Configure: `cmake -S . -B build -DFLB_TESTS_RUNTIME=On -DFLB_TESTS_INTERNAL=On`
 - Configure on Windows:
@@ -35,6 +43,24 @@ Fluent Bit is a C/C++ monorepo built with CMake.
 - `conf/`: sample configurations for local validation.
 
 Keep changes scoped: plugin logic in its plugin directory, shared behavior in `src/` or `lib/`.
+
+## FTS API Definitions
+- Whenever touching FTS, including `plugins/processor_fts/`, `packs/fts/`,
+  `tools/fts/`, or FTS tests, agents must check `docs/fts/fluentbit.d.lua` against the affected
+  implementation. Update declarations and `docs/fts/README.md` when exported
+  functions, constants, methods, record fields, callback contracts, argument or
+  return types, nil-safety, error behavior, or signal/pack availability change.
+- Verify exports in the C bindings and embedded Lua helpers; do not infer API
+  availability solely from the declarations. Keep private `_` helpers excluded.
+- Regenerate the API manifest and verify the exporter from the checkout root:
+  `python3 tools/fts/export_api_schema.py`
+  `python3 tools/fts/export_api_schema.py --check`
+  `python3 -m unittest discover -s tools/fts/tests -v`
+  Keep generated `build/fts_api.json` out of commits.
+- Run `tests/integration/scenarios/processor_fts/tests/test_fts_api_definitions.py`
+  against a binary built from the matching source, normally and with the platform
+  memory checker as required below. Add focused contract coverage when necessary.
+  Report any verification blocker and whether definitions needed an update.
 
 ## Bundled Library Changes
 - Treat `lib/` as bundled third-party or separately maintained code unless the
@@ -144,7 +170,9 @@ Keep changes scoped: plugin logic in its plugin directory, shared behavior in `s
   - `in_opentelemetry: profiles: fix ingestion path`
 - Keep subject/body lines <= 80 chars.
 - Keep each commit scoped to one component/prefix; avoid mixed-area commits.
-- Sign commits with DCO: `git commit -s`.
+- When creating commits, sign them with DCO using `git commit -s`.
+- During code review, do not report missing `Signed-off-by:` trailers.
+  Commit metadata is validated by `.github/workflows/commit-lint.yaml`.
 - PRs should include: problem statement, scope, test evidence (`ctest` output), and compatibility notes.
 - If behavior changes user output/config, include a short before/after example.
 - Target `master` for next major by default; open backport PRs to release branches (`1.x`) when needed.

@@ -30,10 +30,6 @@
 
 /* Buffers and sizes */
 #define JSON_TOKENS                     2048
-#define CONTAINER_NAME_SIZE             50
-#define CONTAINER_ID_SIZE               80
-#define CONTAINER_METADATA_SIZE         512
-#define IMAGE_NAME_SIZE                 512
 #define PID_BUFFER_SIZE                 21
 #define SYSFS_FILE_PATH_SIZE            512
 #define PROCFS_FILE_PATH_SIZE           512

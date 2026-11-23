@@ -163,6 +163,8 @@ static int flb_es_node_ctx_aws_init(struct flb_es_node_ctx *node_ctx,
         flb_errno();
         return -1;
     }
+    flb_tls_set_verify_hostname(node_ctx->aws_tls,
+                                ins->tls_verify_hostname || node->tls_verify_hostname);
 
     provider = flb_standard_chain_provider_create(config,
                                                   node_ctx->aws_tls,
@@ -205,6 +207,8 @@ static int flb_es_node_ctx_aws_init(struct flb_es_node_ctx *node_ctx,
             flb_errno();
             return -1;
         }
+        flb_tls_set_verify_hostname(node_ctx->aws_sts_tls,
+                                    ins->tls_verify_hostname || node->tls_verify_hostname);
 
         provider = flb_sts_provider_create(config,
                                            node_ctx->aws_sts_tls,
@@ -395,11 +399,14 @@ static flb_sds_t extract_cloud_host(struct flb_elasticsearch *ctx,
     colon++;
 
     /* decode base64 */
-    ret = flb_base64_decode((unsigned char *)buf, sizeof(buf), &len, (unsigned char *)colon, strlen(colon));
+    /* keep room for the string terminator */
+    ret = flb_base64_decode((unsigned char *)buf, sizeof(buf) - 1, &len,
+                            (unsigned char *)colon, strlen(colon));
     if (ret) {
         flb_plg_error(ctx->ins, "cannot decode cloud_id");
         return NULL;
     }
+    buf[len] = '\0';
     region = strtok(buf, dollar);
     if (region == NULL) {
         return NULL;
@@ -422,12 +429,17 @@ static flb_sds_t extract_cloud_host(struct flb_elasticsearch *ctx,
         port = colon+1;
     }
 
-    strcpy(cloud_host_buf, host);
-    strcat(cloud_host_buf, ".");
-    strcat(cloud_host_buf, region);
     if (port != NULL) {
-        strcat(cloud_host_buf, ":");
-        strcat(cloud_host_buf, port);
+        ret = snprintf(cloud_host_buf, sizeof(cloud_host_buf), "%s.%s:%s",
+                       host, region, port);
+    }
+    else {
+        ret = snprintf(cloud_host_buf, sizeof(cloud_host_buf), "%s.%s",
+                       host, region);
+    }
+    if (ret < 0 || (size_t) ret >= sizeof(cloud_host_buf)) {
+        flb_plg_error(ctx->ins, "cloud_id host is too long");
+        return NULL;
     }
     return flb_sds_create(cloud_host_buf);
 }
@@ -751,6 +763,7 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
                 flb_es_conf_destroy(ctx);
                 return NULL;
             }
+            flb_tls_set_verify_hostname(ctx->aws_tls, ins->tls_verify_hostname);
 
             tmp = flb_output_get_property("aws_region", ins);
             if (!tmp) {
@@ -812,6 +825,7 @@ struct flb_elasticsearch *flb_es_conf_create(struct flb_output_instance *ins,
                     flb_es_conf_destroy(ctx);
                     return NULL;
                 }
+                flb_tls_set_verify_hostname(ctx->aws_sts_tls, ins->tls_verify_hostname);
 
                 ctx->aws_provider = flb_sts_provider_create(config,
                                                             ctx->aws_sts_tls,

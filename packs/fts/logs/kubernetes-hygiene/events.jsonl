@@ -1,0 +1,1 @@
+{"kubernetes": {"pod_name": "checkout-1", "labels": {"user": "x"}, "annotations": {"debug": "x"}}, "message": "ok"}

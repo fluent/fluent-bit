@@ -82,8 +82,9 @@ static cfl_sds_t sds_alloc(struct cfl_arena *arena, size_t size)
     if (arena == NULL) {
         buf = malloc(allocation_size);
     }
-    else if (size <= 1024) {
-        external_threshold = cfl_arena_large_object_threshold(arena);
+    else if (size <= CFL_ARENA_SDS_MAX_PAYLOAD) {
+        /* pooled strings never use external storage */
+        external_threshold = SIZE_MAX;
         buf = cfl_arena_alloc_sds(arena, size,
                                           CFL_SDS_HEADER_SIZE +
                                           sizeof(struct cfl_sds_arena_header),
@@ -99,7 +100,7 @@ static cfl_sds_t sds_alloc(struct cfl_arena *arena, size_t size)
             buf = cfl_arena_alloc_external(arena, allocation_size);
         }
         else {
-            buf = cfl_arena_malloc(arena, allocation_size);
+            buf = cfl_arena_alloc_object(arena, allocation_size);
         }
     }
     if (!buf) {

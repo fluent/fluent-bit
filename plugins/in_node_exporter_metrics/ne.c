@@ -69,6 +69,18 @@ static int cb_ne_collect(struct flb_input_instance *ins,
     return 0;
 }
 
+static int cb_ne_collect_start(struct flb_input_instance *ins,
+                               struct flb_config *config, void *in_context)
+{
+    struct flb_ne *ctx = in_context;
+
+    /* one-shot: pause the collector and forget it so resume skips it */
+    flb_input_collector_pause(ctx->coll_fd_start, ctx->ins);
+    ctx->coll_fd_start = -1;
+
+    return cb_ne_collect(ins, config, ctx);
+}
+
 static int collectors_common_init(struct flb_ne_collector *coll)
 {
     if (coll == NULL) {
@@ -216,6 +228,7 @@ static int in_ne_init(struct flb_input_instance *in,
 
     /* Initialize fds */
     ctx->coll_fd = -1;
+    ctx->coll_fd_start = -1;
 
     /* Associate context with the instance */
     flb_input_set_context(in, ctx);
@@ -247,6 +260,21 @@ static int in_ne_init(struct flb_input_instance *in,
         flb_plg_error(ctx->ins, "No metrics is specified");
 
         return -1;
+    }
+
+    /* Scrape metrics on start / collector */
+    if (ctx->scrape_interval > 5 && ctx->scrape_on_start) {
+        ret = flb_input_set_collector_time(in,
+                                           cb_ne_collect_start,
+                                           5, 0,
+                                           config);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins,
+                          "could not set collector on start for Node Exporter "
+                          "Metrics plugin");
+            return -1;
+        }
+        ctx->coll_fd_start = ret;
     }
 
     /* Create the collector */
@@ -295,6 +323,9 @@ static void in_ne_pause(void *data, struct flb_config *config)
     struct mk_list *head;
 
     flb_input_collector_pause(ctx->coll_fd, ctx->ins);
+    if (ctx->coll_fd_start != -1) {
+        flb_input_collector_pause(ctx->coll_fd_start, ctx->ins);
+    }
 
     mk_list_foreach(head, &ctx->collectors) {
         coll = mk_list_entry(head, struct flb_ne_collector, _head);
@@ -312,6 +343,9 @@ static void in_ne_resume(void *data, struct flb_config *config)
     struct mk_list *head;
 
     flb_input_collector_resume(ctx->coll_fd, ctx->ins);
+    if (ctx->coll_fd_start != -1) {
+        flb_input_collector_resume(ctx->coll_fd_start, ctx->ins);
+    }
     mk_list_foreach(head, &ctx->collectors) {
         coll = mk_list_entry(head, struct flb_ne_collector, _head);
         if (coll->activated == FLB_FALSE) {
@@ -327,6 +361,13 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_TIME, "scrape_interval", "5",
      0, FLB_TRUE, offsetof(struct flb_ne, scrape_interval),
      "scrape interval to collect metrics from the node."
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "scrape_on_start", "false",
+     0, FLB_TRUE, offsetof(struct flb_ne, scrape_on_start),
+     "scrape metrics upon start, useful to avoid waiting for 'scrape_interval' "
+     "for the first round of metrics."
     },
 
     {

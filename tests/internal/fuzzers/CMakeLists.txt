@@ -13,6 +13,7 @@ set(UNIT_TESTS_FILES
   signv4_fuzzer.c
   flb_json_fuzzer.c
   flb_mp_fuzzer.c
+  flb_mp_raw_fuzzer.c
   filter_stdout_fuzzer.c
   fstore_fuzzer.c
   parser_fuzzer.c
@@ -24,12 +25,14 @@ set(UNIT_TESTS_FILES
   multiline_fuzzer.c
   pack_json_state_fuzzer.c
   http_fuzzer.c
+  http_retry_after_fuzzer.c
   strp_fuzzer.c
   utils_fuzzer.c
   config_map_fuzzer.c
   record_ac_fuzzer.c
   config_yaml_fuzzer.c
   otlp_json_fuzzer.c
+  opentelemetry_logs_fuzzer.c
   )
 
 # Prepare list of unit tests

@@ -1,4 +1,5 @@
 find_package(Threads REQUIRED)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/FluentBitTest.cmake)
 
 include_directories(acutest/)
 
@@ -39,8 +40,13 @@ FLB_RT_TEST(FLB_CHUNK_TRACE "core_chunk_trace.c")
 FLB_RT_TEST(FLB_IN_EVENT_TEST   "in_event_test.c")
 # FLB_IN_WINEVTLOG is only enabled on Windows builds
 FLB_RT_TEST(FLB_IN_WINEVTLOG    "in_winevtlog.c")
+FLB_RT_TEST(FLB_IN_WINDOWS_EXPORTER_METRICS "in_windows_exporter_metrics_tcp.c")
 
 if(FLB_OUT_LIB)
+  if(${CMAKE_SYSTEM_NAME} MATCHES "Linux" OR ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+    FLB_RT_TEST(FLB_IN_NODE_EXPORTER_METRICS "in_node_exporter_metrics.c")
+  endif()
+
   # These plugins works only on Linux
   if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
     FLB_RT_TEST(FLB_IN_CPU            "in_cpu.c")
@@ -233,7 +239,7 @@ if(FLB_IN_LIB AND FLB_OUT_LIB)
   FLB_RT_TEST(FLB_FILTER_RECORD_MODIFIER "filter_record_modifier.c")
   FLB_RT_TEST(FLB_FILTER_MULTILINE       "filter_multiline.c")
   FLB_RT_TEST(FLB_FILTER_SYSINFO         "filter_sysinfo.c")
-  if (FLB_FILTER_WASM)
+  if (FLB_WASM AND FLB_FILTER_WASM)
     FLB_RT_TEST(FLB_FILTER_WASM            "filter_wasm.c")
   endif ()
   FLB_RT_TEST(FLB_FILTER_ECS       "filter_ecs.c")
@@ -250,6 +256,7 @@ endif()
 
 # Output Plugins
 if(FLB_IN_LIB)
+  FLB_RT_TEST(1                        "output_throttle_runtime.c")
   FLB_RT_TEST(FLB_OUT_LIB              "core_engine.c")
   FLB_RT_TEST(FLB_OUT_LIB              "core_log.c")
   FLB_RT_TEST(FLB_OUT_LIB              "core_routes.c")
@@ -257,6 +264,7 @@ if(FLB_IN_LIB)
   FLB_RT_TEST(FLB_OUT_COUNTER          "out_counter.c")
   FLB_RT_TEST(FLB_OUT_AZURE_BLOB       "out_azure_blob_compression.c")
   FLB_RT_TEST(FLB_OUT_AZURE_KUSTO      "out_azure_kusto.c")
+  FLB_RT_TEST(FLB_OUT_ARVANCLOUD_CLOUDLOGS "out_arvancloud_cloudlogs.c")
   FLB_RT_TEST(FLB_OUT_DATADOG          "out_datadog.c")
   FLB_RT_TEST(FLB_OUT_SKYWALKING       "out_skywalking.c")
   FLB_RT_TEST(FLB_OUT_ES               "out_elasticsearch.c")
@@ -264,6 +272,10 @@ if(FLB_IN_LIB)
   FLB_RT_TEST(FLB_OUT_EXIT             "out_exit.c")
   FLB_RT_TEST(FLB_OUT_FLOWCOUNTER      "out_flowcounter.c")
   FLB_RT_TEST(FLB_OUT_FORWARD          "out_forward.c")
+  # Reproduce Linux UDP disconnection using connect(AF_UNSPEC).
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    FLB_RT_TEST(FLB_OUT_GELF             "out_gelf.c")
+  endif()
   FLB_RT_TEST(FLB_OUT_HTTP             "out_http.c")
   FLB_RT_TEST(FLB_OUT_KAFKA            "out_kafka.c")
   FLB_RT_TEST(FLB_OUT_LIB              "out_lib.c")
@@ -310,6 +322,8 @@ if (FLB_PROCESSOR_LABELS)
   FLB_RT_TEST(FLB_PROCESSOR_LABELS "processor_labels.c")
 endif()
 
+FLB_RT_TEST(FLB_PROCESSOR_JOURNALD_OTEL "processor_journald_otel.c")
+
 if (FLB_PROCESSOR_CONTENT_MODIFIER)
   FLB_RT_TEST(FLB_PROCESSOR_CONTENT_MODIFIER "processor_content_modifier.c")
 endif()
@@ -354,6 +368,15 @@ set(FLB_RT_SIMPLE_SYSTEMS_TESTS
   in_random.c
   )
 
+set(FLB_RT_CASE_TESTS
+  filter_kubernetes.c
+  filter_modify.c
+  out_opensearch.c
+  out_stackdriver.c
+  out_syslog.c
+  processor_content_modifier.c
+  )
+
 foreach(source_file ${CHECK_PROGRAMS})
   get_filename_component(o_source_file_we ${source_file} NAME_WE)
   set(source_file_we flb-rt-${o_source_file_we})
@@ -370,6 +393,10 @@ foreach(source_file ${CHECK_PROGRAMS})
       ${source_file_we}
       ${resolved_source_file}
       )
+    if(o_source_file_we STREQUAL "filter_wasm")
+      target_include_directories(${source_file_we} PRIVATE
+        ${CMAKE_SOURCE_DIR}/${FLB_PATH_LIB_WASM_MICRO_RUNTIME}/core/iwasm/include)
+    endif()
     add_sanitizers(${source_file_we})
     if(MSVC AND o_source_file_we STREQUAL "filter_aws")
       target_compile_options(${source_file_we} PRIVATE /Zc:preprocessor)
@@ -379,16 +406,38 @@ foreach(source_file ${CHECK_PROGRAMS})
       ${CMAKE_THREAD_LIBS_INIT}
       ${SYSTEMD_LIB}
       )
+    if(o_source_file_we STREQUAL "filter_wasm")
+      # Direct wrapper calls require an explicit WASM runtime dependency.
+      target_link_libraries(${source_file_we} flb-wasm-static)
+    endif()
+    if(o_source_file_we STREQUAL "in_windows_exporter_metrics_tcp")
+      target_link_libraries(${source_file_we}
+        flb-plugin-in_windows_exporter_metrics
+        )
+    endif()
       if(FLB_AVRO_ENCODER)
         target_link_libraries(${source_file_we} avro-static jansson)
       endif()
-    add_test(NAME ${source_file_we}
-            COMMAND ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${source_file_we}
-            WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY}/build)
-    set_tests_properties(${source_file_we} PROPERTIES LABELS "runtime")
+    list(FIND FLB_RT_CASE_TESTS ${source_file} case_test)
+    if(NOT case_test EQUAL -1 AND NOT CMAKE_CROSSCOMPILING)
+      flb_add_runtime_test_cases(${source_file_we})
+    else()
+      add_test(NAME ${source_file_we}
+              COMMAND ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${source_file_we}
+              WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY}/build)
+      set_tests_properties(${source_file_we} PROPERTIES LABELS "runtime")
+    endif()
     set_property(TARGET ${source_file_we} APPEND_STRING PROPERTY COMPILE_FLAGS "-D${o_source_file_we}")
   endif()
 endforeach()
+
+if(TARGET flb-rt-processor_journald_otel AND FLB_PROCESSOR_OPENTELEMETRY_ENVELOPE)
+  target_compile_definitions(flb-rt-processor_journald_otel PRIVATE JOURNALD_TEST_ENVELOPE)
+endif()
+
+if(TEST flb-rt-output_throttle_runtime)
+  set_tests_properties(flb-rt-output_throttle_runtime PROPERTIES TIMEOUT 120)
+endif()
 
 function(flb_runtime_lock_tests resource_name)
   foreach(test_name ${ARGN})

@@ -1,0 +1,34 @@
+fixture_version: 1
+signal: logs
+processor:
+  name: fts
+  recipe_version: 1
+  packs:
+  - ../pack.json
+  error_mode: keep
+  recipe:
+  - id: policy
+    use: org.fluentbit.policy.stable-log-sampling/apply
+    with:
+      basis_points: 10000
+cases:
+- name: full-budget-preserves-duplicates-and-control
+  input:
+  - body:
+      request_id: a
+  - body:
+      request_id: a
+  - body:
+      request_id: b
+  expected:
+    records:
+    - body:
+        request_id: a
+    - body:
+        request_id: a
+    - body:
+        request_id: b
+    outcomes:
+      kept: 3
+      dropped: 0
+      errors: 0

@@ -9,7 +9,7 @@ pipeline:
     - name: dummy
       tag: out_kafka
       dummy: '{"message":"hello avro","source":"dummy"}'
-      samples: 1
+      samples: 3
 
   outputs:
     - name: kafka
@@ -19,7 +19,7 @@ pipeline:
       format: avro
       schema_registry_url: http://127.0.0.1:${TEST_SUITE_SCHEMA_REGISTRY_PORT}
       schema_registry_subject: out-kafka-avro-value
-      schema_registry_version: latest
+      schema_registry_version: 3
       queue_full_retries: 1
       rdkafka.api.version.request: false
       rdkafka.broker.version.fallback: 0.8.2.0

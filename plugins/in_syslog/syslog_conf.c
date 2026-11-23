@@ -25,6 +25,7 @@
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_utils.h>
+#include <limits.h>
 
 #include "syslog.h"
 #include "syslog_server.h"
@@ -34,6 +35,8 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *ins,
                                       struct flb_config *config)
 {
     int ret;
+    int64_t buffer_chunk_size;
+    int64_t buffer_max_size;
     char port[16];
     struct flb_syslog *ctx;
 
@@ -120,6 +123,31 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *ins,
         }
     }
 
+    /* Validate before narrowing to size_t, which may be only 32 bits. */
+    buffer_chunk_size = flb_utils_size_to_bytes(ctx->buffer_chunk_size_str);
+    if (buffer_chunk_size < 2 || buffer_chunk_size > INT_MAX) {
+        flb_plg_error(ins, "buffer_chunk_size must be between 2 and %i bytes", INT_MAX);
+        flb_log_event_encoder_destroy(ctx->log_encoder);
+        flb_free(ctx);
+        return NULL;
+    }
+
+    buffer_max_size = 0;
+    if (ctx->buffer_max_size_str != NULL) {
+        buffer_max_size = flb_utils_size_to_bytes(ctx->buffer_max_size_str);
+    }
+    if (buffer_max_size < 0 || buffer_max_size > INT_MAX) {
+        flb_plg_error(ins, "buffer_max_size must be between 0 and %i bytes", INT_MAX);
+        flb_log_event_encoder_destroy(ctx->log_encoder);
+        flb_free(ctx);
+        return NULL;
+    }
+    if (buffer_max_size == 0) {
+        buffer_max_size = buffer_chunk_size;
+    }
+    ctx->buffer_chunk_size = (size_t) buffer_chunk_size;
+    ctx->buffer_max_size = (size_t) buffer_max_size;
+
     /* Check if TCP mode was requested */
     if (ctx->mode == FLB_SYSLOG_TCP || ctx->mode == FLB_SYSLOG_UDP) {
         /* Listen interface (if not set, defaults to 0.0.0.0:5140) */
@@ -136,27 +164,6 @@ struct flb_syslog *syslog_conf_create(struct flb_input_instance *ins,
         } else {
             ctx->unix_perm = 0644;
         }
-    }
-
-    /* Buffer Chunk Size */
-    if (ctx->buffer_chunk_size == -1) {
-        flb_log_event_encoder_destroy(ctx->log_encoder);
-
-        flb_plg_error(ins, "invalid buffer_chunk_size");
-        flb_free(ctx);
-        return NULL; 
-    }
-
-    /* Buffer Max Size */
-    if (ctx->buffer_max_size == -1) {
-        flb_log_event_encoder_destroy(ctx->log_encoder);
-
-        flb_plg_error(ins, "invalid buffer_max_size");
-        flb_free(ctx);
-        return NULL;
-    }
-    else if (ctx->buffer_max_size == 0) {
-        ctx->buffer_max_size = ctx->buffer_chunk_size;
     }
 
     /* Socket rcv buffer size */

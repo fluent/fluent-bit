@@ -130,6 +130,15 @@ static int http1_session_process_request(struct flb_http1_server_session *sessio
         return -1;
     }
 
+    if (session->inner_request.query_string.len > 0) {
+        session->stream.request.query_string =
+            cfl_sds_create_len(session->inner_request.query_string.data,
+                               session->inner_request.query_string.len);
+        if (session->stream.request.query_string == NULL) {
+            return -1;
+        }
+    }
+
     result = flb_http_request_normalize(&session->stream.request);
     if (result != 0) {
         return -1;
@@ -423,7 +432,7 @@ int flb_http1_response_commit(struct flb_http_response *response)
 
     response_buffer = sds_result;
 
-    if (response->body != NULL) {
+    if (response->body != NULL && response->stream->request.method != HTTP_METHOD_HEAD) {
         sds_result = cfl_sds_cat(response_buffer,
                                  response->body,
                                  cfl_sds_len(response->body));
@@ -498,6 +507,10 @@ int flb_http1_server_session_init(struct flb_http1_server_session *session,
     }
 
     session->initialized = FLB_TRUE;
+    session->header_scan_offset = 0;
+    session->request_line_version_offset = 0;
+    session->request_line_state = MK_ST_REQ_METHOD;
+    session->headers_complete = FLB_FALSE;
 
     dummy_mk_http_session_init(&session->inner_session, &session->inner_server);
 
@@ -538,6 +551,76 @@ int flb_http1_server_session_ingest(struct flb_http1_server_session *session,
                                     size_t length)
 {
     int result;
+    size_t available;
+    size_t header_limit;
+    size_t offset;
+    const char *data;
+
+    /*
+     * Wait for a complete, bounded header block before invoking Monkey. Keep
+     * only an offset across reads: incoming_data can move when the SDS grows.
+     * Each new byte is examined once, even when CRLFCRLF spans several reads.
+     */
+    if (!session->headers_complete) {
+        header_limit = HTTP_SERVER_DEFAULT_HTTP1_MAX_HEADER_SIZE;
+        if (session->parent->parent != NULL &&
+            session->parent->parent->http1_max_header_size > 0) {
+            header_limit = session->parent->parent->http1_max_header_size;
+        }
+
+        data = session->parent->incoming_data;
+        available = cfl_sds_len(session->parent->incoming_data);
+
+        while (session->header_scan_offset < available &&
+               session->header_scan_offset < header_limit) {
+            offset = ++session->header_scan_offset;
+
+            /* Preserve early request-line rejection while scanning only new bytes. */
+            if (session->request_line_state == MK_ST_REQ_METHOD) {
+                if (data[offset - 1] == ' ') {
+                    session->request_line_state = MK_ST_REQ_URI;
+                }
+                else if (offset > 11) {
+                    /* Monkey rejects a non-space method byte at index > 10. */
+                    session->stream.status = HTTP_STREAM_STATUS_ERROR;
+                    return HTTP_SERVER_PROVIDER_ERROR;
+                }
+            }
+            else if (session->request_line_state == MK_ST_REQ_URI) {
+                if (data[offset - 1] == ' ') {
+                    session->request_line_state = MK_ST_REQ_PROT_VERSION;
+                    session->request_line_version_offset = offset;
+                }
+                else if (data[offset - 1] == '\r' || data[offset - 1] == '\n') {
+                    session->stream.status = HTTP_STREAM_STATUS_ERROR;
+                    return HTTP_SERVER_PROVIDER_ERROR;
+                }
+            }
+            else if (session->request_line_state == MK_ST_REQ_PROT_VERSION &&
+                     offset - session->request_line_version_offset == 7) {
+                /* Reject an invalid protocol as soon as its prefix is available. */
+                if (memcmp(data + session->request_line_version_offset, "HTTP/1.", 7) != 0) {
+                    session->stream.status = HTTP_STREAM_STATUS_ERROR;
+                    return HTTP_SERVER_PROVIDER_ERROR;
+                }
+                session->request_line_state = MK_ST_FIRST_CONTINUE;
+            }
+
+            if (offset >= 4 && memcmp(data + offset - 4, "\r\n\r\n", 4) == 0) {
+                session->headers_complete = FLB_TRUE;
+                break;
+            }
+        }
+
+        if (!session->headers_complete) {
+            if (session->header_scan_offset == header_limit) {
+                session->stream.status = HTTP_STREAM_STATUS_ERROR;
+                return HTTP_SERVER_PROVIDER_ERROR;
+            }
+
+            return HTTP_SERVER_SUCCESS;
+        }
+    }
 
     result = mk_http_parser(&session->inner_request,
                             &session->inner_parser,
@@ -555,15 +638,16 @@ int flb_http1_server_session_ingest(struct flb_http1_server_session *session,
         }
 
         http1_evict_request(session);
+        session->header_scan_offset = 0;
+        session->request_line_version_offset = 0;
+        session->request_line_state = MK_ST_REQ_METHOD;
+        session->headers_complete = FLB_FALSE;
     }
     else if (result == MK_HTTP_PARSER_PENDING) {
         /*
-         * No significant actions are taken here until we reach MK_HTTP_PARSER_OK.
-         * The primary reason is that the caller may need to expand the buffer size
-         * when payloads exceed the current buffer's capacity. In such cases, parser
-         * pointers could end up referencing incorrect memory locations.
-         * To prevent this, we reset the parser state, which introduces a minimal
-         * performance overhead in exchange for ensuring safety.
+         * The body is incomplete. Reset Monkey's pointers before the receive
+         * buffer can move. Header reparsing is bounded by the independent header
+         * limit; incomplete headers never reach this parser.
          */
     }
     else if (result == MK_HTTP_PARSER_ERROR) {

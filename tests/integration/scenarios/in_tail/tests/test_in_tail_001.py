@@ -1159,12 +1159,14 @@ def test_in_tail_ignore_active_older_files_resumes_updated_file(workspace):
     log_file = workspace / "active-aged.log"
     db_path = workspace / "tail.db"
 
-    write_and_sync(log_file, "first-line\n")
+    write_and_sync(log_file, "")
 
     service = Service("tail_ignore_active_older.yaml", tail_path=log_file, db_path=db_path)
 
     try:
         service.start()
+        # Startup under a memory checker can exceed the two-second age limit.
+        write_and_sync(log_file, "first-line\n")
         records = service.wait_for_records(1, timeout=20)
         assert_log_set(records, ["first-line"])
 

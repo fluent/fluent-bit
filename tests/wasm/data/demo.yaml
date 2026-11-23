@@ -1,0 +1,23 @@
+service:
+  flush: 0.5
+  grace: 1
+  log_level: info
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: browser.demo
+      rate: 1
+      dummy: '{"message":"Hello from WASM","level":"info"}'
+      processors:
+        logs:
+          - name: content_modifier
+            action: insert
+            key: runtime
+            value: browser
+          - name: sql
+            query: "SELECT * FROM STREAM WHERE level = 'info';"
+  outputs:
+    - name: stdout
+      match: '*'
+      format: json_lines

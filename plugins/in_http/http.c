@@ -78,6 +78,9 @@ static int in_http_init(struct flb_input_instance *ins,
                                              http_prot_handle_ng,
                                              ctx);
     if (ret == 0) {
+        if (ctx->oauth2_ctx != NULL) {
+            http_server_options.authorization_callback = http_prot_authorize_ng;
+        }
         if (http_server_options.workers > 1) {
             ret = flb_input_ingress_enable(ins);
         }

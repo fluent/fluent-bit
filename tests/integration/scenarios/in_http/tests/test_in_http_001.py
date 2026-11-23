@@ -2,14 +2,18 @@ import http.client
 import json
 import os
 import logging
+from pathlib import Path
+import re
 import socket
 import time
 
 import pytest
 import requests
+from flask import Response
 
-from server.http_server import data_storage, http_server_run
+from server.http_server import MOCK_JWKS_BODY, app, data_storage, http_server_run
 from utils.http_matrix import PROTOCOL_CASES, run_curl_request
+from utils.oauth2 import duplicate_header_token, duplicate_jwks_body, track_jwks_requests
 from utils.input_pause_resume import (
     assert_connection_closed,
     assert_pause_resume_cycles,
@@ -65,6 +69,59 @@ def send_requests(conn, num_requests, headers, json_payload):
             'data': response.read().decode()
         })
     return responses
+
+
+def post_json(connection, message):
+    body = json.dumps({"message": message})
+    connection.request("POST", "/", body=body, headers=create_headers())
+    response = connection.getresponse()
+    response.read()
+    assert response.status == 201
+
+
+def wait_for_connection_close(connection, timeout=10):
+    deadline = time.monotonic() + timeout
+    connection.settimeout(0.25)
+
+    while time.monotonic() < deadline:
+        try:
+            data = connection.recv(1)
+        except (ConnectionResetError, BrokenPipeError):
+            return
+        except socket.timeout:
+            continue
+
+        if not data:
+            return
+
+        pytest.fail(f"HTTP server sent unexpected data while closing an idle connection: {data!r}")
+
+    pytest.fail("HTTP server did not close the connection after its idle timeout")
+
+
+def read_fluent_bit_log(service):
+    return Path(service.flb.log_file).read_text(encoding="utf-8", errors="replace")
+
+
+def wait_for_timeout_log(service):
+    def read_log_with_timeout():
+        log = read_fluent_bit_log(service)
+        if "timed out after 2 seconds (IO timeout)" in log:
+            return log
+
+    return service.service.wait_for_condition(
+        read_log_with_timeout,
+        timeout=5,
+        interval=0.1,
+        description="HTTP connection timeout log",
+    )
+
+
+def timeout_log_pattern(level, peer_port):
+    return re.compile(
+        rf"\[{level}\].*\[downstream\] connection #\d+ from "
+        rf"tcp://127\.0\.0\.1:{peer_port} timed out after 2 seconds \(IO timeout\)"
+    )
 
 
 def assert_connection_open_without_response(connection):
@@ -283,6 +340,166 @@ def test_in_http_accepts_post_with_empty_generic_headers():
     assert b"HTTP/1.1 201" in response
     assert len(forwarded_payloads) == 1
     assert forwarded_payloads[0][0]["message"] == "empty-header"
+
+
+@pytest.mark.parametrize("workers", [1, 4], ids=["single_listener", "workers_4"])
+def test_in_http_idle_timeout_keeps_completed_connections_quiet(workers):
+    service = Service(
+        "in_http_idle_timeout.yaml",
+        extra_env={
+            "IN_HTTP_TEST_WORKERS": workers,
+            "IN_HTTP_TIMEOUT_LOG_ERROR": "true",
+        },
+    )
+    connection = None
+    replacement = None
+
+    try:
+        service.start()
+        connection = create_connection("127.0.0.1", service.flb_listener_port)
+        post_json(connection, "first-request")
+        original_socket = connection.sock
+        peer_port = original_socket.getsockname()[1]
+
+        time.sleep(0.5)
+        post_json(connection, "reused-before-idle-timeout")
+        assert connection.sock is original_socket
+
+        wait_for_connection_close(connection.sock)
+        if workers == 1:
+            timeout_log = wait_for_timeout_log(service)
+            assert timeout_log_pattern("debug", peer_port).search(timeout_log), timeout_log
+        else:
+            timeout_log = read_fluent_bit_log(service)
+        assert not re.search(
+            r"\[error\].*timed out after 2 seconds \(IO timeout\)",
+            timeout_log,
+        ), timeout_log
+
+        replacement = create_connection("127.0.0.1", service.flb_listener_port)
+        post_json(replacement, "reconnected-after-idle-timeout")
+        forwarded_payloads = service.service.wait_for_condition(
+            lambda: list(data_storage["payloads"])
+            if sum(len(payload) for payload in data_storage["payloads"]) == 3
+            else None,
+            timeout=10,
+            interval=0.1,
+            description="three forwarded HTTP records",
+        )
+    finally:
+        if connection is not None:
+            connection.close()
+        if replacement is not None:
+            replacement.close()
+        service.stop()
+
+    messages = [record["message"] for payload in forwarded_payloads for record in payload]
+    assert messages == [
+        "first-request",
+        "reused-before-idle-timeout",
+        "reconnected-after-idle-timeout",
+    ]
+
+
+@pytest.mark.parametrize("completed_request", [False, True], ids=["new_connection", "keepalive"])
+@pytest.mark.parametrize("workers", [1, 4], ids=["single_listener", "workers_4"])
+def test_in_http_incomplete_request_timeout_reports_peer(workers, completed_request):
+    service = Service(
+        "in_http_idle_timeout.yaml",
+        extra_env={
+            "IN_HTTP_TEST_WORKERS": workers,
+            "IN_HTTP_TIMEOUT_LOG_ERROR": "true",
+        },
+    )
+    connection = None
+
+    try:
+        service.start()
+        connection = socket.create_connection(
+            ("127.0.0.1", service.flb_listener_port),
+            timeout=2,
+        )
+        peer_port = connection.getsockname()[1]
+        if completed_request:
+            body = b'{"message":"completed-before-partial"}'
+            connection.sendall(
+                b"POST / HTTP/1.1\r\n"
+                b"Host: localhost\r\n"
+                b"Content-Type: application/json\r\n"
+                + f"Content-Length: {len(body)}\r\n".encode()
+                + b"\r\n"
+                + body
+            )
+            response = bytearray()
+            connection.settimeout(2)
+            while b"\r\n\r\n" not in response:
+                response_chunk = connection.recv(4096)
+                assert response_chunk, "HTTP server closed the completed request connection"
+                response.extend(response_chunk)
+            assert b"HTTP/1.1 201" in response
+
+        connection.sendall(
+            b"POST / HTTP/1.1\r\n"
+            b"Host: localhost\r\n"
+            b"Content-Type: application/json\r\n"
+            b"Content-Length: 100\r\n"
+            b"\r\n"
+            b'{"message":"incomplete'
+        )
+        wait_for_connection_close(connection)
+        timeout_log = wait_for_timeout_log(service)
+        expected_records = 1 if completed_request else 0
+        if expected_records:
+            forwarded_payloads = service.service.wait_for_condition(
+                lambda: list(data_storage["payloads"])
+                if sum(len(payload) for payload in data_storage["payloads"]) == expected_records
+                else None,
+                timeout=5,
+                interval=0.1,
+                description=f"{expected_records} forwarded HTTP records",
+            )
+        else:
+            service.assert_no_forwarded_payloads_for()
+            forwarded_payloads = list(data_storage["payloads"])
+    finally:
+        if connection is not None:
+            connection.close()
+        service.stop()
+
+    assert timeout_log_pattern("error", peer_port).search(timeout_log), timeout_log
+    assert sum(len(payload) for payload in forwarded_payloads) == expected_records
+
+
+def test_in_http_timeout_log_error_can_be_disabled():
+    service = Service(
+        "in_http_idle_timeout.yaml",
+        extra_env={
+            "IN_HTTP_TEST_WORKERS": 1,
+            "IN_HTTP_TIMEOUT_LOG_ERROR": "false",
+        },
+    )
+    connection = None
+
+    try:
+        service.start()
+        connection = socket.create_connection(
+            ("127.0.0.1", service.flb_listener_port),
+            timeout=2,
+        )
+        peer_port = connection.getsockname()[1]
+        connection.sendall(b"POST / HTTP/1.1\r\nHost: localhost\r\n")
+        wait_for_connection_close(connection)
+        timeout_log = wait_for_timeout_log(service)
+    finally:
+        if connection is not None:
+            connection.close()
+        service.stop()
+
+    assert timeout_log_pattern("debug", peer_port).search(timeout_log), timeout_log
+    assert not re.search(
+        r"\[error\].*timed out after 2 seconds \(IO timeout\)",
+        timeout_log,
+    ), timeout_log
 
 
 def test_in_http_accepts_empty_connection_and_transfer_encoding():
@@ -538,8 +755,180 @@ def test_in_http_oauth2_accepts_valid_jwt():
     assert forwarded_payloads[0][0]["message"] == "Este es un mensaje de prueba"
 
 
+@pytest.mark.parametrize(
+    "config_file, certificate_size, expected_status",
+    [
+        ("in_http_oauth2.yaml", 6000, 201),
+        ("in_http_oauth2_jwks_8k.yaml", 6000, 201),
+        ("in_http_oauth2_jwks_8k.yaml", 12000, 401),
+    ],
+)
+def test_in_http_oauth2_jwks_response_limit(monkeypatch, config_file, certificate_size,
+                                           expected_status):
+    jwks_body = {"keys": [{**MOCK_JWKS_BODY["keys"][0], "x5c": ["A" * certificate_size]}]}
+    jwks_requests = track_jwks_requests(monkeypatch, json.dumps(jwks_body))
+    service = Service(config_file)
+    service.start()
+    try:
+        result = run_curl_request(
+            f"http://localhost:{service.flb_listener_port}/",
+            create_payload("sample_data.json"),
+            headers=["Content-Type: application/json", f"Authorization: Bearer {MOCK_VALID_JWT}"],
+            http_mode="http1.1",
+        )
+        assert result["status_code"] == expected_status
+        assert jwks_requests
+        if expected_status == 201:
+            assert len(service.read_forwarded_payloads()) == 1
+        else:
+            service.assert_no_forwarded_payloads_for()
+    finally:
+        service.stop()
+
+    if expected_status == 401:
+        assert "JWKS HTTP response exceeded oauth2.jwks_buffer_max_size=8000 bytes" in (
+            read_fluent_bit_log(service.service)
+        )
+
+
+@pytest.mark.parametrize("response_size, expected_status", [(7999, 201), (8000, 201), (8001, 401)])
+def test_in_http_oauth2_jwks_response_limit_boundary(monkeypatch, response_size, expected_status):
+    jwks_body = [""]
+    jwks_requests = []
+
+    def jwks():
+        jwks_requests.append(True)
+        return jwks_body[0], 200, {"Content-Type": "application/json"}
+
+    def get_raw_jwks(port):
+        response = bytearray()
+        with socket.create_connection(("127.0.0.1", port), timeout=3) as conn:
+            conn.sendall(b"GET /jwks HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+            while True:
+                part = conn.recv(16384)
+                if not part:
+                    break
+                response.extend(part)
+        return bytes(response)
+
+    monkeypatch.setitem(app.view_functions, "jwks", jwks)
+    service = Service("in_http_oauth2_jwks_8k.yaml")
+    service.start()
+    try:
+        key = {**MOCK_JWKS_BODY["keys"][0], "x5c": [""]}
+        jwks_body[0] = json.dumps({"keys": [key]})
+        raw_response = get_raw_jwks(service.test_suite_http_port)
+        padding = response_size - len(raw_response)
+        key["x5c"][0] = "A" * padding
+        jwks_body[0] = json.dumps({"keys": [key]})
+        raw_response = get_raw_jwks(service.test_suite_http_port)
+        padding += response_size - len(raw_response)
+        key["x5c"][0] = "A" * padding
+        jwks_body[0] = json.dumps({"keys": [key]})
+        assert len(get_raw_jwks(service.test_suite_http_port)) == response_size
+
+        result = run_curl_request(
+            f"http://localhost:{service.flb_listener_port}/",
+            create_payload("sample_data.json"),
+            headers=["Content-Type: application/json", f"Authorization: Bearer {MOCK_VALID_JWT}"],
+            http_mode="http1.1",
+        )
+        assert result["status_code"] == expected_status
+        assert len(jwks_requests) >= 4
+        if expected_status == 201:
+            assert len(service.read_forwarded_payloads()) == 1
+        else:
+            service.assert_no_forwarded_payloads_for()
+    finally:
+        service.stop()
+
+    if expected_status == 401:
+        assert "JWKS HTTP response exceeded oauth2.jwks_buffer_max_size=8000 bytes" in (
+            read_fluent_bit_log(service.service)
+        )
+
+
+def test_in_http_oauth2_jwks_chunked_response_timeout(monkeypatch):
+    def jwks():
+        def chunks():
+            for _ in range(30):
+                yield b" "
+                time.sleep(0.2)
+
+        return Response(chunks(), content_type="application/json")
+
+    monkeypatch.setitem(app.view_functions, "jwks", jwks)
+    service = Service("in_http_oauth2_jwks_timeout.yaml")
+    service.start()
+    try:
+        result = run_curl_request(
+            f"http://localhost:{service.flb_listener_port}/",
+            create_payload("sample_data.json"),
+            headers=["Content-Type: application/json", f"Authorization: Bearer {MOCK_VALID_JWT}"],
+            http_mode="http1.1",
+        )
+        assert result["status_code"] == 401
+        service.assert_no_forwarded_payloads_for()
+    finally:
+        service.stop()
+
+    assert "[http_client] response timeout reached" in read_fluent_bit_log(service.service)
+
+
+@pytest.mark.parametrize("field", ["kid", "alg"])
+def test_in_http_oauth2_rejects_duplicate_header(monkeypatch, field):
+    jwks_requests = track_jwks_requests(monkeypatch)
+    token = duplicate_header_token(MOCK_VALID_JWT, field)
+    service = Service("in_http_oauth2.yaml")
+    service.start()
+    try:
+        for _ in range(8):
+            result = run_curl_request(
+                f"http://localhost:{service.flb_listener_port}/",
+                create_payload("sample_data.json"),
+                headers=["Content-Type: application/json", f"Authorization: Bearer {token}"],
+                http_mode="http1.1",
+            )
+            assert result["status_code"] == 401
+        # Rejection must happen during parsing, before fetching a verification key.
+        assert jwks_requests == []
+        assert data_storage["payloads"] == []
+
+        result = run_curl_request(
+            f"http://localhost:{service.flb_listener_port}/",
+            create_payload("sample_data.json"),
+            headers=["Content-Type: application/json", f"Authorization: Bearer {MOCK_VALID_JWT}"],
+            http_mode="http1.1",
+        )
+        assert result["status_code"] == 201
+        assert len(service.read_forwarded_payloads()) == 1
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("field", ["kid", "n", "e"])
+@pytest.mark.parametrize("first_value", ["earlier-value", "", None, []])
+def test_in_http_oauth2_rejects_duplicate_jwks(monkeypatch, field, first_value):
+    jwks_requests = track_jwks_requests(monkeypatch, duplicate_jwks_body(field, first_value))
+    service = Service("in_http_oauth2.yaml")
+    service.start()
+    try:
+        for _ in range(3):
+            result = run_curl_request(
+                f"http://localhost:{service.flb_listener_port}/",
+                create_payload("sample_data.json"),
+                headers=["Content-Type: application/json", f"Authorization: Bearer {MOCK_VALID_JWT}"],
+                http_mode="http1.1",
+            )
+            assert result["status_code"] == 401
+        assert jwks_requests
+        assert data_storage["payloads"] == []
+    finally:
+        service.stop()
+
+
 class Service:
-    def __init__(self, config_file):
+    def __init__(self, config_file, extra_env=None):
         self.config_file = os.path.abspath(os.path.join(os.path.dirname(__file__), '../config/', config_file))
         test_path = os.path.dirname(os.path.abspath(__file__))
         cert_dir = os.path.abspath(os.path.join(test_path, "../../in_splunk/certificate"))
@@ -552,6 +941,7 @@ class Service:
             extra_env={
                 "CERTIFICATE_TEST": self.tls_crt_file,
                 "PRIVATE_KEY_TEST": self.tls_key_file,
+                **(extra_env or {}),
             },
             pre_start=self._start_receiver,
             post_stop=self._stop_receiver,
@@ -604,3 +994,105 @@ class Service:
 
     def stop(self):
         self.service.stop()
+
+
+@pytest.mark.parametrize("size,status", [(8191, 201), (8192, 201), (8193, 413)])
+def test_in_http_inflation_size_boundary(size, status):
+    import gzip
+    import random
+    import string
+
+    # Moderate compression keeps the wire body below the 8192-byte request limit.
+    rng = random.Random(42)
+    payload = json.dumps({"message": "".join(rng.choices(string.ascii_letters, k=size - 15))}).encode()
+    assert len(payload) == size
+    service = Service("in_http_inflation.yaml")
+    service.start()
+    try:
+        connection = create_connection("127.0.0.1", service.flb_listener_port)
+        connection.request("POST", "/", gzip.compress(payload),
+                           {"Content-Type": "application/json", "Content-Encoding": "gzip"})
+        response = connection.getresponse()
+        response.read()
+        assert response.status == status
+        # A rejected request must not poison a keep-alive connection.
+        post_json(connection, "still alive")
+        connection.close()
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("size,status", [(4000, 201), (8192, 201), (8193, 413)])
+@pytest.mark.parametrize("oauth", [False, True])
+def test_in_http_inflation_high_compression_and_auth(size, status, oauth):
+    import gzip
+
+    service = Service("in_http_oauth2.yaml" if oauth else "in_http_inflation.yaml")
+    service.start()
+    try:
+        connection = create_connection("127.0.0.1", service.flb_listener_port)
+        body = json.dumps({"message": "x" * (size - 15)}).encode()
+        assert len(body) == size
+        payload = gzip.compress(body)
+        assert len(body) > len(payload) * 8
+        if oauth:
+            status = 401
+        connection.request("POST", "/", payload,
+                           {"Content-Type": "application/json", "Content-Encoding": "gzip"})
+        response = connection.getresponse()
+        response.read()
+        assert response.status == status
+        connection.close()
+    finally:
+        service.stop()
+
+
+@pytest.mark.parametrize("encoding,body,status", [
+    ("gzip", b"invalid gzip", 400),
+    ("snappy", b"\x80\x80\x80\x80\x01", 413),
+    # A valid zstd RLE frame declaring a 64K output, with only one data byte.
+    ("zstd", b"\x28\xb5\x2f\xfd\xa0\x00\x00\x01\x00\x03\x00\x08x", 413),
+])
+@pytest.mark.parametrize("http_mode", ["http1.1", "http2-prior-knowledge"])
+@pytest.mark.parametrize("oauth", [False, True])
+def test_in_http_inflation_rejection(encoding, body, status, http_mode, oauth):
+    service = Service("in_http_oauth2.yaml" if oauth else "in_http_inflation.yaml")
+    if oauth:
+        status = 401
+    service.start()
+    try:
+        if http_mode == "http1.1":
+            result = run_curl_request(
+                f"http://localhost:{service.flb_listener_port}/", body,
+                headers=["Content-Type: application/json", f"Content-Encoding: {encoding}"],
+                http_mode=http_mode,
+            )
+            assert result["status_code"] == status
+        else:
+            import h2.config
+            import h2.connection
+            import h2.events
+
+            client = h2.connection.H2Connection(
+                config=h2.config.H2Configuration(client_side=True, header_encoding="ascii")
+            )
+            with socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=5) as conn:
+                client.initiate_connection()
+                client.send_headers(1, [
+                    (":method", "POST"), (":scheme", "http"),
+                    (":authority", "localhost"), (":path", "/"),
+                    ("content-type", "application/json"), ("content-encoding", encoding),
+                ])
+                client.send_data(1, body, end_stream=True)
+                conn.sendall(client.data_to_send())
+                response_status = None
+                while response_status is None:
+                    data = conn.recv(65535)
+                    assert data, "HTTP/2 connection closed before the response"
+                    for event in client.receive_data(data):
+                        if isinstance(event, h2.events.ResponseReceived):
+                            response_status = int(dict(event.headers)[":status"])
+                    conn.sendall(client.data_to_send())
+                assert response_status == status
+    finally:
+        service.stop()

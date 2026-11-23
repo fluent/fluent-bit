@@ -1,0 +1,35 @@
+plugin: es
+baseline_commit: b0f5266d4f9d9271bf532a5c0c6ecbe4598eb6f4
+callback_and_send_functions:
+  - cb_es_flush
+  - flb_http_do
+execution_model: direct_flush
+success_means: mixed
+throttle_signals:
+  - status_or_error_code: HTTP 429 response
+    scope: output_instance
+    primary_source: https://www.elastic.co/docs/troubleshoot/elasticsearch/rejected-requests
+  - status_or_error_code: bulk item status 429
+    scope: output_instance
+    primary_source: https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-bulk.html
+retry_after_sources:
+  - HTTP Retry-After response header or trailer on a top-level 429
+local_retries_or_sleeps: []
+partial_acceptance_model: known_subset
+retry_payload_owner: route_retry_context
+cleanup_paths:
+  - success destroys request buffers and clears the retry context
+  - retry and throttle destroy request buffers while preserving the route retry context
+  - retry-context replacement failure destroys the newly allocated selective payload
+changed_classification_cases:
+  - top-level HTTP 429 returns FLB_THROTTLE
+  - a valid bulk response containing an unacknowledged 429 item returns FLB_THROTTLE
+unchanged_classification_cases:
+  - non-429 top-level failures return FLB_RETRY
+  - non-429 failed bulk items remain in the selective retry payload
+  - successful and acknowledged conflict items are excluded from retry payloads
+new_tests:
+  - mixed bulk success, conflict, and 429 retains only the 429 item
+  - top-level 429 honors Retry-After and retries the complete bulk payload
+unsupported_cases:
+  - item-level responses have no per-item Retry-After field in the Bulk API contract

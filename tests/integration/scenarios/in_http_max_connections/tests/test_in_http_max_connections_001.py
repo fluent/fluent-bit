@@ -110,26 +110,45 @@ def _wait_for_accepted_request(service, payload, http_mode, timeout=10, interval
     return {"status_code": 0, "http_version": ""}
 
 
-def _wait_for_rejected_request(service, payload, http_mode, timeout=10, interval=0.05):
-    """Wait until the held connection is accepted and consumes the only slot."""
+def _hold_connection(service, initial_data, payload, http_mode, timeout=10):
+    """Acquire the only slot despite worker accept races and idle eviction."""
     deadline = time.monotonic() + timeout
 
     while time.monotonic() < deadline:
+        held = socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=2)
+        keep_connection = False
         try:
-            response = run_curl_request(
-                f"http://127.0.0.1:{service.flb_listener_port}/",
-                payload=payload,
-                headers=["Content-Type: application/json"],
-                http_mode=http_mode,
-            )
-            if response["status_code"] != 201:
-                return
-        except Exception:
-            return
+            held.sendall(initial_data)
+            try:
+                response = run_curl_request(
+                    f"http://127.0.0.1:{service.flb_listener_port}/",
+                    payload=payload,
+                    headers=["Content-Type: application/json"],
+                    http_mode=http_mode,
+                )
+                rejected = response["status_code"] != 201
+            except Exception:
+                rejected = True
 
-        time.sleep(interval)
+            if rejected:
+                # A failed probe alone is insufficient: the held socket may have
+                # lost the accept race or expired while the probe was running.
+                held.settimeout(0.1)
+                try:
+                    held.recv(1)
+                except socket.timeout:
+                    held.settimeout(5)
+                    keep_connection = True
+                    return held
+        except OSError:
+            pass
+        finally:
+            if not keep_connection:
+                held.close()
 
-    raise AssertionError("held connection never occupied the configured connection slot")
+        time.sleep(0.05)
+
+    raise AssertionError("could not establish a live connection occupying the only slot")
 
 
 def _wait_for_forwarded_message(service, message):
@@ -159,12 +178,8 @@ def test_in_http_max_connections_blocks_and_recovers():
     held_connection = None
     try:
         try:
-            held_connection = socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=2)
-            held_connection.settimeout(2)
-            held_connection.sendall(b"POST / HTTP/1.1\r\n")
-
-            _wait_for_rejected_request(
-                service,
+            held_connection = _hold_connection(
+                service, b"POST / HTTP/1.1\r\n",
                 payload='{"message":"max-connections-probe"}',
                 http_mode="http1.1",
             )
@@ -196,12 +211,8 @@ def test_in_http_idle_timeout_evicts_partial_request_connection():
     held_connection = None
     try:
         try:
-            held_connection = socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=2)
-            held_connection.settimeout(5)
-            held_connection.sendall(b"POST / HTTP/1.1\r\n")
-
-            _wait_for_rejected_request(
-                service,
+            held_connection = _hold_connection(
+                service, b"POST / HTTP/1.1\r\n",
                 payload='{"message":"idle-timeout-blocked"}',
                 http_mode="http1.1",
             )
@@ -239,12 +250,8 @@ def test_in_http_idle_timeout_evicts_partial_http2_preface_connection():
     held_connection = None
     try:
         try:
-            held_connection = socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=2)
-            held_connection.settimeout(5)
-            held_connection.sendall(b"PRI * HTTP/2.0\r\n\r\nSM\r\n")
-
-            _wait_for_rejected_request(
-                service,
+            held_connection = _hold_connection(
+                service, b"PRI * HTTP/2.0\r\n\r\nSM\r\n",
                 payload='{"message":"idle-timeout-http2-blocked"}',
                 http_mode="http2-prior-knowledge",
             )
@@ -268,3 +275,46 @@ def test_in_http_idle_timeout_evicts_partial_http2_preface_connection():
     assert response["status_code"] == 201
     assert response["http_version"] == "2"
     assert forwarded_payloads["message"] == "idle-timeout-http2-recovered"
+
+
+def test_in_http_hold_connection_retries_closed_preface(monkeypatch):
+    if not curl_supports_http2():
+        pytest.skip("curl was built without HTTP/2 support")
+
+    service = Service()
+    _start_service_or_skip(service, ["http_server.max_connections", "http_server.idle_timeout"])
+    original_connect = socket.create_connection
+    original_probe = run_curl_request
+    candidates = []
+    probe_calls = 0
+
+    def connect(*args, **kwargs):
+        connection = original_connect(*args, **kwargs)
+        if args[0] == ("127.0.0.1", service.flb_listener_port):
+            candidates.append(connection)
+        return connection
+
+    def probe_after_close(*args, **kwargs):
+        nonlocal probe_calls
+        probe_calls += 1
+        if probe_calls == 1:
+            # Deterministically model a rejected/expired held connection before
+            # the probe runs, without relying on CI scheduling or timer sleeps.
+            candidates[-1].close()
+        return original_probe(*args, **kwargs)
+
+    monkeypatch.setattr(socket, "create_connection", connect)
+    monkeypatch.setitem(globals(), "run_curl_request", probe_after_close)
+    held_connection = None
+    try:
+        held_connection = _hold_connection(
+            service, b"PRI * HTTP/2.0\r\n\r\nSM\r\n",
+            payload='{"message":"closed-preface-probe"}',
+            http_mode="http2-prior-knowledge",
+        )
+        assert probe_calls >= 2
+        assert len(candidates) >= 2
+    finally:
+        if held_connection:
+            held_connection.close()
+        service.stop()

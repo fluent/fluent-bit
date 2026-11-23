@@ -30,8 +30,13 @@ def wait_for_persisted_chunk(storage_path, process, log_path, timeout=10):
 
     while time.time() < deadline:
         chunks = list(storage_path.glob("*/*.flb"))
-        if chunks and chunks[0].stat().st_size > 0:
-            return chunks[0]
+        if chunks and chunks[0].stat().st_size > 0 and log_path.exists():
+            # File allocation precedes header and record initialization. Wait
+            # for the failed delivery before killing the seed process so the
+            # test cannot persist an empty, preallocated chunk by accident.
+            log = log_path.read_text(encoding="utf-8", errors="replace")
+            if "failed to flush chunk" in log and chunks[0].name in log:
+                return chunks[0]
 
         return_code = process.poll()
         if return_code is not None:

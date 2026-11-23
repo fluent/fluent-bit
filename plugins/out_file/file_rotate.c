@@ -17,6 +17,7 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_file.h>
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_hash_table.h>
@@ -44,18 +45,6 @@
 
 #include "file_rotate.h"
 
-/*
- * Fluent Bit has no core path separator macro; upstream's file.c defines its
- * own the same way. Each translation unit needs its own copy, and adding a
- * shared one would mean modifying file.h and file.c, which this patch keeps
- * untouched.
- */
-#ifdef FLB_SYSTEM_WINDOWS
-#define FLB_PATH_SEPARATOR "\\"
-#else
-#define FLB_PATH_SEPARATOR "/"
-#endif
-
 #define FILE_ROTATE_GZIP_CHUNK_SIZE  (4 * 1024 * 1024)
 #define FILE_ROTATE_INDEX_BUCKETS    128
 #define FILE_ROTATE_SUFFIX_SIZE      32
@@ -75,14 +64,23 @@ struct file_rotate_ctx {
     size_t max_size;
     int max_files;
     int gzip;
+    int follow_symlinks;
     struct mk_list entries;
     struct flb_hash_table *index;
     flb_lock_t index_lock;
 };
 
+static int file_rotate_unlink(struct file_rotate_ctx *rot, const char *path)
+{
+    if (rot->follow_symlinks) {
+        return unlink(path);
+    }
+    return flb_file_unlink_safe(path);
+}
+
 struct file_rotate_ctx *file_rotate_create(struct flb_output_instance *ins,
                                            int enabled, size_t max_size,
-                                           int max_files, int gzip)
+                                           int max_files, int gzip, int follow_symlinks)
 {
     struct file_rotate_ctx *rot;
 
@@ -109,6 +107,7 @@ struct file_rotate_ctx *file_rotate_create(struct flb_output_instance *ins,
     rot->max_size = max_size;
     rot->max_files = max_files;
     rot->gzip = gzip;
+    rot->follow_symlinks = follow_symlinks;
     mk_list_init(&rot->entries);
 
     if (enabled == FLB_FALSE) {
@@ -298,14 +297,24 @@ static int file_rotate_compress(struct file_rotate_ctx *rot,
     FILE *src = NULL;
     FILE *dst = NULL;
 
-    src = fopen(src_path, "rb");
+    if (rot->follow_symlinks) {
+        src = fopen(src_path, "rb");
+    }
+    else {
+        src = flb_file_fopen_safe(NULL, src_path, "rb", 0);
+    }
     if (src == NULL) {
         flb_errno();
         flb_plg_error(rot->ins, "could not open %s for compression", src_path);
         return -1;
     }
 
-    dst = fopen(dst_path, "wb");
+    if (rot->follow_symlinks) {
+        dst = fopen(dst_path, "wb");
+    }
+    else {
+        dst = flb_file_fopen_safe(NULL, dst_path, "wb", 0);
+    }
     if (dst == NULL) {
         flb_errno();
         flb_plg_error(rot->ins, "could not create %s", dst_path);
@@ -369,7 +378,7 @@ cleanup:
     fclose(src);
 
     if (ret != 0) {
-        remove(dst_path);
+        file_rotate_unlink(rot, dst_path);
     }
 
     return ret;
@@ -519,7 +528,7 @@ static int file_rotate_trim(struct file_rotate_ctx *rot, const char *directory,
 #ifdef FLB_SYSTEM_WINDOWS
         if (DeleteFileA(candidates[i].path) != 0) {
 #else
-        if (unlink(candidates[i].path) == 0) {
+        if (file_rotate_unlink(rot, candidates[i].path) == 0) {
 #endif
             flb_plg_debug(rot->ins, "removed old rotated file: %s",
                           candidates[i].path);
@@ -569,19 +578,21 @@ static void file_rotate_do(struct file_rotate_entry *entry)
     snprintf(rotated, len, "%s.%s", entry->path, suffix);
 
 #ifdef FLB_SYSTEM_WINDOWS
-    if (MoveFileExA(entry->path, rotated, MOVEFILE_REPLACE_EXISTING) == 0) {
-        flb_plg_warn(rot->ins, "could not rotate %s", entry->path);
-        flb_free(rotated);
-        return;
-    }
+    ret = rot->follow_symlinks ?
+          (MoveFileExA(entry->path, rotated, MOVEFILE_REPLACE_EXISTING) ? 0 : -1) :
+          flb_file_rename_safe(entry->path, rotated);
 #else
-    if (rename(entry->path, rotated) != 0) {
+    ret = rot->follow_symlinks ? rename(entry->path, rotated) :
+          flb_file_rename_safe(entry->path, rotated);
+#endif
+    if (ret != 0) {
+#ifndef FLB_SYSTEM_WINDOWS
         flb_errno();
+#endif
         flb_plg_warn(rot->ins, "could not rotate %s", entry->path);
         flb_free(rotated);
         return;
     }
-#endif
 
     flb_plg_info(rot->ins, "rotated %s to %s", entry->path, rotated);
     entry->size = 0;
@@ -592,7 +603,7 @@ static void file_rotate_do(struct file_rotate_entry *entry)
             snprintf(compressed, len + 4, "%s.gz", rotated);
             ret = file_rotate_compress(rot, rotated, compressed);
             if (ret == 0) {
-                remove(rotated);
+                file_rotate_unlink(rot, rotated);
             }
             else {
                 flb_plg_warn(rot->ins,

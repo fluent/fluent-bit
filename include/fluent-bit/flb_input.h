@@ -74,6 +74,7 @@
                                      * private key and certificate are required.
                                      */
 #define FLB_INPUT_HTTP_SERVER 4096  /* input uses the generic HTTP server     */
+#define FLB_INPUT_SHUTDOWN_FLUSH         8192 /* allow publishing while shutdown flushes */
 
 /* Input status */
 #define FLB_INPUT_RUNNING     1
@@ -256,6 +257,7 @@ struct flb_input_instance {
      * as the tags will be composed used the file name being watched.
      */
     int flags;
+    int initialized;                     /* successful instance initialization */
 
     int id;                              /* instance id                  */
 #ifdef FLB_HAVE_CHUNK_TRACE
@@ -464,6 +466,7 @@ struct flb_input_instance {
     struct cmt_gauge   *cmt_rate_gate_limited; /* metric: input rate gate */
     struct cmt_gauge   *cmt_rate_gate_busy_chunks;
     struct cmt_gauge   *cmt_rate_gate_retry_attempts;
+    struct cmt_gauge   *cmt_rate_gate_deferred_routes;
 
     /*
      * Input rate accounting state
@@ -483,7 +486,9 @@ struct flb_input_instance {
     size_t   rate_gate_max_bytes;
     size_t   rate_gate_max_records;
     size_t   rate_gate_busy_chunks;
+    size_t   rate_gate_busy_deferred_chunks;
     size_t   rate_gate_retry_attempts;
+    size_t   rate_gate_deferred_routes;
     struct flb_sched_timer *rate_gate_timer; /* one-shot recovery wakeup */
 #endif
 
@@ -510,6 +515,7 @@ struct flb_input_instance {
     char *tls_crt_file;                  /* Certificate                  */
     char *tls_key_file;                  /* Cert Key                     */
     char *tls_key_passwd;                /* Cert Key Password            */
+    char *tls_crl_file;                  /* Certificate Revocation List  */
     char *tls_min_version;               /* Minimum protocol version of TLS */
     char *tls_max_version;               /* Maximum protocol version of TLS */
     char *tls_ciphers;                   /* TLS ciphers */
@@ -632,6 +638,7 @@ struct flb_libco_in_params {
 
 extern pthread_key_t libco_in_param_key;
 extern struct flb_libco_in_params libco_in_param;
+int flb_input_coro_params_init();
 void flb_input_coro_prepare_destroy(struct flb_input_coro *input_coro);
 
 static FLB_INLINE void input_params_set(struct flb_coro *coro,
@@ -687,13 +694,6 @@ static FLB_INLINE void flb_input_coro_resume(struct flb_input_coro *input_coro)
     flb_coro_resume(input_coro->coro);
 }
 
-static void libco_in_param_key_destroy(void *data)
-{
-    struct flb_libco_inparams *params = (struct flb_libco_inparams*)data;
-
-    flb_free(params);
-}
-
 static FLB_INLINE
 struct flb_input_coro *flb_input_coro_collect(struct flb_input_collector *coll,
                                               struct flb_config *config)
@@ -702,12 +702,15 @@ struct flb_input_coro *flb_input_coro_collect(struct flb_input_collector *coll,
     struct flb_coro *coro;
     struct flb_input_coro *input_coro;
 
+    if (flb_input_coro_params_init() != 0) {
+        flb_error("[input] could not initialize coroutine parameter storage");
+        return NULL;
+    }
+
     input_coro = flb_input_coro_create(coll->instance, config);
     if (!input_coro) {
         return NULL;
     }
-
-    pthread_key_create(&libco_in_param_key, libco_in_param_key_destroy);
 
     coro = input_coro->coro;
     if (!coro) {
@@ -942,6 +945,18 @@ int flb_input_downstream_set(struct flb_downstream *stream,
                              struct flb_input_instance *ins);
 void flb_input_ingress_destroy(struct flb_input_instance *ins);
 int flb_input_ingress_enable(struct flb_input_instance *ins);
+/* Nonblocking resume: success transfers *buf and clears it. Every failure
+ * preserves caller ownership. Call only while the input instance is alive. */
+int flb_input_ingress_try_resume_log(struct flb_input_instance *ins,
+                                     size_t starting_stage,
+                                     const char *tag, size_t tag_len,
+                                     void **buf, size_t buf_size, size_t records);
+/* Metrics counterpart: acceptance alone adopts *context and clears it.
+ * BUSY/error preserve both the pointer and its original list membership. */
+int flb_input_ingress_try_resume_metrics(struct flb_input_instance *ins,
+                                         size_t starting_stage,
+                                         const char *tag, size_t tag_len,
+                                         struct cmt **context, size_t payload_size);
 int flb_input_ingress_queue_log(struct flb_input_instance *ins,
                                 const char *tag, size_t tag_len,
                                 const void *buf, size_t buf_size);
@@ -951,6 +966,12 @@ int flb_input_ingress_queue_log_take(struct flb_input_instance *ins,
                                      void *buf, size_t buf_size,
                                      size_t allocation_size);
 int flb_input_ingress_queue_log_take_records(struct flb_input_instance *ins,
+                                             size_t records,
+                                             const char *tag, size_t tag_len,
+                                             void *buf, size_t buf_size,
+                                             size_t allocation_size);
+int flb_input_ingress_queue_log_processed_take_records(
+                                             struct flb_input_instance *ins,
                                              size_t records,
                                              const char *tag, size_t tag_len,
                                              void *buf, size_t buf_size,

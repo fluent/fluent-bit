@@ -23,6 +23,11 @@
 #include "lib/acutest/include/acutest.h"
 #include "test_utils.h"
 
+#ifdef __EMSCRIPTEN__
+/* Some tests delete /tmp; keep embedded fixtures outside that tree. */
+#define CIO_TESTS_DATA_PATH "/chunkio-tests/"
+#else
 #define CIO_TESTS_DATA_PATH "@CIO_TESTS_DATA_PATH@"
+#endif
 
 #endif

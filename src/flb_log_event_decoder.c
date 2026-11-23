@@ -24,8 +24,6 @@
 
 #include <inttypes.h>
 
-#define FLB_LOG_EVENT_DECODER_MAX_RECURSION_DEPTH        1000  /* Safety limit for recursion */
-
 static int create_empty_map(struct flb_log_event_decoder *context) {
     msgpack_packer  packer;
     msgpack_sbuffer buffer;
@@ -356,19 +354,47 @@ int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
         return context->last_result;
     }
 
-    context->record_base = NULL;
-    context->record_length = 0;
-
     if (event == NULL) {
         context->last_result = FLB_EVENT_DECODER_ERROR_INVALID_ARGUMENT;
         return context->last_result;
     }
 
+    /*
+     * Records that must not be returned to the caller are skipped by jumping
+     * back here instead of recursing, so the stack usage does not depend on
+     * the number of consecutive records that are skipped. Every iteration
+     * consumes one msgpack object, so the loop is bounded by the input size.
+     */
+next_record:
+    context->record_base = NULL;
+    context->record_length = 0;
+
     previous_offset = context->offset;
-    result = msgpack_unpack_next(&context->unpacked_event,
-                                 context->buffer,
-                                 context->length,
-                                 &context->offset);
+
+    /*
+     * Reuse one zone across records. Clearing keeps its first chunk, whereas
+     * msgpack_unpack_next() frees and recreates the zone for every record. A
+     * group start takes the zone over, so a new one is created on the next call.
+     */
+    if (context->unpacked_event.zone == NULL) {
+        context->unpacked_event.zone = msgpack_zone_new(MSGPACK_ZONE_CHUNK_SIZE);
+        if (context->unpacked_event.zone == NULL) {
+            context->last_result = FLB_EVENT_DECODER_ERROR_DESERIALIZATION_FAILURE;
+            return context->last_result;
+        }
+    }
+    else {
+        msgpack_zone_clear(context->unpacked_event.zone);
+    }
+
+    memset(&context->unpacked_event.data, 0, sizeof(msgpack_object));
+    result = msgpack_unpack(context->buffer, context->length, &context->offset,
+                            context->unpacked_event.zone, &context->unpacked_event.data);
+
+    /* remaining bytes belong to the next records */
+    if (result == MSGPACK_UNPACK_EXTRA_BYTES) {
+        result = MSGPACK_UNPACK_SUCCESS;
+    }
 
     if (result == MSGPACK_UNPACK_CONTINUE) {
         context->last_result = FLB_EVENT_DECODER_ERROR_INSUFFICIENT_DATA;
@@ -385,14 +411,6 @@ int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
                                                            &context->unpacked_event.data);
 
     if (context->last_result == FLB_EVENT_DECODER_SUCCESS) {
-        /* Check recursion depth limit to prevent stack overflow */
-        if (context->recursion_depth >= FLB_LOG_EVENT_DECODER_MAX_RECURSION_DEPTH) {
-            flb_warn("[decoder] Maximum recursion depth (%d) reached, possible corruption or excessive group markers",
-                     FLB_LOG_EVENT_DECODER_MAX_RECURSION_DEPTH);
-            context->last_result = FLB_EVENT_DECODER_ERROR_DESERIALIZATION_FAILURE;
-            return context->last_result;
-        }
-
         /* get log event type */
         ret = flb_log_event_decoder_get_record_type(event, &record_type);
         if (ret != 0) {
@@ -405,12 +423,8 @@ int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
             flb_debug("[decoder] Invalid group marker timestamp (%" PRId64 "), skipping record. "
                      "Group state preserved.", invalid_timestamp);
 
-            /* Increment recursion depth before recursive call */
-            context->recursion_depth++;
             memset(event, 0, sizeof(struct flb_log_event));
-            ret = flb_log_event_decoder_next(context, event);
-            context->recursion_depth--;  /* Restore after return */
-            return ret;
+            goto next_record;
         }
 
         /* Meta records such as the group opener and closer are identified by negative
@@ -467,16 +481,11 @@ int flb_log_event_decoder_next(struct flb_log_event_decoder *context,
 
             if (context->read_groups != FLB_TRUE) {
                 /*
-                 * Skip group markers by recursively calling to get next record.
-                 * msgpack_unpack_next will properly destroy and reinitialize
-                 * unpacked_event, so no explicit cleanup needed here.
-                 * Increment recursion depth before recursive call.
+                 * Skip group markers and move to the next record. The next
+                 * iteration clears or recreates the unpacked_event zone.
                  */
-                context->recursion_depth++;
                 memset(event, 0, sizeof(struct flb_log_event));
-                ret = flb_log_event_decoder_next(context, event);
-                context->recursion_depth--;  /* Restore after return */
-                return ret;
+                goto next_record;
             }
         }
         else {

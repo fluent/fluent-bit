@@ -18,6 +18,7 @@
  */
 
 
+#include "cprof_protobuf.h"
 #include <cprofiles/cprof_decode_opentelemetry.h>
 #include <cfl/cfl_sds.h>
 
@@ -535,7 +536,7 @@ static int decode_profile_entry(struct cprof_profile *profile,
                 result = clone_variant(&indexed_attribute_value,
                                        indexed_attribute_entry->value,
                                        dictionary->string_table,
-                                       dictionary->n_string_table);
+                                       dictionary->n_string_table, 1);
 
                 if (result != CPROF_DECODE_OPENTELEMETRY_SUCCESS) {
                     return result;
@@ -783,6 +784,16 @@ int cprof_decode_opentelemetry_create(struct cprof **result_context,
 
     if (result_context != NULL) {
         *result_context = NULL;
+    }
+
+    if (result_context == NULL || in_buf == NULL || offset == NULL || *offset > in_size) {
+        return CPROF_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
+    }
+
+    if (cprof_protobuf_validate(
+            &opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__descriptor,
+            &in_buf[*offset], in_size - *offset) != 0) {
+        return CPROF_DECODE_OPENTELEMETRY_INVALID_ARGUMENT_ERROR;
     }
 
     service_request = opentelemetry__proto__collector__profiles__v1development__export_profiles_service_request__unpack(

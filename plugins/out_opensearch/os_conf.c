@@ -263,6 +263,7 @@ struct flb_opensearch *flb_os_conf_create(struct flb_output_instance *ins,
                 flb_os_conf_destroy(ctx);
                 return NULL;
             }
+            flb_tls_set_verify_hostname(ctx->aws_tls, ins->tls_verify_hostname);
 
             tmp = flb_output_get_property("aws_region", ins);
             if (!tmp) {
@@ -324,6 +325,7 @@ struct flb_opensearch *flb_os_conf_create(struct flb_output_instance *ins,
                     flb_os_conf_destroy(ctx);
                     return NULL;
                 }
+                flb_tls_set_verify_hostname(ctx->aws_sts_tls, ins->tls_verify_hostname);
 
                 ctx->aws_provider = flb_sts_provider_create(config,
                                                             ctx->aws_sts_tls,

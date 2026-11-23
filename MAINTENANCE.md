@@ -6,16 +6,18 @@ This document outlines the maintenance strategy and version support for Fluent B
 
 | Branch     | Version | Status           | Maintainer                                                  | Notes                                                              |
 |------------|---------|------------------|-------------------------------------------------------------|--------------------------------------------------------------------|
-| `master`   | v5.1.x  | Stable           | [Eduardo Silva](https://github.com/edsiper)                 | Current stable release series. All new features and bug fixes land here first. |
+| `master`   | v5.2.x  | Development      | [Eduardo Silva](https://github.com/edsiper)                 | Next release series. All new features and bug fixes land here first. |
+| `5.1`      | v5.1.x  | Stable           | [Eduardo Silva](https://github.com/edsiper)                 | Current stable release series. |
 | `5.0`      | v5.0.x  | Maintenance only | [Eduardo Silva](https://github.com/edsiper) [Hiroshi Hatake (@cosmo0920)](https://github.com/cosmo0920) | Critical bug fixes, security fixes, and selected low-risk backports until **November 30, 2026**. |
 
 ---
 
 ## Maintenance Policy
 
-Fluent Bit **v5.1** is the current stable release series and is tracked in the
-`master` branch. The **v5.0** branch is in maintenance mode and receives bug
-fixes, security updates, and selected low-risk backports until its
+The `master` branch tracks development of **v5.2.0**. Fluent Bit **v5.1** is
+the current stable release series and is tracked in the `5.1` branch. The
+**v5.0** branch is in maintenance mode and receives bug fixes, security updates,
+and selected low-risk backports until its
 End-of-Maintenance date. Older release lines are End-of-Life (EOL).
 
 ### Accepted Changes for Maintenance Branches
@@ -27,6 +29,10 @@ End-of-Maintenance date. Older release lines are End-of-Life (EOL).
 > ⚠️ All changes must first be merged into `master` before being cherry-picked into maintenance branches by the maintainer.
 
 Maintenance releases continue on an as-needed basis depending on urgency and impact.
+
+### v5.2 Development
+
+**v5.2.0** is under development in `master`.
 
 ### v5.1 Stable Series
 

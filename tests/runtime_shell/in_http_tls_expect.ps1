@@ -31,7 +31,7 @@ try {
     $env:SIGNAL_FILE_PATH = $signalFile
     $env:LISTENER_VHOST = "leo.vcap.me"
     $env:LISTENER_HOST = "127.0.0.1"
-    $env:LISTENER_PORT = "50000"
+    $env:LISTENER_PORT = "20500"
 
     $config = Get-RuntimeConfigPath "in_http_tls_expect.conf"
     $process = Start-FluentBit $config

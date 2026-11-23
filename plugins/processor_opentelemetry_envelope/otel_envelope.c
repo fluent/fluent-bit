@@ -159,8 +159,8 @@ static void envelop_end(struct cfl_list *list, struct flb_mp_chunk_record *activ
     record->cobj_metadata = NULL;
     record->cobj_record = NULL;
 
-    /* add the envelop before the active record */
-    cfl_list_add_after(&record->_head, &active_record->_head, list);
+    /* Insert after the active record while updating both list directions. */
+    cfl_list_add_before(&record->_head, active_record->_head.next, list);
 }
 
 

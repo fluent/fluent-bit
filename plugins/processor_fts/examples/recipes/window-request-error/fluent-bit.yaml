@@ -1,0 +1,51 @@
+# Run from this directory: fluent-bit -c fluent-bit.yaml
+service:
+  flush: 1
+  grace: 1
+pipeline:
+  inputs:
+    - name: tail
+      path: events.jsonl
+      read_from_head: true
+      processors:
+        logs:
+          - name: fts
+            recipe_version: 1
+            context: native
+            error_mode: drop
+            state_commit: local
+            state_limit: 1M
+            recipe:
+              - id: parse
+                use: logs.parse_json
+                with:
+                  source: {root: body, path: [log]}
+                  destination: {root: body, path: [event]}
+                  remove_source: true
+              - id: privacy
+                use: shared.redact_keys
+                with:
+                  targets: [{root: body, path: [event]}]
+                  keys: [password]
+              - id: retain_request
+                use: window.hold_until
+                with:
+                  keys: [{root: body, path: [event, request_id]}]
+                  hold_ms: 1000
+                  late_ms: 5000
+                  ready_timeout_ms: 10000
+                  max_keys: 1024
+                  max_key_bytes: 256
+                  overflow: keep
+                  retain_when:
+                    selector: {root: body, path: [event, level]}
+                    op: eq
+                    value: ERROR
+                  keep_when:
+                    selector: {root: body, path: [event, level]}
+                    op: neq
+                    value: DEBUG
+  outputs:
+    - name: stdout
+      match: '*'
+      format: json_lines

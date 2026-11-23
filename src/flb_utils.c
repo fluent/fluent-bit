@@ -17,14 +17,19 @@
  *  limitations under the License.
  */
 
+#include <fluent-bit/flb_file.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <ctype.h>
+#include <math.h>
+#include <errno.h>
+#include <limits.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <errno.h>
 #include <msgpack.h>
 
 #include <monkey/mk_core.h>
@@ -65,6 +70,37 @@ extern struct flb_aws_error_reporter *error_reporter;
  * E0 since U+E0CE = U+<FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR><HEX_FRAGMENT>
  */
 #define FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR 0xE0
+
+/* Prefer a file beside the main configuration over a same-named file in CWD. */
+const char *flb_utils_resolve_config_path(const char *path, const char *conf_path,
+                                          char *buf, size_t size)
+{
+    int ret;
+    size_t len;
+    struct stat st;
+
+    if (!path || !conf_path || path[0] == '/') {
+        return path;
+    }
+#ifdef _WIN32
+    if (path[0] == '\\' || (path[0] && path[1] == ':')) {
+        return path;
+    }
+#endif
+
+    len = strlen(conf_path);
+    ret = snprintf(buf, size, "%s%s%s", conf_path,
+                   len > 0 && conf_path[len - 1] == '/' ? "" : "/", path);
+    if (ret < 0 || (size_t) ret >= size) {
+        return NULL;
+    }
+
+    if (stat(buf, &st) == 0 || errno != ENOENT) {
+        return buf;
+    }
+
+    return path;
+}
 
 void flb_utils_error(int err)
 {
@@ -316,9 +352,12 @@ static int quoted_string_len(const char *str)
  * 'out' is set to the beginning of the token.
  * 'out_len' is set to the length of the token.
  * 'parse_quotes' is set to FLB_TRUE when quotes shall be considered when tokenizing the 'str'.
+ * 'str_len' is the number of bytes available in 'str', so the remaining input
+ * is not measured again for every token.
  * The function returns offset to next token in the string.
  */
-static int next_token(const char *str, int separator, char **out, int *out_len, int parse_quotes) {
+static int next_token(const char *str, int str_len, int separator, char **out, int *out_len,
+                      int parse_quotes) {
     const char *token_in = str;
     char *token_out;
     int next_separator = 0;
@@ -327,13 +366,13 @@ static int next_token(const char *str, int separator, char **out, int *out_len, 
     int i;
 
     /* Skip leading separators. */
-    while (*token_in == separator) {
+    while (token_in - str < str_len && *token_in == separator) {
         token_in++;
     }
 
     /* Should quotes be parsed? Or is token quoted? If not, copy until separator or the end of string. */
     if (parse_quotes == FLB_FALSE || (*token_in != '"' && *token_in != '\'')) {
-        len = (int)strlen(token_in);
+        len = str_len - (int)(token_in - str);
         next_separator = mk_string_char_search(token_in, separator, len);
         if (next_separator > 0) {
             len = next_separator;
@@ -407,7 +446,7 @@ static struct mk_list *split(const char *line, int separator, int max_split, int
 
     len = strlen(line);
     while (i < len) {
-        end = next_token(line + i, separator, &val, &val_len, quoted);
+        end = next_token(line + i, len - i, separator, &val, &val_len, quoted);
         if (end == -1) {
             flb_error("Parsing failed: %s", line);
             flb_utils_split_free(list);
@@ -629,7 +668,7 @@ int64_t flb_utils_size_to_binary_bytes(const char *size)
     len = strlen(size);
     val = atof(size);
 
-    if (len == 0) {
+    if (len == 0 || !isfinite(val)) {
         return -1;
     }
 
@@ -643,6 +682,10 @@ int64_t flb_utils_size_to_binary_bytes(const char *size)
     }
 
     if (plen == 0) {
+        /* INT64_MAX rounds to 2^63 as a double, so the upper bound is exclusive. */
+        if (val < -9223372036854775808.0 || val >= 9223372036854775808.0) {
+            return -1;
+        }
         return (int64_t)val;
     }
     else if (plen > 3) {
@@ -752,6 +795,41 @@ int flb_utils_time_to_seconds(const char *time)
     }
 
     return val;
+}
+
+int flb_utils_time_to_seconds_strict(const char *time, int *seconds)
+{
+    int result;
+    char *end;
+    long checked_value;
+    const unsigned char *cursor;
+
+    if (time == NULL || seconds == NULL || time[0] == '\0') {
+        return -1;
+    }
+
+    cursor = (const unsigned char *) time;
+    while (*cursor != '\0') {
+        if (isdigit(*cursor) == 0) {
+            return -1;
+        }
+        cursor++;
+    }
+
+    errno = 0;
+    checked_value = strtol(time, &end, 10);
+    if (errno == ERANGE || end == time || *end != '\0' ||
+        checked_value <= 0 || checked_value > INT_MAX) {
+        return -1;
+    }
+
+    result = flb_utils_time_to_seconds(time);
+    if (result <= 0 || result != checked_value) {
+        return -1;
+    }
+
+    *seconds = result;
+    return 0;
 }
 
 int flb_utils_bool(const char *val)
@@ -2112,12 +2190,8 @@ int flb_utils_uuid_v4_gen(char *buf)
 }
 #endif
 
-int flb_utils_read_file(char *path, char **out_buf, size_t *out_size)
-{
-    return flb_utils_read_file_offset(path, 0, 0, out_buf, out_size);
-}
-
-int flb_utils_read_file_offset(char *path, off_t offset_start, off_t offset_end, char **out_buf, size_t *out_size)
+static int read_file_offset(char *path, off_t offset_start, off_t offset_end,
+                            char **out_buf, size_t *out_size, int nofollow)
 {
     int fd;
     int ret;
@@ -2128,7 +2202,12 @@ int flb_utils_read_file_offset(char *path, off_t offset_start, off_t offset_end,
     flb_sds_t buf;
     FILE *fp;
 
-    fp = fopen(path, "rb");
+    if (nofollow) {
+        fp = flb_file_fopen_safe(NULL, path, "rb", 0);
+    }
+    else {
+        fp = fopen(path, "rb");
+    }
     if (!fp) {
         return -1;
     }
@@ -2190,6 +2269,24 @@ int flb_utils_read_file_offset(char *path, off_t offset_start, off_t offset_end,
     *out_size = total_bytes_read;
 
     return 0;
+}
+
+int flb_utils_read_file(char *path, char **out_buf, size_t *out_size)
+{
+    return read_file_offset(path, 0, 0, out_buf, out_size, FLB_FALSE);
+}
+
+int flb_utils_read_file_offset(char *path, off_t offset_start, off_t offset_end,
+                               char **out_buf, size_t *out_size)
+{
+    return read_file_offset(path, offset_start, offset_end, out_buf, out_size, FLB_FALSE);
+}
+
+/* Enforce containment when blob consumers reopen files, including on retries. */
+int flb_utils_read_file_offset_safe(char *path, off_t offset_start, off_t offset_end,
+                                    char **out_buf, size_t *out_size)
+{
+    return read_file_offset(path, offset_start, offset_end, out_buf, out_size, FLB_TRUE);
 }
 
 static int machine_id_read_and_sanitize(char *path,

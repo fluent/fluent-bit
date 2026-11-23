@@ -48,6 +48,10 @@ void cprof_resource_profiles_destroy(struct cprof_resource_profiles *instance) {
     struct cfl_list             *iterator_backup;
 
     if (instance != NULL) {
+        if (cfl_list_entry_is_orphan(&instance->_head) == CFL_FALSE) {
+            cfl_list_del(&instance->_head);
+        }
+
         if (instance->schema_url != NULL) {
             cfl_sds_destroy(instance->schema_url);
         }
@@ -70,4 +74,3 @@ void cprof_resource_profiles_destroy(struct cprof_resource_profiles *instance) {
         free(instance);
     }
 }
-

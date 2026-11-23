@@ -9,26 +9,25 @@
 
 # Global Owners
 # -------------
-*                        @edsiper @leonardo-albertovich @cosmo0920
+*                        @edsiper @cosmo0920
 
 # Build System & Portability
 # --------------------------
-/CMakeLists.txt          @fujimotos @niedbalski @patrick-stephens @celalettin1286
-/cmake/                  @fujimotos @niedbalski @patrick-stephens @celalettin1286
+/CMakeLists.txt          @niedbalski @patrick-stephens
+/cmake/                  @niedbalski @patrick-stephens
 
 # CI
 # -------------------------
-/.github/                @niedbalski @patrick-stephens @celalettin1286
-/appveyor.yml            @niedbalski @patrick-stephens @celalettin1286
-/dockerfiles/            @niedbalski @patrick-stephens @celalettin1286
-/packaging/              @niedbalski @patrick-stephens @celalettin1286
-/codebase-structure.svg  @niedbalski @patrick-stephens @celalettin1286
-/install.sh              @niedbalski @patrick-stephens @celalettin1286
+/.github/                @niedbalski @patrick-stephens
+/appveyor.yml            @niedbalski @patrick-stephens
+/dockerfiles/            @niedbalski @patrick-stephens
+/packaging/              @niedbalski @patrick-stephens
+/codebase-structure.svg  @niedbalski @patrick-stephens
+/install.sh              @niedbalski @patrick-stephens
 
 # Core: Signv4
 # ------------
 /src/flb_signv4.c        @fluent/aws-fluent-bit-maintainers
-/src/flb_lib.c           @edsiper @niedbalski
 
 # Core: AWS Auth & Utils
 # ------------
@@ -39,20 +38,6 @@
 /include/flb_aws_credentials.h @fluent/aws-fluent-bit-maintainers
 /include/flb_aws_util.h        @fluent/aws-fluent-bit-maintainers
 
-# Core: Stream Processor
-# ----------------
-/src/stream_processor/   @koleini
-
-# Input Plugins
-# -------------
-/plugins/in_collectd     @fujimotos
-/plugins/in_docker       @nokute78 @edsiper
-/plugins/in_dummy        @nokute78
-/plugins/in_netif        @nokute78
-/plugins/in_statsd       @fujimotos
-/plugins/in_thermal      @nokute78
-/plugins/in_winlog       @fujimotos
-
 # Filter Plugins
 # --------------
 /plugins/filter_aws      @fluent/aws-fluent-bit-maintainers
@@ -60,10 +45,18 @@
 
 # Output Plugins
 # --------------
-/plugins/out_datadog     @nokute78 @edsiper
-/plugins/out_es          @pettitwesley @edsiper
 /plugins/out_pgsql       @sxd
+
+# Google Plugins
+/plugins/out_bigquery    @JeffLuoo
+/plugins/out_chronicle   @JeffLuoo
 /plugins/out_stackdriver @JeffLuoo
+
+# Azure Plugins
+/plugins/out_azure                 @tanmaya-panda1
+/plugins/out_azure_blob            @tanmaya-panda1
+/plugins/out_azure_kusto           @tanmaya-panda1
+/plugins/out_azure_logs_ingestion  @tanmaya-panda1
 
 # AWS Plugins
 /plugins/out_s3               @fluent/aws-fluent-bit-maintainers
@@ -83,17 +76,22 @@
 /tests/runtime/out_opensearch.c @fluent/aws-fluent-bit-maintainers
 /tests/runtime/out_s3.c         @fluent/aws-fluent-bit-maintainers
 
+# Azure test code
+/tests/internal/azure_blob_path.c            @tanmaya-panda1
+/tests/runtime/out_azure_blob_compression.c  @tanmaya-panda1
+/tests/runtime/out_azure_kusto.c             @tanmaya-panda1
+
 # Google test code
 # --------------
+/tests/runtime/out_chronicle.c   @JeffLuoo
 /tests/runtime/out_stackdriver.c @JeffLuoo
 /tests/runtime/data/stackdriver  @JeffLuoo
 
 # Devcontainer
-/.devcontainer                  @patrick-stephens @niedbalski @edsiper
+/.devcontainer                  @patrick-stephens @niedbalski
 
 # Calyptia Fleet
-/include/fluent-bit/calyptia/ @pwhelan @alecholmes
-/plugins/custom_calyptia/     @pwhelan @alecholmes
-/plugins/custom_calyptia/     @pwhelan @alecholmes
-/plugins/out_calyptia/        @pwhelan @alecholmes
-/plugins/in_calyptia_fleet/   @pwhelan @alecholmes
+/include/fluent-bit/calyptia/ @agup006 @alecholmes
+/plugins/custom_calyptia/     @agup006 @alecholmes
+/plugins/out_calyptia/        @agup006 @alecholmes
+/plugins/in_calyptia_fleet/   @agup006 @alecholmes

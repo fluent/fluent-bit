@@ -171,7 +171,15 @@ void test_parse_reordered_schema()
 
         msgpack_object_print(stderr, msg.data);
 
-        flb_msgpack_to_avro(&aobject, &msg.data);
+        if (schemas[i] == ts3) {
+            TEST_CHECK(flb_msgpack_to_avro(&aobject, &msg.data) == FLB_FALSE);
+            avro_value_decref(&aobject);
+            avro_schema_decref(aschema);
+            msgpack_unpacked_destroy(&msg);
+            flb_free(out_buf);
+            continue;
+        }
+        TEST_CHECK(flb_msgpack_to_avro(&aobject, &msg.data) == FLB_TRUE);
 
         avro_value_t log0;
         TEST_CHECK(avro_value_get_by_name(&aobject, "log", &log0, NULL) == 0);
@@ -561,56 +569,8 @@ void test_union_type_sanity()
 
     msg = test_init(&aobject, &aschema, JSON_SINGLE_MAP_001_SCHEMA_WITH_UNION, AVRO_SINGLE_MAP1, &out_buf);
 
-    msgpack_object_print(stderr, msg.data);
-    flb_msgpack_to_avro(&aobject, &msg.data);
-
-    size_t totalSize = 0;
-    avro_value_get_size(&aobject, &totalSize);
-    flb_info("totalSize:%zu:\n", totalSize);
-    // this is key001,2,3,4 and the status field which is the union type
-    TEST_CHECK(totalSize == 5);
-
-    avro_value_t test_value;
-    TEST_CHECK(avro_value_get_by_name(&aobject, "key001", &test_value, NULL) == 0);
-
-    int val001 = 0;
-    avro_value_get_int(&test_value, &val001);
-    TEST_CHECK(val001 == 123456789);
-
-    TEST_CHECK(avro_value_get_by_name(&aobject, "key002", &test_value, NULL) == 0);
-
-    float val002 = 0.0f;
-    // for some reason its rounding to this value
-    float val002_actual = 0.999888f;
-    avro_value_get_float(&test_value, &val002);
-    char str1[80];
-    char str2[80];
-    sprintf(str1, "%f", val002);
-    sprintf(str2, "%f", val002_actual);
-    flb_info("val002:%s:\n", str1);
-    flb_info("val002_actual:%s:\n", str2);
-    TEST_CHECK((strcmp(str1, str2) == 0));
-
-    TEST_CHECK(avro_value_get_by_name(&aobject, "key003", &test_value, NULL) == 0);
-    const char *val003 = NULL;
-    size_t val003_size = 0;
-    TEST_CHECK(avro_value_get_string(&test_value, &val003, &val003_size) == 0);
-    flb_info("val003_size:%zu:\n", val003_size);
-    TEST_CHECK(val003[val003_size] == '\0');
-
-    TEST_CHECK((strcmp(val003, "abcdefghijk") == 0));
-    // avro_value_get_by_name returns ths string length plus the NUL
-    TEST_CHECK(val003_size == 12);
-
-    TEST_CHECK(avro_value_get_by_name(&aobject, "key004", &test_value, NULL) == 0);
-
-    size_t asize = 0;
-    avro_value_get_size(&test_value, &asize);
-    flb_info("asize:%zu:\n", asize);
-
-    TEST_CHECK(asize == 2);
-
-    TEST_CHECK(avro_value_get_by_name(&aobject, "status", &test_value, NULL) == 0);
+    /* A reader-side null default does not make a writer field optional. */
+    TEST_CHECK(flb_msgpack_to_avro(&aobject, &msg.data) == FLB_FALSE);
 
     avro_value_decref(&aobject);
     avro_schema_decref(aschema);
@@ -650,7 +610,306 @@ void test_union_type_branches()
     msgpack_unpacked_destroy(&mp);
     flb_free(out_buf);
 }
+static void test_strict_records(void)
+{
+    const char *schema = "{\"type\":\"record\",\"name\":\"Strict\",\"fields\":["
+                         "{\"name\":\"a\",\"type\":\"int\",\"default\":7},"
+                         "{\"name\":\"b\",\"type\":{\"type\":\"array\",\"items\":\"int\"}}]}";
+    const char *records[] = {
+        "{\"a\":1,\"b\":[]}",
+        "{\"b\":[]}",
+        "{\"a\":1,\"unexpected\":[]}",
+        "{\"a\":1,\"b\":[],\"extra\":0}",
+        "{\"a\":1,\"a\":2}",
+        "{\"a\":1,\"b\":[\"invalid\",2]}",
+        "{\"a\":1,\"b\":[2,\"invalid\"]}"
+    };
+    size_t i;
+    size_t size;
+    int root_type;
+    char *buffer;
+    avro_value_t value;
+    avro_schema_t parsed;
+    avro_value_iface_t *iface;
+    msgpack_unpacked unpacked;
+
+    for (i = 0; i < sizeof(records) / sizeof(records[0]); i++) {
+        iface = flb_avro_init(&value, (char *) schema, strlen(schema), &parsed);
+        TEST_ASSERT(iface != NULL);
+        TEST_ASSERT(flb_pack_json(records[i], strlen(records[i]), &buffer,
+                                  &size, &root_type, NULL) == 0);
+        msgpack_unpacked_init(&unpacked);
+        TEST_ASSERT(msgpack_unpack_next(&unpacked, buffer, size, NULL) == MSGPACK_UNPACK_SUCCESS);
+        TEST_CHECK(flb_msgpack_to_avro(&value, &unpacked.data) == (i == 0 ? FLB_TRUE : FLB_FALSE));
+        msgpack_unpacked_destroy(&unpacked);
+        flb_free(buffer);
+        avro_value_decref(&value);
+        avro_value_iface_decref(iface);
+        avro_schema_decref(parsed);
+    }
+}
+
+static void check_wide_avro_map(int record, size_t count)
+{
+    size_t i;
+    size_t value_size;
+    int length;
+    int32_t number;
+    char key[32];
+    flb_sds_t schema;
+    avro_value_t value;
+    avro_value_t element;
+    avro_schema_t parsed;
+    avro_value_iface_t *iface;
+    msgpack_sbuffer buffer;
+    msgpack_packer packer;
+    msgpack_unpacked unpacked;
+
+    schema = flb_sds_create(record ?
+        "{\"type\":\"record\",\"name\":\"Wide\",\"fields\":[" :
+        "{\"type\":\"map\",\"values\":\"int\"}");
+    TEST_ASSERT(schema != NULL);
+    msgpack_sbuffer_init(&buffer);
+    msgpack_packer_init(&packer, &buffer, msgpack_sbuffer_write);
+    msgpack_pack_map(&packer, count);
+    for (i = 0; i < count; i++) {
+        length = snprintf(key, sizeof(key), "k%zu", i);
+        if (record) {
+            TEST_ASSERT(flb_sds_printf(&schema, "%s{\"name\":\"%s\",\"type\":\"int\"}",
+                                       i == 0 ? "" : ",", key) != NULL);
+        }
+        msgpack_pack_str(&packer, length);
+        msgpack_pack_str_body(&packer, key, length);
+        msgpack_pack_int(&packer, 0);
+    }
+    if (record) {
+        TEST_ASSERT(flb_sds_printf(&schema, "]}") != NULL);
+    }
+    else {
+        /* This reproduces the reported input size below Kafka's Avro limit. */
+        TEST_CHECK(buffer.size < 1000000);
+    }
+    iface = flb_avro_init(&value, schema, flb_sds_len(schema), &parsed);
+    TEST_ASSERT(iface != NULL);
+    msgpack_unpacked_init(&unpacked);
+    TEST_ASSERT(msgpack_unpack_next(&unpacked, buffer.data, buffer.size, NULL) ==
+                MSGPACK_UNPACK_SUCCESS);
+    TEST_CHECK(flb_msgpack_to_avro(&value, &unpacked.data) == FLB_TRUE);
+    /* Existing entries must not be mistaken for duplicates in a new input. */
+    TEST_CHECK(flb_msgpack_to_avro(&value, &unpacked.data) == FLB_TRUE);
+    TEST_CHECK(avro_value_get_size(&value, &value_size) == 0);
+    TEST_CHECK(value_size == count);
+    TEST_CHECK(avro_value_get_by_name(&value, key, &element, NULL) == 0);
+    TEST_CHECK(avro_value_get_int(&element, &number) == 0);
+    TEST_CHECK(number == 0);
+
+    /* A duplicate at the end still fails, including after an earlier conversion. */
+    unpacked.data.via.map.ptr[count - 1].key = unpacked.data.via.map.ptr[0].key;
+    TEST_CHECK(flb_msgpack_to_avro(&value, &unpacked.data) == FLB_FALSE);
+    msgpack_unpacked_destroy(&unpacked);
+    msgpack_sbuffer_destroy(&buffer);
+    avro_value_decref(&value);
+    avro_value_iface_decref(iface);
+    avro_schema_decref(parsed);
+    flb_sds_destroy(schema);
+}
+
+static void test_wide_map(void)
+{
+    check_wide_avro_map(FLB_FALSE, 100000);
+}
+
+static void test_wide_record(void)
+{
+    check_wide_avro_map(FLB_TRUE, 4096);
+}
+
+/* Check the wire encoding of double fields and both nullable-union branches. */
+static void test_double_and_nullable_union(void)
+{
+    const char *json[] = {"{\"value\":1.5,\"optional\":null}",
+                          "{\"value\":1.5,\"optional\":\"abc\"}",
+                          "{\"value\":1.5,\"optional\":7}"};
+    const unsigned char expected[] = {0, 0, 0, 0, 42, 0, 0, 0, 0, 0, 0, 248, 63};
+    struct flb_avro_fields fields;
+    size_t i;
+    size_t size;
+    size_t packed_size;
+    int root_type;
+    char *packed;
+    unsigned char output[32];
+
+    fields.schema_id = 42;
+    fields.schema_str = flb_sds_create("{\"type\":\"record\",\"name\":\"Event\",\"fields\":["
+        "{\"name\":\"value\",\"type\":\"double\"},"
+        "{\"name\":\"optional\",\"type\":[\"null\",\"string\"]}]}");
+    TEST_ASSERT(fields.schema_str != NULL);
+    for (i = 0; i < 3; i++) {
+        TEST_ASSERT(flb_pack_json(json[i], strlen(json[i]), &packed, &packed_size,
+                                  &root_type, NULL) == 0);
+        size = sizeof(output);
+        TEST_CHECK(flb_msgpack_raw_to_avro_status(packed, packed_size, &fields,
+                   (char *) output, &size) == (i < 2 ? FLB_TRUE : FLB_FALSE));
+        if (i < 2) {
+            TEST_CHECK(memcmp(output, expected, sizeof(expected)) == 0);
+            TEST_CHECK(size == (i == 0 ? 14 : 18));
+            TEST_CHECK(output[13] == (i == 0 ? 0 : 2));
+            if (i == 1) {
+                TEST_CHECK(output[14] == 6);
+                TEST_CHECK(memcmp(output + 15, "abc", 3) == 0);
+            }
+        }
+        flb_free(packed);
+    }
+    flb_sds_destroy(fields.schema_str);
+}
+
+/* Avro integers can expand relative to MessagePack; report and honor exact size. */
+static void test_required_buffer_size(void)
+{
+    size_t i;
+    size_t size;
+    size_t required;
+    char small[1] = {0x7f};
+    char *output;
+    msgpack_sbuffer buffer;
+    msgpack_packer packer;
+    struct flb_avro_fields fields;
+
+    fields.schema_id = 42;
+    fields.schema_str = flb_sds_create("{\"type\":\"array\",\"items\":\"int\"}");
+    TEST_ASSERT(fields.schema_str != NULL);
+    msgpack_sbuffer_init(&buffer);
+    msgpack_packer_init(&packer, &buffer, msgpack_sbuffer_write);
+    msgpack_pack_array(&packer, 5000);
+    for (i = 0; i < 5000; i++) {
+        msgpack_pack_int(&packer, 64);
+    }
+    size = sizeof(small);
+    TEST_CHECK(flb_msgpack_raw_to_avro_status(buffer.data, buffer.size, &fields,
+                                             small, &size) == FLB_AVRO_BUFFER_TOO_SMALL);
+    TEST_CHECK(small[0] == 0x7f);
+    TEST_CHECK(size > buffer.size);
+    required = size;
+    output = flb_malloc(size);
+    TEST_ASSERT(output != NULL);
+    TEST_CHECK(flb_msgpack_raw_to_avro_status(buffer.data, buffer.size, &fields,
+                                             output, &size) == FLB_TRUE);
+    TEST_CHECK(size == required);
+    flb_free(output);
+    msgpack_sbuffer_destroy(&buffer);
+    flb_sds_destroy(fields.schema_str);
+}
+
+/* Fail Avro allocations deterministically without changing the bundled library. */
+static void *fail_avro_allocation(void *data, void *ptr, size_t old_size, size_t new_size)
+{
+    struct avro_allocator_state *allocator = data;
+
+    /* Target the primitive int value and its reference count, not schema tables. */
+    if (new_size == sizeof(int32_t) + sizeof(int)) {
+        errno = ENOMEM;
+        return NULL;
+    }
+    return allocator->alloc(allocator->user_data, ptr, old_size, new_size);
+}
+
+/* Invalid schemas and excessive nesting are permanent, allocation failures retry. */
+static void test_avro_failure_status(void)
+{
+    int ret;
+    size_t size;
+    char output[64];
+    unsigned char input = 1;
+    unsigned char deep[MSGPACK_EMBED_STACK_SIZE + 2];
+    struct flb_avro_fields fields;
+    struct avro_allocator_state allocator;
+
+    fields.schema_id = 42;
+    fields.schema_str = flb_sds_create("\"invalid-type\"");
+    TEST_ASSERT(fields.schema_str != NULL);
+    size = sizeof(output);
+    errno = ENOMEM;
+    TEST_CHECK(flb_msgpack_raw_to_avro_status(&input, 1, &fields, output, &size) == FLB_FALSE);
+    flb_sds_destroy(fields.schema_str);
+    fields.schema_str = flb_sds_create("\"int\"");
+    TEST_ASSERT(fields.schema_str != NULL);
+    memset(deep, 0x91, sizeof(deep));
+    deep[sizeof(deep) - 1] = 1;
+    errno = ENOMEM;
+    TEST_CHECK(flb_msgpack_raw_to_avro_status(deep, sizeof(deep), &fields,
+                                             output, &size) == FLB_FALSE);
+    allocator = AVRO_CURRENT_ALLOCATOR;
+    avro_set_allocator(fail_avro_allocation, &allocator);
+    ret = flb_msgpack_raw_to_avro_status(&input, 1, &fields, output, &size);
+    avro_set_allocator(allocator.alloc, allocator.user_data);
+    TEST_CHECK(ret == -1);
+    TEST_CHECK(flb_msgpack_raw_to_avro_status(&input, 1, &fields, output, &size) == FLB_TRUE);
+    flb_sds_destroy(fields.schema_str);
+}
+
+/* Named record references must select their original union branch index. */
+static void test_named_union_branch(void)
+{
+    const char *schemas[] = {
+        "{\"type\":\"record\",\"name\":\"Person\",\"fields\":["
+        "{\"name\":\"home\",\"type\":{\"type\":\"record\",\"name\":\"Address\","
+        "\"fields\":[{\"name\":\"city\",\"type\":\"string\"}]}},"
+        "{\"name\":\"other\",\"type\":[\"null\",\"Address\"]}]}",
+        "{\"type\":\"record\",\"name\":\"Person\",\"fields\":["
+        "{\"name\":\"home\",\"type\":{\"type\":\"record\",\"name\":\"Address\","
+        "\"fields\":[{\"name\":\"city\",\"type\":\"string\"}]}},"
+        "{\"name\":\"other\",\"type\":[\"Address\",\"null\"]}]}"
+    };
+    const char *records[] = {
+        "{\"home\":{\"city\":\"A\"},\"other\":{\"city\":\"B\"}}",
+        "{\"home\":{\"city\":\"A\"},\"other\":null}",
+        "{\"home\":{\"city\":\"A\"},\"other\":7}"
+    };
+    const unsigned char prefix[] = {0, 0, 0, 0, 42, 2, 'A'};
+    size_t i;
+    size_t j;
+    size_t size;
+    size_t packed_size;
+    int root_type;
+    int ret;
+    char *packed;
+    unsigned char output[16];
+    struct flb_avro_fields fields;
+
+    fields.schema_id = 42;
+    for (i = 0; i < 2; i++) {
+        fields.schema_str = flb_sds_create(schemas[i]);
+        TEST_ASSERT(fields.schema_str != NULL);
+        for (j = 0; j < 3; j++) {
+            TEST_ASSERT(flb_pack_json(records[j], strlen(records[j]), &packed,
+                                      &packed_size, &root_type, NULL) == 0);
+            size = sizeof(output);
+            ret = flb_msgpack_raw_to_avro_status(packed, packed_size, &fields,
+                                                 (char *) output, &size);
+            TEST_CHECK(ret == (j < 2 ? FLB_TRUE : FLB_FALSE));
+            if (ret == FLB_TRUE) {
+                TEST_CHECK(memcmp(output, prefix, sizeof(prefix)) == 0);
+                TEST_CHECK(output[7] == (j == i ? 2 : 0));
+                TEST_CHECK(size == (j == 0 ? 10 : 8));
+                if (j == 0) {
+                    TEST_CHECK(output[8] == 2 && output[9] == 'B');
+                }
+            }
+            flb_free(packed);
+        }
+        flb_sds_destroy(fields.schema_str);
+    }
+}
+
 TEST_LIST = {
+    { "named_union_branch", test_named_union_branch },
+    { "double_and_nullable_union", test_double_and_nullable_union },
+    { "required_buffer_size", test_required_buffer_size },
+    { "avro_failure_status", test_avro_failure_status },
+    { "wide_map", test_wide_map },
+    { "wide_record", test_wide_record },
+    { "strict_records", test_strict_records },
     /* Avro */
     { "msgpack_to_avro_basic", test_unpack_to_avro},
     { "test_parse_reordered_schema", test_parse_reordered_schema},

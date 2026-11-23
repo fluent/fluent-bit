@@ -88,3 +88,20 @@ document is still alive. Compare them with `arena_initial_used` and
 `arena_used`. `max_rss_kb` is process-level high-water RSS and can remain the
 same for small workloads because it is page-granular and includes executable,
 library, and allocator-retained pages.
+
+## Decoded record batches
+
+The records benchmark builds batches of small log records, each with short
+keys, a nested map, an array, and string, integer, and double values, as
+produced by decoding a buffer of telemetry records. Arena batches are reset
+between iterations; heap batches destroy every record:
+
+```sh
+build-bench/benchmarks/cfl-benchmark-arena-records arena 512 3000
+build-bench/benchmarks/cfl-benchmark-arena-records heap 512 3000
+```
+
+Optional arguments select `referenced` or `owned` values, enable record edits
+(`1` removes, inserts, and renames keys), and set the arena chunk size. The
+tool reports nanoseconds per record and, for arenas, used and reserved bytes
+per record.

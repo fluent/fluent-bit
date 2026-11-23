@@ -96,7 +96,7 @@ void flb_test_filter_parser_extract_fields()
     ctx = flb_create();
 
     /* Configure service */
-    flb_service_set(ctx, "Flush", FLUSH_INTERVAL, "Grace" "1", "Log_Level", "debug", NULL);
+    flb_service_set(ctx, "Flush", FLUSH_INTERVAL, "Grace", "1", "Log_Level", "debug", NULL);
 
     /* Input */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -183,7 +183,7 @@ void flb_test_filter_parser_record_accessor()
     ctx = flb_create();
 
     /* Configure service */
-    flb_service_set(ctx, "Flush", FLUSH_INTERVAL, "Grace" "1", "Log_Level", "debug", NULL);
+    flb_service_set(ctx, "Flush", FLUSH_INTERVAL, "Grace", "1", "Log_Level", "debug", NULL);
 
     /* Input */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -724,12 +724,12 @@ void flb_test_filter_parser_use_system_timezone()
         /* Confirm that daylight savings time is properly detected. */
         {"EST5EDT", "2023-02-14 12:00:00", "1676394000"}, /* Should be ST */
 #ifdef _WIN32
-        /* MSVCRT applies the standard offset to TZ strings and IANA names. */
-        {"EST5EDT", "2023-10-17 05:00:00", "1697536800"},
+        /* Verify the Windows runtime applies daylight saving time. */
+        {"EST5EDT", "2023-10-17 05:00:00", "1697533200"}, /* Should be DST */
 
         /* Examples from https://github.com/fluent/fluent-bit/issues/9197. */
-        {"Europe/London", "2024-01-20 10:00:00", "1705744800"},
-        {"Europe/London", "2024-08-20 11:00:00", "1724151600"},
+        {"Europe/London", "2024-01-20 10:00:00", "1705744800"}, /* Should be ST */
+        {"Europe/London", "2024-08-20 11:00:00", "1724148000"}, /* Should be DST */
 #else
         {"EST5EDT", "2023-10-17 05:00:00", "1697533200"}, /* Should be DST */
 
@@ -945,7 +945,7 @@ void flb_test_filter_parser_first_matched_when_mutilple_parser()
     ctx = flb_create();
 
     /* Configure service */
-    flb_service_set(ctx, "Flush", FLUSH_INTERVAL, "Grace" "1", "Log_Level", "debug", NULL);
+    flb_service_set(ctx, "Flush", FLUSH_INTERVAL, "Grace", "1", "Log_Level", "debug", NULL);
 
     /* Input */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -1032,7 +1032,7 @@ void flb_test_filter_parser_skip_empty_values_false()
     ctx = flb_create();
 
     /* Configure service */
-    flb_service_set(ctx, "Flush", FLUSH_INTERVAL, "Grace" "1", "Log_Level", "debug", NULL);
+    flb_service_set(ctx, "Flush", FLUSH_INTERVAL, "Grace", "1", "Log_Level", "debug", NULL);
 
     /* Input */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -1395,6 +1395,116 @@ void flb_test_filter_parser_reserve_on_preserve_on()
     test_ctx_destroy(ctx);
 }
 
+/* https://github.com/fluent/fluent-bit/issues/12535 */
+void flb_test_filter_parser_duplicate_key_name()
+{
+    int ret;
+    int bytes;
+    char *p;
+    char *output = NULL;
+    char *expected;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    int mod_ffd;
+    int filter_ffd;
+    struct flb_parser *parser;
+    struct flb_lib_out_cb cb;
+
+    cb.cb = callback_test;
+    cb.data = NULL;
+
+    clear_output();
+
+    ctx = flb_create();
+
+    /* Configure service */
+    flb_service_set(ctx, "Flush", FLUSH_INTERVAL, "Grace", "1",
+                    "Log_Level", "error", NULL);
+
+    /* Input */
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd,
+                  "Tag", "test",
+                  NULL);
+
+    /* Parser */
+    parser = flb_parser_create("dummy_test", "regex", "^(?<INT>.+)$",
+                               FLB_TRUE,
+                               NULL, NULL, NULL, MK_FALSE, MK_TRUE,
+                               FLB_FALSE, FLB_FALSE, NULL, 0,
+                               NULL, ctx->config);
+    TEST_CHECK(parser != NULL);
+
+    /*
+     * record_modifier appends each Record entry, so the map contains
+     * Key_Name twice. The parser filter must keep the last success.
+     */
+    mod_ffd = flb_filter(ctx, (char *) "record_modifier", NULL);
+    TEST_CHECK(mod_ffd >= 0);
+    ret = flb_filter_set(ctx, mod_ffd,
+                         "Match", "test",
+                         "record", "data first",
+                         "record", "data second",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Filter */
+    filter_ffd = flb_filter(ctx, (char *) "parser", NULL);
+    TEST_CHECK(filter_ffd >= 0);
+    ret = flb_filter_set(ctx, filter_ffd,
+                         "Match", "test",
+                         "Key_Name", "data",
+                         "Parser", "dummy_test",
+                         "Reserve_Data", "On",
+                         "Preserve_Key", "Off",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    /* Output */
+    out_ffd = flb_output(ctx, (char *) "lib", &cb);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "Match", "*",
+                   "format", "json",
+                   NULL);
+
+    /* Start the engine */
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    /* Ingest data */
+    p = "[1448403340, {\"extra\":\"kept\"}]";
+    bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+    TEST_CHECK(bytes == strlen(p));
+
+    wait_with_timeout(2000, &output);
+    TEST_CHECK_(output != NULL, "Expected output to not be NULL");
+    if (output != NULL) {
+        expected = "\"extra\":\"kept\"";
+        TEST_CHECK_(strstr(output, expected) != NULL,
+                    "Expected output to contain '%s', got '%s'",
+                    expected, output);
+        /* Last successful Key_Name occurrence wins. */
+        expected = "\"INT\":\"second\"";
+        TEST_CHECK_(strstr(output, expected) != NULL,
+                    "Expected output to contain '%s', got '%s'",
+                    expected, output);
+        expected = "\"INT\":\"first\"";
+        TEST_CHECK_(strstr(output, expected) == NULL,
+                    "Expected output to not contain '%s', got '%s'",
+                    expected, output);
+        expected = "\"data\":";
+        TEST_CHECK_(strstr(output, expected) == NULL,
+                    "Expected output to drop Key_Name, got '%s'", output);
+        free(output);
+    }
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 TEST_LIST = {
     {"filter_parser_extract_fields", flb_test_filter_parser_extract_fields },
     {"filter_parser_record_accessor", flb_test_filter_parser_record_accessor },
@@ -1410,6 +1520,7 @@ TEST_LIST = {
     {"filter_parser_reserve_off_preserve_on", flb_test_filter_parser_reserve_off_preserve_on},
     {"filter_parser_reserve_on_preserve_off", flb_test_filter_parser_reserve_on_preserve_off},
     {"filter_parser_reserve_on_preserve_on", flb_test_filter_parser_reserve_on_preserve_on},
+    {"filter_parser_duplicate_key_name", flb_test_filter_parser_duplicate_key_name},
     {NULL, NULL}
 };
 

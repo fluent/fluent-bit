@@ -188,6 +188,10 @@ static struct cfl_kvlist *get_data_point_metadata_context(struct cmt *cmt,
     const char *type_key;
     char key[128];
 
+    if (metric != NULL && metric->otlp_metadata != NULL) {
+        return metric->otlp_metadata;
+    }
+
     type_key = map_type_to_otlp_key(map->type);
     if (type_key == NULL) {
         return NULL;

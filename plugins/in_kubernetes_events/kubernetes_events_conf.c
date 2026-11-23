@@ -78,6 +78,13 @@ static struct flb_sqldb *flb_kubernetes_event_db_open(const char *path,
         }
     }
 
+    ret = flb_sqldb_query(db, SQL_CREATE_KUBERNETES_EVENTS_INDEXES, NULL, NULL);
+    if (ret != FLB_OK) {
+        flb_plg_error(ctx->ins, "db: could not create 'in_kubernetes_events' indexes");
+        flb_sqldb_close(db);
+        return NULL;
+    }
+
     return db;
 }
 
@@ -113,6 +120,8 @@ static int network_init(struct k8s_events *ctx, struct flb_config *config)
         if (!ctx->tls) {
             return -1;
         }
+
+        flb_tls_set_verify_hostname(ctx->tls, ctx->ins->tls_verify_hostname);
 
         io_type = FLB_IO_TLS;
     }

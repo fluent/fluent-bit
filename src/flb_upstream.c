@@ -287,9 +287,9 @@ void flb_upstream_init()
 }
 
 /* Creates a new upstream context */
-struct flb_upstream *flb_upstream_create(struct flb_config *config,
-                                         const char *host, int port, int flags,
-                                         struct flb_tls *tls)
+static struct flb_upstream *upstream_create(struct flb_config *config,
+                                            const char *host, int port, int flags,
+                                            struct flb_tls *tls, int thread_safe)
 {
     int ret;
     int transport;
@@ -300,6 +300,12 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
     char *proxy_password = NULL;
     struct flb_upstream *u;
 
+#ifdef __EMSCRIPTEN__
+    if ((flags & (FLB_IO_UDP | FLB_IO_DTLS)) || config->http_proxy) {
+        flb_error("[upstream] browser transport does not support UDP or proxies");
+        return NULL;
+    }
+#endif
     u = flb_calloc(1, sizeof(struct flb_upstream));
     if (!u) {
         flb_errno();
@@ -394,9 +400,29 @@ struct flb_upstream *flb_upstream_create(struct flb_config *config,
 
     flb_stream_enable_flags(&u->base, FLB_IO_ASYNC);
 
-    mk_list_add(&u->base._head, &config->upstreams);
+    if (thread_safe) {
+        /* Worker-owned upstreams must never enter the engine's shared list. */
+        flb_upstream_thread_safe(u);
+    }
+    else {
+        mk_list_add(&u->base._head, &config->upstreams);
+    }
 
     return u;
+}
+
+struct flb_upstream *flb_upstream_create(struct flb_config *config,
+                                         const char *host, int port, int flags,
+                                         struct flb_tls *tls)
+{
+    return upstream_create(config, host, port, flags, tls, FLB_FALSE);
+}
+
+struct flb_upstream *flb_upstream_create_thread_safe(struct flb_config *config,
+                                                     const char *host, int port, int flags,
+                                                     struct flb_tls *tls)
+{
+    return upstream_create(config, host, port, flags, tls, FLB_TRUE);
 }
 
 #ifdef FLB_HAVE_TLS
@@ -520,6 +546,15 @@ struct flb_upstream *flb_upstream_create_url(struct flb_config *config,
         goto out;
     }
 
+    /* Transport is determined by the scheme, even when the URL has a port. */
+    if (strcasecmp(prot, "https") == 0) {
+        flags |= FLB_IO_TLS;
+        if (tls == NULL) {
+            flb_error("[upstream] TLS context required for URL: %s", url);
+            goto out;
+        }
+    }
+
     /* Manage some default ports */
     if (!port) {
         if (strcasecmp(prot, "http") == 0) {
@@ -527,9 +562,6 @@ struct flb_upstream *flb_upstream_create_url(struct flb_config *config,
         }
         else if (strcasecmp(prot, "https") == 0) {
             tmp_port = 443;
-            if ((flags & FLB_IO_TLS) == 0) {
-                flags |= FLB_IO_TLS;
-            }
         }
     }
     else {
@@ -709,7 +741,13 @@ static struct flb_connection *create_conn(struct flb_upstream *u)
     flb_connection_reset_connection_timeout(conn);
 
     /* Start connection */
+#ifdef __EMSCRIPTEN__
+    /* A browser connection is a request context, never a socket. */
+    ret = 0;
+    conn->recycle = FLB_FALSE;
+#else
     ret = flb_io_net_connect(conn, coro);
+#endif
     if (ret == -1) {
         flb_connection_unset_connection_timeout(conn);
 
@@ -781,7 +819,11 @@ int flb_upstream_destroy(struct flb_upstream *u)
     if (mk_list_is_set(&u->base._head) == 0) {
         mk_list_del(&u->base._head);
     }
-    
+
+    if (flb_stream_is_thread_safe(&u->base)) {
+        pthread_mutex_destroy(&u->base.list_mutex);
+    }
+
     flb_free(u);
 
     return 0;
@@ -1049,6 +1091,10 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
     struct flb_upstream_queue *uq;
     int elapsed_time;
 
+#ifdef __EMSCRIPTEN__
+    /* Fetch enforces request deadlines; these contexts have no socket events. */
+    return 0;
+#endif
     now = time(NULL);
 
     /* Iterate all upstream contexts */
@@ -1083,18 +1129,18 @@ int flb_upstream_conn_timeouts(struct mk_list *list)
             if (drop) {
                 if (!flb_upstream_is_shutting_down(u)) {
                     if (u->base.net.connect_timeout_log_error) {
-                        flb_error("[upstream] connection #%i to %s timed "
+                        flb_error("[upstream] connection #%i to %s:%i timed "
                                   "out after %i seconds (%s)",
                                   u_conn->fd,
-                                  flb_connection_get_remote_address(u_conn),
+                                  u->tcp_host, u->tcp_port,
                                   elapsed_time,
                                   reason);
                     }
                     else {
-                        flb_debug("[upstream] connection #%i to %s timed "
+                        flb_debug("[upstream] connection #%i to %s:%i timed "
                                   "out after %i seconds (%s)",
                                   u_conn->fd,
-                                  flb_connection_get_remote_address(u_conn),
+                                  u->tcp_host, u->tcp_port,
                                   elapsed_time,
                                   reason);
                     }

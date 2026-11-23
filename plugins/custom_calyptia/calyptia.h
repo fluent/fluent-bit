@@ -47,6 +47,7 @@ struct calyptia {
     struct flb_custom_instance *ins;
 
     /* Fleet configuration */
+    int fleet_follow_symlinks;
     flb_sds_t fleet_id;                   /* fleet-id  */
     flb_sds_t fleet_name;
     flb_sds_t fleet_config_dir;           /* fleet configuration directory */

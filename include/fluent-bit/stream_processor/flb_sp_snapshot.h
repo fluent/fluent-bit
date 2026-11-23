@@ -26,6 +26,7 @@ struct flb_sp_snapshot_page {
     int records;
     int start_pos;          /* Start position of the valid data */
     int end_pos;            /* End position of the valid data */
+    size_t size;            /* Allocated size of snapshot_page */
     char *snapshot_page;
     struct mk_list _head;
 };

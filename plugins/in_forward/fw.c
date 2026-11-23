@@ -29,6 +29,8 @@
 #include <msgpack.h>
 
 #ifdef FLB_HAVE_UNIX_SOCKET
+#include <fcntl.h>
+#include <unistd.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/stat.h>
@@ -51,7 +53,7 @@ static int remove_existing_socket_file(char *socket_path)
     struct stat file_data;
     int         result;
 
-    result = stat(socket_path, &file_data);
+    result = lstat(socket_path, &file_data);
 
     if (result == -1) {
         if (errno == ENOENT) {
@@ -79,6 +81,18 @@ static int remove_existing_socket_file(char *socket_path)
 static int fw_unix_create(struct flb_in_fw_config *ctx)
 {
     int ret;
+    char staging_dir[sizeof(((struct sockaddr_un *) 0)->sun_path) + sizeof(".fb-XXXXXX/s")];
+    char staging_path[sizeof(((struct sockaddr_un *) 0)->sun_path) + sizeof(".fb-XXXXXX/s")];
+    const char *separator;
+    size_t parent_length;
+    const char *bind_path;
+    int staging_fd;
+    struct stat staging_stat;
+
+    if (strlen(ctx->unix_path) >= sizeof(((struct sockaddr_un *) 0)->sun_path)) {
+        flb_plg_error(ctx->ins, "configured unix socket path is too long: '%s'", ctx->unix_path);
+        return -1;
+    }
 
     ret = remove_existing_socket_file(ctx->unix_path);
 
@@ -97,30 +111,114 @@ static int fw_unix_create(struct flb_in_fw_config *ctx)
         return -1;
     }
 
+    /* A socket descriptor's mode is not the mode of its filesystem entry. */
+    bind_path = ctx->unix_path;
+    staging_fd = -1;
+    if (ctx->unix_perm_str) {
+        separator = strrchr(ctx->unix_path, '/');
+        parent_length = separator == NULL ? 0 : separator - ctx->unix_path + 1;
+        ret = snprintf(staging_dir, sizeof(staging_dir), "%.*s.fb-XXXXXX",
+                       (int) parent_length, ctx->unix_path);
+        if (ret < 0) {
+            flb_plg_error(ctx->ins, "could not format staging directory for unix socket '%s'",
+                          ctx->unix_path);
+            return -1;
+        }
+        if ((size_t) ret >= sizeof(staging_dir)) {
+            flb_plg_error(ctx->ins, "staging directory path is too long for unix socket '%s'",
+                          ctx->unix_path);
+            return -1;
+        }
+        if (mkdtemp(staging_dir) == NULL) {
+            flb_errno();
+            flb_plg_error(ctx->ins, "could not create staging directory '%s' for unix socket '%s'",
+                          staging_dir, ctx->unix_path);
+            return -1;
+        }
+        staging_fd = open(staging_dir, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+        if (staging_fd < 0) {
+            flb_errno();
+            flb_plg_error(ctx->ins, "could not open staging directory '%s' for unix socket '%s'",
+                          staging_dir, ctx->unix_path);
+            goto staging_setup_error;
+        }
+        if (fstat(staging_fd, &staging_stat) != 0) {
+            flb_errno();
+            flb_plg_error(ctx->ins, "could not stat staging directory '%s' for unix socket '%s'",
+                          staging_dir, ctx->unix_path);
+            goto staging_setup_error;
+        }
+        if (staging_stat.st_uid != geteuid()) {
+            flb_plg_error(ctx->ins, "staging directory '%s' has the wrong owner for unix socket '%s'",
+                          staging_dir, ctx->unix_path);
+            goto staging_setup_error;
+        }
+        if (fchmod(staging_fd, 0700) != 0 || fstat(staging_fd, &staging_stat) != 0) {
+            flb_errno();
+            flb_plg_error(ctx->ins, "could not normalize staging directory '%s'", staging_dir);
+            goto staging_setup_error;
+        }
+        if ((staging_stat.st_mode & 0777) != 0700) {
+            flb_plg_error(ctx->ins, "staging directory '%s' has unsafe mode for unix socket '%s'",
+                          staging_dir, ctx->unix_path);
+            goto staging_setup_error;
+        }
+        ret = snprintf(staging_path, sizeof(staging_path), "%s/s", staging_dir);
+        if (ret < 0) {
+            flb_plg_error(ctx->ins, "could not format staging socket path in '%s' for '%s'",
+                          staging_dir, ctx->unix_path);
+            goto staging_setup_error;
+        }
+        if ((size_t) ret >= sizeof(staging_path)) {
+            flb_plg_error(ctx->ins, "staging socket path in '%s' is too long for '%s'",
+                          staging_dir, ctx->unix_path);
+            goto staging_setup_error;
+        }
+        bind_path = staging_path;
+    }
+
     ctx->downstream = flb_downstream_create(FLB_TRANSPORT_UNIX_STREAM,
                                             ctx->ins->flags,
-                                            ctx->unix_path,
+                                            bind_path,
                                             0,
                                             ctx->ins->tls,
                                             ctx->ins->config,
                                             &ctx->ins->net_setup);
 
     if (ctx->downstream == NULL) {
+        if (ctx->unix_perm_str) {
+            unlinkat(staging_fd, "s", 0);
+            close(staging_fd);
+            rmdir(staging_dir);
+        }
         return -1;
     }
 
     if (ctx->unix_perm_str) {
-        if (chmod(ctx->unix_path, ctx->unix_perm)) {
+        if (fchmodat(staging_fd, "s", ctx->unix_perm, 0) ||
+            renameat(staging_fd, "s", AT_FDCWD, ctx->unix_path)) {
             flb_errno();
 
             flb_plg_error(ctx->ins, "cannot set permission on '%s' to %04o",
                           ctx->unix_path, ctx->unix_perm);
 
+            unlinkat(staging_fd, "s", 0);
+            close(staging_fd);
+            rmdir(staging_dir);
             return -1;
         }
+        close(staging_fd);
+        rmdir(staging_dir);
     }
 
     return 0;
+
+staging_setup_error:
+    if (staging_fd >= 0) {
+        close(staging_fd);
+    }
+    rmdir(staging_dir);
+    return -1;
 }
 #endif
 
@@ -138,36 +236,36 @@ static int in_fw_collect(struct flb_input_instance *ins,
     return in_fw_collect_ctx(in_context);
 }
 
-static int in_fw_collect_ctx(struct flb_in_fw_config *ctx)
+static int in_fw_conn_is_paused(struct flb_in_fw_config *ctx)
 {
-    int                      state_backup;
-    struct flb_connection   *connection;
-    struct fw_conn          *conn;
-
-    state_backup = ctx->state;
-    ctx->state = FW_INSTANCE_STATE_ACCEPTING_CLIENT;
-
-    connection = flb_downstream_conn_get(ctx->downstream);
-
-    if (connection == NULL) {
-        flb_plg_error(ctx->ins, "could not accept new connection");
-        ctx->state = state_backup;
-
-        return -1;
+    if (ctx->is_paused == FLB_TRUE ||
+        ctx->state == FW_INSTANCE_STATE_PAUSED ||
+        ctx->downstream->paused == FLB_TRUE) {
+        return FLB_TRUE;
     }
+
+    return FLB_FALSE;
+}
+
+/*
+ * Accept callback: invoked from the connection event coroutine once the
+ * socket has been accepted and the TLS handshake (if any) completed. A
+ * non-zero return value makes the downstream release the connection.
+ */
+static int in_fw_conn_accept(struct flb_connection *connection, void *data)
+{
+    struct fw_conn          *conn;
+    struct flb_in_fw_config *ctx;
+
+    ctx = data;
 
     if (!ctx->ins->config->is_ingestion_active) {
-        flb_downstream_conn_release(connection);
-        ctx->state = state_backup;
-
         return -1;
     }
 
-    if (ctx->is_paused) {
-        flb_plg_trace(ctx->ins, "TCP connection will be closed FD=%i", connection->fd);
-        flb_downstream_conn_release(connection);
-        ctx->state = state_backup;
-
+    if (in_fw_conn_is_paused(ctx)) {
+        flb_plg_trace(ctx->ins, "TCP connection will be closed FD=%i",
+                      connection->fd);
         return -1;
     }
 
@@ -175,16 +273,45 @@ static int in_fw_collect_ctx(struct flb_in_fw_config *ctx)
 
     conn = fw_conn_add(connection, ctx);
     if (!conn) {
-        flb_downstream_conn_release(connection);
-        ctx->state = state_backup;
-
+        flb_plg_error(ctx->ins, "could not accept new connection");
         return -1;
     }
 
-    ctx->state = state_backup;
+    /*
+     * The secure forward HELO write can suspend this coroutine, the plugin
+     * might have been paused and its connections closed meanwhile. The
+     * wrapper is released by the drop notification.
+     */
+    if (in_fw_conn_is_paused(ctx)) {
+        flb_plg_trace(ctx->ins, "TCP connection will be closed FD=%i",
+                      connection->fd);
+        return -1;
+    }
 
-    if (ctx->state == FW_INSTANCE_STATE_PAUSED) {
-        fw_conn_del_all(ctx);
+    return 0;
+}
+
+static int in_fw_collect_ctx(struct flb_in_fw_config *ctx)
+{
+    int ret;
+
+    /*
+     * Accept the client in its own event coroutine so the TLS handshake
+     * yields back to the event loop while it waits for the peer instead of
+     * blocking it.
+     */
+    ret = flb_downstream_conn_event_accept(ctx->downstream,
+                                           in_fw_conn_accept,
+                                           ctx,
+                                           fw_conn_event,
+                                           MK_EVENT_READ);
+    if (ret != 0) {
+        /*
+         * accept(2) and handshake failures are reported by the core, this
+         * also covers a client which was rejected or served and closed
+         * before the accept coroutine suspended.
+         */
+        flb_plg_trace(ctx->ins, "no new connection accepted");
     }
 
     return 0;
@@ -322,6 +449,9 @@ static int in_fw_start_tcp_listener(struct flb_in_fw_config *ctx,
 
     flb_input_downstream_set(ctx->downstream, ctx->ins);
     flb_net_socket_nonblocking(ctx->downstream->server_fd);
+
+    /* Connections are accepted and served from event coroutines */
+    flb_stream_enable_async_mode(&ctx->downstream->base);
 
     if (use_collector == FLB_TRUE) {
         ret = flb_input_set_collector_socket(ctx->ins,
@@ -581,6 +711,9 @@ static int in_fw_init(struct flb_input_instance *ins,
         flb_input_downstream_set(ctx->downstream, ctx->ins);
         flb_net_socket_nonblocking(ctx->downstream->server_fd);
 
+        /* Connections are accepted and served from event coroutines */
+        flb_stream_enable_async_mode(&ctx->downstream->base);
+
         ret = flb_input_set_collector_socket(ins,
                                              in_fw_collect,
                                              ctx->downstream->server_fd,
@@ -644,6 +777,14 @@ static void in_fw_pause(void *data, struct flb_config *config)
          * and wait for the ingestion to resume.
          */
         if (ctx->runtime != NULL) {
+            /*
+             * Publish the request before blocking on the workers: a worker
+             * waiting for space in the ingress queue (drained by this
+             * thread) would otherwise never get back to its event loop to
+             * acknowledge the pause.
+             */
+            cfl_atomic_store(&ctx->pause_requested, FLB_TRUE);
+
             ret = flb_downstream_worker_runtime_foreach(ctx->runtime,
                                                         in_fw_worker_pause,
                                                         NULL);
@@ -692,6 +833,12 @@ static void in_fw_resume(void *data, struct flb_config *config) {
 
     if (config->is_running == FLB_TRUE) {
         if (ctx->runtime != NULL) {
+            /*
+             * Workers are resumed one at a time: clear the request first so
+             * the ones already resumed do not observe a stale pause.
+             */
+            cfl_atomic_store(&ctx->pause_requested, FLB_FALSE);
+
             ret = flb_downstream_worker_runtime_foreach(ctx->runtime,
                                                         in_fw_worker_resume,
                                                         NULL);
@@ -778,6 +925,22 @@ static struct flb_config_map config_map[] = {
     FLB_CONFIG_MAP_SIZE, "buffer_max_size", FLB_IN_FW_CHUNK_MAX_SIZE,
     0, FLB_TRUE, offsetof(struct flb_in_fw_config, buffer_max_size),
     "The maximum buffer memory size used to receive a Forward message."
+   },
+   {
+    FLB_CONFIG_MAP_SIZE, "msgpack_memory_limit", "0",
+    0, FLB_TRUE, offsetof(struct flb_in_fw_config, msgpack_memory_limit),
+    "Maximum decoded MessagePack zone memory. Zero uses the greater of 65536 "
+    "bytes and 16 times buffer_max_size; an explicit size overrides this budget. "
+    "Includes the outer frame and cumulative PackedForward log entry zones, "
+    "including retained group records and zone overhead."
+   },
+   {
+    FLB_CONFIG_MAP_SIZE, "signal_object_memory_limit", "100M",
+    0, FLB_TRUE, offsetof(struct flb_in_fw_config, signal_object_memory_limit),
+    "Maximum estimated decoded object memory for a PackedForward metrics or traces "
+    "payload. Each MessagePack root, array element, and map entry is charged "
+    "1024 bytes. This is independent of msgpack_memory_limit and is not an "
+    "exact heap limit."
    },
    {
     FLB_CONFIG_MAP_BOOL, "empty_shared_key", "false",

@@ -198,6 +198,62 @@ static void test_rate_gate_backpressure_disabled()
     test_context_destroy(&ctx);
 }
 
+static void test_rate_gate_throttle_deferred_routes(void)
+{
+    int ret;
+    struct test_context ctx;
+    struct flb_input_chunk chunk = {0};
+    struct flb_task task = {0};
+    struct flb_task_route route = {0};
+    struct flb_output_instance output = {0};
+
+    ret = test_context_init(&ctx);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        return;
+    }
+
+    chunk.task = &task;
+    task.ic = &chunk;
+    chunk.busy = FLB_TRUE;
+    mk_list_add(&chunk._head, &ctx.input->chunks);
+    mk_list_init(&task.retries);
+    mk_list_init(&task.routes);
+    mk_list_init(&output.throttle_deferred_routes);
+    route.out = &output;
+    mk_list_add(&route._head, &task.routes);
+    mk_list_add(&task._head, &ctx.input->tasks);
+
+    ctx.input->rate_window_start = cfl_time_now();
+    ctx.input->rate_window_size = 10 * FLB_NSEC_IN_SEC;
+    ctx.input->rate_window_records = 7;
+    ctx.input->rate_gate_enabled = FLB_TRUE;
+    ctx.input->rate_gate_max_records = 1;
+
+    TEST_CHECK(flb_task_route_defer(&task, &output, FLB_FALSE) == 0);
+    ctx.input->rate_gate_use_backpressure = FLB_FALSE;
+    TEST_CHECK(flb_input_rate_gate_protect(ctx.input) == FLB_FALSE);
+    TEST_CHECK(ctx.input->rate_gate_deferred_routes == 0);
+
+    ctx.input->rate_gate_use_backpressure = FLB_TRUE;
+    TEST_CHECK(flb_input_rate_gate_protect(ctx.input) == FLB_TRUE);
+    TEST_CHECK(ctx.input->rate_gate_status == FLB_INPUT_PAUSED);
+    TEST_CHECK(ctx.input->rate_gate_deferred_routes == 1);
+    TEST_CHECK(ctx.input->rate_gate_busy_deferred_chunks == 1);
+    TEST_CHECK(ctx.input->rate_gate_busy_chunks == 1);
+    TEST_CHECK(ctx.input->rate_gate_retry_attempts == 0);
+
+    TEST_CHECK(flb_task_route_cancel_deferred(&task, &output) == 0);
+    chunk.busy = FLB_FALSE;
+    flb_input_rate_gate_maybe_resume(ctx.input);
+    TEST_CHECK(ctx.input->rate_gate_status == FLB_INPUT_RUNNING);
+    TEST_CHECK(ctx.input->rate_gate_deferred_routes == 0);
+
+    mk_list_del(&chunk._head);
+    mk_list_del(&task._head);
+    test_context_destroy(&ctx);
+}
+
 static void test_rate_gate_property_parsing()
 {
     int ret;
@@ -539,6 +595,7 @@ static void test_resume_without_context_is_safe()
 TEST_LIST = {
     {"rate_gate_backpressure_limited", test_rate_gate_backpressure_limited},
     {"rate_gate_backpressure_disabled", test_rate_gate_backpressure_disabled},
+    {"rate_gate_throttle_deferred_routes", test_rate_gate_throttle_deferred_routes},
     {"rate_gate_property_parsing", test_rate_gate_property_parsing},
     {"rate_update_window_rollover", test_rate_update_window_rollover},
     {"rate_update_clock_rollback", test_rate_update_clock_rollback},

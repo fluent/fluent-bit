@@ -52,6 +52,7 @@
 #endif
 
 struct flb_tail_config {
+    int follow_symlinks;
     int fd_notify;             /* inotify fd               */
     flb_pipefd_t ch_manager[2];    /* pipe: channel manager    */
     flb_pipefd_t ch_pending[2];    /* pipe: pending events     */
@@ -162,6 +163,7 @@ struct flb_tail_config {
     uint64_t files_static_count;   /* number of items in the static file list */
     struct mk_list files_static;
     struct mk_list files_event;
+    struct mk_list files_retry; /* Files waiting for a transient read retry */
 
     /* List of rotated files that needs to be removed after 'rotate_wait' */
     struct mk_list files_rotated;

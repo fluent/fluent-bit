@@ -69,6 +69,10 @@ help:
         if (parse_metric_name(context, $1)) {
             YYABORT;
         }
+        if (context->metric.docstring) {
+            /* repeated HELP line for the same metric */
+            cfl_sds_destroy(context->metric.docstring);
+        }
         context->metric.docstring = $2;
     }
 ;
@@ -77,6 +81,11 @@ type:
     TYPE metric_type {
         if (parse_metric_name(context, $1)) {
             YYABORT;
+        }
+        if (context->metric.type != $2) {
+            /* the cached summary/histogram belongs to the previous type of
+             * this metric, it must not be reused as the other kind */
+            context->current.summary = NULL;
         }
         context->metric.type = $2;
     }

@@ -20,6 +20,7 @@
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_http_client.h>
+#include <fluent-bit/flb_http_retry_after.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_time.h>
@@ -76,6 +77,48 @@ static int cb_http_init(struct flb_output_instance *ins,
     return 0;
 }
 
+static const char *http_method_name(int method)
+{
+    switch (method) {
+    case FLB_HTTP_POST:
+        return "POST";
+    case FLB_HTTP_PUT:
+        return "PUT";
+    case FLB_HTTP_PATCH:
+        return "PATCH";
+    }
+
+    return "UNKNOWN";
+}
+
+/* header names and values must not contain line breaks */
+static int header_is_valid(const char *str, size_t len)
+{
+    size_t i;
+
+    for (i = 0; i < len; i++) {
+        if (str[i] == '\r' || str[i] == '\n' || str[i] == '\0') {
+            return FLB_FALSE;
+        }
+    }
+
+    return FLB_TRUE;
+}
+
+static void free_headers(char **headers)
+{
+    size_t i;
+
+    if (!headers) {
+        return;
+    }
+
+    for (i = 0; headers[i] != NULL; i++) {
+        flb_free(headers[i]);
+    }
+    flb_free(headers);
+}
+
 static void append_headers(struct flb_http_client *c,
                            char **headers)
 {
@@ -99,8 +142,6 @@ static void append_headers(struct flb_http_client *c,
                                 strlen(header_key),
                                 header_value,
                                 strlen(header_value));
-            flb_free(header_key);
-            flb_free(header_value);
             header_key = NULL;
             header_value = NULL;
         }
@@ -112,12 +153,20 @@ static void append_headers(struct flb_http_client *c,
 static int http_request(struct flb_out_http *ctx,
                         const void *body, size_t body_len,
                         const char *tag, int tag_len,
-                        char **headers)
+                        char **headers,
+                        struct flb_output_flush *out_flush)
 {
     int ret = 0;
     int out_ret = FLB_OK;
     int compressed = FLB_FALSE;
+    int retry_after_status;
     size_t b_sent;
+    size_t invalid_retry_after_count;
+    size_t parsed_invalid_count;
+    uint64_t retry_after_ms;
+    uint64_t parsed_retry_after_ms;
+    int64_t received_wall_time_ms;
+    time_t received_wall_time;
     void *payload_buf = NULL;
     size_t payload_size = 0;
     struct flb_upstream *u;
@@ -243,10 +292,16 @@ static int http_request(struct flb_out_http *ctx,
     }
 
     if (ctx->header_tag) {
-        flb_http_add_header(c,
-                            ctx->header_tag,
-                            flb_sds_len(ctx->header_tag),
-                            tag, tag_len);
+        if (header_is_valid(tag, tag_len) == FLB_TRUE) {
+            flb_http_add_header(c,
+                                ctx->header_tag,
+                                flb_sds_len(ctx->header_tag),
+                                tag, tag_len);
+        }
+        else {
+            flb_plg_warn(ctx->ins, "tag contains invalid characters, "
+                         "skipping header '%s'", ctx->header_tag);
+        }
     }
 
     /* Content Encoding: gzip */
@@ -303,6 +358,14 @@ static int http_request(struct flb_out_http *ctx,
 #endif
 
     ret = flb_http_do_with_oauth2(c, &b_sent, ctx->oauth2_ctx);
+    received_wall_time = time(NULL);
+    if (received_wall_time < 0 ||
+        (uint64_t) received_wall_time > (uint64_t) INT64_MAX / 1000) {
+        received_wall_time_ms = 0;
+    }
+    else {
+        received_wall_time_ms = (int64_t) received_wall_time * 1000;
+    }
     if (ret == 0) {
         /*
          * Only allow the following HTTP status:
@@ -326,7 +389,56 @@ static int http_request(struct flb_out_http *ctx,
                 flb_plg_error(ctx->ins, "%s:%i, HTTP status=%i",
                               ctx->host, ctx->port, c->resp.status);
             }
-            if (c->resp.status >= 400 && c->resp.status < 500 &&
+            retry_after_status = FLB_RETRY_AFTER_ABSENT;
+            invalid_retry_after_count = 0;
+            retry_after_ms = 0;
+
+            if ((c->resp.status == 429 || c->resp.status == 503) &&
+                c->resp.data != NULL && c->resp.headers_end != NULL) {
+                retry_after_status = flb_http_retry_after_parse_headers(
+                                        c->resp.data,
+                                        (size_t) (c->resp.headers_end - c->resp.data),
+                                        received_wall_time_ms,
+                                        &retry_after_ms,
+                                        &invalid_retry_after_count);
+
+                if (c->resp.trailer_buf != NULL && c->resp.trailer_size > 0) {
+                    parsed_invalid_count = 0;
+                    parsed_retry_after_ms = 0;
+                    ret = flb_http_retry_after_parse_headers(
+                              c->resp.trailer_buf, c->resp.trailer_size,
+                              received_wall_time_ms, &parsed_retry_after_ms,
+                              &parsed_invalid_count);
+                    invalid_retry_after_count += parsed_invalid_count;
+                    if ((ret == FLB_RETRY_AFTER_VALID ||
+                         ret == FLB_RETRY_AFTER_SATURATED) &&
+                        ((retry_after_status != FLB_RETRY_AFTER_VALID &&
+                          retry_after_status != FLB_RETRY_AFTER_SATURATED) ||
+                         parsed_retry_after_ms > retry_after_ms)) {
+                        retry_after_status = ret;
+                        retry_after_ms = parsed_retry_after_ms;
+                    }
+                }
+
+                if (invalid_retry_after_count > 0) {
+                    flb_plg_debug(ctx->ins,
+                                  "ignored %zu malformed Retry-After field(s)",
+                                  invalid_retry_after_count);
+                }
+            }
+
+            if (retry_after_status == FLB_RETRY_AFTER_VALID ||
+                retry_after_status == FLB_RETRY_AFTER_SATURATED) {
+                flb_output_set_retry_after(out_flush, retry_after_ms);
+            }
+
+            if (c->resp.status == 429 ||
+                (c->resp.status == 503 &&
+                 (retry_after_status == FLB_RETRY_AFTER_VALID ||
+                  retry_after_status == FLB_RETRY_AFTER_SATURATED))) {
+                out_ret = FLB_THROTTLE;
+            }
+            else if (c->resp.status >= 400 && c->resp.status < 500 &&
                 c->resp.status != 429 && c->resp.status != 408) {
                 flb_plg_warn(ctx->ins, "could not flush records to %s:%i (http_do=%i), "
                                 "chunk will not be retried",
@@ -485,8 +597,10 @@ static int compose_payload(struct flb_out_http *ctx,
     return FLB_OK;
 }
 
-static char **extract_headers(msgpack_object *obj) {
+static char **extract_headers(struct flb_out_http *ctx, msgpack_object *obj)
+{
     size_t i;
+    size_t n = 0;
     char **headers = NULL;
     size_t str_count;
     msgpack_object_map map;
@@ -514,30 +628,31 @@ static char **extract_headers(msgpack_object *obj) {
         k = map.ptr[i].key.via.str;
         v = map.ptr[i].val.via.str;
 
-        headers[i * 2] = strndup(k.ptr, k.size);
-
-        if (!headers[i]) {
-            goto err;
+        if (header_is_valid(k.ptr, k.size) == FLB_FALSE ||
+            header_is_valid(v.ptr, v.size) == FLB_FALSE) {
+            flb_plg_warn(ctx->ins, "header in record contains invalid "
+                         "characters, skipping it");
+            continue;
         }
 
-        headers[i * 2 + 1] = strndup(v.ptr, v.size);
-
-        if (!headers[i]) {
+        /* pack pairs densely: a NULL entry terminates the list */
+        headers[n] = flb_strndup(k.ptr, k.size);
+        if (!headers[n]) {
             goto err;
         }
+        n++;
+
+        headers[n] = flb_strndup(v.ptr, v.size);
+        if (!headers[n]) {
+            goto err;
+        }
+        n++;
     }
 
     return headers;
 
 err:
-    if (headers) {
-        for (i = 0; i < str_count; i++) {
-            if (headers[i]) {
-                flb_free(headers[i]);
-            }
-        }
-        flb_free(headers);
-    }
+    free_headers(headers);
     return NULL;
 }
 
@@ -545,7 +660,8 @@ static int send_all_requests(struct flb_out_http *ctx,
                              const char *data, size_t size,
                              flb_sds_t body_key,
                              flb_sds_t headers_key,
-                             struct flb_event_chunk *event_chunk)
+                             struct flb_event_chunk *event_chunk,
+                             struct flb_output_flush *out_flush)
 {
     msgpack_object map;
     msgpack_object *k;
@@ -598,7 +714,7 @@ static int send_all_requests(struct flb_out_http *ctx,
         }
 
         if (!flb_ra_get_kv_pair(ctx->headers_ra, map, &start_key, &k, &v)) {
-            headers = extract_headers(v);
+            headers = extract_headers(ctx, v);
             if (headers) {
                 headers_found = true;
             }
@@ -612,19 +728,24 @@ static int send_all_requests(struct flb_out_http *ctx,
         if (body_found && headers_found) {
             flb_plg_trace(ctx->ins, "sending record %zu via %s",
                           record_count++,
-                          ctx->http_method == FLB_HTTP_POST ? "POST" : "PUT");
+                          http_method_name(ctx->http_method));
             ret = http_request(ctx, body, body_size, event_chunk->tag,
-                    flb_sds_len(event_chunk->tag), headers);
+                               flb_sds_len(event_chunk->tag), headers, out_flush);
         }
         else {
             flb_plg_warn(ctx->ins,
                          "failed to extract body/headers using patterns "
                          "\"%s\" and \"%s\"", ctx->body_key, ctx->headers_key);
+            free_headers(headers);
             ret = -1;
             continue;
         }
 
-        flb_free(headers);
+        free_headers(headers);
+
+        if (ret == FLB_THROTTLE) {
+            break;
+        }
     }
 
     flb_log_event_decoder_destroy(&log_decoder);
@@ -646,7 +767,8 @@ static void cb_http_flush(struct flb_event_chunk *event_chunk,
 
     if (ctx->body_key) {
         ret = send_all_requests(ctx, event_chunk->data, event_chunk->size,
-                                ctx->body_key, ctx->headers_key, event_chunk);
+                                ctx->body_key, ctx->headers_key, event_chunk,
+                                out_flush);
         if (ret < 0) {
             flb_plg_error(ctx->ins,
                           "failed to send requests using body key \"%s\"", ctx->body_key);
@@ -664,14 +786,16 @@ static void cb_http_flush(struct flb_event_chunk *event_chunk,
             (ctx->out_format == FLB_PACK_JSON_FORMAT_LINES) ||
             (ctx->out_format == FLB_HTTP_OUT_GELF)) {
             ret = http_request(ctx, out_body, out_size,
-                               event_chunk->tag, flb_sds_len(event_chunk->tag), NULL);
+                               event_chunk->tag, flb_sds_len(event_chunk->tag),
+                               NULL, out_flush);
             flb_sds_destroy(out_body);
         }
         else {
             /* msgpack */
             ret = http_request(ctx,
                                event_chunk->data, event_chunk->size,
-                               event_chunk->tag, flb_sds_len(event_chunk->tag), NULL);
+                               event_chunk->tag, flb_sds_len(event_chunk->tag),
+                               NULL, out_flush);
         }
     }
 
@@ -866,7 +990,7 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "http_method", "POST",
      0, FLB_FALSE, 0,
-     "Specify the HTTP method to use. Supported methods are POST and PUT"
+     "Specify the HTTP method to use. Supported methods are POST, PUT and PATCH"
     },
 
     /* Gelf Properties */

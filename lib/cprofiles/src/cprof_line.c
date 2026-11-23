@@ -38,6 +38,10 @@ struct cprof_line *cprof_line_create(struct cprof_location *location)
 void cprof_line_destroy(struct cprof_line *instance)
 {
     if (instance != NULL) {
+        if (cfl_list_entry_is_orphan(&instance->_head) == CFL_FALSE) {
+            cfl_list_del(&instance->_head);
+        }
+
         free(instance);
     }
 }

@@ -3,9 +3,17 @@ import socket
 import time
 
 import requests
+import pytest
 
 from server.http_server import data_storage, http_server_run
 from utils.test_service import FluentBitTestService
+from utils.fluent_bit_manager import fluent_bit_input_supports_config_property
+
+
+@pytest.fixture(autouse=True, scope="module")
+def require_mqtt_input():
+    if not fluent_bit_input_supports_config_property("mqtt", "payload_key"):
+        pytest.skip("This Fluent Bit build does not include the MQTT input")
 
 
 MQTT_CONNECT_PACKET = bytes(

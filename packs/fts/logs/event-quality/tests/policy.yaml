@@ -1,0 +1,69 @@
+fixture_version: 1
+signal: logs
+processor:
+  name: fts
+  packs:
+  - ../pack.json
+  recipe_version: 1
+  error_mode: drop
+  recipe:
+  - id: policy
+    use: org.fluentbit.policy.event-quality/apply
+cases:
+- name: trim-mark-explicitly
+  input:
+  - body:
+      event_id: x
+      message: abcdefghijklmnopqrst
+  expected:
+    records:
+    - body:
+        event_id: x
+        message: abcdefghijklmnop
+        message.truncated: true
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0
+- name: keep-small
+  input:
+  - body:
+      event_id: x
+      message: ok
+  expected:
+    records:
+    - body:
+        event_id: x
+        message: ok
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0
+- name: reject-missing-id
+  input:
+  - body:
+      message: ok
+  expected:
+    records: []
+    outcomes:
+      kept: 0
+      dropped: 1
+      errors: 1
+    error:
+      step: policy
+      class: validation_failed
+- name: utf8-boundary
+  input:
+  - body:
+      event_id: x
+      message: "aaaaaaaaaaaaaaa\xE9"
+  expected:
+    records:
+    - body:
+        event_id: x
+        message: aaaaaaaaaaaaaaa
+        message.truncated: true
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0

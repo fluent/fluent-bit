@@ -45,6 +45,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <limits.h>
+#ifndef FLB_SYSTEM_WINDOWS
+#include <fcntl.h>
+#endif
 
 #include <monkey/mk_core.h>
 #include <fluent-bit/flb_info.h>
@@ -262,6 +265,7 @@ static void net_io_propagate_critical_error(
 {
     switch (errno) {
     case EBADF:
+    case ETIMEDOUT:
     case ECONNRESET:
     case EDESTADDRREQ:
     case ENOTCONN:
@@ -313,11 +317,15 @@ static int net_io_write(struct flb_connection *connection,
     return ret;
 }
 
+/* Retry nonblocking backpressure, but return blocking send timeouts immediately. */
 static int fd_io_write(int fd, struct sockaddr_storage *address,
                        const void *data, size_t len, size_t *out_len)
 {
     int ret;
     int tries = 0;
+#ifndef FLB_SYSTEM_WINDOWS
+    int flags;
+#endif
     size_t total = 0;
 
     while (total < len) {
@@ -331,7 +339,19 @@ static int fd_io_write(int fd, struct sockaddr_storage *address,
         }
 
         if (ret == -1) {
+            *out_len = total;
             if (FLB_WOULDBLOCK()) {
+#ifndef FLB_SYSTEM_WINDOWS
+                /* EAGAIN on a blocking socket means its send timeout expired. */
+                flags = fcntl(fd, F_GETFL, 0);
+                if (flags == -1) {
+                    return -1;
+                }
+                if ((flags & O_NONBLOCK) == 0) {
+                    errno = ETIMEDOUT;
+                    return -1;
+                }
+#endif
                 /*
                  * FIXME: for now we are handling this in a very lazy way,
                  * just sleep for a second and retry (for a max of 30 tries).
@@ -340,12 +360,6 @@ static int fd_io_write(int fd, struct sockaddr_storage *address,
                 tries++;
 
                 if (tries == 30) {
-                    /* Since we're aborting after 30 failures we want the
-                     * caller to know how much data we were able to send
-                     */
-
-                    *out_len = total;
-
                     return -1;
                 }
 

@@ -1,0 +1,79 @@
+name: Analysis
+
+env:
+  FORCE_COLOR: 1
+  CLICOLOR_FORCE: 1
+
+on:
+  push:
+    paths-ignore:
+      - '**.md'
+      - 'doc/**'
+  pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'doc/**'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+
+  # Run fuzzing with LLVM libFuzzer
+  fuzzing:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v6
+    - name: Run Fuzzing
+      run: |
+        mkdir build
+        cd build
+        cmake .. -DYYJSON_BUILD_FUZZER=ON -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+        cmake --build . --config Release
+        ctest -C Release --output-on-failure
+
+
+  # Upload coverage data to Codecov
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v6
+
+    - name: Install Dependencies
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y llvm
+
+    - name: Build and Test
+      shell: bash
+      run: |
+        mkdir build
+        cd build
+        export LLVM_PROFILE_FILE=cov/profile-%p.profraw
+        cmake .. -DCMAKE_BUILD_TYPE=Debug -DYYJSON_BUILD_TESTS=ON -DYYJSON_ENABLE_COVERAGE=ON \
+                 -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+        cmake --build . --config Debug
+        ctest --output-on-failure
+
+        ctest_files=$(grep -o "test_\w\+" CTestTestfile.cmake | uniq | tr '\n' ' ')
+        ctest_files=$(echo $ctest_files | sed 's/  $//' | sed "s/ / -object /g")
+
+        llvm-profdata merge -sparse cov/profile-*.profraw -o coverage.profdata
+        llvm-cov export $ctest_files -format=lcov -instr-profile=coverage.profdata --skip-branches > coverage.lcov
+
+    - name: Upload Coverage Report
+      if: github.repository == 'ibireme/yyjson'
+      uses: codecov/codecov-action@v6
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        files: ./build/coverage.lcov
+        flags: unittests
+        name: llvm-cov-coverage
+        fail_ci_if_error: true

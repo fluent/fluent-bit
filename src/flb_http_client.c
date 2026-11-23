@@ -50,11 +50,15 @@
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/flb_http_client_debug.h>
 #include <fluent-bit/flb_network.h>
+#include <fluent-bit/flb_upstream_ha.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_base64.h>
 #include <fluent-bit/tls/flb_tls.h>
 #include <time.h>
 #include <fluent-bit/flb_signv4_ng.h>
+#ifdef __EMSCRIPTEN__
+#include <fluent-bit/wasm/flb_wasm_http.h>
+#endif
 
 void flb_http_client_debug(struct flb_http_client *c,
                            struct flb_callback *cb_ctx)
@@ -945,6 +949,17 @@ struct flb_http_client *create_http_client(struct flb_connection *u_conn,
 
     struct flb_http_client *c;
 
+    /* Request targets must not contain HTTP whitespace or control bytes. */
+    if (uri == NULL) {
+        return NULL;
+    }
+    for (p = (char *) uri; *p; p++) {
+        if ((unsigned char) *p <= 0x20 || (unsigned char) *p == 0x7f) {
+            flb_error("[http_client] invalid character in request target");
+            return NULL;
+        }
+    }
+
     switch (method) {
     case FLB_HTTP_GET:
         str_method = "GET";
@@ -1131,7 +1146,12 @@ struct flb_http_client *flb_http_client(struct flb_connection *u_conn,
         c->flags |= FLB_HTTP_11;
     }
 
+#ifdef __EMSCRIPTEN__
+    /* Fetch supplies Host and Content-Length; do not manufacture wire headers. */
+    ret = 0;
+#else
     ret = add_host_and_content_length(c);
+#endif
     if (ret != 0) {
         flb_http_client_destroy(c);
         return NULL;
@@ -1189,9 +1209,9 @@ size_t flb_http_buffer_available(struct flb_http_client *c)
 int flb_http_buffer_increase(struct flb_http_client *c, size_t size,
                              size_t *out_size)
 {
-    int off_payload = 0;
-    int off_headers_end = 0;
-    int off_chunk_processed_end = 0;
+    ssize_t off_payload = -1;
+    ssize_t off_headers_end = -1;
+    ssize_t off_chunk_processed_end = -1;
     char *tmp;
     size_t new_size;
     size_t allocated;
@@ -1221,8 +1241,12 @@ int flb_http_buffer_increase(struct flb_http_client *c, size_t size,
     /*
      * The payload is a reference to a position of 'data' buffer,
      * we need to adjust the pointer after a memory buffer size change.
+     * Note that the pointer can be set while payload_size is zero (e.g.
+     * a chunked response whose first chunk is the last-chunk, or after
+     * the caller consumed the whole payload), so check the pointer and
+     * not the size.
      */
-    if (c->resp.payload_size > 0) {
+    if (c->resp.payload) {
         off_payload = c->resp.payload - c->resp.data;
     }
 
@@ -1236,13 +1260,13 @@ int flb_http_buffer_increase(struct flb_http_client *c, size_t size,
         c->resp.data = tmp;
         c->resp.data_size = new_size;
 
-        if (off_headers_end > 0) {
+        if (off_headers_end >= 0) {
             c->resp.headers_end = c->resp.data + off_headers_end;
         }
-        if (off_chunk_processed_end > 0) {
+        if (off_chunk_processed_end >= 0) {
             c->resp.chunk_processed_end = c->resp.data + off_chunk_processed_end;
         }
-        if (off_payload > 0) {
+        if (off_payload >= 0) {
             c->resp.payload = c->resp.data + off_payload;
         }
     }
@@ -1261,7 +1285,13 @@ int flb_http_add_header(struct flb_http_client *c,
     struct mk_list *tmp;
     struct mk_list *head;
 
-    if (key_len < 1 || val_len < 1) {
+    if (flb_http_header_validate(key, key_len, val, val_len) != 0) {
+        /* Callers may ignore errors: never send a request missing this field. */
+        c->invalid_header = FLB_TRUE;
+        return -1;
+    }
+
+    if (val_len < 1) {
         return -1;
     }
 
@@ -1378,6 +1408,10 @@ static int http_header_push(struct flb_http_client *c, struct flb_kv *header)
     val = header->val;
     val_len = flb_sds_len(header->val);
 
+    if (flb_http_header_validate(key, key_len, val, val_len) != 0) {
+        return -1;
+    }
+
     /*
      * The new header will need enough space in the buffer:
      *
@@ -1451,6 +1485,10 @@ static void http_headers_destroy(struct flb_http_client *c)
 
 int flb_http_set_keepalive(struct flb_http_client *c)
 {
+#ifdef __EMSCRIPTEN__
+    /* Connection reuse belongs to the browser. */
+    return 0;
+#endif
     /* check if 'keepalive' mode is enabled in the Upstream connection */
     if (flb_stream_is_keepalive(c->u_conn->stream) == FLB_FALSE) {
         return -1;
@@ -1850,6 +1888,14 @@ int flb_http_do_request(struct flb_http_client *c, size_t *bytes)
     size_t bytes_body = 0;
     char *tmp;
 
+    if (c->invalid_header) {
+        return FLB_HTTP_ERROR;
+    }
+
+#ifdef __EMSCRIPTEN__
+    flb_error("[http_client] browser streaming requests are unsupported; use flb_http_do");
+    return FLB_HTTP_ERROR;
+#endif
     c->header_len = c->base_header_len;
 
     /* Try to add keep alive header */
@@ -1966,7 +2012,13 @@ int flb_http_get_response_data(struct flb_http_client *c, size_t bytes_consumed)
     ssize_t available;
     size_t out_size;
     time_t now;
+    int timeout;
+    int remaining;
 
+#ifdef __EMSCRIPTEN__
+    flb_error("[http_client] browser streaming responses are unsupported; use flb_http_do");
+    return FLB_HTTP_ERROR;
+#endif
     /* If the caller has consumed some of the payload (via bytes_consumed)
      * we consume those bytes off the payload
      */
@@ -2016,6 +2068,27 @@ int flb_http_get_response_data(struct flb_http_client *c, size_t bytes_consumed)
         }
 
         if (http_client_read_idle_timeout_reached(c, now) == FLB_TRUE) {
+            return FLB_HTTP_ERROR;
+        }
+
+        /* Each blocking read shares the remaining total response budget. */
+        timeout = c->original_net_setup != NULL ? c->original_net_setup->io_timeout :
+                  c->request_net_setup.io_timeout;
+        if (c->response_timeout > 0) {
+            remaining = c->response_timeout - (int) (now - c->ts_start);
+            if (timeout <= 0 || remaining < timeout) {
+                timeout = remaining;
+            }
+        }
+        if (c->read_idle_timeout > 0) {
+            remaining = c->read_idle_timeout - (int) (now - c->last_read_ts);
+            if (timeout <= 0 || remaining < timeout) {
+                timeout = remaining;
+            }
+        }
+        c->request_net_setup.io_timeout = timeout;
+        if (flb_net_socket_set_rcvtimeout(c->u_conn->fd, timeout) != 0) {
+            flb_upstream_conn_recycle(c->u_conn, FLB_FALSE);
             return FLB_HTTP_ERROR;
         }
 
@@ -2084,6 +2157,9 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
     if (c->test_mode == FLB_TRUE) {
         return flb_http_stub_response(c);
     }
+#ifdef __EMSCRIPTEN__
+    return flb_wasm_http_execute(c, bytes);
+#endif
 
     ret = flb_http_do_request(c, bytes);
     if (ret != 0) {
@@ -2142,6 +2218,13 @@ int flb_http_do(struct flb_http_client *c, size_t *bytes)
 int flb_http_do_with_oauth2(struct flb_http_client *c, size_t *bytes,
                             struct flb_oauth2 *oauth2)
 {
+#ifdef __EMSCRIPTEN__
+    if (oauth2) {
+        flb_error("[http_client] OAuth2 is not supported by the browser transport");
+        return -1;
+    }
+    return flb_http_do(c, bytes);
+#else
     int ret;
     flb_sds_t token = NULL;
     struct flb_connection *old_conn;
@@ -2200,6 +2283,7 @@ int flb_http_do_with_oauth2(struct flb_http_client *c, size_t *bytes,
     }
 
     return ret;
+#endif
 }
 
 /*
@@ -2284,8 +2368,10 @@ void flb_http_client_destroy(struct flb_http_client *c)
 
 
 
+#ifndef __EMSCRIPTEN__
 static int flb_http_client_session_read(struct flb_http_client_session *session);
 static int flb_http_client_session_write(struct flb_http_client_session *session);
+#endif
 
 
 
@@ -2304,6 +2390,17 @@ int flb_http_client_ng_init(struct flb_http_client_ng *client,
 {
     memset(client, 0, sizeof(struct flb_http_client_ng));
 
+    cfl_list_init(&client->sessions);
+    flb_lock_init(&client->lock);
+#ifdef __EMSCRIPTEN__
+    /* Fetch owns protocol negotiation; an explicit HTTP/2 requirement cannot be honored. */
+    if (protocol_version != HTTP_PROTOCOL_VERSION_AUTODETECT &&
+        protocol_version != HTTP_PROTOCOL_VERSION_11 &&
+        protocol_version != HTTP_PROTOCOL_VERSION_10) {
+        flb_error("[http_client] browser transport cannot force an HTTP protocol version");
+        return -1;
+    }
+#endif
     client->temporary_buffer = cfl_sds_create_size(HTTP_CLIENT_TEMPORARY_BUFFER_SIZE);
 
     if (client->temporary_buffer == NULL) {
@@ -2311,12 +2408,16 @@ int flb_http_client_ng_init(struct flb_http_client_ng *client,
     }
 
     client->protocol_version = protocol_version;
+    client->max_response_size = FLB_HTTP_CLIENT_NG_RESPONSE_SIZE_MAX;
+    client->max_header_size = FLB_HTTP_CLIENT_NG_HEADER_SIZE_MAX;
+    client->max_wire_size = FLB_HTTP_CLIENT_NG_WIRE_SIZE_MAX;
+    client->max_header_count = FLB_HTTP_CLIENT_NG_HEADER_COUNT_MAX;
+    client->response_timeout = FLB_HTTP_CLIENT_NG_RESPONSE_TIMEOUT;
     client->upstream_ha = upstream_ha;
     client->upstream = upstream;
     client->flags = flags;
 
-    cfl_list_init(&client->sessions);
-
+#ifndef __EMSCRIPTEN__
     if (protocol_version == HTTP_PROTOCOL_VERSION_AUTODETECT) {
         if (upstream->base.tls_context != NULL) {
             flb_tls_set_alpn(upstream->base.tls_context, "h2,http/1.1,http/1.0");
@@ -2338,7 +2439,7 @@ int flb_http_client_ng_init(struct flb_http_client_ng *client,
         }
     }
 
-    flb_lock_init(&client->lock);
+#endif
 
     return 0;
 }
@@ -2404,6 +2505,11 @@ void flb_http_client_ng_destroy(struct flb_http_client_ng *client)
                      FLB_LOCK_DEFAULT_RETRY_DELAY);
 
     flb_lock_destroy(&client->lock);
+#ifdef __EMSCRIPTEN__
+    if (client->releasable) {
+        flb_free(client);
+    }
+#endif
 }
 
 int flb_http_client_session_init(struct flb_http_client_session *session,
@@ -2411,7 +2517,9 @@ int flb_http_client_session_init(struct flb_http_client_session *session,
                                  int protocol_version,
                                  struct flb_connection  *connection)
 {
+#ifndef __EMSCRIPTEN__
     int result;
+#endif
 
     memset(session, 0, sizeof(struct flb_http_client_session));
 
@@ -2425,6 +2533,13 @@ int flb_http_client_session_init(struct flb_http_client_session *session,
 
     cfl_list_entry_init(&session->_head);
 
+#ifdef __EMSCRIPTEN__
+    if (protocol_version != HTTP_PROTOCOL_VERSION_AUTODETECT &&
+        protocol_version != HTTP_PROTOCOL_VERSION_11 &&
+        protocol_version != HTTP_PROTOCOL_VERSION_10) {
+        return -1;
+    }
+#endif
     session->incoming_data = cfl_sds_create_size(1);
 
     if (session->incoming_data == NULL) {
@@ -2437,6 +2552,7 @@ int flb_http_client_session_init(struct flb_http_client_session *session,
         return -1;
     }
 
+#ifndef __EMSCRIPTEN__
     if (session->protocol_version == HTTP_PROTOCOL_VERSION_11 ||
         session->protocol_version == HTTP_PROTOCOL_VERSION_10) {
         session->http1.parent = session;
@@ -2459,6 +2575,10 @@ int flb_http_client_session_init(struct flb_http_client_session *session,
     else {
         return -1;
     }
+#else
+    /* This is the message model, not the browser's negotiated wire version. */
+    session->protocol_version = HTTP_PROTOCOL_VERSION_11;
+#endif
 
     return 0;
 }
@@ -2493,10 +2613,17 @@ struct flb_http_client_session *flb_http_client_session_create(struct flb_http_c
         session->releasable = FLB_TRUE;
 
         if (result != 0) {
+            /* Ownership of the connection transfers only on success. */
+            session->connection = NULL;
             flb_http_client_session_destroy(session);
 
             session = NULL;
         }
+#ifdef __EMSCRIPTEN__
+        else if (client != NULL) {
+            cfl_list_add(&session->_head, &client->sessions);
+        }
+#endif
     }
 
     return session;
@@ -2507,9 +2634,13 @@ struct flb_http_client_session *flb_http_client_session_begin(struct flb_http_cl
     int                             protocol_version;
     struct flb_upstream_node       *upstream_node;
     struct flb_connection          *connection;
+#ifndef __EMSCRIPTEN__
     struct flb_upstream            *upstream;
+#endif
     struct flb_http_client_session *session;
+#ifndef __EMSCRIPTEN__
     const char                     *alpn;
+#endif
 
     if (client->upstream_ha != NULL) {
         upstream_node = flb_upstream_ha_node_get(client->upstream_ha);
@@ -2518,14 +2649,18 @@ struct flb_http_client_session *flb_http_client_session_begin(struct flb_http_cl
             return NULL;
         }
 
+#ifndef __EMSCRIPTEN__
         upstream = upstream_node->u;
+#endif
 
         connection = flb_upstream_conn_get(upstream_node->u);
     }
     else {
         upstream_node = NULL;
 
+#ifndef __EMSCRIPTEN__
         upstream = client->upstream;
+#endif
 
         connection = flb_upstream_conn_get(client->upstream);
     }
@@ -2536,6 +2671,7 @@ struct flb_http_client_session *flb_http_client_session_begin(struct flb_http_cl
 
     protocol_version = client->protocol_version;
 
+#ifndef __EMSCRIPTEN__
     if (protocol_version == HTTP_PROTOCOL_VERSION_AUTODETECT) {
         if (connection->tls_session != NULL) {
             alpn = flb_tls_session_get_alpn(connection->tls_session);
@@ -2560,12 +2696,15 @@ struct flb_http_client_session *flb_http_client_session_begin(struct flb_http_cl
 
     if (protocol_version == HTTP_PROTOCOL_VERSION_20) {
         flb_stream_disable_keepalive(&upstream->base);
+        flb_upstream_conn_recycle(connection, FLB_FALSE);
     }
+#endif
 
     session = flb_http_client_session_create(client, protocol_version, connection);
 
     if (session == NULL) {
         flb_upstream_conn_release(connection);
+        return NULL;
     }
 
     session->upstream_node = upstream_node;
@@ -2589,6 +2728,20 @@ void flb_http_client_session_destroy(struct flb_http_client_session *session)
         }
 
         if (session->connection != NULL) {
+            if (session->original_net_setup != NULL) {
+                session->connection->net = session->original_net_setup;
+                if (session->connection->fd > 0) {
+                    flb_net_socket_set_rcvtimeout(
+                        session->connection->fd,
+                        session->original_net_setup->io_timeout);
+                }
+                if (session->original_net_setup->io_timeout > 0) {
+                    flb_connection_reset_io_timeout(session->connection);
+                }
+                else {
+                    flb_connection_unset_io_timeout(session->connection);
+                }
+            }
             flb_upstream_conn_release(session->connection);
         }
 
@@ -2604,8 +2757,10 @@ void flb_http_client_session_destroy(struct flb_http_client_session *session)
             cfl_sds_destroy(session->outgoing_data);
         }
 
+#ifndef __EMSCRIPTEN__
         flb_http1_client_session_destroy(&session->http1);
         flb_http2_client_session_destroy(&session->http2);
+#endif
 
         if (session->releasable) {
             flb_free(session);
@@ -2617,7 +2772,9 @@ struct flb_http_request *flb_http_client_request_begin(struct flb_http_client_se
 {
     int                     stream_id;
     struct flb_http_stream *stream;
+#ifndef __EMSCRIPTEN__
     int                     result;
+#endif
 
     stream_id = session->stream_sequence_number;
     session->stream_sequence_number += 2;
@@ -2633,6 +2790,7 @@ struct flb_http_request *flb_http_client_request_begin(struct flb_http_client_se
 
     stream->request.protocol_version = session->protocol_version;
 
+#ifndef __EMSCRIPTEN__
     if (stream->request.protocol_version == HTTP_PROTOCOL_VERSION_20) {
         result = flb_http2_request_begin(&stream->request);
     }
@@ -2649,15 +2807,79 @@ struct flb_http_request *flb_http_client_request_begin(struct flb_http_client_se
 
         return NULL;
     }
+#endif
 
     cfl_list_add(&stream->_head, &session->streams);
 
     return &stream->request;
 }
 
+#ifndef __EMSCRIPTEN__
+static int flb_http_client_session_arm_timeout(struct flb_http_client_session *session)
+{
+    struct flb_connection *connection;
+    time_t                 elapsed;
+    time_t                 now;
+    int                    timeout;
+
+    connection = session->connection;
+    now = time(NULL);
+
+    if (session->response_start == 0) {
+        session->response_start = now;
+        session->original_net_setup = connection->net;
+        if (session->original_net_setup == NULL) {
+            return -1;
+        }
+
+        session->request_net_setup = *session->original_net_setup;
+        connection->net = &session->request_net_setup;
+    }
+
+    elapsed = now - session->response_start;
+    if (elapsed >= session->parent->response_timeout) {
+        flb_upstream_conn_recycle(connection, FLB_FALSE);
+        return -1;
+    }
+
+    if (elapsed < 0) {
+        elapsed = 0;
+    }
+
+    timeout = session->parent->response_timeout - (int) elapsed;
+    if (session->original_net_setup->io_timeout > 0 &&
+        session->original_net_setup->io_timeout < timeout) {
+        timeout = session->original_net_setup->io_timeout;
+    }
+
+    session->request_net_setup.io_timeout = timeout;
+    if (connection->fd > 0) {
+        flb_net_socket_set_rcvtimeout(connection->fd, timeout);
+    }
+
+    /* Async reads and writes use this timestamp while their coroutine yields. */
+    flb_connection_reset_io_timeout(connection);
+
+    return 0;
+}
+
+static int flb_http_client_session_deadline_reached(struct flb_http_client_session *session)
+{
+    if (time(NULL) - session->response_start >= session->parent->response_timeout) {
+        flb_upstream_conn_recycle(session->connection, FLB_FALSE);
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+#endif
+
 struct flb_http_response *flb_http_client_request_execute_step(
                             struct flb_http_request *request)
 {
+#ifdef __EMSCRIPTEN__
+    return flb_wasm_http_request_execute(request);
+#else
     struct flb_http_response       *response;
     struct flb_http_client_session *session;
     int                             result;
@@ -2730,6 +2952,7 @@ struct flb_http_response *flb_http_client_request_execute_step(
     }
 
     return response;
+#endif
 }
 
 struct flb_http_response *flb_http_client_request_execute(struct flb_http_request *request)
@@ -2745,9 +2968,14 @@ struct flb_http_response *flb_http_client_request_execute(struct flb_http_reques
     return response;
 }
 
+#ifndef __EMSCRIPTEN__
 static int flb_http_client_session_read(struct flb_http_client_session *session)
 {
     ssize_t result;
+
+    if (flb_http_client_session_arm_timeout(session) != 0) {
+        return -1;
+    }
 
     result = flb_io_net_read(session->connection,
                              (void *) session->parent->temporary_buffer,
@@ -2757,17 +2985,23 @@ static int flb_http_client_session_read(struct flb_http_client_session *session)
         return -1;
     }
 
+    if (flb_http_client_session_deadline_reached(session)) {
+        return -1;
+    }
+
     result = (ssize_t) flb_http_client_session_ingest(
                             session,
                             (unsigned char *) session->parent->temporary_buffer,
                             result);
 
     if (result < 0) {
+        flb_upstream_conn_recycle(session->connection, FLB_FALSE);
         return -2;
     }
 
     return 0;
 }
+#endif
 
 
 void flb_http_client_request_destroy(struct flb_http_request *request,
@@ -2778,11 +3012,16 @@ void flb_http_client_request_destroy(struct flb_http_request *request,
                                          request->stream->parent);
     }
     else {
+#ifdef __EMSCRIPTEN__
+        flb_http_stream_destroy(request->stream);
+#else
         flb_http_request_destroy(request);
+#endif
     }
 }
 
 
+#ifndef __EMSCRIPTEN__
 static int flb_http_client_session_write(struct flb_http_client_session *session)
 {
     size_t data_length;
@@ -2800,12 +3039,20 @@ static int flb_http_client_session_write(struct flb_http_client_session *session
     data_length = cfl_sds_len(session->outgoing_data);
 
     if (data_length > 0) {
+        if (flb_http_client_session_arm_timeout(session) != 0) {
+            return -2;
+        }
+
         result = flb_io_net_write(session->connection,
                                   (void *) session->outgoing_data,
                                   data_length,
                                   &data_sent);
 
         if (result == -1) {
+            return -2;
+        }
+
+        if (flb_http_client_session_deadline_reached(session)) {
             return -2;
         }
 
@@ -2825,11 +3072,33 @@ static int flb_http_client_session_write(struct flb_http_client_session *session
 
     return 0;
 }
+#endif
 
 int flb_http_client_session_ingest(struct flb_http_client_session *session,
                                    unsigned char *buffer,
                                    size_t length)
 {
+#ifndef __EMSCRIPTEN__
+    struct cfl_list        *iterator;
+    struct flb_http_stream *stream;
+
+    /* This independent budget includes chunk and HTTP/2 frame overhead. */
+    if (session->received_bytes > session->parent->max_wire_size ||
+        length > session->parent->max_wire_size - session->received_bytes) {
+        session->response_limit_exceeded = FLB_TRUE;
+        cfl_list_foreach(iterator, &session->streams) {
+            stream = cfl_list_entry(iterator, struct flb_http_stream, _head);
+            stream->status = HTTP_STREAM_STATUS_ERROR;
+        }
+
+        if (session->connection != NULL) {
+            flb_upstream_conn_recycle(session->connection, FLB_FALSE);
+        }
+        return -1;
+    }
+
+    session->received_bytes += length;
+
     if (session->protocol_version == HTTP_PROTOCOL_VERSION_11 ||
         session->protocol_version == HTTP_PROTOCOL_VERSION_10) {
         return flb_http1_client_session_ingest(&session->http1,
@@ -2841,6 +3110,7 @@ int flb_http_client_session_ingest(struct flb_http_client_session *session,
                                                buffer,
                                                length);
     }
+#endif
 
     return -20;
 }
@@ -3311,7 +3581,7 @@ struct flb_http_request *flb_http_client_request_builder_unsafe(
         return NULL;
     }
 
-    flb_http_request_set_port(request, client->upstream->tcp_port);
+    flb_http_request_set_port(request, session->connection->upstream->tcp_port);
 
     va_start(arguments, client);
 

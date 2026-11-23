@@ -26,6 +26,8 @@
 #include <fluent-bit/flb_time.h>
 
 #include <cmetrics/cmt_decode_prometheus.h>
+#include <cmetrics/cmt_cat.h>
+#include <cmetrics/cmt_gauge.h>
 #include "prometheus_textfile.h"
 
 #include <sys/stat.h>
@@ -57,8 +59,8 @@ static struct cfl_array *read_glob(const char *path)
             flb_warn("[%s] glob: [%s] no space", __FUNCTION__, path);
             break;
         case GLOB_NOMATCH:
-            flb_warn("[%s] glob: [%s] no match", __FUNCTION__, path);
-            break;
+            globfree(&glb);
+            return cfl_array_create(1);
         case GLOB_ABORTED:
             flb_warn("[%s] glob: [%s] aborted", __FUNCTION__, path);
             break;
@@ -140,6 +142,9 @@ static struct cfl_array *read_glob_win(const char *path, struct cfl_array *list)
     hnd = FindFirstFileA(pattern, &data);
 
     if (hnd == INVALID_HANDLE_VALUE) {
+        if (GetLastError() == ERROR_FILE_NOT_FOUND) {
+            return list != NULL ? list : cfl_array_create(1);
+        }
         flb_error("unable to open valid handle for: %s", path);
         return NULL;
     }
@@ -215,6 +220,7 @@ static int collect_metrics(struct prom_textfile *ctx)
 {
     int i;
     int ret;
+    int scrape_error = 0;
     char errbuf[256];
     struct stat st;
     struct mk_list *head;
@@ -223,11 +229,21 @@ static int collect_metrics(struct prom_textfile *ctx)
     struct cmt_decode_prometheus_parse_opts opts = {0};
     flb_sds_t content;
     struct cfl_array *files;
+    struct cmt *scrape;
+    struct cmt_gauge *error_gauge;
+    char *label_keys[] = {"input"};
+    char *label_values[] = {ctx->ins->name};
 
     /* cmetrics prometheus decoder options */
     opts.default_timestamp = cfl_time_now();
     opts.errbuf = errbuf;
     opts.errbuf_size = sizeof(errbuf);
+
+    scrape = cmt_create();
+    if (scrape == NULL) {
+        flb_plg_error(ctx->ins, "could not allocate metrics scrape");
+        return -1;
+    }
 
     /* iterate over configured paths */
     mk_list_foreach(head, ctx->path_list) {
@@ -236,6 +252,7 @@ static int collect_metrics(struct prom_textfile *ctx)
         files = read_glob(entry->str);
         if (!files) {
             flb_plg_error(ctx->ins, "error reading glob pattern: %s", entry->str);
+            scrape_error = 1;
             continue;
         }
         if (files->entry_count == 0) {
@@ -253,6 +270,7 @@ static int collect_metrics(struct prom_textfile *ctx)
                 content = flb_file_read(files->entries[i]->data.as_string);
                 if (!content) {
                     flb_plg_debug(ctx->ins, "cannot read %s", files->entries[i]->data.as_string);
+                    scrape_error = 1;
                     continue;
                 }
 
@@ -270,34 +288,64 @@ static int collect_metrics(struct prom_textfile *ctx)
                 flb_sds_destroy(content);
 
                 if (ret == 0) {
-                    flb_input_metrics_append(ctx->ins, NULL, 0, cmt);
+                    ret = cmt_cat(scrape, cmt);
                     cmt_decode_prometheus_destroy(cmt);
+                    if (ret != 0) {
+                        flb_plg_error(ctx->ins, "could not merge metrics from %s",
+                                      files->entries[i]->data.as_string);
+                        cfl_array_destroy(files);
+                        cmt_destroy(scrape);
+                        return -1;
+                    }
                 }
                 else {
                     flb_plg_error(ctx->ins, "error parsing file %s: '%s'",
                                   files->entries[i]->data.as_string, errbuf);
+                    scrape_error = 1;
                     continue;
                 }
             }
             else if (ret != 0) {
                 flb_plg_error(ctx->ins, "cannot read '%s'", files->entries[i]->data.as_string);
+                scrape_error = 1;
                 continue;
             }
         }
         cfl_array_destroy(files);
     }
 
-    return 0;
+    /* Keep an observable snapshot even when no file contributes time series. */
+    error_gauge = cmt_gauge_create(scrape, "fluentbit", "textfile", "scrape_error",
+                                   "Whether a file error occurred during the textfile scrape.",
+                                   1, label_keys);
+    if (error_gauge == NULL) {
+        cmt_destroy(scrape);
+        return -1;
+    }
+    ret = cmt_gauge_set(error_gauge, opts.default_timestamp, scrape_error, 1, label_values);
+    if (ret != 0) {
+        cmt_destroy(scrape);
+        return -1;
+    }
+
+    ret = flb_input_metrics_append(ctx->ins, NULL, 0, scrape);
+    if (ret != 0) {
+        flb_plg_error(ctx->ins, "could not append metrics scrape");
+    }
+    cmt_destroy(scrape);
+
+    return ret;
 }
 
 static int cb_collect(struct flb_input_instance *ins,
                       struct flb_config *config, void *data)
 {
+    int ret;
     struct prom_textfile *ctx = data;
 
-    collect_metrics(ctx);
+    ret = collect_metrics(ctx);
 
-    FLB_INPUT_RETURN(0);
+    FLB_INPUT_RETURN(ret);
 }
 
 static int cb_init(struct flb_input_instance *ins,

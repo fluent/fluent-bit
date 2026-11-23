@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_output.h>
 #include <fluent-bit/flb_processor.h>
+#include <fluent-bit/wasm/flb_wasm_inspect.h>
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_routes_mask.h>
 #include <fluent-bit/flb_conditionals.h>
@@ -166,12 +167,8 @@ static int route_payload_apply_outputs(struct flb_input_instance *ins,
             }
 
             if (route_path->ins->total_limit_size != -1) {
-                if (route_path->ins->fs_chunks_size > chunk_size_sz) {
-                    route_path->ins->fs_chunks_size -= chunk_size_sz;
-                }
-                else {
-                    route_path->ins->fs_chunks_size = 0;
-                }
+                flb_input_chunk_output_size_subtract(route_path->ins,
+                                                     chunk_size_sz);
             }
 
             flb_routes_mask_clear_bit(chunk->routes_mask,
@@ -440,6 +437,47 @@ static int encode_chunk_record(struct flb_log_event_encoder *encoder,
     return 0;
 }
 
+#ifdef __EMSCRIPTEN__
+/* Group start and end markers travel with the records but are not log records. */
+static int trace_is_log_record(struct flb_mp_chunk_record *record)
+{
+    int32_t type;
+
+    if (flb_log_event_decoder_get_record_type(&record->event, &type) != 0) {
+        return FLB_TRUE;
+    }
+
+    return type != FLB_LOG_EVENT_GROUP_START && type != FLB_LOG_EVENT_GROUP_END;
+}
+
+/*
+ * A route without a condition is not split: its outputs get the input's own
+ * chunk with every record (see input_chunk_apply_base_direct_routes).
+ */
+static int trace_has_base_route(struct flb_input_instance *ins)
+{
+    struct cfl_list *head;
+    struct flb_router_path *route_path;
+
+    cfl_list_foreach(head, &ins->routes_direct) {
+        route_path = cfl_list_entry(head, struct flb_router_path, _head);
+
+        if (!route_path->ins) {
+            continue;
+        }
+
+        if (route_path->route &&
+            (route_path->route->condition || route_path->route->per_record_routing)) {
+            continue;
+        }
+
+        return FLB_TRUE;
+    }
+
+    return FLB_FALSE;
+}
+#endif
+
 static int build_payload_for_route(struct flb_input_instance *ins,
                                    struct flb_route_payload *payload,
                                    struct flb_mp_chunk_record **records,
@@ -457,6 +495,10 @@ static int build_payload_for_route(struct flb_input_instance *ins,
     struct flb_mp_chunk_record *group_end = NULL;
     struct flb_mp_chunk_record *group_start_record = NULL;
     uint8_t *matched_by_route = NULL;
+#ifdef __EMSCRIPTEN__
+    size_t trace_record = 0;
+    size_t trace_position;
+#endif
 
     if (!payload || !records || record_count == 0 || !matched_non_default ||
         !matched_any_route) {
@@ -495,6 +537,11 @@ static int build_payload_for_route(struct flb_input_instance *ins,
             }
         }
 
+#ifdef __EMSCRIPTEN__
+        /* position among the log records, group markers left out */
+        trace_position = trace_record++;
+#endif
+
         condition_result = flb_router_condition_evaluate_record(payload->route, records[i]);
         if (condition_result != FLB_TRUE) {
             continue;
@@ -504,6 +551,8 @@ static int build_payload_for_route(struct flb_input_instance *ins,
         matched_non_default[i] = 1;
         matched_any_route[i] = 1;
         matched++;
+        FLB_WASM_TRACE(flb_wasm_trace_route(ins, trace_position, payload->route,
+                                            FLB_FALSE));
     }
 
     /* If no matches, return early */
@@ -620,6 +669,10 @@ static int build_payload_for_default_route(struct flb_input_instance *ins,
     struct flb_mp_chunk_record *group_end = NULL;
     struct flb_mp_chunk_record *group_start_record = NULL;
     int *matched_by_default = NULL;
+#ifdef __EMSCRIPTEN__
+    size_t trace_record = 0;
+    size_t trace_position;
+#endif
 
     if (!payload || !records || !matched_non_default || !matched_any_route) {
         return -1;
@@ -671,6 +724,12 @@ static int build_payload_for_default_route(struct flb_input_instance *ins,
 
     /* Mark matching records */
     for (i = 0; i < record_count; i++) {
+#ifdef __EMSCRIPTEN__
+        trace_position = trace_record;
+        if (trace_is_log_record(records[i])) {
+            trace_record++;
+        }
+#endif
         if (flb_log_event_decoder_get_record_type(&records[i]->event, &record_type) == 0 &&
             record_type == FLB_LOG_EVENT_NORMAL) {
             if (!matched_non_default[i]) {
@@ -679,11 +738,15 @@ static int build_payload_for_default_route(struct flb_input_instance *ins,
                     if (condition_result == FLB_TRUE) {
                         matched_by_default[i] = 1;
                         matched_any_route[i] = 1;
+                        FLB_WASM_TRACE(flb_wasm_trace_route(ins, trace_position, payload->route,
+                                                            FLB_TRUE));
                     }
                 }
                 else {
                     matched_by_default[i] = 1;
                     matched_any_route[i] = 1;
+                    FLB_WASM_TRACE(flb_wasm_trace_route(ins, trace_position, payload->route,
+                                                            FLB_TRUE));
                 }
             }
         }
@@ -1059,12 +1122,7 @@ static int input_chunk_apply_base_direct_routes(struct flb_input_instance *ins,
                 continue;
             }
 
-            if (o_ins->fs_chunks_size > chunk_size_sz) {
-                o_ins->fs_chunks_size -= chunk_size_sz;
-            }
-            else {
-                o_ins->fs_chunks_size = 0;
-            }
+            flb_input_chunk_output_size_subtract(o_ins, chunk_size_sz);
         }
 
         chunk->fs_counted = FLB_FALSE;
@@ -1377,6 +1435,23 @@ static int split_and_append_route_payloads(struct flb_input_instance *ins,
         }
     }
 
+#ifdef __EMSCRIPTEN__
+    /* Records no route takes; none when a route without a condition gets them all. */
+    if (flb_wasm_trace_active && trace_has_base_route(ins) == FLB_FALSE) {
+        size_t trace_record = 0;
+
+        for (index = 0; index < record_count; index++) {
+            if (trace_is_log_record(records_array[index]) == FLB_FALSE) {
+                continue;
+            }
+            if (!matched_any_route[index]) {
+                flb_wasm_trace_unrouted(ins, trace_record);
+            }
+            trace_record++;
+        }
+    }
+#endif
+
     flb_free(records_array);
     flb_free(matched_non_default);
     flb_free(matched_any_route);
@@ -1492,6 +1567,8 @@ static int input_log_append_processed_internal(struct flb_input_instance *ins,
         base_tag_len = strlen(base_tag);
     }
 
+    FLB_WASM_TRACE(flb_wasm_trace_append(ins, base_tag, base_tag_len, records));
+
     conditional_result = split_and_append_route_payloads(ins, records, tag, tag_len,
                                                          buf, buf_size,
                                                          local_append);
@@ -1535,36 +1612,77 @@ static int input_log_append_processed_internal(struct flb_input_instance *ins,
     return ret;
 }
 
+/* Store a log buffer that already went through the input processors */
+static int input_log_append_output(struct flb_input_instance *ins, size_t records,
+                                   const char *tag, size_t tag_len,
+                                   const void *buf, size_t buf_size)
+{
+    if (flb_input_is_threaded(ins) == FLB_TRUE &&
+        input_has_conditional_routes(ins) == FLB_TRUE) {
+        return flb_input_chunk_ring_buffer_enqueue_log_routing(ins,
+                                                               FLB_INPUT_LOGS,
+                                                               records,
+                                                               tag, tag_len,
+                                                               buf, buf_size);
+    }
+
+    return input_log_append_processed_internal(ins, records,
+                                               tag, tag_len,
+                                               buf, buf_size,
+                                               FLB_FALSE);
+}
+
+/* Tag used by processors when the input does not provide one */
+static void input_log_processor_tag(struct flb_input_instance *ins,
+                                    const char **tag, size_t *tag_len)
+{
+    if (*tag) {
+        return;
+    }
+
+    if (ins->tag && ins->tag_len > 0) {
+        *tag = ins->tag;
+        *tag_len = ins->tag_len;
+    }
+    else {
+        *tag = ins->name;
+        *tag_len = strlen(ins->name);
+    }
+}
+
+/*
+ * 'exact_records' tells whether 'records' is the exact number of log records in
+ * the buffer. Caller-provided hints (for example, lines read by an input) are
+ * not forwarded to processors, which count the records themselves.
+ */
 static int input_log_append(struct flb_input_instance *ins,
                             size_t processor_starting_stage,
-                            size_t records,
+                            size_t records, int exact_records,
                             const char *tag, size_t tag_len,
                             const void *buf, size_t buf_size)
 {
     int ret;
+    int known_records = -1;
+    int processed_records = -1;
     int processor_is_active;
     void *out_buf = (void *) buf;
     size_t out_size = buf_size;
 
     processor_is_active = flb_processor_is_active(ins->processor);
     if (processor_is_active) {
-        if (!tag) {
-            if (ins->tag && ins->tag_len > 0) {
-                tag = ins->tag;
-                tag_len = ins->tag_len;
-            }
-            else {
-                tag = ins->name;
-                tag_len = strlen(ins->name);
-            }
+        input_log_processor_tag(ins, &tag, &tag_len);
+
+        if (exact_records && records <= INT_MAX) {
+            known_records = (int) records;
         }
 
-        ret = flb_processor_run(ins->processor,
-                                processor_starting_stage,
-                                FLB_PROCESSOR_LOGS,
-                                tag, tag_len,
-                                (char *) buf, buf_size,
-                                &out_buf, &out_size);
+        ret = flb_processor_run_with_count(ins->processor,
+                                           processor_starting_stage,
+                                           FLB_PROCESSOR_LOGS,
+                                           tag, tag_len,
+                                           (char *) buf, buf_size,
+                                           &out_buf, &out_size,
+                                           known_records, &processed_records);
         if (ret == -1) {
             return -1;
         }
@@ -1576,26 +1694,17 @@ static int input_log_append(struct flb_input_instance *ins,
             return 0;
         }
 
-        if (buf != out_buf) {
-            /* a new buffer was created, re-count the number of records */
-            records = flb_mp_count_log_records(out_buf, out_size);
+        if (buf != out_buf || exact_records) {
+            if (processed_records >= 0) {
+                records = processed_records;
+            }
+            else if (buf != out_buf) {
+                records = flb_mp_count_log_records(out_buf, out_size);
+            }
         }
     }
 
-    if (flb_input_is_threaded(ins) == FLB_TRUE &&
-        input_has_conditional_routes(ins) == FLB_TRUE) {
-        ret = flb_input_chunk_ring_buffer_enqueue_log_routing(ins,
-                                                              FLB_INPUT_LOGS,
-                                                              records,
-                                                              tag, tag_len,
-                                                              out_buf, out_size);
-    }
-    else {
-        ret = input_log_append_processed_internal(ins, records,
-                                                  tag, tag_len,
-                                                  out_buf, out_size,
-                                                  FLB_FALSE);
-    }
+    ret = input_log_append_output(ins, records, tag, tag_len, out_buf, out_size);
 
     if (processor_is_active && buf != out_buf) {
         flb_free(out_buf);
@@ -1613,7 +1722,7 @@ int flb_input_log_append(struct flb_input_instance *ins,
     size_t records;
 
     records = flb_mp_count_log_records(buf, buf_size);
-    ret = input_log_append(ins, 0, records, tag, tag_len, buf, buf_size);
+    ret = input_log_append(ins, 0, records, FLB_TRUE, tag, tag_len, buf, buf_size);
     return ret;
 }
 
@@ -1634,6 +1743,25 @@ int flb_input_log_append_processed(struct flb_input_instance *ins,
                                                FLB_TRUE);
 }
 
+/*
+ * Store an already processed buffer from a thread that might not own input
+ * chunks. Unlike flb_input_log_append_processed(), this entry point performs
+ * the normal threaded-input handoff instead of forcing a local append.
+ */
+int flb_input_log_append_processed_routed(struct flb_input_instance *ins,
+                                          size_t records,
+                                          const char *tag,
+                                          size_t tag_len,
+                                          const void *buf,
+                                          size_t buf_size)
+{
+    if (records == 0) {
+        records = flb_mp_count_log_records(buf, buf_size);
+    }
+
+    return input_log_append_output(ins, records, tag, tag_len, buf, buf_size);
+}
+
 /* Take a msgpack serialized record and enqueue it as a chunk */
 int flb_input_log_append_skip_processor_stages(struct flb_input_instance *ins,
                                                size_t processor_starting_stage,
@@ -1645,6 +1773,7 @@ int flb_input_log_append_skip_processor_stages(struct flb_input_instance *ins,
     return input_log_append(ins,
                             processor_starting_stage,
                             flb_mp_count_log_records(buf, buf_size),
+                            FLB_TRUE,
                             tag,
                             tag_len,
                             buf,
@@ -1659,6 +1788,58 @@ int flb_input_log_append_records(struct flb_input_instance *ins,
 {
     int ret;
 
-    ret = input_log_append(ins, 0, records, tag, tag_len, buf, buf_size);
+    ret = input_log_append(ins, 0, records, FLB_FALSE, tag, tag_len, buf, buf_size);
+    return ret;
+}
+
+/* TRUE when the input processors can take log records built as a CFL chunk */
+int flb_input_log_chunk_supported(struct flb_input_instance *ins,
+                                  int worker_thread)
+{
+    return flb_processor_logs_chunk_supported(ins->processor, worker_thread);
+}
+
+/*
+ * Run the input processors over a chunk of CFL records and enqueue the
+ * result, skipping the msgpack round trip the processors would otherwise do.
+ * The chunk is always consumed, callers check flb_input_log_chunk_supported()
+ * first.
+ */
+int flb_input_log_append_chunk(struct flb_input_instance *ins,
+                               const char *tag, size_t tag_len,
+                               struct flb_mp_chunk_cobj *chunk,
+                               int worker_thread)
+{
+    int ret;
+    int records = -1;
+    void *out_buf = NULL;
+    size_t out_size = 0;
+
+    input_log_processor_tag(ins, &tag, &tag_len);
+
+    ret = flb_processor_run_logs_chunk(ins->processor, tag, tag_len, chunk,
+                                       worker_thread,
+                                       &out_buf, &out_size, &records);
+    if (ret == -1) {
+        return -1;
+    }
+
+    if (out_size == 0) {
+        flb_free(out_buf);
+        return 0;
+    }
+
+    if (records < 0) {
+        records = flb_mp_count_log_records(out_buf, out_size);
+    }
+
+    if (ins->ingress_queue_enabled == FLB_TRUE) {
+        return flb_input_ingress_queue_log_processed_take_records(
+                   ins, records, tag, tag_len, out_buf, out_size, out_size);
+    }
+
+    ret = input_log_append_output(ins, records, tag, tag_len, out_buf, out_size);
+    flb_free(out_buf);
+
     return ret;
 }
