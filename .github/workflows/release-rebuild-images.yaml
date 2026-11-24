@@ -31,8 +31,10 @@ on:
         type: boolean
         default: true
 
-# Different versions can be rebuilt in parallel, the same version cannot.
-concurrency: release-rebuild-images-${{ inputs.version || 'newest' }}
+# An omitted version can resolve to the same release as an explicit version.
+concurrency:
+  group: release-rebuild-images
+  queue: max
 
 permissions:
   contents: read
@@ -56,7 +58,6 @@ jobs:
       preserve: ${{ steps.plan.outputs.preserve }}
       tags: ${{ steps.plan.outputs.tags }}
       windows-images: ${{ steps.plan.outputs.windows-images }}
-      windows-tags: ${{ steps.plan.outputs.windows-tags }}
       report-tags: ${{ steps.plan.outputs.report-tags }}
     steps:
       - name: Checkout release tooling
@@ -69,6 +70,8 @@ jobs:
           git ls-remote --tags "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" 'v*' > release-tags.txt
           docker run --rm quay.io/skopeo/stable:latest list-tags --retry-times 10 \
             "docker://$GHCR_RELEASE_IMAGE_NAME" > registry-tags.json
+          docker run --rm quay.io/skopeo/stable:latest list-tags --retry-times 10 \
+            "docker://$DH_RELEASE_IMAGE_NAME" > mirror-tags.json
           # The build date of the published image names the original build when it is preserved.
           RESOLVED=$(python3 .github/scripts/release_image_rebuild.py resolve \
             --version "$VERSION" --tags-file release-tags.txt)
@@ -76,9 +79,10 @@ jobs:
             "docker://$GHCR_RELEASE_IMAGE_NAME:$RESOLVED" > original.json || rm -f original.json
           python3 .github/scripts/release_image_rebuild.py plan \
             --version "$RESOLVED" --tags-file release-tags.txt --registry-tags registry-tags.json \
-            --original-inspect original.json --date "$(date -u +%Y%m%d)"
+            --mirror-tags mirror-tags.json --original-inspect original.json --date "$(date -u +%Y%m%d)"
         env:
           VERSION: ${{ inputs.version }}
+          DH_RELEASE_IMAGE_NAME: docker.io/${{ secrets.DOCKERHUB_ORGANIZATION || 'fluent/fluent-bit' }}
         shell: bash
 
   rebuild-scan-published:
@@ -204,6 +208,7 @@ jobs:
       promote: ${{ steps.decide.outputs.promote }}
       digest: ${{ steps.image.outputs.digest }}
       debug-digest: ${{ steps.image.outputs.debug-digest }}
+      windows-digests: ${{ steps.image.outputs.windows-digests }}
     steps:
       - name: Checkout release tooling
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -231,10 +236,25 @@ jobs:
               exit 1
             fi
             DIGEST=$(docker buildx imagetools inspect "$REF" --format '{{.Manifest.Digest}}')
+            if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "::error::Invalid digest for $REF"
+              exit 1
+            fi
             echo "${SUFFIX:+debug-}digest=$DIGEST" >> "$GITHUB_OUTPUT"
           done
+          WINDOWS_DIGESTS=$(jq -r '.[]' <<< "$WINDOWS_IMAGES" | while read -r IMAGE; do
+            REF="$STAGING_IMAGE_NAME:$IMAGE-$VERSION"
+            if ! DIGEST=$(docker buildx imagetools inspect "$REF" --format '{{.Manifest.Digest}}') ||
+               [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "Unable to resolve a valid digest for $REF" >&2
+              exit 1
+            fi
+            jq -nc --arg image "$IMAGE" --arg digest "$DIGEST" '{($image): $digest}'
+          done | jq -cs 'add // {}')
+          echo "windows-digests=$WINDOWS_DIGESTS" >> "$GITHUB_OUTPUT"
         env:
           VERSION: ${{ needs.rebuild-plan.outputs.version }}
+          WINDOWS_IMAGES: ${{ needs.rebuild-plan.outputs.windows-images }}
         shell: bash
 
       - name: Create the scan directory
@@ -319,62 +339,66 @@ jobs:
           GHCR_CREDS: ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}
         shell: bash
 
-  # Same promotion as staging-release: copy the verified manifests by digest, never by tag.
+  # One job checks all dated tags in both registries on every publishing attempt.
   rebuild-release-images:
-    name: Release ${{ matrix.tag }} Linux container images
+    name: Release verified Linux and Windows container images
     if: inputs.promote && needs.rebuild-verify.outputs.promote == 'true'
     needs:
       - rebuild-plan
       - rebuild-verify
       - rebuild-release-preserve-original
+    # Normal releases update the same series and latest tags.
+    concurrency:
+      group: staging-build-release
+      queue: max
     runs-on: ubuntu-latest
     environment: release
-    env:
-      SOURCE_DIGEST: ${{ endsWith(matrix.tag, '-debug') && needs.rebuild-verify.outputs.debug-digest || needs.rebuild-verify.outputs.digest }}
-    strategy:
-      fail-fast: false
-      matrix:
-        tag: ${{ fromJSON(needs.rebuild-plan.outputs.tags) }}
     permissions:
+      contents: read
       packages: write
     steps:
-      # Primarily because the skopeo errors are hard to parse and non-obvious
-      - name: Check the image exists
+      - name: Checkout release tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # regctl copies manifests by digest, including Windows images with external layers.
+      - name: Install regctl
         run: |
-          docker pull "$STAGING_IMAGE_NAME@$SOURCE_DIGEST"
+          curl -fsSL --retry 3 https://github.com/regclient/regclient/releases/download/v0.11.7/regctl-linux-amd64 \
+            -o "$RUNNER_TEMP/regctl"
+          echo "3737fbbdd791e04e7a831640b681f3397a376498e80e2ad9b1b2d27296f239bc  $RUNNER_TEMP/regctl" | \
+            sha256sum -c -
+          chmod +x "$RUNNER_TEMP/regctl"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
         shell: bash
 
-      - name: Promote container images from staging to Dockerhub
-        run: |
-          docker run --rm  \
-            quay.io/skopeo/stable:latest \
-            copy \
-              --all \
-              --retry-times 10 \
-              --src-no-creds \
-              --dest-creds "$RELEASE_CREDS" \
-              "docker://$STAGING_IMAGE_NAME@$SOURCE_DIGEST" \
-              "docker://$RELEASE_IMAGE_NAME:$TAG"
-        env:
-          RELEASE_IMAGE_NAME: docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}
-          RELEASE_CREDS: ${{ secrets.DOCKERHUB_USERNAME }}:${{ secrets.DOCKERHUB_TOKEN }}
-          TAG: ${{ matrix.tag }}
-        shell: bash
+      - name: Login to Docker Hub
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Promote container images from staging to GHCR.io
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish the verified manifests
         run: |
-          docker run --rm  \
-            quay.io/skopeo/stable:latest \
-            copy \
-              --all \
-              --retry-times 10 \
-              --src-no-creds \
-              --dest-creds "$RELEASE_CREDS" \
-              "docker://$STAGING_IMAGE_NAME@$SOURCE_DIGEST" \
-              "docker://$GHCR_RELEASE_IMAGE_NAME:$TAG"
+          git ls-remote --tags "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" 'v*' > release-tags.txt
+          python3 .github/scripts/release_image_rebuild.py publish \
+            --staging "$STAGING_IMAGE_NAME" --registry "$GHCR_RELEASE_IMAGE_NAME" --registry "$DH_RELEASE_IMAGE_NAME" \
+            --version "$VERSION" --build "$BUILD" --tags "$TAGS" --tags-file release-tags.txt \
+            --production "$PRODUCTION_DIGEST" --debug "$DEBUG_DIGEST" --windows "$WINDOWS_DIGESTS"
         env:
-          RELEASE_CREDS: ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ matrix.tag }}
+          DH_RELEASE_IMAGE_NAME: docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}
+          VERSION: ${{ needs.rebuild-plan.outputs.version }}
+          BUILD: ${{ needs.rebuild-plan.outputs.build }}
+          TAGS: ${{ needs.rebuild-plan.outputs.tags }}
+          PRODUCTION_DIGEST: ${{ needs.rebuild-verify.outputs.digest }}
+          DEBUG_DIGEST: ${{ needs.rebuild-verify.outputs.debug-digest }}
+          WINDOWS_DIGESTS: ${{ needs.rebuild-verify.outputs.windows-digests }}
         shell: bash
 
   rebuild-release-images-arch-specific-legacy-tags:
@@ -438,68 +462,6 @@ jobs:
         shell: bash
         env:
           TAG: ${{ steps.get-tag.outputs.tag }}
-
-  rebuild-release-images-windows:
-    name: Release Windows images
-    # Cannot be done by Skopeo on a Linux runner unfortunately
-    runs-on: ${{ startsWith(matrix.tag, 'windows-2022-') && 'windows-latest' || 'windows-2025' }}
-    if: inputs.promote && needs.rebuild-verify.outputs.promote == 'true' && needs.rebuild-plan.outputs.windows-tags != '[]'
-    needs:
-      - rebuild-plan
-      - rebuild-verify
-      - rebuild-release-preserve-original
-    environment: release
-    permissions:
-      packages: write
-    strategy:
-      fail-fast: false
-      matrix:
-        tag: ${{ fromJSON(needs.rebuild-plan.outputs.windows-tags) }}
-    steps:
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Check the image exists
-        # Use manifest inspect rather than pulling the image so the Windows host version does not need to match the container image
-        run: |
-          docker manifest inspect "$STAGING_IMAGE_NAME:$TAG"
-        env:
-          TAG: ${{ matrix.tag }}
-        shell: bash
-
-      - name: Promote container images from staging to GHCR.io
-        run: |
-          docker pull "$STAGING_IMAGE_NAME:$TAG"
-          for NAME in "$TAG" "$TAG-$BUILD"; do
-            docker tag "$STAGING_IMAGE_NAME:$TAG" "$GHCR_RELEASE_IMAGE_NAME:$NAME"
-            docker push "$GHCR_RELEASE_IMAGE_NAME:$NAME"
-          done
-        env:
-          TAG: ${{ matrix.tag }}
-          BUILD: ${{ needs.rebuild-plan.outputs.build }}
-        shell: bash
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Promote container images from staging to Dockerhub
-        run: |
-          for NAME in "$TAG" "$TAG-$BUILD"; do
-            docker tag "$STAGING_IMAGE_NAME:$TAG" "$RELEASE_IMAGE_NAME:$NAME"
-            docker push "$RELEASE_IMAGE_NAME:$NAME"
-          done
-        env:
-          RELEASE_IMAGE_NAME: docker.io/${{ secrets.DOCKERHUB_ORGANIZATION }}
-          TAG: ${{ matrix.tag }}
-          BUILD: ${{ needs.rebuild-plan.outputs.build }}
-        shell: bash
 
   rebuild-release-images-sign:
     name: Sign container image manifests
@@ -598,7 +560,6 @@ jobs:
       - rebuild-release-preserve-original
       - rebuild-release-images
       - rebuild-release-images-arch-specific-legacy-tags
-      - rebuild-release-images-windows
       - rebuild-release-images-sign
       - rebuild-release-smoke-test-containers
     runs-on: ubuntu-latest
@@ -621,26 +582,31 @@ jobs:
         run: mkdir -p scans
         shell: bash
 
+      # Scan the same immutable manifest used to look up the dated tag.
+      - name: Inspect the published image
+        id: inspect
+        continue-on-error: true
+        run: |
+          docker run --rm quay.io/skopeo/stable:latest inspect --retry-times 10 \
+            "docker://$GHCR_RELEASE_IMAGE_NAME:$TAG" > "scans/inspect-$TAG.json"
+          DIGEST=$(jq -er '.Digest | select(test("^sha256:[0-9a-f]{64}$"))' "scans/inspect-$TAG.json")
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+        env:
+          TAG: ${{ matrix.tag }}
+        shell: bash
+
       # A release without published images is reported as unavailable instead of failing the page.
       - name: Trivy - published image
+        if: steps.inspect.outputs.digest != ''
         continue-on-error: true
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
-          image-ref: "${{ env.GHCR_RELEASE_IMAGE_NAME }}:${{ matrix.tag }}"
+          image-ref: "${{ env.GHCR_RELEASE_IMAGE_NAME }}@${{ steps.inspect.outputs.digest }}"
           format: "json"
           output: "scans/trivy-${{ matrix.tag }}.json"
           exit-code: "0"
           vuln-type: "os,library"
           severity: "CRITICAL,HIGH"
-
-      - name: Inspect the published image
-        continue-on-error: true
-        run: |
-          docker run --rm quay.io/skopeo/stable:latest inspect --retry-times 10 \
-            "docker://$GHCR_RELEASE_IMAGE_NAME:$TAG" > "scans/inspect-$TAG.json"
-        env:
-          TAG: ${{ matrix.tag }}
-        shell: bash
 
       - name: Upload the scan
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -681,6 +647,9 @@ jobs:
           python3 .github/scripts/release_image_rebuild.py index-tags \
             --tags-file release-tags.txt --registry-tags scans/registry-tags.json > index-tags.txt
           while read -r TAG; do
+            if [[ -s "scans/inspect-$TAG.json" ]]; then
+              continue
+            fi
             # A tag that cannot be inspected is listed as unavailable instead of failing the page.
             docker run --rm quay.io/skopeo/stable:latest inspect --retry-times 10 \
               "docker://$GHCR_RELEASE_IMAGE_NAME:$TAG" > "scans/inspect-$TAG.json" < /dev/null ||
