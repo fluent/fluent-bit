@@ -372,6 +372,78 @@ static void processor_grouped_filter_counters()
     flb_sds_destroy(regex_prop_key);
 }
 
+/* Unknown counts must be reused without counting group markers as records. */
+static void processor_filter_chain_counts(void)
+{
+    int mode;
+    int i;
+    int output_records;
+    double records;
+    char *data;
+    size_t bytes;
+    void *output;
+    size_t output_size;
+    char *labels[1];
+    struct flb_config *config;
+    struct flb_processor *proc;
+    struct flb_processor_unit *units[4];
+    struct flb_filter_instance *filter;
+
+    flb_init_env();
+    for (mode = 0; mode < 4; mode++) {
+        config = flb_config_init();
+        TEST_ASSERT(config != NULL);
+        proc = flb_processor_create(config, "filter_counts", NULL, 0);
+        TEST_ASSERT(proc != NULL);
+
+        for (i = 0; i < 4; i++) {
+            units[i] = flb_processor_unit_create(proc, FLB_PROCESSOR_LOGS,
+                                                i == 2 ? "modify" : "grep");
+            TEST_ASSERT(units[i] != NULL);
+            if (i == 2) {
+                TEST_ASSERT(flb_processor_unit_set_property_str(units[i], "add",
+                                                                "added value") == 0);
+            }
+            else {
+                TEST_ASSERT(flb_processor_unit_set_property_str(units[i], "exclude",
+                                                                "absent .*") == 0);
+            }
+        }
+        TEST_ASSERT(flb_processor_init(proc) == 0);
+        if (mode & 1) {
+            TEST_ASSERT(create_grouped_msgpack_records(&data, &bytes) == 0);
+        }
+        else {
+            TEST_ASSERT(create_msgpack_records(&data, &bytes) == 0);
+        }
+
+        output = NULL;
+        output_size = 0;
+        output_records = -1;
+        TEST_CHECK(flb_processor_run_with_count(proc, 0, FLB_PROCESSOR_LOGS,
+                                                "test", 4, data, bytes,
+                                                &output, &output_size,
+                                                mode & 2 ? 1 : -1,
+                                                &output_records) == 0);
+        TEST_CHECK(output_records == 1);
+        TEST_CHECK(flb_mp_count_log_records(output, output_size) == 1);
+        for (i = 0; i < 4; i++) {
+            filter = units[i]->ctx;
+            labels[0] = (char *) flb_filter_name(filter);
+            records = -1;
+            TEST_CHECK(cmt_counter_get_val(filter->cmt_records, 1, labels, &records) == 0);
+            TEST_CHECK(records == 1.0);
+        }
+
+        if (output != data) {
+            flb_free(output);
+        }
+        flb_free(data);
+        flb_processor_destroy(proc);
+        flb_config_exit(config);
+    }
+}
+
 static void processor_private_inputs_use_main_loop()
 {
     int ret;
@@ -2075,6 +2147,7 @@ static void processor_filter_empty_allocated_result(void)
 }
 
 TEST_LIST = {
+    { "processor_filter_chain_counts", processor_filter_chain_counts },
     { "processor_filter_empty_allocated_result", processor_filter_empty_allocated_result },
     {"log_hold_bounds", test_log_hold_bounds},
     {"input_stop_idempotent_and_opt_in", test_input_stop_idempotent_and_opt_in},
