@@ -2244,6 +2244,10 @@ static int processor_run(struct flb_processor *proc, struct chunk_codec *codec,
             }
             else {
                 unit_in_items = flb_mp_count_log_records(cur_buf, cur_size);
+                if (chunk_cobj == NULL) {
+                    /* Reuse this count until a unit replaces the serialized buffer. */
+                    log_buffer_records = unit_in_items;
+                }
             }
             unit_out_items = unit_in_items;
             item_metrics_available = FLB_TRUE;
@@ -2392,12 +2396,7 @@ static int processor_run(struct flb_processor *proc, struct chunk_codec *codec,
             }
 #ifdef FLB_HAVE_METRICS
             name = (char *) (flb_filter_name(f_ins));
-            if (log_buffer_records >= 0) {
-                in_records = log_buffer_records;
-            }
-            else {
-                in_records = flb_mp_count_log_records(cur_buf, cur_size);
-            }
+            in_records = unit_in_items;
             cmt_counter_add(f_ins->cmt_records, ts, in_records,
                     1, (char *[]) {name});
             cmt_counter_add(f_ins->cmt_bytes, ts, tmp_size,
