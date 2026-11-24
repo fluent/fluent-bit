@@ -24,6 +24,9 @@ on:
 # We also do not want multiples to run for the same version.
 concurrency: staging-build-release
 
+permissions:
+  contents: read
+
 env:
   STAGING_IMAGE_NAME: ghcr.io/${{ github.repository }}/staging
 
@@ -845,7 +848,9 @@ jobs:
 
   staging-release-images-sign:
     name: Sign container image manifests
-    permissions: write-all
+    permissions:
+      packages: write
+      id-token: write
     runs-on: ubuntu-latest
     environment: release
     needs:
