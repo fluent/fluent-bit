@@ -359,7 +359,8 @@ void flb_oauth2_config_destroy(struct flb_oauth2_config *cfg)
 }
 
 static int oauth2_setup_upstream(struct flb_oauth2 *ctx,
-                                 struct flb_output_instance *ins,
+                                 struct flb_config *config,
+                                 int tls_verify_hostname,
                                  const char *auth_url)
 {
     int ret;
@@ -422,17 +423,17 @@ static int oauth2_setup_upstream(struct flb_oauth2 *ctx,
         goto error;
     }
 
-    ret = flb_tls_set_verify_hostname(ctx->tls, ins->tls_verify_hostname);
+    ret = flb_tls_set_verify_hostname(ctx->tls, tls_verify_hostname);
     if (ret != 0) {
         flb_error("[oauth2] error setting TLS hostname verification");
         goto error;
     }
 
     if (strcmp(prot, "https") == 0) {
-        ctx->u = flb_upstream_create_url(ins->config, auth_url, FLB_IO_TLS, ctx->tls);
+        ctx->u = flb_upstream_create_url(config, auth_url, FLB_IO_TLS, ctx->tls);
     }
     else {
-        ctx->u = flb_upstream_create_url(ins->config, auth_url, FLB_IO_TCP, NULL);
+        ctx->u = flb_upstream_create_url(config, auth_url, FLB_IO_TCP, NULL);
     }
 
     if (!ctx->u) {
@@ -1208,8 +1209,31 @@ struct flb_oauth2 *flb_oauth2_create(struct flb_output_instance *ins,
 struct flb_oauth2 *flb_oauth2_create_from_config(struct flb_output_instance *ins,
                                 const struct flb_oauth2_config *cfg)
 {
+    if (!ins) {
+        flb_error("[oauth2] output instance is not set");
+        return NULL;
+    }
+
+    return flb_oauth2_create_from_settings(ins->config, ins->tls_verify_hostname,
+                                           cfg);
+}
+
+struct flb_oauth2 *flb_oauth2_create_from_settings(struct flb_config *config,
+                                int tls_verify_hostname,
+                                const struct flb_oauth2_config *cfg)
+{
     int ret;
     struct flb_oauth2 *ctx;
+
+    if (!config) {
+        flb_error("[oauth2] config is not set");
+        return NULL;
+    }
+
+    if (!cfg) {
+        flb_error("[oauth2] oauth2 configuration is not set");
+        return NULL;
+    }
 
     ctx = flb_calloc(1, sizeof(struct flb_oauth2));
     if (!ctx) {
@@ -1267,7 +1291,8 @@ struct flb_oauth2 *flb_oauth2_create_from_config(struct flb_output_instance *ins
         return NULL;
     }
 
-    ret = oauth2_setup_upstream(ctx, ins, ctx->auth_url);
+    ret = oauth2_setup_upstream(ctx, config, tls_verify_hostname,
+                                ctx->auth_url);
     if (ret != 0) {
         flb_oauth2_destroy(ctx);
         return NULL;
