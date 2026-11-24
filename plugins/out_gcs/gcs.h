@@ -25,38 +25,13 @@
 #include <fluent-bit/flb_fstore.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_aws_util.h>
+#include <fluent-bit/flb_gcp_auth.h>
 
 #define FLB_GCS_DEFAULT_HOST "storage.googleapis.com"
 #define FLB_GCS_DEFAULT_PORT 443
-#define FLB_GCS_SCOPE "https://www.googleapis.com/auth/devstorage.read_write"
-#define FLB_GCS_AUTH_URL "https://oauth2.googleapis.com/token"
-#define FLB_GCS_TOKEN_REFRESH 3000
-#define FLB_GCS_METADATA_SERVER "http://metadata.google.internal"
-#define FLB_GCS_METADATA_TOKEN_URI \
-    "/computeMetadata/v1/instance/service-accounts/default/token"
-#define FLB_GCS_METADATA_TOKEN_SIZE_MAX 14336
+#define FLB_GCS_METADATA_SERVER FLB_GCP_METADATA_SERVER
+#define FLB_GCS_METADATA_TOKEN_URI FLB_GCP_METADATA_TOKEN_URI
 #define FLB_GCS_MIN_TOTAL_FILE_SIZE 1000000
-
-/* refresh federation tokens this many seconds before their server-stated expiry */
-#define FLB_GCS_TOKEN_EXPIRY_SAFETY 300
-
-/* Workload Identity Federation (external account, OIDC token file source) */
-#define FLB_GCS_GOOGLE_STS_URL           "https://sts.googleapis.com"
-#define FLB_GCS_GOOGLE_IAM_URL           "https://iamcredentials.googleapis.com"
-#define FLB_GCS_STS_TOKEN_ENDPOINT       "/v1/token"
-
-#define FLB_GCS_TARGET_RESOURCE_TEMPLATE \
-    "//iam.googleapis.com/projects/%s/locations/global/workloadIdentityPools/%s/providers/%s"
-
-#define FLB_GCS_STS_GRANT_TYPE            "urn:ietf:params:oauth:grant-type:token-exchange"
-#define FLB_GCS_STS_REQUESTED_TOKEN_TYPE  "urn:ietf:params:oauth:token-type:access_token"
-#define FLB_GCS_STS_SUBJECT_TOKEN_TYPE    "urn:ietf:params:oauth:token-type:jwt"
-#define FLB_GCS_STS_SCOPE                 "https://www.googleapis.com/auth/cloud-platform"
-
-#define FLB_GCS_GEN_ACCESS_TOKEN_ENDPOINT \
-    "/v1/projects/-/serviceAccounts/%s:generateAccessToken"
-#define FLB_GCS_GEN_ACCESS_TOKEN_BODY \
-    "{\"scope\": [\"" FLB_GCS_SCOPE "\"]}"
 
 #define FLB_GCS_FORMAT_JSON_LINES 0
 #define FLB_GCS_FORMAT_PARQUET    100
@@ -70,34 +45,17 @@ struct upload_queue {
     struct mk_list _head;
 };
 
-struct flb_gcs_oauth_credentials {
-    flb_sds_t type;
-    flb_sds_t project_id;
-    flb_sds_t private_key_id;
-    flb_sds_t private_key;
-    flb_sds_t client_email;
-    flb_sds_t client_id;
-    flb_sds_t auth_uri;
-    flb_sds_t token_uri;
-};
-
 struct flb_gcs {
     struct flb_output_instance *ins;
     struct flb_config *config;
     struct flb_upstream *u;
-    struct flb_upstream *metadata_u;
-    struct flb_oauth2 *o;
-    pthread_mutex_t token_mutex;
-    int token_mutex_initialized;
     /* serializes access to the upload queue / file store across workers */
     pthread_mutex_t upload_lock;
     int upload_lock_initialized;
-    int metadata_server_auth;
 
     flb_sds_t bucket;
     flb_sds_t content_type;
     flb_sds_t credentials_file;
-    int credentials_file_owned;
     flb_sds_t metadata_server;
     flb_sds_t store_dir;
     flb_sds_t gcs_key_format;
@@ -132,12 +90,13 @@ struct flb_gcs {
     int timer_created;
     int timer_ms;
 
-    struct flb_gcs_oauth_credentials *oauth_credentials;
-
     int unify_tag;
     flb_sds_t unify_tag_name;
 
-    /* Workload Identity Federation (external account) */
+    /* shared Google Cloud authentication */
+    struct flb_gcp_auth *auth;
+
+    /* Workload Identity Federation config (external account) */
     int has_identity_federation;
     flb_sds_t project_number;
     flb_sds_t pool_id;
@@ -145,13 +104,6 @@ struct flb_gcs {
     flb_sds_t identity_token_file;
     flb_sds_t google_service_account;
     flb_sds_t subject_token_type;
-    flb_sds_t sts_audience;
-    struct flb_tls *sts_tls;
-    struct flb_upstream *sts_u;
-    struct flb_tls *iam_tls;
-    struct flb_upstream *iam_u;
-    flb_sds_t federation_token;
-    time_t federation_token_expiry;
 };
 
 int gcs_jwt_encode(struct flb_gcs *ctx, char *payload, char *secret,

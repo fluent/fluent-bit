@@ -28,6 +28,7 @@
 #include <fluent-bit/flb_unescape.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_aws_util.h>
+#include <fluent-bit/flb_gcp_auth.h>
 #include <fluent-bit/aws/flb_aws_compress.h>
 
 #include "gcs.h"
@@ -292,858 +293,36 @@ flb_sds_t gcs_uri_encode_object_name(const char *name, size_t name_len)
     return output;
 }
 
-/* credential parse and oauth helpers based on bigquery/stackdriver style */
-static int flb_gcs_read_credentials_file(struct flb_gcs *ctx, char *creds,
-                                         struct flb_gcs_oauth_credentials *c)
-{
-    int i, ret, len, key_len, val_len;
-    int tok_size = 32;
-    char *buf, *key, *val;
-    void *tmp_tokens;
-    flb_sds_t tmp;
-    struct stat st;
-    jsmn_parser parser;
-    jsmntok_t *t;
-    jsmntok_t *tokens;
-
-    ret = stat(creds, &st);
-    if (ret == -1) {
-        flb_errno();
-        flb_plg_error(ctx->ins, "cannot open credentials file: %s", creds);
-        return -1;
-    }
-
-    if (!S_ISREG(st.st_mode) && !S_ISLNK(st.st_mode)) {
-        flb_plg_error(ctx->ins, "credentials file is not a valid file: %s",
-                      creds);
-        return -1;
-    }
-
-    buf = mk_file_to_buffer(creds);
-    if (!buf) {
-        flb_plg_error(ctx->ins, "error reading credentials file: %s", creds);
-        return -1;
-    }
-
-    jsmn_init(&parser);
-    tokens = flb_calloc(1, sizeof(jsmntok_t) * tok_size);
-    if (!tokens) {
-        flb_free(buf);
-        return -1;
-    }
-
-    ret = jsmn_parse(&parser, buf, st.st_size, tokens, tok_size);
-    while (ret == JSMN_ERROR_NOMEM) {
-        if (tok_size > INT_MAX / 2) {
-            flb_plg_error(ctx->ins, "credentials file is too large: %s", creds);
-            flb_free(buf);
-            flb_free(tokens);
-            return -1;
-        }
-
-        tmp_tokens = flb_realloc(tokens, sizeof(jsmntok_t) * tok_size * 2);
-        if (!tmp_tokens) {
-            flb_errno();
-            flb_free(buf);
-            flb_free(tokens);
-            return -1;
-        }
-        tokens = tmp_tokens;
-        tok_size *= 2;
-        ret = jsmn_parse(&parser, buf, st.st_size, tokens, tok_size);
-    }
-
-    if (ret <= 0) {
-        flb_plg_error(ctx->ins, "invalid JSON credentials file: %s", creds);
-        flb_free(buf);
-        flb_free(tokens);
-        return -1;
-    }
-
-    t = &tokens[0];
-    if (t->type != JSMN_OBJECT) {
-        flb_plg_error(ctx->ins, "invalid JSON map on file: %s", creds);
-        flb_free(buf);
-        flb_free(tokens);
-        return -1;
-    }
-
-    for (i = 1; i < ret; i++) {
-        t = &tokens[i];
-        if (t->type != JSMN_STRING) {
-            continue;
-        }
-
-        if (t->start == -1 || t->end == -1 ||
-            (t->start == 0 && t->end == 0)) {
-            break;
-        }
-        key = buf + t->start;
-        key_len = t->end - t->start;
-
-        i++;
-        if (i >= ret) {
-            break;
-        }
-        t = &tokens[i];
-        if (t->start == -1 || t->end == -1) {
-            continue;
-        }
-        val = buf + t->start;
-        val_len = t->end - t->start;
-
-        if (key_cmp(key, key_len, "type") == 0) {
-            c->type = flb_sds_create_len(val, val_len);
-        }
-        else if (key_cmp(key, key_len, "project_id") == 0) {
-            c->project_id = flb_sds_create_len(val, val_len);
-        }
-        else if (key_cmp(key, key_len, "private_key_id") == 0) {
-            c->private_key_id = flb_sds_create_len(val, val_len);
-        }
-        else if (key_cmp(key, key_len, "private_key") == 0) {
-            tmp = flb_sds_create_len(val, val_len);
-            if (tmp) {
-                len = flb_sds_len(tmp);
-                c->private_key = flb_sds_create_size(len);
-                if (!c->private_key) {
-                    flb_errno();
-                    flb_sds_destroy(tmp);
-                    flb_free(buf);
-                    flb_free(tokens);
-                    return -1;
-                }
-                flb_unescape_string(tmp, len, &c->private_key);
-                flb_sds_destroy(tmp);
-            }
-        }
-        else if (key_cmp(key, key_len, "client_email") == 0) {
-            c->client_email = flb_sds_create_len(val, val_len);
-        }
-        else if (key_cmp(key, key_len, "client_id") == 0) {
-            c->client_id = flb_sds_create_len(val, val_len);
-        }
-        else if (key_cmp(key, key_len, "auth_uri") == 0) {
-            c->auth_uri = flb_sds_create_len(val, val_len);
-        }
-        else if (key_cmp(key, key_len, "token_uri") == 0) {
-            c->token_uri = flb_sds_create_len(val, val_len);
-        }
-    }
-
-    flb_free(buf);
-    flb_free(tokens);
-
-    if (!c->private_key) {
-        flb_plg_error(ctx->ins, "no private key");
-        return -1;
-    }
-
-    return c->client_email ? 0 : -1;
-}
-
-static void flb_gcs_credentials_destroy(struct flb_gcs_oauth_credentials *c)
-{
-    if (!c) {
-        return;
-    }
-
-    if (c->type) {
-        flb_sds_destroy(c->type);
-    }
-    if (c->project_id) {
-        flb_sds_destroy(c->project_id);
-    }
-    if (c->private_key_id) {
-        flb_sds_destroy(c->private_key_id);
-    }
-    if (c->private_key) {
-        flb_sds_destroy(c->private_key);
-    }
-    if (c->client_email) {
-        flb_sds_destroy(c->client_email);
-    }
-    if (c->client_id) {
-        flb_sds_destroy(c->client_id);
-    }
-    if (c->auth_uri) {
-        flb_sds_destroy(c->auth_uri);
-    }
-    if (c->token_uri) {
-        flb_sds_destroy(c->token_uri);
-    }
-
-    flb_free(c);
-}
-
-int gcs_jwt_base64_url_encode(unsigned char *out_buf, size_t out_size,
-                              unsigned char *in_buf, size_t in_size, size_t *olen)
-{
-    size_t i;
-    size_t len;
-    int result;
-
-    if (!out_buf || !in_buf || !olen || out_size < 2) {
-        return -1;
-    }
-
-    result = flb_base64_encode((unsigned char *) out_buf, out_size, &len, in_buf, in_size);
-    if (result != 0) {
-        return -1;
-    }
-    for (i = 0; i < len && out_buf[i] != '='; i++) {
-        if (out_buf[i] == '+') out_buf[i] = '-';
-        else if (out_buf[i] == '/') out_buf[i] = '_';
-    }
-    out_buf[i] = '\0';
-    *olen = i;
-    return 0;
-}
-
+/* thin wrapper kept for the unit tests; ctx is unused */
 int gcs_jwt_encode(struct flb_gcs *ctx, char *payload, char *secret,
                    char **out_signature, size_t *out_size)
 {
-    int ret;
-    size_t header_len;
-    size_t payload_len;
-    size_t secret_len;
-    size_t input_len;
-    size_t encoded_units;
-    size_t buf_size;
-    size_t olen, sig_len;
-    char *buf;
-    char *sigd;
-    char *headers = "{\"alg\": \"RS256\", \"typ\": \"JWT\"}";
-    unsigned char sha256_buf[32] = {0};
-    flb_sds_t out;
-    flb_sds_t tmp;
-    unsigned char sig[256] = {0};
-
     (void) ctx;
 
-    out = NULL;
-    sigd = NULL;
-    header_len = strlen(headers);
-    payload_len = strlen(payload);
-    secret_len = strlen(secret);
-    input_len = header_len > payload_len ? header_len : payload_len;
-    if (input_len > ((size_t) -1) - 2) {
-        return -1;
-    }
-
-    encoded_units = (input_len + 2) / 3;
-    if (encoded_units > (((size_t) -1) - 1) / 4) {
-        return -1;
-    }
-    buf_size = (encoded_units * 4) + 1;
-    buf = flb_malloc(buf_size);
-    if (!buf) {
-        flb_errno();
-        return -1;
-    }
-
-    ret = gcs_jwt_base64_url_encode((unsigned char *) buf, buf_size, (unsigned char *) headers,
-                                    header_len, &olen);
-    if (ret != 0) {
-        goto error;
-    }
-
-    out = flb_sds_create_size(2048);
-    if (!out) {
-        flb_errno();
-        goto error;
-    }
-    tmp = flb_sds_cat(out, buf, olen);
-    if (!tmp) {
-        goto error;
-    }
-    out = tmp;
-
-    tmp = flb_sds_cat(out, ".", 1);
-    if (!tmp) {
-        goto error;
-    }
-    out = tmp;
-
-    ret = gcs_jwt_base64_url_encode((unsigned char *) buf, buf_size, (unsigned char *) payload,
-                                    payload_len, &olen);
-    if (ret != 0) {
-        goto error;
-    }
-    tmp = flb_sds_cat(out, buf, olen);
-    if (!tmp) {
-        goto error;
-    }
-    out = tmp;
-
-    ret = flb_hash_simple(FLB_HASH_SHA256, (unsigned char *) out, flb_sds_len(out),
-                          sha256_buf, sizeof(sha256_buf));
-    if (ret != FLB_CRYPTO_SUCCESS) {
-        goto error;
-    }
-
-    sig_len = sizeof(sig);
-    ret = flb_crypto_sign_simple(FLB_CRYPTO_PRIVATE_KEY, FLB_CRYPTO_PADDING_PKCS1,
-                                 FLB_HASH_SHA256, (unsigned char *) secret, secret_len + 1,
-                                 sha256_buf, sizeof(sha256_buf), sig, &sig_len);
-    if (ret != FLB_CRYPTO_SUCCESS) {
-        goto error;
-    }
-
-    sigd = flb_malloc(2048);
-    if (!sigd) {
-        flb_errno();
-        goto error;
-    }
-    ret = gcs_jwt_base64_url_encode((unsigned char *) sigd, 2048, sig, sig_len, &olen);
-    if (ret != 0) {
-        goto error;
-    }
-
-    tmp = flb_sds_cat(out, ".", 1);
-    if (!tmp) {
-        goto error;
-    }
-    out = tmp;
-
-    tmp = flb_sds_cat(out, sigd, olen);
-    if (!tmp) {
-        goto error;
-    }
-    out = tmp;
-
-    *out_signature = out;
-    *out_size = flb_sds_len(out);
-    flb_free(buf);
-    flb_free(sigd);
-
-    return 0;
-
-error:
-    flb_free(buf);
-    flb_free(sigd);
-    if (out) {
-        flb_sds_destroy(out);
-    }
-
-    return -1;
+    return flb_gcp_jwt_encode(payload, secret, out_signature, out_size);
 }
 
-static int gcs_fetch_metadata_token(struct flb_gcs *ctx, flb_sds_t *payload)
+/* test seam: mocks the metadata server token endpoint */
+static int gcs_mock_metadata_fetch(void *data, flb_sds_t *payload)
 {
-    int ret;
-    int result;
-    size_t bytes_sent;
     const char *test_response;
     flb_sds_t tmp;
-    struct flb_connection *connection;
-    struct flb_http_client *client;
+    (void) data;
 
-    if (gcs_under_test_mode() == FLB_TRUE) {
-        test_response = getenv("TEST_GCS_METADATA_RESPONSE");
-        if (!test_response) {
-            return -1;
-        }
-
-        tmp = flb_sds_copy(*payload, test_response, strlen(test_response));
-        if (!tmp) {
-            return -1;
-        }
-        *payload = tmp;
-        mock_gcs_call_increment_counter("MetadataToken");
-        gcs_setenv("TEST_GCS_LAST_METADATA_URI", FLB_GCS_METADATA_TOKEN_URI);
-        return 0;
-    }
-
-    connection = flb_upstream_conn_get(ctx->metadata_u);
-    if (!connection) {
-        flb_plg_error(ctx->ins,
-                      "failed to connect to metadata server at '%s'; "
-                      "provide google_service_credentials when not running on GCE/GKE",
-                      ctx->metadata_server);
+    test_response = getenv("TEST_GCS_METADATA_RESPONSE");
+    if (!test_response) {
         return -1;
     }
 
-    client = flb_http_client(connection, FLB_HTTP_GET,
-                             FLB_GCS_METADATA_TOKEN_URI,
-                             "", 0, NULL, 0, NULL, 0);
-    if (!client) {
-        flb_upstream_conn_release(connection);
+    tmp = flb_sds_copy(*payload, test_response, strlen(test_response));
+    if (!tmp) {
         return -1;
     }
-
-    flb_http_buffer_size(client, FLB_GCS_METADATA_TOKEN_SIZE_MAX);
-    flb_http_add_header(client, "User-Agent", 10, "Fluent-Bit", 10);
-    flb_http_add_header(client, "Metadata-Flavor", 15, "Google", 6);
-
-    ret = flb_http_do(client, &bytes_sent);
-    if (ret != 0) {
-        flb_plg_warn(ctx->ins, "metadata token request failed: http_do=%i", ret);
-        result = -1;
-    }
-    else if (client->resp.status == 200) {
-        tmp = flb_sds_copy(*payload, client->resp.payload,
-                           client->resp.payload_size);
-        if (tmp) {
-            *payload = tmp;
-            result = 0;
-        }
-        else {
-            result = -1;
-        }
-    }
-    else {
-        flb_plg_warn(ctx->ins,
-                     "metadata token request failed with status=%i response='%.*s'",
-                     client->resp.status,
-                     (int) client->resp.payload_size,
-                     client->resp.payload ? client->resp.payload : "");
-        result = -1;
-    }
-
-    flb_http_client_destroy(client);
-    flb_upstream_conn_release(connection);
-
-    return result;
-}
-
-static int gcs_get_metadata_token(struct flb_gcs *ctx)
-{
-    int ret;
-    flb_sds_t payload;
-
-    payload = flb_sds_create_size(FLB_GCS_METADATA_TOKEN_SIZE_MAX);
-    if (!payload) {
-        return -1;
-    }
-
-    ret = gcs_fetch_metadata_token(ctx, &payload);
-    if (ret == 0) {
-        ret = flb_oauth2_parse_json_response(payload, flb_sds_len(payload),
-                                             ctx->o);
-    }
-    flb_sds_destroy(payload);
-
-    if (ret != 0) {
-        flb_plg_error(ctx->ins, "could not retrieve a metadata server token");
-        return -1;
-    }
-
-    ctx->o->expires_at = time(NULL) + ctx->o->expires_in;
-    return 0;
-}
-
-static int gcs_get_oauth2_token(struct flb_gcs *ctx)
-{
-    int ret;
-    char *sig_data;
-    size_t sig_size;
-    time_t issued;
-    time_t expires;
-    char payload[1024];
-
-    flb_oauth2_payload_clear(ctx->o);
-    if (ctx->metadata_server_auth == FLB_TRUE) {
-        return gcs_get_metadata_token(ctx);
-    }
-
-    issued = time(NULL);
-    expires = issued + FLB_GCS_TOKEN_REFRESH;
-    snprintf(payload, sizeof(payload) - 1,
-             "{\"iss\": \"%s\", \"scope\": \"%s\", \"aud\": \"%s\", "
-             "\"exp\": %llu, \"iat\": %llu}",
-             ctx->oauth_credentials->client_email, FLB_GCS_SCOPE, FLB_GCS_AUTH_URL,
-             (unsigned long long) expires, (unsigned long long) issued);
-
-    ret = gcs_jwt_encode(ctx, payload, ctx->oauth_credentials->private_key, &sig_data, &sig_size);
-    if (ret != 0) {
-        return -1;
-    }
-
-    ret = flb_oauth2_payload_append(ctx->o, "grant_type", -1,
-                                    "urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer", -1);
-    if (ret == -1) {
-        flb_sds_destroy(sig_data);
-        return -1;
-    }
-
-    ret = flb_oauth2_payload_append(ctx->o, "assertion", -1, sig_data, sig_size);
-    flb_sds_destroy(sig_data);
-    if (ret == -1 || !flb_oauth2_token_get(ctx->o)) {
-        return -1;
-    }
+    *payload = tmp;
+    mock_gcs_call_increment_counter("MetadataToken");
+    gcs_setenv("TEST_GCS_LAST_METADATA_URI", FLB_GCS_METADATA_TOKEN_URI);
 
     return 0;
-}
-
-/* The platform rotates this file (e.g. kubelet projected token); read fresh, never cache. */
-static int gcs_read_identity_token(struct flb_gcs *ctx, flb_sds_t *out_token)
-{
-    char *buf;
-    size_t len;
-    flb_sds_t token;
-
-    buf = mk_file_to_buffer(ctx->identity_token_file);
-    if (!buf) {
-        flb_plg_error(ctx->ins, "could not read identity token file: %s",
-                      ctx->identity_token_file);
-        return -1;
-    }
-
-    len = strlen(buf);
-    while (len > 0 && (buf[len - 1] == '\n' || buf[len - 1] == '\r' ||
-                       buf[len - 1] == ' ' || buf[len - 1] == '\t')) {
-        len--;
-    }
-
-    if (len == 0) {
-        flb_plg_error(ctx->ins, "identity token file is empty: %s",
-                      ctx->identity_token_file);
-        flb_free(buf);
-        return -1;
-    }
-
-    token = flb_sds_create_len(buf, len);
-    flb_free(buf);
-    if (!token) {
-        return -1;
-    }
-
-    *out_token = token;
-    return 0;
-}
-
-/* Escapes content only; the caller supplies the surrounding quotes. */
-static flb_sds_t gcs_json_escape(const char *str, size_t len)
-{
-    flb_sds_t out;
-    flb_sds_t ret;
-
-    out = flb_sds_create_size(len + 16);
-    if (!out) {
-        return NULL;
-    }
-
-    ret = flb_sds_cat_utf8(&out, str, (int) len);
-    if (!ret) {
-        flb_sds_destroy(out);
-        return NULL;
-    }
-
-    return ret;
-}
-
-/* Days-from-civil (Howard Hinnant): portable UTC broken-down time to epoch,
- * avoiding non-portable timegm()/strptime() (out_gcs also builds on Windows). */
-static time_t gcs_utc_to_epoch(int year, int mon, int mday,
-                               int hour, int min, int sec)
-{
-    long y = year;
-    long era;
-    long yoe;
-    long doy;
-    long doe;
-    long days;
-
-    y -= (mon <= 2);
-    era = (y >= 0 ? y : y - 399) / 400;
-    yoe = y - era * 400;
-    doy = (153 * (mon + (mon > 2 ? -3 : 9)) + 2) / 5 + mday - 1;
-    doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    days = era * 146097 + doe - 719468;
-
-    return (time_t) days * 86400 + hour * 3600 + min * 60 + sec;
-}
-
-/* Derive expiry from the server-stated lifetime (STS "expires_in" / IAM
- * "expireTime") minus a safety margin; fall back to FLB_GCS_TOKEN_REFRESH. */
-static time_t gcs_federation_token_expiry(struct flb_gcs *ctx,
-                                          struct flb_http_client *sts_c,
-                                          struct flb_http_client *iam_c)
-{
-    time_t now = time(NULL);
-    time_t expiry = 0;
-    flb_sds_t val;
-    int y, mo, d, h, mi, s;
-
-    if (ctx->google_service_account && iam_c) {
-        val = flb_json_get_val(iam_c->resp.payload, iam_c->resp.payload_size,
-                               "expireTime");
-        if (val) {
-            if (sscanf(val, "%d-%d-%dT%d:%d:%d", &y, &mo, &d, &h, &mi, &s) == 6) {
-                expiry = gcs_utc_to_epoch(y, mo, d, h, mi, s);
-            }
-            flb_sds_destroy(val);
-        }
-    }
-    else if (sts_c) {
-        val = flb_json_get_val(sts_c->resp.payload, sts_c->resp.payload_size,
-                               "expires_in");
-        if (val) {
-            long secs = atol(val);
-            if (secs > 0) {
-                expiry = now + (time_t) secs;
-            }
-            flb_sds_destroy(val);
-        }
-    }
-
-    if (expiry <= now) {
-        return now + FLB_GCS_TOKEN_REFRESH;
-    }
-
-    expiry -= FLB_GCS_TOKEN_EXPIRY_SAFETY;
-    if (expiry <= now) {
-        expiry = now + 1;
-    }
-
-    return expiry;
-}
-
-/* Exchange the OIDC subject token at Google STS, optionally impersonating a
- * service account via IAM Credentials.
- * https://cloud.google.com/iam/docs/workload-identity-federation */
-static int gcs_exchange_identity_federation_token(struct flb_gcs *ctx)
-{
-    int ret = -1;
-    int http_ret;
-    size_t b_sent;
-    flb_sds_t subject_token = NULL;
-    flb_sds_t sts_body = NULL;
-    flb_sds_t federated_token = NULL;
-    flb_sds_t iam_url = NULL;
-    flb_sds_t iam_body = NULL;
-    flb_sds_t auth_header = NULL;
-    flb_sds_t new_token = NULL;
-    flb_sds_t audience_esc = NULL;
-    flb_sds_t token_type_esc = NULL;
-    flb_sds_t subject_token_esc = NULL;
-    struct flb_connection *sts_conn = NULL;
-    struct flb_connection *iam_conn = NULL;
-    struct flb_http_client *sts_c = NULL;
-    struct flb_http_client *iam_c = NULL;
-
-    if (gcs_read_identity_token(ctx, &subject_token) != 0) {
-        return -1;
-    }
-
-    /* JSON-escape user-controlled values before embedding them in the request */
-    audience_esc = gcs_json_escape(ctx->sts_audience,
-                                   flb_sds_len(ctx->sts_audience));
-    token_type_esc = gcs_json_escape(ctx->subject_token_type,
-                                     flb_sds_len(ctx->subject_token_type));
-    subject_token_esc = gcs_json_escape(subject_token,
-                                        flb_sds_len(subject_token));
-    if (!audience_esc || !token_type_esc || !subject_token_esc) {
-        goto cleanup;
-    }
-
-    sts_body = flb_sds_create_size(flb_sds_len(subject_token_esc) + 512);
-    if (!sts_body) {
-        goto cleanup;
-    }
-    if (!flb_sds_printf(&sts_body,
-                        "{\"audience\":\"%s\","
-                        "\"grantType\":\"%s\","
-                        "\"requestedTokenType\":\"%s\","
-                        "\"scope\":\"%s\","
-                        "\"subjectTokenType\":\"%s\","
-                        "\"subjectToken\":\"%s\"}",
-                        audience_esc,
-                        FLB_GCS_STS_GRANT_TYPE,
-                        FLB_GCS_STS_REQUESTED_TOKEN_TYPE,
-                        FLB_GCS_STS_SCOPE,
-                        token_type_esc,
-                        subject_token_esc)) {
-        goto cleanup;
-    }
-
-    sts_conn = flb_upstream_conn_get(ctx->sts_u);
-    if (!sts_conn) {
-        flb_plg_error(ctx->ins, "failed to connect to Google STS");
-        goto cleanup;
-    }
-
-    sts_c = flb_http_client(sts_conn, FLB_HTTP_POST, FLB_GCS_STS_TOKEN_ENDPOINT,
-                            sts_body, flb_sds_len(sts_body), NULL, 0, NULL, 0);
-    if (!sts_c) {
-        goto cleanup;
-    }
-    flb_http_add_header(sts_c, "Content-Type", 12, "application/json", 16);
-
-    http_ret = flb_http_do(sts_c, &b_sent);
-    if (http_ret != 0 || sts_c->resp.status != 200) {
-        flb_plg_error(ctx->ins,
-                      "Google STS token exchange failed (http_do=%i status=%i): %s",
-                      http_ret, sts_c->resp.status,
-                      sts_c->resp.payload ? sts_c->resp.payload : "");
-        goto cleanup;
-    }
-
-    federated_token = flb_json_get_val(sts_c->resp.payload,
-                                       sts_c->resp.payload_size,
-                                       "access_token");
-    if (!federated_token) {
-        flb_plg_error(ctx->ins,
-                      "could not extract federated access token from STS response");
-        goto cleanup;
-    }
-
-    if (!ctx->google_service_account) {
-        new_token = flb_sds_create(federated_token);
-        if (!new_token) {
-            goto cleanup;
-        }
-    }
-    else {
-        /* Impersonate the target service account via IAM Credentials */
-        iam_url = flb_sds_create_size(256);
-        if (!iam_url) {
-            goto cleanup;
-        }
-        if (!flb_sds_printf(&iam_url, FLB_GCS_GEN_ACCESS_TOKEN_ENDPOINT,
-                            ctx->google_service_account)) {
-            goto cleanup;
-        }
-
-        auth_header = flb_sds_create_size(flb_sds_len(federated_token) +
-                                          sizeof("Bearer "));
-        if (!auth_header) {
-            goto cleanup;
-        }
-        if (!flb_sds_printf(&auth_header, "Bearer %s", federated_token)) {
-            goto cleanup;
-        }
-
-        iam_body = flb_sds_create(FLB_GCS_GEN_ACCESS_TOKEN_BODY);
-        if (!iam_body) {
-            goto cleanup;
-        }
-
-        iam_conn = flb_upstream_conn_get(ctx->iam_u);
-        if (!iam_conn) {
-            flb_plg_error(ctx->ins, "failed to connect to Google IAM Credentials");
-            goto cleanup;
-        }
-
-        iam_c = flb_http_client(iam_conn, FLB_HTTP_POST, iam_url,
-                                iam_body, flb_sds_len(iam_body), NULL, 0, NULL, 0);
-        if (!iam_c) {
-            goto cleanup;
-        }
-        flb_http_add_header(iam_c, "Authorization", 13,
-                            auth_header, flb_sds_len(auth_header));
-        flb_http_add_header(iam_c, "Content-Type", 12, "application/json", 16);
-
-        http_ret = flb_http_do(iam_c, &b_sent);
-        if (http_ret != 0 || iam_c->resp.status != 200) {
-            flb_plg_error(ctx->ins,
-                          "IAM generateAccessToken failed (http_do=%i status=%i): %s",
-                          http_ret, iam_c->resp.status,
-                          iam_c->resp.payload ? iam_c->resp.payload : "");
-            goto cleanup;
-        }
-
-        new_token = flb_json_get_val(iam_c->resp.payload,
-                                     iam_c->resp.payload_size,
-                                     "accessToken");
-        if (!new_token) {
-            flb_plg_error(ctx->ins,
-                          "could not extract accessToken from IAM response");
-            goto cleanup;
-        }
-    }
-
-    if (ctx->federation_token) {
-        flb_sds_destroy(ctx->federation_token);
-    }
-    ctx->federation_token = new_token;
-    new_token = NULL;
-    ctx->federation_token_expiry = gcs_federation_token_expiry(ctx, sts_c, iam_c);
-    ret = 0;
-
-    flb_plg_info(ctx->ins,
-                 "retrieved Google access token via Workload Identity Federation");
-
-cleanup:
-    flb_sds_destroy(subject_token);
-    flb_sds_destroy(audience_esc);
-    flb_sds_destroy(token_type_esc);
-    flb_sds_destroy(subject_token_esc);
-    flb_sds_destroy(sts_body);
-    flb_sds_destroy(federated_token);
-    flb_sds_destroy(iam_url);
-    flb_sds_destroy(iam_body);
-    flb_sds_destroy(auth_header);
-    flb_sds_destroy(new_token);
-    if (sts_c) {
-        flb_http_client_destroy(sts_c);
-    }
-    if (iam_c) {
-        flb_http_client_destroy(iam_c);
-    }
-    if (sts_conn) {
-        flb_upstream_conn_release(sts_conn);
-    }
-    if (iam_conn) {
-        flb_upstream_conn_release(iam_conn);
-    }
-    return ret;
-}
-
-static flb_sds_t get_google_token(struct flb_gcs *ctx)
-{
-    int ret = 0;
-    flb_sds_t output = NULL;
-    flb_sds_t tmp;
-
-    if (pthread_mutex_lock(&ctx->token_mutex)) {
-        return NULL;
-    }
-
-    if (ctx->has_identity_federation) {
-        if (!ctx->federation_token ||
-            ctx->federation_token_expiry <= time(NULL)) {
-            ret = gcs_exchange_identity_federation_token(ctx);
-        }
-
-        if (ret == 0 && ctx->federation_token) {
-            output = flb_sds_create_size(flb_sds_len(ctx->federation_token) +
-                                         sizeof("Bearer "));
-            if (output) {
-                tmp = flb_sds_printf(&output, "Bearer %s", ctx->federation_token);
-                if (!tmp) {
-                    flb_sds_destroy(output);
-                    output = NULL;
-                }
-                else {
-                    output = tmp;
-                }
-            }
-        }
-    }
-    else {
-        if (flb_oauth2_token_expired(ctx->o) == FLB_TRUE) {
-            ret = gcs_get_oauth2_token(ctx);
-        }
-
-        if (ret == 0) {
-            output = flb_sds_create(ctx->o->token_type);
-            if (output) {
-                tmp = flb_sds_printf(&output, " %s", ctx->o->access_token);
-                if (!tmp) {
-                    flb_sds_destroy(output);
-                    output = NULL;
-                }
-                else {
-                    output = tmp;
-                }
-            }
-        }
-    }
-
-    pthread_mutex_unlock(&ctx->token_mutex);
-    return output;
 }
 
 static int upload_queue_contains(struct flb_gcs *ctx, struct gcs_file *chunk)
@@ -1400,11 +579,11 @@ static int upload_data(struct flb_gcs *ctx,
     char random_hex[9];
 
     if (gcs_under_test_mode() == FLB_TRUE &&
-        ctx->metadata_server_auth == FLB_FALSE) {
+        flb_gcp_auth_uses_metadata_server(ctx->auth) == FLB_FALSE) {
         auth = flb_sds_create("Bearer test-token");
     }
     else {
-        auth = get_google_token(ctx);
+        auth = flb_gcp_auth_get_header(ctx->auth);
     }
 
     if (!auth) {
@@ -1748,95 +927,6 @@ static int flush_init(struct flb_gcs *ctx)
     return 0;
 }
 
-static int gcs_init_identity_federation(struct flb_gcs *ctx, struct flb_config *config)
-{
-    int io_flags = FLB_IO_TLS;
-    struct flb_output_instance *ins = ctx->ins;
-
-    if (ins->host.ipv6 == FLB_TRUE) {
-        io_flags |= FLB_IO_IPV6;
-    }
-
-    if (!ctx->project_number) {
-        flb_plg_error(ins, "'project_number' is required when "
-                      "'enable_identity_federation' is true");
-        return -1;
-    }
-    if (!ctx->pool_id) {
-        flb_plg_error(ins, "'pool_id' is required when "
-                      "'enable_identity_federation' is true");
-        return -1;
-    }
-    if (!ctx->provider_id) {
-        flb_plg_error(ins, "'provider_id' is required when "
-                      "'enable_identity_federation' is true");
-        return -1;
-    }
-    if (!ctx->identity_token_file) {
-        flb_plg_error(ins, "'identity_token_file' is required when "
-                      "'enable_identity_federation' is true");
-        return -1;
-    }
-
-    /* Build the STS audience (workload identity pool provider resource name) */
-    ctx->sts_audience = flb_sds_create_size(256);
-    if (!ctx->sts_audience) {
-        return -1;
-    }
-    if (!flb_sds_printf(&ctx->sts_audience, FLB_GCS_TARGET_RESOURCE_TEMPLATE,
-                        ctx->project_number, ctx->pool_id, ctx->provider_id)) {
-        return -1;
-    }
-
-    /* Google STS upstream (token exchange) */
-    ctx->sts_tls = flb_tls_create(FLB_TLS_CLIENT_MODE, ins->tls_verify,
-                                  ins->tls_debug, ins->tls_vhost,
-                                  ins->tls_ca_path, ins->tls_ca_file,
-                                  ins->tls_crt_file, ins->tls_key_file,
-                                  ins->tls_key_passwd);
-    if (!ctx->sts_tls) {
-        flb_plg_error(ins, "failed to create Google STS TLS context");
-        return -1;
-    }
-    flb_tls_set_verify_hostname(ctx->sts_tls, ins->tls_verify_hostname);
-
-    ctx->sts_u = flb_upstream_create_url(config, FLB_GCS_GOOGLE_STS_URL,
-                                         io_flags, ctx->sts_tls);
-    if (!ctx->sts_u) {
-        flb_plg_error(ins, "failed to create Google STS upstream");
-        return -1;
-    }
-    flb_stream_disable_async_mode(&ctx->sts_u->base);
-
-    /* Google IAM Credentials upstream (only needed for impersonation) */
-    if (ctx->google_service_account) {
-        ctx->iam_tls = flb_tls_create(FLB_TLS_CLIENT_MODE, ins->tls_verify,
-                                      ins->tls_debug, ins->tls_vhost,
-                                      ins->tls_ca_path, ins->tls_ca_file,
-                                      ins->tls_crt_file, ins->tls_key_file,
-                                      ins->tls_key_passwd);
-        if (!ctx->iam_tls) {
-            flb_plg_error(ins, "failed to create Google IAM TLS context");
-            return -1;
-        }
-        flb_tls_set_verify_hostname(ctx->iam_tls, ins->tls_verify_hostname);
-
-        ctx->iam_u = flb_upstream_create_url(config, FLB_GCS_GOOGLE_IAM_URL,
-                                             io_flags, ctx->iam_tls);
-        if (!ctx->iam_u) {
-            flb_plg_error(ins, "failed to create Google IAM upstream");
-            return -1;
-        }
-        flb_stream_disable_async_mode(&ctx->iam_u->base);
-    }
-
-    flb_plg_info(ins,
-                 "Workload Identity Federation enabled (audience=%s, impersonation=%s)",
-                 ctx->sts_audience,
-                 ctx->google_service_account ? ctx->google_service_account : "none");
-    return 0;
-}
-
 /* init/flush/exit */
 static int cb_gcs_init(struct flb_output_instance *ins, struct flb_config *config, void *data)
 {
@@ -1845,7 +935,7 @@ static int cb_gcs_init(struct flb_output_instance *ins, struct flb_config *confi
     flb_sds_t normalized_compression;
     struct flb_gcs *ctx;
     const char *tmp;
-    const char *legacy_credentials;
+    struct flb_gcp_auth_config auth_cfg;
     (void) data;
 
     ctx = flb_calloc(1, sizeof(*ctx));
@@ -1914,64 +1004,36 @@ static int cb_gcs_init(struct flb_output_instance *ins, struct flb_config *confi
         goto error;
     }
 
-    if (pthread_mutex_init(&ctx->token_mutex, NULL) == 0) {
-        ctx->token_mutex_initialized = FLB_TRUE;
+    memset(&auth_cfg, 0, sizeof(auth_cfg));
+    auth_cfg.config = config;
+    auth_cfg.scope = FLB_GCP_SCOPE_STORAGE_READ_WRITE;
+    auth_cfg.log_name = flb_output_name(ins);
+    auth_cfg.credentials_file = ctx->credentials_file;
+    auth_cfg.metadata_server = ctx->metadata_server;
+    auth_cfg.identity_federation = ctx->has_identity_federation;
+    auth_cfg.project_number = ctx->project_number;
+    auth_cfg.pool_id = ctx->pool_id;
+    auth_cfg.provider_id = ctx->provider_id;
+    auth_cfg.identity_token_file = ctx->identity_token_file;
+    auth_cfg.google_service_account = ctx->google_service_account;
+    auth_cfg.subject_token_type = ctx->subject_token_type;
+    auth_cfg.tls_verify = ins->tls_verify;
+    auth_cfg.tls_debug = ins->tls_debug;
+    auth_cfg.tls_verify_hostname = ins->tls_verify_hostname;
+    auth_cfg.ipv6 = ins->host.ipv6;
+    auth_cfg.tls_vhost = ins->tls_vhost;
+    auth_cfg.tls_ca_path = ins->tls_ca_path;
+    auth_cfg.tls_ca_file = ins->tls_ca_file;
+    auth_cfg.tls_crt_file = ins->tls_crt_file;
+    auth_cfg.tls_key_file = ins->tls_key_file;
+    auth_cfg.tls_key_passwd = ins->tls_key_passwd;
+    if (gcs_under_test_mode() == FLB_TRUE) {
+        auth_cfg.metadata_fetch = gcs_mock_metadata_fetch;
     }
-    else {
+
+    ctx->auth = flb_gcp_auth_create(&auth_cfg);
+    if (!ctx->auth) {
         goto error;
-    }
-
-    if (ctx->has_identity_federation) {
-        if (ctx->credentials_file) {
-            flb_plg_error(ins, "'google_service_credentials' and "
-                          "'enable_identity_federation' are mutually exclusive");
-            goto error;
-        }
-
-        if (gcs_init_identity_federation(ctx, config) == -1) {
-            goto error;
-        }
-    }
-    else {
-        tmp = getenv("GOOGLE_APPLICATION_CREDENTIALS");
-        legacy_credentials = getenv("GOOGLE_SERVICE_CREDENTIALS");
-        if (!ctx->credentials_file && tmp && legacy_credentials) {
-            flb_plg_warn(ins, "GOOGLE_APPLICATION_CREDENTIALS and "
-                         "GOOGLE_SERVICE_CREDENTIALS are both set; using "
-                         "GOOGLE_APPLICATION_CREDENTIALS");
-        }
-        if (!ctx->credentials_file && !tmp) {
-            tmp = legacy_credentials;
-        }
-        if (!ctx->credentials_file && tmp) {
-            ctx->credentials_file = flb_sds_create(tmp);
-            if (!ctx->credentials_file) {
-                goto error;
-            }
-            ctx->credentials_file_owned = FLB_TRUE;
-        }
-
-        if (ctx->credentials_file) {
-            ctx->oauth_credentials = flb_calloc(1, sizeof(struct flb_gcs_oauth_credentials));
-            if (!ctx->oauth_credentials) {
-                flb_errno();
-                goto error;
-            }
-
-            if (flb_gcs_read_credentials_file(ctx, ctx->credentials_file,
-                                              ctx->oauth_credentials) == -1) {
-                goto error;
-            }
-        }
-        else {
-            ctx->metadata_server_auth = FLB_TRUE;
-            flb_plg_info(ins, "using GCE/GKE metadata server authentication");
-        }
-
-        ctx->o = flb_oauth2_create(ins, FLB_GCS_AUTH_URL, FLB_GCS_TOKEN_REFRESH);
-        if (!ctx->o) {
-            goto error;
-        }
     }
 
     ctx->u = flb_upstream_create(config, FLB_GCS_DEFAULT_HOST, FLB_GCS_DEFAULT_PORT,
@@ -1996,15 +1058,6 @@ static int cb_gcs_init(struct flb_output_instance *ins, struct flb_config *confi
                      "configure 'workers 1' or higher");
     }
 
-    if (ctx->metadata_server_auth == FLB_TRUE) {
-        ctx->metadata_u = flb_upstream_create_url(config, ctx->metadata_server,
-                                                  FLB_IO_TCP, NULL);
-        if (!ctx->metadata_u) {
-            flb_plg_error(ins, "metadata upstream creation failed");
-            goto error;
-        }
-        flb_stream_disable_async_mode(&ctx->metadata_u->base);
-    }
     ctx->out_format = FLB_PACK_JSON_FORMAT_LINES;
     ctx->gcs_format = FLB_GCS_FORMAT_JSON_LINES;
     ctx->json_date_format = FLB_PACK_JSON_DATE_ISO8601;
@@ -2247,51 +1300,12 @@ static int gcs_ctx_destroy(void *data, struct flb_config *config)
         flb_upstream_destroy(ctx->u);
     }
 
-    if (ctx->metadata_u) {
-        flb_upstream_destroy(ctx->metadata_u);
-    }
-
-    if (ctx->o) {
-        flb_oauth2_destroy(ctx->o);
-    }
-
-    if (ctx->sts_u) {
-        flb_upstream_destroy(ctx->sts_u);
-    }
-
-    if (ctx->iam_u) {
-        flb_upstream_destroy(ctx->iam_u);
-    }
-
-    if (ctx->sts_tls) {
-        flb_tls_destroy(ctx->sts_tls);
-    }
-
-    if (ctx->iam_tls) {
-        flb_tls_destroy(ctx->iam_tls);
-    }
-
-    if (ctx->sts_audience) {
-        flb_sds_destroy(ctx->sts_audience);
-    }
-
-    if (ctx->federation_token) {
-        flb_sds_destroy(ctx->federation_token);
-    }
-
-    flb_gcs_credentials_destroy(ctx->oauth_credentials);
-
-    if (ctx->credentials_file_owned == FLB_TRUE) {
-        flb_sds_destroy(ctx->credentials_file);
-    }
+    flb_gcp_auth_destroy(ctx->auth);
 
     if (ctx->seq_index_file) {
         flb_sds_destroy(ctx->seq_index_file);
     }
 
-    if (ctx->token_mutex_initialized == FLB_TRUE) {
-        pthread_mutex_destroy(&ctx->token_mutex);
-    }
     if (ctx->upload_lock_initialized == FLB_TRUE) {
         pthread_mutex_destroy(&ctx->upload_lock);
     }
@@ -2432,7 +1446,7 @@ static struct flb_config_map config_map[] = {
      "directly against GCS (direct resource access)."
     },
     {
-     FLB_CONFIG_MAP_STR, "subject_token_type", FLB_GCS_STS_SUBJECT_TOKEN_TYPE,
+     FLB_CONFIG_MAP_STR, "subject_token_type", FLB_GCP_STS_SUBJECT_TOKEN_TYPE,
      0, FLB_TRUE, offsetof(struct flb_gcs, subject_token_type),
      "OIDC subject token type for identity federation."
     },
