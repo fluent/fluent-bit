@@ -6,6 +6,7 @@ Fluent Bit maintains active security support for a limited set of release lines.
 
 | Version   | Status     | Security Updates Until |
 |-----------|------------|------------------------|
+| **5.2.x** | ✅ Active  | To be announced        |
 | **5.1.x** | ✅ Active  | To be announced        |
 | **5.0.x** | ✅ Active  | **November 30, 2026**  |
 | **4.2.x** | ❌ EOL     | **July 30, 2026**      |
@@ -15,7 +16,8 @@ Fluent Bit maintains active security support for a limited set of release lines.
 | **< 3.2** | ❌ EOL     | —                      |
 
 > **Note:** 4.2 and earlier are End-of-Life (EOL) and receive no further fixes.
-> The v5.1 End-of-Maintenance date will be published when it is finalized.
+> 5.2 is the latest release series, first released on November 9, 2026.
+> The v5.2 and v5.1 End-of-Maintenance dates will be published when they are finalized.
 
 ---
 
@@ -24,7 +26,7 @@ Fluent Bit maintains active security support for a limited set of release lines.
 - We backport **critical** and **high-severity** security fixes to all **Active** branches listed above.
 - Medium/low-severity fixes may be backported at the maintainers’ discretion.
 - After a branch reaches **EOM**, no further patches are published for that line.
-- Users are strongly encouraged to use the latest **5.1.x** release.
+- Users are strongly encouraged to use the latest **5.2.x** release.
 
 ---
 
@@ -99,4 +101,4 @@ For third-party CVEs that may impact Fluent Bit, we will post an assessment and 
 
 ---
 
-_Last updated: November 17, 2026_
+_Last updated: November 20, 2026_
