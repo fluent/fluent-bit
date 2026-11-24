@@ -54,6 +54,10 @@ int flb_mp_normalize_log_buffer_groups_msgpack(const void *in_buf, size_t in_siz
 int flb_mp_normalize_log_buffer_groups_msgpack_ex(const void *in_buf, size_t in_size,
                                                   char **out_buf, size_t *out_size,
                                                   int flags);
+/* Return the logical count of the retained records without rescanning the result. */
+int flb_mp_normalize_log_buffer_groups_msgpack_with_count(const void *in_buf, size_t in_size,
+                                                         char **out_buf, size_t *out_size,
+                                                         int flags, int *out_records);
 int flb_mp_normalize_log_buffer_groups(const void *in_buf, size_t in_size,
                                        char **out_buf, size_t *out_size);
 int flb_mp_count_remaining(const void *data, size_t bytes, size_t *remaining_bytes);
