@@ -1,0 +1,5 @@
+{
+    "type": "service_account",
+    "project_id": "fluent-bit",
+    "client_email": "gcp-auth@fluent-bit.iam.gserviceaccount.com"
+}

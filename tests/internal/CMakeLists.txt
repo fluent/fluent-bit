@@ -91,6 +91,7 @@ if(FLB_TLS)
     upstream_tls.c
     oauth2_jwt.c
     oauth2.c
+    gcp_auth.c
     )
 endif()
 
