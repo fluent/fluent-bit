@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -44,15 +45,24 @@ def build_id(date, counter):
     return date if counter == 1 else f"{date}.{counter}"
 
 
-def builds(version, registry_tags):
-    """Build ids published for a version, oldest first. A build id is YYYYMMDD or YYYYMMDD.N."""
-    pattern = re.compile(re.escape(version) + r"-(\d{8})(?:\.([1-9]\d*))?")
+def build_numbers(version, registry_tags, *, all_images=False):
+    pattern = re.escape(version) + r"-(\d{8})(?:\.([1-9]\d*))?"
+    prefixes = "|".join(re.escape(image) for image in WINDOWS_IMAGES)
+    linux = re.compile(pattern + ("(?:-debug)?" if all_images else ""))
+    windows = re.compile(f"(?:{prefixes})-" + pattern)
     found = set()
     for tag in registry_tags:
-        match = pattern.fullmatch(tag)
+        match = linux.fullmatch(tag)
+        if not match and all_images:
+            match = windows.fullmatch(tag)
         if match:
             found.add((match.group(1), int(match.group(2) or 1)))
-    return [build_id(date, counter) for date, counter in sorted(found)]
+    return found
+
+
+def builds(version, registry_tags):
+    """Production build ids published for a version, oldest first."""
+    return [build_id(date, counter) for date, counter in sorted(build_numbers(version, registry_tags))]
 
 
 def image_tag(image, version, build=""):
@@ -72,7 +82,8 @@ def resolve(requested, versions):
     return version
 
 
-def plan(requested, versions, date, registry_tags, original_created="", series_count=REPORT_SERIES):
+def plan(requested, versions, date, registry_tags, original_created="", series_count=REPORT_SERIES,
+         mirror_tags=()):
     """Resolve what one rebuild publishes: floating tags only move forward, never to an older patch.
 
     Only images the release originally published are rebuilt, older series ship fewer Windows images.
@@ -93,20 +104,21 @@ def plan(requested, versions, date, registry_tags, original_created="", series_c
     if missing:
         raise ValueError(f"{name} has no published container images: missing {', '.join(missing)}")
     windows = [prefix for prefix in WINDOWS_IMAGES if f"{prefix}-{name}" in registry_tags]
-    published = builds(name, registry_tags)
+    all_tags = set(registry_tags).union(mirror_tags)
+    occupied = build_numbers(name, all_tags, all_images=True)
+    published = builds(name, all_tags)
     if not published:
         if not re.fullmatch(r"\d{8}", original_created):
             raise ValueError(f"expected the YYYYMMDD build date of the published {name} image, "
                              f"got {original_created!r}")
         published = [original_created]
+        occupied.add((original_created, 1))
     preserve = []
     if len(published) == 1:  # no rebuild was published yet, the version tags still name the original
         preserve = [{"from": image_tag(image, name), "to": image_tag(image, name, published[0])}
                     for image in ["production", "debug"] + windows]
-    counter = 1
-    while build_id(date, counter) in published:
-        counter += 1
-    build = build_id(date, counter)
+    counter = max((number for day, number in occupied if day == date), default=0)
+    build = build_id(date, counter + 1)
     tags = [name, f"{name}-{build}"]
     if newest[series] == version:
         tags.append(text(series))
@@ -125,6 +137,53 @@ def plan(requested, versions, date, registry_tags, original_created="", series_c
         "report-versions": report,
         "report-tags": [tag for item in report for tag in (item, f"{item}-debug")],
     }
+
+
+def publish(staging, registries, version, build, tags, digests, versions):
+    """Publish verified manifests, checking both registries before the first write."""
+    release = parse_version(version)
+    if release not in versions:
+        raise ValueError(f"{version} is no longer a tagged release")
+    series = release[:2]
+    eligible = {version}
+    if release == max(candidate for candidate in versions if candidate[:2] == series):
+        eligible.add(text(series))
+    if release == max(versions):
+        eligible.add("latest")
+    dated = {image_tag(image, version, build): digest for image, digest in digests.items()}
+    floating = {tag: digests["debug" if tag.endswith("-debug") else "production"]
+                for tag in tags if tag.removesuffix("-debug") in eligible}
+    floating.update({image_tag(image, version): digests[image]
+                     for image in WINDOWS_IMAGES if image in digests})
+    planned = build_numbers(version, [image_tag("production", version, build)])
+    if len(planned) != 1 or any(not re.fullmatch(r"sha256:[0-9a-f]{64}", digest)
+                                for digest in dated.values()):
+        raise ValueError("invalid rebuild ID or verified image digest")
+    planned_build = planned.pop()
+
+    def registry_command(*args):
+        return subprocess.check_output(["regctl", *args], text=True).strip()
+
+    other_variants = {image_tag(image, version, build) for image in WINDOWS_IMAGES if image not in digests}
+    pending = []
+    for registry in registries:
+        existing = set(registry_command("tag", "ls", registry).splitlines())
+        if any(number > planned_build for number in build_numbers(version, existing, all_images=True)):
+            raise ValueError(f"{registry} has a newer build of {version}; start a new run")
+        for tag, digest in dated.items():
+            destination = f"{registry}:{tag}"
+            if tag not in existing:
+                pending.append((destination, digest))
+            elif registry_command("image", "digest", destination) != digest:
+                raise ValueError(f"{destination} points to a different build; start a new run")
+        if other_variants & existing:
+            raise ValueError(f"{registry} has an unexpected Windows variant of {version}-{build}")
+
+    for destination, digest in pending:
+        registry_command("image", "copy", f"{staging}@{digest}", destination)
+    for registry in registries:
+        for tag, digest in floating.items():
+            registry_command("image", "copy", f"{registry}@{digest}", f"{registry}:{tag}")
 
 
 def findings(path):
@@ -176,13 +235,14 @@ def counts(entries):
                       for severity in SEVERITIES)
 
 
-def revision_tag(tag, registry_tags):
-    """Newest dated tag published for this image; it stays on that build when the plain tag moves."""
+def revision_tag(tag, registry_tags, inspect_dir, digest):
+    """Find the newest dated tag that names the scanned digest."""
     image = "debug" if tag.endswith("-debug") else "production"
     version = tag.removesuffix("-debug")
     for build in reversed(builds(version, registry_tags)):
-        if image_tag(image, version, build) in registry_tags:
-            return image_tag(image, version, build)
+        dated = image_tag(image, version, build)
+        if dated in registry_tags and digest and inspected(inspect_dir, dated)[0] == digest:
+            return dated
     return ""
 
 
@@ -335,8 +395,8 @@ def render(tags, scan_dir, registry_tags, images, generated, run_url=""):
         except (OSError, ValueError, KeyError, TypeError):
             lines.append(f"| `{tag}` | scan unavailable | | | | | |")
             continue
-        dated = revision_tag(tag, registry_tags)
-        lines.append(f"| `{tag}` | {built} | {f'`{dated}`' if dated else 'original release'} | `{digest}` | "
+        dated = revision_tag(tag, registry_tags, scan_dir, digest)
+        lines.append(f"| `{tag}` | {built} | {f'`{dated}`' if dated else '–'} | `{digest}` | "
                      f"{cell(result['os']) or 'unknown'} | {counts(result['fixable'])} | "
                      f"{counts(result['unfixed'])} |")
         total = len(result["fixable"]) + len(result["unfixed"])
@@ -394,10 +454,22 @@ def main(argv=None):
     command.add_argument("--version", default="")
     command.add_argument("--tags-file", required=True, help="output of git ls-remote --tags")
     command.add_argument("--registry-tags", required=True, help="output of skopeo list-tags")
+    command.add_argument("--mirror-tags", help="output of skopeo list-tags in the mirror registry")
     command.add_argument("--date", required=True, help="YYYYMMDD suffix of the dated tag")
     command.add_argument("--original-inspect", default="",
                          help="skopeo inspect output of the published production image")
     command.add_argument("--series", type=int, default=REPORT_SERIES)
+
+    command = commands.add_parser("publish", help="publish verified digests without moving dated tags")
+    command.add_argument("--staging", required=True)
+    command.add_argument("--registry", action="append", required=True)
+    command.add_argument("--version", required=True)
+    command.add_argument("--build", required=True)
+    command.add_argument("--tags", type=json.loads, required=True)
+    command.add_argument("--tags-file", required=True, help="current output of git ls-remote --tags")
+    command.add_argument("--production", required=True)
+    command.add_argument("--debug", required=True)
+    command.add_argument("--windows", type=json.loads, required=True)
 
     command = commands.add_parser("resolve", help="print the version a rebuild request refers to")
     command.add_argument("--version", default="")
@@ -443,8 +515,13 @@ def main(argv=None):
                     created = json.loads(Path(args.original_inspect).read_text())["Created"][:10]
                 except (OSError, ValueError, KeyError, TypeError):
                     created = ""
+            mirror_tags = json.loads(Path(args.mirror_tags).read_text())["Tags"] if args.mirror_tags else []
             emit(plan(args.version.strip(), stable_versions(lines), args.date, registry_tags,
-                      created.replace("-", ""), args.series))
+                      created.replace("-", ""), args.series, mirror_tags=mirror_tags))
+        elif args.command == "publish":
+            publish(args.staging, args.registry, args.version, args.build, args.tags,
+                    {"production": args.production, "debug": args.debug, **args.windows},
+                    stable_versions(Path(args.tags_file).read_text().splitlines()))
         elif args.command == "resolve":
             lines = Path(args.tags_file).read_text().splitlines()
             print(text(resolve(args.version.strip(), stable_versions(lines))))
@@ -466,7 +543,7 @@ def main(argv=None):
             generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
             page = render(args.tags, args.scan_dir, registry_tags, args.image, generated, args.run_url)
             Path(args.output).write_text(page)
-    except (OSError, ValueError, KeyError) as error:
+    except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:
         print(f"::error::{error}")
         return 1
     return 0
