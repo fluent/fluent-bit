@@ -23,6 +23,10 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
+#ifdef FLB_SYSTEM_MACOS
+#include <limits.h>
+#endif
+
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_input.h>
 
@@ -64,6 +68,18 @@ static inline int64_t flb_tail_stat_mtime(struct stat *st)
 static inline int flb_tail_target_file_name_cmp(char *name,
                                                 struct flb_tail_file *file)
 {
+#ifdef FLB_SYSTEM_MACOS
+    char base_a[PATH_MAX];
+    char base_b[PATH_MAX];
+
+    /* macOS basename() uses a buffer shared by all threads. */
+    if (!basename_r(name, base_a) || !basename_r(file->real_name, base_b)) {
+        flb_errno();
+        return -1;
+    }
+
+    return strcmp(base_a, base_b);
+#else
     int ret;
     char *name_a = NULL;
     char *name_b = NULL;
@@ -113,6 +129,7 @@ static inline int flb_tail_target_file_name_cmp(char *name,
     /* FYI: 'base_b' never points to a new allocation, no flb_free is needed */
 
     return ret;
+#endif
 }
 
 int flb_tail_file_name_dup(char *path, struct flb_tail_file *file);
