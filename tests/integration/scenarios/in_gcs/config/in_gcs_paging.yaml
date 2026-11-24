@@ -1,0 +1,24 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: gcs
+      bucket: test-bucket
+      endpoint: http://127.0.0.1:${GCS_PORT}
+      metadata_server: http://127.0.0.1:${GCS_PORT}
+      tag: gcs.paging
+      page_size: 1
+  outputs:
+    - name: http
+      match: 'gcs.*'
+      host: 127.0.0.1
+      port: ${TEST_SUITE_HTTP_PORT}
+      uri: /data
+      format: json
+      json_date_key: event_time
+      json_date_format: iso8601
