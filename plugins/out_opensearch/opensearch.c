@@ -34,6 +34,7 @@
 #include <fluent-bit/flb_http_retry_after.h>
 #include <msgpack.h>
 
+#include <ctype.h>
 #include <cfl/cfl.h>
 #include <stdint.h>
 #include <time.h>
@@ -719,6 +720,10 @@ static int opensearch_format(struct flb_config *config,
             }
             else {
                 index = ra_index;
+            }
+
+            for (int i = 0; index[i]; i++) {
+                index[i] = tolower(index[i]);
             }
 
             if (ctx->suppress_type_name) {
