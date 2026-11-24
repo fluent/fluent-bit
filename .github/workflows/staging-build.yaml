@@ -20,6 +20,13 @@ on:
         type: boolean
         required: false
         default: false
+      macos_only:
+        description: Only build and upload macOS packages.
+        type: boolean
+        default: false
+      macos_ref:
+        description: Override the source ref for the macOS package build.
+        type: string
 
 # We do not want a new staging build to run whilst we are releasing the current staging build.
 # We also do not want multiples to run for the same version.
@@ -74,6 +81,7 @@ jobs:
           flags: 'g'
 
   staging-build-images:
+    if: ${{ !inputs.macos_only }}
     needs: staging-build-get-meta
     permissions:
       contents: read
@@ -129,6 +137,7 @@ jobs:
           AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET_STAGING }}
 
   staging-build-generate-matrix:
+    if: ${{ !inputs.macos_only }}
     name: Staging build matrix
     runs-on: ubuntu-latest
     outputs:
@@ -167,6 +176,7 @@ jobs:
       gpg_private_key_passphrase: ${{ secrets.GPG_PRIVATE_KEY_PASSPHRASE }}
 
   staging-build-windows-packages:
+    if: ${{ !inputs.macos_only }}
     needs:
       - staging-build-get-meta
     permissions:
@@ -190,7 +200,7 @@ jobs:
     uses: ./.github/workflows/call-build-macos.yaml
     with:
       version: ${{ needs.staging-build-get-meta.outputs.version }}
-      ref: ${{ inputs.version || github.ref_name }}
+      ref: ${{ inputs.macos_ref || inputs.version || github.ref_name }}
       environment: staging
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
