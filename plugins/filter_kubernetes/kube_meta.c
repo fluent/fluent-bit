@@ -174,7 +174,7 @@ static int get_token_with_command(const char *command,
 #endif
 
 /* Set K8s Authorization Token and get HTTP Auth Header */
-static int get_http_auth_header(struct flb_kube *ctx)
+int flb_kube_get_http_auth_header(struct flb_kube *ctx)
 {
     int ret;
     char *temp;
@@ -199,6 +199,20 @@ static int get_http_auth_header(struct flb_kube *ctx)
     }
 
     if (ret == -1 || tk == NULL) {
+        return -1;
+    }
+
+    /*
+     * Token commands (e.g. aws-iam-authenticator token --token-only) and
+     * token files commonly end with a newline.
+     */
+    while (tk_size > 0 && (tk[tk_size - 1] == '\n' || tk[tk_size - 1] == '\r')) {
+        tk[--tk_size] = '\0';
+    }
+
+    if (tk_size == 0) {
+        flb_plg_warn(ctx->ins, "kubernetes token is empty");
+        flb_free(tk);
         return -1;
     }
 
@@ -249,7 +263,7 @@ static int refresh_token_if_needed(struct flb_kube *ctx)
     }
 
     if (expired || ctx->kube_token_create == 0) {
-        ret = get_http_auth_header(ctx);
+        ret = flb_kube_get_http_auth_header(ctx);
         if (ret == -1) {
             flb_plg_warn(ctx->ins, "failed to set http auth header");
             return -1;
@@ -317,7 +331,7 @@ static int get_local_pod_info(struct flb_kube *ctx)
 
     /* If a namespace was recognized, a token is mandatory */
     /* Use the token to get HTTP Auth Header*/
-    ret = get_http_auth_header(ctx);
+    ret = flb_kube_get_http_auth_header(ctx);
     if (ret == -1) {
         flb_plg_warn(ctx->ins, "failed to set http auth header");
         return FLB_FALSE;
