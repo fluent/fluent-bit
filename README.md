@@ -6,7 +6,6 @@
 |-------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Unit Tests (`master`)   | [![CI/Unit Tests](https://github.com/fluent/fluent-bit/actions/workflows/unit-tests.yaml/badge.svg?branch=master)](https://github.com/fluent/fluent-bit/actions/workflows/unit-tests.yaml) |
 | Integration Tests       | [![CI/Integration Tests](https://github.com/fluent/fluent-bit/actions/workflows/master-integration-test.yaml/badge.svg)](https://github.com/fluent/fluent-bit/actions/workflows/master-integration-test.yaml) |
-| Arm builds              | <a href="https://actuated.dev/"><img alt="Arm CI sponsored by Actuated" src="https://docs.actuated.dev/images/actuated-badge.png" width="120px"></img></a> |
 | Latest Release Pipeline | [![CI/Build](https://github.com/fluent/fluent-bit/actions/workflows/staging-release.yaml/badge.svg)](https://github.com/fluent/fluent-bit/actions/workflows/staging-release.yaml) |
 
 ---
@@ -30,6 +29,8 @@ The `master` branch tracks development of **v5.2.0**. The current stable release
 series, **v5.1**, is tracked in the `5.1` branch.
 
 For version-specific maintenance timelines and policies, see our [MAINTENANCE.md](https://github.com/fluent/fluent-bit/blob/master/MAINTENANCE.md).
+
+Maintainers: releases, container image rebuilds, backports and security handling are summarized in the [Maintainers Guide](MAINTAINERS_GUIDE.md).
 
 To track upcoming milestones, visit the [project roadmap](https://github.com/fluent/fluent-bit/wiki/Fluent-Bit-Roadmap).
 
