@@ -19,9 +19,24 @@ Our development coding style for C is based on the Apache C style guidelines, we
 
  - https://httpd.apache.org/dev/styleguide.html
 
-You have to pay attention to the code indentation, tabs are 4 spaces, spaces on conditionals, etc. If your code submission is not aligned, it will be rejected.
-
 ### General requirements
+
+#### Indentation
+
+Use spaces for indentation in Fluent Bit C source and headers. Indent each block level by four spaces.
+When a function call, declaration, or definition wraps, align continuation lines with the first argument or parameter.
+Apply this alignment when editing an existing continuation line, and keep unrelated lines out of the formatting change.
+
+```c
+static void warn_failed_output(const char *output_name,
+                               const char *reason)
+{
+    if (reason) {
+        flb_warn("output '%s' failed: %s",
+                 output_name, reason);
+    }
+}
+```
 
 #### Line Length
 
