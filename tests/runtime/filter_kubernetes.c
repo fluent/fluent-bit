@@ -5,6 +5,10 @@
 #include <fluent-bit/flb_time.h>
 #include <fluent-bit/flb_info.h>
 #include "flb_tests_runtime.h"
+#ifdef FLB_SYSTEM_LINUX
+#include "../../plugins/filter_kubernetes/kube_conf.h"
+#include "../../plugins/filter_kubernetes/kube_meta.h"
+#endif
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -1309,7 +1313,55 @@ static void flb_test_systemd_logs()
 }
 #endif
 
+#ifdef FLB_SYSTEM_LINUX
+static void flb_test_kube_token_command_line_ending(void)
+{
+    int ret;
+    size_t index;
+    struct flb_kube ctx;
+    struct flb_filter_instance ins = { .log_level = FLB_LOG_OFF };
+    const char *commands[] = {
+        "printf '%s' test-token",
+        "printf 'test-token\\n'",
+        "printf 'test-token\\r\\n'",
+    };
+
+    for (index = 0; index < sizeof(commands) / sizeof(commands[0]); index++) {
+        TEST_CASE(commands[index]);
+        memset(&ctx, 0, sizeof(ctx));
+        ctx.ins = &ins;
+        ctx.kube_token_command = commands[index];
+
+        ret = flb_kube_get_http_auth_header(&ctx);
+        if (TEST_CHECK(ret == 0) && TEST_CHECK(ctx.token != NULL) &&
+            TEST_CHECK(ctx.auth != NULL)) {
+            TEST_CHECK(strcmp(ctx.token, "test-token") == 0);
+            TEST_CHECK(ctx.token_len == sizeof("test-token") - 1);
+            TEST_CHECK(strcmp(ctx.auth, "Bearer test-token") == 0);
+            TEST_CHECK(ctx.auth_len == sizeof("Bearer test-token") - 1);
+        }
+        flb_free(ctx.token);
+        flb_free(ctx.auth);
+    }
+
+    TEST_CASE("line ending without a token");
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.ins = &ins;
+    ctx.kube_token_command = "printf '\\r\\n'";
+    ret = flb_kube_get_http_auth_header(&ctx);
+    TEST_CHECK(ret == -1);
+    TEST_CHECK(ctx.token == NULL);
+    TEST_CHECK(ctx.auth == NULL);
+    TEST_CHECK(ctx.kube_token_create == 0);
+    flb_free(ctx.token);
+    flb_free(ctx.auth);
+}
+#endif
+
 TEST_LIST = {
+#ifdef FLB_SYSTEM_LINUX
+    {"kube_token_command_line_ending", flb_test_kube_token_command_line_ending},
+#endif
     {"kube_core_base", flb_test_core_base},
     {"kube_core_no_meta", flb_test_core_no_meta},
     {"kube_core_unescaping_text", flb_test_core_unescaping_text},
