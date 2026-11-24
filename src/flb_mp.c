@@ -313,7 +313,7 @@ static FLB_INLINE int mp_raw_skip(const unsigned char **cursor,
                     low = flb_mp_raw_be32(p + 4);
 
                     if ((high & 0x80000000) == 0 ||
-                        (high == 0xffffffff && (low & 0x80000000) != 0)) {
+                        (high == UINT32_MAX && low >= UINT32_C(0x80000000))) {
                         return -1;
                     }
                 }
