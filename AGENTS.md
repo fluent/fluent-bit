@@ -93,7 +93,10 @@ Keep changes scoped: plugin logic in its plugin directory, shared behavior in `s
 
 ## Coding Style & Naming Conventions
 - Follow Apache-style C conventions used by Fluent Bit.
-- Use 4-space tabs/indentation and target 100 chars per line; 120 chars max.
+- Follow the [C indentation rules](CONTRIBUTING.md#indentation). Use four
+  spaces per block level and align wrapped arguments and parameters with the
+  first argument or parameter.
+- Target 100 chars per line, with a 120-character maximum.
 - Always use braces for `if/else/while/do` blocks.
 - Put function opening braces on the next line:
   `int fn(void)\n{ ... }`
