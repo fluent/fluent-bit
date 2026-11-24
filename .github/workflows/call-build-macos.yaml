@@ -75,10 +75,10 @@ jobs:
       matrix:
         config:
           - name: "Apple Silicon macOS runner"
-            runner: macos-14
+            runner: macos-15
             cmake_version: "3.31.6"
           - name: "Intel macOS runner"
-            runner: macos-14-large
+            runner: macos-15-large
             cmake_version: "3.31.6"
 
     steps:
