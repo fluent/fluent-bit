@@ -1,10 +1,12 @@
 """Guard the rebuild of released container images: planning, gating, report and publication."""
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import yaml
 
@@ -94,6 +96,12 @@ class PlanTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "no published container images"):
             rebuild.plan("4.2.9", self.versions, "20261116", REGISTRY)
 
+    def test_partial_builds_in_either_registry_reserve_their_ids(self):
+        primary = REGISTRY + ["5.2.0-20261109", "5.2.0-20261116-debug"]
+        mirror = ["windows-2022-5.2.0-20261116.2", "5.2.0-20261116.3"]
+        plan = rebuild.plan("5.2.0", self.versions, "20261116", primary, mirror_tags=mirror)
+        self.assertEqual(plan["build"], "20261116.4")
+
     def test_original_release_is_kept_before_its_tags_move(self):
         plan = rebuild.plan("5.0.11", self.versions, "20261116", REGISTRY, "20261009")
         self.assertEqual(plan["build"], "20261116")
@@ -130,6 +138,117 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(rebuild.plan("5.2.0", self.versions, "20261120", registry)["build"], "20261120")
         self.assertEqual(rebuild.image_tag("windows-2022", "5.2.0", "20261116.2"), "windows-2022-5.2.0-20261116.2")
         self.assertEqual(rebuild.image_tag("debug", "5.2.0"), "5.2.0-debug")
+
+
+class PublicationTests(unittest.TestCase):
+    def setUp(self):
+        self.version = "5.2.0"
+        self.build = "20261116"
+        self.staging = "ghcr.io/fluent/fluent-bit/staging"
+        self.registries = ["ghcr.io/fluent/fluent-bit", "docker.io/fluent/fluent-bit"]
+        self.digests = dict(zip(("production", "debug", "windows-2022"),
+                                (f"sha256:{char * 64}" for char in "abc")))
+        self.tags = ["5.2.0", "5.2.0-20261116", "5.2", "latest", "5.2.0-debug",
+                     "5.2.0-20261116-debug", "5.2-debug", "latest-debug"]
+        self.versions = rebuild.stable_versions(TAGS)
+        self.published = {registry: {} for registry in self.registries}
+        self.copies = []
+
+    def registry(self, command, *, text):
+        self.assertTrue(text)
+        self.assertEqual(command[0], "regctl")
+        group, action, ref = command[1:4]
+        if (group, action) == ("tag", "ls"):
+            return "\n".join(self.published[ref])
+        if (group, action) == ("image", "digest"):
+            registry, tag = ref.rsplit(":", 1)
+            return self.published[registry][tag]
+        self.assertEqual((group, action), ("image", "copy"))
+        registry, tag = command[4].rsplit(":", 1)
+        self.published[registry][tag] = ref.split("@", 1)[1]
+        self.copies.append((ref, command[4]))
+        return ""
+
+    def publish(self):
+        with patch.object(rebuild.subprocess, "check_output", side_effect=self.registry):
+            rebuild.publish(self.staging, self.registries, self.version, self.build, self.tags,
+                            self.digests, self.versions)
+
+    def test_retry_keeps_matching_tags_and_fills_each_registry_before_moving_aliases(self):
+        ghcr, dockerhub = self.registries
+        self.published[ghcr]["5.2.0-20261116"] = self.digests["production"]
+        self.published[dockerhub]["5.2.0-20261116-debug"] = self.digests["debug"]
+        self.publish()
+        dated_copies = self.copies[:4]
+        self.assertTrue(all(src.startswith(self.staging + "@") for src, _ in dated_copies))
+        self.assertTrue(all("20261116" in dst for _, dst in dated_copies))
+        self.assertNotIn(f"{ghcr}:5.2.0-20261116", [dst for _, dst in self.copies])
+        self.assertNotIn(f"{dockerhub}:5.2.0-20261116-debug", [dst for _, dst in self.copies])
+        for registry in self.registries:
+            self.assertEqual(self.published[registry]["windows-2022-5.2.0-20261116"],
+                             self.digests["windows-2022"])
+            self.assertEqual(self.published[registry]["latest"], self.digests["production"])
+        self.copies.clear()
+        self.publish()
+        self.assertTrue(self.copies)
+        self.assertTrue(all("20261116" not in dst for _, dst in self.copies))
+
+    def test_conflicting_partial_publication_stops_before_any_write(self):
+        self.published[self.registries[1]]["windows-2022-5.2.0-20261116"] = "sha256:" + "d" * 64
+        with self.assertRaisesRegex(ValueError, "different build"):
+            self.publish()
+        self.assertEqual(self.copies, [])
+
+    def test_registry_failure_stops_before_any_write(self):
+        def registry(command, *, text):
+            if command[1:] == ["tag", "ls", self.registries[1]]:
+                raise subprocess.CalledProcessError(1, command)
+            return self.registry(command, text=text)
+
+        with patch.object(rebuild.subprocess, "check_output", side_effect=registry):
+            with self.assertRaises(subprocess.CalledProcessError):
+                rebuild.publish(self.staging, self.registries, self.version, self.build,
+                                self.tags, self.digests, self.versions)
+        self.assertEqual(self.copies, [])
+
+    def test_older_retry_cannot_move_aliases_back(self):
+        self.published[self.registries[0]]["5.2.0-20261116.2-debug"] = self.digests["debug"]
+        with self.assertRaisesRegex(ValueError, "newer build"):
+            self.publish()
+        self.assertEqual(self.copies, [])
+
+    def test_retry_rechecks_series_and_latest_aliases(self):
+        for newer, expected in (((5, 3, 0), {"5.2", "5.2-debug"}), ((5, 2, 1), set())):
+            with self.subTest(newer=newer):
+                self.versions = rebuild.stable_versions(TAGS) + [newer]
+                self.copies.clear()
+                self.publish()
+                moved = {dst.rsplit(":", 1)[1] for _, dst in self.copies}
+                self.assertIn("5.2.0", moved)
+                self.assertEqual(moved & {"5.2", "5.2-debug", "latest", "latest-debug"}, expected)
+
+    def test_failed_dated_copy_leaves_aliases_untouched_until_retry(self):
+        failed = f"{self.registries[1]}:5.2.0-20261116-debug"
+
+        def registry(command, *, text):
+            if command[1:3] == ["image", "copy"] and command[-1] == failed:
+                raise subprocess.CalledProcessError(1, command)
+            return self.registry(command, text=text)
+
+        with patch.object(rebuild.subprocess, "check_output", side_effect=registry):
+            with self.assertRaises(subprocess.CalledProcessError):
+                rebuild.publish(self.staging, self.registries, self.version, self.build,
+                                self.tags, self.digests, self.versions)
+        written = {dst for _, dst in self.copies}
+        self.assertEqual(len(written), 4)
+        self.assertTrue(all("20261116" in dst for dst in written))
+        self.copies.clear()
+        self.publish()
+        dated, aliases = self.copies[:2], self.copies[2:]
+        self.assertIn(failed, [dst for _, dst in dated])
+        self.assertTrue(all("20261116" in dst for _, dst in dated))
+        self.assertTrue(all("20261116" not in dst for _, dst in aliases))
+        self.assertTrue(written.isdisjoint(dst for _, dst in self.copies))
 
 
 class IndexTests(unittest.TestCase):
@@ -229,15 +348,21 @@ class GateTests(unittest.TestCase):
         scan(directory, "trivy-5.2.0.json", [("CVE-1", "HIGH", "lib|ssl", "3.0.1"), ("CVE-3", "HIGH", "libc6", "")])
         (directory / "inspect-5.2.0.json").write_text(json.dumps(
             {"Digest": "sha256:abc", "Created": "2026-11-16T10:00:00Z"}))
+        (directory / "inspect-5.2.0-20261116.json").write_text(json.dumps(
+            {"Digest": "sha256:abc", "Created": "2026-11-16T10:00:00Z"}))
+        (directory / "inspect-5.2.0-20261117.json").write_text(json.dumps(
+            {"Digest": "sha256:other", "Created": "2026-11-17T10:00:00Z"}))
         scan(directory, "trivy-5.2.0-debug.json", [])
         (directory / "inspect-5.2.0-debug.json").write_text(json.dumps(
             {"Digest": "sha256:def", "Created": "2026-11-09T10:00:00Z"}))
-        registry = ["5.2.0", "5.2.0-20261101", "5.2.0-20261116", "5.2.0-20261116-debug-extra",
+        registry = ["5.2.0", "5.2.0-20261101", "5.2.0-20261116", "5.2.0-20261117",
+                    "5.2.0-20261117-debug", "5.2.0-20261116-debug-extra",
                     "5.2.0-amd64", "5.2.00-20270101"]
         page = rebuild.render(["5.2.0", "5.2.0-debug", "5.1.5"], directory, registry,
                               ["docker.io/fluent/fluent-bit"], "now", "https://example.invalid/run")
         self.assertIn("| `5.2.0` | 2026-11-16 | `5.2.0-20261116` | `sha256:abc` | debian 13.7 | 0 / 1 | 0 / 1 |", page)
-        self.assertIn("| `5.2.0-debug` | 2026-11-09 | original release | `sha256:def` |", page)
+        self.assertIn("| `5.2.0-debug` | 2026-11-09 | – | `sha256:def` |", page)
+        self.assertNotIn("20261117", page)
         self.assertIn("| `5.1.5` | scan unavailable |", page)
         self.assertIn("lib\\|ssl", page)
         self.assertIn("[this workflow run](https://example.invalid/run)", page)
@@ -261,6 +386,12 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(list(self.workflow[True]), ["workflow_dispatch"])
         self.assertEqual(self.workflow["permissions"], {"contents": "read"})
 
+    def test_implicit_and_explicit_release_versions_share_a_concurrency_group(self):
+        self.assertEqual(self.workflow["concurrency"], {
+            "group": "release-rebuild-images",
+            "queue": "max",
+        })
+
     def test_rebuild_uses_release_tag_and_fresh_base_images(self):
         build = self.jobs["rebuild-build"]
         self.assertEqual(build["with"]["ref"], "${{ needs.rebuild-plan.outputs.ref }}")
@@ -282,7 +413,7 @@ class WorkflowTests(unittest.TestCase):
 
     def test_publication_requires_verified_rebuild_and_release_environment(self):
         publishing = [name for name in self.jobs if name.startswith("rebuild-release-")]
-        self.assertEqual(len(publishing), 6)
+        self.assertEqual(len(publishing), 5)
         for name in publishing:
             with self.subTest(job=name):
                 job = self.jobs[name]
@@ -290,36 +421,80 @@ class WorkflowTests(unittest.TestCase):
                 self.assertLessEqual({"rebuild-verify", "rebuild-test", "rebuild-build"}, self.ancestors(name))
                 self.assertNotIn("always()", str(job.get("if", "")))
                 self.assertNotIn("cancelled()", str(job.get("if", "")))
-        for name in ("rebuild-release-images", "rebuild-release-images-windows"):
-            self.assertTrue(self.jobs[name]["if"].startswith(
-                "inputs.promote && needs.rebuild-verify.outputs.promote == 'true'"))
-
-    def test_linux_images_are_promoted_by_verified_digest(self):
         job = self.jobs["rebuild-release-images"]
-        self.assertIn("outputs.digest", job["env"]["SOURCE_DIGEST"])
-        self.assertIn("outputs.debug-digest", job["env"]["SOURCE_DIGEST"])
-        commands = "\n".join(step.get("run", "") for step in job["steps"])
-        self.assertEqual(commands.count("docker://$STAGING_IMAGE_NAME@$SOURCE_DIGEST"), 2)
-        self.assertNotIn("docker://$STAGING_IMAGE_NAME:", commands)
+        self.assertTrue(job["if"].startswith(
+            "inputs.promote && needs.rebuild-verify.outputs.promote == 'true'"))
+
+    def test_linux_and_windows_images_are_promoted_by_verified_digest(self):
+        job = self.jobs["rebuild-release-images"]
+        release = yaml.safe_load((ROOT / ".github/workflows/staging-release.yaml").read_text())
+        self.assertEqual(job["concurrency"], {"group": release["concurrency"], "queue": "max"})
+        publish = job["steps"][-1]
+        self.assertIn("release_image_rebuild.py publish", publish["run"])
+        self.assertIn("--tags-file release-tags.txt", publish["run"])
+        self.assertIn('--registry "$GHCR_RELEASE_IMAGE_NAME" --registry "$DH_RELEASE_IMAGE_NAME"',
+                      publish["run"])
+        for variant, output in (("PRODUCTION_DIGEST", "digest"), ("DEBUG_DIGEST", "debug-digest"),
+                                ("WINDOWS_DIGESTS", "windows-digests")):
+            self.assertEqual(publish["env"][variant], "${{ needs.rebuild-verify.outputs." + output + " }}")
         verify = "\n".join(step.get("run", "") for step in self.jobs["rebuild-verify"]["steps"])
         self.assertIn('"amd64,arm,arm64"', verify)
+        self.assertIn('"$STAGING_IMAGE_NAME:$IMAGE-$VERSION"', verify)
+        plan = "\n".join(step.get("run", "") for step in self.jobs["rebuild-plan"]["steps"])
+        self.assertIn("--mirror-tags mirror-tags.json", plan)
+
+    def test_windows_digest_verification_fails_on_lookup_error_or_invalid_output(self):
+        step = next(step for step in self.jobs["rebuild-verify"]["steps"] if step.get("id") == "image")
+        mock_docker = """
+docker() {
+    case "$4 $5" in
+        *' --raw')
+            echo '{"manifests":[{"platform":{"os":"linux","architecture":"amd64"}},
+                                {"platform":{"os":"linux","architecture":"arm"}},
+                                {"platform":{"os":"linux","architecture":"arm64"}}]}'
+            ;;
+        *windows-2022*)
+            case "$LOOKUP" in
+                failure) return 1 ;;
+                invalid) echo "bad-digest" ;;
+                valid) printf 'sha256:%064d\\n' 1 ;;
+            esac
+            ;;
+        *) printf 'sha256:%064d\\n' 2 ;;
+    esac
+}
+"""
+        for lookup in ("failure", "invalid", "valid", "empty"):
+            with self.subTest(lookup=lookup), tempfile.TemporaryDirectory() as directory:
+                output = Path(directory) / "output"
+                result = subprocess.run(
+                    ["bash", "-eo", "pipefail", "-c", mock_docker + step["run"]],
+                    env={**os.environ, "GITHUB_OUTPUT": str(output), "LOOKUP": lookup,
+                         "STAGING_IMAGE_NAME": "ghcr.io/fluent/fluent-bit/staging", "VERSION": "5.2.0",
+                         "WINDOWS_IMAGES": '[]' if lookup == "empty" else '["windows-2022"]'},
+                    capture_output=True, text=True)
+                if lookup in ("failure", "invalid"):
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertNotIn("windows-digests=", output.read_text())
+                    continue
+                self.assertEqual(result.returncode, 0, result.stderr)
+                output_line = output.read_text().splitlines()[-1]
+                self.assertTrue(output_line.startswith("windows-digests="))
+                expected = {} if lookup == "empty" else {"windows-2022": f"sha256:{1:064d}"}
+                self.assertEqual(json.loads(output_line.split("=", 1)[1]), expected)
 
     def test_original_release_is_kept_before_any_tag_moves(self):
         keep = self.jobs["rebuild-release-preserve-original"]
         self.assertEqual(keep["if"], "inputs.promote && needs.rebuild-verify.outputs.promote == 'true'")
         run = keep["steps"][0]["run"]
         self.assertIn("--preserve-digests", run)
-        # Completeness is checked per registry and image, and a kept build is never overwritten.
         self.assertEqual(run.count("list-tags"), 1)
         self.assertIn("'.Tags | index($tag)' existing-tags.json", run)
         self.assertLess(run.index("is already kept"), run.index("copy --all"))
         self.assertIn('keep "$GHCR_RELEASE_IMAGE_NAME" "$GHCR_CREDS"', run)
         self.assertIn('keep "$DH_RELEASE_IMAGE_NAME" "$DH_CREDS"', run)
         self.assertEqual(keep["steps"][0]["env"]["PRESERVE"], "${{ needs.rebuild-plan.outputs.preserve }}")
-        for name in ("rebuild-release-images", "rebuild-release-images-windows"):
-            self.assertIn("rebuild-release-preserve-original", self.jobs[name]["needs"])
-        windows = "\n".join(step.get("run", "") for step in self.jobs["rebuild-release-images-windows"]["steps"])
-        self.assertEqual(windows.count('for NAME in "$TAG" "$TAG-$BUILD"'), 2)
+        self.assertIn("rebuild-release-preserve-original", self.jobs["rebuild-release-images"]["needs"])
 
     def test_both_wiki_pages_are_published(self):
         steps = self.jobs["rebuild-report-publish"]["steps"]
