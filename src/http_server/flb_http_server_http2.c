@@ -896,6 +896,8 @@ static int http2_data_chunk_recv_callback(nghttp2_session *inner_session,
     size_t                          required_size;
     size_t                          maximum_size;
     size_t                          target_size;
+    size_t                          initial_size;
+    uint32_t                        grpc_msg_len;
 
     stream = nghttp2_session_get_stream_user_data(inner_session, stream_id);
 
@@ -924,12 +926,10 @@ static int http2_data_chunk_recv_callback(nghttp2_session *inner_session,
         /*
          * Pre-allocate body buffer to avoid repeated reallocs as 16KB HTTP/2
          * frames arrive. Three strategies, in priority order:
-         *   1. Content-Length header — exact size (non-gRPC HTTP/2)
-         *   2. gRPC 5-byte frame header — parse message length for exact size
-         *   3. Fallback to frame size (len) — original behavior
+         *   1. Content-Length header - exact size (non-gRPC HTTP/2)
+         *   2. gRPC 5-byte frame header - parse message length for exact size
+         *   3. Fallback to frame size (len) - original behavior
          */
-        size_t initial_size;
-
         if (stream->request.content_length > 0) {
             initial_size = stream->request.content_length;
         }
@@ -937,10 +937,10 @@ static int http2_data_chunk_recv_callback(nghttp2_session *inner_session,
                  stream->request.content_type != NULL &&
                  strncmp(stream->request.content_type, "application/grpc", 16) == 0) {
             /* gRPC length-prefixed frame: 1 byte flags + 4 bytes message length */
-            uint32_t grpc_msg_len = ((uint32_t) data[1] << 24) |
-                                    ((uint32_t) data[2] << 16) |
-                                    ((uint32_t) data[3] << 8)  |
-                                    ((uint32_t) data[4]);
+            grpc_msg_len = ((uint32_t) data[1] << 24) |
+                           ((uint32_t) data[2] << 16) |
+                           ((uint32_t) data[3] << 8)  |
+                           ((uint32_t) data[4]);
             if ((size_t) grpc_msg_len > SIZE_MAX - 5) {
                 stream->status = HTTP_STREAM_STATUS_ERROR;
                 return -1;
@@ -951,9 +951,9 @@ static int http2_data_chunk_recv_callback(nghttp2_session *inner_session,
             initial_size = len;
         }
 
+        /* A DATA chunk may contain more than one gRPC message. */
         if (initial_size < len) {
-            stream->status = HTTP_STREAM_STATUS_ERROR;
-            return -1;
+            initial_size = len;
         }
 
         if (http2_request_body_limit_exceeded(stream, initial_size)) {
