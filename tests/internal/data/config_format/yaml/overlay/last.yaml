@@ -1,0 +1,4 @@
+service:
+  telemetry:
+    metrics:
+      update: last
