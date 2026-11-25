@@ -137,6 +137,29 @@ static const char *env_file_path(const char *uri)
     return path;
 }
 
+/* Strip a trailing CRLF pair, or a lone CR or LF, from a file value. */
+static void env_strip_line_ending(flb_sds_t buf)
+{
+    size_t len;
+
+    len = flb_sds_len(buf);
+    if (len == 0) {
+        return;
+    }
+
+    if (len >= 2 && buf[len - 2] == '\r' && buf[len - 1] == '\n') {
+        len -= 2;
+    }
+    else if (buf[len - 1] == '\n' || buf[len - 1] == '\r') {
+        len--;
+    }
+    else {
+        return;
+    }
+
+    flb_sds_len_set(buf, len);
+}
+
 int flb_env_set_extended(struct flb_env *env, const char *key, const char *val,
                          const char *uri, int refresh_interval)
 {
@@ -179,12 +202,8 @@ int flb_env_set_extended(struct flb_env *env, const char *key, const char *val,
         }
 
         value = fs_buf;
+        env_strip_line_ending(fs_buf);
         vlen = flb_sds_len(fs_buf);
-
-        if (vlen > 0 && (value[vlen - 1] == '\n' || value[vlen - 1] == '\r')) {
-            vlen--;
-            flb_sds_len_set(fs_buf, vlen);
-        }
 
         if (vlen == 0) {
             flb_error("[env] file %s content is empty", value);
@@ -278,11 +297,8 @@ const char *flb_env_get(struct flb_env *env, const char *key)
                         break;
                     }
 
+                    env_strip_line_ending(fs_buf);
                     vlen = flb_sds_len(fs_buf);
-                    if (vlen > 0 && (fs_buf[vlen - 1] == '\n' || fs_buf[vlen - 1] == '\r')) {
-                        vlen--;
-                        flb_sds_len_set(fs_buf, vlen);
-                    }
 
                     if (vlen == 0) {
                         flb_error("[env] file %s content is empty", file);
