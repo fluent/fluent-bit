@@ -8,6 +8,9 @@
         .globl invokeNative
         .type  invokeNative, function
 invokeNative:
+#if defined(__linux__) && defined(__ELF__)
+        hint    #34             /* bti c */
+#endif
 #else
         .globl _invokeNative
 _invokeNative:
@@ -77,3 +80,13 @@ return:
         add     sp, sp, #0x30          /* restore sp */
         ret
 
+#if defined(__linux__) && defined(__ELF__)
+        .pushsection .note.gnu.property, "a", %note
+        .p2align 3
+        .long 4, 16, 5          /* namesz, descsz, NT_GNU_PROPERTY_TYPE_0 */
+        .asciz "GNU"
+        .long 0xc0000000, 4     /* GNU_PROPERTY_AARCH64_FEATURE_1_AND, size */
+        .long 1                 /* GNU_PROPERTY_AARCH64_FEATURE_1_BTI */
+        .long 0                 /* align descriptor to 8 bytes */
+        .popsection
+#endif
