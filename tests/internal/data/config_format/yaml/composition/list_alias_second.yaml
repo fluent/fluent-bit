@@ -1,0 +1,2 @@
+defaults:
+  second: &snapshot_second {log_level: *path}

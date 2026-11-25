@@ -1,0 +1,32 @@
+# Set FTS_PACKAGES_DIR to the absolute installed packs/fts directory.
+# This inspection example listens only on localhost. Select the real source,
+# operation, ownership/affinity and exporter before deployment.
+service:
+  flush: 1
+  grace: 1
+pipeline:
+  inputs:
+    - name: opentelemetry
+      listen: 127.0.0.1
+      port: 4318
+      processors:
+        metrics:
+          - name: fts
+            packages_dir: ${FTS_PACKAGES_DIR}
+            packs: [metrics/gauge-rollup/pack.json]
+            recipe_version: 1
+            state_commit: local
+            error_mode: keep
+            state_limit: 8M
+            recipe:
+              - id: rollup
+                use: org.fluentbit.gauge-rollup/apply
+                with:
+                  names: [queue_depth]
+                  operation: max
+                  interval_ms: 10000
+                  max_samples: 10000
+  outputs:
+    - name: stdout
+      match: '*'
+      format: otlp_json

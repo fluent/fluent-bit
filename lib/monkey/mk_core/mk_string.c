@@ -450,6 +450,76 @@ char *mk_string_build(char **buffer, unsigned long *len,
     return *buffer;
 }
 
+char *mk_string_html_escape(const char *str)
+{
+    size_t i;
+    size_t escaped_len = 0;
+    char *buf;
+    char *p;
+    const char *escape;
+
+    if (!str) {
+        return mk_string_dup("");
+    }
+
+    for (i = 0; str[i] != '\0'; i++) {
+        switch (str[i]) {
+        case '<':
+        case '>':
+            escaped_len += 4;
+            break;
+        case '&':
+            escaped_len += 5;
+            break;
+        case '"':
+        case '\'':
+            escaped_len += 6;
+            break;
+        default:
+            escaped_len++;
+        }
+    }
+
+    buf = mk_mem_alloc(escaped_len + 1);
+    if (!buf) {
+        return NULL;
+    }
+
+    p = buf;
+    for (i = 0; str[i] != '\0'; i++) {
+        escape = NULL;
+
+        switch (str[i]) {
+        case '<':
+            escape = "&lt;";
+            break;
+        case '>':
+            escape = "&gt;";
+            break;
+        case '&':
+            escape = "&amp;";
+            break;
+        case '"':
+            escape = "&quot;";
+            break;
+        case '\'':
+            escape = "&#039;";
+            break;
+        }
+
+        if (escape) {
+            strcpy(p, escape);
+            p += strlen(escape);
+        }
+        else {
+            *p++ = str[i];
+        }
+    }
+
+    *p = '\0';
+    return buf;
+}
+
 int mk_string_trim(char **str)
 {
     unsigned int i;

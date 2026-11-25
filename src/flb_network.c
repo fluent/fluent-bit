@@ -51,6 +51,10 @@
 #include <monkey/mk_core.h>
 #include <ares.h>
 
+#ifdef FLB_HAVE_UNIX_SOCKET
+#include <sys/wait.h>
+#endif
+
 #ifdef FLB_SYSTEM_MACOS
 #ifdef _GNU_SOURCE
 #undef _GNU_SOURCE
@@ -71,14 +75,12 @@ struct flb_dns_lookup_context {
     struct mk_event              response_event;                  /* c-ares socket event */
     int                          ares_socket_registered;
     struct ares_socket_functions ares_socket_functions;
-    int                         *udp_timeout_detected;
     int                          ares_socket_created;
-    int                          ares_socket_type;
     void                        *ares_channel;
     int                         *result_code;
     struct mk_event_loop        *event_loop;
     struct flb_coro             *coroutine;
-    struct flb_sched_timer      *udp_timer;
+    struct flb_sched_timer      *dns_timer;
     int                          finished;
     int                          dropped;
     struct flb_net_dns          *dns_ctx;
@@ -141,6 +143,7 @@ void flb_net_setup_init(struct flb_net_setup *net)
     net->dns_resolver = NULL;
     net->dns_prefer_ipv4 = FLB_FALSE;
     net->dns_prefer_ipv6 = FLB_FALSE;
+    net->share_port = FLB_FALSE;
     net->keepalive = FLB_TRUE;
     net->keepalive_idle_timeout = 30;
     net->keepalive_max_recycle = 0;
@@ -161,20 +164,26 @@ int flb_net_host_set(const char *plugin_name, struct flb_net_host *host, const c
     int len;
     int olen;
     const char *s, *e, *u;
+    const char *separator;
 
     memset(host, '\0', sizeof(struct flb_net_host));
 
     olen = strlen(address);
-    if (olen == strlen(plugin_name)) {
-        return 0;
+    separator = strstr(address, "://");
+    if (separator != NULL && separator != address) {
+        s = separator + 3;
     }
+    else {
+        if (olen == strlen(plugin_name)) {
+            return 0;
+        }
 
-    len = strlen(plugin_name) + 3;
-    if (olen < len) {
-        return -1;
+        len = strlen(plugin_name) + 3;
+        if (olen < len) {
+            return -1;
+        }
+        s = address + len;
     }
-
-    s = address + len;
     if (*s == '[') {
         /* IPv6 address (RFC 3986) */
         e = strchr(++s, ']');
@@ -239,6 +248,8 @@ int flb_net_socket_share_port(flb_sockfd_t fd)
     }
 #else
     (void) fd;
+    flb_error("shared listener ports are not supported on this platform");
+    return -1;
 #endif
 
     return 0;
@@ -311,6 +322,28 @@ int flb_net_socket_set_rcvtimeout(flb_sockfd_t fd, int timeout_in_seconds)
     tv.tv_sec = timeout_in_seconds;
     tv.tv_usec = 0;
     if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv) == -1) {
+#endif
+        flb_errno();
+        return -1;
+    }
+
+    return 0;
+}
+
+/* Bound blocking sends using the same seconds-based timeout as receives. */
+int flb_net_socket_set_sndtimeout(flb_sockfd_t fd, int timeout_in_seconds)
+{
+#ifdef FLB_SYSTEM_WINDOWS
+    /* WINDOWS */
+    DWORD timeout = timeout_in_seconds * 1000;
+    if (setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, (const char*)&timeout, sizeof timeout)
+        == -1) {
+#else
+    /* LINUX and MAC OS X */
+    struct timeval tv;
+    tv.tv_sec = timeout_in_seconds;
+    tv.tv_usec = 0;
+    if (setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, (const char*)&tv, sizeof tv) == -1) {
 #endif
         flb_errno();
         return -1;
@@ -685,11 +718,11 @@ static void flb_net_dns_lookup_context_drop(struct flb_dns_lookup_context *looku
         mk_list_del(&lookup_context->_head);
         mk_list_add(&lookup_context->_head, &lookup_context->dns_ctx->lookups_drop);
 
-        if (lookup_context->udp_timer != NULL &&
-            lookup_context->udp_timer->active) {
-            flb_sched_timer_invalidate(lookup_context->udp_timer);
+        if (lookup_context->dns_timer != NULL &&
+            lookup_context->dns_timer->active) {
+            flb_sched_timer_invalidate(lookup_context->dns_timer);
 
-            lookup_context->udp_timer = NULL;
+            lookup_context->dns_timer = NULL;
         }
     }
 }
@@ -934,13 +967,12 @@ static void flb_net_getaddrinfo_timeout_handler(struct flb_config *config, void 
         return;
     }
 
-    *(lookup_context->udp_timeout_detected) = FLB_TRUE;
     lookup_context->finished = FLB_TRUE;
-    lookup_context->udp_timer = NULL;
+    lookup_context->dns_timer = NULL;
 
-    /* We deliverately set udp_timer because we don't want flb_net_dns_lookup_context_drop
-     * to call flb_sched_timer_invalidate on the timer which was already disabled and
-     * is about to be destroyed after this this callback returns.
+    /* Clear dns_timer so flb_net_dns_lookup_context_drop does not invalidate
+     * the timer which was already disabled and will be destroyed after this
+     * callback returns.
      */
 
     ares_cancel(lookup_context->ares_channel);
@@ -987,7 +1019,6 @@ static ares_socket_t flb_dns_ares_socket(int af, int type, int protocol, void *u
         return -1;
     }
 
-    lookup_context->ares_socket_type       = type;
     lookup_context->ares_socket_created    = FLB_TRUE;
 
     lookup_context->response_event.mask    = MK_EVENT_EMPTY;
@@ -1112,7 +1143,7 @@ static struct flb_dns_lookup_context *flb_net_dns_lookup_context_create(
     lookup_context->ares_socket_functions.asendv = flb_dns_ares_send;
     lookup_context->ares_socket_created = 0;
     lookup_context->event_loop = evl;
-    lookup_context->udp_timer = NULL;
+    lookup_context->dns_timer = NULL;
     lookup_context->coroutine = coroutine;
     lookup_context->finished = 0;
     lookup_context->dropped = 0;
@@ -1132,7 +1163,6 @@ static struct flb_dns_lookup_context *flb_net_dns_lookup_context_create(
 int flb_net_getaddrinfo(const char *node, const char *service, struct addrinfo *hints,
                         struct addrinfo **res, char *dns_mode_textual, int timeout)
 {
-    int                            udp_timeout_detected;
     struct flb_dns_lookup_context *lookup_context;
     int                            errno_backup;
     int                            result_code;
@@ -1170,7 +1200,6 @@ int flb_net_getaddrinfo(const char *node, const char *service, struct addrinfo *
         return result;
     }
 
-    lookup_context->udp_timeout_detected = &udp_timeout_detected;
     lookup_context->result_code = &result_code;
     lookup_context->result = &result_data;
 
@@ -1181,7 +1210,6 @@ int flb_net_getaddrinfo(const char *node, const char *service, struct addrinfo *
      */
     result_code = ARES_ESERVFAIL;
     result_data = NULL;
-    udp_timeout_detected = 0;
 
     /* The timeout we get is expressed in seconds so we need to convert it to
      * milliseconds
@@ -1206,41 +1234,43 @@ int flb_net_getaddrinfo(const char *node, const char *service, struct addrinfo *
                      flb_net_getaddrinfo_callback, lookup_context);
 
     if (!lookup_context->finished) {
-        if (lookup_context->ares_socket_created) {
-            if (lookup_context->ares_socket_type == SOCK_DGRAM) {
-                /* If the socket type created by c-ares is UDP then we need to create our
-                 * own timeout mechanism before yielding and cancel it if things go as
-                 * expected.
+        if (lookup_context->ares_socket_created && timeout > 0) {
+            /* Bound both UDP and TCP lookups, including a TCP connection to a
+             * DNS server that never completes. Cancellation schedules cleanup
+             * and resumes the waiting coroutine.
+             */
+            sched = flb_sched_ctx_get();
+            assert(sched != NULL);
+
+            result = flb_sched_timer_cb_create(sched, FLB_SCHED_TIMER_CB_ONESHOT,
+                                               timeout,
+                                               flb_net_getaddrinfo_timeout_handler,
+                                               lookup_context,
+                                               &lookup_context->dns_timer);
+            if (result == -1) {
+                /* Timer creation failed, it happen because of file descriptor or memory
+                 * exhaustion (ulimits usually)
                  */
 
-                sched = flb_sched_ctx_get();
-                assert(sched != NULL);
+                /* Cancellation invokes the callback synchronously. Preserve the
+                 * allocation error instead of replacing it with ARES_ECANCELLED.
+                 */
+                lookup_context->finished = FLB_TRUE;
+                result_code = ARES_ENOMEM;
 
-                result = flb_sched_timer_cb_create(sched, FLB_SCHED_TIMER_CB_ONESHOT,
-                                                   timeout,
-                                                   flb_net_getaddrinfo_timeout_handler,
-                                                   lookup_context,
-                                                   &lookup_context->udp_timer);
-                if (result == -1) {
-                    /* Timer creation failed, it happen because of file descriptor or memory
-                     * exhaustion (ulimits usually)
-                     */
+                ares_cancel(lookup_context->ares_channel);
 
-                    result_code = ARES_ENOMEM;
+                lookup_context->coroutine = NULL;
 
-                    ares_cancel(lookup_context->ares_channel);
-
-                    lookup_context->coroutine = NULL;
-
-                    flb_net_dns_lookup_context_drop(lookup_context);
-                }
-                else {
-                    flb_coro_yield(coroutine, FLB_FALSE);
-                }
+                flb_net_dns_lookup_context_drop(lookup_context);
             }
             else {
                 flb_coro_yield(coroutine, FLB_FALSE);
             }
+        }
+        else if (lookup_context->ares_socket_created) {
+            /* A non-positive connect timeout disables the DNS deadline too. */
+            flb_coro_yield(coroutine, FLB_FALSE);
         }
         else {
             /* Do we want to do anything special for this condition? */
@@ -1465,8 +1495,21 @@ flb_sockfd_t flb_net_tcp_connect(const char *host, unsigned long port,
         /* Disable Nagle's algorithm */
         flb_net_socket_tcp_nodelay(fd);
 
-        /* Set receive timeout */
-        flb_net_socket_set_rcvtimeout(fd, u_conn->net->io_timeout);
+        /* Set receive timeout and bound writes on synchronous sockets. */
+        ret = flb_net_socket_set_rcvtimeout(fd, u_conn->net->io_timeout);
+        if (ret == -1 && is_async == FLB_FALSE) {
+            flb_socket_close(fd);
+            fd = -1;
+            continue;
+        }
+        if (is_async == FLB_FALSE) {
+            ret = flb_net_socket_set_sndtimeout(fd, u_conn->net->io_timeout);
+            if (ret == -1) {
+                flb_socket_close(fd);
+                fd = -1;
+                continue;
+            }
+        }
 
         if (u_conn) {
             u_conn->fd = fd;
@@ -1689,8 +1732,9 @@ flb_sockfd_t flb_net_server(const char *port, const char *listen_addr,
             continue;
         }
 
-        if (share_port) {
-            flb_net_socket_share_port(fd);
+        if (share_port && flb_net_socket_share_port(fd) == -1) {
+            flb_socket_close(fd);
+            continue;
         }
 
         flb_net_socket_tcp_nodelay(fd);
@@ -1763,8 +1807,9 @@ flb_sockfd_t flb_net_server_udp(const char *port, const char *listen_addr, int s
             continue;
         }
 
-        if (share_port) {
-            flb_net_socket_share_port(fd);
+        if (share_port && flb_net_socket_share_port(fd) == -1) {
+            flb_socket_close(fd);
+            continue;
         }
 
         ret = flb_net_bind_udp(fd, rp->ai_addr, rp->ai_addrlen);
@@ -1789,6 +1834,84 @@ flb_sockfd_t flb_net_server_udp(const char *port, const char *listen_addr, int s
 }
 
 #ifdef FLB_HAVE_UNIX_SOCKET
+/* Bind long staging paths without changing the multithreaded parent's cwd. */
+static int net_bind_unix_long(flb_sockfd_t fd, const char *path)
+{
+    char *directory;
+    char *name;
+    int directory_fd;
+    int channel[2];
+    int error;
+    int status;
+    ssize_t count;
+    pid_t child;
+    pid_t waited;
+    struct sockaddr_un address;
+
+    directory = flb_strdup(path);
+    if (directory == NULL) {
+        return -1;
+    }
+    name = strrchr(directory, '/');
+    if (name == NULL || strlen(name + 1) >= sizeof(address.sun_path)) {
+        flb_free(directory);
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+    memset(&address, 0, sizeof(address));
+    address.sun_family = AF_UNIX;
+    strcpy(address.sun_path, name + 1);
+    *name = '\0';
+    directory_fd = open(directory[0] ? directory : "/", O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+    flb_free(directory);
+    if (directory_fd == -1) {
+        return -1;
+    }
+    if (pipe(channel) == -1) {
+        error = errno;
+        close(directory_fd);
+        errno = error;
+        return -1;
+    }
+    child = fork();
+    if (child == 0) {
+        /* Only async-signal-safe operations are allowed after fork. */
+        close(channel[0]);
+        error = 0;
+        if (fchdir(directory_fd) == -1 ||
+            bind(fd, (struct sockaddr *) &address,
+                 offsetof(struct sockaddr_un, sun_path) + strlen(address.sun_path) + 1) == -1) {
+            error = errno;
+        }
+        do {
+            count = write(channel[1], &error, sizeof(error));
+        } while (count == -1 && errno == EINTR);
+        _exit(count == sizeof(error) ? 0 : 1);
+    }
+    error = errno;
+    close(channel[1]);
+    close(directory_fd);
+    if (child == -1) {
+        close(channel[0]);
+        errno = error;
+        return -1;
+    }
+    do {
+        count = read(channel[0], &error, sizeof(error));
+    } while (count == -1 && errno == EINTR);
+    close(channel[0]);
+    do {
+        waited = waitpid(child, &status, 0);
+    } while (waited == -1 && errno == EINTR);
+    if (count != sizeof(error) || waited == -1 ||
+        !WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+        errno = EIO;
+        return -1;
+    }
+    errno = error;
+    return error == 0 ? 0 : -1;
+}
+
 flb_sockfd_t flb_net_server_unix(const char *listen_path,
                                  int stream_mode,
                                  int backlog,
@@ -1820,11 +1943,18 @@ flb_sockfd_t flb_net_server_unix(const char *listen_path,
 
         strncpy(address.sun_path, listen_path, sizeof(address.sun_path));
 
-        if (share_port) {
-            flb_net_socket_share_port(fd);
+        if (share_port && flb_net_socket_share_port(fd) == -1) {
+            flb_socket_close(fd);
+            return -1;
         }
 
-        if (stream_mode) {
+        if (path_length >= sizeof(address.sun_path)) {
+            ret = net_bind_unix_long(fd, listen_path);
+            if (ret == 0 && stream_mode) {
+                ret = listen(fd, backlog);
+            }
+        }
+        else if (stream_mode) {
             ret = flb_net_bind(fd,
                                (const struct sockaddr *) &address,
                                address_length,
@@ -1840,6 +1970,7 @@ flb_sockfd_t flb_net_server_unix(const char *listen_path,
             flb_warn("Cannot bind to or listen on %s", listen_path);
 
             flb_socket_close(fd);
+            return -1;
         }
     }
     else {
@@ -1851,7 +1982,7 @@ flb_sockfd_t flb_net_server_unix(const char *listen_path,
 #else
 flb_sockfd_t flb_net_server_unix(const char *listen_path,
                                  int stream_mode,
-                                 int backlog)
+                                 int backlog, int share_port)
 {
     flb_error("Unix sockets are not available in this platform");
 
@@ -1912,10 +2043,14 @@ flb_sockfd_t flb_net_accept(flb_sockfd_t server_fd)
                         SOCK_NONBLOCK | SOCK_CLOEXEC);
 #else
     remote_fd = accept(server_fd, (struct sockaddr*)&sock_addr, &socket_size);
-    flb_net_socket_nonblocking(remote_fd);
+
+    if (remote_fd != FLB_INVALID_SOCKET) {
+        flb_net_socket_nonblocking(remote_fd);
+    }
 #endif
 
-    if (remote_fd == -1) {
+    if (remote_fd == FLB_INVALID_SOCKET &&
+        !FLB_WOULDBLOCK()) {
         perror("accept4");
     }
 

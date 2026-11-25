@@ -33,6 +33,7 @@ struct mk_plugin_network {
     int (*writev) (struct mk_plugin *, int, struct mk_iov *);
     int (*close) (struct mk_plugin *, int);
     int (*send_file) (struct mk_plugin *, int, int, off_t *, size_t);
+    int (*event_interest) (struct mk_plugin *, int, int);
     int buffer_size;
     struct mk_plugin *plugin;
 };

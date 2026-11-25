@@ -1,0 +1,35 @@
+service:
+  log_level: trace
+  flush: 1
+pipeline:
+  inputs:
+    - name: dummy
+      dummy: '{"request": {"method": "GET", "path": "/api/v1/resource", "headers": {"Authorization": "Bearer valid-token"}, "access": "granted"}}'
+      tag: error.msg
+      processors:
+        logs:
+          - name: content_modifier
+            action: insert
+            key: modified_if_post
+            value: true
+            condition:
+              op: and
+              rules:
+                - field: $request['method']
+                  op: eq
+                  value: POST
+
+          - name: content_modifier
+            action: insert
+            key: modified_if_get
+            value: true
+            condition:
+              op: and
+              rules:
+                - field: $request['method']
+                  op: eq
+                  value: GET
+
+  outputs:
+    - name: stdout
+      match: '*'

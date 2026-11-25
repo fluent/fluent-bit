@@ -59,6 +59,21 @@ void flb_log_event_encoder_reset(struct flb_log_event_encoder *context)
     flb_log_event_encoder_update_internal_state(context);
 }
 
+static int encoder_buffer_write(void *data, const char *buffer, size_t length)
+{
+    struct flb_log_event_encoder *context;
+
+    context = (struct flb_log_event_encoder *)
+              ((char *) data - offsetof(struct flb_log_event_encoder, buffer));
+
+    if (context->buffer.size > context->output_limit ||
+        length > context->output_limit - context->buffer.size) {
+        return -1;
+    }
+
+    return msgpack_sbuffer_write(&context->buffer, buffer, length);
+}
+
 int flb_log_event_encoder_init(struct flb_log_event_encoder *context, int format)
 {
     if (context == NULL) {
@@ -75,11 +90,12 @@ int flb_log_event_encoder_init(struct flb_log_event_encoder *context, int format
     context->dynamically_allocated = FLB_FALSE;
     context->initialized = FLB_TRUE;
     context->format = format;
+    context->output_limit = SIZE_MAX;
 
     msgpack_sbuffer_init(&context->buffer);
     msgpack_packer_init(&context->packer,
                         &context->buffer,
-                        msgpack_sbuffer_write);
+                        encoder_buffer_write);
 
     flb_log_event_encoder_dynamic_field_init(&context->metadata,
                                              MSGPACK_OBJECT_MAP);
@@ -174,6 +190,7 @@ int flb_log_event_encoder_emit_record(struct flb_log_event_encoder *context)
     int      result;
     char     ts_buf[8];
     char     rec_header[5];
+    size_t   original_size;
     uint32_t sec;
     uint32_t nsec;
 
@@ -181,6 +198,7 @@ int flb_log_event_encoder_emit_record(struct flb_log_event_encoder *context)
         return FLB_EVENT_ENCODER_ERROR_INVALID_CONTEXT;
     }
 
+    original_size = context->buffer.size;
     result = FLB_EVENT_ENCODER_SUCCESS;
 
     if (context->root.size == 0) {
@@ -290,6 +308,10 @@ int flb_log_event_encoder_emit_record(struct flb_log_event_encoder *context)
         }
     }
 
+    if (result != FLB_EVENT_ENCODER_SUCCESS) {
+        context->buffer.size = original_size;
+    }
+
     flb_log_event_encoder_update_internal_state(context);
     flb_log_event_encoder_reset_record(context);
 
@@ -346,6 +368,13 @@ int flb_log_event_encoder_set_timestamp(struct flb_log_event_encoder *context,
                                         struct flb_time *timestamp)
 {
     if (timestamp != NULL) {
+        if (flb_time_is_valid_eventtime(timestamp) != FLB_TRUE &&
+            !(timestamp->tm.tv_nsec == 0 &&
+              (timestamp->tm.tv_sec == FLB_LOG_EVENT_GROUP_START ||
+               timestamp->tm.tv_sec == FLB_LOG_EVENT_GROUP_END))) {
+            return FLB_EVENT_ENCODER_ERROR_INVALID_ARGUMENT;
+        }
+
         flb_time_copy(&context->timestamp, timestamp);
     }
     else {
@@ -480,8 +509,8 @@ int flb_log_event_encoder_group_header_end(struct flb_log_event_encoder *context
     int ret;
 
     ret = flb_log_event_encoder_commit_record(context);
-    if (ret == -1) {
-        return -1;
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return ret;
     }
 
     return 0;
@@ -504,8 +533,8 @@ int flb_log_event_encoder_group_end(struct flb_log_event_encoder *context)
     }
 
     ret = flb_log_event_encoder_commit_record(context);
-    if (ret == -1) {
-        return -1;
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return ret;
     }
 
     return 0;

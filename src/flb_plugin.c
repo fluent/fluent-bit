@@ -19,6 +19,7 @@
 
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
+#include <stddef.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_error.h>
@@ -252,14 +253,26 @@ int flb_plugin_load(char *path, struct flb_plugins *ctx,
     }
     else if (is_processor(plugin_stname) == FLB_TRUE) {
         type = FLB_PLUGIN_PROCESSOR;
-        processor = flb_malloc(sizeof(struct flb_processor_plugin));
+        processor = flb_calloc(1, sizeof(struct flb_processor_plugin));
         if (processor == NULL) {
             flb_errno();
             flb_free(plugin_stname);
             dlclose(dso_handle);
             return -1;
         }
-        memcpy(processor, symbol, sizeof(struct flb_processor_plugin));
+        /* Old descriptors end before cb_preflight. Do not read their trailing
+         * memory; flags in the stable prefix opt into the new extension. */
+        memcpy(processor, symbol, offsetof(struct flb_processor_plugin, cb_preflight));
+        if (processor->flags & FLB_PROCESSOR_FLAG_PREFLIGHT) {
+            memcpy(&processor->cb_preflight,
+                   (char *) symbol + offsetof(struct flb_processor_plugin, cb_preflight),
+                   sizeof(processor->cb_preflight));
+        }
+        if (processor->flags & FLB_PROCESSOR_FLAG_INPUT_STOP) {
+            memcpy(&processor->cb_input_stop,
+                   (char *) symbol + offsetof(struct flb_processor_plugin, cb_input_stop),
+                   sizeof(processor->cb_input_stop));
+        }
         mk_list_add(&processor->_head, &config->processor_plugins);
     }
     else if (is_filter(plugin_stname) == FLB_TRUE) {
@@ -388,27 +401,16 @@ int flb_plugin_load_config_file(const char *file, struct flb_config *config)
     char *cfg = NULL;
     struct mk_list *head;
     struct cfl_list *head_e;
-    struct stat st;
     struct flb_cf *cf;
     struct flb_cf_section *section;
     struct cfl_kvpair *entry;
 
 #ifndef FLB_HAVE_STATIC_CONF
-    ret = stat(file, &st);
-    if (ret == -1 && errno == ENOENT) {
-        /* Try to resolve the real path (if exists) */
-        if (file[0] == '/') {
-            flb_utils_error(FLB_ERR_CFG_PLUGIN_FILE);
-            return -1;
-        }
-
-        if (config->conf_path) {
-            snprintf(tmp, PATH_MAX, "%s%s", config->conf_path, file);
-            cfg = tmp;
-        }
-    }
-    else {
-        cfg = (char *) file;
+    cfg = (char *) flb_utils_resolve_config_path(file, config->conf_path,
+                                                 tmp, sizeof(tmp));
+    if (!cfg) {
+        flb_utils_error(FLB_ERR_CFG_PLUGIN_FILE);
+        return -1;
     }
 
     flb_debug("[plugin] opening configuration file %s", cfg);

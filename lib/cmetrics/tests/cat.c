@@ -24,9 +24,16 @@
 #include <cmetrics/cmt_histogram.h>
 #include <cmetrics/cmt_exp_histogram.h>
 #include <cmetrics/cmt_summary.h>
+#include <cmetrics/cmt_map.h>
 #include <cmetrics/cmt_encode_text.h>
 #include <cmetrics/cmt_encode_prometheus.h>
 #include <cmetrics/cmt_cat.h>
+#include <cmetrics/cmt_metric.h>
+
+#include <string.h>
+#include <cmetrics/cmt_encode_msgpack.h>
+#include <cmetrics/cmt_decode_msgpack.h>
+#include <cmetrics/cmt_encode_opentelemetry.h>
 
 #include "cmt_tests.h"
 
@@ -668,7 +675,1007 @@ void test_exp_histogram_preserves_aggregation_type()
     cmt_destroy(dst);
 }
 
+void test_summary_concatenation_preserves_series()
+{
+    int                   ret;
+    int                   found_first;
+    int                   found_second;
+    double                quantiles[] = {0.5, 0.9};
+    double                values[] = {5.0, 9.0};
+    struct cfl_list      *head;
+    struct cfl_list      *label_head;
+    struct cmt           *dst;
+    struct cmt           *src_first;
+    struct cmt           *src_second;
+    struct cmt_summary   *summary;
+    struct cmt_metric    *metric;
+    struct cmt_map_label *label;
+
+    dst = cmt_create();
+    src_first = cmt_create();
+    src_second = cmt_create();
+    TEST_ASSERT(dst != NULL);
+    TEST_ASSERT(src_first != NULL);
+    TEST_ASSERT(src_second != NULL);
+
+    summary = cmt_summary_create(src_first, "test", "cat", "summary",
+                                 "Summary concatenation", 2, quantiles,
+                                 1, (char *[]) {"kind"});
+    TEST_ASSERT(summary != NULL);
+    ret = cmt_summary_set_default(summary, 10, values, 14.0, 7,
+                                  1, (char *[]) {"first"});
+    TEST_ASSERT(ret == 0);
+
+    ret = cmt_cat(dst, src_first);
+    TEST_ASSERT(ret == 0);
+    TEST_CHECK(cfl_list_size(&dst->summaries) == 1);
+
+    summary = cfl_list_entry_first(&dst->summaries,
+                                   struct cmt_summary, _head);
+    TEST_CHECK(cfl_list_size(&summary->map->metrics) == 1);
+
+    metric = cfl_list_entry_first(&summary->map->metrics,
+                                  struct cmt_metric, _head);
+    label = cfl_list_entry_first(&metric->labels,
+                                 struct cmt_map_label, _head);
+    TEST_CHECK(strcmp(label->name, "first") == 0);
+    TEST_CHECK(cmt_summary_get_count_value(metric) == 7);
+
+    summary = cmt_summary_create(src_second, "test", "cat", "summary",
+                                 "Summary concatenation", 2, quantiles,
+                                 1, (char *[]) {"kind"});
+    TEST_ASSERT(summary != NULL);
+    ret = cmt_summary_set_default(summary, 20, values, 18.0, 9,
+                                  1, (char *[]) {"second"});
+    TEST_ASSERT(ret == 0);
+
+    ret = cmt_cat(dst, src_second);
+    TEST_ASSERT(ret == 0);
+    TEST_CHECK(cfl_list_size(&dst->summaries) == 1);
+
+    summary = cfl_list_entry_first(&dst->summaries,
+                                   struct cmt_summary, _head);
+    TEST_CHECK(cfl_list_size(&summary->map->metrics) == 2);
+
+    found_first = CMT_FALSE;
+    found_second = CMT_FALSE;
+    cfl_list_foreach(head, &summary->map->metrics) {
+        metric = cfl_list_entry(head, struct cmt_metric, _head);
+        label_head = metric->labels.next;
+        label = cfl_list_entry(label_head, struct cmt_map_label, _head);
+
+        TEST_CHECK(strcmp(label->name, "kind") != 0);
+        if (strcmp(label->name, "first") == 0) {
+            found_first = CMT_TRUE;
+        }
+        else if (strcmp(label->name, "second") == 0) {
+            found_second = CMT_TRUE;
+        }
+    }
+
+    TEST_CHECK(found_first == CMT_TRUE);
+    TEST_CHECK(found_second == CMT_TRUE);
+
+    cmt_destroy(src_second);
+    cmt_destroy(src_first);
+    cmt_destroy(dst);
+}
+
+void test_summary_concatenation_rejects_mismatched_label_schema()
+{
+    int ret;
+    double quantiles[] = {0.5, 0.9};
+    struct cmt *dst;
+    struct cmt *src;
+    struct cmt_summary *summary;
+
+    dst = cmt_create();
+    src = cmt_create();
+    TEST_ASSERT(dst != NULL);
+    TEST_ASSERT(src != NULL);
+
+    summary = cmt_summary_create(dst, "test", "cat", "schema",
+                                 "schema validation", 2, quantiles, 2,
+                                 (char *[]) {"method", "status"});
+    TEST_ASSERT(summary != NULL);
+
+    summary = cmt_summary_create(src, "test", "cat", "schema",
+                                 "schema validation", 2, quantiles, 2,
+                                 (char *[]) {"status", "method"});
+    TEST_ASSERT(summary != NULL);
+
+    TEST_ASSERT(cmt_label_add(src, "pending", "discarded on failure") == 0);
+    ret = cmt_cat(dst, src);
+    TEST_CHECK(ret == -1);
+    TEST_CHECK(cfl_list_size(&dst->summaries) == 1);
+    TEST_CHECK(cmt_labels_count(dst->static_labels) == 0);
+    TEST_CHECK(cmt_labels_count(src->static_labels) == 1);
+
+    cmt_destroy(src);
+    cmt_destroy(dst);
+}
+
+static struct cmt_label *find_static_label(struct cmt *cmt, char *key)
+{
+    struct cfl_list *head;
+    struct cmt_label *label;
+
+    cfl_list_foreach(head, &cmt->static_labels->list) {
+        label = cfl_list_entry(head, struct cmt_label, _head);
+        if (strcmp(label->key, key) == 0) {
+            return label;
+        }
+    }
+    return NULL;
+}
+
+void test_cat_static_labels_chain()
+{
+    struct cmt *src;
+    struct cmt *intermediate;
+    struct cmt *dst;
+    struct cmt_gauge *gauge;
+    struct cmt_label *source_label;
+    struct cmt_label *copied_label;
+    cfl_sds_t text;
+
+    src = cmt_create();
+    intermediate = cmt_create();
+    dst = cmt_create();
+    TEST_ASSERT(src != NULL && intermediate != NULL && dst != NULL);
+    TEST_ASSERT(cmt_label_add(src, "upstream", "") == 0);
+    gauge = cmt_gauge_create(src, "", "", "test_metric", "test metric",
+                             1, (char *[]) {"original"});
+    TEST_ASSERT(gauge != NULL);
+    TEST_ASSERT(cmt_gauge_set(gauge, 0, 1.0, 1, (char *[]) {"value"}) == 0);
+
+    TEST_ASSERT(cmt_cat(intermediate, src) == 0);
+    TEST_ASSERT(cmt_label_add(intermediate, "first", "one") == 0);
+    TEST_ASSERT(cmt_cat(dst, intermediate) == 0);
+    TEST_ASSERT(cmt_label_add(dst, "second", "two") == 0);
+    TEST_CHECK(cmt_labels_count(src->static_labels) == 1);
+    TEST_CHECK(cmt_labels_count(intermediate->static_labels) == 2);
+    TEST_CHECK(cmt_labels_count(dst->static_labels) == 3);
+    source_label = find_static_label(intermediate, "first");
+    copied_label = find_static_label(dst, "first");
+    TEST_ASSERT(source_label != NULL && copied_label != NULL);
+    TEST_CHECK(source_label != copied_label);
+    TEST_CHECK(source_label->key != copied_label->key);
+    TEST_CHECK(source_label->val != copied_label->val);
+    cmt_destroy(src);
+    cmt_destroy(intermediate);
+
+    text = cmt_encode_prometheus_create(dst, 0);
+    TEST_ASSERT(text != NULL);
+    TEST_CHECK(strstr(text, "test_metric{upstream=\"\",first=\"one\",second=\"two\","
+                            "original=\"value\"} 1") != NULL);
+    cmt_encode_prometheus_destroy(text);
+    cmt_destroy(dst);
+}
+
+void test_cat_static_labels_merge()
+{
+    struct cmt *src;
+    struct cmt *dst;
+    struct cmt_label *label;
+    struct cmt_gauge *gauge;
+    cfl_sds_t text;
+
+    src = cmt_create();
+    dst = cmt_create();
+    TEST_ASSERT(src != NULL && dst != NULL);
+    gauge = cmt_gauge_create(dst, "", "", "existing_metric", "existing metric", 0, NULL);
+    TEST_ASSERT(gauge != NULL);
+    TEST_ASSERT(cmt_gauge_set(gauge, 0, 1.0, 0, NULL) == 0);
+    gauge = cmt_gauge_create(src, "", "", "new_metric", "new metric", 0, NULL);
+    TEST_ASSERT(gauge != NULL);
+    TEST_ASSERT(cmt_gauge_set(gauge, 0, 2.0, 0, NULL) == 0);
+    TEST_ASSERT(cmt_label_add(dst, "existing", "preserved") == 0);
+    TEST_ASSERT(cmt_label_add(dst, "shared", "same") == 0);
+    TEST_ASSERT(cmt_label_add(src, "shared", "same") == 0);
+    TEST_ASSERT(cmt_label_add(src, "new", "copied") == 0);
+    TEST_ASSERT(cmt_label_add(src, "new", "copied") == 0);
+    TEST_ASSERT(cmt_label_add(src, "NEW", "case-sensitive") == 0);
+    TEST_ASSERT(cmt_cat(dst, src) == 0);
+    TEST_ASSERT(cmt_cat(dst, src) == 0);
+    TEST_CHECK(cmt_labels_count(dst->static_labels) == 4);
+    label = cfl_list_entry_first(&dst->static_labels->list, struct cmt_label, _head);
+    TEST_CHECK(strcmp(label->key, "existing") == 0);
+    TEST_CHECK(strcmp(label->val, "preserved") == 0);
+    label = find_static_label(dst, "new");
+    TEST_ASSERT(label != NULL);
+    TEST_CHECK(strcmp(label->val, "copied") == 0);
+    label = find_static_label(dst, "NEW");
+    TEST_ASSERT(label != NULL);
+    TEST_CHECK(strcmp(label->val, "case-sensitive") == 0);
+    cmt_destroy(src);
+    TEST_CHECK(cfl_list_size(&dst->gauges) == 2);
+    text = cmt_encode_prometheus_create(dst, 0);
+    TEST_ASSERT(text != NULL);
+    TEST_CHECK(strstr(text, "existing_metric{existing=\"preserved\",shared=\"same\","
+                            "new=\"copied\",NEW=\"case-sensitive\"} 1") != NULL);
+    TEST_CHECK(strstr(text, "new_metric{existing=\"preserved\",shared=\"same\","
+                            "new=\"copied\",NEW=\"case-sensitive\"} 2") != NULL);
+    cmt_encode_prometheus_destroy(text);
+    cmt_destroy(dst);
+}
+
+void test_cat_static_labels_conflict()
+{
+    struct cmt *src;
+    struct cmt *dst;
+    struct cmt_gauge *gauge;
+    struct cmt_label *label;
+
+    src = cmt_create();
+    dst = cmt_create();
+    TEST_ASSERT(src != NULL && dst != NULL);
+    TEST_ASSERT(cmt_label_add(dst, "shared", "destination") == 0);
+    TEST_ASSERT(cmt_label_add(src, "new", "must not be added") == 0);
+    TEST_ASSERT(cmt_label_add(src, "shared", "source") == 0);
+    gauge = cmt_gauge_create(src, "", "", "test_metric", "test metric", 0, NULL);
+    TEST_ASSERT(gauge != NULL);
+    TEST_ASSERT(cmt_gauge_set(gauge, 0, 1.0, 0, NULL) == 0);
+    TEST_CHECK(cmt_cat(dst, src) == -1);
+    TEST_CHECK(cmt_labels_count(dst->static_labels) == 1);
+    TEST_CHECK(cfl_list_size(&dst->gauges) == 0);
+    label = find_static_label(dst, "shared");
+    TEST_ASSERT(label != NULL);
+    TEST_CHECK(strcmp(label->val, "destination") == 0);
+    cmt_destroy(dst);
+
+    /* Conflicting duplicate keys within the source are rejected too. */
+    dst = cmt_create();
+    TEST_ASSERT(dst != NULL);
+    TEST_ASSERT(cmt_label_add(src, "shared", "conflicting") == 0);
+    TEST_CHECK(cmt_cat(dst, src) == -1);
+    TEST_CHECK(cmt_labels_count(dst->static_labels) == 0);
+    TEST_CHECK(cfl_list_size(&dst->gauges) == 0);
+    cmt_destroy(src);
+    cmt_destroy(dst);
+}
+
+void test_cat_static_labels_dynamic_conflict()
+{
+    int type;
+    struct cmt *src;
+    struct cmt *dst;
+    struct cmt_gauge *gauge;
+    char *keys[] = {"other", "region"};
+    char *values[] = {"value", "west"};
+    cfl_sds_t before;
+    cfl_sds_t after;
+
+    for (type = CMT_COUNTER; type <= CMT_EXP_HISTOGRAM; type++) {
+        src = cmt_create();
+        dst = cmt_create();
+        TEST_ASSERT(src != NULL && dst != NULL);
+        TEST_ASSERT(cmt_label_add(dst, "existing", "preserved") == 0);
+        TEST_ASSERT(cmt_label_add(src, "pending", "must not be added") == 0);
+        TEST_ASSERT(cmt_label_add(src, "region", "east") == 0);
+        TEST_ASSERT(cmt_gauge_create(src, "", "", "new_metric", "new metric",
+                                     0, NULL) != NULL);
+
+        /* Even schemas without samples must reject a colliding static key. */
+        switch (type) {
+        case CMT_COUNTER:
+            TEST_ASSERT(cmt_counter_create(dst, "", "", "metric", "metric",
+                                           2, keys) != NULL);
+            break;
+        case CMT_GAUGE:
+            gauge = cmt_gauge_create(dst, "", "", "metric", "metric", 2, keys);
+            TEST_ASSERT(gauge != NULL);
+            TEST_ASSERT(cmt_gauge_set(gauge, 0, 1.0, 2, values) == 0);
+            break;
+        case CMT_HISTOGRAM:
+            TEST_ASSERT(cmt_histogram_create(dst, "", "", "metric", "metric",
+                                             NULL, 2, keys) != NULL);
+            break;
+        case CMT_SUMMARY:
+            TEST_ASSERT(cmt_summary_create(dst, "", "", "metric", "metric",
+                                           0, NULL, 2, keys) != NULL);
+            break;
+        case CMT_UNTYPED:
+            TEST_ASSERT(cmt_untyped_create(dst, "", "", "metric", "metric",
+                                           2, keys) != NULL);
+            break;
+        case CMT_EXP_HISTOGRAM:
+            TEST_ASSERT(cmt_exp_histogram_create(dst, "", "", "metric", "metric",
+                                                 2, keys) != NULL);
+            break;
+        }
+
+        before = cmt_encode_prometheus_create(dst, 0);
+        TEST_ASSERT(before != NULL);
+        TEST_CHECK(cmt_cat(dst, src) == -1);
+        TEST_CHECK(cmt_labels_count(dst->static_labels) == 1);
+        TEST_CHECK(cmt_labels_count(src->static_labels) == 2);
+        TEST_CHECK(cfl_list_size(&dst->gauges) == (type == CMT_GAUGE ? 1 : 0));
+        after = cmt_encode_prometheus_create(dst, 0);
+        TEST_ASSERT(after != NULL);
+        TEST_CHECK(strcmp(before, after) == 0);
+        cmt_encode_prometheus_destroy(before);
+        cmt_encode_prometheus_destroy(after);
+        cmt_destroy(src);
+
+        /* Key comparison is case-sensitive. */
+        src = cmt_create();
+        TEST_ASSERT(src != NULL);
+        TEST_ASSERT(cmt_label_add(src, "Region", "east") == 0);
+        TEST_CHECK(cmt_cat(dst, src) == 0);
+        TEST_CHECK(cmt_labels_count(dst->static_labels) == 2);
+        cmt_destroy(src);
+        cmt_destroy(dst);
+    }
+}
+
+void test_cat_static_labels_source_dynamic_conflict()
+{
+    int shared;
+    int populated;
+    struct cmt *src;
+    struct cmt *dst;
+    struct cmt_gauge *gauge;
+    char *keys[] = {"other", "region"};
+    char *values[] = {"value", "west"};
+    cfl_sds_t src_before;
+    cfl_sds_t dst_before;
+    cfl_sds_t after;
+
+    for (shared = 0; shared <= 1; shared++) {
+        for (populated = 0; populated <= 1; populated++) {
+            src = cmt_create();
+            dst = cmt_create();
+            TEST_ASSERT(src != NULL && dst != NULL);
+            TEST_ASSERT(cmt_label_add(dst, "existing", "preserved") == 0);
+            if (shared) {
+                TEST_ASSERT(cmt_label_add(dst, "region", "east") == 0);
+            }
+            TEST_ASSERT(cmt_label_add(src, "pending", "must not be added") == 0);
+            TEST_ASSERT(cmt_label_add(src, "region", "east") == 0);
+            gauge = cmt_gauge_create(dst, "", "", "existing_metric",
+                                     "existing metric", 0, NULL);
+            TEST_ASSERT(gauge != NULL);
+            TEST_ASSERT(cmt_gauge_set(gauge, 0, 1.0, 0, NULL) == 0);
+            gauge = cmt_gauge_create(src, "", "", "new_metric",
+                                     "new metric", 2, keys);
+            TEST_ASSERT(gauge != NULL);
+            if (populated) {
+                TEST_ASSERT(cmt_gauge_set(gauge, 0, 2.0, 2, values) == 0);
+            }
+
+            src_before = cmt_encode_prometheus_create(src, 0);
+            dst_before = cmt_encode_prometheus_create(dst, 0);
+            TEST_ASSERT(src_before != NULL && dst_before != NULL);
+            TEST_CHECK(cmt_cat(dst, src) == -1);
+            TEST_CHECK(cmt_labels_count(dst->static_labels) == 1 + shared);
+            TEST_CHECK(cmt_labels_count(src->static_labels) == 2);
+            TEST_CHECK(cfl_list_size(&dst->gauges) == 1);
+            TEST_CHECK(cfl_list_size(&src->gauges) == 1);
+
+            /* Rejection must preserve metric identity and label ordering. */
+            after = cmt_encode_prometheus_create(dst, 0);
+            TEST_ASSERT(after != NULL);
+            TEST_CHECK(strcmp(dst_before, after) == 0);
+            cmt_encode_prometheus_destroy(after);
+            after = cmt_encode_prometheus_create(src, 0);
+            TEST_ASSERT(after != NULL);
+            TEST_CHECK(strcmp(src_before, after) == 0);
+            cmt_encode_prometheus_destroy(after);
+            cmt_encode_prometheus_destroy(src_before);
+            cmt_encode_prometheus_destroy(dst_before);
+            cmt_destroy(src);
+            cmt_destroy(dst);
+        }
+    }
+}
+
+void test_cat_static_labels_empty()
+{
+    struct cmt *src;
+    struct cmt *dst;
+
+    src = cmt_create();
+    dst = cmt_create();
+    TEST_ASSERT(src != NULL && dst != NULL);
+    TEST_CHECK(cmt_cat(dst, src) == 0);
+    TEST_CHECK(cmt_labels_count(dst->static_labels) == 0);
+    TEST_ASSERT(cmt_label_add(dst, "existing", "preserved") == 0);
+    TEST_CHECK(cmt_cat(dst, src) == 0);
+    TEST_CHECK(cmt_labels_count(dst->static_labels) == 1);
+    TEST_CHECK(cmt_cat(NULL, src) == -1);
+    TEST_CHECK(cmt_cat(dst, NULL) == -1);
+    cmt_destroy(src);
+    cmt_destroy(dst);
+}
+
+/* Decode into a fresh map, whose series have not entered the lookup index. */
+static struct cmt *decode_copy(struct cmt *source)
+{
+    char *buffer;
+    size_t size;
+    size_t offset = 0;
+    struct cmt *decoded = NULL;
+
+    TEST_ASSERT(cmt_encode_msgpack_create(source, &buffer, &size) == 0);
+    TEST_ASSERT(cmt_decode_msgpack_create(&decoded, buffer, size, &offset) == 0);
+    cmt_encode_msgpack_destroy(buffer);
+    return decoded;
+}
+
+void test_cat_decoded_index_lifecycle()
+{
+    struct cmt *source;
+    struct cmt *destination;
+    struct cmt *appended;
+    struct cmt_gauge *gauge;
+    struct cmt_gauge *merged;
+    struct cmt_gauge *extra;
+    struct cmt_metric *metric;
+    struct cfl_list *head;
+    struct cfl_list *tmp;
+    double value;
+    char *keys[] = {"first", "second"};
+    char *left[] = {"ab", "c"};
+    char *right[] = {"a", "bc"};
+    char *late[] = {"late", NULL};
+    char *missing[] = {"missing", ""};
+
+    source = cmt_create();
+    TEST_ASSERT(source != NULL);
+    gauge = cmt_gauge_create(source, "test", "cat", "index", "Index lifecycle", 2, keys);
+    TEST_ASSERT(gauge != NULL);
+    /* These label tuples deliberately produce the same concatenated hash input. */
+    TEST_ASSERT(cmt_gauge_set(gauge, 10, 1, 2, left) == 0);
+    TEST_ASSERT(cmt_gauge_set(gauge, 10, 2, 2, right) == 0);
+    destination = decode_copy(source);
+    merged = cfl_list_entry(destination->gauges.next, struct cmt_gauge, _head);
+    TEST_CHECK(merged->map->indexed_metric_count == 0);
+    TEST_ASSERT(cmt_gauge_get_val(merged, 2, left, &value) == 0);
+    TEST_CHECK(value == 1);
+    TEST_ASSERT(cmt_gauge_get_val(merged, 2, right, &value) == 0);
+    TEST_CHECK(value == 2);
+    TEST_CHECK(merged->map->indexed_metric_count == 2);
+    TEST_CHECK(cmt_gauge_get_val(merged, 2, missing, &value) != 0);
+    TEST_ASSERT(cmt_cat(destination, source) == 0);
+    TEST_CHECK(cfl_list_size(&merged->map->metrics) == 2);
+    cmt_destroy(source);
+
+    source = cmt_create();
+    TEST_ASSERT(source != NULL);
+    gauge = cmt_gauge_create(source, "test", "cat", "index", "Index lifecycle", 2, keys);
+    TEST_ASSERT(gauge != NULL);
+    TEST_ASSERT(cmt_gauge_set(gauge, 20, 3, 2, late) == 0);
+    appended = decode_copy(source);
+    extra = cfl_list_entry(appended->gauges.next, struct cmt_gauge, _head);
+    /* Exercise a decoder-style append after lookups have already indexed a prefix. */
+    cfl_list_foreach_safe(head, tmp, &extra->map->metrics) {
+        metric = cfl_list_entry(head, struct cmt_metric, _head);
+        TEST_CHECK(!metric->hash_indexed);
+        cfl_list_del(head);
+        cfl_list_add(head, &merged->map->metrics);
+    }
+    cmt_destroy(appended);
+    cmt_destroy(source);
+    TEST_ASSERT(cmt_gauge_get_val(merged, 2, late, &value) == 0);
+    TEST_CHECK(value == 3);
+    TEST_CHECK(merged->map->indexed_metric_count == 3);
+    metric = cmt_map_metric_get(&merged->opts, merged->map, 2, late, CMT_FALSE);
+    TEST_ASSERT(metric != NULL);
+    cmt_map_metric_destroy(metric);
+    TEST_CHECK(cmt_gauge_get_val(merged, 2, late, &value) != 0);
+    TEST_ASSERT(cmt_gauge_get_val(merged, 2, right, &value) == 0);
+    TEST_CHECK(value == 2);
+    TEST_ASSERT(cmt_gauge_set(merged, 30, 4, 2, missing) == 0);
+    cmt_map_metrics_expire(merged->map, 20);
+    TEST_CHECK(cfl_list_size(&merged->map->metrics) == 1);
+    TEST_CHECK(cmt_gauge_get_val(merged, 2, left, &value) != 0);
+    TEST_ASSERT(cmt_gauge_get_val(merged, 2, missing, &value) == 0);
+    TEST_CHECK(value == 4);
+    cmt_map_metrics_expire(merged->map, 40);
+    TEST_CHECK(cfl_list_size(&merged->map->metrics) == 0);
+    TEST_ASSERT(cmt_gauge_set(merged, 50, 5, 2, late) == 0);
+    TEST_ASSERT(cmt_gauge_get_val(merged, 2, late, &value) == 0);
+    TEST_CHECK(value == 5);
+    cmt_destroy(destination);
+}
+
+void test_cat_many_contexts()
+{
+    int batch;
+    int index;
+    double value;
+    char label[32];
+    char *keys[] = {"series"};
+    char *values[] = {label};
+    struct cmt *source;
+    struct cmt *destination;
+    struct cmt_gauge *gauge;
+
+    destination = cmt_create();
+    TEST_ASSERT(destination != NULL);
+    for (batch = 0; batch < 10; batch++) {
+        source = cmt_create();
+        TEST_ASSERT(source != NULL);
+        gauge = cmt_gauge_create(source, "test", "cat", "many", "Many series", 1, keys);
+        TEST_ASSERT(gauge != NULL);
+        for (index = 0; index < 1000; index++) {
+            snprintf(label, sizeof(label), "%d", batch * 1000 + index);
+            TEST_ASSERT(cmt_gauge_set(gauge, 100, batch * 1000 + index, 1, values) == 0);
+        }
+        TEST_ASSERT(cmt_cat(destination, source) == 0);
+        /* Repeated concatenation must update existing identities, not duplicate them. */
+        TEST_ASSERT(cmt_cat(destination, source) == 0);
+        cmt_destroy(source);
+    }
+    TEST_CHECK(cfl_list_size(&destination->gauges) == 1);
+    gauge = cfl_list_entry(destination->gauges.next, struct cmt_gauge, _head);
+    TEST_CHECK(cfl_list_size(&gauge->map->metrics) == 10000);
+    for (index = 0; index < 10000; index++) {
+        snprintf(label, sizeof(label), "%d", index);
+        TEST_ASSERT(cmt_gauge_get_val(gauge, 1, values, &value) == 0);
+        TEST_CHECK(value == index);
+    }
+    cmt_destroy(destination);
+}
+
+static struct cmt *create_otlp_gauge_context(char *label, double value, uint64_t flags)
+{
+    struct cmt *cmt;
+    struct cmt_gauge *gauge;
+    struct cmt_metric *sample;
+
+    cmt = cmt_create();
+    if (cmt == NULL) {
+        return NULL;
+    }
+
+    gauge = cmt_gauge_create(cmt, "", "", "otlp_gauge", "otlp gauge",
+                             1, (char *[]) {"key"});
+    if (gauge == NULL ||
+        cmt_gauge_set(gauge, 100, value, 1, (char *[]) {label}) != 0) {
+        cmt_destroy(cmt);
+        return NULL;
+    }
+
+    sample = cfl_list_entry_first(&gauge->map->metrics, struct cmt_metric, _head);
+    sample->otlp_metadata = cfl_kvlist_create();
+    if (sample->otlp_metadata == NULL ||
+        cfl_kvlist_insert_uint64(sample->otlp_metadata, "flags", flags) != 0) {
+        cmt_destroy(cmt);
+        return NULL;
+    }
+
+    return cmt;
+}
+
+static uint64_t sample_flags(struct cmt_metric *sample)
+{
+    struct cfl_variant *value;
+
+    value = cfl_kvlist_fetch(sample->otlp_metadata, "flags");
+    if (value == NULL) {
+        return UINT64_MAX;
+    }
+    if (value->type == CFL_VARIANT_UINT) {
+        return value->data.as_uint64;
+    }
+    if (value->type == CFL_VARIANT_INT) {
+        return (uint64_t) value->data.as_int64;
+    }
+    return UINT64_MAX;
+}
+
+void test_cat_clears_stale_otlp_point_metadata()
+{
+    int label_count;
+    char *keys[] = {"key"};
+    char *values[] = {"v"};
+    struct cmt *dst;
+    struct cmt *src;
+    struct cmt_gauge *dst_gauge;
+    struct cmt_gauge *src_gauge;
+    struct cmt_metric *dst_sample;
+    struct cmt_metric *src_sample;
+
+    /* Exercise both the static and label-indexed sample replacement paths. */
+    for (label_count = 0; label_count <= 1; label_count++) {
+        dst = cmt_create();
+        src = cmt_create();
+        TEST_ASSERT(dst != NULL && src != NULL);
+
+        dst_gauge = cmt_gauge_create(dst, "", "", "otlp_gauge", "otlp gauge",
+                                     label_count, keys);
+        src_gauge = cmt_gauge_create(src, "", "", "otlp_gauge", "otlp gauge",
+                                     label_count, keys);
+        TEST_ASSERT(dst_gauge != NULL && src_gauge != NULL);
+        TEST_ASSERT(cmt_gauge_set(dst_gauge, 100, 1.0, label_count, values) == 0);
+        TEST_ASSERT(cmt_gauge_set(src_gauge, 200, 2.5, label_count, values) == 0);
+
+        dst_sample = cmt_map_metric_get(&dst_gauge->opts, dst_gauge->map,
+                                        label_count, values, CMT_FALSE);
+        src_sample = cmt_map_metric_get(&src_gauge->opts, src_gauge->map,
+                                        label_count, values, CMT_FALSE);
+        TEST_ASSERT(dst_sample != NULL && src_sample != NULL);
+        dst_sample->otlp_metadata = cfl_kvlist_create();
+        TEST_ASSERT(dst_sample->otlp_metadata != NULL);
+        TEST_ASSERT(cfl_kvlist_insert_uint64(dst_sample->otlp_metadata,
+                                            "flags", 1) == 0);
+        cmt_metric_set_start_timestamp(dst_sample, 50);
+        TEST_ASSERT(src_sample->otlp_metadata == NULL);
+
+        TEST_ASSERT(cmt_cat(dst, src) == 0);
+        TEST_CHECK(dst_sample->otlp_metadata == NULL);
+        TEST_CHECK(cmt_metric_get_value(dst_sample) == 2.5);
+        TEST_CHECK(cmt_metric_get_timestamp(dst_sample) == 200);
+        TEST_CHECK(!cmt_metric_has_start_timestamp(dst_sample));
+        TEST_CHECK(cfl_list_size(&dst_gauge->map->metrics) == label_count);
+
+        /* Repeated copies must also tolerate an already empty destination. */
+        TEST_ASSERT(cmt_cat(dst, src) == 0);
+        TEST_CHECK(dst_sample->otlp_metadata == NULL);
+
+        cmt_destroy(src);
+        cmt_destroy(dst);
+    }
+}
+
+/* Samples carrying OTLP metadata must merge by labels, never duplicate. */
+void test_cat_otlp_metadata_samples_merge_by_labels()
+{
+    int ret;
+    struct cmt *first;
+    struct cmt *second;
+    struct cmt *other;
+    struct cmt *final;
+    struct cmt_gauge *gauge;
+    struct cmt_metric *sample;
+    struct cmt_map_label *label;
+    struct cfl_list *head;
+    int found_v;
+    int found_w;
+
+    first = create_otlp_gauge_context("v", 1.0, 1);
+    second = create_otlp_gauge_context("v", 2.0, 2);
+    other = create_otlp_gauge_context("w", 3.0, 3);
+    final = cmt_create();
+    TEST_ASSERT(first != NULL && second != NULL && other != NULL && final != NULL);
+
+    ret = cmt_cat(final, first);
+    TEST_CHECK(ret == 0);
+    ret = cmt_cat(final, second);
+    TEST_CHECK(ret == 0);
+    ret = cmt_cat(final, second);
+    TEST_CHECK(ret == 0);
+
+    TEST_CHECK(cfl_list_size(&final->gauges) == 1);
+    gauge = cfl_list_entry_first(&final->gauges, struct cmt_gauge, _head);
+    TEST_ASSERT(gauge != NULL);
+    TEST_CHECK(cfl_list_size(&gauge->map->metrics) == 1);
+
+    sample = cfl_list_entry_first(&gauge->map->metrics, struct cmt_metric, _head);
+    TEST_CHECK(cmt_metric_get_value(sample) == 2.0);
+    TEST_CHECK(sample_flags(sample) == 2);
+
+    /* The merged sample remains reachable through the label index. */
+    ret = cmt_gauge_set(gauge, 200, 5.0, 1, (char *[]) {"v"});
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(cfl_list_size(&gauge->map->metrics) == 1);
+    TEST_CHECK(cmt_metric_get_value(sample) == 5.0);
+
+    /* A distinct label set is still appended. */
+    ret = cmt_cat(final, other);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(cfl_list_size(&gauge->map->metrics) == 2);
+
+    found_v = 0;
+    found_w = 0;
+    cfl_list_foreach(head, &gauge->map->metrics) {
+        sample = cfl_list_entry(head, struct cmt_metric, _head);
+        label = cfl_list_entry_first(&sample->labels, struct cmt_map_label, _head);
+        if (strcmp(label->name, "v") == 0) {
+            found_v++;
+            TEST_CHECK(sample_flags(sample) == 2);
+        }
+        else if (strcmp(label->name, "w") == 0) {
+            found_w++;
+            TEST_CHECK(sample_flags(sample) == 3);
+            TEST_CHECK(cmt_metric_get_value(sample) == 3.0);
+        }
+    }
+    TEST_CHECK(found_v == 1);
+    TEST_CHECK(found_w == 1);
+
+    cmt_destroy(first);
+    cmt_destroy(second);
+    cmt_destroy(other);
+    cmt_destroy(final);
+}
+
+/* Distinct OTLP data points of one series (different time windows) are kept,
+ * but concatenating them again must not duplicate either of them. */
+void test_cat_otlp_metadata_distinct_points_kept()
+{
+    int ret;
+    int pass;
+    struct cmt *source;
+    struct cmt *final;
+    struct cmt_gauge *gauge;
+    struct cmt_metric *first;
+    struct cmt_metric *second;
+    struct cmt_map_label *label;
+    struct cfl_list *head;
+    uint64_t timestamps;
+
+    source = create_otlp_gauge_context("v", 1.0, 1);
+    TEST_ASSERT(source != NULL);
+
+    /* Add a second data point of the same series at a later time, the way
+     * the OTLP decoder appends independent points. */
+    gauge = cfl_list_entry_first(&source->gauges, struct cmt_gauge, _head);
+    first = cfl_list_entry_first(&gauge->map->metrics, struct cmt_metric, _head);
+    second = calloc(1, sizeof(struct cmt_metric));
+    TEST_ASSERT(second != NULL);
+    cfl_list_init(&second->labels);
+    cfl_list_init(&second->_hash_head);
+    second->map = gauge->map;
+    second->hash = first->hash;
+    cfl_list_add(&second->_head, &gauge->map->metrics);
+    TEST_ASSERT(cmt_map_metric_get(&gauge->opts, gauge->map, 1, (char *[]) {"v"},
+                                   CMT_FALSE) == first);
+    label = calloc(1, sizeof(struct cmt_map_label));
+    TEST_ASSERT(label != NULL);
+    label->name = cfl_sds_create("v");
+    TEST_ASSERT(label->name != NULL);
+    cfl_list_add(&label->_head, &second->labels);
+    cmt_metric_set_double(second, 200, 2.0);
+    second->otlp_metadata = cfl_kvlist_create();
+    TEST_ASSERT(second->otlp_metadata != NULL);
+    TEST_ASSERT(cfl_kvlist_insert_uint64(second->otlp_metadata, "flags", 2) == 0);
+
+    final = cmt_create();
+    TEST_ASSERT(final != NULL);
+
+    for (pass = 0; pass < 2; pass++) {
+        ret = cmt_cat(final, source);
+        TEST_CHECK(ret == 0);
+
+        gauge = cfl_list_entry_first(&final->gauges, struct cmt_gauge, _head);
+        TEST_ASSERT(gauge != NULL);
+        TEST_CHECK(cfl_list_size(&gauge->map->metrics) == 2);
+
+        timestamps = 0;
+        cfl_list_foreach(head, &gauge->map->metrics) {
+            first = cfl_list_entry(head, struct cmt_metric, _head);
+            timestamps += cmt_metric_get_timestamp(first);
+            if (cmt_metric_get_timestamp(first) == 100) {
+                TEST_CHECK(sample_flags(first) == 1);
+                TEST_CHECK(cmt_metric_get_value(first) == 1.0);
+            }
+            else {
+                TEST_CHECK(sample_flags(first) == 2);
+                TEST_CHECK(cmt_metric_get_value(first) == 2.0);
+            }
+        }
+        TEST_CHECK(timestamps == 300);
+    }
+
+    cmt_destroy(source);
+    cmt_destroy(final);
+}
+
+/* A family with more label keys than the destination cannot be merged: the
+ * destination must stay encodable and keep its samples. */
+void test_cat_rejects_larger_label_schema()
+{
+    struct cmt *a;
+    struct cmt *b;
+    struct cmt *dst;
+    struct cmt_gauge *gauge_a;
+    struct cmt_gauge *gauge_b;
+    struct cmt_gauge *out;
+    cfl_sds_t wire;
+
+    a = cmt_create();
+    b = cmt_create();
+    dst = cmt_create();
+    TEST_ASSERT(a != NULL && b != NULL && dst != NULL);
+    gauge_a = cmt_gauge_create(a, "", "", "g", "g", 1, (char *[]) {"a"});
+    gauge_b = cmt_gauge_create(b, "", "", "g", "g", 2, (char *[]) {"a", "b"});
+    TEST_ASSERT(gauge_a != NULL && gauge_b != NULL);
+    TEST_ASSERT(cmt_gauge_set(gauge_a, 100, 1, 1, (char *[]) {"x"}) == 0);
+    TEST_ASSERT(cmt_gauge_set(gauge_b, 200, 2, 2, (char *[]) {"x", "y"}) == 0);
+
+    TEST_CHECK(cmt_cat(dst, a) == 0);
+    TEST_CHECK(cmt_cat(dst, b) == -1);
+
+    out = cfl_list_entry_first(&dst->gauges, struct cmt_gauge, _head);
+    TEST_CHECK(out->map->label_count == 1);
+    TEST_CHECK(cfl_list_size(&out->map->metrics) == 1);
+    wire = cmt_encode_opentelemetry_create(dst);
+    TEST_CHECK(wire != NULL);
+    if (wire != NULL) {
+        cmt_encode_opentelemetry_destroy(wire);
+    }
+
+    cmt_destroy(a);
+    cmt_destroy(b);
+    cmt_destroy(dst);
+}
+
+static struct cmt *semantics_counter(int aggregation_type, int allow_reset, int with_sample,
+                                     char *unit)
+{
+    struct cmt *ctx;
+    struct cmt_counter *counter;
+
+    ctx = cmt_create();
+    TEST_ASSERT(ctx != NULL);
+    counter = cmt_counter_create(ctx, "", "", "requests", "requests", 1, (char *[]) {"site"});
+    TEST_ASSERT(counter != NULL);
+    counter->aggregation_type = aggregation_type;
+    counter->allow_reset = allow_reset;
+    if (unit != NULL) {
+        counter->map->unit = cfl_sds_create(unit);
+        TEST_ASSERT(counter->map->unit != NULL);
+    }
+    if (with_sample) {
+        TEST_ASSERT(cmt_counter_set(counter, 100, 5, 1, (char *[]) {"b"}) == 0);
+    }
+    return ctx;
+}
+
+static struct cmt *semantics_histogram(int aggregation_type)
+{
+    struct cmt *ctx;
+    struct cmt_histogram *histogram;
+    uint64_t buckets[] = {1, 2};
+
+    ctx = cmt_create();
+    TEST_ASSERT(ctx != NULL);
+    histogram = cmt_histogram_create(ctx, "", "", "latency", "latency",
+                                     cmt_histogram_buckets_create(1, 1.0), 0, NULL);
+    TEST_ASSERT(histogram != NULL);
+    histogram->aggregation_type = aggregation_type;
+    TEST_ASSERT(cmt_histogram_set_default(histogram, 100, buckets, 1.5, 2, 0, NULL) == 0);
+    return ctx;
+}
+
+/* Later contributors must not change how samples already in an existing
+ * family are read: an empty one is a no-op and a conflicting one fails
+ * without changes. */
+void test_cat_keeps_existing_family_semantics()
+{
+    struct cmt *dst;
+    struct cmt *src;
+    struct cmt_counter *counter;
+    struct cmt_histogram *histogram;
+
+    dst = cmt_create();
+    TEST_ASSERT(dst != NULL);
+    src = semantics_counter(CMT_AGGREGATION_TYPE_CUMULATIVE, CMT_FALSE, CMT_TRUE, NULL);
+    TEST_CHECK(cmt_cat(dst, src) == 0);
+    cmt_destroy(src);
+    counter = cfl_list_entry_first(&dst->counters, struct cmt_counter, _head);
+
+    /* empty contributors: delta, non-monotonic, with a unit */
+    src = semantics_counter(CMT_AGGREGATION_TYPE_DELTA, CMT_TRUE, CMT_FALSE, "s");
+    TEST_CHECK(cmt_cat(dst, src) == 0);
+    cmt_destroy(src);
+    TEST_CHECK(counter->aggregation_type == CMT_AGGREGATION_TYPE_CUMULATIVE);
+    TEST_CHECK(counter->allow_reset == CMT_FALSE);
+    TEST_CHECK(counter->map->unit == NULL);
+    TEST_CHECK(cfl_list_size(&counter->map->metrics) == 1);
+
+    /* contributors with samples and conflicting semantics */
+    src = semantics_counter(CMT_AGGREGATION_TYPE_DELTA, CMT_FALSE, CMT_TRUE, NULL);
+    TEST_CHECK(cmt_cat(dst, src) == -1);
+    cmt_destroy(src);
+    src = semantics_counter(CMT_AGGREGATION_TYPE_CUMULATIVE, CMT_TRUE, CMT_TRUE, NULL);
+    TEST_CHECK(cmt_cat(dst, src) == -1);
+    cmt_destroy(src);
+    TEST_CHECK(counter->aggregation_type == CMT_AGGREGATION_TYPE_CUMULATIVE);
+    TEST_CHECK(counter->allow_reset == CMT_FALSE);
+    TEST_CHECK(cmt_metric_get_value(cfl_list_entry_first(&counter->map->metrics,
+                                                         struct cmt_metric, _head)) == 5);
+    cmt_destroy(dst);
+
+    /* unspecified temporality (Fluent Bit 5.0.x histograms) merges with
+     * either and keeps the destination's */
+    dst = semantics_histogram(CMT_AGGREGATION_TYPE_CUMULATIVE);
+    src = semantics_histogram(CMT_AGGREGATION_TYPE_UNSPECIFIED);
+    TEST_CHECK(cmt_cat(dst, src) == 0);
+    cmt_destroy(src);
+    histogram = cfl_list_entry_first(&dst->histograms, struct cmt_histogram, _head);
+    TEST_CHECK(histogram->aggregation_type == CMT_AGGREGATION_TYPE_CUMULATIVE);
+    src = semantics_histogram(CMT_AGGREGATION_TYPE_DELTA);
+    TEST_CHECK(cmt_cat(dst, src) == -1);
+    cmt_destroy(src);
+    TEST_CHECK(histogram->aggregation_type == CMT_AGGREGATION_TYPE_CUMULATIVE);
+    cmt_destroy(dst);
+}
+
+/* A destination family that holds no samples has nothing to reinterpret:
+ * it takes the semantics of the first contributor that brings samples. */
+void test_cat_empty_family_adopts_semantics()
+{
+    struct cmt *dst;
+    struct cmt *src;
+    struct cmt_counter *counter;
+
+    dst = cmt_create();
+    TEST_ASSERT(dst != NULL);
+    src = semantics_counter(CMT_AGGREGATION_TYPE_CUMULATIVE, CMT_FALSE, CMT_FALSE, "s");
+    TEST_CHECK(cmt_cat(dst, src) == 0);
+    cmt_destroy(src);
+    counter = cfl_list_entry_first(&dst->counters, struct cmt_counter, _head);
+    TEST_CHECK(cfl_list_size(&counter->map->metrics) == 0);
+
+    src = semantics_counter(CMT_AGGREGATION_TYPE_DELTA, CMT_TRUE, CMT_TRUE, "ms");
+    TEST_CHECK(cmt_cat(dst, src) == 0);
+    cmt_destroy(src);
+    TEST_CHECK(counter->aggregation_type == CMT_AGGREGATION_TYPE_DELTA);
+    TEST_CHECK(counter->allow_reset == CMT_TRUE);
+    TEST_CHECK(counter->map->unit != NULL && strcmp(counter->map->unit, "ms") == 0);
+    TEST_CHECK(cfl_list_size(&counter->map->metrics) == 1);
+
+    /* once it holds samples, its semantics stay */
+    src = semantics_counter(CMT_AGGREGATION_TYPE_CUMULATIVE, CMT_FALSE, CMT_TRUE, "ms");
+    TEST_CHECK(cmt_cat(dst, src) == -1);
+    cmt_destroy(src);
+    TEST_CHECK(counter->aggregation_type == CMT_AGGREGATION_TYPE_DELTA);
+    cmt_destroy(dst);
+}
+
+/* Values are never converted, so families with different explicit units
+ * cannot be merged. An empty unit is unspecified. */
+void test_cat_rejects_conflicting_units()
+{
+    struct cmt *dst;
+    struct cmt *src;
+    struct cmt_counter *counter;
+
+    dst = cmt_create();
+    TEST_ASSERT(dst != NULL);
+    src = semantics_counter(CMT_AGGREGATION_TYPE_CUMULATIVE, CMT_FALSE, CMT_TRUE, "s");
+    TEST_CHECK(cmt_cat(dst, src) == 0);
+    cmt_destroy(src);
+    counter = cfl_list_entry_first(&dst->counters, struct cmt_counter, _head);
+
+    src = semantics_counter(CMT_AGGREGATION_TYPE_CUMULATIVE, CMT_FALSE, CMT_TRUE, "ms");
+    TEST_CHECK(cmt_cat(dst, src) == -1);
+    cmt_destroy(src);
+    src = semantics_counter(CMT_AGGREGATION_TYPE_CUMULATIVE, CMT_FALSE, CMT_FALSE, "ms");
+    TEST_CHECK(cmt_cat(dst, src) == 0);
+    cmt_destroy(src);
+    src = semantics_counter(CMT_AGGREGATION_TYPE_CUMULATIVE, CMT_FALSE, CMT_TRUE, "");
+    TEST_CHECK(cmt_cat(dst, src) == 0);
+    cmt_destroy(src);
+    src = semantics_counter(CMT_AGGREGATION_TYPE_CUMULATIVE, CMT_FALSE, CMT_TRUE, "s");
+    TEST_CHECK(cmt_cat(dst, src) == 0);
+    cmt_destroy(src);
+
+    TEST_CHECK(strcmp(counter->map->unit, "s") == 0);
+    TEST_CHECK(cfl_list_size(&counter->map->metrics) == 1);
+    cmt_destroy(dst);
+}
+
 TEST_LIST = {
+    {"cat_rejects_larger_label_schema", test_cat_rejects_larger_label_schema},
+    {"cat_keeps_existing_family_semantics", test_cat_keeps_existing_family_semantics},
+    {"cat_rejects_conflicting_units", test_cat_rejects_conflicting_units},
+    {"cat_empty_family_adopts_semantics", test_cat_empty_family_adopts_semantics},
+    {"cat_clears_stale_otlp_point_metadata", test_cat_clears_stale_otlp_point_metadata},
+    {"cat_otlp_metadata_distinct_points_kept", test_cat_otlp_metadata_distinct_points_kept},
+    {"cat_otlp_metadata_samples_merge_by_labels", test_cat_otlp_metadata_samples_merge_by_labels},
+    {"cat_many_contexts", test_cat_many_contexts},
+    {"cat_decoded_index_lifecycle", test_cat_decoded_index_lifecycle},
+    {"cat_static_labels_source_dynamic_conflict", test_cat_static_labels_source_dynamic_conflict},
+    {"cat_static_labels_dynamic_conflict", test_cat_static_labels_dynamic_conflict},
+    {"cat_static_labels_chain", test_cat_static_labels_chain},
+    {"cat_static_labels_merge", test_cat_static_labels_merge},
+    {"cat_static_labels_conflict", test_cat_static_labels_conflict},
+    {"cat_static_labels_empty", test_cat_static_labels_empty},
     {"cat", test_cat},
     {"duplicate_metrics", test_duplicate_metrics},
     {"histogram_empty_concatenation", test_histogram_empty_concatenation},
@@ -676,5 +1683,8 @@ TEST_LIST = {
     {"histogram_empty_to_populated", test_histogram_empty_to_populated},
     {"histogram_populated_to_empty", test_histogram_populated_to_empty},
     {"exp_histogram_preserves_aggregation_type", test_exp_histogram_preserves_aggregation_type},
+    {"summary_concatenation_preserves_series", test_summary_concatenation_preserves_series},
+    {"summary_concatenation_rejects_mismatched_label_schema",
+     test_summary_concatenation_rejects_mismatched_label_schema},
     { 0 }
 };

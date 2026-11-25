@@ -3,6 +3,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_gzip.h>
+#include <fluent-bit/flb_compression.h>
 
 #include "flb_tests_internal.h"
 
@@ -291,8 +292,78 @@ void test_decompress_concatenated()
     flb_free(out);
 }
 
+/*
+ * A gzip stream carrying an FCOMMENT field must decompress through the
+ * streaming decompressor used by the forward protocol. The comment is a
+ * NUL terminated string placed between the base header and the deflate
+ * body, so the parser has to skip its terminating NUL before handing the
+ * remaining bytes to inflate.
+ */
+void test_decompress_with_comment()
+{
+    int ret;
+    char *in_data = morpheus;
+    size_t in_len = strlen(morpheus);
+    void *gz;
+    size_t gz_len;
+    const char *comment = "fluent-bit";
+    size_t comment_len = strlen(comment) + 1; /* include the NUL */
+    uint8_t *stream;
+    size_t stream_len;
+    struct flb_decompression_context *dctx;
+    uint8_t *append_ptr;
+    char out[8192];
+    size_t out_len;
+    size_t total = 0;
+    int iterations = 0;
+
+    ret = flb_gzip_compress(in_data, in_len, &gz, &gz_len);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(gz_len > 10);
+
+    /* Re-frame the payload with an FCOMMENT field inserted right after the
+     * 10 byte base header. */
+    stream_len = gz_len + comment_len;
+    stream = flb_malloc(stream_len);
+    TEST_CHECK(stream != NULL);
+
+    memcpy(stream, gz, 10);
+    stream[3] |= 0x10; /* FCOMMENT */
+    memcpy(stream + 10, comment, comment_len);
+    memcpy(stream + 10 + comment_len, (uint8_t *) gz + 10, gz_len - 10);
+
+    dctx = flb_decompression_context_create(FLB_COMPRESSION_ALGORITHM_GZIP, 0);
+    TEST_CHECK(dctx != NULL);
+
+    append_ptr = flb_decompression_context_get_append_buffer(dctx);
+    memcpy(append_ptr, stream, stream_len);
+    dctx->input_buffer_length += stream_len;
+
+    do {
+        out_len = sizeof(out);
+        ret = flb_decompress(dctx, out, &out_len);
+        if (ret != FLB_DECOMPRESSOR_SUCCESS) {
+            break;
+        }
+        if (out_len > 0) {
+            if (total + out_len <= in_len) {
+                TEST_CHECK(memcmp(out, morpheus + total, out_len) == 0);
+            }
+            total += out_len;
+        }
+    } while (dctx->input_buffer_length > 0 && ++iterations < 64);
+
+    TEST_CHECK(ret == FLB_DECOMPRESSOR_SUCCESS);
+    TEST_CHECK(total == in_len);
+
+    flb_decompression_context_destroy(dctx);
+    flb_free(stream);
+    flb_free(gz);
+}
+
 TEST_LIST = {
     {"compress", test_compress},
+    {"decompress_with_comment", test_decompress_with_comment},
     {"compress_multi", test_compress_multi},
     {"compress_large", test_compress_large},
     {"header_in_data", test_header_in_gzip_body},

@@ -58,7 +58,7 @@ asm (
       "  ldp x28, x29, [x0, #144]\n"
       "  ldp x16, x17, [x0, #160]\n"
       "  mov sp, x16\n"
-      "  br x17\n"
+      "  ret x17\n"
       ".previous\n"
     );
 

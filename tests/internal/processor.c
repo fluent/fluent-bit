@@ -18,6 +18,7 @@
  */
 
 #include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_lib.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_pack.h>
@@ -31,6 +32,8 @@
 #include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_log_event_encoder.h>
+#include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_mp_chunk.h>
 #include <fluent-bit/flb_plugin.h>
 #include <cmetrics/cmt_counter.h>
 
@@ -372,6 +375,8 @@ static void processor_grouped_filter_counters()
 static void processor_private_inputs_use_main_loop()
 {
     int ret;
+    int collector_count;
+    void *context;
     struct flb_config *config;
     struct flb_input_instance *ins;
     struct mk_event_loop *thread_evl;
@@ -417,6 +422,14 @@ static void processor_private_inputs_use_main_loop()
 
     ret = flb_input_instance_init(ins, config);
     TEST_CHECK(ret == 0);
+
+    /* Initializing a private input again must not replace its owned state. */
+    context = ins->context;
+    collector_count = mk_list_size(&ins->collectors);
+    ret = flb_input_instance_init(ins, config);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(ins->context == context);
+    TEST_CHECK(mk_list_size(&ins->collectors) == collector_count);
 
     mk_list_foreach(head, &ins->collectors) {
         coll = mk_list_entry(head, struct flb_input_collector, _head);
@@ -625,10 +638,1462 @@ static void processor_metrics_counters()
     flb_sds_destroy(regex_prop_key);
 }
 
+static int create_intermediate_metrics(struct flb_processor_instance *ins,
+                                       struct cmt *input, struct cmt **output,
+                                       const char *tag, int tag_len)
+{
+    *output = cmt_create();
+    return *output == NULL ? -1 : FLB_PROCESSOR_SUCCESS;
+}
+
+static int fail_metrics_processing(struct flb_processor_instance *ins,
+                                   struct cmt *input, struct cmt **output,
+                                   const char *tag, int tag_len)
+{
+    *output = NULL;
+    return -1;
+}
+
+static void processor_metrics_failure_clears_output(void)
+{
+    struct flb_config *config;
+    struct flb_processor *proc;
+    struct cmt *input;
+    void *output;
+    size_t output_size = 123;
+    struct flb_processor_plugin first = {
+        .name = "test_metrics_copy",
+        .description = "create intermediate metrics",
+        .cb_process_metrics = create_intermediate_metrics
+    };
+    struct flb_processor_plugin second = {
+        .name = "test_metrics_failure",
+        .description = "fail metrics processing",
+        .cb_process_metrics = fail_metrics_processing
+    };
+
+    flb_init_env();
+    config = flb_config_init();
+    TEST_ASSERT(config != NULL);
+    mk_list_add(&first._head, &config->processor_plugins);
+    mk_list_add(&second._head, &config->processor_plugins);
+    proc = flb_processor_create(config, "failure", NULL, 0);
+    TEST_ASSERT(proc != NULL);
+    TEST_ASSERT(flb_processor_unit_create(proc, FLB_PROCESSOR_METRICS, first.name) != NULL);
+    TEST_ASSERT(flb_processor_unit_create(proc, FLB_PROCESSOR_METRICS, second.name) != NULL);
+    TEST_ASSERT(flb_processor_init(proc) == 0);
+    input = cmt_create();
+    TEST_ASSERT(input != NULL);
+    output = input;
+    TEST_CHECK(flb_processor_run(proc, 0, FLB_PROCESSOR_METRICS, "test", 4,
+                                input, 0, &output, &output_size) == -1);
+    TEST_CHECK(output == NULL);
+    TEST_CHECK(output_size == 0);
+    /* The caller still owns the original input after a failed pipeline. */
+    cmt_destroy(input);
+    flb_processor_destroy(proc);
+    mk_list_del(&first._head);
+    mk_list_del(&second._head);
+    flb_config_exit(config);
+}
+
+/* records per group and around the groups of the windowed buffer */
+#define WINDOW_GROUPS          3
+#define WINDOW_GROUP_RECORDS   1500
+#define WINDOW_PLAIN_RECORDS   2000
+#define WINDOW_TOTAL_RECORDS   (WINDOW_GROUPS * WINDOW_GROUP_RECORDS + \
+                                2 * WINDOW_PLAIN_RECORDS)
+#define WINDOW_CORRUPT_RECORDS 3000
+
+static int window_calls;
+static int window_max_records;
+
+static int append_window_record(struct flb_log_event_encoder *encoder, int seq)
+{
+    int ret;
+    struct flb_time ts;
+
+    ret = flb_log_event_encoder_begin_record(encoder);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -1;
+    }
+
+    flb_time_set(&ts, 1700000000 + seq, 0);
+    ret = flb_log_event_encoder_set_timestamp(encoder, &ts);
+    if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+        return -1;
+    }
+
+    ret = flb_log_event_encoder_append_body_values(
+            encoder,
+            FLB_LOG_EVENT_CSTRING_VALUE("seq"),
+            FLB_LOG_EVENT_INT64_VALUE(seq),
+            FLB_LOG_EVENT_CSTRING_VALUE("message"),
+            FLB_LOG_EVENT_CSTRING_VALUE("windowed processing test record"));
+    if (ret == FLB_EVENT_ENCODER_SUCCESS) {
+        ret = flb_log_event_encoder_commit_record(encoder);
+    }
+
+    return ret == FLB_EVENT_ENCODER_SUCCESS ? 0 : -1;
+}
+
+/* plain records, groups larger than the window record limit, plain records */
+static int create_window_records(char **out_buf, size_t *out_size)
+{
+    int i;
+    int g;
+    int seq = 0;
+    int ret = 0;
+    char name[8];
+    struct flb_log_event_encoder *encoder;
+
+    encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+    if (encoder == NULL) {
+        return -1;
+    }
+
+    for (i = 0; ret == 0 && i < WINDOW_PLAIN_RECORDS; i++) {
+        ret = append_window_record(encoder, seq++);
+    }
+
+    for (g = 0; ret == 0 && g < WINDOW_GROUPS; g++) {
+        snprintf(name, sizeof(name), "g%d", g);
+        if (flb_log_event_encoder_group_init(encoder) != 0) {
+            ret = -1;
+            break;
+        }
+
+        ret = flb_log_event_encoder_append_metadata_values(
+                encoder,
+                FLB_LOG_EVENT_CSTRING_VALUE("group"),
+                FLB_LOG_EVENT_CSTRING_VALUE(name));
+        if (ret != FLB_EVENT_ENCODER_SUCCESS ||
+            flb_log_event_encoder_group_header_end(encoder) != 0) {
+            ret = -1;
+            break;
+        }
+
+        for (i = 0; ret == 0 && i < WINDOW_GROUP_RECORDS; i++) {
+            ret = append_window_record(encoder, seq++);
+        }
+
+        if (ret == 0 && flb_log_event_encoder_group_end(encoder) != 0) {
+            ret = -1;
+        }
+    }
+
+    for (i = 0; ret == 0 && i < WINDOW_PLAIN_RECORDS; i++) {
+        ret = append_window_record(encoder, seq++);
+    }
+
+    if (ret != 0) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+
+    *out_buf = flb_malloc(encoder->output_length);
+    if (*out_buf == NULL) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+    memcpy(*out_buf, encoder->output_buffer, encoder->output_length);
+    *out_size = encoder->output_length;
+    flb_log_event_encoder_destroy(encoder);
+
+    return 0;
+}
+
+static int create_plain_window_records(char **out_buf, size_t *out_size)
+{
+    int i;
+    int ret = 0;
+    struct flb_log_event_encoder *encoder;
+
+    encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+    if (encoder == NULL) {
+        return -1;
+    }
+
+    for (i = 0; ret == 0 && i < WINDOW_CORRUPT_RECORDS; i++) {
+        ret = append_window_record(encoder, i);
+    }
+    if (ret != 0) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+
+    *out_buf = flb_malloc(encoder->output_length + 1);
+    if (*out_buf == NULL) {
+        flb_log_event_encoder_destroy(encoder);
+        return -1;
+    }
+
+    memcpy(*out_buf, encoder->output_buffer, encoder->output_length);
+    (*out_buf)[encoder->output_length] = (char) 0xc1;
+    *out_size = encoder->output_length + 1;
+    flb_log_event_encoder_destroy(encoder);
+
+    return 0;
+}
+
+static int append_corrupt_tail(char **buf, size_t *size)
+{
+    char *tmp;
+
+    tmp = flb_realloc(*buf, *size + 1);
+    if (tmp == NULL) {
+        return -1;
+    }
+
+    tmp[*size] = (char) 0xc1;
+    *buf = tmp;
+    *size += 1;
+    return 0;
+}
+
+static int mark_window_records(struct flb_processor_instance *ins, void *data,
+                               const char *tag, int tag_len)
+{
+    int type;
+    int records = 0;
+    struct flb_mp_chunk_cobj *chunk = data;
+    struct flb_mp_chunk_record *record;
+
+    while (flb_mp_chunk_cobj_record_next(chunk, &record) == FLB_MP_CHUNK_RECORD_OK) {
+        if (flb_log_event_decoder_get_record_type(&record->event, &type) != 0 ||
+            type != FLB_LOG_EVENT_NORMAL) {
+            continue;
+        }
+        records++;
+        if (cfl_kvlist_insert_int64(record->cobj_record->variant->data.as_kvlist,
+                                    "x", 1) != 0) {
+            return FLB_PROCESSOR_FAILURE;
+        }
+    }
+
+    window_calls++;
+    if (records > window_max_records) {
+        window_max_records = records;
+    }
+
+    return FLB_PROCESSOR_SUCCESS;
+}
+
+static int drop_window_records(struct flb_processor_instance *ins, void *data,
+                               const char *tag, int tag_len)
+{
+    int type;
+    struct cfl_list *head;
+    struct cfl_list *tmp;
+    struct flb_mp_chunk_cobj *chunk = data;
+    struct flb_mp_chunk_record *record;
+
+    while (flb_mp_chunk_cobj_record_next(chunk, &record) == FLB_MP_CHUNK_RECORD_OK) {
+    }
+    chunk->record_pos = NULL;
+
+    cfl_list_foreach_safe(head, tmp, &chunk->records) {
+        record = cfl_list_entry(head, struct flb_mp_chunk_record, _head);
+        if (flb_log_event_decoder_get_record_type(&record->event, &type) == 0 &&
+            type == FLB_LOG_EVENT_NORMAL) {
+            flb_mp_chunk_cobj_record_destroy(chunk, record);
+        }
+    }
+
+    window_calls++;
+    return FLB_PROCESSOR_SUCCESS;
+}
+
+static struct flb_processor_plugin window_mark_plugin = {
+    .name = "test_window_mark",
+    .description = "windowed record marker",
+    .cb_process_logs = mark_window_records,
+    .flags = FLB_PROCESSOR_FLAG_LOG_WINDOWS
+};
+
+static struct flb_processor_plugin single_mark_plugin = {
+    .name = "test_single_mark",
+    .description = "single chunk record marker",
+    .cb_process_logs = mark_window_records,
+    .flags = 0
+};
+
+static struct flb_processor_plugin window_drop_plugin = {
+    .name = "test_window_drop",
+    .description = "windowed record dropper",
+    .cb_process_logs = drop_window_records,
+    .flags = FLB_PROCESSOR_FLAG_LOG_WINDOWS
+};
+
+static struct flb_config *window_config_create(void)
+{
+    struct flb_config *config;
+
+    flb_init_env();
+    config = flb_config_init();
+    if (config == NULL) {
+        return NULL;
+    }
+    mk_list_add(&window_mark_plugin._head, &config->processor_plugins);
+    mk_list_add(&single_mark_plugin._head, &config->processor_plugins);
+    mk_list_add(&window_drop_plugin._head, &config->processor_plugins);
+
+    return config;
+}
+
+static void window_config_destroy(struct flb_config *config)
+{
+    mk_list_del(&window_mark_plugin._head);
+    mk_list_del(&single_mark_plugin._head);
+    mk_list_del(&window_drop_plugin._head);
+    flb_config_exit(config);
+}
+
+static struct flb_processor *window_processor_create(struct flb_config *config,
+                                                     struct flb_input_instance *owner,
+                                                     char *first, char *second)
+{
+    struct flb_processor *proc;
+
+    proc = flb_processor_create(config, "window_test", NULL, 0);
+    if (proc == NULL) {
+        return NULL;
+    }
+    proc->data = owner;
+    proc->source_plugin_type = FLB_PLUGIN_INPUT;
+
+    if (flb_processor_unit_create(proc, FLB_PROCESSOR_LOGS, first) == NULL ||
+        (second && flb_processor_unit_create(proc, FLB_PROCESSOR_LOGS, second) == NULL) ||
+        flb_processor_init(proc) != 0) {
+        flb_processor_destroy(proc);
+        return NULL;
+    }
+
+    return proc;
+}
+
+/* checks order, the processor mark and that every group stayed whole */
+static void check_window_output(char *buf, size_t size)
+{
+    int ret;
+    int type;
+    int seq = 0;
+    int groups = 0;
+    int in_group = FLB_FALSE;
+    int group_records = 0;
+    char name[8];
+    msgpack_object *value;
+    struct flb_log_event event;
+    struct flb_log_event_decoder decoder;
+
+    ret = flb_log_event_decoder_init(&decoder, buf, size);
+    TEST_ASSERT(ret == FLB_EVENT_DECODER_SUCCESS);
+    flb_log_event_decoder_read_groups(&decoder, FLB_TRUE);
+
+    while (flb_log_event_decoder_next(&decoder, &event) == FLB_EVENT_DECODER_SUCCESS) {
+        TEST_ASSERT(flb_log_event_decoder_get_record_type(&event, &type) == 0);
+
+        if (type == FLB_LOG_EVENT_GROUP_START) {
+            TEST_CHECK(in_group == FLB_FALSE);
+            snprintf(name, sizeof(name), "g%d", groups);
+            value = &event.metadata->via.map.ptr[0].val;
+            TEST_CHECK(event.metadata->via.map.size == 1);
+            TEST_CHECK(value->type == MSGPACK_OBJECT_STR &&
+                       value->via.str.size == strlen(name) &&
+                       memcmp(value->via.str.ptr, name, strlen(name)) == 0);
+            in_group = FLB_TRUE;
+            group_records = 0;
+            continue;
+        }
+        else if (type == FLB_LOG_EVENT_GROUP_END) {
+            TEST_CHECK(in_group == FLB_TRUE);
+            TEST_CHECK(group_records == WINDOW_GROUP_RECORDS);
+            in_group = FLB_FALSE;
+            groups++;
+            continue;
+        }
+
+        if (in_group) {
+            group_records++;
+        }
+        TEST_CHECK(event.body->type == MSGPACK_OBJECT_MAP &&
+                   event.body->via.map.size == 3);
+        TEST_CHECK(event.body->via.map.ptr[0].val.via.i64 == seq);
+        TEST_CHECK(event.body->via.map.ptr[2].val.via.i64 == 1);
+        seq++;
+    }
+
+    TEST_CHECK(seq == WINDOW_TOTAL_RECORDS);
+    TEST_CHECK(groups == WINDOW_GROUPS);
+    TEST_CHECK(in_group == FLB_FALSE);
+    flb_log_event_decoder_destroy(&decoder);
+}
+
+static void processor_log_windows_match_single_chunk(void)
+{
+    int ret;
+    int records;
+    int single_calls;
+    char *input;
+    size_t input_size;
+    void *windowed;
+    size_t windowed_size;
+    void *single;
+    size_t single_size;
+    double items_in;
+    double items_out;
+    double invocations;
+    char stage_label[32];
+    struct flb_config *config;
+    struct flb_processor *proc;
+    struct flb_processor_unit *pu;
+    struct flb_input_instance owner;
+
+    config = window_config_create();
+    TEST_ASSERT(config != NULL);
+    memset(&owner, 0, sizeof(owner));
+    snprintf(owner.name, sizeof(owner.name), "%s", "window_input.0");
+    owner.cmt = cmt_create();
+    TEST_ASSERT(owner.cmt != NULL);
+    TEST_ASSERT(create_window_records(&input, &input_size) == 0);
+    TEST_CHECK(input_size > 4 * 65536);
+
+    /* the single chunk reference */
+    proc = window_processor_create(config, &owner, "test_single_mark", NULL);
+    TEST_ASSERT(proc != NULL);
+    window_calls = 0;
+    window_max_records = 0;
+    ret = flb_processor_run(proc, 0, FLB_PROCESSOR_LOGS, "test", 4,
+                            input, input_size, &single, &single_size);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(window_calls == 1);
+    TEST_CHECK(window_max_records == WINDOW_TOTAL_RECORDS);
+    single_calls = window_calls;
+    flb_processor_destroy(proc);
+
+    /* the windowed run must produce the same bytes */
+    proc = window_processor_create(config, &owner, "test_window_mark", NULL);
+    TEST_ASSERT(proc != NULL);
+    window_calls = 0;
+    window_max_records = 0;
+    records = -1;
+    ret = flb_processor_run_with_count(proc, 0, FLB_PROCESSOR_LOGS, "test", 4,
+                                       input, input_size, &windowed, &windowed_size,
+                                       -1, &records);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(window_calls > single_calls);
+    /* windows hold at most the record limit plus one whole group */
+    TEST_CHECK(window_max_records <= 1024 + WINDOW_GROUP_RECORDS);
+    TEST_CHECK(records == WINDOW_TOTAL_RECORDS);
+    TEST_CHECK(windowed != NULL && windowed != input);
+    TEST_CHECK(windowed_size == single_size);
+    TEST_CHECK(windowed_size == single_size &&
+               memcmp(windowed, single, single_size) == 0);
+    check_window_output(windowed, windowed_size);
+
+    /* one invocation per buffer, with logical record counts */
+    pu = mk_list_entry(proc->logs.next, struct flb_processor_unit, _head);
+    snprintf(stage_label, sizeof(stage_label), "%zu", pu->stage);
+    TEST_CHECK(get_counter_value_5(proc->cmt_invocations, "input", "window_input.0",
+                                   (char *) pu->name, stage_label, "logs",
+                                   &invocations) == 0);
+    TEST_CHECK(get_counter_value_5(proc->cmt_items_in, "input", "window_input.0",
+                                   (char *) pu->name, stage_label, "logs",
+                                   &items_in) == 0);
+    TEST_CHECK(get_counter_value_5(proc->cmt_items_out, "input", "window_input.0",
+                                   (char *) pu->name, stage_label, "logs",
+                                   &items_out) == 0);
+    TEST_CHECK(invocations == 1.0);
+    TEST_CHECK(items_in == WINDOW_TOTAL_RECORDS);
+    TEST_CHECK(items_out == WINDOW_TOTAL_RECORDS);
+    flb_processor_destroy(proc);
+
+    flb_free(windowed);
+    flb_free(single);
+    flb_free(input);
+    cmt_destroy(owner.cmt);
+    window_config_destroy(config);
+}
+
+static void processor_log_windows_drop_all(void)
+{
+    int ret;
+    int records;
+    char *input;
+    size_t input_size;
+    void *output;
+    size_t output_size;
+    double items_drop;
+    char stage_label[32];
+    struct flb_config *config;
+    struct flb_processor *proc;
+    struct flb_processor_unit *pu;
+    struct flb_input_instance owner;
+
+    config = window_config_create();
+    TEST_ASSERT(config != NULL);
+    memset(&owner, 0, sizeof(owner));
+    snprintf(owner.name, sizeof(owner.name), "%s", "window_input.0");
+    owner.cmt = cmt_create();
+    TEST_ASSERT(owner.cmt != NULL);
+    TEST_ASSERT(create_window_records(&input, &input_size) == 0);
+
+    proc = window_processor_create(config, &owner, "test_window_drop", NULL);
+    TEST_ASSERT(proc != NULL);
+    window_calls = 0;
+    records = -1;
+    output = input;
+    output_size = input_size;
+    ret = flb_processor_run_with_count(proc, 0, FLB_PROCESSOR_LOGS, "test", 4,
+                                       input, input_size, &output, &output_size,
+                                       -1, &records);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(window_calls > 1);
+    TEST_CHECK(output == NULL);
+    TEST_CHECK(output_size == 0);
+    TEST_CHECK(records == 0);
+
+    pu = mk_list_entry(proc->logs.next, struct flb_processor_unit, _head);
+    snprintf(stage_label, sizeof(stage_label), "%zu", pu->stage);
+    TEST_CHECK(get_counter_value_5(proc->cmt_items_drop, "input", "window_input.0",
+                                   (char *) pu->name, stage_label, "logs",
+                                   &items_drop) == 0);
+    TEST_CHECK(items_drop == WINDOW_TOTAL_RECORDS);
+
+    flb_processor_destroy(proc);
+    flb_free(input);
+    cmt_destroy(owner.cmt);
+    window_config_destroy(config);
+}
+
+static void check_marked_output(void *output, size_t output_size, int expected)
+{
+    int count = 0;
+    int type;
+    struct flb_log_event event;
+    struct flb_log_event_decoder decoder;
+
+    TEST_ASSERT(flb_log_event_decoder_init(&decoder, output, output_size) ==
+                FLB_EVENT_DECODER_SUCCESS);
+
+    while (flb_log_event_decoder_next(&decoder, &event) == FLB_EVENT_DECODER_SUCCESS) {
+        TEST_ASSERT(flb_log_event_decoder_get_record_type(&event, &type) == 0);
+        if (type != FLB_LOG_EVENT_NORMAL) {
+            continue;
+        }
+        TEST_CHECK(event.body->type == MSGPACK_OBJECT_MAP);
+        TEST_CHECK(event.body->via.map.size == 3);
+        count++;
+    }
+
+    TEST_CHECK(count == expected);
+    flb_log_event_decoder_destroy(&decoder);
+}
+
+static void run_processor_corrupt_tail(int windowed)
+{
+    int ret;
+    int records = -1;
+    int expected;
+    char *input;
+    size_t input_size;
+    void *output = NULL;
+    size_t output_size = 0;
+    double errors;
+    char stage_label[32];
+    struct flb_config *config;
+    struct flb_processor *proc;
+    struct flb_processor_unit *pu;
+    struct flb_input_instance owner;
+
+    config = window_config_create();
+    TEST_ASSERT(config != NULL);
+    memset(&owner, 0, sizeof(owner));
+    snprintf(owner.name, sizeof(owner.name), "%s", "window_input.0");
+    owner.cmt = cmt_create();
+    TEST_ASSERT(owner.cmt != NULL);
+
+    if (windowed) {
+        TEST_ASSERT(create_plain_window_records(&input, &input_size) == 0);
+        expected = WINDOW_CORRUPT_RECORDS;
+        proc = window_processor_create(config, &owner, "test_window_mark", NULL);
+    }
+    else {
+        TEST_ASSERT(create_msgpack_records(&input, &input_size) == 0);
+        TEST_ASSERT(append_corrupt_tail(&input, &input_size) == 0);
+        expected = 1;
+        proc = window_processor_create(config, &owner, "test_single_mark", NULL);
+    }
+    TEST_ASSERT(proc != NULL);
+
+    window_calls = 0;
+    ret = flb_processor_run_with_count(proc, 0, FLB_PROCESSOR_LOGS, "test", 4,
+                                       input, input_size, &output, &output_size,
+                                       -1, &records);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(records == expected);
+    TEST_CHECK(output != NULL && output != input);
+    TEST_CHECK(flb_mp_count_log_records(output, output_size) == expected);
+    if (windowed) {
+        TEST_CHECK(window_calls > 1);
+    }
+    else {
+        TEST_CHECK(window_calls == 1);
+    }
+    check_marked_output(output, output_size, expected);
+
+    pu = mk_list_entry(proc->logs.next, struct flb_processor_unit, _head);
+    snprintf(stage_label, sizeof(stage_label), "%zu", pu->stage);
+    TEST_CHECK(get_counter_value_5(proc->cmt_errors, "input", "window_input.0",
+                                   (char *) pu->name, stage_label, "logs", &errors) == 0);
+    TEST_CHECK(errors == 1.0);
+
+    flb_free(output);
+    flb_free(input);
+    flb_processor_destroy(proc);
+    cmt_destroy(owner.cmt);
+    window_config_destroy(config);
+}
+
+static void processor_corrupt_tail_preserves_prefix(void)
+{
+    run_processor_corrupt_tail(FLB_FALSE);
+}
+
+static void processor_window_corrupt_tail_preserves_prefix(void)
+{
+    run_processor_corrupt_tail(FLB_TRUE);
+}
+
+static void processor_log_windows_need_every_unit(void)
+{
+    int i;
+    int ret;
+    char *input;
+    size_t input_size;
+    void *output;
+    size_t output_size;
+    struct flb_config *config;
+    struct flb_processor *proc;
+    struct flb_input_instance owner;
+    struct flb_log_event_encoder *encoder;
+
+    config = window_config_create();
+    TEST_ASSERT(config != NULL);
+    memset(&owner, 0, sizeof(owner));
+    snprintf(owner.name, sizeof(owner.name), "%s", "window_input.0");
+    owner.cmt = cmt_create();
+    TEST_ASSERT(owner.cmt != NULL);
+    TEST_ASSERT(create_window_records(&input, &input_size) == 0);
+
+    /* a unit without the capability keeps the whole run on one chunk */
+    proc = window_processor_create(config, &owner, "test_window_mark",
+                                   "test_single_mark");
+    TEST_ASSERT(proc != NULL);
+    window_calls = 0;
+    window_max_records = 0;
+    ret = flb_processor_run(proc, 0, FLB_PROCESSOR_LOGS, "test", 4,
+                            input, input_size, &output, &output_size);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(window_calls == 2);
+    TEST_CHECK(window_max_records == WINDOW_TOTAL_RECORDS);
+    flb_free(output);
+    flb_processor_destroy(proc);
+
+    flb_free(input);
+
+    /* a buffer within one window keeps the single chunk path */
+    encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+    TEST_ASSERT(encoder != NULL);
+    for (i = 0; i < 300; i++) {
+        TEST_ASSERT(append_window_record(encoder, i) == 0);
+    }
+    proc = window_processor_create(config, &owner, "test_window_mark", NULL);
+    TEST_ASSERT(proc != NULL);
+    window_calls = 0;
+    window_max_records = 0;
+    ret = flb_processor_run(proc, 0, FLB_PROCESSOR_LOGS, "test", 4,
+                            encoder->output_buffer, encoder->output_length,
+                            &output, &output_size);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(window_calls == 1);
+    TEST_CHECK(window_max_records == 300);
+    flb_free(output);
+    flb_processor_destroy(proc);
+    flb_log_event_encoder_destroy(encoder);
+
+    cmt_destroy(owner.cmt);
+    window_config_destroy(config);
+}
+
+/*
+ * The decoded chunk outlives the first unit's lock, so it must decode and
+ * encode with its own codec: another worker thread can reset the first
+ * unit's decoder while later units still read records from the chunk.
+ */
+static int codec_shared;
+
+static int probe_codec_and_stop(struct flb_processor_instance *ins, void *data,
+                                const char *tag, int tag_len)
+{
+    struct flb_mp_chunk_cobj *chunk = data;
+    struct flb_mp_chunk_record *record;
+
+    /* callbacks run under the unit lock, so the counter needs no atomics */
+    if (chunk->log_decoder == ins->log_decoder || chunk->log_encoder == ins->log_encoder) {
+        codec_shared++;
+    }
+
+    /* leave the remaining records for the next unit to decode */
+    flb_mp_chunk_cobj_record_next(chunk, &record);
+    return FLB_PROCESSOR_SUCCESS;
+}
+
+static struct flb_processor_plugin codec_probe_plugin = {
+    .name = "test_codec_probe",
+    .description = "checks the chunk codec and stops early",
+    .cb_process_logs = probe_codec_and_stop,
+    .flags = 0
+};
+
+static struct flb_processor_plugin codec_window_probe_plugin = {
+    .name = "test_codec_window_probe",
+    .description = "checks the chunk codec and stops early, windowed",
+    .cb_process_logs = probe_codec_and_stop,
+    .flags = FLB_PROCESSOR_FLAG_LOG_WINDOWS
+};
+
+struct codec_worker {
+    struct flb_processor *proc;
+    char *input;
+    size_t input_size;
+    int expected;
+    int failures;
+};
+
+static void *codec_worker_run(void *data)
+{
+    int i;
+    int ret;
+    int records;
+    void *output;
+    size_t output_size;
+    struct codec_worker *worker = data;
+
+    for (i = 0; i < 50; i++) {
+        records = -1;
+        output = NULL;
+        ret = flb_processor_run_with_count(worker->proc, 0, FLB_PROCESSOR_LOGS, "test", 4,
+                                           worker->input, worker->input_size,
+                                           &output, &output_size, -1, &records);
+        if (ret != 0 || records != worker->expected || output == NULL) {
+            worker->failures++;
+        }
+        if (output != NULL && output != worker->input) {
+            flb_free(output);
+        }
+    }
+
+    return NULL;
+}
+
+static void run_codec_workers(struct flb_config *config, char *first, char *second,
+                              char *input, size_t input_size, int expected)
+{
+    int i;
+    struct flb_processor *proc;
+    struct flb_input_instance owner;
+    struct codec_worker workers[4];
+    pthread_t threads[4];
+
+    memset(&owner, 0, sizeof(owner));
+    snprintf(owner.name, sizeof(owner.name), "%s", "window_input.0");
+    owner.cmt = cmt_create();
+    TEST_ASSERT(owner.cmt != NULL);
+    proc = window_processor_create(config, &owner, first, second);
+    TEST_ASSERT(proc != NULL);
+
+    for (i = 0; i < 4; i++) {
+        workers[i].proc = proc;
+        workers[i].input = input;
+        workers[i].input_size = input_size;
+        workers[i].expected = expected;
+        workers[i].failures = 0;
+        TEST_ASSERT(pthread_create(&threads[i], NULL, codec_worker_run, &workers[i]) == 0);
+    }
+    for (i = 0; i < 4; i++) {
+        pthread_join(threads[i], NULL);
+        TEST_CHECK(workers[i].failures == 0);
+    }
+
+    flb_processor_destroy(proc);
+    cmt_destroy(owner.cmt);
+}
+
+static void processor_chunk_codec_is_per_run(void)
+{
+    int i;
+    char *input;
+    size_t input_size;
+    struct flb_config *config;
+    struct flb_log_event_encoder *encoder;
+
+    config = window_config_create();
+    TEST_ASSERT(config != NULL);
+    mk_list_add(&codec_probe_plugin._head, &config->processor_plugins);
+    mk_list_add(&codec_window_probe_plugin._head, &config->processor_plugins);
+    codec_shared = 0;
+
+    /* single chunk path: the second unit decodes what the first one left */
+    encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+    TEST_ASSERT(encoder != NULL);
+    for (i = 0; i < 300; i++) {
+        TEST_ASSERT(append_window_record(encoder, i) == 0);
+    }
+    run_codec_workers(config, "test_codec_probe", "test_single_mark",
+                      encoder->output_buffer, encoder->output_length, 300);
+    flb_log_event_encoder_destroy(encoder);
+
+    /* windowed path */
+    TEST_ASSERT(create_window_records(&input, &input_size) == 0);
+    run_codec_workers(config, "test_codec_window_probe", "test_window_mark",
+                      input, input_size, WINDOW_TOTAL_RECORDS);
+    flb_free(input);
+
+    TEST_CHECK(codec_shared == 0);
+
+    mk_list_del(&codec_probe_plugin._head);
+    mk_list_del(&codec_window_probe_plugin._head);
+    window_config_destroy(config);
+}
+
+/* removes group end markers, as a filtering processor can do */
+static int drop_group_ends(struct flb_processor_instance *ins, void *data,
+                           const char *tag, int tag_len)
+{
+    int type;
+    struct cfl_list *head;
+    struct cfl_list *tmp;
+    struct flb_mp_chunk_cobj *chunk = data;
+    struct flb_mp_chunk_record *record;
+
+    while (flb_mp_chunk_cobj_record_next(chunk, &record) == FLB_MP_CHUNK_RECORD_OK) {
+    }
+    chunk->record_pos = NULL;
+
+    cfl_list_foreach_safe(head, tmp, &chunk->records) {
+        record = cfl_list_entry(head, struct flb_mp_chunk_record, _head);
+        if (flb_log_event_decoder_get_record_type(&record->event, &type) == 0 &&
+            type == FLB_LOG_EVENT_GROUP_END) {
+            flb_mp_chunk_cobj_record_destroy(chunk, record);
+        }
+    }
+
+    return FLB_PROCESSOR_SUCCESS;
+}
+
+static struct flb_processor_plugin drop_group_end_plugin = {
+    .name = "test_drop_group_end",
+    .description = "removes group end markers",
+    .cb_process_logs = drop_group_ends,
+    .flags = 0
+};
+
+/* layout tokens: r<n> record, S group start, E group end */
+static void run_group_layout(struct flb_config *config, char *unit,
+                             const char *layout, const char *expected)
+{
+    int ret;
+    int type;
+    int length;
+    char token[16];
+    char result[128];
+    const char *cursor;
+    void *output = NULL;
+    size_t output_size = 0;
+    msgpack_object *seq;
+    struct flb_processor *proc;
+    struct flb_input_instance owner;
+    struct flb_log_event event;
+    struct flb_log_event_decoder decoder;
+    struct flb_log_event_encoder *encoder;
+
+    memset(&owner, 0, sizeof(owner));
+    snprintf(owner.name, sizeof(owner.name), "%s", "window_input.0");
+    owner.cmt = cmt_create();
+    TEST_ASSERT(owner.cmt != NULL);
+    proc = window_processor_create(config, &owner, unit, NULL);
+    TEST_ASSERT(proc != NULL);
+
+    encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
+    TEST_ASSERT(encoder != NULL);
+    for (cursor = layout; sscanf(cursor, "%15s%n", token, &length) == 1; cursor += length) {
+        if (token[0] == 'r') {
+            TEST_ASSERT(append_window_record(encoder, atoi(token + 1)) == 0);
+        }
+        else if (token[0] == 'S') {
+            TEST_ASSERT(flb_log_event_encoder_group_init(encoder) == 0);
+            TEST_ASSERT(flb_log_event_encoder_group_header_end(encoder) == 0);
+        }
+        else {
+            TEST_ASSERT(flb_log_event_encoder_group_end(encoder) == 0);
+        }
+    }
+
+    ret = flb_processor_run(proc, 0, FLB_PROCESSOR_LOGS, "test", 4,
+                            encoder->output_buffer, encoder->output_length,
+                            &output, &output_size);
+    TEST_CHECK(ret == 0);
+
+    result[0] = '\0';
+    if (output != NULL && output_size > 0) {
+        TEST_ASSERT(flb_log_event_decoder_init(&decoder, output, output_size) == 0);
+        flb_log_event_decoder_read_groups(&decoder, FLB_TRUE);
+        while (flb_log_event_decoder_next(&decoder, &event) == FLB_EVENT_DECODER_SUCCESS) {
+            TEST_ASSERT(flb_log_event_decoder_get_record_type(&event, &type) == 0);
+            if (type == FLB_LOG_EVENT_GROUP_START) {
+                snprintf(token, sizeof(token), "S ");
+            }
+            else if (type == FLB_LOG_EVENT_GROUP_END) {
+                snprintf(token, sizeof(token), "E ");
+            }
+            else {
+                seq = &event.body->via.map.ptr[0].val;
+                snprintf(token, sizeof(token), "r%d ", (int) seq->via.i64);
+            }
+            strncat(result, token, sizeof(result) - strlen(result) - 1);
+        }
+        flb_log_event_decoder_destroy(&decoder);
+    }
+    if (strlen(result) > 0) {
+        result[strlen(result) - 1] = '\0';
+    }
+    TEST_CHECK(strcmp(result, expected) == 0);
+    TEST_MSG("%s: '%s' produced '%s', expected '%s'", unit, layout, result, expected);
+
+    if (output != NULL && output != encoder->output_buffer) {
+        flb_free(output);
+    }
+    flb_log_event_encoder_destroy(encoder);
+    flb_processor_destroy(proc);
+    cmt_destroy(owner.cmt);
+}
+
+static void processor_group_boundaries_follow_the_input(void)
+{
+    struct flb_config *config;
+
+    config = window_config_create();
+    TEST_ASSERT(config != NULL);
+    mk_list_add(&drop_group_end_plugin._head, &config->processor_plugins);
+
+    /* a processor removing an end never leaves an orphan start behind */
+    run_group_layout(config, "test_drop_group_end", "S r0 r1 E r2", "r0 r1 r2");
+    /* groups split across appends keep their boundary markers */
+    run_group_layout(config, "test_single_mark", "S r0 r1", "S r0 r1");
+    run_group_layout(config, "test_single_mark", "r0 E S r1 E", "r0 E S r1 E");
+    /* stray and empty markers of a balanced input are removed as before */
+    run_group_layout(config, "test_single_mark", "S r0 E E r1", "S r0 E r1");
+
+    mk_list_del(&drop_group_end_plugin._head);
+    window_config_destroy(config);
+}
+
+static int native_drop_second_record(struct flb_processor_instance *ins,
+                                      void *data, const char *tag, int tag_len)
+{
+    int ret;
+    int type;
+    int count;
+    struct flb_mp_chunk_cobj *chunk;
+    struct flb_mp_chunk_record *record;
+
+    chunk = data;
+    count = 0;
+    while ((ret = flb_mp_chunk_cobj_record_next(chunk, &record)) == FLB_MP_CHUNK_RECORD_OK) {
+        TEST_CHECK(flb_log_event_decoder_get_record_type(&record->event, &type) == 0);
+        if (type == FLB_LOG_EVENT_NORMAL && ++count == 2) {
+            TEST_CHECK(flb_mp_chunk_cobj_record_destroy(chunk, record) == 0);
+        }
+    }
+    return ret == FLB_MP_CHUNK_RECORD_EOF ? FLB_PROCESSOR_SUCCESS : FLB_PROCESSOR_FAILURE;
+}
+
+static void processor_native_chain_counters(void)
+{
+    int grouped;
+    int root_type;
+    char *data;
+    char *resized;
+    size_t bytes;
+    size_t out_size;
+    void *out;
+    double value;
+    struct flb_config *config;
+    struct flb_processor *proc;
+    struct flb_processor_unit *first;
+    struct flb_processor_unit *second;
+    struct flb_processor_instance *ins;
+    struct flb_processor_plugin *original;
+    struct flb_processor_plugin drop;
+    struct flb_input_instance owner;
+    const char *json = "[[1700000000,{}],{\"message\":\"first\"}]"
+                       "[[1700000001,{}],{\"message\":\"second\"}]";
+
+    flb_init_env();
+    for (grouped = 0; grouped <= 1; grouped++) {
+        config = flb_config_init();
+        TEST_CHECK(config != NULL);
+        memset(&owner, 0, sizeof(owner));
+        snprintf(owner.name, sizeof(owner.name), "unit_input.0");
+        owner.cmt = cmt_create();
+        TEST_CHECK(owner.cmt != NULL);
+        proc = flb_processor_create(config, "native_counters", &owner, FLB_PLUGIN_INPUT);
+        TEST_CHECK(proc != NULL);
+        first = flb_processor_unit_create(proc, FLB_PROCESSOR_LOGS, "content_modifier");
+        second = flb_processor_unit_create(proc, FLB_PROCESSOR_LOGS, "content_modifier");
+        TEST_CHECK(first != NULL && second != NULL);
+        TEST_CHECK(flb_processor_unit_set_property_str(first, "action", "insert") == 0);
+        TEST_CHECK(flb_processor_unit_set_property_str(first, "key", "unused") == 0);
+        TEST_CHECK(flb_processor_unit_set_property_str(first, "value", "unused") == 0);
+        TEST_CHECK(flb_processor_unit_set_property_str(second, "action", "insert") == 0);
+        TEST_CHECK(flb_processor_unit_set_property_str(second, "key", "after_drop") == 0);
+        TEST_CHECK(flb_processor_unit_set_property_str(second, "value", "yes") == 0);
+        TEST_CHECK(flb_processor_init(proc) == 0);
+        ins = first->ctx;
+        original = ins->p;
+        drop = *original;
+        drop.cb_process_logs_raw = NULL;
+        drop.cb_process_logs = native_drop_second_record;
+        ins->p = &drop;
+        if (grouped) {
+            TEST_CHECK(create_grouped_msgpack_records(&data, &bytes) == 0);
+            resized = flb_realloc(data, bytes * 2);
+            TEST_CHECK(resized != NULL);
+            data = resized;
+            memcpy(data + bytes, data, bytes);
+            bytes *= 2;
+        }
+        else {
+            TEST_CHECK(flb_pack_json(json, strlen(json), &data, &bytes, &root_type, NULL) == 0);
+        }
+        TEST_CHECK(flb_mp_count_log_records(data, bytes) == 2);
+        out = NULL;
+        TEST_CHECK(flb_processor_run(proc, 0, FLB_PROCESSOR_LOGS, "test", 4,
+                                    data, bytes, &out, &out_size) == 0);
+        TEST_CHECK(flb_mp_count_log_records(out, out_size) == 1);
+        TEST_CHECK(get_counter_value_5(proc->cmt_items_in, "input", "unit_input.0",
+                                       "content_modifier", "0", "logs", &value) == 0);
+        TEST_CHECK(value == 2.0);
+        TEST_CHECK(get_counter_value_5(proc->cmt_items_out, "input", "unit_input.0",
+                                       "content_modifier", "0", "logs", &value) == 0);
+        TEST_CHECK(value == 1.0);
+        TEST_CHECK(get_counter_value_5(proc->cmt_items_in, "input", "unit_input.0",
+                                       "content_modifier", "1", "logs", &value) == 0);
+        TEST_CHECK(value == 1.0);
+        TEST_CHECK(get_counter_value_5(proc->cmt_items_out, "input", "unit_input.0",
+                                       "content_modifier", "1", "logs", &value) == 0);
+        TEST_CHECK(value == 1.0);
+        TEST_CHECK(get_counter_value_5(proc->cmt_items_drop, "input", "unit_input.0",
+                                       "content_modifier", "0", "logs", &value) == 0);
+        TEST_CHECK(value == 1.0);
+        TEST_CHECK(get_counter_value_5_or_zero(proc->cmt_items_drop, "input", "unit_input.0",
+                                               "content_modifier", "1", "logs", &value) == 0);
+        TEST_CHECK(value == 0.0);
+        ins->p = original;
+        if (out != data) {
+            flb_free(out);
+        }
+        flb_free(data);
+        flb_processor_destroy(proc);
+        cmt_destroy(owner.cmt);
+        flb_config_exit(config);
+    }
+}
+
+struct preflight_probe_config {
+    struct cfl_variant *rules;
+};
+
+static int preflight_probe_calls;
+static int preflight_probe_initializations;
+static int preflight_probe_fail;
+
+static struct flb_config_map preflight_probe_map[] = {
+    {FLB_CONFIG_MAP_VARIANT, "rules", NULL, 0, FLB_TRUE,
+     offsetof(struct preflight_probe_config, rules), "Borrowed nested configuration"},
+    {0}
+};
+
+static int preflight_probe_validate(struct flb_processor_instance *ins,
+                                    struct flb_config *config)
+{
+    struct preflight_probe_config options = {0};
+
+    preflight_probe_calls++;
+    TEST_CHECK(ins->context == NULL);
+    TEST_CHECK(ins->cmt == NULL);
+    TEST_CHECK(flb_processor_instance_config_map_set(ins, &options) == 0);
+    TEST_ASSERT(options.rules != NULL);
+    TEST_CHECK(options.rules->type == CFL_VARIANT_ARRAY);
+    TEST_CHECK(options.rules->data.as_array->entry_count == 1);
+    return preflight_probe_fail ? -1 : 0;
+}
+
+static int preflight_probe_init(struct flb_processor_instance *ins, void *source,
+                                int type, struct flb_config *config)
+{
+    struct preflight_probe_config options = {0};
+
+    preflight_probe_initializations++;
+    TEST_CHECK(flb_processor_instance_config_map_set(ins, &options) == 0);
+    TEST_ASSERT(options.rules != NULL);
+    TEST_CHECK(options.rules->data.as_array->entry_count == 1);
+    ins->context = ins;
+    return 0;
+}
+
+static void processor_preflight_is_repeatable_and_preserves_variants(void)
+{
+    size_t i;
+    int signals[] = {FLB_PROCESSOR_LOGS, FLB_PROCESSOR_METRICS,
+                     FLB_PROCESSOR_TRACES, FLB_PROCESSOR_PROFILES};
+    struct flb_config *config;
+    struct flb_processor *proc;
+    struct flb_processor_unit *units[4];
+    struct flb_processor_instance *ins;
+    struct cfl_variant *value;
+    struct cfl_array *array;
+    struct flb_processor_plugin plugin = {
+        .name = "preflight_probe",
+        .flags = FLB_PROCESSOR_FLAG_PREFLIGHT,
+        .description = "verify configuration-only validation",
+        .config_map = preflight_probe_map,
+        .cb_preflight = preflight_probe_validate,
+        .cb_init = preflight_probe_init
+    };
+
+    flb_init_env();
+    config = flb_config_init();
+    TEST_ASSERT(config != NULL);
+    mk_list_add(&plugin._head, &config->processor_plugins);
+    proc = flb_processor_create(config, "preflight", NULL, 0);
+    TEST_ASSERT(proc != NULL);
+    array = cfl_array_create(1);
+    TEST_ASSERT(array != NULL);
+    TEST_CHECK(cfl_array_append_string(array, "value") == 0);
+    value = cfl_variant_create_from_array(array);
+    TEST_ASSERT(value != NULL);
+    for (i = 0; i < 4; i++) {
+        units[i] = flb_processor_unit_create(proc, signals[i], plugin.name);
+        TEST_ASSERT(units[i] != NULL);
+        TEST_CHECK(flb_processor_unit_set_property(units[i], "rules", value) == 0);
+    }
+    preflight_probe_calls = 0;
+    plugin.flags = 0;
+    TEST_CHECK(flb_processor_preflight(proc) == 0);
+    TEST_CHECK(preflight_probe_calls == 0);
+    plugin.flags = FLB_PROCESSOR_FLAG_PREFLIGHT;
+    preflight_probe_initializations = 0;
+    preflight_probe_fail = 0;
+    TEST_CHECK(flb_processor_preflight(proc) == 0);
+    TEST_CHECK(flb_processor_preflight(proc) == 0);
+    TEST_CHECK(preflight_probe_calls == 8);
+    TEST_CHECK(preflight_probe_initializations == 0);
+    TEST_CHECK(proc->is_active == FLB_FALSE);
+    for (i = 0; i < 4; i++) {
+        ins = units[i]->ctx;
+        TEST_CHECK(ins->config_map == NULL);
+        TEST_CHECK(ins->context == NULL);
+        TEST_CHECK(ins->cmt == NULL);
+    }
+    preflight_probe_fail = 1;
+    TEST_CHECK(flb_processor_preflight(proc) == -1);
+    preflight_probe_fail = 0;
+    TEST_CHECK(flb_processor_init(proc) == 0);
+    TEST_CHECK(preflight_probe_initializations == 4);
+    TEST_CHECK(flb_processor_preflight(proc) == -1);
+    flb_processor_destroy(proc);
+    cfl_variant_destroy(value);
+    mk_list_del(&plugin._head);
+    flb_config_exit(config);
+}
+
+static void processor_preflight_rejects_filter_properties(void)
+{
+    struct flb_config *config;
+    struct flb_processor *proc;
+    struct flb_processor_unit *unit;
+    struct flb_filter_instance *filter;
+
+    flb_init_env();
+    config = flb_config_init();
+    TEST_ASSERT(config != NULL);
+    proc = flb_processor_create(config, "filter_preflight", NULL, 0);
+    TEST_ASSERT(proc != NULL);
+    unit = flb_processor_unit_create(proc, FLB_PROCESSOR_LOGS, "grep");
+    TEST_ASSERT(unit != NULL);
+    TEST_CHECK(flb_processor_unit_set_property_str(unit, "unknown_property", "value") == 0);
+    TEST_CHECK(flb_processor_preflight(proc) == -1);
+    filter = unit->ctx;
+    TEST_CHECK(filter->config_map == NULL);
+    TEST_CHECK(filter->context == NULL);
+    flb_processor_destroy(proc);
+    flb_config_exit(config);
+}
+
+static void test_ingress_resume_ownership(void)
+{
+    struct flb_input_instance ins;
+    void *buffer;
+    void *original;
+    int ret;
+
+    memset(&ins, 0, sizeof(ins));
+    pthread_mutex_init(&ins.ingress_queue_lock, NULL);
+    pthread_cond_init(&ins.ingress_queue_space_available, NULL);
+    mk_list_init(&ins.ingress_queue);
+    buffer = flb_malloc(4);
+    TEST_ASSERT(buffer != NULL);
+    memcpy(buffer, "test", 4);
+    original = buffer;
+
+    ret = flb_input_ingress_try_resume_log(&ins, 1, NULL, 0, &buffer, 4, 1);
+    TEST_CHECK(ret == -1);
+    TEST_CHECK(buffer == original);
+    TEST_CHECK(memcmp(buffer, "test", 4) == 0);
+
+    ins.ingress_queue_enabled = FLB_TRUE;
+    ins.ingress_queue_signal_pending = FLB_TRUE;
+    ins.ingress_queue_byte_limit = 3;
+    ret = flb_input_ingress_try_resume_log(&ins, 1, NULL, 0, &buffer, 4, 1);
+    TEST_CHECK(ret == FLB_INPUT_INGRESS_BUSY);
+    TEST_CHECK(buffer == original);
+    TEST_CHECK(ins.ingress_queue_pending_bytes == 0);
+
+    ins.ingress_queue_byte_limit = 4;
+    ins.ingress_queue_event_limit = 1;
+    ret = flb_input_ingress_try_resume_log(&ins, 1, "test", 4, &buffer, 4, 1);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(buffer == NULL);
+    TEST_CHECK(ins.ingress_queue_pending_bytes == 4);
+    TEST_CHECK(ins.ingress_queue_pending_events == 1);
+
+    buffer = flb_malloc(4);
+    TEST_ASSERT(buffer != NULL);
+    memcpy(buffer, "next", 4);
+    original = buffer;
+    ret = flb_input_ingress_try_resume_log(&ins, 1, NULL, 0, &buffer, 4, 1);
+    TEST_CHECK(ret == FLB_INPUT_INGRESS_BUSY);
+    TEST_CHECK(buffer == original);
+    TEST_CHECK(memcmp(buffer, "next", 4) == 0);
+    flb_input_ingress_destroy(&ins);
+    TEST_CHECK(ins.ingress_queue_pending_bytes == 0);
+    TEST_CHECK(ins.ingress_queue_pending_events == 0);
+    ret = flb_input_ingress_try_resume_log(&ins, 1, NULL, 0, &buffer, 4, 1);
+    TEST_CHECK(ret == -1);
+    TEST_CHECK(buffer == original);
+    flb_free(buffer);
+    pthread_mutex_destroy(&ins.ingress_queue_lock);
+    pthread_cond_destroy(&ins.ingress_queue_space_available);
+}
+
+static int input_stop_probe(struct flb_processor_instance *ins, void *data)
+{
+    int *calls;
+
+    (void) ins;
+    calls = data;
+    (*calls)++;
+    return -1;
+}
+
+static void test_input_stop_idempotent_and_opt_in(void)
+{
+    struct flb_processor proc;
+    struct flb_processor_plugin plugin;
+    struct flb_processor_instance instances[4];
+    struct flb_processor_unit units[4];
+    struct mk_list *lists[4];
+    int calls[4] = {0};
+    size_t i;
+
+    memset(&proc, 0, sizeof(proc));
+    memset(&plugin, 0, sizeof(plugin));
+    memset(instances, 0, sizeof(instances));
+    memset(units, 0, sizeof(units));
+    lists[0] = &proc.logs;
+    lists[1] = &proc.metrics;
+    lists[2] = &proc.traces;
+    lists[3] = &proc.profiles;
+    plugin.cb_input_stop = input_stop_probe;
+    proc.source_plugin_type = FLB_PLUGIN_INPUT;
+    for (i = 0; i < 4; i++) {
+        mk_list_init(lists[i]);
+        instances[i].p = &plugin;
+        instances[i].context = &calls[i];
+        units[i].unit_type = FLB_PROCESSOR_UNIT_NATIVE;
+        units[i].ctx = &instances[i];
+        units[i].name = "stop-test";
+        mk_list_add(&units[i]._head, lists[i]);
+    }
+    flb_processor_input_stop(&proc);
+    for (i = 0; i < 4; i++) {
+        TEST_CHECK(calls[i] == 0);
+    }
+    plugin.flags = FLB_PROCESSOR_FLAG_INPUT_STOP;
+    proc.source_plugin_type = FLB_PLUGIN_OUTPUT;
+    flb_processor_input_stop(&proc);
+    for (i = 0; i < 4; i++) {
+        TEST_CHECK(calls[i] == 0);
+    }
+    proc.source_plugin_type = FLB_PLUGIN_INPUT;
+    flb_processor_input_stop(&proc);
+    flb_processor_input_stop(&proc);
+    for (i = 0; i < 4; i++) {
+        TEST_CHECK(calls[i] == 1);
+        TEST_CHECK(instances[i].input_stopped == FLB_TRUE);
+        TEST_CHECK(instances[i].context == &calls[i]);
+    }
+}
+
+static void test_log_hold_bounds(void)
+{
+    struct flb_processor proc;
+    struct flb_processor_plugin plugin;
+    struct flb_processor_instance ins;
+    struct flb_processor_unit unit;
+
+    memset(&proc, 0, sizeof(proc));
+    memset(&plugin, 0, sizeof(plugin));
+    memset(&ins, 0, sizeof(ins));
+    memset(&unit, 0, sizeof(unit));
+    proc.source_plugin_type = FLB_PLUGIN_INPUT;
+    unit.parent = &proc;
+    unit.unit_type = FLB_PROCESSOR_UNIT_NATIVE;
+    ins.p = &plugin;
+    ins.pu = &unit;
+    ins.event_type = FLB_PROCESSOR_LOGS;
+    ins.log_hold_limit = 3;
+    TEST_CHECK(flb_processor_log_hold(&ins, 1) == -1);
+    TEST_CHECK(ins.log_held_current == 0);
+    ins.log_callback_active = FLB_TRUE;
+    TEST_CHECK(flb_processor_log_hold(&ins, 2) == 0);
+    TEST_CHECK(ins.log_held_current == 2 && ins.log_held_delta == 2);
+    TEST_CHECK(flb_processor_log_hold(&ins, 2) == -1);
+    TEST_CHECK(flb_processor_log_release(&ins, 3) == -1);
+    TEST_CHECK(ins.log_held_current == 2 && ins.log_held_delta == 2);
+    TEST_CHECK(flb_processor_log_release(&ins, 1) == 0);
+    ins.input_stopped = FLB_TRUE;
+    TEST_CHECK(flb_processor_log_release(&ins, 1) == -1);
+    TEST_CHECK(flb_processor_log_discard(&ins, 1) == 0);
+    TEST_CHECK(flb_processor_log_discard(&ins, 1) == -1);
+    TEST_CHECK(ins.log_held_current == 0);
+    TEST_CHECK(ins.accounting_error_logged == FLB_TRUE);
+    ins.input_stopped = FLB_FALSE;
+    ins.log_held_delta = 0;
+    ins.log_held_current = SIZE_MAX;
+    TEST_CHECK(flb_processor_log_hold(&ins, 1) == -1);
+    TEST_CHECK(ins.log_held_current == SIZE_MAX);
+    ins.log_held_current = 0;
+    proc.source_plugin_type = FLB_PLUGIN_OUTPUT;
+    TEST_CHECK(flb_processor_log_hold(&ins, 1) == -1);
+    proc.source_plugin_type = FLB_PLUGIN_INPUT;
+    ins.event_type = FLB_PROCESSOR_METRICS;
+    TEST_CHECK(flb_processor_log_hold(&ins, 1) == -1);
+    ins.event_type = FLB_PROCESSOR_LOGS;
+    plugin.flags = FLB_PROCESSOR_FLAG_LOGS_WORKER_SAFE;
+    TEST_CHECK(flb_processor_log_hold(&ins, 1) == -1);
+    TEST_CHECK(ins.log_held_current == 0);
+}
+
+/* A filter may return an owned allocation even when it drops every record. */
+static int filter_empty_allocated_result(const void *data, size_t bytes,
+                                         const char *tag, int tag_len,
+                                         void **out_buf, size_t *out_bytes,
+                                         struct flb_filter_instance *filter,
+                                         struct flb_input_instance *input,
+                                         void *context, struct flb_config *config)
+{
+    (void) data;
+    (void) bytes;
+    (void) tag;
+    (void) tag_len;
+    (void) filter;
+    (void) input;
+    (void) context;
+    (void) config;
+
+    *out_buf = flb_malloc(65536);
+    *out_bytes = 0;
+    if (!TEST_CHECK(*out_buf != NULL)) {
+        return FLB_FILTER_NOTOUCH;
+    }
+    return FLB_FILTER_MODIFIED;
+}
+
+static void processor_filter_empty_allocated_result(void)
+{
+    int ret;
+    char *input;
+    size_t input_size;
+    void *output = NULL;
+    size_t output_size = 0;
+    struct flb_config *config;
+    struct flb_processor *processor;
+    struct flb_processor_unit *unit;
+    struct flb_filter_instance *filter;
+    struct flb_filter_plugin plugin;
+    struct flb_filter_plugin *original_plugin;
+
+    flb_init_env();
+    config = flb_config_init();
+    TEST_ASSERT(config != NULL);
+    processor = flb_processor_create(config, "empty_result", NULL, 0);
+    TEST_ASSERT(processor != NULL);
+    unit = flb_processor_unit_create(processor, FLB_PROCESSOR_LOGS, "stdout");
+    TEST_ASSERT(unit != NULL);
+    TEST_ASSERT(flb_processor_init(processor) == 0);
+    TEST_ASSERT(create_msgpack_records(&input, &input_size) == 0);
+
+    filter = unit->ctx;
+    original_plugin = filter->p;
+    plugin = *original_plugin;
+    plugin.cb_filter = filter_empty_allocated_result;
+    filter->p = &plugin;
+    ret = flb_processor_run(processor, 0, FLB_PROCESSOR_LOGS,
+                            "test", 4, input, input_size, &output, &output_size);
+    filter->p = original_plugin;
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(output == NULL);
+    TEST_CHECK(output_size == 0);
+
+    /* Valgrind must also verify that the callback's allocation was released. */
+    flb_free(input);
+    flb_processor_destroy(processor);
+    flb_config_exit(config);
+}
+
 TEST_LIST = {
+    { "processor_filter_empty_allocated_result", processor_filter_empty_allocated_result },
+    {"log_hold_bounds", test_log_hold_bounds},
+    {"input_stop_idempotent_and_opt_in", test_input_stop_idempotent_and_opt_in},
+    {"ingress_resume_ownership", test_ingress_resume_ownership},
+    {"processor_preflight_repeatable_variants", processor_preflight_is_repeatable_and_preserves_variants},
+    {"processor_preflight_filter_properties", processor_preflight_rejects_filter_properties},
+    { "processor_native_chain_counters", processor_native_chain_counters },
+    {"processor_metrics_failure_clears_output", processor_metrics_failure_clears_output},
     { "processor_private_inputs_use_main_loop", processor_private_inputs_use_main_loop },
     { "processor", processor },
     { "processor_grouped_filter_counters", processor_grouped_filter_counters },
     { "processor_metrics_counters", processor_metrics_counters },
+    { "processor_log_windows_match_single_chunk", processor_log_windows_match_single_chunk },
+    { "processor_log_windows_drop_all", processor_log_windows_drop_all },
+    { "processor_corrupt_tail_preserves_prefix", processor_corrupt_tail_preserves_prefix },
+    { "processor_window_corrupt_tail_preserves_prefix",
+      processor_window_corrupt_tail_preserves_prefix },
+    { "processor_log_windows_need_every_unit", processor_log_windows_need_every_unit },
+    { "processor_chunk_codec_is_per_run", processor_chunk_codec_is_per_run },
+    { "processor_group_boundaries_follow_the_input", processor_group_boundaries_follow_the_input },
     { 0 }
 };

@@ -1,0 +1,22 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: forward
+      listen: 127.0.0.1
+      port: ${FORWARD_SECURE_SENDER_PORT}
+
+  outputs:
+    - name: forward
+      match: test
+      host: 127.0.0.1
+      port: ${FORWARD_SECURE_RECEIVER_PORT}
+      shared_key: integration-secret
+      self_hostname: sender-node
+      send_options: true
+      require_ack_response: true

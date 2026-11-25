@@ -62,6 +62,9 @@ struct flb_gzip_header {
 struct flb_gzip_decompression_context {
     struct flb_gzip_header gzip_header;
     mz_stream              miniz_stream;
+    mz_ulong               header_crc;
+    mz_ulong               body_crc;
+    uint32_t               body_size;
 };
 
 static unsigned int read_le16(const unsigned char *p)
@@ -704,12 +707,13 @@ static int flb_gzip_decompressor_process_header(
     context->read_buffer = &context->read_buffer[FLB_GZIP_HEADER_SIZE];
     context->input_buffer_length -= FLB_GZIP_HEADER_SIZE;
 
-    /* Magic bytes */
-    if (inner_context->gzip_header.magic_number != FLB_GZIP_MAGIC_NUMBER) {
+    /* Magic bytes (stored in little endian order in the header) */
+    if (read_le16((unsigned char *) &inner_context->gzip_header.magic_number) !=
+        FLB_GZIP_MAGIC_NUMBER) {
         context->state = FLB_DECOMPRESSOR_STATE_FAILED;
 
         flb_error("[gzip] invalid magic bytes : %04x",
-                  inner_context->gzip_header.magic_number);
+                  read_le16((unsigned char *) &inner_context->gzip_header.magic_number));
 
         return FLB_DECOMPRESSOR_FAILURE;
     }
@@ -722,6 +726,10 @@ static int flb_gzip_decompressor_process_header(
 
         return FLB_DECOMPRESSOR_FAILURE;
     }
+
+    inner_context->header_crc = mz_crc32(MZ_CRC32_INIT,
+                                         (unsigned char *) &inner_context->gzip_header,
+                                         FLB_GZIP_HEADER_SIZE);
 
     /* Flag processing */
     /* Reserved bits */
@@ -739,13 +747,27 @@ static int flb_gzip_decompressor_process_header(
     return FLB_DECOMPRESSOR_SUCCESS;
 }
 
+static void *gzip_inflate_alloc(void *opaque, size_t items, size_t size)
+{
+    (void) opaque;
+
+    return flb_calloc(items, size);
+}
+
+static void gzip_inflate_free(void *opaque, void *ptr)
+{
+    (void) opaque;
+
+    flb_free(ptr);
+}
+
 static int flb_gzip_decompressor_process_optional_headers(
             struct flb_decompression_context *context)
 {
     struct flb_gzip_decompression_context *inner_context;
     int                                    status;
     uint16_t                               hcrc;
-    uint16_t                               xlen;
+    size_t                                 xlen;
     uint16_t                               crc;
 
     inner_context = (struct flb_gzip_decompression_context *) \
@@ -763,6 +785,8 @@ static int flb_gzip_decompressor_process_optional_headers(
             return FLB_DECOMPRESSOR_INSUFFICIENT_DATA;
         }
 
+        inner_context->header_crc = mz_crc32(inner_context->header_crc,
+                                             context->read_buffer, xlen);
         context->read_buffer = &context->read_buffer[xlen];
         context->input_buffer_length -= xlen;
 
@@ -779,13 +803,14 @@ static int flb_gzip_decompressor_process_optional_headers(
         xlen = strnlen((char *) context->read_buffer,
                        context->input_buffer_length);
 
-        if (xlen == 0 ||
-            xlen == context->input_buffer_length) {
+        if (xlen == context->input_buffer_length) {
             return FLB_DECOMPRESSOR_INSUFFICIENT_DATA;
         }
 
         xlen++;
 
+        inner_context->header_crc = mz_crc32(inner_context->header_crc,
+                                             context->read_buffer, xlen);
         context->read_buffer = &context->read_buffer[xlen];
         context->input_buffer_length -= xlen;
 
@@ -802,11 +827,14 @@ static int flb_gzip_decompressor_process_optional_headers(
         xlen = strnlen((char *) context->read_buffer,
                        context->input_buffer_length);
 
-        if (xlen == 0 ||
-            xlen == context->input_buffer_length) {
+        if (xlen == context->input_buffer_length) {
             return FLB_DECOMPRESSOR_INSUFFICIENT_DATA;
         }
 
+        xlen++;
+
+        inner_context->header_crc = mz_crc32(inner_context->header_crc,
+                                             context->read_buffer, xlen);
         context->read_buffer = &context->read_buffer[xlen];
         context->input_buffer_length -= xlen;
 
@@ -826,9 +854,7 @@ static int flb_gzip_decompressor_process_optional_headers(
 
         hcrc = read_le16(context->read_buffer);
 
-        crc = mz_crc32(MZ_CRC32_INIT,
-                       (const unsigned char *) &inner_context->gzip_header,
-                       FLB_GZIP_HEADER_SIZE);
+        crc = inner_context->header_crc;
 
         crc &= 0x0000FFFF;
 
@@ -846,15 +872,21 @@ static int flb_gzip_decompressor_process_optional_headers(
         inner_context->gzip_header.header_flags &= (~FHCRC);
     }
 
+    /* Start each member with a zeroed inflate history window. */
+    inner_context->miniz_stream.zalloc = gzip_inflate_alloc;
+    inner_context->miniz_stream.zfree = gzip_inflate_free;
     status = mz_inflateInit2(&inner_context->miniz_stream,
                              -Z_DEFAULT_WINDOW_BITS);
 
     if (status != MZ_OK) {
         context->state = FLB_DECOMPRESSOR_STATE_FAILED;
 
-        return FLB_DECOMPRESSOR_FAILURE;
+        return status == MZ_MEM_ERROR ? FLB_DECOMPRESSOR_ALLOCATION_FAILURE :
+                                        FLB_DECOMPRESSOR_FAILURE;
     }
 
+    inner_context->body_crc = MZ_CRC32_INIT;
+    inner_context->body_size = 0;
     context->state = FLB_DECOMPRESSOR_STATE_EXPECTING_BODY;
 
     return FLB_DECOMPRESSOR_SUCCESS;
@@ -890,13 +922,16 @@ static int flb_gzip_decompressor_process_body_chunk(
 
         *output_length = 0;
 
-        return FLB_DECOMPRESSOR_FAILURE;
+        return status == MZ_MEM_ERROR ? FLB_DECOMPRESSOR_ALLOCATION_FAILURE :
+                                        FLB_DECOMPRESSOR_FAILURE;
     }
 
     processed_bytes  = context->input_buffer_length;
     processed_bytes -= inner_context->miniz_stream.avail_in;
 
     *output_length  -= inner_context->miniz_stream.avail_out;
+    inner_context->body_crc = mz_crc32(inner_context->body_crc, output_buffer, *output_length);
+    inner_context->body_size += (uint32_t) *output_length;
 
 #ifdef FLB_DECOMPRESSOR_ERASE_DECOMPRESSED_DATA
     if (processed_bytes > 0) {
@@ -922,8 +957,16 @@ static int flb_gzip_decompressor_process_body_chunk(
 static int flb_gzip_decompressor_process_footer(
             struct flb_decompression_context *context)
 {
+    struct flb_gzip_decompression_context *inner_context = context->inner_context;
+
     if (context->input_buffer_length <  (sizeof(uint32_t) * 2)) {
         return FLB_DECOMPRESSOR_INSUFFICIENT_DATA;
+    }
+
+    if (read_le32(context->read_buffer) != inner_context->body_crc ||
+        read_le32(context->read_buffer + 4) != inner_context->body_size) {
+        context->state = FLB_DECOMPRESSOR_STATE_FAILED;
+        return FLB_DECOMPRESSOR_FAILURE;
     }
 
     context->input_buffer_length -= (sizeof(uint32_t) * 2);
@@ -1023,6 +1066,7 @@ void flb_gzip_decompression_context_destroy(void *context)
     flb_free(inner_context);
 }
 
+#ifdef FLB_HAVE_HTTP_SERVER
 int flb_is_http_session_gzip_compressed(struct mk_http_session *session)
 {
     int gzip_compressed = FLB_FALSE;
@@ -1048,3 +1092,4 @@ int flb_is_http_session_gzip_compressed(struct mk_http_session *session)
 
     return gzip_compressed;
 }
+#endif

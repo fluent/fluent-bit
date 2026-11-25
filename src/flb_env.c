@@ -118,6 +118,25 @@ void flb_env_destroy(struct flb_env *env)
     flb_free(env);
 }
 
+static const char *env_file_path(const char *uri)
+{
+    const char *path = uri;
+
+    if (strncmp(path, "file://", 7) == 0) {
+        path += 7;
+    }
+#ifdef FLB_SYSTEM_WINDOWS
+    /* A local drive URI uses file:///C:/path; the filesystem needs C:/path. */
+    if (path[0] == '/' &&
+        ((path[1] >= 'A' && path[1] <= 'Z') || (path[1] >= 'a' && path[1] <= 'z')) &&
+        path[2] == ':' && (path[3] == '/' || path[3] == '\\')) {
+        path++;
+    }
+#endif
+
+    return path;
+}
+
 int flb_env_set_extended(struct flb_env *env, const char *key, const char *val,
                          const char *uri, int refresh_interval)
 {
@@ -146,8 +165,7 @@ int flb_env_set_extended(struct flb_env *env, const char *key, const char *val,
     /* Check if the variable is a reference to a file */
     if (vlen > 7 && strncmp(value, "file://", 7) == 0) {
         orig_uri = value;
-        vlen -= 7;
-        value += 7;
+        value = env_file_path(value);
 
         if (access(value, R_OK) == -1) {
             flb_error("[env] file %s not found", value);
@@ -247,10 +265,7 @@ const char *flb_env_get(struct flb_env *env, const char *key)
                 now = time(NULL);
                 if (var->last_refresh == 0 ||
                     now - var->last_refresh >= var->refresh_interval) {
-                    file = var->uri;
-                    if (strncmp(file, "file://", 7) == 0) {
-                        file += 7;
-                    }
+                    file = env_file_path(var->uri);
 
                     if (access(file, R_OK) == -1) {
                         flb_error("[env] file %s not found", file);

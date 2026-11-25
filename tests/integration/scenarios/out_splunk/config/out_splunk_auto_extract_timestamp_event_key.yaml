@@ -1,0 +1,20 @@
+service:
+  flush: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+pipeline:
+  inputs:
+    - name: dummy
+      tag: out_splunk
+      dummy: '{"message":"2022-06-13 12:34:56 example event"}'
+      samples: 1
+  outputs:
+    - name: splunk
+      match: out_splunk
+      host: 127.0.0.1
+      port: ${TEST_SUITE_HTTP_PORT}
+      tls: off
+      splunk_token: secret-token
+      event_key: $message
+      auto_extract_timestamp: true

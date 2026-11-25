@@ -2,13 +2,26 @@
 
 [Fluent Bit](https://fluentbit.io) container images are available on Docker Hub ready for production usage.
 
-The stable AMD64 images are based on [Distroless](https://github.com/GoogleContainerTools/distroless) focusing on security containing just the Fluent Bit binary, minimal system libraries and basic configuration.
+The stable images are based on [Distroless](https://github.com/GoogleContainerTools/distroless) focusing on security containing just the Fluent Bit binary, minimal system libraries and basic configuration.
 
 Optionally, we provide debug images which contain shells and tooling that can be used to troubleshoot or for testing purposes.
 
-There are also images for ARM32 and ARM64 architectures but no debug versions of these.
+Production and debug images are published for AMD64, ARM64 and ARM32 (`arm/v7`).
 
 For a detailed list of installation, usage and versions available, please refer to the the official documentation: https://docs.fluentbit.io/manual/installation/docker
+
+## Security updates
+
+Released images are rebuilt on updated base images when a base image security fix is available,
+without a new Fluent Bit release. The version tag, for example `5.2.0`, moves to the newest build
+and every build keeps a dated tag that never moves, for example `5.2.0-20261117`.
+
+- [Container images](https://github.com/fluent/fluent-bit/wiki/Container-Images): every published
+  build with its tags, digests and build date.
+- [Container image security status](https://github.com/fluent/fluent-bit/wiki/Container-Image-Security-Status):
+  known critical and high findings of the current images.
+- [Security policy](https://github.com/fluent/fluent-bit/blob/master/SECURITY.md#-container-images):
+  what to do when a scanner reports a finding in an image.
 
 ## Multiple architecture support
 
@@ -45,7 +58,7 @@ docker buildx build --platform "linux/amd64,linux/arm64,linux/arm/v7,linux/s390x
 
 ## Build and test
 
-1. Checkout the branch you want, e.g. 1.8 for 1.8.X containers.
+1. Checkout the branch you want, e.g. 5.1 for 5.1.X containers.
 2. Build Fluent Bit from the **root of the Git repo (not from this directory)**:
 ```
 $ docker build -t fluent/fluent-bit --target=production -f dockerfiles/Dockerfile .

@@ -18,9 +18,19 @@
  *  limitations under the License.
  */
 
+#include <stdlib.h>
+#include <string.h>
+#ifndef _WIN32
+#include <pthread.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <unistd.h>
+#endif
+
 #include <fluent-bit.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_network.h>
 #include <float.h>
 #include <math.h>
 #include <msgpack.h>
@@ -36,9 +46,12 @@ struct test_ctx {
 
 pthread_mutex_t result_mutex = PTHREAD_MUTEX_INITIALIZER;
 int num_output = 0;
+static const char *callback_error = NULL;
+
 static int get_output_num()
 {
     int ret;
+
     pthread_mutex_lock(&result_mutex);
     ret = num_output;
     pthread_mutex_unlock(&result_mutex);
@@ -46,16 +59,48 @@ static int get_output_num()
     return ret;
 }
 
-static void set_output_num(int num)
+static void increment_output_num()
 {
     pthread_mutex_lock(&result_mutex);
-    num_output = num;
+    num_output++;
+    pthread_mutex_unlock(&result_mutex);
+}
+
+static void add_output_num(int num)
+{
+    pthread_mutex_lock(&result_mutex);
+    num_output += num;
+    pthread_mutex_unlock(&result_mutex);
+}
+
+static void set_callback_error(const char *message)
+{
+    pthread_mutex_lock(&result_mutex);
+    if (callback_error == NULL) {
+        callback_error = message;
+    }
     pthread_mutex_unlock(&result_mutex);
 }
 
 static void clear_output_num()
 {
-    set_output_num(0);
+    pthread_mutex_lock(&result_mutex);
+    num_output = 0;
+    callback_error = NULL;
+    pthread_mutex_unlock(&result_mutex);
+}
+
+static void check_callback_error()
+{
+    const char *message;
+
+    pthread_mutex_lock(&result_mutex);
+    message = callback_error;
+    pthread_mutex_unlock(&result_mutex);
+
+    if (!TEST_CHECK(message == NULL)) {
+        TEST_MSG("%s", message);
+    }
 }
 
 struct str_list {
@@ -63,44 +108,88 @@ struct str_list {
     char **lists;
 };
 
+struct json_stream_expected {
+    const char *records[2];
+    int seen[2];
+};
+
+/* A flush may contain one or both records. Check each complete JSON object. */
+static void cb_check_json_stream(void *ctx, int ffd, int res_ret,
+                                 void *res_data, size_t res_size, void *data)
+{
+    size_t i;
+    size_t len;
+    size_t offset;
+    flb_sds_t output = res_data;
+    struct json_stream_expected *expected = data;
+
+    if (output == NULL) {
+        set_callback_error("formatter returned no output");
+        return;
+    }
+
+    if (expected == NULL || res_ret != 0) {
+        set_callback_error("formatter returned an error or no callback data");
+        flb_sds_destroy(output);
+        return;
+    }
+
+    offset = 0;
+    while (offset < res_size) {
+        for (i = 0; i < 2; i++) {
+            len = strlen(expected->records[i]);
+            if (len <= res_size - offset &&
+                strncmp(output + offset, expected->records[i], len) == 0) {
+                pthread_mutex_lock(&result_mutex);
+                expected->seen[i]++;
+                num_output++;
+                pthread_mutex_unlock(&result_mutex);
+                offset += len;
+                break;
+            }
+        }
+
+        if (i == 2) {
+            set_callback_error("formatter output contained an unexpected JSON stream record");
+            break;
+        }
+    }
+
+    flb_sds_destroy(output);
+}
+
 /* Callback to check expected results */
 static void cb_check_str_list(void *ctx, int ffd, int res_ret, 
                               void *res_data, size_t res_size, void *data)
 {
     char *p;
     flb_sds_t out_line = res_data;
-    int num = get_output_num();
     size_t i;
     struct str_list *l = (struct str_list *)data;
 
-    if (!TEST_CHECK(res_data != NULL)) {
-        TEST_MSG("res_data is NULL");
+    if (res_data == NULL) {
+        set_callback_error("formatter returned no output");
         return;
     }
 
-    if (!TEST_CHECK(l != NULL)) {
-        TEST_MSG("l is NULL");
+    if (l == NULL) {
+        set_callback_error("formatter callback data is NULL");
         flb_sds_destroy(out_line);
         return;
     }
 
-    if(!TEST_CHECK(res_ret == 0)) {
-        TEST_MSG("callback ret=%d", res_ret);
-    }
-    if (!TEST_CHECK(res_data != NULL)) {
-        TEST_MSG("res_data is NULL");
-        flb_sds_destroy(out_line);
-        return;
+    if (res_ret != 0) {
+        set_callback_error("formatter returned an error");
     }
 
-    for (i=0; i<l->size; i++) {
+    for (i = 0; i < l->size; i++) {
         p = strstr(out_line, l->lists[i]);
-        if (!TEST_CHECK(p != NULL)) {
-            TEST_MSG("  Got   :%s\n  expect:%s", out_line, l->lists[i]);
+        if (p == NULL) {
+            set_callback_error("formatter output did not contain an expected string");
         }
     }
-    set_output_num(num+1);
 
+    increment_output_num();
     flb_sds_destroy(out_line);
 }
 
@@ -131,7 +220,7 @@ static int msgpack_strncmp(char* str, size_t str_len, msgpack_object obj)
     case MSGPACK_OBJECT_NEGATIVE_INTEGER:
         {
             long long val = strtoll(str, NULL, 10);
-            if (val == (unsigned long)obj.via.i64) {
+            if (val == obj.via.i64) {
                 ret = 0;
             }
         }
@@ -177,38 +266,48 @@ static void cb_check_msgpack_kv(void *ctx, int ffd, int res_ret,
     int i_map;
     int map_size;
     int i_list;
-    int num = get_output_num();
+    int matches = 0;
+    msgpack_unpack_return unpack_result = MSGPACK_UNPACK_CONTINUE;
 
-    if (!TEST_CHECK(res_data != NULL)) {
-        TEST_MSG("res_data is NULL");
+    if (res_data == NULL) {
+        set_callback_error("formatter returned no output");
         return;
     }
 
-    if (!TEST_CHECK(data != NULL)) {
-        flb_error("data is NULL");
+    if (data == NULL) {
+        set_callback_error("formatter callback data is NULL");
         return;
+    }
+
+    if (res_ret != 0) {
+        set_callback_error("formatter returned an error");
     }
 
     /* Iterate each item array and apply rules */
     msgpack_unpacked_init(&result);
-    while (msgpack_unpack_next(&result, res_data, res_size, &off) == MSGPACK_UNPACK_SUCCESS) {
+    while (off < res_size) {
+        unpack_result = msgpack_unpack_next(&result, res_data, res_size, &off);
+        if (unpack_result != MSGPACK_UNPACK_SUCCESS) {
+            break;
+        }
+
         obj = result.data;
         /*
         msgpack_object_print(stdout, obj);
         */
         if (obj.type != MSGPACK_OBJECT_ARRAY || obj.via.array.size != 2) {
-            flb_error("array error. type = %d", obj.type);
+            set_callback_error("formatter output contained an invalid record");
             continue;
         }
         obj = obj.via.array.ptr[1];
         if (obj.type != MSGPACK_OBJECT_MAP) {
-            flb_error("map error. type = %d", obj.type);
+            set_callback_error("formatter output record was not a map");
             continue;
         }
         map_size = obj.via.map.size;
         for (i_map=0; i_map<map_size; i_map++) {
             if (obj.via.map.ptr[i_map].key.type != MSGPACK_OBJECT_STR) {
-                flb_error("key is not string. type =%d", obj.via.map.ptr[i_map].key.type);
+                set_callback_error("formatter output map key was not a string");
                 continue;
             }
             for (i_list=0; i_list< l->size/2; i_list++)  {
@@ -216,16 +315,30 @@ static void cb_check_msgpack_kv(void *ctx, int ffd, int res_ret,
                                     obj.via.map.ptr[i_map].key) == 0 &&
                     msgpack_strncmp(l->lists[i_list*2+1], strlen(l->lists[i_list*2+1]),
                                     obj.via.map.ptr[i_map].val) == 0) {
-                    num++;
+                    matches++;
                 }
             }
         }
     }
-    set_output_num(num);
+
+    if (unpack_result == MSGPACK_UNPACK_PARSE_ERROR) {
+        set_callback_error("formatter output contained invalid MessagePack");
+    }
+    else if (unpack_result == MSGPACK_UNPACK_NOMEM_ERROR) {
+        set_callback_error("could not unpack formatter output");
+    }
+    else if (unpack_result == MSGPACK_UNPACK_CONTINUE && res_size != 0) {
+        set_callback_error("formatter output contained incomplete MessagePack");
+    }
+    else if (unpack_result != MSGPACK_UNPACK_SUCCESS &&
+             unpack_result != MSGPACK_UNPACK_CONTINUE) {
+        set_callback_error("formatter output returned an unexpected unpack result");
+    }
+    else {
+        add_output_num(matches);
+    }
 
     msgpack_unpacked_destroy(&result);
-
-    return ;
 }
 
 static struct test_ctx *test_ctx_create()
@@ -267,12 +380,14 @@ static void test_ctx_destroy(struct test_ctx *ctx)
 
     sleep(1);
     flb_stop(ctx->flb);
+    check_callback_error();
     flb_destroy(ctx->flb);
     flb_free(ctx);
 }
 
 void flb_test_format_msgpack()
 {
+    int attempts;
     struct test_ctx *ctx;
     int ret;
     int num;
@@ -313,8 +428,12 @@ void flb_test_format_msgpack()
     ret = flb_lib_push(ctx->flb, ctx->i_ffd, (char *) buf1, size1);
     TEST_CHECK(ret >= 0);
 
-    /* waiting to flush */
-    flb_time_msleep(500);
+    for (attempts = 0; attempts < 50; attempts++) {
+        if (get_output_num() == expected.size / 2) {
+            break;
+        }
+        flb_time_msleep(100);
+    }
 
     num = get_output_num();
     if (!TEST_CHECK(num == expected.size / 2))  {
@@ -330,10 +449,13 @@ void flb_test_format_json()
     int ret;
     int num;
 
-    char *buf1 = "[1, {\"msg\":\"hello world\"}]";
+    /*
+     * Both records in one push: in_lib appends them together, so a flush
+     * cannot split them across formatter calls.
+     */
+    char *buf1 = "[1, {\"msg\":\"hello world\"}]"
+                 "[2, {\"msg\":\"hello world\"}]";
     size_t size1 = strlen(buf1);
-    char *buf2 = "[2, {\"msg\":\"hello world\"}]";
-    size_t size2 = strlen(buf2);
 
     char *expected_strs[] = {"[{\"date\":1.0,\"msg\":\"hello world\"},{\"date\":2.0,\"msg\":\"hello world\"}]"};
     struct str_list expected = {
@@ -367,8 +489,6 @@ void flb_test_format_json()
     /* Ingest data sample */
     ret = flb_lib_push(ctx->flb, ctx->i_ffd, (char *) buf1, size1);
     TEST_CHECK(ret >= 0);
-    ret = flb_lib_push(ctx->flb, ctx->i_ffd, (char *) buf2, size2);
-    TEST_CHECK(ret >= 0);
 
     /* waiting to flush */
     flb_time_msleep(500);
@@ -387,15 +507,20 @@ void flb_test_format_json_stream()
     int ret;
     int num;
 
-    char *buf1 = "[1, {\"msg\":\"hello world\"}]";
+    /*
+     * Both records in one push: in_lib appends them together, so a flush
+     * cannot split them across formatter calls.
+     */
+    char *buf1 = "[1, {\"msg\":\"hello world\"}]"
+                 "[2, {\"msg\":\"hello world\"}]";
     size_t size1 = strlen(buf1);
-    char *buf2 = "[2, {\"msg\":\"hello world\"}]";
-    size_t size2 = strlen(buf2);
 
-    char *expected_strs[] = {"{\"date\":1.0,\"msg\":\"hello world\"}{\"date\":2.0,\"msg\":\"hello world\"}"};
-    struct str_list expected = {
-                                .size = sizeof(expected_strs)/sizeof(char*),
-                                .lists = &expected_strs[0],
+    struct json_stream_expected expected = {
+        .records = {
+            "{\"date\":1.0,\"msg\":\"hello world\"}",
+            "{\"date\":2.0,\"msg\":\"hello world\"}"
+        },
+        .seen = {0, 0}
     };
 
     clear_output_num();
@@ -413,7 +538,7 @@ void flb_test_format_json_stream()
     TEST_CHECK(ret == 0);
 
     ret = flb_output_set_test(ctx->flb, ctx->o_ffd,
-                         "formatter", cb_check_str_list,
+                         "formatter", cb_check_json_stream,
                           &expected, NULL);
     TEST_CHECK(ret == 0);
 
@@ -424,18 +549,21 @@ void flb_test_format_json_stream()
     /* Ingest data sample */
     ret = flb_lib_push(ctx->flb, ctx->i_ffd, (char *) buf1, size1);
     TEST_CHECK(ret >= 0);
-    ret = flb_lib_push(ctx->flb, ctx->i_ffd, (char *) buf2, size2);
-    TEST_CHECK(ret >= 0);
 
-    /* waiting to flush */
-    flb_time_msleep(500);
+    /* Wait for both records, whether they arrive in one or two flushes. */
+    for (ret = 0; ret < 50 && get_output_num() < 2; ret++) {
+        flb_time_msleep(100);
+    }
 
     num = get_output_num();
-    if (!TEST_CHECK(num > 0))  {
-        TEST_MSG("no outputs");
+    if (!TEST_CHECK(num == 2)) {
+        TEST_MSG("got %d records, expected 2", num);
     }
 
     test_ctx_destroy(ctx);
+
+    TEST_CHECK(expected.seen[0] == 1);
+    TEST_CHECK(expected.seen[1] == 1);
 }
 
 void flb_test_format_json_lines()
@@ -444,10 +572,13 @@ void flb_test_format_json_lines()
     int ret;
     int num;
 
-    char *buf1 = "[1, {\"msg\":\"hello world\"}]";
+    /*
+     * Both records in one push: in_lib appends them together, so a flush
+     * cannot split them across formatter calls.
+     */
+    char *buf1 = "[1, {\"msg\":\"hello world\"}]"
+                 "[2, {\"msg\":\"hello world\"}]";
     size_t size1 = strlen(buf1);
-    char *buf2 = "[2, {\"msg\":\"hello world\"}]";
-    size_t size2 = strlen(buf2);
 
     char *expected_strs[] = {"{\"date\":1.0,\"msg\":\"hello world\"}\n{\"date\":2.0,\"msg\":\"hello world\"}"};
     struct str_list expected = {
@@ -480,8 +611,6 @@ void flb_test_format_json_lines()
 
     /* Ingest data sample */
     ret = flb_lib_push(ctx->flb, ctx->i_ffd, (char *) buf1, size1);
-    TEST_CHECK(ret >= 0);
-    ret = flb_lib_push(ctx->flb, ctx->i_ffd, (char *) buf2, size2);
     TEST_CHECK(ret >= 0);
 
     /* waiting to flush */
@@ -1042,11 +1171,8 @@ void flb_test_json_date_format_java_sql_timestamp()
 
 int callback_test(void* data, size_t size, void* cb_data)
 {
-    int num;
-
     if (size > 0) {
-        num = get_output_num();
-        set_output_num(num+1);
+        increment_output_num();
     }
     return 0;
 }
@@ -1063,6 +1189,12 @@ void flb_test_in_http()
     struct flb_lib_out_cb cb;
     char *buf = "[1, {\"msg\":\"hello world\"}]";
     size_t size = strlen(buf);
+    const char *port;
+
+    port = getenv("FLB_TEST_HTTP_PORT");
+    if (!port) {
+        port = "8888";
+    }
 
     cb.cb   = callback_test;
     cb.data = NULL;
@@ -1087,7 +1219,7 @@ void flb_test_in_http()
 
     ret = flb_input_set(ctx->flb,
                         i_ffd,
-                        "port", "8888",
+                        "port", port,
                         "tag", "http",
                         "host", "127.0.0.1",
                         NULL);
@@ -1109,7 +1241,7 @@ void flb_test_in_http()
                          ctx->o_ffd,
                          "match", "lib",
                          "host", "127.0.0.1",
-                         "port", "8888",
+                         "port", port,
                          NULL);
     TEST_CHECK(ret == 0);
 
@@ -1139,6 +1271,276 @@ void flb_test_in_http()
     test_ctx_destroy(ctx);
 }
 
+#ifndef _WIN32
+struct patch_method_mock_server {
+    flb_sockfd_t listen_fd;
+    int port;
+    int stop;
+    pthread_t thread;
+    pthread_mutex_t lock;
+    char request_method[16];
+};
+
+static int patch_method_mock_server_stopping(struct patch_method_mock_server *server)
+{
+    int stop;
+
+    pthread_mutex_lock(&server->lock);
+    stop = server->stop;
+    pthread_mutex_unlock(&server->lock);
+
+    return stop;
+}
+
+static void patch_method_mock_server_set_method(struct patch_method_mock_server *server,
+                                                const char *method)
+{
+    pthread_mutex_lock(&server->lock);
+    strncpy(server->request_method, method,
+            sizeof(server->request_method) - 1);
+    pthread_mutex_unlock(&server->lock);
+}
+
+static void patch_method_mock_server_get_method(struct patch_method_mock_server *server,
+                                                char *out, size_t size)
+{
+    pthread_mutex_lock(&server->lock);
+    strncpy(out, server->request_method, size - 1);
+    out[size - 1] = '\0';
+    pthread_mutex_unlock(&server->lock);
+}
+
+static void *patch_method_mock_server_thread(void *data)
+{
+    struct patch_method_mock_server *server;
+    flb_sockfd_t conn_fd;
+    ssize_t bytes;
+    char request[4096];
+    const char response[] =
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Length: 0\r\n"
+        "Connection: close\r\n"
+        "\r\n";
+
+    server = data;
+
+    while (!patch_method_mock_server_stopping(server)) {
+        conn_fd = accept(server->listen_fd, NULL, NULL);
+        if (patch_method_mock_server_stopping(server)) {
+            if (conn_fd >= 0) {
+                flb_socket_close(conn_fd);
+            }
+            break;
+        }
+        if (conn_fd < 0) {
+            flb_time_msleep(10);
+            continue;
+        }
+
+        bytes = recv(conn_fd, request, sizeof(request) - 1, 0);
+        if (bytes > 0) {
+            request[bytes] = '\0';
+            if (strncmp(request, "PATCH ", 6) == 0) {
+                patch_method_mock_server_set_method(server, "PATCH");
+            }
+            else if (strncmp(request, "POST ", 5) == 0) {
+                patch_method_mock_server_set_method(server, "POST");
+            }
+            else if (strncmp(request, "PUT ", 4) == 0) {
+                patch_method_mock_server_set_method(server, "PUT");
+            }
+        }
+
+        send(conn_fd, response, strlen(response), 0);
+        flb_socket_close(conn_fd);
+        break;
+    }
+
+    return NULL;
+}
+
+static int patch_method_mock_server_start(struct patch_method_mock_server *server)
+{
+    int on = 1;
+    struct sockaddr_in addr;
+    socklen_t len;
+
+    memset(server, 0, sizeof(struct patch_method_mock_server));
+    if (pthread_mutex_init(&server->lock, NULL) != 0) {
+        server->listen_fd = -1;
+        return -1;
+    }
+
+    server->listen_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (server->listen_fd < 0) {
+        pthread_mutex_destroy(&server->lock);
+        return -1;
+    }
+
+    setsockopt(server->listen_fd, SOL_SOCKET, SO_REUSEADDR, (const char *) &on,
+               sizeof(on));
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = 0;
+
+    if (bind(server->listen_fd, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
+        flb_socket_close(server->listen_fd);
+        server->listen_fd = -1;
+        pthread_mutex_destroy(&server->lock);
+        return -1;
+    }
+
+    len = sizeof(addr);
+    if (getsockname(server->listen_fd, (struct sockaddr *) &addr, &len) < 0) {
+        flb_socket_close(server->listen_fd);
+        server->listen_fd = -1;
+        pthread_mutex_destroy(&server->lock);
+        return -1;
+    }
+
+    server->port = ntohs(addr.sin_port);
+
+    if (listen(server->listen_fd, 4) < 0) {
+        flb_socket_close(server->listen_fd);
+        server->listen_fd = -1;
+        pthread_mutex_destroy(&server->lock);
+        return -1;
+    }
+
+    server->stop = 0;
+    if (pthread_create(&server->thread, NULL, patch_method_mock_server_thread,
+                       server) != 0) {
+        flb_socket_close(server->listen_fd);
+        server->listen_fd = -1;
+        pthread_mutex_destroy(&server->lock);
+        return -1;
+    }
+
+    return 0;
+}
+
+static void patch_method_mock_server_stop(struct patch_method_mock_server *server)
+{
+    if (server->listen_fd < 0) {
+        return;
+    }
+
+    flb_sockfd_t wake_fd;
+    struct sockaddr_in addr;
+
+    pthread_mutex_lock(&server->lock);
+    server->stop = 1;
+    pthread_mutex_unlock(&server->lock);
+
+    /* wake the listener in case no client ever connected */
+    wake_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (wake_fd >= 0) {
+        memset(&addr, 0, sizeof(addr));
+        addr.sin_family = AF_INET;
+        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        addr.sin_port = htons(server->port);
+        connect(wake_fd, (struct sockaddr *) &addr, sizeof(addr));
+        flb_socket_close(wake_fd);
+    }
+    shutdown(server->listen_fd, SHUT_RDWR);
+
+    pthread_join(server->thread, NULL);
+    flb_socket_close(server->listen_fd);
+    server->listen_fd = -1;
+    pthread_mutex_destroy(&server->lock);
+}
+
+void flb_test_http_method_patch(void)
+{
+    struct patch_method_mock_server server;
+    struct test_ctx *ctx;
+    int ret;
+    int attempts;
+    char port[16];
+    char method[16];
+    char *buf = "[1, {\"msg\":\"hello world\"}]";
+    size_t size = strlen(buf);
+
+    memset(&server, 0, sizeof(server));
+    server.listen_fd = -1;
+
+    if (!TEST_CHECK(patch_method_mock_server_start(&server) == 0)) {
+        TEST_MSG("failed to start mock HTTP server");
+        return;
+    }
+
+    snprintf(port, sizeof(port), "%d", server.port);
+
+    clear_output_num();
+
+    ctx = test_ctx_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        patch_method_mock_server_stop(&server);
+        TEST_MSG("test_ctx_create failed");
+        return;
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "format", "json",
+                         "host", "127.0.0.1",
+                         "port", port,
+                         "http_method", "patch",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_lib_push(ctx->flb, ctx->i_ffd, (char *) buf, size);
+    TEST_CHECK(ret >= 0);
+
+    for (attempts = 0; attempts < 50; attempts++) {
+        patch_method_mock_server_get_method(&server, method, sizeof(method));
+        if (method[0] != '\0') {
+            break;
+        }
+        flb_time_msleep(100);
+    }
+
+    patch_method_mock_server_stop(&server);
+
+    /* server thread is joined, safe to read */
+    if (!TEST_CHECK(strcmp(server.request_method, "PATCH") == 0)) {
+        TEST_MSG("expected PATCH request, got '%s'", server.request_method);
+    }
+
+    test_ctx_destroy(ctx);
+}
+
+void flb_test_http_method_invalid(void)
+{
+    struct test_ctx *ctx;
+    int ret;
+
+    ctx = test_ctx_create();
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        return;
+    }
+
+    ret = flb_output_set(ctx->flb, ctx->o_ffd,
+                         "match", "*",
+                         "format", "json",
+                         "http_method", "DELETE",
+                         NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret != 0);
+
+    flb_destroy(ctx->flb);
+    flb_free(ctx);
+}
+#endif
+
 /* Test list */
 TEST_LIST = {
     {"format_msgpack" , flb_test_format_msgpack},
@@ -1156,5 +1558,9 @@ TEST_LIST = {
     {"json_date_format_iso8601" , flb_test_json_date_format_iso8601},
     {"json_date_format_java_sql_timestamp" , flb_test_json_date_format_java_sql_timestamp},
     {"in_http", flb_test_in_http},
+#ifndef _WIN32
+    {"http_method_patch", flb_test_http_method_patch},
+    {"http_method_invalid", flb_test_http_method_invalid},
+#endif
     {NULL, NULL}
 };

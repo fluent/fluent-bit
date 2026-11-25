@@ -1,4 +1,4 @@
-/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+﻿/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
 /*  Fluent Bit
  *  ==========
@@ -30,11 +30,58 @@ Approach for this tests is basing on filter_kubernetes tests
 #include <fluent-bit/flb_unicode.h>
 #endif
 #include <stdlib.h>
+#include <errno.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <fcntl.h>
 #include <string.h>
+#ifdef _WIN32
+#include <io.h>
+#include <sys/utime.h>
+#include "../../plugins/in_tail/win32/interface.h"
+#endif
 #include "flb_tests_runtime.h"
+#ifdef __linux__
+#include "../../plugins/in_tail/tail_file.h"
+#endif
+
+#ifdef _WIN32
+#define fsync _commit
+#ifndef S_IRUSR
+#define S_IRUSR _S_IREAD
+#endif
+#ifndef S_IWUSR
+#define S_IWUSR _S_IWRITE
+#endif
+#ifndef S_IRGRP
+#define S_IRGRP 0
+#endif
+#ifndef S_IWGRP
+#define S_IWGRP 0
+#endif
+#ifndef S_IRWXU
+#define S_IRWXU (S_IRUSR | S_IWUSR)
+#endif
+#ifndef AT_FDCWD
+#define AT_FDCWD -100
+#endif
+
+static int flb_test_utimensat(int dirfd, const char *path,
+                              const struct timespec times[2], int flags)
+{
+    struct _utimbuf tm;
+
+    (void) dirfd;
+    (void) flags;
+
+    tm.actime = times[0].tv_sec;
+    tm.modtime = times[1].tv_sec;
+
+    return _utime(path, &tm);
+}
+
+#define utimensat flb_test_utimensat
+#endif
 
 #ifdef FLB_HAVE_INOTIFY
 #include "../../plugins/in_tail/tail_config.h"
@@ -189,6 +236,9 @@ static struct test_tail_ctx *test_tail_ctx_create(struct flb_lib_out_cb *data,
 
     /* open() flags */
     o_flags = O_RDWR | O_CREAT;
+#ifdef FLB_SYSTEM_WINDOWS
+    o_flags |= O_BINARY;
+#endif
 
     if (paths != NULL) {
         ctx->fds = flb_malloc(sizeof(int) * path_num);
@@ -375,8 +425,12 @@ void wait_expected_num_with_timeout(uint32_t timeout_ms, int expected_num, int *
 
 static inline int64_t set_result(int64_t v)
 {
+#ifdef _WIN32
+    return InterlockedExchange64((volatile LONG64 *)&result_time, v);
+#else
     int64_t old = __sync_lock_test_and_set(&result_time, v);
     return old;
+#endif
 }
 
 
@@ -387,13 +441,18 @@ static int file_to_buf(const char *path, char **out_buf, size_t *out_size)
     char *buf;
     FILE *fp;
     struct stat st;
+    const char *file_mode = "r";
+
+#ifdef FLB_SYSTEM_WINDOWS
+    file_mode = "rb";
+#endif
 
     ret = stat(path, &st);
     if (ret == -1) {
         return -1;
     }
 
-    fp = fopen(path, "r");
+    fp = fopen(path, file_mode);
     if (!fp) {
         return -1;
     }
@@ -1576,6 +1635,98 @@ void flb_test_exclude_path()
     test_tail_ctx_destroy(ctx);
 }
 
+#ifdef _WIN32
+static void test_windows_open_descriptor_exhaustion(int (*open_file)(const char *, int))
+{
+    int *fds;
+    int count;
+    int fd;
+    int i;
+    int saved_errno;
+    char buf;
+    DWORD handles_before;
+    DWORD handles_after;
+
+    /* Leave room to detect exhaustion without depending on the exact CRT limit. */
+    fds = flb_malloc(16384 * sizeof(int));
+    if (!TEST_CHECK(fds != NULL)) {
+        return;
+    }
+
+    for (count = 0; count < 16384; count++) {
+        fd = _open("NUL", _O_RDONLY);
+        if (fd == -1) {
+            break;
+        }
+        fds[count] = fd;
+    }
+    saved_errno = errno;
+    if (!TEST_CHECK(count > 0 && count < 16384)) {
+        goto cleanup;
+    }
+    TEST_CHECK(saved_errno == EMFILE);
+
+    if (!TEST_CHECK(GetProcessHandleCount(GetCurrentProcess(), &handles_before))) {
+        goto cleanup;
+    }
+    for (i = 0; i < 32; i++) {
+        errno = 0;
+        fd = open_file("NUL", O_RDONLY);
+        saved_errno = errno;
+        TEST_CHECK(fd == -1);
+        TEST_CHECK(saved_errno == EMFILE);
+        if (fd != -1) {
+            _close(fd);
+        }
+    }
+    if (TEST_CHECK(GetProcessHandleCount(GetCurrentProcess(), &handles_after))) {
+        TEST_CHECK(handles_after == handles_before);
+        TEST_MSG("handle count before=%lu after=%lu", handles_before, handles_after);
+    }
+
+    /* Releasing one descriptor must allow a usable open and normal cleanup. */
+    _close(fds[--count]);
+    fd = open_file("NUL", O_RDONLY);
+    if (TEST_CHECK(fd != -1)) {
+        TEST_CHECK(_read(fd, &buf, 1) == 0);
+        TEST_CHECK(_close(fd) == 0);
+    }
+
+cleanup:
+    for (i = 0; i < count; i++) {
+        _close(fds[i]);
+    }
+    flb_free(fds);
+}
+
+void flb_test_windows_open_descriptor_exhaustion(void)
+{
+    test_windows_open_descriptor_exhaustion(win32_open);
+}
+
+void flb_test_windows_open_utf8_descriptor_exhaustion(void)
+{
+    test_windows_open_descriptor_exhaustion(win32_open_utf8);
+}
+
+void flb_test_windows_extended_path_prefixes(void)
+{
+    size_t length;
+    wchar_t local_path[] = L"\\\\?\\C:\\logs\\unicode.log";
+    wchar_t unc_path[] = L"\\\\?\\UNC\\server\\share\\unicode.log";
+    const wchar_t expected_local_path[] = L"C:\\logs\\unicode.log";
+    const wchar_t expected_unc_path[] = L"\\\\server\\share\\unicode.log";
+
+    length = win32_remove_extended_path_prefix(local_path, wcslen(local_path));
+    TEST_CHECK(length == wcslen(expected_local_path));
+    TEST_CHECK(wcscmp(local_path, expected_local_path) == 0);
+
+    length = win32_remove_extended_path_prefix(unc_path, wcslen(unc_path));
+    TEST_CHECK(length == wcslen(expected_unc_path));
+    TEST_CHECK(wcscmp(unc_path, expected_unc_path) == 0);
+}
+#endif
+
 void flb_test_offset_key()
 {
     struct flb_lib_out_cb cb_data;
@@ -1793,10 +1944,8 @@ void flb_test_skip_empty_lines()
     ret = flb_start(ctx->flb);
     TEST_CHECK(ret == 0);
 
-    /* waiting to flush */
-    flb_time_msleep(500);
-
-    num = get_output_num();
+    /* wait for the record, the tail input can take longer than a fixed delay */
+    wait_expected_num_with_timeout(5000, 1, &num);
     if (!TEST_CHECK(num == 1))  {
         TEST_MSG("output error: expect=1 got=%d", num);
     }
@@ -1862,10 +2011,8 @@ void flb_test_skip_empty_lines_crlf()
     ret = flb_start(ctx->flb);
     TEST_CHECK(ret == 0);
 
-    /* waiting to flush */
-    flb_time_msleep(500);
-
-    num = get_output_num();
+    /* wait for the record, the tail input can take longer than a fixed delay */
+    wait_expected_num_with_timeout(5000, 1, &num);
     if (!TEST_CHECK(num == 1))  {
         TEST_MSG("output error: expect=1 got=%d", num);
     }
@@ -2042,6 +2189,194 @@ void flb_test_in_tail_ignore_active_older_files()
     test_tail_ctx_destroy(ctx);
 }
 
+/*
+ * Verify that a file excluded by ignore_active_older_files is re-picked up
+ * once its mtime is refreshed by a new write.
+ *
+ * Sequence:
+ *   1. Write msg1  → engine reads it (count = 1)
+ *   2. Wait 4 s    → purge fires (rotate_wait=1s), file is >2s old; inode
+ *                    registered as aged-out and file removed from monitoring
+ *   3. Write msg2  → mtime is now fresh
+ *   4. Wait 3 s    → scan fires (refresh_interval=1s), sees fresh mtime;
+ *                    unregisters aged-out entry and re-adds file at the
+ *                    stored offset (file->offset saved at age-out time);
+ *                    engine reads only msg2 (count += 1)
+ *   5. Assert count == 2
+ */
+void flb_test_in_tail_ignore_active_older_files_reread_on_update()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+    char *file[] = {"source_file_reread.log"};
+    char *path = "source_file_reread.log";
+    char *msg = "TEST LINE";
+    const int expected = 2;
+    const int expected_before_rotate = 1;
+    int ret;
+    int num;
+    int unused;
+
+    clear_output_num();
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &unused;
+
+    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char *), FLB_TRUE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        return;
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->o_ffd,
+                        "path",                               path,
+                        "ignore_older",                      "2s",
+                        "rotate_wait",                       "1s",
+                        "refresh_interval",                  "1s",
+                        "read_newly_discovered_files_from_head", "false",
+                        "ignore_active_older_files",         "on",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    if (!TEST_CHECK(ret == 0)) {
+        test_tail_ctx_destroy(ctx);
+        return;
+    }
+
+    /* Write first message and allow it to be flushed */
+    ret = write_msg(ctx, msg, strlen(msg));
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+        return;
+    }
+
+    /* Wait until msg1 is consumed before starting the aging clock. */
+    wait_expected_num_with_timeout(5000, expected_before_rotate, &num);
+    if (!TEST_CHECK(num == expected_before_rotate)) {
+        TEST_MSG("msg1 not consumed in time. got=%d", num);
+        test_tail_ctx_destroy(ctx);
+        return;
+    }
+
+    /*
+     * Wait long enough for the purge callback (rotate_wait=1s) to fire and
+     * detect that the file's mtime is older than ignore_older=2s, which
+     * removes the file from monitoring and registers its inode as aged-out.
+     */
+    flb_time_msleep(4000);
+
+    /* Append new content: this updates mtime so the file is no longer old */
+    ret = write_msg(ctx, msg, strlen(msg));
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+        return;
+    }
+
+    /*
+     * Wait for the scan callback (refresh_interval=1s) to re-evaluate the
+     * aged-out entry, find the fresh mtime, unregister the entry, and
+     * re-add the file.  The file is re-added at the stored offset (the read
+     * position saved when the file was aged out), so only msg2 — the content
+     * that refreshed the mtime — is flushed (count += 1).
+     */
+    wait_expected_num_with_timeout(5000, expected, &num);
+
+    if (!TEST_CHECK(num == expected)) {
+        TEST_MSG("output num error. expect=%d got=%d", expected, num);
+    }
+
+    test_tail_ctx_destroy(ctx);
+}
+
+void flb_test_in_tail_ignore_active_older_files_reread_on_update_default_read_from_head()
+{
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+    char *file[] = {"source_file_reread_default.log"};
+    char *path = "source_file_reread_default.log";
+    char *msg = "TEST LINE";
+    const int expected = 2;
+    const int expected_before_rotate = 1;
+    int ret;
+    int num;
+    int unused;
+
+    clear_output_num();
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = &unused;
+
+    ctx = test_tail_ctx_create(&cb_data, &file[0], sizeof(file)/sizeof(char *), FLB_TRUE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        return;
+    }
+
+    /*
+     * Do not set read_newly_discovered_files_from_head — leave it at its
+     * default (true).  The fix in set_file_position must honour the saved
+     * offset even when ctx->read_from_head is true, so only msg2 is flushed
+     * on re-pickup rather than replaying msg1 from the start.
+     */
+    ret = flb_input_set(ctx->flb, ctx->o_ffd,
+                        "path",                      path,
+                        "ignore_older",              "2s",
+                        "rotate_wait",               "1s",
+                        "refresh_interval",          "1s",
+                        "ignore_active_older_files", "on",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    if (!TEST_CHECK(ret == 0)) {
+        test_tail_ctx_destroy(ctx);
+        return;
+    }
+
+    /* Write first message and allow it to be flushed */
+    ret = write_msg(ctx, msg, strlen(msg));
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+        return;
+    }
+
+    /* Wait until msg1 is consumed before starting the aging clock. */
+    wait_expected_num_with_timeout(5000, expected_before_rotate, &num);
+    if (!TEST_CHECK(num == expected_before_rotate)) {
+        TEST_MSG("msg1 not consumed in time. got=%d", num);
+        test_tail_ctx_destroy(ctx);
+        return;
+    }
+
+    /*
+     * Wait long enough for the purge callback (rotate_wait=1s) to fire and
+     * age out the file.
+     */
+    flb_time_msleep(4000);
+
+    /* Append new content: updates mtime so the file is no longer old */
+    ret = write_msg(ctx, msg, strlen(msg));
+    if (!TEST_CHECK(ret > 0)) {
+        test_tail_ctx_destroy(ctx);
+        return;
+    }
+
+    /*
+     * The scan callback re-adds the file from the stored offset.  With the
+     * default read_newly_discovered_files_from_head=true, set_file_position
+     * must still seek to the saved offset so msg1 is not replayed.
+     * Total expected: 1 (msg1) + 1 (msg2) = 2.
+     */
+    wait_expected_num_with_timeout(5000, expected, &num);
+
+    if (!TEST_CHECK(num == expected)) {
+        TEST_MSG("output num error. expect=%d got=%d", expected, num);
+    }
+
+    test_tail_ctx_destroy(ctx);
+}
+
 void flb_test_inotify_watcher_false()
 {
     struct flb_lib_out_cb cb_data;
@@ -2101,6 +2436,28 @@ void flb_test_inotify_watcher_false()
 }
 
 #ifdef FLB_HAVE_INOTIFY
+static int wait_tail_collectors_state(struct flb_tail_config *tail_ctx,
+                                      struct flb_input_instance *ins,
+                                      int expected)
+{
+    int i;
+    int fs_running;
+    int progress_running;
+
+    for (i = 0; i < 50; i++) {
+        fs_running = flb_input_collector_running(tail_ctx->coll_fd_fs1, ins);
+        progress_running = flb_input_collector_running(tail_ctx->coll_fd_progress_check,
+                                                       ins);
+        if (fs_running == expected && progress_running == expected) {
+            return 0;
+        }
+
+        flb_time_msleep(100);
+    }
+
+    return -1;
+}
+
 void flb_test_inotify_pause_collectors()
 {
     int ret;
@@ -2147,6 +2504,54 @@ void flb_test_inotify_pause_collectors()
     TEST_CHECK(flb_input_collector_running(tail_ctx->coll_fd_fs1, ins) == FLB_TRUE);
     TEST_CHECK(flb_input_collector_running(tail_ctx->coll_fd_progress_check,
                                            ins) == FLB_TRUE);
+
+    test_tail_ctx_destroy(ctx);
+}
+
+void flb_test_inotify_threaded_pause_collectors()
+{
+    int ret;
+    struct mk_list *head;
+    struct flb_input_instance *ins;
+    struct flb_tail_config *tail_ctx;
+    struct flb_lib_out_cb cb_data;
+    struct test_tail_ctx *ctx;
+    char *file[] = {"inotify_threaded_pause_collectors.log"};
+
+    cb_data.cb = cb_count_msgpack;
+    cb_data.data = NULL;
+
+    ctx = test_tail_ctx_create(&cb_data, &file[0], 1, FLB_TRUE);
+    if (!TEST_CHECK(ctx != NULL)) {
+        TEST_MSG("test_ctx_create failed");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "path", file[0],
+                        "threaded", "true",
+                        NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx->flb);
+    TEST_CHECK(ret == 0);
+
+    head = ctx->flb->config->inputs.next;
+    ins = mk_list_entry(head, struct flb_input_instance, _head);
+    tail_ctx = ins->context;
+
+    ret = wait_tail_collectors_state(tail_ctx, ins, FLB_TRUE);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_input_pause(ins);
+    TEST_CHECK(ret == 0);
+    ret = wait_tail_collectors_state(tail_ctx, ins, FLB_FALSE);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_input_resume(ins);
+    TEST_CHECK(ret == 0);
+    ret = wait_tail_collectors_state(tail_ctx, ins, FLB_TRUE);
+    TEST_CHECK(ret == 0);
 
     test_tail_ctx_destroy(ctx);
 }
@@ -2202,8 +2607,8 @@ void flb_test_parser()
         exit(EXIT_FAILURE);
     }
 
-    /* waiting to flush */
-    flb_time_msleep(500);
+    /* Wait for collection and output on slower runners. */
+    wait_num_with_timeout(5000, &num);
 
     num = get_output_num();
     if (!TEST_CHECK(num > 0))  {
@@ -2734,7 +3139,65 @@ void flb_test_db_compare_filename()
 #endif /* FLB_HAVE_SQLDB */
 
 /* Test list */
+#ifdef __linux__
+static void flb_test_file_name_truncated(void)
+{
+    char directory[] = "/tmp/flb-tail-name-XXXXXX";
+    char component[241];
+    int directories[19];
+    int i;
+    size_t remaining;
+    size_t depth;
+    char *name;
+    struct flb_tail_file file = {0};
+
+    TEST_ASSERT(mkdtemp(directory) != NULL);
+    directories[0] = open(directory, O_RDONLY | O_DIRECTORY);
+    TEST_ASSERT(directories[0] >= 0);
+    memset(component, 'a', sizeof(component) - 1);
+    component[sizeof(component) - 1] = '\0';
+    for (i = 1; i < 19; i++) {
+        TEST_ASSERT(mkdirat(directories[i - 1], component, 0700) == 0);
+        directories[i] = openat(directories[i - 1], component, O_RDONLY | O_DIRECTORY);
+        TEST_ASSERT(directories[i] >= 0);
+    }
+    file.fd = openat(directories[18], "log", O_CREAT | O_RDWR, 0600);
+    TEST_ASSERT(file.fd >= 0);
+    name = flb_tail_file_name(&file);
+    TEST_CHECK(name == NULL);
+    flb_free(name);
+    close(file.fd);
+    TEST_CHECK(unlinkat(directories[18], "log", 0) == 0);
+
+    /* Leave exactly one byte for the pathname terminator. */
+    remaining = PATH_MAX - 2 - strlen(directory);
+    depth = remaining / sizeof(component);
+    TEST_ASSERT(depth < sizeof(directories) / sizeof(directories[0]));
+    remaining %= sizeof(component);
+    TEST_ASSERT(remaining > 0);
+    component[remaining] = '\0';
+    file.fd = openat(directories[depth], component, O_CREAT | O_RDWR, 0600);
+    TEST_ASSERT(file.fd >= 0);
+    name = flb_tail_file_name(&file);
+    TEST_CHECK(name != NULL && strlen(name) == PATH_MAX - 1);
+    flb_free(name);
+    close(file.fd);
+    TEST_CHECK(unlinkat(directories[depth], component, 0) == 0);
+    component[remaining] = 'a';
+
+    for (i = 18; i > 0; i--) {
+        close(directories[i]);
+        TEST_CHECK(unlinkat(directories[i - 1], component, AT_REMOVEDIR) == 0);
+    }
+    close(directories[0]);
+    TEST_CHECK(rmdir(directory) == 0);
+}
+#endif
+
 TEST_LIST = {
+#ifdef __linux__
+    {"file_name_truncated", flb_test_file_name_truncated},
+#endif
     {"issue_3943", flb_test_in_tail_issue_3943},
     /* Properties */
     {"skip_long_lines", flb_test_in_tail_skip_long_lines},
@@ -2743,15 +3206,23 @@ TEST_LIST = {
     {"path_comma", flb_test_path_comma},
     {"path_key", flb_test_path_key},
     {"exclude_path", flb_test_exclude_path},
+#ifdef _WIN32
+    {"windows_open_descriptor_exhaustion", flb_test_windows_open_descriptor_exhaustion},
+    {"windows_open_utf8_descriptor_exhaustion", flb_test_windows_open_utf8_descriptor_exhaustion},
+    {"windows_extended_path_prefixes", flb_test_windows_extended_path_prefixes},
+#endif
     {"offset_key", flb_test_offset_key},
     {"multiline_offset_key", flb_test_multiline_offset_key},
     {"skip_empty_lines", flb_test_skip_empty_lines},
     {"skip_empty_lines_crlf", flb_test_skip_empty_lines_crlf},
     {"ignore_older", flb_test_ignore_older},
     {"ignore_active_older_files", flb_test_in_tail_ignore_active_older_files},
+    {"ignore_active_older_files_reread_on_update", flb_test_in_tail_ignore_active_older_files_reread_on_update},
+    {"ignore_active_older_files_reread_on_update_default_read_from_head", flb_test_in_tail_ignore_active_older_files_reread_on_update_default_read_from_head},
 #ifdef FLB_HAVE_INOTIFY
     {"inotify_watcher_false", flb_test_inotify_watcher_false},
     {"inotify_pause_collectors", flb_test_inotify_pause_collectors},
+    {"inotify_threaded_pause_collectors", flb_test_inotify_threaded_pause_collectors},
 #endif /* FLB_HAVE_INOTIFY */
 
 #ifdef FLB_HAVE_REGEX

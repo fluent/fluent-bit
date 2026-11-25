@@ -497,6 +497,34 @@ static void remove_by_reference()
     cfl_array_destroy(arr);
 }
 
+static void remove_by_reference_not_found()
+{
+    int ret;
+    struct cfl_array *arr;
+    struct cfl_array *other;
+    struct cfl_variant *var;
+
+    arr = cfl_array_create(1);
+    TEST_CHECK(arr != NULL);
+
+    other = cfl_array_create(1);
+    TEST_CHECK(other != NULL);
+
+    ret = cfl_array_append_string(other, "test");
+    TEST_CHECK(ret == 0);
+
+    var = cfl_array_fetch_by_index(other, 0);
+    TEST_CHECK(var != NULL);
+
+    ret = cfl_array_remove_by_reference(arr, var);
+    TEST_CHECK(ret == -1);
+
+    TEST_CHECK(cfl_array_fetch_by_index(other, 0) == var);
+
+    cfl_array_destroy(other);
+    cfl_array_destroy(arr);
+}
+
 static void print_write_error()
 {
 #ifdef __linux__
@@ -585,6 +613,7 @@ TEST_LIST = {
     {"append_kvlist_rejects_cycles", append_kvlist_rejects_cycles},
     {"remove_by_index",     remove_by_index},
     {"remove_by_reference", remove_by_reference},
+    {"remove_by_reference_not_found", remove_by_reference_not_found},
     {"print_write_error",   print_write_error},
     {"null_inputs",         null_inputs},
     { 0 }

@@ -12,6 +12,13 @@ set(UNIT_TESTS_FILES
   event_timeout.c
   )
 
+if (CMAKE_SYSTEM_NAME MATCHES "Windows")
+  set(UNIT_TESTS_FILES
+    ${UNIT_TESTS_FILES}
+    win32_socketpair.c
+    )
+endif()
+
 # Prepare list of unit tests
 foreach(source_file ${UNIT_TESTS_FILES})
   get_filename_component(source_file_we ${source_file} NAME_WE)

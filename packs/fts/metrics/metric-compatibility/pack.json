@@ -1,0 +1,22 @@
+{
+  "pack_version": 1,
+  "fts_api_version": 1,
+  "id": "org.fluentbit.policy.metric-compatibility",
+  "version": "1.0.1",
+  "title": "Metric name and unit compatibility",
+  "description": "Explicit latency gauge compatibility profile: milliseconds to seconds, then rename, with declared double conversion. No implicit temporality changes. Histogram migration requires a separately declared bucket profile; rename collisions fail rather than merging distinct streams. Only gauges are transformed. Rename collision checks cover the current OTLP scope/batch; reserve target names across batches and producers.",
+  "blocks": [
+    {
+      "name": "apply",
+      "signals": [
+        "metrics"
+      ],
+      "source": "blocks/apply.lua",
+      "parameters": {},
+      "privacy": false
+    }
+  ],
+  "fixtures": [
+    "tests/policy.yaml"
+  ]
+}

@@ -4,29 +4,37 @@ include_directories(cutest/)
 
 set(UNIT_TESTS_FILES
   pack.c
+  output.c
   pipe.c
   sds.c
   sds_list.c
   hmac.c
   crypto.c
   hash.c
+  fips.c
   kv.c
   slist.c
   router.c
   router_config.c
   network.c
+  network_dns.c
   unit_sizes.c
   hashtable.c
   http_client.c
+  http_retry_after.c
   utils.c
   gzip.c
+  compression.c
   zstd.c
   random.c
+  thread_storage.c
+  config_service.c
   config_map.c
   mp.c
   mp_chunk_cobj.c
   input_chunk.c
   input_chunk_routes.c
+  input_pause.c
   flb_time.c
   file.c
   csv.c
@@ -34,12 +42,16 @@ set(UNIT_TESTS_FILES
   typecast.c
   base64.c
   bucket_queue.c
+  downstream_worker.c
   flb_event_loop.c
   ring_buffer.c
   regex.c
+  scheduler.c
+  json.c
   parser_json.c
   parser_ltsv.c
   parser_regex.c
+  parser_cri.c
   parser_logfmt.c
   env.c
   log.c
@@ -53,10 +65,16 @@ set(UNIT_TESTS_FILES
   endianness.c
   task_map.c
   strptime.c
+  plugin_alias.c
   storage_inherit.c
   unicode.c
   opentelemetry.c
   storage_dlq.c
+  engine_adaptive_flush.c
+  engine_dispatch.c
+  output_thread.c
+  output_throttle.c
+  search_bulk.c
 )
 
 if(FLB_OUT_AZURE_BLOB)
@@ -79,6 +97,7 @@ endif()
 # Config format
 set(UNIT_TESTS_FILES
     ${UNIT_TESTS_FILES}
+    config.c
     config_format.c
     config_format_fluentbit.c
 )
@@ -124,9 +143,14 @@ endif()
 if(FLB_METRICS)
   set(UNIT_TESTS_FILES
     ${UNIT_TESTS_FILES}
+    input_rate_gate.c
     metrics.c
     cumulative_to_delta.c
     )
+endif()
+
+if(FLB_PROCESSOR_SQL)
+  list(APPEND UNIT_TESTS_FILES processor_sql.c)
 endif()
 
 if(FLB_HTTP_SERVER)
@@ -148,6 +172,13 @@ if(FLB_AVRO_ENCODER)
     ${UNIT_TESTS_FILES}
     avro.c
     )
+endif()
+
+if(FLB_AVRO_ENCODER OR FLB_PROTOBUF_ENCODER)
+  list(APPEND UNIT_TESTS_FILES kafka_schema_registry.c)
+endif()
+if(FLB_PROTOBUF_ENCODER)
+  list(APPEND UNIT_TESTS_FILES kafka_protobuf.c)
 endif()
 
 if(FLB_AWS)
@@ -191,7 +222,28 @@ if(FLB_RIPSER)
     )
 endif()
 
+if(FLB_IN_OPENTELEMETRY)
+  list(APPEND UNIT_TESTS_FILES opentelemetry_protobuf.c)
+endif()
+
+if(FLB_IN_COLLECTD)
+  list(APPEND UNIT_TESTS_FILES collectd.c)
+endif()
+
+if(FLB_LUAJIT AND FLB_YYJSON AND FLB_PROCESSOR_FTS)
+  list(APPEND UNIT_TESTS_FILES fts.c)
+endif()
+
+if(FLB_METRICS AND FLB_PROCESSOR_METRICS_SELECTOR)
+  list(APPEND UNIT_TESTS_FILES metrics_selector.c)
+endif()
+
+if(FLB_METRICS AND FLB_PROCESSOR_LABELS)
+  list(APPEND UNIT_TESTS_FILES processor_labels.c)
+endif()
+
 set(UNIT_TESTS_DATA
+  data/fips/disabled.cnf
   data/tls/certificate.pem
   data/tls/private_key.pem
   data/pack/json_single_map_001.json
@@ -214,6 +266,10 @@ configure_file(
 macro(FLB_TEST_COPY_DATA path)
   configure_file(${path} ${CMAKE_CURRENT_BINARY_DIR}/${path} COPYONLY)
 endmacro()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+  list(APPEND UNIT_TESTS_FILES input_ingest_alloc.c)
+endif()
 
 foreach(test_data ${UNIT_TESTS_DATA})
   FLB_TEST_COPY_DATA(${test_data})
@@ -243,7 +299,9 @@ function(prepare_unit_tests TEST_PREFIX SOURCEFILES)
         target_link_libraries(${source_file_we} flb-aws)
       endif()
 
-      if(FLB_OUT_AZURE_BLOB AND "${source_file_we}" STREQUAL "flb-it-azure_blob_path")
+      if(FLB_OUT_AZURE_BLOB AND
+         "${source_file_we}" STREQUAL "flb-it-azure_blob_path" AND
+         "${FLB_TEST_LINK_LIBRARY}" STREQUAL "fluent-bit-static")
         target_link_libraries(${source_file_we} flb-plugin-out_azure_blob)
       endif()
 
@@ -251,7 +309,12 @@ function(prepare_unit_tests TEST_PREFIX SOURCEFILES)
         target_link_libraries(${source_file_we} flb-sp)
       endif()
 
-      target_link_libraries(${source_file_we} fluent-bit-static cfl-static)
+      if("${source_file_we}" STREQUAL "flb-it-network_dns")
+        # Keep upstream calls and DNS thread-local state in the test executable.
+        target_link_libraries(${source_file_we} fluent-bit-static cfl-static)
+      else()
+        target_link_libraries(${source_file_we} ${FLB_TEST_LINK_LIBRARY} cfl-static)
+      endif()
 
       if(FLB_AVRO_ENCODER)
         target_link_libraries(${source_file_we} avro-static jansson)
@@ -267,6 +330,65 @@ endfunction(prepare_unit_tests)
 
 prepare_unit_tests(flb-it- "${UNIT_TESTS_FILES}")
 
+if(TARGET flb-it-network_dns)
+  # Use the real resolver implementation with a test-local c-ares initializer.
+  target_sources(flb-it-network_dns PRIVATE ${PROJECT_SOURCE_DIR}/src/flb_network.c)
+  target_compile_definitions(flb-it-network_dns PRIVATE
+    ares_init_options=flb_test_ares_init_options)
+endif()
+
+if(TARGET flb-it-input_chunk)
+  set_tests_properties(flb-it-input_chunk PROPERTIES TIMEOUT 120)
+endif()
+
+if(TARGET flb-it-engine_dispatch)
+  target_include_directories(flb-it-engine_dispatch PRIVATE
+    ${PROJECT_SOURCE_DIR}/lib/chunkio/deps)
+endif()
+
+option(FLB_TESTS_FIPS_ENABLED "Run tests that require an installed OpenSSL FIPS provider" OFF)
+if(TARGET flb-it-fips)
+  if(FLB_OUT_S3)
+    target_compile_definitions(flb-it-fips PRIVATE FLB_TEST_FIPS_S3)
+  endif()
+
+  set(FLB_TEST_FIPS_DISABLED_CONFIG
+      "${CMAKE_CURRENT_BINARY_DIR}/data/fips/disabled.cnf")
+  set(FLB_TEST_FIPS_MISSING_MODULES
+      "${CMAKE_CURRENT_BINARY_DIR}/data/fips/missing-modules")
+  set(FLB_TEST_FIPS_UNAVAILABLE_ENV
+      "FLB_TEST_FIPS_MODE=unavailable"
+      "OPENSSL_CONF=${FLB_TEST_FIPS_DISABLED_CONFIG}"
+      "OPENSSL_MODULES=${FLB_TEST_FIPS_MISSING_MODULES}")
+  set(FLB_TEST_FIPS_DISABLED_ENV
+      "FLB_TEST_FIPS_MODE=disabled"
+      "OPENSSL_CONF=${FLB_TEST_FIPS_DISABLED_CONFIG}"
+      "OPENSSL_MODULES=${FLB_TEST_FIPS_MISSING_MODULES}")
+
+  set_tests_properties(flb-it-fips PROPERTIES
+    ENVIRONMENT "${FLB_TEST_FIPS_DISABLED_ENV}")
+
+  add_test(NAME flb-it-fips-unavailable
+    COMMAND $<TARGET_FILE:flb-it-fips>)
+  set_tests_properties(flb-it-fips-unavailable PROPERTIES
+    LABELS "internal"
+    ENVIRONMENT "${FLB_TEST_FIPS_UNAVAILABLE_ENV}")
+
+  if(FLB_TESTS_FIPS_ENABLED)
+    add_test(NAME flb-it-fips-enabled
+      COMMAND $<TARGET_FILE:flb-it-fips>)
+    set_tests_properties(flb-it-fips-enabled PROPERTIES
+      LABELS "internal"
+      ENVIRONMENT "FLB_TEST_FIPS_MODE=enabled")
+
+    add_test(NAME flb-it-fips-preenabled
+      COMMAND $<TARGET_FILE:flb-it-fips>)
+    set_tests_properties(flb-it-fips-preenabled PROPERTIES
+      LABELS "internal"
+      ENVIRONMENT "FLB_TEST_FIPS_MODE=preenabled")
+  endif()
+endif()
+
 if(FLB_METRICS AND FLB_PROCESSOR_CUMULATIVE_TO_DELTA)
   set(CUMULATIVE_TO_DELTA_PLUGIN_DIR
     ${PROJECT_SOURCE_DIR}/plugins/processor_cumulative_to_delta)
@@ -279,6 +401,56 @@ if(FLB_METRICS AND FLB_PROCESSOR_CUMULATIVE_TO_DELTA)
     ${CUMULATIVE_TO_DELTA_PLUGIN_DIR})
 endif()
 
+if(FLB_METRICS AND FLB_PROCESSOR_METRICS_SELECTOR AND
+   CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+  # A private plugin copy lets fault injection wrap calls when core tests link the shared library.
+  target_sources(flb-it-metrics_selector PRIVATE
+    ${PROJECT_SOURCE_DIR}/plugins/processor_metrics_selector/selector.c)
+  target_compile_definitions(flb-it-metrics_selector PRIVATE
+    FLB_TEST_CMT_CAT_WRAP
+    processor_metrics_selector_plugin=flb_test_metrics_selector_plugin)
+  target_link_options(flb-it-metrics_selector PRIVATE "-Wl,--wrap=cmt_cat")
+endif()
+
+if(FLB_AVRO_ENCODER OR FLB_PROTOBUF_ENCODER)
+  target_link_libraries(flb-it-kafka_schema_registry jansson)
+  target_sources(flb-it-kafka_schema_registry PRIVATE
+    ${PROJECT_SOURCE_DIR}/plugins/out_kafka/kafka_schema_registry.c)
+  target_include_directories(flb-it-kafka_schema_registry PRIVATE
+    ${PROJECT_SOURCE_DIR}/plugins/out_kafka)
+  if(DEFINED KAFKA_INCLUDEDIR)
+    target_include_directories(flb-it-kafka_schema_registry PRIVATE
+      ${KAFKA_INCLUDEDIR}/librdkafka)
+  endif()
+endif()
+
 if(FLB_TESTS_INTERNAL_FUZZ)
   add_subdirectory(fuzzers)
+endif()
+
+if(FLB_PROTOBUF_ENCODER)
+  foreach(test_target flb-it-kafka_schema_registry flb-it-kafka_protobuf)
+    target_sources(${test_target} PRIVATE ${PROJECT_SOURCE_DIR}/plugins/out_kafka/kafka_protobuf.cpp)
+    target_include_directories(${test_target} PRIVATE ${PROJECT_SOURCE_DIR}/plugins/out_kafka)
+    target_compile_features(${test_target} PRIVATE cxx_std_11)
+    target_link_libraries(${test_target} protobuf::libprotobuf protobuf::libprotoc)
+  endforeach()
+endif()
+
+if(TARGET flb-it-input_ingest_alloc)
+  # Private core copy permits deterministic envelope/tag allocation failures.
+  target_sources(flb-it-input_ingest_alloc PRIVATE
+    ${PROJECT_SOURCE_DIR}/src/flb_input_ingest.c)
+  foreach(ingress_api try_resume_log try_resume_metrics enable destroy queue_log queue_log_take
+      queue_log_take_records queue_log_processed_take_records queue_metrics
+      queue_metrics_list queue_traces queue_profiles)
+    target_compile_definitions(flb-it-input_ingest_alloc PRIVATE
+      flb_input_ingress_${ingress_api}=flb_test_ingress_${ingress_api})
+  endforeach()
+  target_link_options(flb-it-input_ingest_alloc PRIVATE
+    "-Wl,--wrap=calloc" "-Wl,--wrap=flb_sds_create_len")
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "^riscv")
+    # LLD before 17 can corrupt wrapped symbol addresses during relaxation.
+    target_link_options(flb-it-input_ingest_alloc PRIVATE "-Wl,--no-relax")
+  endif()
 endif()

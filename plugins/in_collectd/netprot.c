@@ -31,16 +31,38 @@
 #include <fluent-bit/flb_endian.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 #include <msgpack.h>
+#include <string.h>
 #include "netprot.h"
 #include "typesdb.h"
 
-#define be16read(x) (be16toh(*(uint16_t *) (x)))
-#define be32read(x) (be32toh(*(uint32_t *) (x)))
-#define be64read(x) (be64toh(*(uint64_t *) (x)))
+/* Packet fields may start at any byte offset. */
+static uint16_t be16read(const void *ptr)
+{
+    uint16_t value;
 
-#define le16read(x) (le16toh(*(uint16_t *) (x)))
-#define le32read(x) (le32toh(*(uint32_t *) (x)))
-#define le64read(x) (le64toh(*(uint64_t *) (x)))
+    memcpy(&value, ptr, sizeof(value));
+    return be16toh(value);
+}
+
+static uint64_t be64read(const void *ptr)
+{
+    uint64_t value;
+
+    memcpy(&value, ptr, sizeof(value));
+    return be64toh(value);
+}
+
+static double le_double_read(const void *ptr)
+{
+    uint64_t bits;
+    double value;
+
+    /* Collectd gauges use little-endian IEEE 754 doubles. */
+    memcpy(&bits, ptr, sizeof(bits));
+    bits = le64toh(bits);
+    memcpy(&value, &bits, sizeof(value));
+    return value;
+}
 
 /* Convert a high-resolution time into a normal UNIX time. */
 #define hr2time(x) ((double) (x) / 1073741824)
@@ -100,6 +122,12 @@ static int netprot_pack_value(char *ptr, int size, struct netprot_header *hdr,
      * Since each value uses (1 + 8) bytes, the total buffer size must
      * be 2-byte header plus <count * 9> bytes.
      */
+    if (size < sizeof(uint16_t)) {
+        flb_error("[in_collectd] data truncated (%i < %zu)",
+                  size, sizeof(uint16_t));
+        return -1;
+    }
+
     count = be16read(ptr);
     if (size != 2 + count * 9) {
         flb_error("[in_collectd] data corrupted (size=%i, count=%i)",
@@ -200,7 +228,7 @@ static int netprot_pack_value(char *ptr, int size, struct netprot_header *hdr,
                 break;
             case DS_TYPE_GAUGE:
                 result = flb_log_event_encoder_append_body_double(
-                            encoder, *((double *) pval));
+                            encoder, le_double_read(pval));
                 break;
             case DS_TYPE_DERIVE:
                 result = flb_log_event_encoder_append_body_int64(

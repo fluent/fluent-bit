@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_record_accessor.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_hash_table.h>
+#include <fluent-bit/flb_pthread.h>
 #include <cfl/cfl_list.h>
 
 #define FLB_LOKI_CT              "Content-Type"
@@ -46,6 +47,10 @@
 #define FLB_LOKI_DROP_SINGLE_KEY_ON  (((uint64_t) 1) << 1)
 #define FLB_LOKI_DROP_SINGLE_KEY_RAW (((uint64_t) 1) << 2)
 
+/* tenant_id_key split request error handling */
+#define FLB_LOKI_TENANT_ID_KEY_ERROR_PARTIAL_SUCCESS 0
+#define FLB_LOKI_TENANT_ID_KEY_ERROR_PARTIAL_ERROR   1
+
 struct flb_loki_kv {
     int val_type;                       /* FLB_LOKI_KV_STR or FLB_LOKI_KV_RA */
     flb_sds_t key;                      /* string key */
@@ -65,6 +70,7 @@ struct flb_loki {
     flb_sds_t line_format;
     flb_sds_t tenant_id;
     flb_sds_t tenant_id_key_config;
+    flb_sds_t tenant_id_key_error_handling;
     int compress_gzip;
 
     /* HTTP Auth */
@@ -88,6 +94,7 @@ struct flb_loki {
     char *tcp_host;
     int out_line_format;
     int out_drop_single_key;
+    int out_tenant_id_key_error_handling;
     int ra_used;                           /* number of record accessor label keys */
     struct flb_record_accessor *ra_k8s;              /* kubernetes record accessor */
     struct mk_list labels_list;                       /* list of flb_loki_kv nodes */
@@ -97,11 +104,18 @@ struct flb_loki {
     struct flb_mp_accessor *remove_mpa;      /* remove_keys multi-pattern accessor */
     struct flb_record_accessor *ra_tenant_id_key;         /* dynamic tenant id key */
 
-    struct cfl_list dynamic_tenant_list;
-    pthread_mutex_t dynamic_tenant_list_lock;
-
     struct cfl_list remove_mpa_list;
     pthread_mutex_t remove_mpa_list_lock;
+
+    /*
+     * Per-instance TLS key for the thread-local remove_mpa cache. Each loki
+     * output instance owns its own key so multiple loki outputs running on
+     * the same worker thread do not share each other's mpa, which would
+     * cause one instance to silently skip remove_keys against records that
+     * do not match the other instance's patterns.
+     */
+    pthread_key_t remove_mpa_key;
+    int remove_mpa_key_initialized;
 
     /* Upstream Context */
     struct flb_upstream *u;

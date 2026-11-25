@@ -93,10 +93,12 @@ struct flb_oauth2 {
     struct flb_upstream *u;
 };
 
-struct flb_oauth2 *flb_oauth2_create(struct flb_config *config,
+struct flb_output_instance;
+
+struct flb_oauth2 *flb_oauth2_create(struct flb_output_instance *ins,
                                      const char *auth_url, int expire_sec);
 struct flb_oauth2 *flb_oauth2_create_from_config(
-                                struct flb_config *config,
+                                struct flb_output_instance *ins,
                                 const struct flb_oauth2_config *cfg);
 void flb_oauth2_destroy(struct flb_oauth2 *ctx);
 void flb_oauth2_config_destroy(struct flb_oauth2_config *cfg);

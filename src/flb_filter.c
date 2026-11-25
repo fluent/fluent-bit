@@ -21,12 +21,15 @@
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_env.h>
+#include <fluent-bit/wasm/flb_wasm_inspect.h>
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_plugin.h>
+#include <fluent-bit/flb_plugin_alias.h>
 #include <chunkio/chunkio.h>
 
 #ifdef FLB_HAVE_CHUNK_TRACE
@@ -243,6 +246,8 @@ void flb_filter_do(struct flb_input_chunk *ic,
 
                 /* all records removed, no data to continue processing */
                 if (out_size == 0) {
+                    FLB_WASM_TRACE(flb_wasm_trace_filter(f_ins, i_ins, ntag, tag_len,
+                                                         in_records, 0, FLB_TRUE));
 #ifdef FLB_HAVE_CHUNK_TRACE
                     if (ic->trace) {
                         flb_chunk_trace_filter(ic->trace, (void *)f_ins, &tm_start, &tm_finish, "", 0);
@@ -268,6 +273,9 @@ void flb_filter_do(struct flb_input_chunk *ic,
                 }
                 else {
                     out_records = flb_mp_count_log_records(out_buf, out_size);
+                    FLB_WASM_TRACE(flb_wasm_trace_filter(f_ins, i_ins, ntag, tag_len,
+                                                         in_records, out_records,
+                                                         FLB_TRUE));
 
 #ifdef FLB_HAVE_METRICS
                     if (out_records > in_records) {
@@ -312,6 +320,11 @@ void flb_filter_do(struct flb_input_chunk *ic,
                     flb_chunk_trace_filter(ic->trace, (void *)f_ins, &tm_start, &tm_finish, out_buf, out_size);
                 }
 #endif /* FLB_HAVE_CHUNK_TRACE */
+            }
+            else {
+                FLB_WASM_TRACE(flb_wasm_trace_filter(f_ins, i_ins, ntag, tag_len,
+                                                     in_records, in_records,
+                                                     FLB_FALSE));
             }
         }
     }
@@ -435,6 +448,8 @@ struct flb_filter_instance *flb_filter_new(struct flb_config *config,
                                            const char *filter, void *data)
 {
     int id;
+    const char *alias_target;
+    const char *effective_filter_name;
     struct mk_list *head;
     struct flb_filter_plugin *plugin;
     struct flb_filter_instance *instance = NULL;
@@ -443,12 +458,30 @@ struct flb_filter_instance *flb_filter_new(struct flb_config *config,
         return NULL;
     }
 
+    effective_filter_name = filter;
+
     mk_list_foreach(head, &config->filter_plugins) {
         plugin = mk_list_entry(head, struct flb_filter_plugin, _head);
-        if (strcasecmp(plugin->name, filter) == 0) {
+        if (strcasecmp(plugin->name, effective_filter_name) == 0) {
             break;
         }
         plugin = NULL;
+    }
+
+    if (plugin == NULL) {
+        alias_target = flb_plugin_alias_get(FLB_PLUGIN_FILTER, filter,
+                                            strlen(filter));
+        if (alias_target != NULL) {
+            effective_filter_name = alias_target;
+
+            mk_list_foreach(head, &config->filter_plugins) {
+                plugin = mk_list_entry(head, struct flb_filter_plugin, _head);
+                if (strcasecmp(plugin->name, effective_filter_name) == 0) {
+                    break;
+                }
+                plugin = NULL;
+            }
+        }
     }
 
     if (!plugin) {
@@ -493,7 +526,6 @@ struct flb_filter_instance *flb_filter_new(struct flb_config *config,
 
     mk_list_init(&instance->properties);
     mk_list_add(&instance->_head, &config->filters);
-
     return instance;
 }
 

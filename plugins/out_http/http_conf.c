@@ -293,7 +293,9 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
         }
         else {
             flb_plg_error(ctx->ins, "invalid compress option '%s'", tmp);
-            flb_free(ctx);
+            ctx->u = upstream;
+            ctx->uri = uri;
+            flb_http_conf_destroy(ctx);
             return NULL;
         }
     }
@@ -308,9 +310,17 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
         else if (strcasecmp(tmp, "PUT") == 0) {
             ctx->http_method = FLB_HTTP_PUT;
         }
+        else if (strcasecmp(tmp, "PATCH") == 0) {
+            ctx->http_method = FLB_HTTP_PATCH;
+        }
         else {
-            flb_plg_error(ctx->ins, "invalid http_method option '%s'. Supported methods are POST and PUT", tmp);
-            flb_free(ctx);
+            flb_plg_error(ctx->ins,
+                          "invalid http_method option '%s'. "
+                          "Supported methods are POST, PUT and PATCH",
+                          tmp);
+            ctx->u = upstream;
+            ctx->uri = uri;
+            flb_http_conf_destroy(ctx);
             return NULL;
         }
     }
@@ -373,7 +383,7 @@ struct flb_out_http *flb_http_conf_create(struct flb_output_instance *ins,
             return NULL;
         }
 
-        ctx->oauth2_ctx = flb_oauth2_create_from_config(config, &ctx->oauth2_config);
+        ctx->oauth2_ctx = flb_oauth2_create_from_config(ins, &ctx->oauth2_config);
         if (!ctx->oauth2_ctx) {
             flb_plg_error(ctx->ins, "failed to initialize oauth2 context");
             flb_http_conf_destroy(ctx);

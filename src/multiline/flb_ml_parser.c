@@ -22,7 +22,6 @@
 #include <fluent-bit/multiline/flb_ml.h>
 #include <fluent-bit/multiline/flb_ml_parser.h>
 #include <fluent-bit/multiline/flb_ml_rule.h>
-#include <fluent-bit/multiline/flb_ml_mode.h>
 #include <fluent-bit/multiline/flb_ml_group.h>
 
 #include <stddef.h>
@@ -185,6 +184,13 @@ int flb_ml_parser_builtin_create(struct flb_config *config)
     mlp = flb_ml_parser_python(config, NULL);
     if (!mlp) {
         flb_error("[multiline] could not init 'python' built-in parser");
+        goto error;
+    }
+
+    /* JSON */
+    mlp = flb_ml_parser_json(config, NULL);
+    if (!mlp) {
+        flb_error("[multiline] could not init 'json' built-in parser");
         goto error;
     }
 

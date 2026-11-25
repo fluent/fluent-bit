@@ -387,6 +387,10 @@ static int in_tail_progress_check_callback(struct flb_input_instance *ins,
 
     pending_data_detected = FLB_FALSE;
 
+    if (flb_input_buf_paused(ctx->ins) == FLB_TRUE) {
+        return 0;
+    }
+
     mk_list_foreach_safe(head, tmp, &ctx->files_event) {
         file = mk_list_entry(head, struct flb_tail_file, _head);
         ret = reconcile_file_state(ctx, file, "in_tail_progress_check", &pending);

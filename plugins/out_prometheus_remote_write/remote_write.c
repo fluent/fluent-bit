@@ -33,6 +33,8 @@
 #include "remote_write.h"
 #include "remote_write_conf.h"
 
+#define FLB_PROMETHEUS_REMOTE_WRITE_METRIC_MAX_AGE_SECONDS 3600
+
 static int http_post(struct prometheus_remote_write_context *ctx,
                      const void *body, size_t body_len,
                      const char *tag, int tag_len)
@@ -296,6 +298,7 @@ static void cb_prom_flush(struct flb_event_chunk *event_chunk,
     flb_sds_t buf = NULL;
     size_t diff = 0;
     size_t off = 0;
+    uint64_t expiration;
     struct cmt *cmt;
     struct prometheus_remote_write_context *ctx = out_context;
 
@@ -303,6 +306,9 @@ static void cb_prom_flush(struct flb_event_chunk *event_chunk,
     ctx = out_context;
     ok = CMT_DECODE_MSGPACK_SUCCESS;
     result = FLB_OK;
+    expiration = cfl_time_now() -
+                 (FLB_PROMETHEUS_REMOTE_WRITE_METRIC_MAX_AGE_SECONDS *
+                  FLB_NSEC_IN_SEC);
 
     /* Buffer to concatenate multiple metrics contexts */
     buf = flb_sds_create_size(event_chunk->size);
@@ -319,6 +325,9 @@ static void cb_prom_flush(struct flb_event_chunk *event_chunk,
     while ((ret = cmt_decode_msgpack_create(&cmt,
                                             (char *) event_chunk->data,
                                             event_chunk->size, &off)) == ok) {
+        /* Exclude samples that remote write backends consider stale. */
+        cmt_expire(cmt, expiration);
+
         /* append labels set by config */
         append_labels(ctx, cmt);
 

@@ -20,7 +20,7 @@
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_sds.h>
-#include "ne.h"
+#include "ne_utils.h"
 
 /* required by stat(2), open(2) */
 #include <sys/types.h>
@@ -29,6 +29,39 @@
 #include <fcntl.h>
 
 #include <glob.h>
+
+static void ne_utils_file_log(struct flb_ne *ctx, int log_level, int err_num,
+                              const char *operation, const char *path)
+{
+    if (!ctx) {
+        errno = err_num;
+        flb_errno();
+        return;
+    }
+
+    if (err_num != ENOENT) {
+        log_level = FLB_LOG_ERROR;
+    }
+
+    switch (log_level) {
+    case FLB_LOG_TRACE:
+        flb_plg_trace(ctx->ins, "could not %s '%s'", operation, path);
+        break;
+    case FLB_LOG_DEBUG:
+        flb_plg_debug(ctx->ins, "could not %s '%s'", operation, path);
+        break;
+    case FLB_LOG_INFO:
+        flb_plg_info(ctx->ins, "could not %s '%s'", operation, path);
+        break;
+    case FLB_LOG_WARN:
+        flb_plg_warn(ctx->ins, "could not %s '%s'", operation, path);
+        break;
+    case FLB_LOG_ERROR:
+    default:
+        flb_plg_error(ctx->ins, "could not %s '%s'", operation, path);
+        break;
+    }
+}
 
 int ne_utils_str_to_double(char *str, double *out_val)
 {
@@ -65,10 +98,23 @@ int ne_utils_str_to_uint64(char *str, uint64_t *out_val)
     return 0;
 }
 
-int ne_utils_file_read_uint64(const char *mount,
+int ne_utils_file_read_uint64(struct flb_ne *ctx,
+                              const char *mount,
                               const char *path,
                               const char *join_a, const char *join_b,
                               uint64_t *out_val)
+{
+    return ne_utils_file_read_uint64_at_level(ctx, mount, path, join_a, join_b,
+                                             out_val, FLB_LOG_ERROR);
+}
+
+int ne_utils_file_read_uint64_at_level(struct flb_ne *ctx,
+                                       const char *mount,
+                                       const char *path,
+                                       const char *join_a,
+                                       const char *join_b,
+                                       uint64_t *out_val,
+                                       int log_level)
 {
     int fd;
     int len;
@@ -122,18 +168,20 @@ int ne_utils_file_read_uint64(const char *mount,
 
     fd = open(p, O_RDONLY);
     if (fd == -1) {
+        ne_utils_file_log(ctx, log_level, errno, "open", p);
         flb_sds_destroy(p);
         return -1;
     }
-    flb_sds_destroy(p);
 
     bytes = read(fd, &tmp, sizeof(tmp));
     if (bytes == -1) {
-        flb_errno();
+        ne_utils_file_log(ctx, log_level, errno, "read from", p);
         close(fd);
+        flb_sds_destroy(p);
         return -1;
     }
     close(fd);
+    flb_sds_destroy(p);
 
     ret = ne_utils_str_to_uint64(tmp, &val);
     if (ret == -1) {
@@ -148,7 +196,7 @@ int ne_utils_file_read_uint64(const char *mount,
  * Read a file and every non-empty line is stored as a flb_slist_entry in the
  * given list.
  */
-int ne_utils_file_read_lines(const char *mount, const char *path, struct mk_list *list)
+int ne_utils_file_read_lines(struct flb_ne *ctx, const char *mount, const char *path, struct mk_list *list)
 {
     int len;
     int ret;
@@ -167,7 +215,12 @@ int ne_utils_file_read_lines(const char *mount, const char *path, struct mk_list
     snprintf(real_path, sizeof(real_path) - 1, "%s%s", mount, path);
     f = fopen(real_path, "r");
     if (f == NULL) {
-        flb_errno();
+        if (ctx) {
+            flb_plg_error(ctx->ins, "could not open '%s'", real_path);
+        }
+        else {
+            flb_errno();
+        }
         return -1;
     }
 
@@ -196,11 +249,24 @@ int ne_utils_file_read_lines(const char *mount, const char *path, struct mk_list
 /*
  * Read a file and store the first line as a string.
  */
-int ne_utils_file_read_sds(const char *mount,
+int ne_utils_file_read_sds(struct flb_ne *ctx,
+                           const char *mount,
                            const char *path,
                            const char *join_a,
                            const char *join_b,
                            flb_sds_t *str)
+{
+    return ne_utils_file_read_sds_at_level(ctx, mount, path, join_a, join_b,
+                                          str, FLB_LOG_ERROR);
+}
+
+int ne_utils_file_read_sds_at_level(struct flb_ne *ctx,
+                                    const char *mount,
+                                    const char *path,
+                                    const char *join_a,
+                                    const char *join_b,
+                                    flb_sds_t *str,
+                                    int log_level)
 {
     int fd;
     int len;
@@ -250,18 +316,20 @@ int ne_utils_file_read_sds(const char *mount,
 
     fd = open(p, O_RDONLY);
     if (fd == -1) {
+        ne_utils_file_log(ctx, log_level, errno, "open", p);
         flb_sds_destroy(p);
         return -1;
     }
-    flb_sds_destroy(p);
 
     bytes = read(fd, &tmp, sizeof(tmp));
     if (bytes == -1) {
-        flb_errno();
+        ne_utils_file_log(ctx, log_level, errno, "read from", p);
         close(fd);
+        flb_sds_destroy(p);
         return -1;
     }
     close(fd);
+    flb_sds_destroy(p);
 
     for (i = bytes-1; i > 0; i--) {
         if (tmp[i] != '\n' && tmp[i] != '\r') {

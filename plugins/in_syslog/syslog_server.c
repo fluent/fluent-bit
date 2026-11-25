@@ -27,6 +27,7 @@
 #include <fluent-bit/flb_input_plugin.h>
 
 #if !defined(FLB_SYSTEM_WINDOWS)
+#include <fcntl.h>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -36,12 +37,13 @@
 
 #include "syslog.h"
 
+#if !defined(FLB_SYSTEM_WINDOWS)
 static int remove_existing_socket_file(char *socket_path)
 {
     struct stat file_data;
     int         result;
 
-    result = stat(socket_path, &file_data);
+    result = lstat(socket_path, &file_data);
 
     if (result == -1) {
         if (errno == ENOENT) {
@@ -66,12 +68,17 @@ static int remove_existing_socket_file(char *socket_path)
     return 0;
 }
 
-#if !defined(FLB_SYSTEM_WINDOWS)
 static int syslog_server_unix_create(struct flb_syslog *ctx)
 {
     int             result;
     int             mode;
     struct flb_tls *tls;
+    char            staging_dir[sizeof(((struct sockaddr_un *) 0)->sun_path) + sizeof(".fb-XXXXXX/s")];
+    char            staging_path[sizeof(((struct sockaddr_un *) 0)->sun_path) + sizeof(".fb-XXXXXX/s")];
+    const char     *separator;
+    size_t          parent_length;
+    int             staging_fd;
+    struct stat     staging_stat;
 
     if (ctx->mode == FLB_SYSLOG_UNIX_TCP) {
         mode = FLB_TRANSPORT_UNIX_STREAM;
@@ -84,6 +91,11 @@ static int syslog_server_unix_create(struct flb_syslog *ctx)
         tls = NULL;
     }
     else {
+        return -1;
+    }
+
+    if (strlen(ctx->unix_path) >= sizeof(((struct sockaddr_un *) 0)->sun_path)) {
+        flb_plg_error(ctx->ins, "configured unix socket path is too long: '%s'", ctx->unix_path);
         return -1;
     }
 
@@ -104,27 +116,104 @@ static int syslog_server_unix_create(struct flb_syslog *ctx)
         return -1;
     }
 
+    /* Apply the mode while the socket is inside a private directory. */
+    separator = strrchr(ctx->unix_path, '/');
+    parent_length = separator == NULL ? 0 : separator - ctx->unix_path + 1;
+    result = snprintf(staging_dir, sizeof(staging_dir), "%.*s.fb-XXXXXX",
+                      (int) parent_length, ctx->unix_path);
+    if (result < 0) {
+        flb_plg_error(ctx->ins, "could not format staging directory for unix socket '%s'",
+                      ctx->unix_path);
+        return -1;
+    }
+    if ((size_t) result >= sizeof(staging_dir)) {
+        flb_plg_error(ctx->ins, "staging directory path is too long for unix socket '%s'",
+                      ctx->unix_path);
+        return -1;
+    }
+    if (mkdtemp(staging_dir) == NULL) {
+        flb_errno();
+        flb_plg_error(ctx->ins, "could not create staging directory '%s' for unix socket '%s'",
+                      staging_dir, ctx->unix_path);
+        return -1;
+    }
+    staging_fd = open(staging_dir, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+    if (staging_fd < 0) {
+        flb_errno();
+        flb_plg_error(ctx->ins, "could not open staging directory '%s' for unix socket '%s'",
+                      staging_dir, ctx->unix_path);
+        goto staging_setup_error;
+    }
+    if (fstat(staging_fd, &staging_stat) != 0) {
+        flb_errno();
+        flb_plg_error(ctx->ins, "could not stat staging directory '%s' for unix socket '%s'",
+                      staging_dir, ctx->unix_path);
+        goto staging_setup_error;
+    }
+    if (staging_stat.st_uid != geteuid()) {
+        flb_plg_error(ctx->ins, "staging directory '%s' has the wrong owner for unix socket '%s'",
+                      staging_dir, ctx->unix_path);
+        goto staging_setup_error;
+    }
+    if (fchmod(staging_fd, 0700) != 0 || fstat(staging_fd, &staging_stat) != 0) {
+        flb_errno();
+        flb_plg_error(ctx->ins, "could not normalize staging directory '%s'", staging_dir);
+        goto staging_setup_error;
+    }
+    if ((staging_stat.st_mode & 0777) != 0700) {
+        flb_plg_error(ctx->ins, "staging directory '%s' has unsafe mode for unix socket '%s'",
+                      staging_dir, ctx->unix_path);
+        goto staging_setup_error;
+    }
+    result = snprintf(staging_path, sizeof(staging_path), "%s/s", staging_dir);
+    if (result < 0) {
+        flb_plg_error(ctx->ins, "could not format staging socket path in '%s' for '%s'",
+                      staging_dir, ctx->unix_path);
+        goto staging_setup_error;
+    }
+    if ((size_t) result >= sizeof(staging_path)) {
+        flb_plg_error(ctx->ins, "staging socket path in '%s' is too long for '%s'",
+                      staging_dir, ctx->unix_path);
+        goto staging_setup_error;
+    }
+
     ctx->downstream = flb_downstream_create(mode,
                                             ctx->ins->flags,
-                                            ctx->unix_path,
+                                            staging_path,
                                             0,
                                             tls,
                                             ctx->ins->config,
                                             &ctx->ins->net_setup);
 
     if (ctx->downstream == NULL) {
+        unlinkat(staging_fd, "s", 0);
+        close(staging_fd);
+        rmdir(staging_dir);
         return -1;
     }
 
-    if (chmod(ctx->unix_path, ctx->unix_perm)) {
+    if (fchmodat(staging_fd, "s", ctx->unix_perm, 0) ||
+        renameat(staging_fd, "s", AT_FDCWD, ctx->unix_path)) {
         flb_errno();
         flb_error("[in_syslog] cannot set permission on '%s' to %04o",
                   ctx->unix_path, ctx->unix_perm);
 
+        unlinkat(staging_fd, "s", 0);
+        close(staging_fd);
+        rmdir(staging_dir);
         return -1;
     }
+    close(staging_fd);
+    rmdir(staging_dir);
 
     return 0;
+
+staging_setup_error:
+    if (staging_fd >= 0) {
+        close(staging_fd);
+    }
+    rmdir(staging_dir);
+    return -1;
 }
 #else
 static int syslog_server_unix_create(struct flb_syslog *ctx)

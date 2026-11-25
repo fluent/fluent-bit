@@ -21,8 +21,13 @@
 #include <cmetrics/cmt_counter.h>
 #include <cmetrics/cmt_encode_msgpack.h>
 #include <cmetrics/cmt_decode_msgpack.h>
+#include <cmetrics/cmt_map.h>
 #include <cmetrics/cmt_encode_prometheus.h>
 #include <cmetrics/cmt_encode_text.h>
+
+#if !defined(_WIN32) && !defined(_WIN64)
+#include <pthread.h>
+#endif
 
 #include "cmt_tests.h"
 
@@ -243,6 +248,20 @@ void test_labels()
     TEST_CHECK(ret == 0);
     TEST_CHECK(val == 10.55);
 
+    /* Label boundaries must be part of identity. These two tuples feed the
+     * same unframed byte sequence ("abc") into the hash. */
+    ret = cmt_counter_add(c, ts, 4.0, 2, (char *[]) {"ab", "c"});
+    TEST_CHECK(ret == 0);
+    ret = cmt_counter_add(c, ts, 7.0, 2, (char *[]) {"a", "bc"});
+    TEST_CHECK(ret == 0);
+
+    ret = cmt_counter_get_val(c, 2, (char *[]) {"ab", "c"}, &val);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(val == 4.0);
+    ret = cmt_counter_get_val(c, 2, (char *[]) {"a", "bc"}, &val);
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(val == 7.0);
+
     /* Valid counter set */
     ret = cmt_counter_set(c, ts, 12.15, 2, (char *[]) {"localhost", "test"});
     TEST_CHECK(ret == 0);
@@ -254,11 +273,76 @@ void test_labels()
     cmt_destroy(cmt);
 }
 
+#if !defined(_WIN32) && !defined(_WIN64)
+#define CONCURRENT_THREAD_COUNT 8
+#define CONCURRENT_UPDATE_COUNT 10000
+
+struct concurrent_counter_context {
+    struct cmt_counter *counter;
+    int result;
+};
+
+static void *concurrent_counter_worker(void *data)
+{
+    int index;
+    struct concurrent_counter_context *context = data;
+
+    for (index = 0; index < CONCURRENT_UPDATE_COUNT; index++) {
+        if (cmt_counter_inc(context->counter, (uint64_t) index + 1, 1,
+                            (char *[]) {"shared"}) != 0) {
+            context->result = -1;
+            break;
+        }
+    }
+
+    return NULL;
+}
+
+void test_concurrent_metric_creation()
+{
+    int index;
+    int result;
+    double value;
+    pthread_t threads[CONCURRENT_THREAD_COUNT];
+    struct concurrent_counter_context contexts[CONCURRENT_THREAD_COUNT];
+    struct cmt *cmt;
+    struct cmt_counter *counter;
+
+    cmt = cmt_create();
+    TEST_ASSERT(cmt != NULL);
+    counter = cmt_counter_create(cmt, "test", "", "concurrent", "help",
+                                 1, (char *[]) {"series"});
+    TEST_ASSERT(counter != NULL);
+
+    for (index = 0; index < CONCURRENT_THREAD_COUNT; index++) {
+        contexts[index].counter = counter;
+        contexts[index].result = 0;
+        result = pthread_create(&threads[index], NULL,
+                                concurrent_counter_worker, &contexts[index]);
+        TEST_ASSERT(result == 0);
+    }
+    for (index = 0; index < CONCURRENT_THREAD_COUNT; index++) {
+        pthread_join(threads[index], NULL);
+        TEST_CHECK(contexts[index].result == 0);
+    }
+
+    TEST_CHECK(cfl_list_size(&counter->map->metrics) == 1);
+    result = cmt_counter_get_val(counter, 1, (char *[]) {"shared"}, &value);
+    TEST_CHECK(result == 0);
+    TEST_CHECK(value == CONCURRENT_THREAD_COUNT * CONCURRENT_UPDATE_COUNT);
+
+    cmt_destroy(cmt);
+}
+#endif
+
 TEST_LIST = {
     {"basic", test_counter},
     {"labels", test_labels},
     {"msgpack", test_msgpack},
     {"prometheus", test_prometheus},
     {"text", test_text},
+#if !defined(_WIN32) && !defined(_WIN64)
+    {"concurrent_metric_creation", test_concurrent_metric_creation},
+#endif
     { 0 }
 };

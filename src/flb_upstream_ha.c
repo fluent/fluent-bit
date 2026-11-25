@@ -361,10 +361,9 @@ struct flb_upstream_ha *flb_upstream_ha_from_file(const char *file,
     const char *cfg = NULL;
     char *tmp;
     char path[PATH_MAX + 1];
-    struct stat st;
     struct mk_list *head;
     struct mk_list *g_head;
-    struct flb_upstream_ha *ups;
+    struct flb_upstream_ha *ups = NULL;
     struct flb_upstream_node *node;
     struct flb_cf *cf = NULL;
     struct flb_cf_section *section;
@@ -372,20 +371,9 @@ struct flb_upstream_ha *flb_upstream_ha_from_file(const char *file,
     struct flb_cf_section *node_section;
 
 #ifndef FLB_HAVE_STATIC_CONF
-    ret = stat(file, &st);
-    if (ret == -1 && errno == ENOENT) {
-        /* Try to resolve the real path (if exists) */
-        if (file[0] == '/') {
-            return NULL;
-        }
-
-        if (config->conf_path) {
-            snprintf(path, PATH_MAX, "%s%s", config->conf_path, file);
-            cfg = path;
-        }
-    }
-    else {
-        cfg = file;
+    cfg = flb_utils_resolve_config_path(file, config->conf_path, path, sizeof(path));
+    if (!cfg) {
+        return NULL;
     }
     flb_debug("[upstream_ha] opening file %s", cfg);
     cf = flb_cf_create_from_file(NULL, (char *) cfg);
@@ -433,7 +421,7 @@ struct flb_upstream_ha *flb_upstream_ha_from_file(const char *file,
             node = create_node(c, cf, section, config);
             if (!node) {
                 flb_error("[upstream_ha] cannot register node on upstream '%s'",
-                        tmp);
+                        ups->name);
                 flb_upstream_ha_destroy(ups);
                 flb_cf_destroy(cf);
                 return NULL;
@@ -452,8 +440,19 @@ struct flb_upstream_ha *flb_upstream_ha_from_file(const char *file,
             tmp = flb_cf_section_property_get_string(cf, section, "name");
             if (!tmp) {
                 flb_error("[upstream_ha] missing name for upstream at %s", cfg);
+                if (ups) {
+                    flb_upstream_ha_destroy(ups);
+                }
                 flb_cf_destroy(cf);
                 return NULL;
+            }
+
+            /* only one upstream group per file is supported, keep the last one */
+            if (ups) {
+                flb_warn("[upstream_ha] %s defines more than one upstream, "
+                         "ignoring '%s' and using '%s'", cfg, ups->name, tmp);
+                flb_upstream_ha_destroy(ups);
+                c = 0;
             }
 
             ups = flb_upstream_ha_create(tmp);
@@ -487,7 +486,7 @@ struct flb_upstream_ha *flb_upstream_ha_from_file(const char *file,
                 node = create_node(c, cf, node_section, config);
                 if (!node) {
                     flb_error("[upstream_ha] cannot register node on upstream '%s'",
-                            tmp);
+                            ups->name);
                     flb_upstream_ha_destroy(ups);
                     flb_cf_destroy(cf);
                     flb_free(node_section);
@@ -504,7 +503,9 @@ struct flb_upstream_ha *flb_upstream_ha_from_file(const char *file,
 
     if (c == 0) {
         flb_error("[upstream_ha] no nodes defined");
-        flb_upstream_ha_destroy(ups);
+        if (ups) {
+            flb_upstream_ha_destroy(ups);
+        }
         flb_cf_destroy(cf);
         return NULL;
     }

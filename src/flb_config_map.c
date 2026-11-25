@@ -834,10 +834,24 @@ int flb_config_map_set(struct flb_config *config, struct mk_list *properties, st
                         return -1;
                     }
                 }
-                if (m->value.val.str) {
-                    flb_sds_destroy(m->value.val.str);
+                /*
+                 * A map can be applied more than once to different contexts
+                 * (e.g. one per listener worker). Keep the current string
+                 * when the value did not change so the pointers handed to
+                 * previous contexts stay valid.
+                 */
+                if (m->value.val.str &&
+                    flb_sds_len(m->value.val.str) == flb_sds_len(resolved) &&
+                    memcmp(m->value.val.str, resolved,
+                           flb_sds_len(resolved)) == 0) {
+                    flb_sds_destroy(resolved);
                 }
-                m->value.val.str = resolved;
+                else {
+                    if (m->value.val.str) {
+                        flb_sds_destroy(m->value.val.str);
+                    }
+                    m->value.val.str = resolved;
+                }
 
                 if (m->flags & FLB_CONFIG_MAP_DYNAMIC_ENV) {
                     if (m->value.raw) {

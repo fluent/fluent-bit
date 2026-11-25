@@ -29,6 +29,10 @@
 
 #include <msgpack.h>
 
+#ifndef FLB_SYSTEM_WINDOWS
+#include <sys/types.h>
+#endif
+
 #define DEFAULT_BUF_SIZE      "4096"
 #define DEFAULT_INTERVAL_SEC  "1"
 #define DEFAULT_INTERVAL_NSEC "0"
@@ -47,6 +51,11 @@ struct flb_exec {
     struct flb_log_event_encoder log_encoder;
     int exit_after_oneshot;
     int propagate_exit_code;
+#ifndef FLB_SYSTEM_WINDOWS
+    pthread_mutex_t child_mutex;
+    pid_t child_pid;
+    int shutdown_requested;
+#endif
 };
 
 #endif /* FLB_IN_EXEC_H */

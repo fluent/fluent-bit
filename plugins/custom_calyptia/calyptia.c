@@ -235,6 +235,7 @@ int set_fleet_input_properties(struct calyptia *ctx, struct flb_input_instance *
     flb_input_set_property(fleet, "host", ctx->cloud_host);
     flb_input_set_property(fleet, "port", ctx->cloud_port);
     flb_input_set_property(fleet, "config_dir", ctx->fleet_config_dir);
+    flb_input_set_property(fleet, "follow_symlinks", ctx->fleet_follow_symlinks ? "true" : "false");
     flb_input_set_property(fleet, "fleet_config_legacy_format", ctx->fleet_config_legacy_format == 1 ? "on" : "off");
 
     /* Set TLS properties */
@@ -703,6 +704,12 @@ static int cb_calyptia_exit(void *data, struct flb_config *config)
 
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_BOOL, "fleet.follow_symlinks", "true",
+     0, FLB_TRUE, offsetof(struct calyptia, fleet_follow_symlinks),
+     "Follow symbolic links in Fleet file operations. Set false to reject symbolic links "
+     "and Windows reparse points in file paths."
+    },
     {
      FLB_CONFIG_MAP_STR, "api_key", NULL,
      0, FLB_TRUE, offsetof(struct calyptia, api_key),

@@ -529,6 +529,13 @@ static int ingest_all_chunks(struct flb_azure_kusto *ctx, struct flb_config *con
             ret = azure_kusto_load_ingestion_resources(ctx, config);
             if (ret != 0) {
                 flb_plg_error(ctx->ins, "ingest_all_old_buffer_files :: cannot load ingestion resources");
+                flb_sds_destroy(tag_sds);
+                flb_sds_destroy(payload);
+                if (is_compressed) {
+                    flb_free(final_payload);
+                }
+                azure_kusto_store_file_unlock(chunk);
+                chunk->failures += 1;
                 return -1;
             }
 
@@ -560,6 +567,24 @@ static int ingest_all_chunks(struct flb_azure_kusto *ctx, struct flb_config *con
     }
 
     return 0;
+}
+
+/*
+ * Wait without blocking other workers from buffering. The caller holds
+ * buffer_mutex, and the file stays locked until this callback finishes with it.
+ * Return a refreshed list cursor because other files may have been removed
+ * while the mutex was released.
+ */
+static struct mk_list *azure_kusto_retry_wait(struct flb_azure_kusto *ctx,
+                                   struct azure_kusto_file *file,
+                                   unsigned int delay)
+{
+    azure_kusto_store_file_lock(file);
+    pthread_mutex_unlock(&ctx->buffer_mutex);
+    sleep(delay);
+    pthread_mutex_lock(&ctx->buffer_mutex);
+
+    return file->fsf->_head.next;
 }
 
 /**
@@ -608,6 +633,8 @@ static void cb_azure_kusto_ingest(struct flb_config *config, void *data)
     int backoff_time;
     int max_backoff_time = 64; /* Maximum backoff time in seconds */
 
+    pthread_mutex_lock(&ctx->buffer_mutex);
+
     /* Initialize random seed for staggered refresh intervals */
     srand(time(NULL));
 
@@ -647,7 +674,7 @@ static void cb_azure_kusto_ingest(struct flb_config *config, void *data)
                 retry_count++;
                 /* Add jitter: random value between 0 and backoff_time */
                 int jitter = rand() % backoff_time;
-                sleep(backoff_time + jitter); /* Exponential backoff with jitter */
+                tmp = azure_kusto_retry_wait(ctx, file, backoff_time + jitter);
                 backoff_time = (backoff_time * 2 < max_backoff_time) ? backoff_time * 2 : max_backoff_time; /* Double the backoff time, but cap it */
                 continue; /* Retry on failure */
             }
@@ -672,7 +699,7 @@ static void cb_azure_kusto_ingest(struct flb_config *config, void *data)
                     int jitter = rand() % backoff_time;
                     flb_plg_warn(ctx->ins, "scheduler_kusto_ingest :: failed while compressing payload :: Retrying in %d seconds (attempt %d of %d) with jitter %d for file %s",
                                  backoff_time + jitter, retry_count, ctx->scheduler_max_retries, jitter, file->fsf->name);
-                    sleep(backoff_time + jitter); /* Exponential backoff with jitter */
+                    tmp = azure_kusto_retry_wait(ctx, file, backoff_time + jitter);
                     backoff_time = (backoff_time * 2 < max_backoff_time) ? backoff_time * 2 : max_backoff_time; /* Double the backoff time, but cap it */
                     continue; /* Retry on failure */
                 }
@@ -710,7 +737,7 @@ static void cb_azure_kusto_ingest(struct flb_config *config, void *data)
                 int jitter = rand() % backoff_time;
                 flb_plg_warn(ctx->ins, "scheduler_kusto_ingest :: error loading ingestion resources :: Retrying in %d seconds (attempt %d of %d) with jitter %d for file %s",
                              backoff_time + jitter, retry_count, ctx->scheduler_max_retries, jitter, file->fsf->name);
-                sleep(backoff_time + jitter); /* Exponential backoff with jitter */
+                tmp = azure_kusto_retry_wait(ctx, file, backoff_time + jitter);
                 backoff_time = (backoff_time * 2 < max_backoff_time) ? backoff_time * 2 : max_backoff_time; /* Double the backoff time, but cap it */
                 continue; /* Retry on failure */
             }
@@ -739,7 +766,7 @@ static void cb_azure_kusto_ingest(struct flb_config *config, void *data)
                 int jitter = rand() % backoff_time;
                 flb_plg_warn(ctx->ins, "scheduler_kusto_ingest :: error while ingesting to kusto :: Retrying in %d seconds (attempt %d of %d) with jitter %d for file %s",
                              backoff_time + jitter, retry_count, ctx->scheduler_max_retries, jitter, file->fsf->name);
-                sleep(backoff_time + jitter); /* Exponential backoff with jitter */
+                tmp = azure_kusto_retry_wait(ctx, file, backoff_time + jitter);
                 backoff_time = (backoff_time * 2 < max_backoff_time) ? backoff_time * 2 : max_backoff_time; /* Double the backoff time, but cap it */
                 continue; /* Retry on failure */
             }
@@ -782,6 +809,7 @@ static void cb_azure_kusto_ingest(struct flb_config *config, void *data)
     }
     /* Log the end of the upload timer callback */
     flb_plg_debug(ctx->ins, "Exited upload timer callback (cb_azure_kusto_ingest)..");
+    pthread_mutex_unlock(&ctx->buffer_mutex);
 }
 
 
@@ -910,6 +938,10 @@ static int ingest_to_kusto(void *out_context, flb_sds_t new_data,
  *
  * @return 0 on success, -1 on failure.
  */
+/*
+ * Initialize authentication and the buffered store shared by output workers.
+ * Create buffer_mutex before exposing the context to flush callbacks.
+ */
 static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_config *config,
                                void *data)
 {
@@ -977,6 +1009,16 @@ static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_confi
     pthread_mutex_init(&ctx->token_mutex, NULL);
     pthread_mutex_init(&ctx->resources_mutex, NULL);
     pthread_mutex_init(&ctx->blob_mutex, NULL);
+    if (pthread_mutex_init(&ctx->buffer_mutex, NULL) != 0) {
+        if (ctx->buffering_enabled == FLB_TRUE) {
+            azure_kusto_store_exit(ctx);
+        }
+        pthread_mutex_destroy(&ctx->resources_mutex);
+        pthread_mutex_destroy(&ctx->token_mutex);
+        pthread_mutex_destroy(&ctx->blob_mutex);
+        flb_azure_kusto_conf_destroy(ctx);
+        return -1;
+    }
 
     /*
      * Create upstream context for Kusto Ingestion endpoint
@@ -990,6 +1032,7 @@ static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_confi
         pthread_mutex_destroy(&ctx->resources_mutex);
         pthread_mutex_destroy(&ctx->token_mutex);
         pthread_mutex_destroy(&ctx->blob_mutex);
+        pthread_mutex_destroy(&ctx->buffer_mutex);
         flb_azure_kusto_conf_destroy(ctx);
         return -1;
     }    
@@ -1003,7 +1046,7 @@ static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_confi
 
     /* Create oauth2 context */
     ctx->o =
-        flb_oauth2_create(ctx->config, ctx->oauth_url, FLB_AZURE_KUSTO_TOKEN_REFRESH);
+        flb_oauth2_create(ins, ctx->oauth_url, FLB_AZURE_KUSTO_TOKEN_REFRESH);
     if (!ctx->o) {
         flb_plg_error(ctx->ins, "cannot create oauth2 context");
         if (ctx->buffering_enabled == FLB_TRUE) {
@@ -1013,6 +1056,7 @@ static int cb_azure_kusto_init(struct flb_output_instance *ins, struct flb_confi
         pthread_mutex_destroy(&ctx->resources_mutex);
         pthread_mutex_destroy(&ctx->token_mutex);
         pthread_mutex_destroy(&ctx->blob_mutex);
+        pthread_mutex_destroy(&ctx->buffer_mutex);
         flb_azure_kusto_conf_destroy(ctx);
         return -1;
     }
@@ -1248,7 +1292,7 @@ static int buffer_chunk(void *out_context, struct azure_kusto_file *upload_file,
  * @param out_context Pointer to the output context, specifically the Azure Kusto context.
  * @param config Pointer to the Fluent Bit configuration structure.
  */
-static void flush_init(void *out_context, struct flb_config *config)
+static int flush_init(void *out_context, struct flb_config *config)
 {
     int ret;
     struct flb_azure_kusto *ctx = out_context;
@@ -1272,7 +1316,7 @@ static void flush_init(void *out_context, struct flb_config *config)
                           "Failed to send locally buffered data left over "
                           "from previous executions; will retry. Buffer=%s",
                           ctx->fs->root_path);
-            FLB_OUTPUT_RETURN(FLB_RETRY);
+            return -1;
         }
     }
     else {
@@ -1298,10 +1342,12 @@ static void flush_init(void *out_context, struct flb_config *config)
                                         ctx->timer_ms, cb_azure_kusto_ingest, ctx, NULL);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "Failed to create upload timer");
-            FLB_OUTPUT_RETURN(FLB_RETRY);
+            return -1;
         }
         ctx->timer_created = FLB_TRUE;
     }
+
+    return 0;
 }
 
 /**
@@ -1344,16 +1390,26 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
     tag_len = flb_sds_len(event_chunk->tag);
 
     if (ctx->buffering_enabled == FLB_TRUE) {
-    /* Determine the tag name based on the unify_tag setting */
+        /* Buffered requests use synchronous I/O while the store is locked. */
+        pthread_mutex_lock(&ctx->buffer_mutex);
+
+        /* Determine the tag name based on the unify_tag setting */
         if (ctx->unify_tag == FLB_TRUE){
             tag_name = flb_sds_create("fluentbit-buffer-file-unify-tag.log");
         }
         else {
             tag_name = event_chunk->tag;
         }
+        if (!tag_name) {
+            ret = FLB_RETRY;
+            goto error;
+        }
         tag_name_len = flb_sds_len(tag_name);
         /* Initialize the flush process */
-        flush_init(ctx,config);
+        if (flush_init(ctx, config) != 0) {
+            ret = FLB_RETRY;
+            goto error;
+        }
 
         /* Reformat msgpack to JSON payload */
         ret = azure_kusto_format(ctx, tag_name, tag_name_len, event_chunk->data,
@@ -1529,8 +1585,11 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
     if (is_compressed && final_payload) {
         flb_free(final_payload);
     }
-    if (tag_name) {
+    if (tag_name && ctx->unify_tag == FLB_TRUE) {
         flb_sds_destroy(tag_name);
+    }
+    if (ctx->buffering_enabled == FLB_TRUE) {
+        pthread_mutex_unlock(&ctx->buffer_mutex);
     }
     FLB_OUTPUT_RETURN(ret);
 
@@ -1542,8 +1601,11 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
     if (is_compressed && final_payload) {
         flb_free(final_payload);
     }
-    if (tag_name) {
+    if (tag_name && ctx->unify_tag == FLB_TRUE) {
         flb_sds_destroy(tag_name);
+    }
+    if (ctx->buffering_enabled == FLB_TRUE) {
+        pthread_mutex_unlock(&ctx->buffer_mutex);
     }
     FLB_OUTPUT_RETURN(ret);
 }
@@ -1578,6 +1640,10 @@ static void cb_azure_kusto_flush(struct flb_event_chunk *event_chunk,
  * - 0 on successful cleanup.
  * - -1 if the context is invalid or if an error occurs during cleanup.
  */
+/*
+ * Send remaining buffered data after all workers have joined, then release
+ * the store, authentication resources, and buffer_mutex.
+ */
 static int cb_azure_kusto_exit(void *data, struct flb_config *config)
 {
     struct flb_azure_kusto *ctx = data;
@@ -1607,6 +1673,7 @@ static int cb_azure_kusto_exit(void *data, struct flb_config *config)
     pthread_mutex_destroy(&ctx->resources_mutex);
     pthread_mutex_destroy(&ctx->token_mutex);
     pthread_mutex_destroy(&ctx->blob_mutex);
+    pthread_mutex_destroy(&ctx->buffer_mutex);
 
     flb_azure_kusto_conf_destroy(ctx);
 

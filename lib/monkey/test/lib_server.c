@@ -17,6 +17,7 @@
 
 #include <monkey/mk_lib.h>
 #include <monkey/monkey.h>
+#include <monkey/mk_net.h>
 
 #include "mk_tests.h"
 
@@ -220,8 +221,9 @@ uint8_t run_server_test(mk_ctx_t *srv, int timeout_sec, test_cb_t cb)
     return result;
 }
 
-int test_cb_sleep() 
+int test_cb_sleep(mk_ctx_t *srv)
 {
+    (void) srv;
     sleep(1);
     return 0;
 }
@@ -238,6 +240,20 @@ void test_server_start_stop_single_worker(void)
     uint8_t result = run_server_test(srv, 5, test_cb_sleep); 
     mk_destroy(srv);
     TEST_CHECK(result == TEST_SUCCESS);
+}
+
+void test_core_plain_transport_available(void)
+{
+    struct mk_plugin_network *transport;
+
+    transport = mk_net_transport_default();
+    TEST_CHECK(transport != NULL);
+    TEST_CHECK(transport->read != NULL);
+    TEST_CHECK(transport->write != NULL);
+    TEST_CHECK(transport->writev != NULL);
+    TEST_CHECK(transport->close != NULL);
+    TEST_CHECK(transport->send_file != NULL);
+    TEST_CHECK(transport->plugin == NULL);
 }
 
 void test_server_start_stop_more_workers(void) 
@@ -269,7 +285,31 @@ void test_server_start_stop_force_fair_balancing(void)
     TEST_CHECK(result == TEST_SUCCESS);
 }
 
+/* Run with Clang -fsanitize=function to check the clock worker adapter as
+ * well as the worker trampoline across repeated startup and cancellation.
+ */
+void test_server_clock_worker_repeated_start_stop(void)
+{
+    mk_ctx_t *srv;
+    uint8_t result;
+    int iteration;
+
+    for (iteration = 0; iteration < 3; iteration++) {
+        srv = mk_create();
+        TEST_ASSERT(srv != NULL);
+        mk_config_set(srv, "Listen", "127.0.0.1:27456", "Workers", "1", NULL);
+        result = run_server_test(srv, 5, test_cb_sleep);
+        mk_destroy(srv);
+        TEST_CHECK(result == TEST_SUCCESS);
+    }
+}
+
 TEST_LIST = {
+    {"server_clock_worker_repeated_start_stop", test_server_clock_worker_repeated_start_stop},
+    {
+        "core_plain_transport_available",
+        test_core_plain_transport_available
+    },
     { 
         "server_start_stop", 
         test_server_start_stop_single_worker 

@@ -1,0 +1,23 @@
+{
+  "command": [
+    "/home/edsiper/c/fluent-bit/tests/integration/.venv/bin/python",
+    "-m",
+    "pytest",
+    "-q",
+    "-o",
+    "log_cli=false",
+    "-p",
+    "no:cacheprovider",
+    "scenarios/storage/tests/test_chunk_allocation.py::test_filter_expansion_respects_quota",
+    "scenarios/storage/tests/test_chunk_allocation.py::test_reused_chunk_budgets_adaptive_growth",
+    "--junitxml=/home/edsiper/c/fluent-bit/benchmarks/results/5.2-jemalloc54-special-20261101/validation/rerun-log-assertions.xml"
+  ],
+  "cwd": "/tmp/flb-jemalloc54-special-20261101/tests/integration",
+  "env_overrides": {
+    "FLUENT_BIT_BINARY": "/tmp/flb-jemalloc54-special-20261101/build/bin/fluent-bit",
+    "VALGRIND": "1",
+    "VALGRIND_STRICT": "1"
+  },
+  "exit_code": 0,
+  "seconds": 5.577182054519653
+}

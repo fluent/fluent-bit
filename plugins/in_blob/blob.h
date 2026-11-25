@@ -45,6 +45,7 @@ struct blob_file {
 };
 
 struct blob_ctx {
+    int follow_symlinks;
     /* collector for scan_refresh_interval */
     int coll_fd;
 

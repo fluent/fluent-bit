@@ -105,7 +105,7 @@ static int nvme_get_entry_value(struct flb_ne *ctx,
     if (check_path_for_sysfs(ctx, nvme_info->str, entry_path) != 0) {
         return -1;
     }
-    ret = ne_utils_file_read_lines(nvme_info->str, nvme_sysentry, out_info_list);
+    ret = ne_utils_file_read_lines(ctx, nvme_info->str, nvme_sysentry, out_info_list);
     if (ret == -1) {
         return ret;
     }

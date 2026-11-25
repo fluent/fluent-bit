@@ -428,6 +428,126 @@ cleanup_fail:
     return NULL;
 }
 
+int flb_wasm_validate_function_v2(struct flb_wasm *fw, const char *function_name)
+{
+    wasm_function_inst_t function;
+    wasm_valkind_t params[6];
+    wasm_valkind_t result;
+    int index;
+
+    function = wasm_runtime_lookup_function(fw->module_inst, function_name);
+    if (!function || wasm_func_get_param_count(function, fw->module_inst) != 6 ||
+        wasm_func_get_result_count(function, fw->module_inst) != 1) {
+        return -1;
+    }
+
+    wasm_func_get_param_types(function, fw->module_inst, params);
+    wasm_func_get_result_types(function, fw->module_inst, &result);
+    for (index = 0; index < 6; index++) {
+        if (params[index] != WASM_I32) {
+            return -1;
+        }
+    }
+
+    return result == WASM_I64 ? 0 : -1;
+}
+
+/* Copy only the supplied bytes; callers need not supply a trailing NUL. */
+static uint32_t wasm_copy_value(struct flb_wasm *fw, const char *value, size_t length)
+{
+    uint32_t offset;
+    char *native;
+
+    if (length >= UINT32_MAX || (length > 0 && value == NULL)) {
+        return 0;
+    }
+    offset = wasm_runtime_module_malloc(fw->module_inst, length + 1, (void **) &native);
+    if (offset != 0) {
+        if (length > 0) {
+            memcpy(native, value, length);
+        }
+        native[length] = '\0';
+    }
+    return offset;
+}
+
+int flb_wasm_call_function_v2(struct flb_wasm *fw, const char *function_name,
+                              const char *tag, size_t tag_len, struct flb_time t,
+                              const char *record, size_t record_len,
+                              char **output, size_t *output_len)
+{
+    wasm_function_inst_t function;
+    wasm_val_t args[6] = {0};
+    wasm_val_t result = {0};
+    uint32_t buffers[2] = {0};
+    uint64_t value_length;
+    uint32_t value;
+    uint32_t length;
+    char *native;
+    int index;
+    int ret = -1;
+
+    *output = NULL;
+    *output_len = 0;
+    if (flb_wasm_validate_function_v2(fw, function_name) != 0) {
+        return -1;
+    }
+    function = wasm_runtime_lookup_function(fw->module_inst, function_name);
+    buffers[0] = wasm_copy_value(fw, tag, tag_len);
+    buffers[1] = wasm_copy_value(fw, record, record_len);
+    if (!buffers[0] || !buffers[1]) {
+        goto cleanup;
+    }
+
+    for (index = 0; index < 6; index++) {
+        args[index].kind = WASM_I32;
+    }
+    args[0].of.i32 = buffers[0];
+    args[1].of.i32 = tag_len;
+    args[2].of.i32 = t.tm.tv_sec;
+    args[3].of.i32 = t.tm.tv_nsec;
+    args[4].of.i32 = buffers[1];
+    args[5].of.i32 = record_len;
+
+    if (!wasm_runtime_call_wasm_a(fw->exec_env, function, 1, &result, 6, args)) {
+        flb_error("[wasm] function failed: %s", wasm_runtime_get_exception(fw->module_inst));
+        goto cleanup;
+    }
+
+    value_length = (uint64_t) result.of.i64;
+    if (value_length == 0) {
+        ret = 1;
+        goto cleanup;
+    }
+    value = (uint32_t) value_length;
+    length = (uint32_t) (value_length >> 32);
+    if (value == 0 || length == 0 || (uint64_t) length + 1 > SIZE_MAX ||
+        !wasm_runtime_validate_app_addr(fw->module_inst, value, length)) {
+        flb_error("[wasm] invalid value-length pair");
+        goto cleanup;
+    }
+
+    /* Reacquire native addresses after execution, which may grow memory. */
+    native = wasm_runtime_addr_app_to_native(fw->module_inst, value);
+    *output = flb_malloc((size_t) length + 1);
+    if (*output == NULL) {
+        goto cleanup;
+    }
+    memcpy(*output, native, length);
+    (*output)[length] = '\0';
+    *output_len = length;
+    ret = 0;
+
+cleanup:
+    wasm_runtime_clear_exception(fw->module_inst);
+    for (index = 0; index < 2; index++) {
+        if (buffers[index] != 0) {
+            wasm_runtime_module_free(fw->module_inst, buffers[index]);
+        }
+    }
+    return ret;
+}
+
 int flb_wasm_call_wasi_main(struct flb_wasm *fw)
 {
 #if WASM_ENABLE_LIBC_WASI != 0

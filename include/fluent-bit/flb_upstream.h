@@ -30,6 +30,10 @@
 #include <fluent-bit/flb_upstream_queue.h>
 #include <fluent-bit/flb_stream.h>
 
+#ifdef FLB_HAVE_TLS
+#include <fluent-bit/tls/flb_tls.h>
+#endif
+
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_gauge.h>
 
@@ -41,6 +45,8 @@
  * --- flb_io.h ---
  *   #define  FLB_IO_TCP      1
  *   #define  FLB_IO_TLS      2
+ *   #define  FLB_IO_UDP     32
+ *   #define  FLB_IO_DTLS    64
  *   #define  FLB_IO_ASYNC    8
  *   #define  FLB_IO_TCP_KA  16
  * ---
@@ -49,6 +55,9 @@
 /* Upstream handler */
 struct flb_upstream {
     struct flb_stream          base;
+#ifdef __EMSCRIPTEN__
+    const char               *browser_url; /* borrowed from owning output */
+#endif
 
     char                      *tcp_host;
     int                        tcp_port;
@@ -57,6 +66,9 @@ struct flb_upstream {
     int                        proxied_port;
     char                      *proxy_username;
     char                      *proxy_password;
+#ifdef FLB_HAVE_TLS
+    struct flb_tls            *proxy_tls_context; /* TLS context for the proxy (https proxy) */
+#endif
 
     /*
      * If an upstream context has been created in HA mode, this flag is
@@ -93,11 +105,21 @@ void flb_upstream_init();
 struct flb_upstream *flb_upstream_create(struct flb_config *config,
                                          const char *host, int port, int flags,
                                          struct flb_tls *tls);
+/* Create a worker-owned upstream without accessing config->upstreams. */
+struct flb_upstream *flb_upstream_create_thread_safe(struct flb_config *config,
+                                                     const char *host, int port, int flags,
+                                                     struct flb_tls *tls);
 struct flb_upstream *flb_upstream_create_url(struct flb_config *config,
                                              const char *url, int flags,
                                              struct flb_tls *tls);
 
 int flb_upstream_destroy(struct flb_upstream *u);
+
+#ifdef FLB_HAVE_TLS
+int flb_upstream_proxy_tls_setup(struct flb_upstream *u,
+                                 int verify, int verify_hostname,
+                                 const char *ca_path, const char *ca_file);
+#endif
 
 int flb_upstream_set_property(struct flb_config *config,
                               struct flb_net_setup *net, char *k, char *v);

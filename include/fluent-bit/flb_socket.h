@@ -51,4 +51,7 @@ int flb_socket_error(int fd);
 
 #endif
 
+/* Descriptor fields that do not own an open socket or channel. */
+#define FLB_UNINITIALIZED_SOCKET FLB_INVALID_SOCKET
+
 #endif

@@ -183,6 +183,7 @@ value_t get_diameter(const index_diameter_t& i) { return i.second; }
 
 struct diameter_entry_t : std::pair<value_t, entry_t> {
 	using std::pair<value_t, entry_t>::pair;
+	diameter_entry_t() : std::pair<value_t, entry_t>() {}
 	diameter_entry_t(value_t _diameter, index_t _index, coefficient_t _coefficient)
 	    : diameter_entry_t(_diameter, make_entry(_index, _coefficient)) {}
 	diameter_entry_t(const diameter_index_t& _diameter_index, coefficient_t _coefficient)

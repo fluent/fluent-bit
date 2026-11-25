@@ -70,6 +70,15 @@ char *flb_wasm_call_function_format_msgpack(struct flb_wasm *fw, const char *fun
                                             const char* tag_data, size_t tag_len,
                                             struct flb_time t,
                                             const char *records, size_t records_len);
+/* V2: six i32 parameters and an i64 value-length pair result. */
+int flb_wasm_validate_function_v2(struct flb_wasm *fw, const char *function_name);
+
+/* Returns 0 for output, 1 for drop, and -1 for failure. Caller frees output. */
+int flb_wasm_call_function_v2(struct flb_wasm *fw, const char *function_name,
+                              const char *tag, size_t tag_len, struct flb_time t,
+                              const char *record, size_t record_len,
+                              char **output, size_t *output_len);
+
 int flb_wasm_call_wasi_main(struct flb_wasm *fw);
 void flb_wasm_buffer_free(struct flb_wasm *fw);
 void flb_wasm_destroy(struct flb_wasm *fw);

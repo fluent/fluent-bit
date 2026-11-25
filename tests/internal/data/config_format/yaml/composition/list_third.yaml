@@ -1,0 +1,5 @@
+defaults:
+  level: &level error
+pipeline:
+  inputs:
+    - {name: dummy, tag: third}

@@ -27,6 +27,8 @@ struct flb_config;
 
 #define VIVO_RING_BUFFER_SIZE 10
 
+flb_sds_t vivo_json(const void *data, size_t size, int escape_unicode);
+
 /* Plugin context */
 struct vivo_exporter {
     void *http;
@@ -37,7 +39,10 @@ struct vivo_exporter {
 
     /* options */
     int empty_stream_on_read;
+    int compress;
     size_t stream_queue_size;
+    size_t stream_page_size;
+    char generation[37];
     flb_sds_t http_cors_allow_origin;
 
     /* instance context */

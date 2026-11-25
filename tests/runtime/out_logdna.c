@@ -18,9 +18,9 @@
  */
 
 #include <fluent-bit.h>
+#include <fluent-bit/flb_pthread.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_time.h>
-#include <pthread.h>
 #include "flb_tests_runtime.h"
 
 /* Thread-safe callback invocation tracking */
@@ -742,6 +742,205 @@ void flb_test_lifecycle()
     }
 }
 
+/*
+ * Test: a "hostname" key present in the record is promoted to a top-level
+ * field instead of being left only in the line body.
+ */
+#define JSON_WITH_HOSTNAME \
+    "[12345678, {\"hostname\":\"record-host\",\"message\":\"hello\"}]"
+
+static void cb_check_record_hostname(void *ctx, int ffd, int res_ret,
+                                     void *res_data, size_t res_size,
+                                     void *data)
+{
+    flb_sds_t json = res_data;
+
+    if (!TEST_CHECK(strstr(json, "\"hostname\":\"record-host\"") != NULL)) {
+        TEST_MSG("record hostname not promoted: %s", json);
+    }
+
+    set_output_num(get_output_num() + 1);
+    flb_sds_destroy(json);
+}
+
+void flb_test_record_hostname_field()
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd, out_ffd;
+
+    clear_output_num();
+
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1",
+                    "log_level", "error", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "logdna", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "api_key", "test-key",
+                   NULL);
+
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_record_hostname, NULL, NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    flb_lib_push(ctx, in_ffd,
+                 (char *) JSON_WITH_HOSTNAME,
+                 sizeof(JSON_WITH_HOSTNAME) - 1);
+
+    sleep(2);
+
+    if (!TEST_CHECK(get_output_num() > 0)) {
+        TEST_MSG("formatter callback was not invoked");
+    }
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+/*
+ * Test: when the record carries no "hostname" key, the value resolved at
+ * configuration time is used as the default.
+ */
+static void cb_check_default_hostname(void *ctx, int ffd, int res_ret,
+                                      void *res_data, size_t res_size,
+                                      void *data)
+{
+    flb_sds_t json = res_data;
+
+    if (!TEST_CHECK(strstr(json, "\"hostname\":\"config-host\"") != NULL)) {
+        TEST_MSG("default hostname not set: %s", json);
+    }
+
+    set_output_num(get_output_num() + 1);
+    flb_sds_destroy(json);
+}
+
+void flb_test_default_hostname_field()
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd, out_ffd;
+
+    clear_output_num();
+
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1",
+                    "log_level", "error", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "logdna", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "api_key", "test-key",
+                   "hostname", "config-host",
+                   NULL);
+
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_default_hostname, NULL, NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    flb_lib_push(ctx, in_ffd,
+                 (char *) JSON_NO_APP,
+                 sizeof(JSON_NO_APP) - 1);
+
+    sleep(2);
+
+    if (!TEST_CHECK(get_output_num() > 0)) {
+        TEST_MSG("formatter callback was not invoked");
+    }
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
+/*
+ * Test: hostname behaves like the other promoted keys, so with
+ * exclude_promoted_keys enabled it is not duplicated into the line body.
+ */
+static void cb_check_hostname_non_duplication(void *ctx, int ffd, int res_ret,
+                                              void *res_data, size_t res_size,
+                                              void *data)
+{
+    flb_sds_t json = res_data;
+
+    if (!TEST_CHECK(strstr(json, "\"hostname\":\"record-host\"") != NULL)) {
+        TEST_MSG("record hostname not promoted: %s", json);
+    }
+
+    if (!TEST_CHECK(strstr(json, "\\\"hostname\\\":") == NULL)) {
+        TEST_MSG("hostname duplicated in line: %s", json);
+    }
+
+    if (!TEST_CHECK(strstr(json, "\\\"message\\\":") != NULL)) {
+        TEST_MSG("message missing from line: %s", json);
+    }
+
+    set_output_num(get_output_num() + 1);
+    flb_sds_destroy(json);
+}
+
+void flb_test_hostname_non_duplication()
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd, out_ffd;
+
+    clear_output_num();
+
+    ctx = flb_create();
+    flb_service_set(ctx, "flush", "1", "grace", "1",
+                    "log_level", "error", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "logdna", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd,
+                   "match", "test",
+                   "api_key", "test-key",
+                   "exclude_promoted_keys", "true",
+                   NULL);
+
+    ret = flb_output_set_test(ctx, out_ffd, "formatter",
+                              cb_check_hostname_non_duplication, NULL, NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    flb_lib_push(ctx, in_ffd,
+                 (char *) JSON_WITH_HOSTNAME,
+                 sizeof(JSON_WITH_HOSTNAME) - 1);
+
+    sleep(2);
+
+    if (!TEST_CHECK(get_output_num() > 0)) {
+        TEST_MSG("formatter callback was not invoked");
+    }
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+}
+
 TEST_LIST = {
     {"non_duplication",            flb_test_non_duplication},
     {"data_completeness",          flb_test_data_completeness},
@@ -751,6 +950,9 @@ TEST_LIST = {
     {"no_primary_keys",            flb_test_no_primary_keys},
     {"payload_structure",          flb_test_payload_structure},
     {"backward_compat",            flb_test_backward_compat},
+    {"record_hostname_field",      flb_test_record_hostname_field},
+    {"default_hostname_field",     flb_test_default_hostname_field},
+    {"hostname_non_duplication",   flb_test_hostname_non_duplication},
     {"lifecycle",                  flb_test_lifecycle},
     {NULL, NULL}
 };

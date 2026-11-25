@@ -21,6 +21,7 @@
 #define FLB_IN_FW_CONN_H
 
 #include <fluent-bit/flb_compression.h>
+#include <fluent-bit/flb_mp_preflight.h>
 
 #define FLB_IN_FW_CHUNK_SIZE      "1024000" /* 1MB */
 #define FLB_IN_FW_CHUNK_MAX_SIZE  "6144000" /* =FLB_IN_FW_CHUNK_SIZE * 6.  6MB */
@@ -48,6 +49,8 @@ struct fw_conn {
     char *buf;                       /* Buffer data                       */
     size_t buf_len;                  /* Data length                       */
     size_t buf_size;                 /* Buffer size                       */
+    struct flb_mp_preflight *preflight;
+    size_t frame_zone_cost;
     size_t rest;                     /* Unpacking offset                  */
 
     /* Decompression context */
@@ -63,6 +66,7 @@ struct fw_conn {
     struct mk_list _head;
 };
 
+int fw_conn_event(void *data);
 struct fw_conn *fw_conn_add(struct flb_connection *connection, struct flb_in_fw_config *ctx);
 int fw_conn_del(struct fw_conn *conn);
 int fw_conn_del_all(struct flb_in_fw_config *ctx);

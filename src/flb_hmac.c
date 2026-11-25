@@ -110,6 +110,8 @@ int flb_hmac_init(struct flb_hmac *context,
     if (result == 0) {
         context->last_error = ERR_get_error();
 
+        flb_hmac_cleanup(context);
+
         return FLB_CRYPTO_BACKEND_ERROR;
     }
 
@@ -194,6 +196,8 @@ int flb_hmac_init(struct flb_hmac *context,
 
     if (result != 1) {
         context->last_error = ERR_get_error();
+
+        flb_hmac_cleanup(context);
 
         return FLB_CRYPTO_BACKEND_ERROR;
     }

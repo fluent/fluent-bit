@@ -1,11 +1,14 @@
 import contextlib
 import http.server
+import json
 import os
 import shlex
+import ssl
 import sys
 import threading
 
 import pytest
+import yaml
 
 from utils.data_utils import read_file
 from utils.test_service import FluentBitTestService
@@ -25,14 +28,55 @@ class _KubeApiHandler(http.server.BaseHTTPRequestHandler):
 
 
 @contextlib.contextmanager
-def _run_kube_api_server():
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _KubeApiHandler)
+def _run_kube_api_server(handler=_KubeApiHandler):
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     port = server.server_address[1]
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
 
     try:
         yield port
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
+class _PodAssociationServer(http.server.ThreadingHTTPServer):
+    def __init__(self, server_address, handler_class):
+        super().__init__(server_address, handler_class)
+        self.request_count = 0
+        self.request_count_lock = threading.Lock()
+
+
+class _PodAssociationHandler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        payload = b"{}"
+
+        with self.server.request_count_lock:
+            self.server.request_count += 1
+
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def log_message(self, fmt, *args):
+        return
+
+
+@contextlib.contextmanager
+def _run_pod_association_server(cert_file, key_file):
+    server = _PodAssociationServer(("127.0.0.1", 0), _PodAssociationHandler)
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(cert_file, key_file)
+    server.socket = context.wrap_socket(server.socket, server_side=True)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        yield server
     finally:
         server.shutdown()
         server.server_close()
@@ -61,6 +105,166 @@ class Service:
 
     def read_log(self):
         return read_file(self.flb.log_file)
+
+
+@pytest.mark.parametrize(
+    "items_fields",
+    [{"items": None}, {}, {"items": {}}, {"items": "invalid"},
+     {"items": 1}, {"items": False}, {"items": []},
+     {"items": [{"metadata": "malformed"}]},
+     {"items": [{"metadata": {"name": "testpod", "namespace": "default",
+                               "uid": "kubelet-test-pod"}}]}],
+    ids=["null", "missing", "object", "string", "number", "boolean", "empty",
+         "malformed-metadata", "valid"],
+)
+def test_filter_kubernetes_kubelet_items(tmp_path, items_fields):
+    payload = {"kind": "PodList", "apiVersion": "v1", "metadata": {}}
+    payload.update(items_fields)
+    meta_file = tmp_path / "default_testpod.meta"
+    meta_file.write_text(json.dumps(payload), encoding="utf-8")
+    config = {
+        "service": {"flush": 1, "grace": 1, "log_level": "info",
+                    "http_server": True,
+                    "http_port": "${FLUENT_BIT_HTTP_MONITORING_PORT}"},
+        "pipeline": {
+            "inputs": [{"name": "dummy", "samples": 1,
+                        "tag": f"kube.var.log.containers.testpod_default_app-{'a' * 64}.log",
+                        "dummy": '{"message":"kubelet-items-regression"}'}],
+            "filters": [{"name": "kubernetes", "match": "kube.*",
+                         "use_kubelet": True,
+                         "kube_meta_preload_cache_dir": str(tmp_path),
+                         "kube_tag_prefix": "kube.var.log.containers."}],
+            "outputs": [{"name": "stdout", "match": "*", "format": "json_lines"}],
+        },
+    }
+    config_file = tmp_path / "kubelet-items.yaml"
+    config_file.write_text(yaml.safe_dump(config), encoding="utf-8")
+    service = Service(str(config_file))
+    try:
+        service.start()
+        log_text = service.wait_for_log_contains('"kubelet-items-regression"')
+    finally:
+        service.stop()
+
+    records = [json.loads(line) for line in log_text.splitlines() if line.startswith("{")]
+    records = [record for record in records
+               if record.get("message") == "kubelet-items-regression"]
+    assert len(records) == 1
+    metadata = records[0].get("kubernetes", {})
+    assert metadata["pod_name"] == "testpod"
+    assert metadata["namespace_name"] == "default"
+    items = items_fields.get("items")
+    if isinstance(items, list) and items and isinstance(items[0].get("metadata"), dict):
+        assert metadata["pod_id"] == "kubelet-test-pod"
+    else:
+        assert "pod_id" not in metadata
+
+
+def _probe_config(tmp_path, use_kubelet):
+    kubernetes_filter = {
+        "name": "kubernetes",
+        "match": "kube.*",
+        "kube_meta_preload_cache_dir": str(tmp_path),
+        "kube_tag_prefix": "kube.var.log.containers.",
+    }
+    if use_kubelet:
+        kubernetes_filter["use_kubelet"] = True
+
+    return {
+        "service": {"flush": 1, "grace": 1, "log_level": "info",
+                    "http_server": True,
+                    "http_port": "${FLUENT_BIT_HTTP_MONITORING_PORT}"},
+        "pipeline": {
+            "inputs": [{"name": "dummy", "samples": 1,
+                        "tag": f"kube.var.log.containers.testpod_default_app-{'a' * 64}.log",
+                        "dummy": '{"message":"malformed-pod-regression"}'}],
+            "filters": [kubernetes_filter],
+            "outputs": [{"name": "stdout", "match": "*", "format": "json_lines"}],
+        },
+    }
+
+
+def _probe_records(log_text):
+    records = [json.loads(line) for line in log_text.splitlines() if line.startswith("{")]
+    records = [record for record in records
+               if record.get("message") == "malformed-pod-regression"]
+    assert len(records) == 1
+    return records
+
+
+@pytest.mark.parametrize("use_kubelet", [True, False], ids=["kubelet", "api"])
+@pytest.mark.parametrize(
+    ("pod_fields", "expect_pod_id"),
+    [({"spec": 1234567}, True),
+     ({"spec": "invalid"}, True),
+     ({"status": 987654321}, True),
+     ({"status": ["invalid"]}, True),
+     ({"status": {"containerStatuses": "aaaa"}}, True),
+     ({"status": {"containerStatuses": 4242}}, True),
+     ({"status": {"containerStatuses": [7]}}, True),
+     ({"status": {"containerStatuses": [{"name": "app", "containerID": 99,
+                                        "image": None}]}}, True)],
+    ids=["spec-number", "spec-string", "status-number", "status-array",
+         "statuses-string", "statuses-number", "statuses-element-number",
+         "statuses-value-types"],
+)
+def test_filter_kubernetes_malformed_pod_object(tmp_path, use_kubelet,
+                                                pod_fields, expect_pod_id):
+    pod = {"metadata": {"name": "testpod", "namespace": "default",
+                        "uid": "kubelet-test-pod"}}
+    pod.update(pod_fields)
+    if use_kubelet:
+        payload = {"kind": "PodList", "apiVersion": "v1", "metadata": {},
+                   "items": [pod]}
+    else:
+        payload = pod
+    meta_file = tmp_path / "default_testpod.meta"
+    meta_file.write_text(json.dumps(payload), encoding="utf-8")
+    config = _probe_config(tmp_path, use_kubelet)
+    config_file = tmp_path / "malformed-pod-object.yaml"
+    config_file.write_text(yaml.safe_dump(config), encoding="utf-8")
+    service = Service(str(config_file))
+    try:
+        service.start()
+        log_text = service.wait_for_log_contains('"malformed-pod-regression"')
+    finally:
+        service.stop()
+
+    records = _probe_records(log_text)
+    metadata = records[0].get("kubernetes", {})
+    assert metadata["pod_name"] == "testpod"
+    assert metadata["namespace_name"] == "default"
+    if expect_pod_id:
+        assert metadata["pod_id"] == "kubelet-test-pod"
+    else:
+        assert "pod_id" not in metadata
+
+
+@pytest.mark.parametrize("use_kubelet", [True, False], ids=["kubelet", "api"])
+@pytest.mark.parametrize(
+    "payload",
+    [[{"metadata": {"name": "testpod", "namespace": "default"}}],
+     "just-a-string", 42, True],
+    ids=["root-array", "root-string", "root-number", "root-boolean"],
+)
+def test_filter_kubernetes_non_object_root(tmp_path, use_kubelet, payload):
+    meta_file = tmp_path / "default_testpod.meta"
+    meta_file.write_text(json.dumps(payload), encoding="utf-8")
+    config = _probe_config(tmp_path, use_kubelet)
+    config_file = tmp_path / "non-object-root.yaml"
+    config_file.write_text(yaml.safe_dump(config), encoding="utf-8")
+    service = Service(str(config_file))
+    try:
+        service.start()
+        log_text = service.wait_for_log_contains('"malformed-pod-regression"')
+    finally:
+        service.stop()
+
+    records = _probe_records(log_text)
+    metadata = records[0].get("kubernetes", {})
+    assert metadata["pod_name"] == "testpod"
+    assert metadata["namespace_name"] == "default"
+    assert "pod_id" not in metadata
 
 
 def _write_script(tmp_path, name, line_count):
@@ -114,6 +318,59 @@ def _write_config(tmp_path, name, script_file, kube_api_port):
     return config_file
 
 
+def _write_pod_association_config(tmp_path, servers, cert_file, key_file, instances_per_host):
+    config_lines = [
+        "[SERVICE]",
+        "    Flush 1",
+        "    Grace 1",
+        "    Log_Level info",
+        "    HTTP_Server On",
+        "    HTTP_Port ${FLUENT_BIT_HTTP_MONITORING_PORT}",
+        "",
+        "[INPUT]",
+        "    Name dummy",
+        "    Tag application.test",
+        "    Samples 1",
+        "",
+        "[INPUT]",
+        "    Name dummy",
+        "    Tag dataplane.test",
+        "    Samples 1",
+        "",
+    ]
+
+    for match, server in list(zip(("application.*", "dataplane.*"), servers)) * instances_per_host:
+        config_lines.extend(
+            [
+                "[FILTER]",
+                "    Name kubernetes",
+                f"    Match {match}",
+                "    Dummy_Meta On",
+                "    Use_Pod_Association On",
+                "    AWS_Pod_Association_Host 127.0.0.1",
+                f"    AWS_Pod_Association_Port {server.server_address[1]}",
+                "    AWS_Pod_Service_Map_Refresh_Interval 1",
+                "    AWS_Pod_Association_Host_TLS_Verify Off",
+                f"    AWS_Pod_Association_Host_Server_CA_File {cert_file}",
+                f"    AWS_Pod_Association_Host_Client_Cert_File {cert_file}",
+                f"    AWS_Pod_Association_Host_Client_Key_File {key_file}",
+                "",
+            ]
+        )
+
+    config_lines.extend(
+        [
+            "[OUTPUT]",
+            "    Name null",
+            "    Match *",
+        ]
+    )
+
+    config_file = tmp_path / "pod_association_multiple_filters.conf"
+    config_file.write_text("\n".join(config_lines), encoding="utf-8")
+    return config_file
+
+
 @pytest.mark.skipif(sys.platform != "linux", reason="Kube_Token_Command test is Linux-only")
 def test_filter_kubernetes_token_command_accepts_multiline_output_over_8kb(tmp_path):
     script_file = _write_script(tmp_path, "token_large.py", 3000)
@@ -146,3 +403,162 @@ def test_filter_kubernetes_token_command_rejects_multiline_output_over_limit(tmp
 
     assert "failed to run command" in log_text
     assert "kube token command test" in log_text
+
+
+@pytest.mark.parametrize("source", [
+    "file",
+    pytest.param("command", marks=pytest.mark.skipif(
+        sys.platform != "linux", reason="Kube_Token_Command test is Linux-only")),
+])
+@pytest.mark.parametrize("ending", [b"", b"\n", b"\r\n"], ids=["none", "lf", "crlf"])
+def test_filter_kubernetes_token_line_ending(tmp_path, source, ending):
+    requests = []
+    pod = json.dumps({
+        "metadata": {"name": "testpod", "namespace": "default", "uid": "token-test-pod"},
+    }).encode()
+
+    class Handler(_KubeApiHandler):
+        def do_GET(self):
+            requests.append((self.path, self.headers.get("Authorization")))
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(pod)))
+            self.end_headers()
+            self.wfile.write(pod)
+
+    token_file = tmp_path / "token"
+    token_file.write_bytes(b"regression-token" + ending)
+    config = _probe_config(tmp_path, use_kubelet=False)
+    kube_filter = config["pipeline"]["filters"][0]
+    del kube_filter["kube_meta_preload_cache_dir"]
+    kube_filter["kube_namespace_file"] = str(tmp_path / "no-namespace")
+    if source == "command":
+        kube_filter["kube_token_command"] = f"cat {shlex.quote(str(token_file))}"
+    else:
+        kube_filter["kube_token_file"] = str(token_file)
+
+    with _run_kube_api_server(Handler) as port:
+        kube_filter["kube_url"] = f"http://127.0.0.1:{port}"
+        config_file = tmp_path / "token-line-ending.yaml"
+        config_file.write_text(yaml.safe_dump(config), encoding="utf-8")
+        service = Service(str(config_file))
+        try:
+            service.start()
+            log_text = service.wait_for_log_contains('"malformed-pod-regression"')
+        finally:
+            service.stop()
+
+    assert requests == [("/api/v1/namespaces/default/pods/testpod", "Bearer regression-token")]
+    assert _probe_records(log_text)[0]["kubernetes"]["pod_id"] == "token-test-pod"
+
+
+@pytest.mark.parametrize("instances_per_host", [1, 8])
+def test_filter_kubernetes_pod_association_is_independent_per_instance(tmp_path, instances_per_host):
+    cert_dir = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "../../in_splunk/certificate")
+    )
+    cert_file = os.path.join(cert_dir, "certificate.pem")
+    key_file = os.path.join(cert_dir, "private_key.pem")
+
+    with _run_pod_association_server(cert_file, key_file) as application_server, \
+            _run_pod_association_server(cert_file, key_file) as dataplane_server:
+        servers = (application_server, dataplane_server)
+        config_file = _write_pod_association_config(
+            tmp_path, servers, cert_file, key_file, instances_per_host
+        )
+        service = Service(str(config_file))
+        service.start()
+        try:
+            service.service.wait_for_condition(
+                lambda: all(server.request_count >= 3 * instances_per_host for server in servers),
+                timeout=20,
+                interval=0.25,
+                description="repeated refreshes from concurrent pod association filters",
+            )
+        finally:
+            service.stop()
+
+    assert all(server.request_count >= 3 * instances_per_host for server in servers)
+
+
+@pytest.mark.parametrize("custom_parser", [False, True])
+@pytest.mark.parametrize("namespace_only", [False, True])
+def test_filter_kubernetes_rejects_unsafe_tag_names(tmp_path, custom_parser, namespace_only):
+    requests = []
+
+    class Handler(_KubeApiHandler):
+        def do_GET(self):
+            requests.append((self.path, self.headers.get("Authorization")))
+            super().do_GET()
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    token_file = tmp_path / "token"
+    token_file.write_text("regression-token", encoding="utf-8")
+    parser_file = tmp_path / "parsers.conf"
+    parser_file.write_text(
+        "[PARSER]\n    Name capture\n    Format regex\n"
+        "    Regex ^(?<pod_name>[^_]+)_(?<namespace_name>[^_]+)_"
+        "(?<container_name>.+)-(?<docker_id>[a-z0-9]{64})\\.log$\n",
+        encoding="utf-8",
+    )
+    invalid = [
+        "../secrets", "default/pods", "default?watch=true", "default#fragment",
+        "default%2fsecrets", "default space", "default\tvalue",
+        "default\r\nX-Injected: yes", "default\x00suffix", ".", "..",
+        "UPPER", "-default", "default-", "default.name", "n" * 64,
+    ]
+    valid = [("pod-0.example", "default"), ("p" * 253, "n" * 63), ("0", "1")]
+    cases = [("pod", name) for name in invalid]
+    if custom_parser:
+        cases += [(name, "default") for name in invalid if name not in ("default.name", "n" * 64)]
+        cases += [("p" * 254, "default"), ("pod..name", "default"), ("pod.", "default")]
+    cases += valid
+    inputs = [
+        {
+            "name": "dummy", "samples": 1,
+            "tag": f"kube.var.log.containers.{pod}_{namespace}_container-{'a' * 64}.log",
+            "dummy": '{"message":"tag-name-case-%d"}' % index,
+        }
+        for index, (pod, namespace) in enumerate(cases)
+    ]
+    kube_filter = {
+        "name": "kubernetes", "match": "kube.*",
+        "kube_url": f"http://127.0.0.1:{server.server_address[1]}",
+        "kube_token_file": str(token_file), "kube_meta_namespace_cache_ttl": "0",
+        "kube_meta_cache_ttl": "0", "kube_tag_prefix": "kube.var.log.containers.",
+        "namespace_labels": True, "namespace_metadata_only": namespace_only,
+    }
+    if custom_parser:
+        kube_filter["regex_parser"] = "capture"
+    config = {
+        "service": {"flush": 1, "grace": 1, "log_level": "info",
+                    "parsers_file": str(parser_file), "http_server": True,
+                    "http_port": "${FLUENT_BIT_HTTP_MONITORING_PORT}"},
+        "pipeline": {"inputs": inputs, "filters": [kube_filter],
+                     "outputs": [{"name": "stdout", "match": "*"}]},
+    }
+    config_file = tmp_path / "tag-names.yaml"
+    config_file.write_text(yaml.safe_dump(config), encoding="utf-8")
+    service = Service(str(config_file))
+    try:
+        service.start()
+        service.service.wait_for_condition(
+            lambda: all(f'"tag-name-case-{index}"' in service.read_log()
+                        for index in range(len(cases))),
+            timeout=30, interval=0.25, description="all tag validation records flushed",
+        )
+    finally:
+        service.stop()
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+    expected = {f"/api/v1/namespaces/{namespace}" for _, namespace in valid}
+    if not namespace_only:
+        expected.update(f"/api/v1/namespaces/{namespace}/pods/{pod}"
+                        for pod, namespace in valid)
+    assert {path for path, _ in requests} == expected
+    assert len(requests) == len(expected)
+    assert all(auth == "Bearer regression-token" for _, auth in requests)

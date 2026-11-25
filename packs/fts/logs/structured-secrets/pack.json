@@ -1,0 +1,35 @@
+{
+  "pack_version": 1,
+  "fts_api_version": 1,
+  "id": "org.fluentbit.policy.structured-secrets",
+  "version": "1.0.0",
+  "title": "Structured secret protection",
+  "description": "Recursively redact configured exact keys in structured log bodies. No free-text detection, URL parsing, resource scanning or compliance certification. Bytes and unselected fields remain typed.",
+  "blocks": [
+    {
+      "name": "apply",
+      "signals": [
+        "logs"
+      ],
+      "source": "blocks/apply.lua",
+      "parameters": {
+        "keys": {
+          "type": "strings",
+          "default": [
+            "password",
+            "authorization",
+            "api_key"
+          ]
+        },
+        "replacement": {
+          "type": "string",
+          "default": "[REDACTED]"
+        }
+      },
+      "privacy": true
+    }
+  ],
+  "fixtures": [
+    "tests/policy.yaml"
+  ]
+}

@@ -8,7 +8,10 @@ on:
     paths:
       - 'dockerfiles/Dockerfile'
       - 'dockerfiles/Dockerfile.windows'
+      - 'dockerfiles/Dockerfile.windows.nano'
       - 'conf/**'
+      - '.github/workflows/call-build-images.yaml'
+      - '.github/workflows/pr-image-tests.yaml'
 
   workflow_dispatch:
 
@@ -21,16 +24,16 @@ jobs:
         # We do not push and this allows simpler workflow running for forks too
       steps:
         - name: Checkout code
-          uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+          uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
           with:
             persist-credentials: false
 
         - name: Set up Docker Buildx
-          uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+          uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003 # v4.4.0
 
         - name: Extract metadata from Github
           id: meta
-          uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
+          uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
           with:
             images: ${{ github.repository }}/pr-${{ github.event.pull_request.number }}
             tags: |
@@ -38,7 +41,7 @@ jobs:
 
         - name: Build the multi-arch images
           id: build
-          uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+          uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
           with:
             file: ./dockerfiles/Dockerfile
             context: .
@@ -57,7 +60,7 @@ jobs:
           shell: bash
 
         - name: Build the debug multi-arch images
-          uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+          uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
           with:
             file: ./dockerfiles/Dockerfile
             context: .
@@ -74,7 +77,7 @@ jobs:
         contents: read
       steps:
       - name: Checkout code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Build the classic test image
         # We only want to confirm it builds with classic mode, nothing else
@@ -85,59 +88,129 @@ jobs:
           DOCKER_BUILDKIT: 0
         shell: bash
     pr-image-tests-build-windows-images:
-      name: PR - Docker windows build test, windows 2022 and 2025
+      name: PR - Docker ${{ matrix.windows-container-type }} build, Windows ${{ matrix.windows-base-version }}
       runs-on: windows-${{ matrix.windows-base-version }}
       strategy:
-        fail-fast: true
+        fail-fast: false
         matrix:
-          windows-base-version:
-            # https://github.com/fluent/fluent-bit/blob/1d366594a889624ec3003819fe18588aac3f17cd/dockerfiles/Dockerfile.windows#L3
-            - '2022'
-            - '2025'
+          include:
+            - windows-base-version: '2022'
+              windows-container-type: servercore
+              dockerfile: Dockerfile.windows
+              image-tag-suffix: windows-2022
+            - windows-base-version: '2025'
+              windows-container-type: servercore
+              dockerfile: Dockerfile.windows
+              image-tag-suffix: windows-2025
+            - windows-base-version: '2025'
+              windows-container-type: nanoserver
+              dockerfile: Dockerfile.windows.nano
+              image-tag-suffix: windows-nano-2025
       permissions:
         contents: read
       steps:
         - name: Checkout repository
-          uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+          uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
         - name: Extract metadata from Github
           id: meta
-          uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
+          uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
           with:
             images: ${{ github.repository }}/pr-${{ github.event.pull_request.number }}
             tags: |
               type=sha
             flavor: |
-              suffix=-windows-${{ matrix.windows-base-version }}
+              suffix=-${{ matrix.image-tag-suffix }}
 
         # https://github.com/actions/runner-images/issues/12199
         # https://github.com/moby/moby/issues/48093
         # https://support.microsoft.com/en-us/topic/gettemppath-changes-in-windows-february-cumulative-update-preview-4cc631fb-9d97-4118-ab6d-f643cd0a7259#ID0EDF
-        - name: Change system temp directory to the drive having sufficient disk space
+        - name: Move Docker storage and system temp to the build drive
           id: relocate-system-temp-dir
           run: |
             $ErrorActionPreference = "Stop"
+            Get-Volume | Where-Object DriveLetter | Select-Object DriveLetter, FileSystem, SizeRemaining, Size
             if (Test-Path -Path "D:\") {
+              if ((Get-Volume -DriveLetter D).FileSystem -ne "NTFS") {
+                throw "Docker Windows container storage requires an NTFS build drive"
+              }
               $newSystemTempDir = "D:\SystemTemp"
               New-Item -ItemType Directory -Path "${newSystemTempDir}" -Force
               $acl = New-Object System.Security.AccessControl.DirectorySecurity
               $acl.SetSecurityDescriptorSddlForm("O:SYG:SYD:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)")
               Set-Acl "${newSystemTempDir}" -AclObject ${acl}
               [Environment]::SetEnvironmentVariable("SYSTEMTEMP", "${newSystemTempDir}", [EnvironmentVariableTarget]::Machine)
-              Restart-Service docker
+
+              # SYSTEMTEMP does not relocate Docker's layer extraction or image storage.
+              $dockerDataRoot = "D:\docker"
+              $daemonConfigPath = Join-Path $env:ProgramData "docker\config\daemon.json"
+              $daemonConfig = @{}
+              if (Test-Path $daemonConfigPath) {
+                $daemonConfig = Get-Content $daemonConfigPath -Raw | ConvertFrom-Json -AsHashtable
+              }
+              $daemonConfig["data-root"] = $dockerDataRoot
+              New-Item -ItemType Directory -Path (Split-Path $daemonConfigPath) -Force | Out-Null
+              Stop-Service docker
+              try {
+                $daemonConfig | ConvertTo-Json -Depth 100 | Set-Content $daemonConfigPath -Encoding utf8NoBOM
+              }
+              finally {
+                Start-Service docker
+              }
+
+              $dockerReady = $false
+              for ($attempt = 0; $attempt -lt 30; $attempt++) {
+                $actualDataRoot = docker info --format '{{.DockerRootDir}}' 2>$null
+                if ($LASTEXITCODE -eq 0) {
+                  $dockerReady = $true
+                  break
+                }
+                Start-Sleep -Seconds 2
+              }
+              if (-not $dockerReady) {
+                throw "Docker did not become ready after relocating its storage"
+              }
+              if ($actualDataRoot.TrimEnd('\') -ne $dockerDataRoot.TrimEnd('\')) {
+                throw "Docker storage relocation failed: expected $dockerDataRoot, got $actualDataRoot"
+              }
+              Write-Host "Docker data root: $actualDataRoot"
             } else {
-              Write-Warning "Drive D doesn't exist, so there is no disk to relocate system temp directory"
+              Write-Warning "Drive D doesn't exist; Docker storage and system temp remain on the system drive"
             }
           shell: pwsh
 
         - name: Build the windows images
           id: build
           run: |
-            docker build -t ${{ steps.meta.outputs.tags }} --build-arg WINDOWS_VERSION=ltsc${{ matrix.windows-base-version }} -f ./dockerfiles/Dockerfile.windows .
+            docker build -t ${{ steps.meta.outputs.tags }} --build-arg WINDOWS_VERSION=ltsc${{ matrix.windows-base-version }} -f ./dockerfiles/${{ matrix.dockerfile }} .
 
         - name: Sanity check it runs
           # We do this for a simple check of dependencies
           run: |
             docker run --rm -t ${{ steps.meta.outputs.tags }} --help
           shell: bash
+
+        - name: Sanity check the Nano Server default configuration
+          if: matrix.windows-container-type == 'nanoserver'
+          run: |
+            $containerName = "fluent-bit-nano-${{ matrix.windows-base-version }}"
+
+            try {
+              docker run --detach --name $containerName ${{ steps.meta.outputs.tags }}
+              Start-Sleep -Seconds 5
+
+              $running = docker inspect --format '{{.State.Running}}' $containerName
+              docker logs $containerName
+
+              if ($running -ne "true") {
+                throw "Nano Server container did not remain running"
+              }
+            }
+            finally {
+              $containerId = docker ps --all --quiet --filter "name=^/${containerName}$"
+              if ($containerId) {
+                docker rm --force $containerName | Out-Null
+              }
+            }
+          shell: pwsh
 

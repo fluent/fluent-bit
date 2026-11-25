@@ -55,6 +55,7 @@
 #define AZURE_BLOB_AUTH_SAS 1
 
 struct flb_azure_blob {
+    int follow_symlinks;
     int auto_create_container;
     int emulator_mode;
     int compression;
@@ -124,6 +125,9 @@ struct flb_azure_blob {
     /* Shared key */
     unsigned char *decoded_sk;        /* decoded shared key */
     size_t decoded_sk_size;           /* size of decoded shared key */
+
+    /* Protect buffered files shared by flush workers and the upload timer. */
+    pthread_mutex_t buffer_mutex;
 
 #ifdef FLB_HAVE_SQLDB
     /*

@@ -19,7 +19,10 @@
  */
 
 #include <string.h>
+#include <onigmo.h>
 #include <fluent-bit/flb_regex.h>
+#include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_thread_storage.h>
 #include "flb_tests_internal.h"
 
 struct kv_list {
@@ -408,7 +411,132 @@ static void test_slash_delimited_literal_slashes()
     }
 }
 
+static void test_operation_limit(void)
+{
+    struct flb_regex *regex;
+    struct flb_regex_search result;
+    char text[65];
+
+    TEST_CHECK(flb_regex_init() == 0);
+    TEST_CHECK(onig_get_match_operation_limit() == 10000000UL);
+    memset(text, 'a', sizeof(text) - 2);
+    text[sizeof(text) - 2] = '!';
+    text[sizeof(text) - 1] = '\0';
+    regex = flb_regex_create("^(a+)+\\1$");
+    TEST_ASSERT(regex != NULL);
+    TEST_CHECK(flb_regex_match(regex, (unsigned char *) text, strlen(text)) ==
+               ONIGERR_MATCH_OPERATION_LIMIT_OVER);
+    TEST_CHECK(flb_regex_do(regex, text, strlen(text), &result) ==
+               ONIGERR_MATCH_OPERATION_LIMIT_OVER);
+    TEST_CHECK(result.region == NULL);
+    TEST_CHECK(flb_regex_match(regex, (unsigned char *) "aaaa", 4) == 1);
+    TEST_CHECK(flb_regex_match(regex, (unsigned char *) "!", 1) == 0);
+    flb_regex_destroy(regex);
+}
+
+static void test_operation_limit_linear(void)
+{
+    struct flb_regex *regex;
+    struct flb_regex_search result;
+    const char *prefix = "2026-11-05T00:00:00Z stdout F ";
+    char *text;
+    size_t length = 600000;
+    size_t prefix_length;
+
+    TEST_CHECK(flb_regex_init() == 0);
+    text = flb_malloc(length);
+    TEST_ASSERT(text != NULL);
+    prefix_length = strlen(prefix);
+    memcpy(text, prefix, prefix_length);
+    memset(text + prefix_length, 'a', length - prefix_length);
+    /* Same expression as the built-in CRI multiline parser. */
+    regex = flb_regex_create("^(?<time>.+?) (?<stream>stdout|stderr) (?<_p>F|P) (?<log>.*)$");
+    TEST_ASSERT(regex != NULL);
+    TEST_CHECK(flb_regex_do(regex, text, length, &result) == 4);
+    if (result.region != NULL) {
+        flb_regex_results_release(&result);
+    }
+    flb_regex_destroy(regex);
+    flb_free(text);
+}
+
+static void test_cached_operation_limit(void)
+{
+    struct flb_regex *regex;
+    struct flb_regex_search result;
+    char text[1002];
+
+    TEST_CHECK(flb_regex_init() == 0);
+    memset(text, 'a', sizeof(text) - 2);
+    text[sizeof(text) - 2] = '!';
+    text[sizeof(text) - 1] = '\0';
+    regex = flb_regex_create("^(a+)+$");
+    TEST_ASSERT(regex != NULL);
+    TEST_CHECK(flb_regex_match(regex, (unsigned char *) text, strlen(text)) == 0);
+    TEST_CHECK(flb_regex_do(regex, text, strlen(text), &result) == -1);
+    TEST_CHECK(result.region == NULL);
+    TEST_CHECK(flb_regex_match(regex, (unsigned char *) "aaaa", 4) == 1);
+    flb_regex_destroy(regex);
+}
+
+struct regex_init_worker {
+    struct flb_regex *regex;
+    int failed;
+};
+
+static void *regex_init_match_worker(void *data)
+{
+    struct regex_init_worker *worker = data;
+    int i;
+
+    for (i = 0; i < 2000; i++) {
+        if (onig_get_match_operation_limit() != 10000000UL ||
+            flb_regex_match(worker->regex, (unsigned char *) "aaaaaaaaaaaaaaab", 16) != 1) {
+            worker->failed = 1;
+            break;
+        }
+    }
+    return NULL;
+}
+
+static void test_operation_limit_initialization(void)
+{
+    struct regex_init_worker worker = {0};
+    struct flb_config *config;
+    pthread_t thread;
+    unsigned long saved_limit;
+    int i;
+
+    /* The budget exists even before the first explicit backend init. */
+    saved_limit = onig_get_match_operation_limit();
+    TEST_CHECK(saved_limit == 10000000UL);
+    TEST_CHECK(flb_regex_init() == 0);
+    worker.regex = flb_regex_create("^(a|aa){3,10}b$");
+    TEST_ASSERT(worker.regex != NULL);
+    TEST_ASSERT(pthread_create(&thread, NULL, regex_init_match_worker, &worker) == 0);
+    for (i = 0; i < 2000; i++) {
+        TEST_CHECK(flb_regex_init() == 0);
+    }
+    TEST_CHECK(pthread_join(thread, NULL) == 0);
+    TEST_CHECK(worker.failed == 0);
+    flb_regex_destroy(worker.regex);
+
+    /* Sequential overrides must not be overwritten by context creation. */
+    onig_set_match_operation_limit(saved_limit - 1);
+    config = flb_config_init();
+    TEST_CHECK(config != NULL);
+    TEST_CHECK(onig_get_match_operation_limit() == saved_limit - 1);
+    if (config != NULL) {
+        flb_config_exit(config);
+    }
+    onig_set_match_operation_limit(saved_limit);
+}
+
 TEST_LIST = {
+    { "operation_limit_initialization", test_operation_limit_initialization},
+    { "cached_operation_limit", test_cached_operation_limit},
+    { "operation_limit_linear", test_operation_limit_linear},
+    { "operation_limit", test_operation_limit},
     { "basic" , test_basic},
     { "uri" , test_uri},
     { "option_ignore_case", test_option_ignore_case},

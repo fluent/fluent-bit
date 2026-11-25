@@ -37,7 +37,7 @@ struct ctrace_id *ctr_id_create_random(size_t size)
     }
 
     ret = ctr_random_get(buf, size);
-    if (ret < 0) {
+    if (ret != (ssize_t) size) {
         free(buf);
         return NULL;
     }
@@ -50,6 +50,10 @@ struct ctrace_id *ctr_id_create_random(size_t size)
 
 void ctr_id_destroy(struct ctrace_id *cid)
 {
+    if (cid == NULL) {
+        return;
+    }
+
     cfl_sds_destroy(cid->buf);
     free(cid);
 }
@@ -59,7 +63,7 @@ struct ctrace_id *ctr_id_create(void *buf, size_t len)
     int ret;
     struct ctrace_id *cid;
 
-    if (len <= 0) {
+    if (buf == NULL || len == 0) {
         return NULL;
     }
 
@@ -80,14 +84,21 @@ struct ctrace_id *ctr_id_create(void *buf, size_t len)
 
 int ctr_id_set(struct ctrace_id *cid, void *buf, size_t len)
 {
-    if (cid->buf) {
-        cfl_sds_destroy(cid->buf);
-    }
+    cfl_sds_t new_buf;
 
-    cid->buf = cfl_sds_create_len(buf, len);
-    if (!cid->buf) {
+    if (cid == NULL || buf == NULL || len == 0) {
         return -1;
     }
+
+    new_buf = cfl_sds_create_len(buf, len);
+    if (new_buf == NULL) {
+        return -1;
+    }
+
+    if (cid->buf != NULL) {
+        cfl_sds_destroy(cid->buf);
+    }
+    cid->buf = new_buf;
 
     return 0;
 }

@@ -19,37 +19,68 @@
 
 #include <fluent-bit.h>
 #include <fluent-bit/flb_time.h>
-#include <pthread.h>
+#include <fluent-bit/flb_compat.h>
 #include <stdlib.h>
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 #include "flb_tests_runtime.h"
 
+#define TEST_STOP_WAIT_STEP_MS  10
+#define TEST_STOP_TIMEOUT_MS  10000
 
 int64_t result_time;
 static inline int64_t set_result(int64_t v)
 {
+#ifdef _WIN32
+    return InterlockedExchange64((volatile LONG64 *)&result_time, v);
+#else
     int64_t old = __sync_lock_test_and_set(&result_time, v);
     return old;
+#endif
 }
 
 static inline int64_t get_result(void)
 {
+#ifdef _WIN32
+    return InterlockedCompareExchange64((volatile LONG64 *)&result_time, 0, 0);
+#else
     int64_t old = __sync_fetch_and_add(&result_time, 0);
-
     return old;
+#endif
 }
 
 static inline int64_t time_in_ms()
 {
-    int ms;
-    struct timespec s;
-    TEST_CHECK(clock_gettime(CLOCK_MONOTONIC, &s) == 0);
-    ms = s.tv_nsec / 1.0e6;
-    if (ms >= 1000) {
-        ms = 0;
-    }
-    return 1000 * s.tv_sec + ms;
+    struct flb_time s;
+    flb_time_get(&s);
+    return flb_time_to_millisec(&s);
 }
+
+#if defined(FLB_SYSTEM_MACOS)
+static int stop_engine(flb_ctx_t *ctx)
+{
+    int ret;
+    int trys;
+
+    ret = flb_engine_exit(ctx->config);
+    TEST_CHECK_(ret >= 0, "requesting graceful engine shutdown");
+
+    for (trys = 0;
+         trys < TEST_STOP_TIMEOUT_MS / TEST_STOP_WAIT_STEP_MS &&
+         ctx->status == FLB_LIB_OK;
+         trys++) {
+        flb_time_msleep(TEST_STOP_WAIT_STEP_MS);
+    }
+
+    TEST_CHECK_(ctx->status != FLB_LIB_OK, "engine did not stop within %d ms",
+                TEST_STOP_TIMEOUT_MS);
+
+    return flb_stop(ctx);
+}
+
+#define flb_stop stop_engine
+#endif
 
 int callback_test(void* data, size_t size, void* cb_data)
 {
@@ -67,9 +98,33 @@ struct callback_record {
 };
 
 struct callback_records {
+    pthread_mutex_t mutex;
     int num_records;
     struct callback_record *records;
 };
+
+static int callback_records_count(struct callback_records *records)
+{
+    int count;
+
+    pthread_mutex_lock(&records->mutex);
+    count = records->num_records;
+    pthread_mutex_unlock(&records->mutex);
+
+    return count;
+}
+
+static void callback_records_wait(struct callback_records *records,
+                                  int minimum_records, int wait_seconds)
+{
+    int trys;
+
+    for (trys = 0;
+         trys < wait_seconds && callback_records_count(records) < minimum_records;
+         trys++) {
+        flb_time_msleep(1000);
+    }
+}
 
 int callback_add_record(void* data, size_t size, void* cb_data)
 {
@@ -77,6 +132,7 @@ int callback_add_record(void* data, size_t size, void* cb_data)
 
     if (size > 0) {
         flb_info("[test] flush record");
+        pthread_mutex_lock(&ctx->mutex);
         if (ctx->records == NULL) {
             ctx->records = (struct callback_record *)
                            flb_calloc(1, sizeof(struct callback_record));
@@ -86,11 +142,14 @@ int callback_add_record(void* data, size_t size, void* cb_data)
                                        (ctx->num_records+1)*sizeof(struct callback_record));
         }
         if (ctx->records ==  NULL) {
+            pthread_mutex_unlock(&ctx->mutex);
             return -1;
         }
         ctx->records[ctx->num_records].size = size;
         ctx->records[ctx->num_records].data = data;
         ctx->num_records++;
+        set_result(ctx->num_records);
+        pthread_mutex_unlock(&ctx->mutex);
     }
     return 0;
 }
@@ -152,7 +211,7 @@ void do_test(char *system, ...)
     TEST_CHECK(flb_start(ctx) == 0);
 
     for (trys = 0; trys < 5 && get_result() == 0; trys++) {
-        sleep(1);
+        flb_time_msleep(1000);
     }
 
     flb_info("[test] check status 1");
@@ -160,7 +219,7 @@ void do_test(char *system, ...)
     TEST_CHECK(ret > 0);
 
     for (trys = 0; trys < 5 && get_result() == ret; trys++) {
-        sleep(1);
+        flb_time_msleep(1000);
     }
 
     flb_info("[test] check status 2");
@@ -179,11 +238,11 @@ void do_test_records(char *system, void (*records_cb)(struct callback_records *)
     char *key;
     char *value;
     int idx;
-    int trys;
     struct flb_lib_out_cb cb;
     struct callback_records *records;
 
     records = flb_calloc(1, sizeof(struct callback_records));
+    pthread_mutex_init(&records->mutex, NULL);
     records->num_records = 0;
     records->records = NULL;
     cb.cb   = callback_add_record;
@@ -217,24 +276,24 @@ void do_test_records(char *system, void (*records_cb)(struct callback_records *)
     /* Start test */
     TEST_CHECK(flb_start(ctx) == 0);
 
-    for (trys = 0; trys < 5 && records->num_records <= 0; trys++) {
-        sleep(1);
-    }
-
-    records_cb(records);
+    callback_records_wait(records, 1, 5);
 
     flb_stop(ctx);
+
+    records_cb(records);
 
     for (idx = 0; idx < records->num_records; idx++) {
         flb_lib_free(records->records[idx].data);
     }
     flb_free(records->records);
+    pthread_mutex_destroy(&records->mutex);
     flb_free(records);
 
     flb_destroy(ctx);
 }
 
-void do_test_records_single(char *system, void (*records_cb)(struct callback_records *), ...)
+void do_test_records_single(char *system, int minimum_records, int wait_seconds,
+                            void (*records_cb)(struct callback_records *), ...)
 {
     flb_ctx_t    *ctx    = NULL;
     int in_ffd;
@@ -248,6 +307,7 @@ void do_test_records_single(char *system, void (*records_cb)(struct callback_rec
     struct callback_records *records;
 
     records = flb_calloc(1, sizeof(struct callback_records));
+    pthread_mutex_init(&records->mutex, NULL);
     records->num_records = 0;
     records->records = NULL;
     cb.cb   = callback_add_record;
@@ -274,8 +334,10 @@ void do_test_records_single(char *system, void (*records_cb)(struct callback_rec
     TEST_CHECK(out_ffd >= 0);
     TEST_CHECK(flb_output_set(ctx, out_ffd, "match", "test", NULL) == 0);
 
+#ifndef _WIN32
     exit_ffd = flb_output(ctx, (char *)"exit", &cb);
     TEST_CHECK(flb_output_set(ctx, exit_ffd, "match", "test", NULL) == 0);
+#endif
 
     TEST_CHECK(flb_service_set(ctx, "Flush", "1",
                                     "Grace", "1",
@@ -284,23 +346,24 @@ void do_test_records_single(char *system, void (*records_cb)(struct callback_rec
     /* Start test */
     TEST_CHECK(flb_start(ctx) == 0);
 
-    /* 4 sec passed. It must have flushed */
-    sleep(5);
-
-    records_cb(records);
+    callback_records_wait(records, minimum_records, wait_seconds);
 
     flb_stop(ctx);
+
+    records_cb(records);
 
     for (i = 0; i < records->num_records; i++) {
         flb_lib_free(records->records[i].data);
     }
     flb_free(records->records);
+    pthread_mutex_destroy(&records->mutex);
     flb_free(records);
 
     flb_destroy(ctx);
 }
 
-void do_test_records_wait_time(char *system, int wait_time, void (*records_cb)(struct callback_records *), ...)
+void do_test_records_wait_time(char *system, int minimum_records, int wait_seconds,
+                               void (*records_cb)(struct callback_records *), ...)
 {
     flb_ctx_t    *ctx    = NULL;
     int in_ffd;
@@ -313,6 +376,7 @@ void do_test_records_wait_time(char *system, int wait_time, void (*records_cb)(s
     struct callback_records *records;
 
     records = flb_calloc(1, sizeof(struct callback_records));
+    pthread_mutex_init(&records->mutex, NULL);
     records->num_records = 0;
     records->records = NULL;
     cb.cb   = callback_add_record;
@@ -346,30 +410,30 @@ void do_test_records_wait_time(char *system, int wait_time, void (*records_cb)(s
     /* Start test */
     TEST_CHECK(flb_start(ctx) == 0);
 
-    /* Set wait_time plus 2 sec passed. It must have flushed */
-    sleep(wait_time + 2);
-
-    records_cb(records);
+    callback_records_wait(records, minimum_records, wait_seconds);
 
     flb_stop(ctx);
+
+    records_cb(records);
 
     for (i = 0; i < records->num_records; i++) {
         flb_lib_free(records->records[i].data);
     }
     flb_free(records->records);
+    pthread_mutex_destroy(&records->mutex);
     flb_free(records);
 
     flb_destroy(ctx);
 }
 
-void flb_test_in_disk_flush()
+void flb_test_in_disk_flush(void)
 {
     do_test("disk",
             "interval_sec", "0",
             "interval_nsec", "500000000",
             NULL);
 }
-void flb_test_in_proc_flush()
+void flb_test_in_proc_flush(void)
 {
     do_test("proc",
             "interval_sec", "0",
@@ -380,7 +444,7 @@ void flb_test_in_proc_flush()
             "fd", "on",
             NULL);
 }
-void flb_test_in_head_flush()
+void flb_test_in_head_flush(void)
 {
     do_test("head",
             "interval_sec", "0",
@@ -388,11 +452,11 @@ void flb_test_in_head_flush()
             "File", "/dev/urandom",
             NULL);
 }
-void flb_test_in_cpu_flush()
+void flb_test_in_cpu_flush(void)
 {
     do_test("cpu", NULL);
 }
-void flb_test_in_random_flush()
+void flb_test_in_random_flush(void)
 {
     do_test("random", NULL);
 }
@@ -531,31 +595,16 @@ void flb_test_dummy_records_message_copies_1(struct callback_records *records)
 
 void flb_test_dummy_records_message_copies_5(struct callback_records *records)
 {
-    int trys;
-
-    for (trys = 0; trys < 5 && records->num_records < 5; trys++) {
-        sleep(1);
-    }
     TEST_CHECK(records->num_records >= 5);
 }
 
 void flb_test_dummy_records_message_copies_100(struct callback_records *records)
 {
-    int trys;
-
-    for (trys = 0; trys < 100 && records->num_records < 100; trys++) {
-        sleep(1);
-    }
     TEST_CHECK(records->num_records >= 100);
 }
 
 void flb_test_dummy_records_message_rate(struct callback_records *records)
 {
-    int trys;
-
-    for (trys = 0; trys < 20 && records->num_records < 20; trys++) {
-        sleep(1);
-    }
     TEST_CHECK(records->num_records >= 20);
 }
 
@@ -571,10 +620,10 @@ void flb_test_dummy_records_message_interval_nsec(struct callback_records *recor
 
 void flb_test_dummy_records_message_flush_on_startup(struct callback_records *records)
 {
-    TEST_CHECK(records->num_records >= 2);
+    TEST_CHECK(records->num_records == 1);
 }
 
-void flb_test_in_dummy_flush()
+void flb_test_in_dummy_flush(void)
 {
     do_test("dummy", NULL);
     do_test_records("dummy", flb_test_dummy_records_message_default, NULL);
@@ -595,39 +644,43 @@ void flb_test_in_dummy_flush()
                     "start_time_nsec", "1999",
                     "fixed_timestamp", "on",
                     NULL);
-    do_test_records_single("dummy", flb_test_dummy_records_message_copies_1,
+    do_test_records_single("dummy", 1, 5, flb_test_dummy_records_message_copies_1,
                     "copies", "1",
                     NULL);
-    do_test_records_single("dummy", flb_test_dummy_records_message_copies_5,
+    do_test_records_single("dummy", 5, 5, flb_test_dummy_records_message_copies_5,
                     "copies", "5",
                     NULL);
-    do_test_records_single("dummy", flb_test_dummy_records_message_copies_100,
+    do_test_records_single("dummy", 100, 100, flb_test_dummy_records_message_copies_100,
                     "copies", "100",
                     NULL);
-    do_test_records_wait_time("dummy", 1, flb_test_dummy_records_message_rate,
-                    "rate", "20",
-                    NULL);
-    do_test_records_wait_time("dummy", 2, flb_test_dummy_records_message_interval_sec,
+    do_test_records_wait_time("dummy", 1, 4, flb_test_dummy_records_message_interval_sec,
                     "interval_sec", "2",
                     "interval_nsec", "0",
                     NULL);
-    do_test_records_wait_time("dummy", 1, flb_test_dummy_records_message_interval_nsec,
+    do_test_records_wait_time("dummy", 1, 3, flb_test_dummy_records_message_interval_nsec,
                     "interval_sec", "0",
                     "interval_nsec", "700000000",
                     NULL);
-    do_test_records_wait_time("dummy", 5, flb_test_dummy_records_message_flush_on_startup,
-                    "interval_sec", "5",
+    /* The periodic collector must not satisfy the startup assertion. */
+    do_test_records_wait_time("dummy", 1, 3, flb_test_dummy_records_message_flush_on_startup,
+                    "interval_sec", "60",
                     "interval_nsec", "0",
                     "flush_on_startup", "true",
                     NULL);
 }
 
-void flb_test_in_dummy_thread_flush()
+void flb_test_in_dummy_rate(void)
+{
+    do_test_records_wait_time("dummy", 20, 20, flb_test_dummy_records_message_rate,
+                             "rate", "20", NULL);
+}
+
+void flb_test_in_dummy_thread_flush(void)
 {
     do_test("dummy_thread", NULL);
 }
 
-void flb_test_in_mem_flush()
+void flb_test_in_mem_flush(void)
 {
     do_test("mem", NULL);
 }
@@ -686,6 +739,7 @@ TEST_LIST = {
 #endif
 #ifdef in_dummy
     {"dummy_flush",   flb_test_in_dummy_flush},
+    {"dummy_rate",    flb_test_in_dummy_rate},
 #endif
 #ifdef in_mem
     {"mem_flush",     flb_test_in_mem_flush},

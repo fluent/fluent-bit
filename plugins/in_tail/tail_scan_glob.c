@@ -236,7 +236,12 @@ static int tail_scan_path(const char *path, struct flb_tail_config *ctx)
     /* For every entry found, generate an output list */
     now = time(NULL);
     for (i = 0; i < globbuf.gl_pathc; i++) {
-        ret = stat(globbuf.gl_pathv[i], &st);
+        if (ctx->follow_symlinks) {
+            ret = stat(globbuf.gl_pathv[i], &st);
+        }
+        else {
+            ret = lstat(globbuf.gl_pathv[i], &st);
+        }
         if (ret == 0 && S_ISREG(st.st_mode)) {
             /* Check if this file is blacklisted */
             if (tail_is_excluded(globbuf.gl_pathv[i], ctx) == FLB_TRUE) {
@@ -250,10 +255,22 @@ static int tail_scan_path(const char *path, struct flb_tail_config *ctx)
                                                    strlen(globbuf.gl_pathv[i]),
                                                    &aged_out_inode) == 0) {
                 if (aged_out_inode == (uint64_t) st.st_ino) {
-                    flb_plg_debug(ctx->ins,
-                                  "excluded=%s (ignore_active_older_files)",
-                                  globbuf.gl_pathv[i]);
-                    continue;
+                    mtime = flb_tail_stat_mtime(&st);
+                    if (mtime > 0 && (now - ctx->ignore_older) > mtime) {
+                        flb_plg_debug(ctx->ins,
+                                      "excluded=%s (ignore_active_older_files)",
+                                      globbuf.gl_pathv[i]);
+                        continue;
+                    }
+                }
+                else {
+                    /* Different inode at the same path: the stored offset
+                     * belongs to the old file and must not be applied to the
+                     * replacement file. */
+                    flb_tail_scan_unregister_ignored_file_size(
+                        ctx,
+                        globbuf.gl_pathv[i],
+                        strlen(globbuf.gl_pathv[i]));
                 }
 
                 flb_tail_scan_unregister_aged_out_inode(
@@ -290,6 +307,11 @@ static int tail_scan_path(const char *path, struct flb_tail_config *ctx)
                     ctx,
                     globbuf.gl_pathv[i],
                     strlen(globbuf.gl_pathv[i]));
+
+                /* Discard stale offset if the file was truncated in place. */
+                if (ignored_file_size > (ssize_t) st.st_size) {
+                    ignored_file_size = -1;
+                }
             }
 
             /* Append file to list */

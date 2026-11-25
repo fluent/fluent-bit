@@ -619,6 +619,42 @@ static void flb_test_output_processor_drop_parity(void)
     flb_destroy(ctx);
 }
 
+static int poll_retry_drop_route_parity_grouped(
+             struct flb_input_instance *i_ins,
+             struct flb_output_instance *o_ins,
+             flb_ctx_t *ctx,
+             double *output_dropped_records,
+             double *router_drop_records)
+{
+    int ret;
+    int attempts;
+
+    for (attempts = 0; attempts < 50; attempts++) {
+        ret = get_counter_value_1_or_zero(o_ins->cmt_dropped_records,
+                                          (char *) flb_output_name(o_ins),
+                                          output_dropped_records);
+        if (ret != 0) {
+            return ret;
+        }
+
+        ret = get_counter_value_2_or_zero(ctx->config->router->logs_drop_records_total,
+                                          (char *) flb_input_name(i_ins),
+                                          (char *) flb_output_name(o_ins),
+                                          router_drop_records);
+        if (ret != 0) {
+            return ret;
+        }
+
+        if (*output_dropped_records == 1.0 && *router_drop_records == 1.0) {
+            return 0;
+        }
+
+        flb_time_msleep(100);
+    }
+
+    return -1;
+}
+
 static void flb_test_retry_drop_route_parity_grouped(void)
 {
     int ret;
@@ -685,7 +721,10 @@ static void flb_test_retry_drop_route_parity_grouped(void)
     TEST_CHECK(o_ins != NULL);
 
     if (i_ins && o_ins) {
-        flb_time_msleep(2000);
+        ret = poll_retry_drop_route_parity_grouped(i_ins, o_ins, ctx,
+                                                    &output_dropped_records,
+                                                    &router_drop_records);
+        TEST_CHECK(ret == 0);
 
         ret = get_counter_value_1(o_ins->cmt_proc_records,
                                   (char *) flb_output_name(o_ins),

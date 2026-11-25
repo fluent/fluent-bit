@@ -19,6 +19,7 @@
 
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_metric.h>
+#include <cmetrics/cmt_otlp_metadata.h>
 #include <cmetrics/cmt_map.h>
 #include <cmetrics/cmt_summary.h>
 #include <cmetrics/cmt_histogram.h>
@@ -292,10 +293,7 @@ static int unpack_opts(mpack_reader_t *reader, struct cmt_map *map)
             }
         }
         if (NULL == opts->name) {
-            opts->name = cfl_sds_create("");
-            if (NULL == opts->name) {
-                return CMT_DECODE_MSGPACK_ALLOCATION_ERROR;
-            }
+            return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
         }
 
         /* Allocate enough space for the three components, the separators
@@ -667,6 +665,7 @@ static int unpack_summary_quantile(mpack_reader_t *reader, size_t index, void *c
 
 static int unpack_summary_quantiles(mpack_reader_t *reader, size_t index, void *context)
 {
+    int    result;
     size_t expected_count;
     size_t entry_count;
     struct cmt_msgpack_decode_context *decode_context;
@@ -689,7 +688,13 @@ static int unpack_summary_quantiles(mpack_reader_t *reader, size_t index, void *
         return CMT_DECODE_MSGPACK_CORRUPT_INPUT_DATA_ERROR;
     }
 
-    return cmt_mpack_unpack_array(reader, unpack_summary_quantile, context);
+    result = cmt_mpack_unpack_array(reader, unpack_summary_quantile, context);
+
+    if (result == CMT_DECODE_MSGPACK_SUCCESS) {
+        decode_context->metric_section_set = CMT_TRUE;
+    }
+
+    return result;
 }
 
 static int unpack_summary_count(mpack_reader_t *reader, size_t index, void *context)
@@ -755,6 +760,10 @@ static int unpack_metric_summary(mpack_reader_t *reader, size_t index, void *con
     }
 
     decode_context = (struct cmt_msgpack_decode_context *) context;
+
+    if (decode_context->map->type != CMT_SUMMARY) {
+        return CMT_DECODE_MSGPACK_CORRUPT_INPUT_DATA_ERROR;
+    }
 
     result = cmt_mpack_unpack_map(reader, callbacks, (void *) decode_context);
 
@@ -846,6 +855,7 @@ static int unpack_histogram_buckets(mpack_reader_t *reader, size_t index, void *
     struct cmt_histogram *histogram;
     size_t expected_count;
     size_t entry_count;
+    int result;
 
     if (NULL == reader  ||
         NULL == context ) {
@@ -870,7 +880,13 @@ static int unpack_histogram_buckets(mpack_reader_t *reader, size_t index, void *
         return CMT_DECODE_MSGPACK_CORRUPT_INPUT_DATA_ERROR;
     }
 
-    return cmt_mpack_unpack_array(reader, unpack_histogram_bucket, decode_context);
+    result = cmt_mpack_unpack_array(reader, unpack_histogram_bucket, decode_context);
+
+    if (result == CMT_DECODE_MSGPACK_SUCCESS) {
+        decode_context->metric_section_set = CMT_TRUE;
+    }
+
+    return result;
 }
 
 static int unpack_metric_histogram(mpack_reader_t *reader, size_t index, void *context)
@@ -891,6 +907,10 @@ static int unpack_metric_histogram(mpack_reader_t *reader, size_t index, void *c
     }
 
     decode_context = (struct cmt_msgpack_decode_context *) context;
+
+    if (decode_context->map->type != CMT_HISTOGRAM) {
+        return CMT_DECODE_MSGPACK_CORRUPT_INPUT_DATA_ERROR;
+    }
 
     result = cmt_mpack_unpack_map(reader, callbacks, (void *) decode_context);
 
@@ -1171,6 +1191,11 @@ static int unpack_metric_exp_histogram(mpack_reader_t *reader, size_t index, voi
     };
 
     decode_context = (struct cmt_msgpack_decode_context *) context;
+
+    if (decode_context->map->type != CMT_EXP_HISTOGRAM) {
+        return CMT_DECODE_MSGPACK_CORRUPT_INPUT_DATA_ERROR;
+    }
+
     cmt_metric_exp_hist_lock(decode_context->metric);
     result = cmt_mpack_unpack_map(reader, callbacks, context);
     cmt_metric_exp_hist_unlock(decode_context->metric);
@@ -1191,6 +1216,16 @@ static int unpack_metric_hash(mpack_reader_t *reader, size_t index, void *contex
     decode_context = (struct cmt_msgpack_decode_context *) context;
 
     return cmt_mpack_consume_uint_tag(reader, &decode_context->metric->hash);
+}
+
+static int unpack_metric_otlp(mpack_reader_t *reader, size_t index, void *context)
+{
+    struct cmt_msgpack_decode_context *decode_context = context;
+
+    if (decode_context->metric->otlp_metadata != NULL) {
+        return CMT_DECODE_MSGPACK_CORRUPT_INPUT_DATA_ERROR;
+    }
+    return unpack_cfl_kvlist(reader, &decode_context->metric->otlp_metadata);
 }
 
 static int unpack_metric(mpack_reader_t *reader,
@@ -1214,6 +1249,7 @@ static int unpack_metric(mpack_reader_t *reader,
             {"histogram", unpack_metric_histogram},
             {"exp_histogram", unpack_metric_exp_histogram},
             {"hash",      unpack_metric_hash},
+            {"otlp",      unpack_metric_otlp},
             {NULL,        NULL}
         };
 
@@ -1269,8 +1305,20 @@ static int unpack_metric(mpack_reader_t *reader,
 
     decode_context->metric = metric;
     decode_context->metric_value_type_set = CMT_FALSE;
+    decode_context->metric_section_set = CMT_FALSE;
 
     result = cmt_mpack_unpack_map(reader, callbacks, (void *) decode_context);
+
+    /* the bucket or quantile storage above is sized from the map layout, so
+     * the entry must carry that data, otherwise a tiny entry could make the
+     * decoder allocate the whole layout for nothing
+     */
+    if (CMT_DECODE_MSGPACK_SUCCESS == result &&
+        (decode_context->map->type == CMT_HISTOGRAM ||
+         decode_context->map->type == CMT_SUMMARY) &&
+        decode_context->metric_section_set == CMT_FALSE) {
+        result = CMT_DECODE_MSGPACK_CORRUPT_INPUT_DATA_ERROR;
+    }
 
     if (CMT_DECODE_MSGPACK_SUCCESS != result) {
         destroy_label_list(&metric->labels);
@@ -1289,6 +1337,8 @@ static int unpack_metric(mpack_reader_t *reader,
             free(metric->exp_hist_negative_buckets);
         }
 
+        cfl_kvlist_destroy(metric->otlp_metadata);
+
         free(metric);
     }
     else {
@@ -1303,6 +1353,8 @@ static int unpack_metric_array_entry(mpack_reader_t *reader, size_t index, void 
     int                                result;
     uint64_t                          *old_negative_buckets;
     uint64_t                          *old_positive_buckets;
+    uint64_t                          *old_hist_buckets;
+    uint64_t                          *old_sum_quantiles;
     struct cmt_metric                 *metric;
     struct cmt_msgpack_decode_context *decode_context;
 
@@ -1321,25 +1373,41 @@ static int unpack_metric_array_entry(mpack_reader_t *reader, size_t index, void 
         old_negative_buckets = NULL;
 
         if (0 == cfl_list_size(&metric->labels)) {
-            /* Should we care about finding more than one "implicitly static metric" in
-             * the array?
+            /* Every label-less entry is the static metric; when several are
+             * present the last one wins, exactly as released readers do.
              */
             decode_context->map->metric_static_set = 1;
 
             if (decode_context->map->type == CMT_HISTOGRAM) {
+                /* a previous label-less entry may own the static storage */
+                old_hist_buckets = decode_context->map->metric.hist_buckets;
+
                 decode_context->map->metric.hist_buckets = metric->hist_buckets;
                 cmt_atomic_store(&decode_context->map->metric.hist_count,
                                  cmt_atomic_load(&metric->hist_count));
                 cmt_atomic_store(&decode_context->map->metric.hist_sum,
                                  cmt_atomic_load(&metric->hist_sum));
+
+                if (old_hist_buckets != NULL) {
+                    free(old_hist_buckets);
+                }
             }
             else if (decode_context->map->type == CMT_SUMMARY) {
+                /* a previous label-less entry may own the static storage */
+                old_sum_quantiles = decode_context->map->metric.sum_quantiles;
+
                 cmt_atomic_store(&decode_context->map->metric.sum_quantiles_set, cmt_atomic_load(&metric->sum_quantiles_set));
                 decode_context->map->metric.sum_quantiles = metric->sum_quantiles;
+                decode_context->map->metric.sum_quantiles_count =
+                    metric->sum_quantiles_count;
                 cmt_atomic_store(&decode_context->map->metric.sum_count,
                                  cmt_atomic_load(&metric->sum_count));
                 cmt_atomic_store(&decode_context->map->metric.sum_sum,
                                  cmt_atomic_load(&metric->sum_sum));
+
+                if (old_sum_quantiles != NULL) {
+                    free(old_sum_quantiles);
+                }
             }
             else if (decode_context->map->type == CMT_EXP_HISTOGRAM) {
                 cmt_metric_exp_hist_lock(&decode_context->map->metric);
@@ -1383,6 +1451,9 @@ static int unpack_metric_array_entry(mpack_reader_t *reader, size_t index, void 
                              cmt_atomic_load(&metric->val_int64));
             cmt_atomic_store(&decode_context->map->metric.val_uint64,
                              cmt_atomic_load(&metric->val_uint64));
+            cfl_kvlist_destroy(decode_context->map->metric.otlp_metadata);
+            decode_context->map->metric.otlp_metadata = metric->otlp_metadata;
+            metric->otlp_metadata = NULL;
             decode_context->map->metric.hash = metric->hash;
             cmt_atomic_store(&decode_context->map->metric.timestamp,
                              cmt_atomic_load(&metric->timestamp));
@@ -1486,6 +1557,24 @@ static int unpack_meta_aggregation_type(mpack_reader_t *reader, size_t index, vo
     }
 
     return result;
+}
+
+static int unpack_meta_allow_reset(mpack_reader_t *reader, size_t index, void *context)
+{
+    struct cmt_msgpack_decode_context *decode_context;
+    uint64_t value;
+    int result;
+
+    decode_context = context;
+    result = cmt_mpack_consume_uint_tag(reader, &value);
+    if (result != CMT_DECODE_MSGPACK_SUCCESS) {
+        return result;
+    }
+    if (value > 1) {
+        return CMT_DECODE_MSGPACK_CORRUPT_INPUT_DATA_ERROR;
+    }
+    decode_context->allow_reset = value;
+    return CMT_DECODE_MSGPACK_SUCCESS;
 }
 
 static int unpack_meta_opts(mpack_reader_t *reader, size_t index, void *context)
@@ -1636,6 +1725,7 @@ static int unpack_basic_type_meta(mpack_reader_t *reader, size_t index, void *co
     int                                   result;
     struct cmt_summary                   *summary;
     struct cmt_histogram                 *histogram;
+    struct cmt_exp_histogram             *exp_histogram;
     struct cmt_counter                   *counter;
     struct cmt_msgpack_decode_context    *decode_context;
     struct cmt_mpack_map_entry_callback_t callbacks[] = \
@@ -1647,6 +1737,7 @@ static int unpack_basic_type_meta(mpack_reader_t *reader, size_t index, void *co
             {"buckets",          unpack_meta_buckets},
             {"quantiles",        unpack_meta_quantiles},
             {"aggregation_type", unpack_meta_aggregation_type},
+            {"allow_reset",      unpack_meta_allow_reset},
             {NULL,               NULL}
         };
 
@@ -1684,6 +1775,12 @@ static int unpack_basic_type_meta(mpack_reader_t *reader, size_t index, void *co
             else {
                 histogram->buckets = NULL;
             }
+
+            histogram->aggregation_type = decode_context->aggregation_type;
+        }
+        else if (decode_context->map->type == CMT_EXP_HISTOGRAM) {
+            exp_histogram = (struct cmt_exp_histogram *) decode_context->map->parent;
+            exp_histogram->aggregation_type = decode_context->aggregation_type;
         }
         else if (decode_context->map->type == CMT_SUMMARY) {
             summary = (struct cmt_summary *) decode_context->map->parent;
@@ -1697,6 +1794,7 @@ static int unpack_basic_type_meta(mpack_reader_t *reader, size_t index, void *co
         else if(decode_context->map->type == CMT_COUNTER) {
             counter = (struct cmt_counter *) decode_context->map->parent;
             counter->aggregation_type = decode_context->aggregation_type;
+            counter->allow_reset = decode_context->allow_reset;
         }
     }
 
@@ -1705,9 +1803,18 @@ static int unpack_basic_type_meta(mpack_reader_t *reader, size_t index, void *co
 
 static int unpack_basic_type_values(mpack_reader_t *reader, size_t index, void *context)
 {
+    struct cmt_msgpack_decode_context *decode_context;
+
     if (NULL == reader ||
         NULL == context) {
         return CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+    }
+
+    decode_context = context;
+
+    /* The metadata fixes the storage layout before samples are allocated. */
+    if (decode_context->map->parent == NULL) {
+        return CMT_DECODE_MSGPACK_CORRUPT_INPUT_DATA_ERROR;
     }
 
     return cmt_mpack_unpack_array(reader,
@@ -2172,8 +2279,22 @@ int cmt_decode_msgpack_create(struct cmt **out_cmt, char *in_buf, size_t in_size
     mpack_reader_init_data(&reader, &in_buf[*offset], in_size);
 
     result = unpack_context(&reader, cmt);
+    if (result == CMT_DECODE_MSGPACK_SUCCESS && cmt_otlp_histogram_restore(cmt) != 0) {
+        result = CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+    }
+    if (result == CMT_DECODE_MSGPACK_SUCCESS && cmt_otlp_metadata_restore(cmt) != 0) {
+        result = CMT_DECODE_MSGPACK_INVALID_ARGUMENT_ERROR;
+    }
 
-    remainder = mpack_reader_remaining(&reader, NULL);
+    /* Semantic rejection can leave containers open without an MPack error.
+     * Preserve the consumed offset, then cancel tracking before destruction. */
+    if (CMT_DECODE_MSGPACK_SUCCESS != result && mpack_reader_error(&reader) == mpack_ok) {
+        remainder = (size_t) (reader.end - reader.data);
+        mpack_reader_flag_error(&reader, mpack_error_invalid);
+    }
+    else {
+        remainder = mpack_reader_remaining(&reader, NULL);
+    }
 
     *offset += in_size - remainder;
 

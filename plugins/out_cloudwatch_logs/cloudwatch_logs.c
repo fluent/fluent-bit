@@ -83,6 +83,7 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     char *session_name = NULL;
     struct flb_cloudwatch *ctx = NULL;
     int ret;
+    int i;
     flb_sds_t tmp_sds = NULL;
     (void) config;
     (void) data;
@@ -96,6 +97,18 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
     mk_list_init(&ctx->streams);
 
     ctx->ins = ins;
+
+    if (ins->tp_workers > 0) {
+        ctx->worker_streams = flb_calloc(ins->tp_workers, sizeof(struct mk_list));
+        if (!ctx->worker_streams) {
+            flb_errno();
+            goto error;
+        }
+        ctx->stream_worker_count = ins->tp_workers;
+        for (i = 0; i < ctx->stream_worker_count; i++) {
+            mk_list_init(&ctx->worker_streams[i]);
+        }
+    }
 
     /* Populate context with config map defaults and incoming properties */
     ret = flb_output_config_map_set(ins, (void *) ctx);
@@ -257,6 +270,7 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
         flb_plg_error(ctx->ins, "Failed to create tls context");
         goto error;
     }
+    flb_tls_set_verify_hostname(ctx->cred_tls, ins->tls_verify_hostname);
 
     ctx->client_tls = flb_tls_create(FLB_TLS_CLIENT_MODE,
                                      ins->tls_verify,
@@ -271,6 +285,7 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
         flb_plg_error(ctx->ins, "Failed to create tls context");
         goto error;
     }
+    flb_tls_set_verify_hostname(ctx->client_tls, ins->tls_verify_hostname);
 
     ctx->aws_provider = flb_standard_chain_provider_create(config,
                                                            ctx->cred_tls,
@@ -307,6 +322,7 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
             flb_errno();
             goto error;
         }
+        flb_tls_set_verify_hostname(ctx->sts_tls, ins->tls_verify_hostname);
 
         ctx->base_aws_provider = ctx->aws_provider;
 
@@ -458,6 +474,10 @@ static void cb_cloudwatch_flush(struct flb_event_chunk *event_chunk,
                                    event_chunk->type, config);
     if (event_count < 0) {
         flb_plg_error(ctx->ins, "Failed to send events");
+        if (buf->non_retriable_error == FLB_TRUE) {
+            cw_flush_destroy(buf);
+            FLB_OUTPUT_RETURN(FLB_ERROR);
+        }
         cw_flush_destroy(buf);
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
@@ -469,6 +489,7 @@ static void cb_cloudwatch_flush(struct flb_event_chunk *event_chunk,
 
 void flb_cloudwatch_ctx_destroy(struct flb_cloudwatch *ctx)
 {
+    int i;
     struct log_stream *stream;
     struct mk_list *tmp;
     struct mk_list *head;
@@ -527,6 +548,14 @@ void flb_cloudwatch_ctx_destroy(struct flb_cloudwatch *ctx)
             mk_list_del(&stream->_head);
             log_stream_destroy(stream);
         }
+        for (i = 0; i < ctx->stream_worker_count; i++) {
+            mk_list_foreach_safe(head, tmp, &ctx->worker_streams[i]) {
+                stream = mk_list_entry(head, struct log_stream, _head);
+                mk_list_del(&stream->_head);
+                log_stream_destroy(stream);
+            }
+        }
+        flb_free(ctx->worker_streams);
         flb_free(ctx);
     }
 }

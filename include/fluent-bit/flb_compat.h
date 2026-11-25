@@ -27,6 +27,8 @@
 #ifndef FLB_COMPAT_H
 #define FLB_COMPAT_H
 
+#include <string.h>
+
 /*
  * libmonkey exposes compat macros for <unistd.h>, which some platforms lack,
  * so include the header here.
@@ -46,6 +48,7 @@
 #include <fluent-bit/flb_dlfcn_win32.h>
 
 #define FLB_DIRCHAR '\\'
+#define FLB_PATH_SEPARATOR "\\"
 #define PATH_MAX MAX_PATH
 #define S_ISREG(m) (((m) & S_IFMT) == S_IFREG)
 #define S_ISLNK(m) (0)  /* Windows doesn't support S_IFLNK */
@@ -142,6 +145,7 @@ static inline int usleep(LONGLONG usec)
 #include <strings.h>
 
 #define FLB_DIRCHAR '/'
+#define FLB_PATH_SEPARATOR "/"
 #endif
 
 #ifdef FLB_HAVE_UNIX_SOCKET
@@ -204,8 +208,14 @@ static inline uint32_t __attribute__((optimize("-O0"))) FLB_ALIGNED_DWORD_READ(u
 #endif
 
 #else
-static inline uint32_t FLB_ALIGNED_DWORD_READ(unsigned char *source) {
-    return *((uint32_t *) source);
+static inline uint32_t FLB_ALIGNED_DWORD_READ(unsigned char *source)
+{
+    uint32_t result;
+
+    /* MessagePack extension payloads are not guaranteed to be aligned. */
+    memcpy(&result, source, sizeof(result));
+
+    return result;
 }
 #endif
 

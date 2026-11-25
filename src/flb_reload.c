@@ -32,6 +32,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_plugin.h>
 #include <fluent-bit/flb_reload.h>
+#include <fluent-bit/flb_processor.h>
 #include <fluent-bit/flb_time.h>
 
 #include <cfl/cfl.h>
@@ -205,6 +206,27 @@ static int flb_custom_propery_check_all(struct flb_config *config)
     return 0;
 }
 
+static int processor_property_check_all(struct flb_config *config)
+{
+    struct mk_list *head;
+    struct flb_input_instance *input;
+    struct flb_output_instance *output;
+
+    mk_list_foreach(head, &config->inputs) {
+        input = mk_list_entry(head, struct flb_input_instance, _head);
+        if (flb_processor_preflight(input->processor) != 0) {
+            return -1;
+        }
+    }
+    mk_list_foreach(head, &config->outputs) {
+        output = mk_list_entry(head, struct flb_output_instance, _head);
+        if (flb_processor_preflight(output->processor) != 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
 int flb_reload_property_check_all(struct flb_config *config)
 {
     int ret = 0;
@@ -238,6 +260,11 @@ int flb_reload_property_check_all(struct flb_config *config)
     if (ret == -1) {
         flb_error("[reload] check properties for output plugins is failed");
 
+        return -1;
+    }
+
+    if (processor_property_check_all(config) != 0) {
+        flb_error("[reload] processor configuration preflight failed");
         return -1;
     }
 
@@ -533,6 +560,20 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
 
     new_config = new_ctx->config;
 
+    if (old_config->conf_path) {
+        new_config->conf_path = flb_strdup(old_config->conf_path);
+        if (!new_config->conf_path) {
+            if (file != NULL) {
+                flb_sds_destroy(file);
+            }
+            flb_cf_destroy(new_cf);
+            flb_destroy(new_ctx);
+            flb_error("[reload] copying configuration path failed. Reloading is halted");
+            flb_reload_watchdog_cleanup(watchdog_ctx);
+            return FLB_RELOAD_HALTED;
+        }
+    }
+
     /* Inherit verbose from the old ctx instance */
     verbose = ctx->config->verbose;
     new_config->verbose = verbose;
@@ -552,7 +593,12 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
 
     /* Create another config format context */
     if (file != NULL) {
+        new_cf->entry_file = old_config->hot_reload_config_file;
+        if (new_cf->entry_file != NULL) {
+            rewind(new_cf->entry_file);
+        }
         loaded_cf = flb_cf_create_from_file(new_cf, file);
+        new_cf->entry_file = NULL;
 
         if (!loaded_cf) {
             flb_sds_destroy(file);
@@ -595,6 +641,19 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
         return FLB_RELOAD_HALTED;
     }
 
+    if (new_config->fips_mode != old_config->fips_mode) {
+        if (file != NULL) {
+            flb_sds_destroy(file);
+        }
+        flb_cf_destroy(new_cf);
+        flb_destroy(new_ctx);
+        old_config->hot_reloading = FLB_FALSE;
+
+        flb_error("[reload] security.fips_mode cannot be changed by hot reload");
+        flb_reload_watchdog_cleanup(watchdog_ctx);
+        return FLB_RELOAD_HALTED;
+    }
+
     /* Validate plugin properites before fluent-bit stops the old context. */
     ret = flb_reload_property_check_all(new_config);
     if (ret != 0) {
@@ -622,6 +681,7 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
 
     flb_info("[reload] stop everything of the old context");
     flb_stop(ctx);
+    new_config->prior_reload_exit_status = old_config->exit_status_code;
     flb_destroy(ctx);
 
     flb_info("[reload] start everything");

@@ -211,7 +211,12 @@ static int span_extract_attributes(struct ctrace_span *span,
     ssize_t                  match_count;
     struct flb_regex_search  match_list;
     struct cfl_variant      *attribute;
+    cfl_sds_t                source;
     int                      result;
+
+    if (span->attr == NULL) {
+        return FLB_FALSE;
+    }
 
     attribute = cfl_kvlist_fetch(span->attr->kv, key);
     if (attribute == NULL) {
@@ -222,12 +227,24 @@ static int span_extract_attributes(struct ctrace_span *span,
         return FLB_FALSE;
     }
 
+    /*
+     * attribute_match_cb() replaces the span attribute named like each
+     * capture group; if a group is named like 'key' that destroys the very
+     * string the match results point into, so run the regex over a copy.
+     */
+    source = cfl_sds_create_len(attribute->data.as_string,
+                                cfl_sds_len(attribute->data.as_string));
+    if (source == NULL) {
+        return FLB_FALSE;
+    }
+
     match_count = flb_regex_do(regex,
-                               attribute->data.as_string,
-                               cfl_sds_len(attribute->data.as_string),
+                               source,
+                               cfl_sds_len(source),
                                &match_list);
 
     if (match_count <= 0) {
+        cfl_sds_destroy(source);
         return FLB_FALSE;
     }
 
@@ -235,6 +252,9 @@ static int span_extract_attributes(struct ctrace_span *span,
                              &match_list,
                              attribute_match_cb,
                              (void *) span);
+
+    cfl_sds_destroy(source);
+
     if (result == -1) {
         return FLB_FALSE;
     }

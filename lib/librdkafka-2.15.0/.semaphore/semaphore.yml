@@ -1,0 +1,631 @@
+version: v1.0
+name: build-test-release
+agent:
+  machine:
+    type: s1-prod-ubuntu24-04-arm64-00
+execution_time_limit:
+  hours: 3
+
+auto_cancel:
+  running:
+    when: "branch != 'master'"
+
+global_job_config:
+  prologue:
+    commands:
+      - checkout
+      - mkdir artifacts
+      - mkdir dest
+  env_vars:
+    - name: CACHE_TAG
+      value: '8'
+    - name: CI
+      value: 'true'
+    - name: KAFKA_VERSION
+      value: '4.3.0'
+    - name: CP_VERSION
+      value: '8.0.0'
+    # Shows plain output from docker build (no progress bars)
+    - name: BUILDKIT_PROGRESS
+      value: plain
+    - name: MACOSX_DEPLOYMENT_TARGET
+      value: '13'
+
+blocks:
+  - name: 'OSX arm64/m1'
+    dependencies: []
+    run:
+      when: "tag =~ '^v[0-9]\\.'"
+    task:
+      agent:
+        machine:
+          type: s1-macos-15-arm64-8
+      env_vars:
+        - name: ARTIFACT_KEY
+          value: p-librdkafka__plat-osx__arch-arm64__lnk-all
+      epilogue:
+        commands:
+          - '[[ -z $SEMAPHORE_GIT_TAG_NAME ]] || artifact push workflow artifacts/ --destination artifacts/${ARTIFACT_KEY}/'
+      jobs:
+        - name: 'Build'
+          commands:
+            - ./configure --install-deps --source-deps-only --enable-static --disable-lz4-ext --enable-strip
+            - make -j all examples check
+            - examples/rdkafka_example -X builtin.features
+            - otool -L src/librdkafka.dylib
+            - otool -L src-cpp/librdkafka++.dylib
+            - make -j -C tests build
+            - make -C tests run_local_quick
+            - DESTDIR="$PWD/dest" make install
+            - (cd dest && tar cvzf ../artifacts/librdkafka.tgz .)
+
+
+  - name: 'OSX x64'
+    dependencies: []
+    run:
+      when: "tag =~ '^v[0-9]\\.'"
+    task:
+      agent:
+        machine:
+          type: s1-macos-15-amd64-6
+      env_vars:
+        - name: ARTIFACT_KEY
+          value: p-librdkafka__plat-osx__arch-x64__lnk-all
+      epilogue:
+        commands:
+          - '[[ -z $SEMAPHORE_GIT_TAG_NAME ]] || artifact push workflow artifacts/ --destination artifacts/${ARTIFACT_KEY}/'
+      jobs:
+        - name: 'Build'
+          commands:
+            - ./configure --install-deps --source-deps-only --enable-static --disable-lz4-ext --enable-strip
+            - make -j all examples check
+            - examples/rdkafka_example -X builtin.features
+            - otool -L src/librdkafka.dylib
+            - otool -L src-cpp/librdkafka++.dylib
+            - make -j -C tests build
+            - make -C tests run_local_quick
+            - DESTDIR="$PWD/dest" make install
+            - (cd dest && tar cvzf ../artifacts/librdkafka.tgz .)
+
+
+  - name: 'Style check'
+    dependencies: []
+    skip:
+      # Skip for release tags, we don't want style checks
+      # to fail the release build.
+      when: "tag =~ '^v[0-9]\\.'"
+    task:
+      agent:
+        machine:
+          type: s1-prod-ubuntu24-04-arm64-00
+      jobs:
+        - name: 'Style check'
+          commands:
+            - packaging/tools/run-in-docker.sh test-runner-arm64-${CACHE_TAG} packaging/tools/run-style-check.sh
+
+  - name: 'Build documentation'
+    dependencies: []
+    task:
+      agent:
+        machine:
+          type: s1-prod-ubuntu24-04-arm64-1
+      jobs:
+        - name: 'Generate documentation'
+          commands:
+            - packaging/tools/run-in-docker.sh test-runner-arm64-${CACHE_TAG} make docs
+            - (cd staging-docs && tar cvzf ../artifacts/librdkafka-docs.tgz .)
+            - '[[ -z $SEMAPHORE_GIT_TAG_NAME ]] || artifact push workflow artifacts/librdkafka-docs.tgz --destination artifacts/librdkafka-docs.tgz'
+
+
+  - name: 'Linux Ubuntu amd64: source build'
+    dependencies: []
+    skip:
+      # Skip for release tags, we don't want flaky CI tests
+      # to fail the release build.
+      when: "tag =~ '^v[0-9]\\.'"
+    task:
+      agent:
+        machine:
+          type: s1-prod-ubuntu24-04-amd64-1
+      env_vars:
+        - name: CFLAGS
+          value: -std=gnu90 # Test minimum C standard, default in CentOS 7
+      prologue:
+        commands:
+          - '[[ -z $DOCKERHUB_APIKEY ]] || docker login --username $DOCKERHUB_USER --password $DOCKERHUB_APIKEY'
+      jobs:
+        - name: 'Build configuration checks'
+          commands:
+            - python3 -m pip install -U pip
+            - ./packaging/tools/build-configurations-checks.sh make test-runner-manylinux-amd64-${CACHE_TAG}
+            - ./packaging/tools/build-configurations-checks.sh cmake test-runner-manylinux-amd64-${CACHE_TAG}
+            - ./packaging/tools/build-configurations-checks.sh make test-runner-alpine-amd64-${CACHE_TAG}
+            - ./packaging/tools/build-configurations-checks.sh cmake test-runner-alpine-amd64-${CACHE_TAG}
+
+  - name: 'Linux Ubuntu amd64: share consumer tests'
+    dependencies: []
+    skip:
+      when: "tag =~ '^v[0-9]\\.'"
+    task:
+      agent:
+        machine:
+          type: s1-prod-ubuntu24-04-amd64-1
+      prologue:
+        commands:
+          - '[[ -z $DOCKERHUB_APIKEY ]] || docker login --username $DOCKERHUB_USER --password $DOCKERHUB_APIKEY'
+      jobs:
+        - name: 'Linux Ubuntu amd64: share consumer tests'
+          commands:
+            - cache restore trivup-kafka-${KAFKA_VERSION}-${CACHE_TAG}
+            - packaging/tools/run-in-docker.sh test-runner-amd64-${CACHE_TAG}
+              ./packaging/tools/run-share-consumer-tests.sh
+              ${KAFKA_VERSION} ${CP_VERSION}
+            - cache store trivup-kafka-${KAFKA_VERSION}-${CACHE_TAG} tests/tmp-KafkaCluster/KafkaCluster/KafkaBrokerApp/kafka/${KAFKA_VERSION}
+
+  - name: 'Linux Ubuntu amd64: share consumer telemetry'
+    dependencies: []
+    skip:
+      when: "tag =~ '^v[0-9]\\.'"
+    task:
+      agent:
+        machine:
+          type: s1-prod-ubuntu24-04-amd64-1
+      prologue:
+        commands:
+          - '[[ -z $DOCKERHUB_APIKEY ]] || docker login --username $DOCKERHUB_USER --password $DOCKERHUB_APIKEY'
+          - sem-version java 17
+      epilogue:
+        always:
+          commands:
+            - 'ls artifacts/ 2>/dev/null && artifact push job artifacts/ --destination telemetry-debug-${SEMAPHORE_JOB_ID}/ || true'
+      jobs:
+        - name: 'Linux Ubuntu amd64: share consumer telemetry'
+          commands:
+            - cache restore share-telemetry-${KAFKA_VERSION}-${CACHE_TAG}
+            - ./packaging/tools/setup-share-telemetry-testing.sh
+            - cache store share-telemetry-${KAFKA_VERSION}-${CACHE_TAG} tests/share_telemetry_verify/.work
+
+  - name: 'Linux Ubuntu aarch64: share consumer tests'
+    dependencies: []
+    skip:
+      when: "tag =~ '^v[0-9]\\.'"
+    task:
+      agent:
+        machine:
+          type: s1-prod-ubuntu24-04-arm64-1
+      prologue:
+        commands:
+          - '[[ -z $DOCKERHUB_APIKEY ]] || docker login --username $DOCKERHUB_USER --password $DOCKERHUB_APIKEY'
+      jobs:
+        - name: 'Linux Ubuntu aarch64: share consumer tests'
+          commands:
+            - cache restore trivup-kafka-${KAFKA_VERSION}-${CACHE_TAG}
+            - packaging/tools/run-in-docker.sh test-runner-arm64-${CACHE_TAG}
+              ./packaging/tools/run-share-consumer-tests.sh
+              ${KAFKA_VERSION} ${CP_VERSION}
+            - cache store trivup-kafka-${KAFKA_VERSION}-${CACHE_TAG} tests/tmp-KafkaCluster/KafkaCluster/KafkaBrokerApp/kafka/${KAFKA_VERSION}
+
+# TODO KIP-932: Re-enable once M1 issues on share consumer tests are fixed.
+#   - name: 'OSX arm64/m1: share consumer tests'
+#     dependencies: []
+#     skip:
+#       when: "tag =~ '^v[0-9]\\.'"
+#     task:
+#       agent:
+#         machine:
+#           type: s1-macos-15-arm64-8
+#       jobs:
+#         - name: 'OSX arm64/m1: share consumer tests'
+#           commands:
+#             - brew install openjdk@21
+#             - sudo ln -sfn $(brew --prefix openjdk@21)/libexec/openjdk.jdk /Library/Java/JavaVirtualMachines/openjdk-21.jdk
+#             - export JAVA_HOME=$(/usr/libexec/java_home -v 21)
+#             - cd tests && python3 -m pip install -r requirements.txt && cd ..
+#             - cache restore trivup-kafka-${KAFKA_VERSION}-${CACHE_TAG}
+#             - ./packaging/tools/run-share-consumer-tests.sh
+#               ${KAFKA_VERSION} ${CP_VERSION}
+#             - cache store trivup-kafka-${KAFKA_VERSION}-${CACHE_TAG} tests/tmp-KafkaCluster/KafkaCluster/KafkaBrokerApp/kafka/${KAFKA_VERSION}
+
+  - name: 'Linux Ubuntu amd64: Share Consumer Single Broker Tests'
+    dependencies: []
+    skip:
+      when: "tag =~ '^v[0-9]\\.'"
+    task:
+      agent:
+        machine:
+          type: s1-prod-ubuntu24-04-amd64-1
+      prologue:
+        commands:
+          - (cd tests && python3 -m pip install -r requirements.txt)
+          - ./configure --install-deps --enable-werror --enable-devel
+          - make -j all
+          - make -j -C tests build
+          - sem-version java 17
+      jobs:
+        - name: 'Linux Ubuntu amd64: Share Consumer Single Broker Tests'
+          commands:
+            - cache restore trivup-kafka-${KAFKA_VERSION}-${CACHE_TAG}
+            - (cd tests && python3 -m trivup.clusters.KafkaCluster --kraft
+              --version ${KAFKA_VERSION} --cpversion ${CP_VERSION}
+              --brokers 1
+              --conf '["share.coordinator.state.topic.replication.factor=1", "share.coordinator.state.topic.min.isr=1", "group.share.min.record.lock.duration.ms=1000", "transaction.state.log.replication.factor=1", "transaction.state.log.min.isr=1"]'
+              --cmd 'TESTS_SKIP_BEFORE=0155 python3 run-test-batches.py')
+            - cache store trivup-kafka-${KAFKA_VERSION}-${CACHE_TAG} tests/tmp-KafkaCluster/KafkaCluster/KafkaBrokerApp/kafka/${KAFKA_VERSION}
+
+  - name: 'Windows MSVC: share consumer tests'
+    dependencies: []
+    skip:
+      when: "tag =~ '^v[0-9]\\.'"
+    task:
+      agent:
+        machine:
+          type: s1-prod-windows
+      env_vars:
+        - name: VCPKG_DISABLE_METRICS
+          value: 'yes'
+      prologue:
+        commands:
+          - cd ..
+          - "& .\\librdkafka\\win32\\setup-vcpkg.ps1"
+          - cd librdkafka
+          - $msbuild = (& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -prerelease -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe); & $msbuild win32\librdkafka.sln /p:Configuration=Release /p:Platform=$env:MSVC_PLATFORM /p:PlatformToolset=v142; if ($LASTEXITCODE -ne 0) { throw "Build failed" }
+          - cache restore jdk21-msi-${env:CACHE_TAG}
+          - if (Test-Path C:\jdk21.msi) { Write-Host "JDK MSI cache HIT" } else { Write-Host "JDK MSI cache MISS - downloading"; Invoke-WebRequest -Uri "https://aka.ms/download-jdk/microsoft-jdk-21-windows-x64.msi" -OutFile C:\jdk21.msi -UseBasicParsing }
+          - cache store jdk21-msi-${env:CACHE_TAG} C:\jdk21.msi
+          - Start-Process msiexec.exe -Wait -ArgumentList '/i', 'C:\jdk21.msi', '/quiet', 'ADDLOCAL=FeatureMain,FeatureEnvironment,FeatureJarFileRunWith,FeatureJavaHome'
+          - $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH", "User")
+      epilogue:
+        always:
+          commands:
+            - try { Get-Process -Name java -ErrorAction Stop | Stop-Process -Force } catch {}
+      jobs:
+        - name: 'Windows x64: share consumer tests'
+          env_vars:
+            - name: triplet
+              value: x64-windows
+            - name: MSVC_PLATFORM
+              value: x64
+          commands:
+            - cache restore kafka-windows-${env:KAFKA_VERSION}-${env:CACHE_TAG}
+            - if (Test-Path C:\kafka.tgz) { Write-Host "Kafka tarball cache HIT" } else { Write-Host "Kafka tarball cache MISS - downloading"; Invoke-WebRequest -Uri "https://archive.apache.org/dist/kafka/${env:KAFKA_VERSION}/kafka_2.13-${env:KAFKA_VERSION}.tgz" -OutFile C:\kafka.tgz -UseBasicParsing }
+            - cache store kafka-windows-${env:KAFKA_VERSION}-${env:CACHE_TAG} C:\kafka.tgz
+            - tar -xzf C:\kafka.tgz -C C:\
+            - Add-Content "C:\kafka_2.13-${env:KAFKA_VERSION}\config\server.properties" "`ngroup.share.min.record.lock.duration.ms=1000`ntransaction.state.log.replication.factor=1`ntransaction.state.log.min.isr=1"
+            - $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH", "User"); $env:KAFKA_CLUSTER_ID = & "C:\kafka_2.13-${env:KAFKA_VERSION}\bin\windows\kafka-storage.bat" random-uuid; & "C:\kafka_2.13-${env:KAFKA_VERSION}\bin\windows\kafka-storage.bat" format --standalone -t $env:KAFKA_CLUSTER_ID -c "C:\kafka_2.13-${env:KAFKA_VERSION}\config\server.properties"; Start-Job -Name kafka-broker -ScriptBlock { param($v) & "C:\kafka_2.13-$v\bin\windows\kafka-server-start.bat" "C:\kafka_2.13-$v\config\server.properties" } -ArgumentList $env:KAFKA_VERSION; Start-Sleep 15; cd tests; Set-Content test.conf "bootstrap.servers=localhost:9092`nbroker.address.family=v4"; Remove-Item Env:TESTS -ErrorAction SilentlyContinue; Remove-Item Env:TESTS_SKIP -ErrorAction SilentlyContinue; $env:RDKAFKA_TEST_CONF = "test.conf"; $env:TESTS_SKIP_BEFORE = "0155"; $env:TEST_BROKER_OS = "windows"; & ..\win32\outdir\v142\x64\Release\tests.exe; Stop-Job -Name kafka-broker
+        - name: 'Windows x86: share consumer tests'
+          env_vars:
+            - name: triplet
+              value: x86-windows
+            - name: MSVC_PLATFORM
+              value: Win32
+          commands:
+            - cache restore kafka-windows-${env:KAFKA_VERSION}-${env:CACHE_TAG}
+            - if (Test-Path C:\kafka.tgz) { Write-Host "Kafka tarball cache HIT" } else { Write-Host "Kafka tarball cache MISS - downloading"; Invoke-WebRequest -Uri "https://archive.apache.org/dist/kafka/${env:KAFKA_VERSION}/kafka_2.13-${env:KAFKA_VERSION}.tgz" -OutFile C:\kafka.tgz -UseBasicParsing }
+            - cache store kafka-windows-${env:KAFKA_VERSION}-${env:CACHE_TAG} C:\kafka.tgz
+            - tar -xzf C:\kafka.tgz -C C:\
+            - Add-Content "C:\kafka_2.13-${env:KAFKA_VERSION}\config\server.properties" "`ngroup.share.min.record.lock.duration.ms=1000`ntransaction.state.log.replication.factor=1`ntransaction.state.log.min.isr=1"
+            - $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH", "User"); $env:KAFKA_CLUSTER_ID = & "C:\kafka_2.13-${env:KAFKA_VERSION}\bin\windows\kafka-storage.bat" random-uuid; & "C:\kafka_2.13-${env:KAFKA_VERSION}\bin\windows\kafka-storage.bat" format --standalone -t $env:KAFKA_CLUSTER_ID -c "C:\kafka_2.13-${env:KAFKA_VERSION}\config\server.properties"; Start-Job -Name kafka-broker -ScriptBlock { param($v) & "C:\kafka_2.13-$v\bin\windows\kafka-server-start.bat" "C:\kafka_2.13-$v\config\server.properties" } -ArgumentList $env:KAFKA_VERSION; Start-Sleep 15; cd tests; Set-Content test.conf "bootstrap.servers=localhost:9092`nbroker.address.family=v4"; Remove-Item Env:TESTS -ErrorAction SilentlyContinue; Remove-Item Env:TESTS_SKIP -ErrorAction SilentlyContinue; $env:RDKAFKA_TEST_CONF = "test.conf"; $env:TESTS_SKIP_BEFORE = "0155"; $env:TEST_BROKER_OS = "windows"; & ..\win32\outdir\v142\Win32\Release\tests.exe; Stop-Job -Name kafka-broker
+
+  - name: 'Linux x64: release artifact docker builds'
+    dependencies: []
+    run:
+      when: "tag =~ '^v[0-9]\\.'"
+    task:
+      agent:
+        machine:
+          type: s1-prod-ubuntu24-04-amd64-1
+      prologue:
+        commands:
+          - '[[ -z $DOCKERHUB_APIKEY ]] || docker login --username $DOCKERHUB_USER --password $DOCKERHUB_APIKEY'
+      epilogue:
+        commands:
+          - '[[ -z $SEMAPHORE_GIT_TAG_NAME ]] || artifact push workflow artifacts/ --destination artifacts/${ARTIFACT_KEY}/'
+      jobs:
+        - name: 'Build: centos8 glibc +gssapi'
+          env_vars:
+            - name: ARTIFACT_KEY
+              value: p-librdkafka__plat-linux__dist-centos8__arch-x64__lnk-std__extra-gssapi
+          commands:
+            - packaging/tools/build-release-artifacts.sh quay.io/pypa/manylinux_2_28_x86_64:2026.05.07-2 artifacts/librdkafka.tgz
+
+        - name: 'Build: centos8 glibc'
+          env_vars:
+            - name: ARTIFACT_KEY
+              value: p-librdkafka__plat-linux__dist-centos8__arch-x64__lnk-all
+          commands:
+            - packaging/tools/build-release-artifacts.sh --disable-gssapi quay.io/pypa/manylinux_2_28_x86_64:2026.05.07-2 artifacts/librdkafka.tgz
+
+        - name: 'Build: alpine musl +gssapi'
+          env_vars:
+            - name: ARTIFACT_KEY
+              value: p-librdkafka__plat-linux__dist-alpine__arch-x64__lnk-std__extra-gssapi
+          commands:
+            - packaging/tools/build-release-artifacts.sh alpine:3.16.9 artifacts/librdkafka.tgz
+
+        - name: 'Build: alpine musl'
+          env_vars:
+            - name: ARTIFACT_KEY
+              value: p-librdkafka__plat-linux__dist-alpine__arch-x64__lnk-all
+          commands:
+            - packaging/tools/build-release-artifacts.sh --disable-gssapi alpine:3.16.9 artifacts/librdkafka.tgz
+
+
+  - name: 'Linux arm64: release artifact docker builds'
+    dependencies: []
+    run:
+      when: "tag =~ '^v[0-9]\\.'"
+    task:
+      agent:
+        machine:
+          type: s1-prod-ubuntu24-04-arm64-1
+      prologue:
+        commands:
+          - '[[ -z $DOCKERHUB_APIKEY ]] || docker login --username $DOCKERHUB_USER --password $DOCKERHUB_APIKEY'
+      epilogue:
+        commands:
+          - '[[ -z $SEMAPHORE_GIT_TAG_NAME ]] || artifact push workflow artifacts/ --destination artifacts/${ARTIFACT_KEY}/'
+      jobs:
+        - name: 'Build: centos8 glibc +gssapi'
+          env_vars:
+            - name: ARTIFACT_KEY
+              value: p-librdkafka__plat-linux__dist-centos8__arch-arm64__lnk-std__extra-gssapi
+          commands:
+            - packaging/tools/build-release-artifacts.sh quay.io/pypa/manylinux_2_28_aarch64:2026.05.07-2 artifacts/librdkafka.tgz
+
+        - name: 'Build: centos8 glibc'
+          env_vars:
+            - name: ARTIFACT_KEY
+              value: p-librdkafka__plat-linux__dist-centos8__arch-arm64__lnk-all
+          commands:
+            - packaging/tools/build-release-artifacts.sh --disable-gssapi quay.io/pypa/manylinux_2_28_aarch64:2026.05.07-2 artifacts/librdkafka.tgz
+
+        - name: 'Build: alpine musl +gssapi'
+          env_vars:
+            - name: ARTIFACT_KEY
+              value: p-librdkafka__plat-linux__dist-alpine__arch-arm64__lnk-all__extra-gssapi
+          commands:
+            - packaging/tools/build-release-artifacts.sh alpine:3.16.9 artifacts/librdkafka.tgz
+
+        - name: 'Build: alpine musl'
+          env_vars:
+            - name: ARTIFACT_KEY
+              value: p-librdkafka__plat-linux__dist-alpine__arch-arm64__lnk-all
+          commands:
+            - packaging/tools/build-release-artifacts.sh --disable-gssapi alpine:3.16.9 artifacts/librdkafka.tgz
+
+  - name: 'Linux s390x: release artifact docker builds'
+    dependencies: []
+    run:
+      when: "tag =~ '^v[0-9]\\.'"
+    task:
+      agent:
+        machine:
+          type: s1-prod-ubuntu24-04-amd64-1
+      env_vars:
+        - name: S390X_USER
+          value: "ubuntu"
+        - name: LOCAL_KEY
+          value: "./s390x.prv"
+      prologue:
+        commands:
+          - '[[ -z $DOCKERHUB_APIKEY ]] || docker login --username $DOCKERHUB_USER --password $DOCKERHUB_APIKEY'
+      epilogue:
+        commands:
+          - '[[ -z $SEMAPHORE_GIT_TAG_NAME ]] || artifact push workflow artifacts/ --destination artifacts/${ARTIFACT_KEY}/'
+          - if [[ "$LOCAL_KEY" =~ ^\./.*$ ]]; then rm -f $LOCAL_KEY; fi
+      jobs:
+        - name: 'Build: centos8 glibc'
+          env_vars:
+            - name: ARTIFACT_KEY
+              value: p-librdkafka__plat-linux__dist-centos8__arch-s390x__lnk-all
+          commands:
+            - . vault-setup
+            - packaging/tools/build-release-artifacts-s390x.sh --disable-gssapi quay.io/pypa/manylinux_2_28_s390x:2026.05.07-2 artifacts/librdkafka.tgz
+
+  - name: 'Windows x64: MinGW-w64'
+    dependencies: []
+    run:
+      when: "tag =~ '^v[0-9]\\.'"
+    task:
+      agent:
+        machine:
+          type: s1-prod-windows
+      env_vars:
+        - name: CHERE_INVOKING
+          value: 'yes'
+        - name: MSYSTEM
+          value: UCRT64
+      prologue:
+        commands:
+          # Set up msys2
+          - "& .\\win32\\setup-msys2.ps1"
+      epilogue:
+        commands:
+          - if ($env:SEMAPHORE_GIT_TAG_NAME -ne "") { artifact push workflow artifacts/ --destination artifacts/$Env:ARTIFACT_KEY/ }
+      jobs:
+        - name: 'Build: MinGW-w64 Dynamic'
+          env_vars:
+            - name: ARTIFACT_KEY
+              value: p-librdkafka__plat-windows__dist-mingw__arch-x64__lnk-std
+          commands:
+            - C:\msys64\usr\bin\bash -lc './packaging/mingw-w64/semaphoreci-build.sh ./artifacts/librdkafka.tgz'
+
+        - name: 'Build: MinGW-w64 Static'
+          env_vars:
+            - name: ARTIFACT_KEY
+              value: p-librdkafka__plat-windows__dist-mingw__arch-x64__lnk-static
+          commands:
+            - C:\msys64\usr\bin\bash -lc './packaging/mingw-w64/semaphoreci-build.sh --static ./artifacts/librdkafka.tgz'
+
+  - name: 'Windows x64: Windows SDK 10.0 / MSVC v142 / VS 2019'
+    dependencies: []
+    run:
+      when: "tag =~ '^v[0-9]\\.'"
+    task:
+      agent:
+        machine:
+          type: s1-prod-windows
+      env_vars:
+        # Disable vcpkg telemetry
+        - name: VCPKG_DISABLE_METRICS
+          value: 'yes'
+      prologue:
+        commands:
+          # install vcpkg in the parent directory.
+          - cd ..
+          # Setup vcpkg
+          - "& .\\librdkafka\\win32\\setup-vcpkg.ps1"
+          - cd librdkafka
+      epilogue:
+        commands:
+          - Get-ChildItem . -include *.dll -recurse
+          - Get-ChildItem . -include *.lib -recurse
+          - if ($env:SEMAPHORE_GIT_TAG_NAME -ne "") { artifact push workflow artifacts/ --destination artifacts/$Env:ARTIFACT_KEY/ }
+      jobs:
+        - name: 'Build: MSVC x64'
+          env_vars:
+            - name: triplet
+              value: x64-windows
+            - name: ARTIFACT_KEY
+              value: p-librdkafka__plat-windows__dist-msvc__arch-x64__lnk-std
+          commands:
+            - "& .\\win32\\msbuild.ps1 -platform x64"
+            - "& .\\win32\\package-zip.ps1 -platform x64"
+        - name: 'Build: MSVC x86'
+          env_vars:
+            - name: triplet
+              value: x86-windows
+            - name: ARTIFACT_KEY
+              value: p-librdkafka__plat-windows__dist-msvc__arch-x86__lnk-std
+          commands:
+            - "& .\\win32\\msbuild.ps1 -platform Win32"
+            - "& .\\win32\\package-zip.ps1 -platform Win32"
+
+  - name: 'Packaging'
+    dependencies:
+      - 'Build documentation'
+      - 'OSX arm64/m1'
+      - 'OSX x64'
+      - 'Linux x64: release artifact docker builds'
+      - 'Linux arm64: release artifact docker builds'
+      - 'Linux s390x: release artifact docker builds'
+      - 'Windows x64: MinGW-w64'
+      - 'Windows x64: Windows SDK 10.0 / MSVC v142 / VS 2019'
+    run:
+      when: "tag =~ '^v[0-9]\\.'"
+    task:
+      agent:
+        machine:
+          type: s1-prod-ubuntu24-04-amd64-2
+      jobs:
+        - name: 'Build NuGet and static packages'
+          commands:
+            # Get all artifacts from previous jobs in this workflow/pipeline.
+            - artifact pull workflow artifacts
+            - mkdir -p packages
+            # Prepare packaging tools
+            - cd packaging/nuget
+            - python3 -m pip install -U -r requirements.txt
+            # Create NuGet package
+            # We need --ignore-tag since the jobs don't add the tag to
+            # the artifact path, and they don't need to since these artifacts
+            # are part of the same workflow.
+            - ./release.py --directory ../../artifacts --ignore-tag --class NugetPackage ${SEMAPHORE_GIT_TAG_NAME}
+            - cp -v librdkafka.redist.*.nupkg ../../packages
+            # Create static package
+            - ./release.py --directory ../../artifacts --ignore-tag --class StaticPackage ${SEMAPHORE_GIT_TAG_NAME}
+            - cp -v librdkafka-static-bundle*.tgz ../../packages
+            - cd ../../
+            # Copy generated docs to packages for inclusion in the tar ball
+            - cp -v artifacts/librdkafka-docs.tgz packages/
+            # Maker super tar ball of all packages
+            - cd packages
+            - tar cvf librdkafka-packages-${SEMAPHORE_GIT_TAG_NAME}-${SEMAPHORE_WORKFLOW_ID}.tar .
+            # Provide some extra details
+            - ls -la
+            - sha256sum *
+            - cd ..
+            # Upload all packages to project artifact store
+            - artifact push project packages --destination librdkafka-packages-${SEMAPHORE_GIT_TAG_NAME}-${SEMAPHORE_WORKFLOW_ID}
+            - echo Thank you
+
+promotions:
+  - name: Run local tests on all architectures and integration tests
+    pipeline_file: semaphore-integration.yml
+    auto_promote_on:
+      - result: passed
+        branch:
+        - "master"
+  # Manual promotion only, the auto promotion on master happens after 
+  # integration tests pass.
+  - name: Run all tests
+    pipeline_file: run-all-tests.yml
+    parameters:
+      env_vars:
+        - required: true
+          name: TEST_KAFKA_GIT_REF
+          default_value: 4.0.0
+        - required: true
+          name: TEST_TYPE
+          default_value: plaintext,ssl
+        - required: true
+          name: TEST_ARCHES
+          default_value: x86_64,aarch64
+        - required: true
+          name: TEST_PARALLEL
+          default_value: "1"
+  # PLAIN and OAUTHBEARER and PLAIN are supported.
+  # into a job. Other mechanisms (SCRAM, GSSAPI) require additional
+  # trivup/CI fixes before they can be enabled.
+  - name: Run SASL PLAIN tests with share consumer
+    pipeline_file: run-sasl-tests.yml
+    parameters:
+      env_vars:
+        - required: true
+          name: TEST_KAFKA_GIT_REF
+          default_value: "4.3.0"
+        - name: TEST_SASL
+          default_value: "PLAIN"
+        - required: true
+          name: TEST_TYPE
+          default_value: "plaintext,ssl"
+          options:
+            - "plaintext,ssl"
+            - "plaintext"
+            - "ssl"
+        - required: true
+          name: TEST_ARCHES
+          default_value: "x86_64,aarch64"
+          options:
+            - "x86_64,aarch64"
+            - "x86_64"
+            - "aarch64"
+  - name: Run SASL OAUTHBEARER tests with share consumer
+    pipeline_file: run-sasl-tests.yml
+    parameters:
+      env_vars:
+        - required: true
+          name: TEST_KAFKA_GIT_REF
+          default_value: "4.3.0"
+        - name: TEST_SASL
+          default_value: "OAUTHBEARER"
+        - required: true
+          name: TEST_TYPE
+          default_value: "plaintext,ssl"
+          options:
+            - "plaintext,ssl"
+            - "plaintext"
+            - "ssl"
+        - required: true
+          name: TEST_ARCHES
+          default_value: "x86_64,aarch64"
+          options:
+            - "x86_64,aarch64"
+            - "x86_64"
+            - "aarch64"
+  - name: Run share consumer tests under ASAN+LSAN
+    pipeline_file: run-asan-tests.yml
+  - name: Run share consumer tests under TSAN
+    pipeline_file: run-tsan-tests.yml
+  - name: Run share consumer tests under valgrind
+    pipeline_file: run-valgrind-tests.yml

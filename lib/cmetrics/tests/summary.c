@@ -19,6 +19,7 @@
 
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_summary.h>
+#include <cmetrics/cmt_map.h>
 #include <cmetrics/cmt_encode_prometheus.h>
 #include <cmetrics/cmt_encode_text.h>
 
@@ -90,6 +91,36 @@ void test_set_defaults()
     /* static label: register static label for the context */
     cmt_label_add(cmt, "static", "test");
     prometheus_encode_test(cmt);
+
+    cmt_destroy(cmt);
+}
+
+void test_quantile_bounds()
+{
+    uint64_t ts;
+    double quantiles[] = {0.5};
+    double values[] = {12.0};
+    struct cmt *cmt;
+    struct cmt_metric *metric;
+    struct cmt_summary *summary;
+
+    cmt = cmt_create();
+    TEST_ASSERT(cmt != NULL);
+    summary = cmt_summary_create(cmt, "test", "", "summary", "help",
+                                 1, quantiles, 0, NULL);
+    TEST_ASSERT(summary != NULL);
+    ts = cfl_time_now();
+    TEST_ASSERT(cmt_summary_set_default(summary, ts, values, 12.0, 1,
+                                        0, NULL) == 0);
+    metric = cmt_map_metric_get(&summary->opts, summary->map, 0, NULL,
+                                CMT_FALSE);
+    TEST_ASSERT(metric != NULL);
+
+    TEST_CHECK(cmt_summary_quantile_get_value(metric, 0) == 12.0);
+    TEST_CHECK(cmt_summary_quantile_get_value(metric, -1) == 0.0);
+    TEST_CHECK(cmt_summary_quantile_get_value(metric, 1) == 0.0);
+    cmt_summary_quantile_set(metric, ts, 1, 99.0);
+    TEST_CHECK(cmt_summary_quantile_get_value(metric, 0) == 12.0);
 
     cmt_destroy(cmt);
 }
@@ -167,6 +198,7 @@ void fluentbit_bug_5894()
 
 TEST_LIST = {
     {"set_defaults"      , test_set_defaults},
+    {"quantile_bounds"   , test_quantile_bounds},
     {"fluentbit_bug_5894", fluentbit_bug_5894},
     { 0 }
 };

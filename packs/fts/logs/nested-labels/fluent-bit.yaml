@@ -1,0 +1,35 @@
+service:
+  flush: 1
+  grace: 1
+  parsers_file: parsers.conf
+pipeline:
+  inputs:
+  - name: tail
+    path: events.jsonl
+    read_from_head: true
+    parser: json
+    processors:
+      logs:
+      - name: fts
+        recipe_version: 1
+        packs:
+        - logs/nested-labels/pack.json
+        error_mode: keep
+        recipe:
+        - id: enrich
+          use: org.fluentbit.nested-labels/enrich_logs
+          with:
+            labels:
+            - name: environment
+              value: staging
+            - name: account_id
+              value:
+                type: uint64
+                value: '18446744073709551615'
+            - name: verified
+              value: true
+        packages_dir: ${FTS_PACKAGES_DIR}
+  outputs:
+  - name: stdout
+    match: '*'
+    format: json_lines

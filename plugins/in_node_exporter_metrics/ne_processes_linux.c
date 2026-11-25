@@ -195,7 +195,7 @@ static int processes_thread_update(struct flb_ne *ctx, flb_sds_t pid_str, flb_sd
         }
 
         mk_list_init(&stat_list);
-        ret = ne_utils_file_read_lines(thread->str, "/stat", &stat_list);
+        ret = ne_utils_file_read_lines(ctx,thread->str, "/stat", &stat_list);
         if (ret == -1) {
             continue;
         }
@@ -271,7 +271,7 @@ static int processes_update(struct flb_ne *ctx)
 
     ts = cfl_time_now();
 
-    ret = ne_utils_file_read_uint64(ctx->path_procfs, "/sys", "kernel", "threads-max", &val);
+    ret = ne_utils_file_read_uint64(ctx, ctx->path_procfs, "/sys", "kernel", "threads-max", &val);
     if (ret == -1) {
         return -1;
     }
@@ -282,7 +282,7 @@ static int processes_update(struct flb_ne *ctx)
                       (double)val, 0, NULL);
     }
 
-    ret = ne_utils_file_read_uint64(ctx->path_procfs, "/sys", "kernel", "pid_max", &val);
+    ret = ne_utils_file_read_uint64(ctx, ctx->path_procfs, "/sys", "kernel", "pid_max", &val);
     if (ret == -1) {
         return -1;
     }
@@ -313,7 +313,7 @@ static int processes_update(struct flb_ne *ctx)
         }
 
         mk_list_init(&stat_list);
-        ret = ne_utils_file_read_lines(process->str, "/stat", &stat_list);
+        ret = ne_utils_file_read_lines(ctx,process->str, "/stat", &stat_list);
         if (ret == -1) {
             continue;
         }

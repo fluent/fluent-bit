@@ -530,7 +530,9 @@ void flb_test_format_none_with_unknown_parser()
         TEST_MSG("flb_start unexpectedly succeeded with unknown parser");
     }
 
-    test_ctx_destroy(ctx);
+    /* flb_start failed, so there is no running engine to stop. */
+    flb_destroy(ctx->flb);
+    flb_free(ctx);
 }
 
 void flb_test_format_none_parser_fallback_udp()

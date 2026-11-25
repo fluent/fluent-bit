@@ -76,7 +76,7 @@ ev_token_bucket_update_(struct ev_token_bucket *bucket,
     ev_uint32_t current_tick)
 {
 	/* It's okay if the tick number overflows, since we'll just
-	 * wrap around when we do the unsigned substraction. */
+	 * wrap around when we do the unsigned subtraction. */
 	unsigned n_ticks = current_tick - bucket->last_updated;
 
 	/* Make sure some ticks actually happened, and that time didn't
@@ -146,11 +146,29 @@ ev_token_bucket_cfg_new(size_t read_rate, size_t read_burst,
 {
 	struct ev_token_bucket_cfg *r;
 	struct timeval g;
+	unsigned msec_per_tick;
+
 	if (! tick_len) {
 		g.tv_sec = 1;
 		g.tv_usec = 0;
 		tick_len = &g;
 	}
+
+	/* Avoid possible overflow.
+	 * - there is no point in accepting values larger then INT_MAX/1000 anyway
+	 * - on windows tv_sec (tv_usec) is long, which is int, which has upper value limit INT_MAX
+	 * - and also negative values does not make any sense
+	 */
+	if (tick_len->tv_sec < 0 || tick_len->tv_sec > INT_MAX/1000)
+		return NULL;
+
+	/* Note, overflow with tv_usec is not possible since tv_sec is limited to
+	 * INT_MAX/1000 anyway */
+	msec_per_tick = (unsigned)(tick_len->tv_sec * 1000) +
+	    (tick_len->tv_usec & COMMON_TIMEOUT_MICROSECONDS_MASK)/1000;
+	if (!msec_per_tick)
+		return NULL;
+
 	if (read_rate > read_burst || write_rate > write_burst ||
 	    read_rate < 1 || write_rate < 1)
 		return NULL;
@@ -167,8 +185,7 @@ ev_token_bucket_cfg_new(size_t read_rate, size_t read_burst,
 	r->read_maximum = read_burst;
 	r->write_maximum = write_burst;
 	memcpy(&r->tick_timeout, tick_len, sizeof(struct timeval));
-	r->msec_per_tick = (tick_len->tv_sec * 1000) +
-	    (tick_len->tv_usec & COMMON_TIMEOUT_MICROSECONDS_MASK)/1000;
+	r->msec_per_tick = msec_per_tick;
 	return r;
 }
 
@@ -560,8 +577,7 @@ int
 bufferevent_set_rate_limit(struct bufferevent *bev,
     struct ev_token_bucket_cfg *cfg)
 {
-	struct bufferevent_private *bevp =
-	    EVUTIL_UPCAST(bev, struct bufferevent_private, bev);
+	struct bufferevent_private *bevp = BEV_UPCAST(bev);
 	int r = -1;
 	struct bufferevent_rate_limit *rlim;
 	struct timeval now;
@@ -737,8 +753,7 @@ bufferevent_add_to_rate_limit_group(struct bufferevent *bev,
     struct bufferevent_rate_limit_group *g)
 {
 	int wsuspend, rsuspend;
-	struct bufferevent_private *bevp =
-	    EVUTIL_UPCAST(bev, struct bufferevent_private, bev);
+	struct bufferevent_private *bevp = BEV_UPCAST(bev);
 	BEV_LOCK(bev);
 
 	if (!bevp->rate_limiting) {
@@ -789,8 +804,7 @@ int
 bufferevent_remove_from_rate_limit_group_internal_(struct bufferevent *bev,
     int unsuspend)
 {
-	struct bufferevent_private *bevp =
-	    EVUTIL_UPCAST(bev, struct bufferevent_private, bev);
+	struct bufferevent_private *bevp = BEV_UPCAST(bev);
 	BEV_LOCK(bev);
 	if (bevp->rate_limiting && bevp->rate_limiting->group) {
 		struct bufferevent_rate_limit_group *g =
@@ -858,14 +872,16 @@ int
 bufferevent_set_max_single_read(struct bufferevent *bev, size_t size)
 {
 	struct bufferevent_private *bevp;
+	int ret = 0;
 	BEV_LOCK(bev);
 	bevp = BEV_UPCAST(bev);
 	if (size == 0 || size > EV_SSIZE_MAX)
 		bevp->max_single_read = MAX_SINGLE_READ_DEFAULT;
 	else
 		bevp->max_single_read = size;
+	ret = evbuffer_set_max_read(bev->input, bevp->max_single_read);
 	BEV_UNLOCK(bev);
-	return 0;
+	return ret;
 }
 
 int
@@ -1087,6 +1103,9 @@ bufferevent_ratelim_init_(struct bufferevent_private *bev)
 	bev->rate_limiting = NULL;
 	bev->max_single_read = MAX_SINGLE_READ_DEFAULT;
 	bev->max_single_write = MAX_SINGLE_WRITE_DEFAULT;
+
+	if (evbuffer_set_max_read(bev->bev.input, bev->max_single_read))
+		return -1;
 
 	return 0;
 }

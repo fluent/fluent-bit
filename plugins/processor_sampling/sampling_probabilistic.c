@@ -101,6 +101,14 @@ static int cb_do_sampling(struct sampling *ctx, void *plugin_context,
 
     cfl_list_foreach_safe(head, tmp, &in_ctr->span_list) {
         span = cfl_list_entry(head, struct ctrace_span, _head_global);
+
+        /* a span without a trace_id cannot be sampled, drop it */
+        if (span->trace_id == NULL) {
+            flb_plg_debug(ctx->ins, "dropping span without trace_id");
+            ctr_span_destroy(span);
+            continue;
+        }
+
         ret = check_sampling(span->trace_id->buf, settings->sampling_percentage);
         if (ret == 1) {
             /* we keep the span, all good */

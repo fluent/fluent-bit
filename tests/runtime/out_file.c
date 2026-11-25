@@ -26,12 +26,47 @@ void flb_test_file_delim_ltsv(void);
 void flb_test_file_label_delim(void);
 void flb_test_file_template(void);
 void flb_test_file_mkdir(void);
+void flb_test_file_mkdir_hardened(void);
+void flb_test_file_literal_percent(void);
+void flb_test_file_dynamic_path_file(void);
+void flb_test_file_dynamic_path_file_hardened(void);
+void flb_test_file_dynamic_timestamp(void);
+void flb_test_file_dynamic_percent_values(void);
+void flb_test_file_dynamic_requires_fallback(void);
+void flb_test_file_dynamic_missing_fallback(void);
+void flb_test_file_dynamic_unsafe_fallback(void);
+void flb_test_file_dynamic_windows_unsafe_fallback(void);
+void flb_test_file_dynamic_path_traversal_fallback(void);
+#ifdef FLB_SYSTEM_WINDOWS
+void flb_test_file_dynamic_windows_path_root(void);
+#endif
+void flb_test_file_dynamic_limit_fallback(void);
+void flb_test_file_tag_limit_fallback(void);
+
+void flb_test_file_tag_escape(void);
 
 /* Test list */
 TEST_LIST = {
+    {"tag_escape", flb_test_file_tag_escape},
     {"path",            flb_test_file_path},
     {"path_file",       flb_test_file_path_file},
     {"mkdir",           flb_test_file_mkdir},
+    {"mkdir_hardened", flb_test_file_mkdir_hardened},
+    {"literal_percent", flb_test_file_literal_percent},
+    {"dynamic_path_file", flb_test_file_dynamic_path_file},
+    {"dynamic_path_file_hardened", flb_test_file_dynamic_path_file_hardened},
+    {"dynamic_timestamp", flb_test_file_dynamic_timestamp},
+    {"dynamic_percent_values", flb_test_file_dynamic_percent_values},
+    {"dynamic_requires_fallback", flb_test_file_dynamic_requires_fallback},
+    {"dynamic_missing_fallback", flb_test_file_dynamic_missing_fallback},
+    {"dynamic_unsafe_fallback", flb_test_file_dynamic_unsafe_fallback},
+    {"dynamic_windows_unsafe_fallback", flb_test_file_dynamic_windows_unsafe_fallback},
+    {"dynamic_path_traversal_fallback", flb_test_file_dynamic_path_traversal_fallback},
+#ifdef FLB_SYSTEM_WINDOWS
+    {"dynamic_windows_path_root", flb_test_file_dynamic_windows_path_root},
+#endif
+    {"dynamic_limit_fallback", flb_test_file_dynamic_limit_fallback},
+    {"tag_limit_fallback", flb_test_file_tag_limit_fallback},
     {"template",        flb_test_file_template},
     {"delimiter_ltsv",  flb_test_file_delim_ltsv},
     {"delimiter_csv",   flb_test_file_delim_csv},
@@ -51,6 +86,22 @@ TEST_LIST = {
 #define TEST_LOGFILE "flb_test_file_dummy.log"
 #define TEST_LOGPATH "out_file"
 #define TEST_TIMEOUT 5
+
+static int set_dynamic_path(flb_ctx_t *ctx, int out_ffd, const char *pattern)
+{
+#ifdef FLB_SYSTEM_WINDOWS
+    char path[PATH_MAX];
+
+    if (_fullpath(path, pattern, sizeof(path)) == NULL) {
+        return -1;
+    }
+    pattern = path;
+    return flb_output_set(ctx, out_ffd, "path", pattern,
+                          "windows.absolute_dynamic_path", "true", NULL);
+#else
+    return flb_output_set(ctx, out_ffd, "path", pattern, NULL);
+#endif
+}
 
 void flb_test_file_json_invalid(void)
 {
@@ -410,8 +461,8 @@ void flb_test_file_path(void)
     flb_sds_printf(&path, "%s/%s", TEST_LOGPATH, file);
 
     remove(path);
-    remove(TEST_LOGPATH);
-    ret = mkdir(TEST_LOGPATH, S_IRUSR | S_IWUSR | S_IXUSR);
+    flb_test_rmdir(TEST_LOGPATH);
+    ret = flb_test_mkdir(TEST_LOGPATH);
     if (!TEST_CHECK(ret == 0)) {
         TEST_MSG("mkdir failed:path=%s errno=%d",TEST_LOGPATH, errno);
         flb_sds_destroy(path);
@@ -453,7 +504,7 @@ void flb_test_file_path(void)
     }
     flb_sds_destroy(path);
     flb_sds_destroy(file);
-    remove(TEST_LOGPATH);
+    flb_test_rmdir(TEST_LOGPATH);
 }
 
 void flb_test_file_path_file(void)
@@ -476,8 +527,8 @@ void flb_test_file_path_file(void)
     flb_sds_printf(&path, "%s/%s", TEST_LOGPATH, TEST_LOGFILE);
 
     remove(path);
-    remove(TEST_LOGPATH);
-    ret = mkdir(TEST_LOGPATH, S_IRUSR | S_IWUSR | S_IXUSR);
+    flb_test_rmdir(TEST_LOGPATH);
+    ret = flb_test_mkdir(TEST_LOGPATH);
     if (!TEST_CHECK(ret == 0)) {
         TEST_MSG("mkdir failed:path=%s errno=%d",TEST_LOGPATH, errno);
         flb_sds_destroy(path);
@@ -518,10 +569,672 @@ void flb_test_file_path_file(void)
         remove(path);
     }
     flb_sds_destroy(path);
-    remove(TEST_LOGPATH);
+    flb_test_rmdir(TEST_LOGPATH);
 }
 
 #define JSON_BASIC "[1448403340,{\"key1\":\"val1\", \"key2\":\"val2\"}]"
+#define JSON_DYNAMIC \
+    "[1448403340,{\"proxy_name\":\"proxy1\", \"hostname\":\"host1\"}]" \
+    "[1448403341,{\"proxy_name\":\"proxy2\", \"hostname\":\"host2\"}]"
+#define JSON_DYNAMIC_MISSING "[1448403340,{\"proxy_name\":\"proxy1\"}]"
+#define JSON_DYNAMIC_UNSAFE "[1448403340,{\"hostname\":\"../escape.log\"}]"
+#define JSON_DYNAMIC_WINDOWS_UNSAFE "[1448403340,{\"hostname\":\"host:one.log\"}]"
+#define JSON_DYNAMIC_PATH_TRAVERSAL "[1448403340,{\"proxy_name\":\"..\"}]"
+#define JSON_DYNAMIC_LIMIT \
+    "[1448403340,{\"hostname\":\"host1\"}]" \
+    "[1448403341,{\"hostname\":\"host2\"}]"
+#define JSON_DYNAMIC_PERCENT "[1448403340,{\"proxy_name\":\"proxy%m\"}]"
+
+void flb_test_file_literal_percent(void)
+{
+    int ret;
+    int bytes;
+    char *p = JSON_BASIC;
+    char file[256];
+    char fallback[256];
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+    FILE *fp;
+
+    snprintf(file, sizeof(file), "%s/metrics%%used.log", TEST_LOGPATH);
+    snprintf(fallback, sizeof(fallback), "%s/fallback.log", TEST_LOGPATH);
+    remove(file);
+    remove(fallback);
+    flb_test_rmdir(TEST_LOGPATH);
+
+    ctx = flb_create();
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "file", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "test", NULL);
+    flb_output_set(ctx, out_ffd, "path", TEST_LOGPATH, NULL);
+    flb_output_set(ctx, out_ffd, "file", "metrics%used.log", NULL);
+    flb_output_set(ctx, out_ffd, "fallback_path", TEST_LOGPATH, NULL);
+    flb_output_set(ctx, out_ffd, "fallback_file", "fallback.log", NULL);
+    flb_output_set(ctx, out_ffd, "mkdir", "true", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+    TEST_CHECK(bytes == strlen(p));
+    ret = wait_for_file(file, 1, TEST_TIMEOUT);
+    TEST_CHECK(ret == 0);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    fp = fopen(file, "r");
+    TEST_CHECK(fp != NULL);
+    if (fp != NULL) {
+        fclose(fp);
+    }
+    TEST_CHECK(access(fallback, F_OK) != 0);
+    remove(file);
+    remove(fallback);
+    flb_test_rmdir(TEST_LOGPATH);
+}
+
+static void test_file_dynamic_path_file_policy(const char *follow_symlinks)
+{
+    int ret;
+    int bytes;
+    char *p = JSON_DYNAMIC;
+    char path1[256];
+    char path2[256];
+    char tag_dir[256];
+    char dir1[256];
+    char dir2[256];
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    snprintf(tag_dir, sizeof(tag_dir), "%s/test", TEST_LOGPATH);
+    snprintf(dir1, sizeof(dir1), "%s/proxy1", tag_dir);
+    snprintf(dir2, sizeof(dir2), "%s/proxy2", tag_dir);
+    snprintf(path1, sizeof(path1), "%s/file.20151124", dir1);
+    snprintf(path2, sizeof(path2), "%s/file.20151124", dir2);
+    remove(path1);
+    remove(path2);
+    flb_test_rmdir(dir1);
+    flb_test_rmdir(dir2);
+    flb_test_rmdir(tag_dir);
+    flb_test_rmdir(TEST_LOGPATH);
+
+    ctx = flb_create();
+    flb_service_set(ctx, "Flush", "1", "Grace", "1",
+                    "Log_Level", "error", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "file", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "test", NULL);
+    TEST_CHECK(set_dynamic_path(ctx, out_ffd, TEST_LOGPATH "/$TAG/$proxy_name") == 0);
+    flb_output_set(ctx, out_ffd, "file", "file.%Y%m%d", NULL);
+    flb_output_set(ctx, out_ffd, "enable_strftime", "true", NULL);
+    flb_output_set(ctx, out_ffd, "fallback_path", TEST_LOGPATH, NULL);
+    flb_output_set(ctx, out_ffd, "fallback_file", "metrics.log", NULL);
+    flb_output_set(ctx, out_ffd, "mkdir", "true", NULL);
+    flb_output_set(ctx, out_ffd, "follow_symlinks", follow_symlinks, NULL);
+    flb_output_set(ctx, out_ffd, "format", "plain", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+    TEST_CHECK(bytes == strlen(p));
+
+    ret = wait_for_file(path1, 1, TEST_TIMEOUT);
+    TEST_CHECK(ret == 0);
+    ret = wait_for_file(path2, 1, TEST_TIMEOUT);
+    TEST_CHECK(ret == 0);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    remove(path1);
+    remove(path2);
+    flb_test_rmdir(dir1);
+    flb_test_rmdir(dir2);
+    flb_test_rmdir(tag_dir);
+    flb_test_rmdir(TEST_LOGPATH);
+}
+
+void flb_test_file_dynamic_path_file(void)
+{
+    test_file_dynamic_path_file_policy("true");
+}
+
+void flb_test_file_dynamic_path_file_hardened(void)
+{
+    test_file_dynamic_path_file_policy("false");
+}
+
+void flb_test_file_dynamic_timestamp(void)
+{
+    int ret;
+    int bytes;
+    char *p = JSON_BASIC;
+    char path[256];
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    snprintf(path, sizeof(path), "%s/events.20151124.log", TEST_LOGPATH);
+    remove(path);
+    flb_test_rmdir(TEST_LOGPATH);
+
+    ctx = flb_create();
+    flb_service_set(ctx, "Flush", "1", "Grace", "1",
+                    "Log_Level", "error", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "file", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "test", NULL);
+    flb_output_set(ctx, out_ffd, "path", TEST_LOGPATH, NULL);
+    flb_output_set(ctx, out_ffd, "file", "events.%Y%m%d.log", NULL);
+    flb_output_set(ctx, out_ffd, "enable_strftime", "true", NULL);
+    flb_output_set(ctx, out_ffd, "fallback_path", TEST_LOGPATH, NULL);
+    flb_output_set(ctx, out_ffd, "fallback_file", "fallback.log", NULL);
+    flb_output_set(ctx, out_ffd, "mkdir", "true", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+    TEST_CHECK(bytes == strlen(p));
+
+    ret = wait_for_file(path, 1, TEST_TIMEOUT);
+    TEST_CHECK(ret == 0);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    remove(path);
+    flb_test_rmdir(TEST_LOGPATH);
+}
+
+void flb_test_file_dynamic_percent_values(void)
+{
+    int ret;
+    int bytes;
+    char *p = JSON_DYNAMIC_PERCENT;
+    char path[256];
+    char proxy_dir[256];
+    char tag_dir[256];
+    char year_dir[256];
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    snprintf(year_dir, sizeof(year_dir), "%s/2015", TEST_LOGPATH);
+    snprintf(tag_dir, sizeof(tag_dir), "%s/test%%d", year_dir);
+    snprintf(proxy_dir, sizeof(proxy_dir), "%s/proxy%%m", tag_dir);
+    snprintf(path, sizeof(path), "%s/file.20151124", proxy_dir);
+    remove(path);
+    flb_test_rmdir(proxy_dir);
+    flb_test_rmdir(tag_dir);
+    flb_test_rmdir(year_dir);
+    flb_test_rmdir(TEST_LOGPATH);
+
+    ctx = flb_create();
+    flb_service_set(ctx, "Flush", "1", "Grace", "1",
+                    "Log_Level", "error", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test%d", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "file", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "path",
+                   TEST_LOGPATH "/%Y/$TAG/$proxy_name", NULL);
+    flb_output_set(ctx, out_ffd, "file", "file.%Y%m%d", NULL);
+    flb_output_set(ctx, out_ffd, "enable_strftime", "true", NULL);
+    flb_output_set(ctx, out_ffd, "fallback_path", TEST_LOGPATH, NULL);
+    flb_output_set(ctx, out_ffd, "fallback_file", "fallback.log", NULL);
+    flb_output_set(ctx, out_ffd, "mkdir", "true", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+    TEST_CHECK(bytes == strlen(p));
+    ret = wait_for_file(path, 1, TEST_TIMEOUT);
+    TEST_CHECK(ret == 0);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    remove(path);
+    flb_test_rmdir(proxy_dir);
+    flb_test_rmdir(tag_dir);
+    flb_test_rmdir(year_dir);
+    flb_test_rmdir(TEST_LOGPATH);
+}
+
+void flb_test_file_dynamic_requires_fallback(void)
+{
+    int ret;
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    ctx = flb_create();
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "off", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "file", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "test", NULL);
+    flb_output_set(ctx, out_ffd, "path", TEST_LOGPATH, NULL);
+    flb_output_set(ctx, out_ffd, "file", "$hostname.log", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret != 0);
+
+    if (ret == 0) {
+        flb_stop(ctx);
+    }
+    flb_destroy(ctx);
+}
+
+void flb_test_file_dynamic_missing_fallback(void)
+{
+    int ret;
+    int bytes;
+    char *p = JSON_DYNAMIC_MISSING;
+    char fallback[256];
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    snprintf(fallback, sizeof(fallback), "%s/fallback.log", TEST_LOGPATH);
+    remove(fallback);
+    flb_test_rmdir(TEST_LOGPATH);
+
+    ctx = flb_create();
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "file", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "test", NULL);
+    flb_output_set(ctx, out_ffd, "path", TEST_LOGPATH, NULL);
+    flb_output_set(ctx, out_ffd, "file", "$hostname.log", NULL);
+    flb_output_set(ctx, out_ffd, "on_missing_field", "fallback", NULL);
+    flb_output_set(ctx, out_ffd, "fallback_path", TEST_LOGPATH, NULL);
+    flb_output_set(ctx, out_ffd, "fallback_file", "fallback.log", NULL);
+    flb_output_set(ctx, out_ffd, "mkdir", "true", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+    TEST_CHECK(bytes == strlen(p));
+    ret = wait_for_file(fallback, 1, TEST_TIMEOUT);
+    TEST_CHECK(ret == 0);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    remove(fallback);
+    flb_test_rmdir(TEST_LOGPATH);
+}
+
+void flb_test_file_dynamic_unsafe_fallback(void)
+{
+    int ret;
+    int bytes;
+    char *p = JSON_DYNAMIC_UNSAFE;
+    char fallback[256];
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    snprintf(fallback, sizeof(fallback), "%s/fallback.log", TEST_LOGPATH);
+    remove(fallback);
+    remove("escape.log");
+    flb_test_rmdir(TEST_LOGPATH);
+
+    ctx = flb_create();
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "file", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "test", NULL);
+    flb_output_set(ctx, out_ffd, "path", TEST_LOGPATH, NULL);
+    flb_output_set(ctx, out_ffd, "file", "$hostname", NULL);
+    flb_output_set(ctx, out_ffd, "on_missing_field", "fallback", NULL);
+    flb_output_set(ctx, out_ffd, "fallback_path", TEST_LOGPATH, NULL);
+    flb_output_set(ctx, out_ffd, "fallback_file", "fallback.log", NULL);
+    flb_output_set(ctx, out_ffd, "mkdir", "true", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+    TEST_CHECK(bytes == strlen(p));
+    ret = wait_for_file(fallback, 1, TEST_TIMEOUT);
+    TEST_CHECK(ret == 0);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    TEST_CHECK(access("escape.log", F_OK) != 0);
+    remove(fallback);
+    flb_test_rmdir(TEST_LOGPATH);
+}
+
+void flb_test_file_dynamic_windows_unsafe_fallback(void)
+{
+    int ret;
+    int bytes;
+    char *p = JSON_DYNAMIC_WINDOWS_UNSAFE;
+    char fallback[256];
+    char unsafe[256];
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    snprintf(fallback, sizeof(fallback), "%s/fallback.log", TEST_LOGPATH);
+    snprintf(unsafe, sizeof(unsafe), "%s/host:one.log", TEST_LOGPATH);
+    remove(fallback);
+    remove(unsafe);
+    flb_test_rmdir(TEST_LOGPATH);
+
+    ctx = flb_create();
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "file", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "test", NULL);
+    flb_output_set(ctx, out_ffd, "path", TEST_LOGPATH, NULL);
+    flb_output_set(ctx, out_ffd, "file", "$hostname", NULL);
+    flb_output_set(ctx, out_ffd, "on_missing_field", "fallback", NULL);
+    flb_output_set(ctx, out_ffd, "fallback_path", TEST_LOGPATH, NULL);
+    flb_output_set(ctx, out_ffd, "fallback_file", "fallback.log", NULL);
+    flb_output_set(ctx, out_ffd, "mkdir", "true", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+    TEST_CHECK(bytes == strlen(p));
+    ret = wait_for_file(fallback, 1, TEST_TIMEOUT);
+    TEST_CHECK(ret == 0);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    TEST_CHECK(access(unsafe, F_OK) != 0);
+    remove(fallback);
+    remove(unsafe);
+    flb_test_rmdir(TEST_LOGPATH);
+}
+
+void flb_test_file_dynamic_limit_fallback(void)
+{
+    int ret;
+    int bytes;
+    char *p = JSON_DYNAMIC_LIMIT;
+    char first[256];
+    char overflow[256];
+    char second[256];
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+
+    snprintf(first, sizeof(first), "%s/host1.log", TEST_LOGPATH);
+    snprintf(second, sizeof(second), "%s/host2.log", TEST_LOGPATH);
+    snprintf(overflow, sizeof(overflow), "%s/overflow.log", TEST_LOGPATH);
+    remove(first);
+    remove(second);
+    remove(overflow);
+    flb_test_rmdir(TEST_LOGPATH);
+
+    ctx = flb_create();
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "file", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "test", NULL);
+    flb_output_set(ctx, out_ffd, "path", TEST_LOGPATH, NULL);
+    flb_output_set(ctx, out_ffd, "file", "$hostname.log", NULL);
+    flb_output_set(ctx, out_ffd, "max_dynamic_files", "1", NULL);
+    flb_output_set(ctx, out_ffd, "on_limit_reached", "fallback", NULL);
+    flb_output_set(ctx, out_ffd, "fallback_path", TEST_LOGPATH, NULL);
+    flb_output_set(ctx, out_ffd, "fallback_file", "overflow.log", NULL);
+    flb_output_set(ctx, out_ffd, "mkdir", "true", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+    TEST_CHECK(bytes == strlen(p));
+    ret = wait_for_file(first, 1, TEST_TIMEOUT);
+    TEST_CHECK(ret == 0);
+    ret = wait_for_file(overflow, 1, TEST_TIMEOUT);
+    TEST_CHECK(ret == 0);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    TEST_CHECK(access(second, F_OK) != 0);
+    remove(first);
+    remove(second);
+    remove(overflow);
+    flb_test_rmdir(TEST_LOGPATH);
+}
+
+void flb_test_file_tag_limit_fallback(void)
+{
+    int ret;
+    int bytes;
+    int first_input;
+    int second_input;
+    int out_ffd;
+    char first[256];
+    char second[256];
+    char overflow[256];
+    flb_ctx_t *ctx;
+
+    snprintf(first, sizeof(first), "%s/first", TEST_LOGPATH);
+    snprintf(second, sizeof(second), "%s/second", TEST_LOGPATH);
+    snprintf(overflow, sizeof(overflow), "%s/overflow.log", TEST_LOGPATH);
+    remove(first);
+    remove(second);
+    remove(overflow);
+    flb_test_rmdir(TEST_LOGPATH);
+
+    ctx = flb_create();
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL);
+
+    first_input = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(first_input >= 0);
+    flb_input_set(ctx, first_input, "tag", "first", NULL);
+    second_input = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(second_input >= 0);
+    flb_input_set(ctx, second_input, "tag", "second", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "file", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "path", TEST_LOGPATH, NULL);
+    flb_output_set(ctx, out_ffd, "max_dynamic_files", "1", NULL);
+    flb_output_set(ctx, out_ffd, "on_limit_reached", "fallback", NULL);
+    flb_output_set(ctx, out_ffd, "fallback_path", TEST_LOGPATH, NULL);
+    flb_output_set(ctx, out_ffd, "fallback_file", "overflow.log", NULL);
+    flb_output_set(ctx, out_ffd, "mkdir", "true", NULL);
+    flb_output_set(ctx, out_ffd, "rotate", "true", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    bytes = flb_lib_push(ctx, first_input, JSON_SMALL, strlen(JSON_SMALL));
+    TEST_CHECK(bytes == strlen(JSON_SMALL));
+    ret = wait_for_file(first, 1, TEST_TIMEOUT);
+    TEST_CHECK(ret == 0);
+
+    bytes = flb_lib_push(ctx, second_input, JSON_SMALL, strlen(JSON_SMALL));
+    TEST_CHECK(bytes == strlen(JSON_SMALL));
+    ret = wait_for_file(overflow, 1, TEST_TIMEOUT);
+    TEST_CHECK(ret == 0);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    TEST_CHECK(access(second, F_OK) != 0);
+    remove(first);
+    remove(second);
+    remove(overflow);
+    flb_test_rmdir(TEST_LOGPATH);
+}
+
+void flb_test_file_dynamic_path_traversal_fallback(void)
+{
+    int ret;
+    int bytes;
+    char *p = JSON_DYNAMIC_PATH_TRAVERSAL;
+    char fallback[256];
+    flb_ctx_t *ctx;
+    int in_ffd;
+    int out_ffd;
+#ifdef FLB_SYSTEM_WINDOWS
+    const char *nested = "[1448403340,{\"proxy_name\":\"region/site\"}]";
+    char line[256];
+    FILE *fp;
+#endif
+
+    snprintf(fallback, sizeof(fallback), "%s/fallback.log", TEST_LOGPATH);
+    remove(fallback);
+    remove("unsafe.log");
+    flb_test_rmdir(TEST_LOGPATH);
+
+    ctx = flb_create();
+    flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL);
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "file", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "test", NULL);
+    TEST_CHECK(set_dynamic_path(ctx, out_ffd, TEST_LOGPATH "/$proxy_name") == 0);
+    flb_output_set(ctx, out_ffd, "file", "unsafe.log", NULL);
+    flb_output_set(ctx, out_ffd, "on_missing_field", "fallback", NULL);
+    flb_output_set(ctx, out_ffd, "fallback_path", TEST_LOGPATH, NULL);
+    flb_output_set(ctx, out_ffd, "fallback_file", "fallback.log", NULL);
+    flb_output_set(ctx, out_ffd, "mkdir", "true", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    bytes = flb_lib_push(ctx, in_ffd, p, strlen(p));
+    TEST_CHECK(bytes == strlen(p));
+#ifdef FLB_SYSTEM_WINDOWS
+    bytes = flb_lib_push(ctx, in_ffd, nested, strlen(nested));
+    TEST_CHECK(bytes == strlen(nested));
+#endif
+    ret = wait_for_file(fallback, 1, TEST_TIMEOUT);
+    TEST_CHECK(ret == 0);
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    TEST_CHECK(access("unsafe.log", F_OK) != 0);
+#ifdef FLB_SYSTEM_WINDOWS
+    TEST_CHECK(access(TEST_LOGPATH "/region", F_OK) != 0);
+    fp = fopen(fallback, "r");
+    if (TEST_CHECK(fp != NULL)) {
+        TEST_CHECK(fgets(line, sizeof(line), fp) != NULL);
+        TEST_CHECK(fgets(line, sizeof(line), fp) != NULL);
+        TEST_CHECK(fgets(line, sizeof(line), fp) == NULL);
+        fclose(fp);
+    }
+#endif
+    remove(fallback);
+    flb_test_rmdir(TEST_LOGPATH);
+}
+
+#ifdef FLB_SYSTEM_WINDOWS
+void flb_test_file_dynamic_windows_path_root(void)
+{
+    int i;
+    int ret;
+    int in_ffd;
+    int out_ffd;
+    flb_ctx_t *ctx;
+    const char *patterns[] = {
+        "C:$dir",
+        "C:$dir\\logs",
+        "\\$dir\\logs",
+        "\\\\$dir\\logs",
+        "//fixed-server/$dir",
+        "\\\\?\\C:\\logs\\$dir",
+        "\\\\.\\C:\\logs\\$dir",
+        TEST_LOGPATH "/$dir",
+        "C:%Y/logs"
+    };
+
+    for (i = 0; i < sizeof(patterns) / sizeof(patterns[0]); i++) {
+        ctx = flb_create();
+        flb_service_set(ctx, "Grace", "1", "Log_Level", "off", NULL);
+        in_ffd = flb_input(ctx, (char *) "lib", NULL);
+        TEST_CHECK(in_ffd >= 0);
+
+        out_ffd = flb_output(ctx, (char *) "file", NULL);
+        TEST_CHECK(out_ffd >= 0);
+        TEST_CHECK(flb_output_set(ctx, out_ffd, "match", "*",
+                                  "path", patterns[i], "file", "test.log",
+                                  "fallback_file", "fallback.log",
+                                  "windows.absolute_dynamic_path", "true",
+                                  "enable_strftime", "true", NULL) == 0);
+        /* Exercise configuration only. No records or filesystem I/O. */
+        ret = flb_start(ctx);
+        TEST_CHECK(ret != 0);
+        TEST_MSG("path template: %s", patterns[i]);
+        if (ret == 0) {
+            flb_stop(ctx);
+        }
+        flb_destroy(ctx);
+    }
+}
+#endif
+
 void flb_test_file_delim_csv(void)
 {
     int ret;
@@ -755,7 +1468,7 @@ void flb_test_file_template(void)
     }
 }
 
-void flb_test_file_mkdir(void)
+static void test_file_mkdir_policy(const char *follow_symlinks)
 {
     int i;
     int ret;
@@ -783,7 +1496,7 @@ void flb_test_file_mkdir(void)
     flb_sds_printf(&path, "%s/%s", TEST_LOGPATH, file);
 
     remove(path);
-    remove(TEST_LOGPATH);
+    flb_test_rmdir(TEST_LOGPATH);
 
     ctx = flb_create();
     flb_service_set(ctx, "Flush", "1", "Grace", "1", "Log_Level", "error", NULL);
@@ -797,6 +1510,7 @@ void flb_test_file_mkdir(void)
     flb_output_set(ctx, out_ffd, "match", "test", NULL);
     flb_output_set(ctx, out_ffd, "path", TEST_LOGPATH, NULL);
     flb_output_set(ctx, out_ffd, "mkdir", "true", NULL);
+    flb_output_set(ctx, out_ffd, "follow_symlinks", follow_symlinks, NULL);
 
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
@@ -820,5 +1534,52 @@ void flb_test_file_mkdir(void)
     }
     flb_sds_destroy(path);
     flb_sds_destroy(file);
-    remove(TEST_LOGPATH);
+    flb_test_rmdir(TEST_LOGPATH);
+}
+
+void flb_test_file_mkdir(void)
+{
+    test_file_mkdir_policy("true");
+}
+
+void flb_test_file_mkdir_hardened(void)
+{
+    test_file_mkdir_policy("false");
+}
+
+void flb_test_file_tag_escape(void)
+{
+    flb_ctx_t *ctx;
+    int input;
+    int output;
+    int mode;
+    FILE *fp;
+    char line[512];
+    char *record = "[1700000000, {\"name\":\"escaped\"}]";
+    char *path = "escaped.log";
+
+    for (mode = 0; mode < 2; mode++) {
+        remove(path);
+        ctx = flb_create();
+        flb_service_set(ctx, "Flush", "0.1", "Grace", "1", "Log_Level", "error", NULL);
+        input = flb_input(ctx, "lib", NULL);
+        flb_input_set(ctx, input, "tag", "app.\r\nforged\t %0A\x7f", NULL);
+        output = flb_output(ctx, "file", NULL);
+        flb_output_set(ctx, output, "match", "*", "format", "out_file",
+                       "file", mode ? "$name.log" : path, "fallback_file", "fallback.log", NULL);
+        TEST_CHECK(flb_start(ctx) == 0);
+        TEST_CHECK(flb_lib_push(ctx, input, record, strlen(record)) == strlen(record));
+        TEST_CHECK(wait_for_file(path, 1, TEST_TIMEOUT) == 0);
+        flb_stop(ctx);
+        flb_destroy(ctx);
+        fp = fopen(path, "r");
+        TEST_CHECK(fp != NULL);
+        if (fp) {
+            TEST_CHECK(fgets(line, sizeof(line), fp) != NULL);
+            TEST_CHECK(strstr(line, "app.%0D%0Aforged%09%20%250A%7F: [1700000000.") == line);
+            TEST_CHECK(fgets(line, sizeof(line), fp) == NULL);
+            fclose(fp);
+        }
+        remove(path);
+    }
 }

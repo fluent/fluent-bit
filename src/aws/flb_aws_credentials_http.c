@@ -23,6 +23,11 @@
 #include <fluent-bit/flb_aws_credentials.h>
 #include <fluent-bit/flb_aws_util.h>
 #include <fluent-bit/flb_utils.h>
+#include <fluent-bit/flb_compat.h>
+
+#ifdef FLB_SYSTEM_WINDOWS
+#include <ws2tcpip.h>
+#endif
 
 #include <fluent-bit/flb_jsmn.h>
 #include <stdlib.h>
@@ -63,20 +68,42 @@ does not satisfy any of the following conditions:
 is within the loopback CIDR (IPv4 127.0.0.0/8, IPv6 ::1/128)
 is the ECS container host 169.254.170.2
 is the EKS container host (IPv4 169.254.170.23, IPv6 fd00:ec2::23)
-is localhost with Greengrass credential provider path (/2016-11-01/credentialprovider/)*/
+is localhost with Greengrass credential provider path (/2016-11-01/credentialprovider/)
+or is an IPv6 link-local address (fe80::/10). */
 static int validate_http_credential_uri(flb_sds_t protocol, flb_sds_t host, flb_sds_t path)
 {
-    if (strncmp(protocol, "https", 5) == 0) {
+    struct in_addr ipv4;
+    struct in6_addr ipv6;
+    struct in6_addr eks_ipv6;
+
+    if (strcmp(protocol, "https") == 0) {
         return 0;
-    } else if (strncmp(host, "127.", 4) == 0 ||
-               strncmp(host, ECS_CREDENTIALS_HOST, ECS_CREDENTIALS_HOST_LEN) == 0 ||
-               strncmp(host, EKS_CREDENTIALS_HOST, EKS_CREDENTIALS_HOST_LEN) == 0 ||
-               strstr(host, "::1") != NULL ||
-               strstr(host, "fd00:ec2::23") != NULL ||
-               strstr(host, "fe80:") != NULL ||
-               (strcmp(host, GREENGRASS_CREDENTIALS_HOST) == 0 && path != NULL &&
-                strcmp(path, GREENGRASS_CREDENTIALS_PATH) == 0)) {
+    }
+
+    if (strcmp(protocol, "http") != 0) {
+        return -1;
+    }
+
+    if (strcmp(host, GREENGRASS_CREDENTIALS_HOST) == 0 && path != NULL &&
+        strcmp(path, GREENGRASS_CREDENTIALS_PATH) == 0) {
         return 0;
+    }
+
+    if (inet_pton(AF_INET, host, &ipv4) == 1) {
+        if (((unsigned char *) &ipv4.s_addr)[0] == 127 ||
+            strcmp(host, ECS_CREDENTIALS_HOST) == 0 ||
+            strcmp(host, EKS_CREDENTIALS_HOST) == 0) {
+            return 0;
+        }
+    }
+
+    if (inet_pton(AF_INET6, host, &ipv6) == 1) {
+        inet_pton(AF_INET6, "fd00:ec2::23", &eks_ipv6);
+        if (IN6_IS_ADDR_LOOPBACK(&ipv6) ||
+            memcmp(&ipv6, &eks_ipv6, sizeof(ipv6)) == 0 ||
+            (ipv6.s6_addr[0] == 0xfe && (ipv6.s6_addr[1] & 0xc0) == 0x80)) {
+            return 0;
+        }
     }
 
     return -1;
@@ -259,6 +286,8 @@ struct flb_aws_provider *flb_endpoint_provider_create(struct flb_config *config,
                                                       flb_aws_client_generator
                                                       *generator)
 {
+    size_t tls_host_len;
+    flb_sds_t tls_host;
     struct flb_aws_provider_http *implementation = NULL;
     struct flb_aws_provider *provider = NULL;
     struct flb_upstream *upstream = NULL;
@@ -270,6 +299,8 @@ struct flb_aws_provider *flb_endpoint_provider_create(struct flb_config *config,
     provider = flb_calloc(1, sizeof(struct flb_aws_provider));
     if (!provider) {
         flb_errno();
+        flb_sds_destroy(host);
+        flb_sds_destroy(path);
         return NULL;
     }
 
@@ -278,8 +309,10 @@ struct flb_aws_provider *flb_endpoint_provider_create(struct flb_config *config,
     implementation = flb_calloc(1, sizeof(struct flb_aws_provider_http));
 
     if (!implementation) {
-        flb_free(provider);
         flb_errno();
+        flb_aws_provider_destroy(provider);
+        flb_sds_destroy(host);
+        flb_sds_destroy(path);
         return NULL;
     }
 
@@ -289,7 +322,27 @@ struct flb_aws_provider *flb_endpoint_provider_create(struct flb_config *config,
     implementation->host = host;
     implementation->path = path;
 
-    upstream = flb_upstream_create(config, host, port, io_flags, NULL);
+    if (io_flags == FLB_IO_TLS) {
+        /* Bind verification to the credential host, including through a proxy. */
+        tls_host_len = flb_sds_len(host);
+        if (tls_host_len > 0 && host[tls_host_len - 1] == '.') {
+            tls_host_len--;
+        }
+        tls_host = tls_host_len > 0 ? flb_sds_create_len(host, tls_host_len) : NULL;
+        if (tls_host != NULL) {
+            provider->cred_tls = flb_tls_create(FLB_TLS_CLIENT_MODE, FLB_TRUE, 0,
+                                               tls_host, NULL, NULL, NULL, NULL, NULL);
+            flb_sds_destroy(tls_host);
+        }
+
+        if (!provider->cred_tls) {
+            flb_error("[aws_credentials] HTTP Provider: TLS initialization error");
+            flb_aws_provider_destroy(provider);
+            return NULL;
+        }
+    }
+
+    upstream = flb_upstream_create(config, host, port, io_flags, provider->cred_tls);
 
     if (!upstream) {
         flb_aws_provider_destroy(provider);
@@ -302,8 +355,8 @@ struct flb_aws_provider *flb_endpoint_provider_create(struct flb_config *config,
 
     implementation->client = generator->create();
     if (!implementation->client) {
-        flb_aws_provider_destroy(provider);
         flb_upstream_destroy(upstream);
+        flb_aws_provider_destroy(provider);
         flb_error("[aws_credentials] HTTP Provider: client creation error");
         return NULL;
     }
@@ -360,7 +413,7 @@ struct flb_aws_provider *flb_http_provider_create(struct flb_config *config,
             return NULL;
         }
 
-        insecure = strncmp(protocol, "http", 4) == 0 ? FLB_TRUE : FLB_FALSE;
+        insecure = strcmp(protocol, "http") == 0 ? FLB_TRUE : FLB_FALSE;
         ret = validate_http_credential_uri(protocol, host, path);
         if (ret < 0) {
             flb_error("[aws credentials] %s must be set to an https:// address, a link local IP address, "
@@ -372,6 +425,18 @@ struct flb_aws_provider *flb_http_provider_create(struct flb_config *config,
             flb_sds_destroy(port_sds);
             flb_sds_destroy(path);
             return NULL;
+        }
+
+        /* Use a numeric loopback address so localhost cannot resolve elsewhere. */
+        if (insecure == FLB_TRUE && strcmp(host, GREENGRASS_CREDENTIALS_HOST) == 0) {
+            flb_sds_destroy(host);
+            host = flb_sds_create("127.0.0.1");
+            if (host == NULL) {
+                flb_sds_destroy(protocol);
+                flb_sds_destroy(port_sds);
+                flb_sds_destroy(path);
+                return NULL;
+            }
         }
     }
     else {

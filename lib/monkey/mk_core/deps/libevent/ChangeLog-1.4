@@ -152,7 +152,7 @@ Changes in 1.4.2-rc:
  o remove NDEBUG ifdefs from evdns.c
  o update documentation of event_loop and event_base_loop; from Tani Hosokawa.
  o detect integer types properly on platforms without stdint.h
- o Remove "AM_MAINTAINER_MODE" declaration in configure.in: now makefiles and configure should get re-generated automatically when Makefile.am or configure.in chanes.
+ o Remove "AM_MAINTAINER_MODE" declaration in configure.in: now makefiles and configure should get re-generated automatically when Makefile.am or configure.in changes.
  o do not insert event into list when evsel->add fails
 
 Changes in 1.4.1-beta:
@@ -163,7 +163,7 @@ Changes in 1.4.1-beta:
  o better documentation for event_base_loopexit; from Scott Lamb.
  o Make kqueue have the same behavior as other backends when a signal is caught between event_add() and event_loop().  Previously, it would catch and ignore such signals.
  o Make kqueue restore signal handlers correctly when event_del() is called.
- o provide event_reinit() to reintialize an event_base after fork
+ o provide event_reinit() to reinitialize an event_base after fork
  o small improvements to evhttp documentation
  o always generate Date and Content-Length headers for HTTP/1.1 replies
  o set the correct event base for HTTP close events
@@ -175,7 +175,7 @@ Changes in 1.4.1-beta:
  o support for 32-bit tag numbers in rpc structures; this is wire compatible, but changes the API slightly.
  o prefix {encode,decode}_tag functions with evtag to avoid collisions
  o Correctly handle DNS replies with no answers set (Fixes bug 1846282)
- o The configure script now takes an --enable-gcc-warnigns option that turns on many optional gcc warnings.  (Nick has been building with these for a while, but they might be useful to other developers.)
+ o The configure script now takes an --enable-gcc-warnings option that turns on many optional gcc warnings.  (Nick has been building with these for a while, but they might be useful to other developers.)
  o When building with GCC, use the "format" attribute to verify type correctness of calls to printf-like functions.
  o removed linger from http server socket; reported by Ilya Martynov
  o allow \r or \n individually to separate HTTP headers instead of the standard "\r\n"; from Charles Kerr.

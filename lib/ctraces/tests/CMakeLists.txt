@@ -1,7 +1,11 @@
 set(UNIT_TESTS_FILES
+  protobuf.c
+  variant_depth.c
   decoding.c
   basic.c
   span.c
+  status.c
+  opentelemetry.c
   )
 
 set(CTR_TESTS_DATA_PATH "${CMAKE_CURRENT_SOURCE_DIR}/data")
@@ -31,3 +35,9 @@ endif()
     WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY}/tests)
   set_tests_properties(${source_file_we} PROPERTIES LABELS "internal")
 endforeach()
+
+# Fault injection stays in the test executable and needs GNU-compatible wrapping.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_definitions(ctr-test-status PRIVATE CTR_TEST_ALLOC_WRAP)
+  target_link_options(ctr-test-status PRIVATE "-Wl,--wrap=malloc" "-Wl,--wrap=calloc")
+endif()

@@ -7,7 +7,7 @@ This can take some time to complete so is only triggered via the label on-demand
 
 ## Linux
 
-The [`distros`](./distros/) directory contains OCI container definitions used to build [Fluent Bit](http://fluentbit.io) Linux packages for different distros, the following table describe the supported targets:
+The [`distros`](./distros/) directory contains OCI container definitions used to build [Fluent Bit](http://fluentbit.io) Linux packages for different distros, the following table describe the targets built for `master`, as listed in the [build configuration](./build-config.json):
 
 | Distro        |   Version / Code Name     | Arch    | Target Option            |
 |---------------|---------------------------|---------|--------------------------|
@@ -37,18 +37,13 @@ The [`distros`](./distros/) directory contains OCI container definitions used to
 | Debian        |   11                      | arm64v8 | debian/bullseye.arm64v8  |
 | Debian        |   10                      | x86_64  | debian/buster            |
 | Debian        |   10                      | arm64v8 | debian/buster.arm64v8    |
+| Ubuntu        |   26.04                   | x86_64  | ubuntu/26.04             |
+| Ubuntu        |   26.04                   | arm64v8 | ubuntu/26.04.arm64v8     |
 | Ubuntu        |   24.04 / Noble Numbat    | x86_64  | ubuntu/24.04             |
 | Ubuntu        |   24.04 / Noble Numbat    | arm64v8 | ubuntu/24.04.arm64v8     |
 | Ubuntu        |   22.04 / Jammy Jellyfish | x86_64  | ubuntu/22.04             |
 | Ubuntu        |   22.04 / Jammy Jellyfish | arm64v8 | ubuntu/22.04.arm64v8     |
-| Ubuntu        |   20.04 / Focal Fossa     | x86_64  | ubuntu/20.04             |
-| Ubuntu        |   20.04 / Focal Fossa     | arm64v8 | ubuntu/20.04.arm64v8     |
-| Ubuntu        |   18.04 / Bionic Beaver   | x86_64  | ubuntu/18.04             |
-| Ubuntu        |   18.04 / Bionic Beaver   | arm64v8 | ubuntu/18.04.arm64v8     |
-| Ubuntu        |   16.04 / Xenial Xerus    | x86_64  | ubuntu/16.04             |
 | Raspbian      |   12 / Bookworm           | arm32v7 | raspbian/bookworm        |
-| Raspbian      |   11 / Bullseye           | arm32v7 | raspbian/bullseye        |
-| Raspbian      |   10 / Buster             | arm32v7 | raspbian/buster          |
 | Rocky Linux   |   10                      | x86_64  | rockylinux/10            |
 | Rocky Linux   |   10                      | arm64v8 | rockylinux/10.arm64v8    |
 | Rocky Linux   |   9                       | x86_64  | rockylinux/9             |
@@ -78,6 +73,6 @@ The steps involved and additional requirements can all be found there.
 
 ## macOS
 
-Windows builds are carried out by the [dedicated workflow](../.github/workflows/call-build-macos.yaml) in CI.
+macOS builds are carried out by the [dedicated workflow](../.github/workflows/call-build-macos.yaml) in CI.
 This builds using the standard CMake process on a dedicated macOS runner within Github actions.
 The steps involved and additional requirements can all be found there.

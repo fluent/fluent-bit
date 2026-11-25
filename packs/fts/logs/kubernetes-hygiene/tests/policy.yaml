@@ -1,0 +1,97 @@
+fixture_version: 1
+signal: logs
+processor:
+  name: fts
+  packs:
+  - ../pack.json
+  recipe_version: 1
+  error_mode: drop
+  recipe:
+  - id: policy
+    use: org.fluentbit.policy.kubernetes-hygiene/apply
+cases:
+- name: remove-unbounded-metadata
+  input:
+  - body:
+      kubernetes:
+        pod_name: checkout-1
+        labels:
+          user: x
+        annotations:
+          debug: x
+      message: ok
+  expected:
+    records:
+    - body:
+        kubernetes:
+          pod_name: checkout-1
+        message: ok
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0
+- name: non-kubernetes-control
+  input:
+  - body:
+      message: ok
+  expected:
+    records:
+    - body:
+        message: ok
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0
+- name: wrong-shape
+  input:
+  - body:
+      kubernetes: wrong
+  expected:
+    records: []
+    outcomes:
+      kept: 0
+      dropped: 1
+      errors: 1
+    error:
+      step: policy
+      class: wrong_type
+- name: namespace-only
+  input:
+  - body:
+      kubernetes_namespace:
+        name: default
+        labels:
+          private: x
+        annotations:
+          private: y
+  expected:
+    records:
+    - body:
+        kubernetes_namespace:
+          name: default
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0
+- name: both-metadata
+  input:
+  - body:
+      kubernetes:
+        pod_name: x
+        labels:
+          x: y
+      kubernetes_namespace:
+        name: default
+        annotations:
+          x: y
+  expected:
+    records:
+    - body:
+        kubernetes:
+          pod_name: x
+        kubernetes_namespace:
+          name: default
+    outcomes:
+      kept: 1
+      dropped: 0
+      errors: 0

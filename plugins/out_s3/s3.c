@@ -18,6 +18,7 @@
  */
 
 #include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_env.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_slist.h>
 #include <fluent-bit/flb_time.h>
@@ -35,13 +36,16 @@
 #include <fluent-bit/flb_base64.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_input_blob.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <sys/stat.h>
 
 #include <msgpack.h>
 
+#include <fluent-bit/flb_hash_table.h>
 #include "s3.h"
 #include "s3_store.h"
+#include <fluent-bit/aws/flb_aws_compress.h>
 
 #define DEFAULT_S3_PORT 443
 #define DEFAULT_S3_INSECURE_PORT 80
@@ -54,12 +58,96 @@ struct worker_info {
 
 FLB_TLS_DEFINE(struct worker_info, s3_worker_info);
 
-#ifdef FLB_SYSTEM_WINDOWS
-static int setenv(const char *name, const char *value, int overwrite)
+struct s3_test_env_entry {
+    char *name;
+    char *value;
+    struct mk_list _head;
+};
+
+static pthread_mutex_t s3_test_env_mutex = PTHREAD_MUTEX_INITIALIZER;
+static struct mk_list s3_test_env = {&s3_test_env, &s3_test_env};
+
+/* Values remain immutable until reset, after all test workers have stopped. */
+char *flb_s3_test_env_get(const char *name)
 {
-    return SetEnvironmentVariableA(name, value);
+    struct mk_list *head;
+    struct s3_test_env_entry *entry;
+    char *value;
+
+    pthread_mutex_lock(&s3_test_env_mutex);
+    mk_list_foreach_r(head, &s3_test_env) {
+        entry = mk_list_entry(head, struct s3_test_env_entry, _head);
+        if (strcmp(entry->name, name) == 0) {
+            value = entry->value;
+            pthread_mutex_unlock(&s3_test_env_mutex);
+            return value;
+        }
+    }
+    pthread_mutex_unlock(&s3_test_env_mutex);
+    return getenv(name);
 }
-#endif
+
+int flb_s3_test_env_set(const char *name, const char *value, int overwrite)
+{
+    struct s3_test_env_entry *entry;
+    struct s3_test_env_entry *previous;
+    struct mk_list *head;
+
+    entry = flb_calloc(1, sizeof(*entry));
+    if (entry == NULL) {
+        return -1;
+    }
+    entry->name = flb_strdup(name);
+    entry->value = value == NULL ? NULL : flb_strdup(value);
+    if (entry->name == NULL || (value != NULL && entry->value == NULL)) {
+        flb_free(entry->name);
+        flb_free(entry->value);
+        flb_free(entry);
+        return -1;
+    }
+
+    pthread_mutex_lock(&s3_test_env_mutex);
+    if (!overwrite) {
+        mk_list_foreach_r(head, &s3_test_env) {
+            previous = mk_list_entry(head, struct s3_test_env_entry, _head);
+            if (strcmp(previous->name, name) == 0) {
+                if (previous->value != NULL) {
+                    pthread_mutex_unlock(&s3_test_env_mutex);
+                    flb_free(entry->name);
+                    flb_free(entry->value);
+                    flb_free(entry);
+                    return 0;
+                }
+                break;
+            }
+        }
+    }
+    mk_list_add(&entry->_head, &s3_test_env);
+    pthread_mutex_unlock(&s3_test_env_mutex);
+    return 0;
+}
+
+int flb_s3_test_env_unset(const char *name)
+{
+    return flb_s3_test_env_set(name, NULL, 1);
+}
+
+void flb_s3_test_env_reset(void)
+{
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct s3_test_env_entry *entry;
+
+    pthread_mutex_lock(&s3_test_env_mutex);
+    mk_list_foreach_safe(head, tmp, &s3_test_env) {
+        entry = mk_list_entry(head, struct s3_test_env_entry, _head);
+        mk_list_del(&entry->_head);
+        flb_free(entry->name);
+        flb_free(entry->value);
+        flb_free(entry);
+    }
+    pthread_mutex_unlock(&s3_test_env_mutex);
+}
 
 static int s3_timer_create(struct flb_s3 *ctx);
 
@@ -68,9 +156,9 @@ static int construct_request_buffer(struct flb_s3 *ctx, flb_sds_t new_data,
                                     char **out_buf, size_t *out_size);
 
 static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t file_first_log_time,
-                         char *body, size_t body_size);
+                         char *body, size_t body_size, struct s3_file *chunk);
 
-static int put_all_chunks(struct flb_s3 *ctx);
+static int put_all_chunks(struct flb_s3 *ctx, int cleanup_empty_streams);
 
 static void cb_s3_upload(struct flb_config *ctx, void *data);
 
@@ -85,12 +173,276 @@ static void remove_from_queue(struct upload_queue *entry);
 static void s3_chunk_retry_exhausted_cleanup(struct flb_s3 *ctx,
                                              struct s3_file *chunk_file);
 static int s3_get_retry_exhausted_action(const char *value);
+static void s3_upload_queue(struct flb_config *config, void *out_context);
+static void cb_s3_upload_queue(struct flb_config *config, void *out_context);
+static void s3_upload_queue_retry_cancel(struct flb_s3 *ctx);
+static void s3_upload_queue_release(struct flb_s3 *ctx);
+static int enqueue_oldest_timed_out_chunk(struct flb_s3 *ctx, time_t now,
+                                          int skip_held_tags);
+static void complete_pending_uploads(struct flb_s3 *ctx);
+static void complete_pending_uploads_once(struct flb_s3 *ctx, int *checked);
+static int s3_uploader_timer_create(struct flb_s3 *ctx);
+static int s3_uploader_part_pending(struct flb_s3 *ctx, const char *upload_id);
+
+/* Claims keep a tag's chunks and multipart state owned across unlocked I/O. */
+struct s3_upload_claim {
+    const char *tag;
+    int tag_len;
+    struct mk_list _head;
+};
+
+static int s3_tag_busy(struct flb_s3 *ctx, const char *tag, int tag_len)
+{
+    struct mk_list *head;
+    struct s3_upload_claim *claim;
+
+    mk_list_foreach(head, &ctx->upload_claims) {
+        claim = mk_list_entry(head, struct s3_upload_claim, _head);
+        if (ctx->key_fmt_has_seq_index ||
+            (claim->tag_len == tag_len && memcmp(claim->tag, tag, tag_len) == 0)) {
+            return FLB_TRUE;
+        }
+    }
+    return FLB_FALSE;
+}
+
+static void s3_claim_start(struct flb_s3 *ctx, struct s3_upload_claim *claim,
+                           const char *tag, int tag_len)
+{
+    claim->tag = tag;
+    claim->tag_len = tag_len;
+    mk_list_add(&claim->_head, &ctx->upload_claims);
+}
+
+static void s3_claim_end(struct s3_upload_claim *claim)
+{
+    mk_list_del(&claim->_head);
+}
+
+/* Providers return owned credentials, but copying their cache must not race refresh. */
+static struct flb_aws_credentials *s3_get_credentials(struct flb_aws_provider *provider)
+{
+    struct flb_s3 *ctx = provider->implementation;
+    struct flb_aws_credentials *credentials;
+
+    pthread_mutex_lock(&ctx->files_mutex);
+    credentials = ctx->provider->provider_vtable->get_credentials(ctx->provider);
+    pthread_mutex_unlock(&ctx->files_mutex);
+
+    return credentials;
+}
+
+static int s3_refresh_credentials(struct flb_aws_provider *provider)
+{
+    struct flb_s3 *ctx = provider->implementation;
+    int ret;
+
+    pthread_mutex_lock(&ctx->files_mutex);
+    ret = ctx->provider->provider_vtable->refresh(ctx->provider);
+    pthread_mutex_unlock(&ctx->files_mutex);
+
+    return ret;
+}
+
+static struct flb_aws_provider_vtable s3_request_provider_vtable = {
+    .get_credentials = s3_get_credentials,
+    .refresh = s3_refresh_credentials
+};
+
+/* Snapshot mutable client state while allowing independent network requests. */
+struct flb_http_client *s3_request(struct flb_s3 *ctx,
+                                  int method, const char *uri,
+                                  const char *body, size_t body_size,
+                                  struct flb_aws_header *headers, size_t headers_count,
+                                  int *deferred)
+{
+    uint64_t generation;
+    struct flb_aws_client client;
+    struct flb_aws_provider provider = {0};
+    struct flb_http_client *response;
+
+    *deferred = !s3_uploader_admit(ctx, &generation);
+    if (*deferred) {
+        return NULL;
+    }
+
+    /* Only credential acquisition/refresh use the shared synchronous provider. */
+    provider.provider_vtable = &s3_request_provider_vtable;
+    provider.implementation = ctx;
+    client = *ctx->s3_client;
+    if (ctx->uploader_gate_initialized) {
+        /* Every uploader retry needs its own admission decision. */
+        client.retry_requests = FLB_FALSE;
+    }
+    client.provider = &provider;
+    pthread_mutex_unlock(&ctx->files_mutex);
+    response = client.client_vtable->request(&client, method, uri, body, body_size,
+                                             headers, headers_count);
+    pthread_mutex_lock(&ctx->files_mutex);
+    if (s3_uploader_response(ctx, response, generation)) {
+        *deferred = FLB_TRUE;
+        flb_http_client_destroy(response);
+        response = NULL;
+    }
+    if (ctx->s3_client->extra_user_agent == NULL) {
+        ctx->s3_client->extra_user_agent = client.extra_user_agent;
+    }
+    else if (client.extra_user_agent != ctx->s3_client->extra_user_agent) {
+        flb_sds_destroy(client.extra_user_agent);
+    }
+    if (client.refresh_limit > ctx->s3_client->refresh_limit) {
+        ctx->s3_client->refresh_limit = client.refresh_limit;
+    }
+    return response;
+}
+
+static struct flb_http_client *s3_blob_request(struct flb_s3 *ctx, int method,
+                                              const char *uri, const char *body, size_t body_size,
+                                              struct flb_aws_header *headers, size_t headers_count,
+                                              int *deferred)
+{
+    struct flb_http_client *response;
+
+    /* Blob PutObject enters without files_mutex; multipart callers already own it. */
+    pthread_mutex_lock(&ctx->files_mutex);
+    response = s3_request(ctx, method, uri, body, body_size, headers, headers_count, deferred);
+    pthread_mutex_unlock(&ctx->files_mutex);
+    return response;
+}
 
 static int blob_initialize_authorization_endpoint_upstream(struct flb_s3 *context);
 
 static flb_sds_t s3_format_event_chunk(struct flb_s3 *ctx,
                                        struct flb_event_chunk *event_chunk,
                                        struct flb_config *config);
+
+/*
+ * enable_parquet_format - configure context for Parquet output
+ *
+ * Sets the S3 format to Parquet and forces PutObject mode.
+ * Returns 0 on success, -1 if Parquet support was not compiled in.
+ */
+static int enable_parquet_format(struct flb_s3 *ctx)
+{
+#ifdef FLB_HAVE_ARROW_PARQUET
+    ctx->s3_format = FLB_S3_FORMAT_PARQUET;
+    ctx->use_put_object = FLB_TRUE;
+    return 0;
+#else
+    flb_plg_error(ctx->ins,
+                  "parquet format requires parquet-glib at compile time");
+    return -1;
+#endif
+}
+
+/*
+ * enable_arrow_format - configure context for Apache Arrow output
+ *
+ * Sets the S3 format to Arrow and forces PutObject mode. Columnar formats
+ * must be written as a single complete object, so multipart upload is not
+ * supported.
+ * Returns 0 on success, -1 if Arrow support was not compiled in.
+ */
+static int enable_arrow_format(struct flb_s3 *ctx)
+{
+#ifdef FLB_HAVE_ARROW
+    ctx->s3_format = FLB_S3_FORMAT_ARROW;
+    ctx->use_put_object = FLB_TRUE;
+    return 0;
+#else
+    flb_plg_error(ctx->ins,
+                  "arrow format requires arrow-glib at compile time");
+    return -1;
+#endif
+}
+
+/*
+ * parse_output_format - resolve format string to format constant
+ *
+ * Returns FLB_S3_FORMAT_PARQUET for "parquet" and FLB_S3_FORMAT_ARROW for
+ * "arrow", otherwise delegates to flb_pack_to_json_format_type for JSON
+ * format types.
+ */
+static int parse_output_format(const char *format)
+{
+    if (strcasecmp(format, "parquet") == 0) {
+        return FLB_S3_FORMAT_PARQUET;
+    }
+    if (strcasecmp(format, "arrow") == 0) {
+        return FLB_S3_FORMAT_ARROW;
+    }
+    return flb_pack_to_json_format_type(format);
+}
+
+/*
+ * validate_format_compression - check a codec is valid for a columnar format
+ *
+ * Compression is an axis applied on top of the format, but each columnar
+ * format only accepts a subset of codecs:
+ *   - Parquet: none, snappy, gzip, zstd (page-level codec).
+ *   - Arrow/Feather: none, zstd (Arrow IPC only supports ZSTD).
+ *
+ * Returns 0 if the FLB_AWS_COMPRESS_* codec is valid for s3_format, else -1.
+ */
+static int validate_format_compression(int s3_format, int compression_type)
+{
+    if (s3_format == FLB_S3_FORMAT_PARQUET) {
+        switch (compression_type) {
+        case FLB_AWS_COMPRESS_NONE:
+        case FLB_AWS_COMPRESS_SNAPPY:
+        case FLB_AWS_COMPRESS_GZIP:
+        case FLB_AWS_COMPRESS_ZSTD:
+            return 0;
+        default:
+            return -1;
+        }
+    }
+    if (s3_format == FLB_S3_FORMAT_ARROW) {
+        switch (compression_type) {
+        case FLB_AWS_COMPRESS_NONE:
+        case FLB_AWS_COMPRESS_ZSTD:
+            return 0;
+        default:
+            return -1;
+        }
+    }
+    return -1;
+}
+
+/*
+ * s3_format_is_columnar - report whether a format compresses internally
+ *
+ * Columnar formats (Parquet, Arrow) embed compression inside the file, so the
+ * 'compression' codec is applied by the format writer and the uploaded object
+ * must NOT carry a byte-level Content-Encoding header.
+ */
+static int s3_format_is_columnar(int s3_format)
+{
+    return (s3_format == FLB_S3_FORMAT_PARQUET ||
+            s3_format == FLB_S3_FORMAT_ARROW);
+}
+
+/*
+ * s3_format_to_aws_compress_format - convert an S3 output format to the
+ * aws-compress columnar format identifier
+ *
+ * Translates FLB_S3_FORMAT_* to the FLB_AWS_COMPRESS_FORMAT_* identifier
+ * consumed by flb_aws_compression_compress_columnar(), keeping the
+ * compression layer decoupled from the plugin's format enum. Returns -1 for
+ * any format that is not a known columnar format, so a future format added to
+ * s3_format_is_columnar() but not mapped here fails loudly instead of being
+ * silently emitted as Arrow.
+ */
+static int s3_format_to_aws_compress_format(int s3_format)
+{
+    if (s3_format == FLB_S3_FORMAT_PARQUET) {
+        return FLB_AWS_COMPRESS_FORMAT_PARQUET;
+    }
+    if (s3_format == FLB_S3_FORMAT_ARROW) {
+        return FLB_AWS_COMPRESS_FORMAT_ARROW;
+    }
+    return -1;
+}
 
 static struct flb_aws_header *get_content_encoding_header(int compression_type)
 {
@@ -161,7 +513,7 @@ static char *mock_error_response(char *error_env_var)
     char *error = NULL;
     int len = 0;
 
-    err_val = getenv(error_env_var);
+    err_val = flb_s3_test_env_get(error_env_var);
     if (err_val != NULL && strlen(err_val) > 0) {
         error = flb_calloc(strlen(err_val) + 1, sizeof(char));
         if (error == NULL) {
@@ -180,7 +532,7 @@ static char *mock_error_response(char *error_env_var)
 
 int s3_plugin_under_test()
 {
-    if (getenv("FLB_S3_PLUGIN_UNDER_TEST") != NULL) {
+    if (flb_s3_test_env_get("FLB_S3_PLUGIN_UNDER_TEST") != NULL) {
         return FLB_TRUE;
     }
 
@@ -199,9 +551,10 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
     if (ctx->content_type != NULL) {
         headers_len++;
     }
-    if (ctx->compression == FLB_AWS_COMPRESS_GZIP ||
-        ctx->compression == FLB_AWS_COMPRESS_ZSTD ||
-        ctx->compression == FLB_AWS_COMPRESS_SNAPPY) {
+    if (!s3_format_is_columnar(ctx->s3_format) &&
+        (ctx->compression == FLB_AWS_COMPRESS_GZIP ||
+         ctx->compression == FLB_AWS_COMPRESS_ZSTD ||
+         ctx->compression == FLB_AWS_COMPRESS_SNAPPY)) {
         headers_len++;
     }
     if (ctx->canned_acl != NULL) {
@@ -231,9 +584,10 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
         s3_headers[n].val_len = strlen(ctx->content_type);
         n++;
     }
-    if (ctx->compression == FLB_AWS_COMPRESS_GZIP ||
-        ctx->compression == FLB_AWS_COMPRESS_ZSTD ||
-        ctx->compression == FLB_AWS_COMPRESS_SNAPPY) {
+    if (!s3_format_is_columnar(ctx->s3_format) &&
+        (ctx->compression == FLB_AWS_COMPRESS_GZIP ||
+         ctx->compression == FLB_AWS_COMPRESS_ZSTD ||
+         ctx->compression == FLB_AWS_COMPRESS_SNAPPY)) {
         encoding_header = get_content_encoding_header(ctx->compression);
 
         if (encoding_header == NULL) {
@@ -268,7 +622,7 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
 };
 
 /*
- * Track mock API call counts via env vars (e.g. TEST_PutObject_CALL_COUNT)
+ * Track mock API call counts in synchronized test state
  * so tests can assert the exact number of S3 API attempts.
  */
 static void mock_s3_call_increment_counter(char *api)
@@ -279,11 +633,31 @@ static void mock_s3_call_increment_counter(char *api)
     char buf[16];
 
     snprintf(env_var, sizeof(env_var), "TEST_%s_CALL_COUNT", api);
-    val = getenv(env_var);
+    val = flb_s3_test_env_get(env_var);
     count = val ? atoi(val) : 0;
     count++;
     snprintf(buf, sizeof(buf), "%d", count);
-    setenv(env_var, buf, 1);
+    flb_s3_test_env_set(env_var, buf, 1);
+}
+
+static void mock_s3_call_record_uri(char *api, char *uri)
+{
+    char count_env_var[64];
+    char uri_env_var[64];
+    char *count;
+
+    if (flb_s3_test_env_get("TEST_RECORD_S3_URIS") == NULL) {
+        return;
+    }
+
+    snprintf(count_env_var, sizeof(count_env_var), "TEST_%s_CALL_COUNT", api);
+    count = flb_s3_test_env_get(count_env_var);
+    if (count == NULL) {
+        return;
+    }
+
+    snprintf(uri_env_var, sizeof(uri_env_var), "TEST_%s_URI_%s", api, count);
+    flb_s3_test_env_set(uri_env_var, uri, 1);
 }
 
 struct flb_http_client *mock_s3_call(char *error_env_var, char *api)
@@ -373,6 +747,23 @@ struct flb_http_client *mock_s3_call(char *error_env_var, char *api)
     return c;
 }
 
+static struct flb_http_client *mock_s3_call_for_tag(char *error_env_var,
+                                                    char *error_tag_env_var,
+                                                    char *api,
+                                                    const char *tag,
+                                                    int tag_len)
+{
+    char *error_tag;
+
+    error_tag = flb_s3_test_env_get(error_tag_env_var);
+    if (error_tag != NULL &&
+        (strlen(error_tag) != tag_len || memcmp(error_tag, tag, tag_len) != 0)) {
+        return mock_s3_call("TEST_S3_OTHER_TAG_ERROR", api);
+    }
+
+    return mock_s3_call(error_env_var, api);
+}
+
 static flb_sds_t concat_path(char *p1, char *p2)
 {
     flb_sds_t dir;
@@ -389,6 +780,37 @@ static flb_sds_t concat_path(char *p1, char *p2)
     dir = tmp;
 
     return dir;
+}
+
+static flb_sds_t create_buffer_path(struct flb_s3 *ctx)
+{
+#ifdef FLB_SYSTEM_WINDOWS
+    char *temp_dir;
+    flb_sds_t dir;
+    flb_sds_t tmp;
+
+    if (strcmp(ctx->store_dir, "/tmp/fluent-bit/s3") == 0) {
+        temp_dir = getenv("TEMP");
+        if (temp_dir == NULL) {
+            temp_dir = getenv("TMP");
+        }
+
+        if (temp_dir != NULL) {
+            dir = flb_sds_create_size(64);
+            tmp = flb_sds_printf(&dir, "%s/fluent-bit/s3/%s",
+                                 temp_dir, ctx->bucket);
+            if (tmp == NULL) {
+                flb_errno();
+                flb_sds_destroy(dir);
+                return NULL;
+            }
+
+            return tmp;
+        }
+    }
+#endif
+
+    return concat_path(ctx->store_dir, ctx->bucket);
 }
 
 /* Reads in index value from metadata file and sets seq_index to value */
@@ -532,6 +954,7 @@ void multipart_upload_destroy(struct multipart_upload *m_upload)
         return;
     }
 
+    flb_sds_destroy(m_upload->pending_etag);
     if (m_upload->s3_key) {
         flb_sds_destroy(m_upload->s3_key);
     }
@@ -542,7 +965,7 @@ void multipart_upload_destroy(struct multipart_upload *m_upload)
         flb_sds_destroy(m_upload->upload_id);
     }
 
-    for (i = 0; i < m_upload->part_number; i++) {
+    for (i = 0; i < m_upload->part_number && i < S3_MAX_PARTS; i++) {
         etag = m_upload->etags[i];
         if (etag) {
             flb_sds_destroy(etag);
@@ -562,6 +985,8 @@ static void s3_context_destroy(struct flb_s3 *ctx)
     if (!ctx) {
         return;
     }
+
+    s3_uploader_destroy(ctx);
 
     if (ctx->base_provider) {
         flb_aws_provider_destroy(ctx->base_provider);
@@ -620,11 +1045,34 @@ static void s3_context_destroy(struct flb_s3 *ctx)
 
     mk_list_foreach_safe(head, tmp, &ctx->upload_queue) {
         upload_contents = mk_list_entry(head, struct upload_queue, _head);
-        s3_store_file_delete(ctx, upload_contents->upload_file);
         remove_from_queue(upload_contents);
     }
 
+    if (ctx->files_mutex_initialized == FLB_TRUE) {
+        pthread_mutex_destroy(&ctx->files_mutex);
+    }
+
     flb_free(ctx);
+}
+
+static int s3_init_user_agent(struct flb_config *config)
+{
+    const char *value;
+
+    if (flb_env_get(config->env, "FLB_AWS_USER_AGENT") != NULL) {
+        return 0;
+    }
+    value = flb_env_get(config->env, "k8s");
+    if (getenv("ECS_CONTAINER_METADATA_URI_V4") != NULL) {
+        value = "ecs";
+    }
+    else if (value != NULL && strcasecmp(value, "enabled") == 0) {
+        value = "k8s";
+    }
+    else {
+        value = "none";
+    }
+    return flb_env_set(config->env, "FLB_AWS_USER_AGENT", value);
 }
 
 static int cb_s3_init(struct flb_output_instance *ins,
@@ -638,12 +1086,15 @@ static int cb_s3_init(struct flb_output_instance *ins,
     const char *tmp;
     struct flb_s3 *ctx = NULL;
     struct flb_aws_client_generator *generator;
-    (void) config;
     (void) data;
     char *ep;
     struct flb_split_entry *tok;
     struct mk_list *split;
     int list_size;
+
+    if (s3_init_user_agent(config) < 0) {
+        return -1;
+    }
 
     FLB_TLS_INIT(s3_worker_info);
 
@@ -653,12 +1104,23 @@ static int cb_s3_init(struct flb_output_instance *ins,
         return -1;
     }
     ctx->ins = ins;
+
+    ret = pthread_mutex_init(&ctx->files_mutex, NULL);
+    if (ret != 0) {
+        flb_free(ctx);
+        return -1;
+    }
+    ctx->files_mutex_initialized = FLB_TRUE;
+
+    mk_list_init(&ctx->pending_checkpoints);
     mk_list_init(&ctx->uploads);
     mk_list_init(&ctx->upload_queue);
+    mk_list_init(&ctx->upload_claims);
 
     ctx->retry_time = 0;
     ctx->upload_queue_success = FLB_FALSE;
     ctx->out_format = FLB_PACK_JSON_FORMAT_LINES;
+    ctx->s3_format = FLB_S3_FORMAT_JSON_LINES;
 
     /*
      * The engine default retry_limit (1) is too low for S3's internal
@@ -685,6 +1147,15 @@ static int cb_s3_init(struct flb_output_instance *ins,
         return -1;
     }
 
+    if (config->fips_mode_active == FLB_TRUE && ctx->send_content_md5 == FLB_TRUE) {
+        flb_plg_error(ctx->ins,
+                      "send_content_md5 uses MD5 and is not available "
+                      "when security.fips_mode is enabled");
+        s3_context_destroy(ctx);
+        flb_output_set_context(ins, NULL);
+        return -1;
+    }
+
     action = s3_get_retry_exhausted_action(ctx->retry_exhausted_action_str);
     if (action == -1) {
         flb_plg_error(ctx->ins,
@@ -706,30 +1177,58 @@ static int cb_s3_init(struct flb_output_instance *ins,
     /* Format key */
     tmp = flb_output_get_property("format", ins);
     if (tmp) {
-        ret = flb_pack_to_json_format_type(tmp);
+        ret = parse_output_format(tmp);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "invalid format '%s'", tmp);
             return -1;
         }
 
-        if (ret == FLB_PACK_JSON_FORMAT_JSON) {
+        if (ret == FLB_S3_FORMAT_PARQUET) {
+            if (ctx->log_key != NULL) {
+                flb_plg_error(ctx->ins,
+                              "'log_key' is not supported when format is "
+                              "parquet");
+                return -1;
+            }
+            if (enable_parquet_format(ctx) == -1) {
+                s3_context_destroy(ctx);
+                flb_output_set_context(ins, NULL);
+                return -1;
+            }
+        }
+        else if (ret == FLB_S3_FORMAT_ARROW) {
+            if (ctx->log_key != NULL) {
+                flb_plg_error(ctx->ins,
+                              "'log_key' is not supported when format is "
+                              "arrow");
+                return -1;
+            }
+            if (enable_arrow_format(ctx) == -1) {
+                s3_context_destroy(ctx);
+                flb_output_set_context(ins, NULL);
+                return -1;
+            }
+        }
+        else if (ret == FLB_PACK_JSON_FORMAT_JSON) {
             flb_plg_warn(ctx->ins,
-                         "'json' format is implicitly interpreted as 'json_lines' before."
-                         "Now interpreted as 'json_lines' explicitly now");
-            ret =  FLB_PACK_JSON_FORMAT_LINES;
+                         "'json' format is implicitly interpreted as "
+                         "'json_lines'. Now interpreted as 'json_lines' "
+                         "explicitly");
+            ctx->out_format = FLB_PACK_JSON_FORMAT_LINES;
         }
-        else if (ret != FLB_PACK_JSON_FORMAT_LINES &&
-            ret != FLB_PACK_JSON_FORMAT_OTLP) {
-            flb_plg_error(ctx->ins, "unsupported format '%s'", tmp);
-            return -1;
-        }
-        ctx->out_format = ret;
+        else if (ret == FLB_PACK_JSON_FORMAT_LINES ||
+                 ret == FLB_PACK_JSON_FORMAT_OTLP) {
+            ctx->out_format = ret;
 
-        if (ctx->out_format == FLB_PACK_JSON_FORMAT_OTLP &&
-            ctx->log_key != NULL) {
-            flb_plg_error(ctx->ins,
-                          "'log_key' is not supported when format is "
-                          "otlp_json or otlp_json_pretty");
+            if (ret == FLB_PACK_JSON_FORMAT_OTLP && ctx->log_key != NULL) {
+                flb_plg_error(ctx->ins,
+                              "'log_key' is not supported when format is "
+                              "otlp_json or otlp_json_pretty");
+                return -1;
+            }
+        }
+        else {
+            flb_plg_error(ctx->ins, "unsupported format '%s'", tmp);
             return -1;
         }
     }
@@ -769,7 +1268,7 @@ static int cb_s3_init(struct flb_output_instance *ins,
      * We append the bucket name to the dir, to support multiple instances
      * of this plugin using the same buffer dir
      */
-    tmp_sds = concat_path(ctx->store_dir, ctx->bucket);
+    tmp_sds = create_buffer_path(ctx);
     if (!tmp_sds) {
         flb_plg_error(ctx->ins, "Could not construct buffer path");
         return -1;
@@ -818,19 +1317,73 @@ static int cb_s3_init(struct flb_output_instance *ins,
 
     tmp = flb_output_get_property("compression", ins);
     if (tmp) {
-        ret = flb_aws_compression_get_type(tmp);
-        if (ret == -1) {
-            flb_plg_error(ctx->ins, "unknown compression: %s", tmp);
-            return -1;
+        if (strcasecmp(tmp, "parquet") == 0) {
+            if (ctx->log_key != NULL) {
+                flb_plg_error(ctx->ins,
+                              "'log_key' is not supported when format is "
+                              "parquet");
+                return -1;
+            }
+            flb_plg_warn(ctx->ins,
+                         "'compression=parquet' is deprecated. "
+                         "Use 'format parquet' with 'compression' set to "
+                         "the desired page-level codec (snappy, zstd, gzip)");
+            if (enable_parquet_format(ctx) == -1) {
+                return -1;
+            }
         }
-        if (ctx->use_put_object == FLB_FALSE &&
-            (ret == FLB_AWS_COMPRESS_ARROW ||
-             ret == FLB_AWS_COMPRESS_PARQUET)) {
-            flb_plg_error(ctx->ins,
-                          "use_put_object must be enabled when Apache Arrow or Parquet is enabled");
-            return -1;
+        else if (strcasecmp(tmp, "arrow") == 0) {
+            if (ctx->log_key != NULL) {
+                flb_plg_error(ctx->ins,
+                              "'log_key' is not supported when format is "
+                              "arrow");
+                return -1;
+            }
+            flb_plg_warn(ctx->ins,
+                         "'compression=arrow' is deprecated. "
+                         "Use 'format arrow' with 'compression' set to "
+                         "the desired codec (zstd)");
+            if (enable_arrow_format(ctx) == -1) {
+                return -1;
+            }
         }
-        ctx->compression = ret;
+        else {
+            /*
+             * 'none' explicitly selects no compression. It is not part of the
+             * compression dispatch table (which reserves 0/NONE as a footer),
+             * so accept it here and map it to FLB_AWS_COMPRESS_NONE.
+             */
+            if (strcasecmp(tmp, "none") == 0) {
+                ret = FLB_AWS_COMPRESS_NONE;
+            }
+            else {
+                ret = flb_aws_compression_get_type(tmp);
+                if (ret == -1) {
+                    flb_plg_error(ctx->ins, "unknown compression: %s", tmp);
+                    return -1;
+                }
+            }
+
+            if (ctx->s3_format == FLB_S3_FORMAT_PARQUET ||
+                ctx->s3_format == FLB_S3_FORMAT_ARROW) {
+                /*
+                 * For columnar formats, 'compression' selects the codec
+                 * applied inside the format (page-level for Parquet, IPC
+                 * buffer compression for Arrow) rather than a byte-level
+                 * wrap of the uploaded object. The Content-Encoding header
+                 * is intentionally not emitted for these formats.
+                 */
+                if (validate_format_compression(ctx->s3_format, ret) != 0) {
+                    flb_plg_error(ctx->ins,
+                                  "'%s' is not a supported compression codec "
+                                  "for the configured format (parquet "
+                                  "supports snappy, gzip, zstd; arrow "
+                                  "supports zstd)", tmp);
+                    return -1;
+                }
+            }
+            ctx->compression = ret;
+        }
     }
 
     tmp = flb_output_get_property("content_type", ins);
@@ -975,6 +1528,7 @@ skip_size_validation:
             flb_plg_error(ctx->ins, "Failed to create tls context");
             return -1;
         }
+        flb_tls_set_verify_hostname(ctx->client_tls, ins->tls_verify_hostname);
     }
 
     /* AWS provider needs a separate TLS instance */
@@ -991,6 +1545,7 @@ skip_size_validation:
         flb_errno();
         return -1;
     }
+    flb_tls_set_verify_hostname(ctx->provider_tls, ins->tls_verify_hostname);
 
     ctx->provider = flb_standard_chain_provider_create(config,
                                                        ctx->provider_tls,
@@ -1026,6 +1581,7 @@ skip_size_validation:
             flb_errno();
             return -1;
         }
+        flb_tls_set_verify_hostname(ctx->sts_provider_tls, ins->tls_verify_hostname);
 
         session_name = flb_sts_session_name();
         if (!session_name) {
@@ -1058,7 +1614,9 @@ skip_size_validation:
     ctx->has_old_uploads = s3_store_has_uploads(ctx);
 
     /* Multipart */
-    multipart_read_uploads_from_fs(ctx);
+    if (multipart_read_uploads_from_fs(ctx) < 0) {
+        return -1;
+    }
 
     if (mk_list_size(&ctx->uploads) > 0) {
         /* note that these should be sent */
@@ -1095,6 +1653,10 @@ skip_size_validation:
     }
 
     flb_output_upstream_set(ctx->s3_client->upstream, ctx->ins);
+    if (ctx->uploader_gate_initialized && ctx->s3_client->upstream->base.net.io_timeout <= 0) {
+        /* A synchronous request needs a finite idle timeout while workers drain. */
+        ctx->s3_client->upstream->base.net.io_timeout = S3_UPLOADER_IO_TIMEOUT;
+    }
 
     ctx->s3_client->host = ctx->endpoint;
 
@@ -1103,8 +1665,14 @@ skip_size_validation:
     ctx->provider->provider_vtable->init(ctx->provider);
 
     ctx->timer_created = FLB_FALSE;
-    ctx->timer_ms = (int) (ctx->upload_timeout / 6) * 1000;
-    if (s3_plugin_under_test() == FLB_FALSE) {
+    if (s3_plugin_under_test() == FLB_TRUE) {
+        ctx->timer_ms = (int) (ctx->upload_timeout * 1000 / 6);
+        if (ctx->timer_ms < 100) {
+            ctx->timer_ms = 100;
+        }
+    }
+    else {
+        ctx->timer_ms = (int) (ctx->upload_timeout / 6) * 1000;
         if (ctx->timer_ms > UPLOAD_TIMER_MAX_WAIT) {
             ctx->timer_ms = UPLOAD_TIMER_MAX_WAIT;
         }
@@ -1114,10 +1682,8 @@ skip_size_validation:
     }
 
     /*
-     * S3 must ALWAYS use sync mode
-     * In the timer thread we do a mk_list_foreach_safe on the queue of uplaods and chunks
-     * Iterating over those lists is not concurrent safe. If a flush call ran at the same time
-     * And deleted an item from the list, this could cause a crash/corruption.
+     * Log uploads use synchronous I/O. Upload claims protect borrowed objects
+     * while the store mutex is released for compression and network requests.
      */
     flb_stream_disable_async_mode(&ctx->s3_client->upstream->base);
 
@@ -1135,13 +1701,15 @@ skip_size_validation:
     }
 
     /* clean up any old buffers found on startup */
-    if (ctx->has_old_buffers == FLB_TRUE) {
+    if (!ctx->uploader_gate_initialized && ctx->has_old_buffers == FLB_TRUE) {
         flb_plg_info(ctx->ins,
                      "Sending locally buffered data from previous "
                      "executions to S3; buffer=%s",
                      ctx->fs->root_path);
         ctx->has_old_buffers = FLB_FALSE;
-        ret = put_all_chunks(ctx);
+        pthread_mutex_lock(&ctx->files_mutex);
+        ret = put_all_chunks(ctx, FLB_TRUE);
+        pthread_mutex_unlock(&ctx->files_mutex);
         if (ret < 0) {
             ctx->has_old_buffers = FLB_TRUE;
             flb_plg_error(ctx->ins,
@@ -1152,7 +1720,7 @@ skip_size_validation:
     }
 
     /* clean up any old uploads found on start up */
-    if (ctx->has_old_uploads == FLB_TRUE) {
+    if (!ctx->uploader_gate_initialized && ctx->has_old_uploads == FLB_TRUE) {
         flb_plg_info(ctx->ins,
                      "Completing multipart uploads from previous "
                      "executions to S3; buffer=%s",
@@ -1180,6 +1748,10 @@ skip_size_validation:
         }
     }
 
+    if (ctx->uploader_gate_initialized && ins->tp_workers == 0 &&
+        s3_uploader_timer_create(ctx) < 0) {
+        return -1;
+    }
     return 0;
 }
 
@@ -1210,6 +1782,15 @@ static int cb_s3_worker_init(void *data, struct flb_config *config)
         return -1;
     }
 
+    if (ctx->uploader_gate_initialized) {
+        pthread_mutex_lock(&ctx->files_mutex);
+        ret = s3_uploader_timer_create(ctx);
+        pthread_mutex_unlock(&ctx->files_mutex);
+        if (ret < 0) {
+            return -1;
+        }
+    }
+
     return 0;
 }
 
@@ -1225,6 +1806,11 @@ static int cb_s3_worker_exit(void *data, struct flb_config *config)
 
     flb_plg_info(ctx->ins, "terminating worker");
 
+    /* Do not leave a shared pointer into this worker's retiring scheduler. */
+    pthread_mutex_lock(&ctx->files_mutex);
+    s3_upload_queue_retry_cancel(ctx);
+    pthread_mutex_unlock(&ctx->files_mutex);
+
     info = FLB_TLS_GET(s3_worker_info);
     if (info != NULL) {
         flb_free(info);
@@ -1239,7 +1825,7 @@ static int cb_s3_worker_exit(void *data, struct flb_config *config)
  *
  * Chunk is allowed to be NULL
  */
-static int upload_data(struct flb_s3 *ctx, struct s3_file *chunk,
+static int upload_data_owned(struct flb_s3 *ctx, struct s3_file *chunk,
                        struct multipart_upload *m_upload,
                        char *body, size_t body_size,
                        const char *tag, int tag_len)
@@ -1249,11 +1835,13 @@ static int upload_data(struct flb_s3 *ctx, struct s3_file *chunk,
     int size_check = FLB_FALSE;
     int part_num_check = FLB_FALSE;
     int timeout_check = FLB_FALSE;
+    int payload_needs_free = FLB_FALSE;
     int ret;
     void *payload_buf = NULL;
     size_t payload_size = 0;
     size_t preCompress_size = 0;
     time_t file_first_log_time = time(NULL);
+    struct s3_retry_state part = {0};
 
     /*
      * When chunk does not exist, file_first_log_time will be the current time.
@@ -1265,9 +1853,35 @@ static int upload_data(struct flb_s3 *ctx, struct s3_file *chunk,
         file_first_log_time = chunk->first_log_time;
     }
 
+#ifdef FLB_HAVE_ARROW
+    if (s3_format_is_columnar(ctx->s3_format)) {
+        pthread_mutex_unlock(&ctx->files_mutex);
+        ret = flb_aws_compression_compress_columnar(
+                    s3_format_to_aws_compress_format(ctx->s3_format),
+                    body, body_size, &payload_buf,
+                    &payload_size, ctx->compression);
+        pthread_mutex_lock(&ctx->files_mutex);
+        if (ret == -1) {
+            flb_plg_error(ctx->ins, "Failed to convert data to columnar "
+                          "format");
+            if (chunk != NULL) {
+                s3_store_file_unlock(chunk);
+                chunk->failures += 1;
+            }
+            return FLB_RETRY;
+        }
+        preCompress_size = body_size;
+        body = (void *) payload_buf;
+        body_size = payload_size;
+        payload_needs_free = FLB_TRUE;
+    }
+    else
+#endif
     if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
-        /* Map payload */
-        ret = flb_aws_compression_compress(ctx->compression, body, body_size, &payload_buf, &payload_size);
+        pthread_mutex_unlock(&ctx->files_mutex);
+        ret = flb_aws_compression_compress(ctx->compression, body, body_size,
+                                           &payload_buf, &payload_size);
+        pthread_mutex_lock(&ctx->files_mutex);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "Failed to compress data");
             if (chunk != NULL) {
@@ -1280,10 +1894,15 @@ static int upload_data(struct flb_s3 *ctx, struct s3_file *chunk,
             preCompress_size = body_size;
             body = (void *) payload_buf;
             body_size = payload_size;
+            payload_needs_free = FLB_TRUE;
         }
     }
 
-    if (ctx->use_put_object == FLB_TRUE) {
+    if (chunk != NULL && chunk->part_upload_id != NULL) {
+        goto multipart;
+    }
+
+    if (ctx->use_put_object == FLB_TRUE || (chunk != NULL && chunk->retry.uri != NULL)) {
         goto put_object;
     }
 
@@ -1308,7 +1927,8 @@ static int upload_data(struct flb_s3 *ctx, struct s3_file *chunk,
             /* already big enough, just use PutObject API */
             goto put_object;
         }
-        else if(body_size > MIN_CHUNKED_UPLOAD_SIZE) {
+        else if (body_size > MIN_CHUNKED_UPLOAD_SIZE ||
+                 (ctx->uploader_gate_initialized && body_size == MIN_CHUNKED_UPLOAD_SIZE)) {
             init_upload = FLB_TRUE;
             goto multipart;
         }
@@ -1321,11 +1941,6 @@ static int upload_data(struct flb_s3 *ctx, struct s3_file *chunk,
         }
     }
     else {
-        /* existing upload */
-        if (body_size < MIN_CHUNKED_UPLOAD_SIZE) {
-            complete_upload = FLB_TRUE;
-        }
-
         goto multipart;
     }
 
@@ -1334,26 +1949,32 @@ put_object:
     /*
      * remove chunk from buffer list
      */
-    ret = s3_put_object(ctx, tag, file_first_log_time, body, body_size);
-    if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
+    ret = s3_put_object(ctx, tag, file_first_log_time, body, body_size, chunk);
+    if (payload_needs_free) {
         flb_free(payload_buf);
     }
     if (ret < 0) {
         /* re-add chunk to list */
         if (chunk) {
             s3_store_file_unlock(chunk);
-            chunk->failures += 1;
+            if (ret != S3_UPLOAD_DEFERRED) {
+                chunk->failures += 1;
+            }
         }
-        return FLB_RETRY;
+        return ret == S3_UPLOAD_DEFERRED ? ret : FLB_RETRY;
     }
 
     /* data was sent successfully- delete the local buffer */
-    if (chunk) {
-        s3_store_file_delete(ctx, chunk);
+    if (chunk && s3_store_file_delete(ctx, chunk) < 0) {
+        return S3_UPLOAD_DEFERRED;
     }
     return FLB_OK;
 
 multipart:
+    /* A reserved part is still the final part when its encoded body is small. */
+    if (body_size < MIN_CHUNKED_UPLOAD_SIZE) {
+        complete_upload = FLB_TRUE;
+    }
 
     if (init_upload == FLB_TRUE) {
         m_upload = create_upload(ctx, tag, tag_len, file_first_log_time);
@@ -1361,8 +1982,9 @@ multipart:
             flb_plg_error(ctx->ins, "Could not find or create upload for tag %s", tag);
             if (chunk) {
                 s3_store_file_unlock(chunk);
+                chunk->failures += 1;
             }
-            if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
+            if (payload_needs_free) {
                 flb_free(payload_buf);
             }
             return FLB_RETRY;
@@ -1375,35 +1997,67 @@ multipart:
             flb_plg_error(ctx->ins, "Could not initiate multipart upload");
             if (chunk) {
                 s3_store_file_unlock(chunk);
+                if (ret != S3_UPLOAD_DEFERRED) {
+                    chunk->failures += 1;
+                }
             }
-            if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
+            if (payload_needs_free) {
                 flb_free(payload_buf);
             }
-            return FLB_RETRY;
+            return ret == S3_UPLOAD_DEFERRED ? ret : FLB_RETRY;
         }
         m_upload->upload_state = MULTIPART_UPLOAD_STATE_CREATED;
     }
 
+    if (ctx->uploader_gate_initialized && chunk != NULL && chunk->part_upload_id == NULL) {
+        part.uri = flb_sds_create(m_upload->upload_id);
+        part.failures = m_upload->part_number;
+        chunk->part_upload_id = part.uri;
+        chunk->part_number = part.failures;
+        if (part.uri == NULL ||
+            s3_uploader_state_write(ctx, "part", chunk->fsf->name, &part) < 0) {
+            s3_store_file_unlock(chunk);
+            if (payload_needs_free) {
+                flb_free(payload_buf);
+            }
+            return part.uri == NULL ? FLB_RETRY : S3_UPLOAD_DEFERRED;
+        }
+    }
     ret = upload_part(ctx, m_upload, body, body_size, NULL);
     if (ret < 0) {
-        if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
+        if (payload_needs_free) {
             flb_free(payload_buf);
         }
-        m_upload->upload_errors += 1;
+        if (ret == S3_UPLOAD_GONE && chunk != NULL && chunk->part_upload_id != NULL) {
+            flb_plg_warn(ctx->ins, "Multipart upload %s no longer exists; replaying buffer %s",
+                         m_upload->upload_id, chunk->fsf->name);
+            s3_uploader_state_delete(ctx, "part", chunk->fsf->name);
+            flb_sds_destroy(chunk->part_upload_id);
+            chunk->part_upload_id = NULL;
+            chunk->part_number = 0;
+            m_upload->upload_state = MULTIPART_UPLOAD_STATE_COMPLETE_IN_PROGRESS;
+            s3_store_file_unlock(chunk);
+            return S3_UPLOAD_GONE;
+        }
+        if (ret != S3_UPLOAD_DEFERRED && !ctx->uploader_gate_initialized) {
+            m_upload->upload_errors += 1;
+        }
         /* re-add chunk to list */
         if (chunk) {
             s3_store_file_unlock(chunk);
-            chunk->failures += 1;
+            if (ret != S3_UPLOAD_DEFERRED) {
+                chunk->failures += 1;
+            }
         }
-        return FLB_RETRY;
+        return ret == S3_UPLOAD_DEFERRED ? ret : FLB_RETRY;
     }
     m_upload->part_number += 1;
     /* data was sent successfully- delete the local buffer */
     if (chunk) {
-        s3_store_file_delete(ctx, chunk);
+        ret = s3_store_file_delete(ctx, chunk);
         chunk = NULL;
     }
-    if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
+    if (payload_needs_free) {
         flb_free(payload_buf);
     }
     if (m_upload->bytes >= ctx->file_size) {
@@ -1422,7 +2076,7 @@ multipart:
         flb_plg_info(ctx->ins, "Will complete upload for %s because upload_timeout"
                      " has elapsed", m_upload->s3_key);
     }
-    if (size_check || part_num_check || timeout_check) {
+    if (size_check || part_num_check || timeout_check || m_upload->restored) {
         complete_upload = FLB_TRUE;
     }
 
@@ -1431,7 +2085,20 @@ multipart:
         m_upload->upload_state = MULTIPART_UPLOAD_STATE_COMPLETE_IN_PROGRESS;
     }
 
-    return FLB_OK;
+    return ret < 0 ? S3_UPLOAD_DEFERRED : FLB_OK;
+}
+
+static int upload_data(struct flb_s3 *ctx, struct s3_file *chunk,
+                       struct multipart_upload *m_upload,
+                       char *body, size_t body_size, const char *tag, int tag_len)
+{
+    int ret;
+    struct s3_upload_claim claim;
+
+    s3_claim_start(ctx, &claim, tag, tag_len);
+    ret = upload_data_owned(ctx, chunk, m_upload, body, body_size, tag, tag_len);
+    s3_claim_end(&claim);
+    return ret;
 }
 
 /*
@@ -1439,9 +2106,11 @@ multipart:
  * Used on shut down to try to send all buffered data
  * Used on start up to try to send any leftover buffers from previous executions
  */
-static int put_all_chunks(struct flb_s3 *ctx)
+static int put_all_chunks(struct flb_s3 *ctx, int cleanup_empty_streams)
 {
+    int result = 0;
     struct s3_file *chunk;
+    struct mk_list *stream_tmp;
     struct mk_list *tmp;
     struct mk_list *head;
     struct mk_list *f_head;
@@ -1452,8 +2121,13 @@ static int put_all_chunks(struct flb_s3 *ctx)
     char *buffer = NULL;
     size_t buffer_size;
     int ret;
+    uint64_t scan_id;
+    struct s3_upload_claim claim;
 
-    mk_list_foreach(head, &ctx->fs->streams) {
+    scan_id = ++ctx->upload_scan_id;
+
+restart:
+    mk_list_foreach_safe(head, stream_tmp, &ctx->fs->streams) {
         /* skip multi upload stream */
         fs_stream = mk_list_entry(head, struct flb_fstore_stream, _head);
         if (fs_stream == ctx->stream_upload) {
@@ -1472,7 +2146,8 @@ static int put_all_chunks(struct flb_s3 *ctx)
             chunk = fsf->data;
 
             /* Locked chunks are being processed, skip */
-            if (chunk->locked == FLB_TRUE) {
+            if (chunk->locked == FLB_TRUE || chunk->upload_scan_id >= scan_id ||
+                s3_tag_busy(ctx, (const char *) fsf->meta_buf, fsf->meta_size)) {
                 continue;
             }
 
@@ -1484,45 +2159,94 @@ static int put_all_chunks(struct flb_s3 *ctx)
                 continue;
             }
 
+            chunk->upload_scan_id = scan_id;
             ret = construct_request_buffer(ctx, NULL, chunk,
                                            &buffer, &buffer_size);
             if (ret < 0) {
                 flb_plg_error(ctx->ins,
                               "Could not construct request buffer for %s",
                               chunk->file_path);
-                return -1;
+                result = -1;
+                if (ctx->preserve_data_ordering == FLB_TRUE ||
+                    ctx->key_fmt_has_seq_index == FLB_TRUE) {
+                    return result;
+                }
+                continue;
             }
 
-            if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
-                /* Map payload */
-                ret = flb_aws_compression_compress(ctx->compression, buffer, buffer_size, &payload_buf, &payload_size);
+            s3_claim_start(ctx, &claim, (const char *) fsf->meta_buf, fsf->meta_size);
+            pthread_mutex_unlock(&ctx->files_mutex);
+#ifdef FLB_HAVE_ARROW
+            if (s3_format_is_columnar(ctx->s3_format)) {
+                ret = flb_aws_compression_compress_columnar(
+                            s3_format_to_aws_compress_format(ctx->s3_format),
+                            buffer, buffer_size,
+                            &payload_buf, &payload_size,
+                            ctx->compression);
                 if (ret == -1) {
-                    flb_plg_error(ctx->ins, "Failed to compress data, uploading uncompressed data instead to prevent data loss");
-                } else {
-                    flb_plg_info(ctx->ins, "Pre-compression chunk size is %zu, After compression, chunk is %zu bytes", buffer_size, payload_size);
+                    flb_plg_error(ctx->ins,
+                                  "Failed to convert to columnar format, "
+                                  "uploading raw data to prevent data loss");
+                }
+                else {
                     flb_free(buffer);
-
+                    buffer = (void *) payload_buf;
+                    buffer_size = payload_size;
+                }
+            }
+            else
+#endif
+            if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
+                ret = flb_aws_compression_compress(ctx->compression,
+                                                  buffer, buffer_size,
+                                                  &payload_buf,
+                                                  &payload_size);
+                if (ret == -1) {
+                    flb_plg_error(ctx->ins,
+                                  "Failed to compress data, uploading "
+                                  "uncompressed data to prevent data loss");
+                }
+                else {
+                    flb_plg_info(ctx->ins,
+                                 "Pre-compression chunk size is %zu, "
+                                 "After compression, chunk is %zu bytes",
+                                 buffer_size, payload_size);
+                    flb_free(buffer);
                     buffer = (void *) payload_buf;
                     buffer_size = payload_size;
                 }
             }
 
+            pthread_mutex_lock(&ctx->files_mutex);
             ret = s3_put_object(ctx, (const char *)
                                 fsf->meta_buf,
-                                chunk->create_time, buffer, buffer_size);
+                                chunk->create_time, buffer, buffer_size, chunk);
             flb_free(buffer);
+            s3_claim_end(&claim);
             if (ret < 0) {
                 s3_store_file_unlock(chunk);
                 chunk->failures += 1;
-                return -1;
+                result = -1;
+                if (ctx->preserve_data_ordering == FLB_TRUE ||
+                    ctx->key_fmt_has_seq_index == FLB_TRUE) {
+                    return result;
+                }
+                goto restart;
             }
 
             /* data was sent successfully- delete the local buffer */
             s3_store_file_delete(ctx, chunk);
+            goto restart;
+        }
+
+        if (cleanup_empty_streams == FLB_TRUE &&
+            fs_stream != ctx->stream_active &&
+            mk_list_is_empty(&fs_stream->files) == 0) {
+            flb_fstore_stream_destroy(fs_stream, FLB_TRUE);
         }
     }
 
-    return 0;
+    return result;
 }
 
 /*
@@ -1538,6 +2262,11 @@ static int construct_request_buffer(struct flb_s3 *ctx, flb_sds_t new_data,
     char *buffered_data = NULL;
     size_t buffer_size = 0;
     int ret;
+
+    if (s3_plugin_under_test() == FLB_TRUE &&
+        flb_s3_test_env_get("TEST_CONSTRUCT_REQUEST_BUFFER_ERROR") != NULL) {
+        return -1;
+    }
 
     if (new_data == NULL && chunk == NULL) {
         flb_plg_error(ctx->ins, "[construct_request_buffer] Something went wrong"
@@ -1589,21 +2318,41 @@ static int construct_request_buffer(struct flb_s3 *ctx, flb_sds_t new_data,
 }
 
 static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t file_first_log_time,
-                         char *body, size_t body_size)
+                         char *body, size_t body_size, struct s3_file *chunk)
 {
     flb_sds_t s3_key = NULL;
     struct flb_http_client *c = NULL;
-    struct flb_aws_client *s3_client;
     struct flb_aws_header *headers = NULL;
     char *random_alphanumeric;
     int append_random = FLB_FALSE;
     int len;
     int ret;
     int num_headers = 0;
+    int deferred = FLB_FALSE;
+    int keep_uri;
+    int advance_index;
+    int recovery;
+    const char *suffix;
+    const char *basename;
+    size_t prefix_len;
     char *final_key;
     flb_sds_t uri;
     flb_sds_t tmp;
     char final_body_md5[25];
+
+    keep_uri = ctx->uploader_gate_initialized && chunk != NULL;
+    recovery = keep_uri && chunk->retry.uri != NULL &&
+               flb_sds_len(chunk->retry.uri) == sizeof(S3_RECOVERY_PREFIX) - 1 + 32 &&
+               strncmp(chunk->retry.uri, S3_RECOVERY_PREFIX, sizeof(S3_RECOVERY_PREFIX) - 1) == 0;
+    advance_index = ctx->key_fmt_has_seq_index &&
+                    (!keep_uri || chunk->retry.uri == NULL || recovery);
+    if (keep_uri && chunk->retry.uri != NULL && !recovery) {
+        uri = flb_sds_create(chunk->retry.uri);
+        if (uri == NULL) {
+            return -1;
+        }
+        goto prepare_request;
+    }
 
     s3_key = flb_get_s3_key(ctx->s3_key_format, file_first_log_time, tag,
                             ctx->tag_delimiters, ctx->seq_index);
@@ -1618,11 +2367,41 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t file_first_
         append_random = FLB_TRUE;
         len += 16;
     }
-    len += strlen(ctx->bucket + 1);
+    len += strlen(ctx->bucket) + 1;
 
     uri = flb_sds_create_size(len);
+    if (uri == NULL) {
+        flb_sds_destroy(s3_key);
+        return -1;
+    }
 
-    if (append_random == FLB_TRUE) {
+    if (recovery && !ctx->key_fmt_has_uuid) {
+        suffix = chunk->retry.uri + sizeof(S3_RECOVERY_PREFIX) - 1;
+        /* The leading slash separates the bucket and does not count toward the key limit. */
+        prefix_len = strlen(s3_key);
+        basename = strrchr(s3_key, '/');
+        if (basename != NULL && (size_t) (basename - s3_key + 1) > 1024 - strlen(suffix)) {
+            /* Leave room for a separator and the complete recovery identifier. */
+            prefix_len = basename - s3_key;
+            if (prefix_len > 1024 - strlen(suffix)) {
+                prefix_len = 1024 - strlen(suffix);
+                while (prefix_len && ((unsigned char) s3_key[prefix_len] & 0xc0) == 0x80) {
+                    prefix_len--;
+                }
+            }
+            tmp = flb_sds_printf(&uri, "/%s%.*s/%s", ctx->bucket, (int) prefix_len, s3_key, suffix);
+        }
+        else {
+            if (prefix_len + strlen(suffix) > 1024) {
+                prefix_len = 1024 - strlen(suffix);
+                while (prefix_len > 0 && ((unsigned char) s3_key[prefix_len] & 0xc0) == 0x80) {
+                    prefix_len--;
+                }
+            }
+            tmp = flb_sds_printf(&uri, "/%s%.*s-%s", ctx->bucket, (int) prefix_len, s3_key, suffix);
+        }
+    }
+    else if (append_random == FLB_TRUE) {
         random_alphanumeric = flb_sts_session_name();
         if (!random_alphanumeric) {
             flb_sds_destroy(s3_key);
@@ -1649,6 +2428,7 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t file_first_
     flb_sds_destroy(s3_key);
     uri = tmp;
 
+prepare_request:
     memset(final_body_md5, 0, sizeof(final_body_md5));
     if (ctx->send_content_md5 == FLB_TRUE) {
         ret = get_md5_base64(body, body_size,
@@ -1661,20 +2441,37 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t file_first_
     }
 
     /* Update file and increment index value right before request */
-    if (ctx->key_fmt_has_seq_index) {
+    if (advance_index) {
         ctx->seq_index++;
 
         ret = write_seq_index(ctx->seq_index_file, ctx->seq_index);
         if (ret < 0 && access(ctx->seq_index_file, F_OK) == 0) {
             ctx->seq_index--;
             flb_plg_error(ctx->ins, "Failed to update sequential index metadata file");
+            flb_sds_destroy(uri);
             return -1;
         }
     }
 
-    s3_client = ctx->s3_client;
+    if (keep_uri && (chunk->retry.uri == NULL || recovery)) {
+        tmp = flb_sds_create(uri);
+        if (tmp == NULL) {
+            flb_sds_destroy(uri);
+            return -1;
+        }
+        flb_sds_destroy(chunk->retry.uri);
+        chunk->retry.uri = tmp;
+        if (s3_uploader_state_write(ctx, "chunk", chunk->fsf->name, &chunk->retry) < 0) {
+            flb_sds_destroy(uri);
+            return -1;
+        }
+    }
+
     if (s3_plugin_under_test() == FLB_TRUE) {
-        c = mock_s3_call("TEST_PUT_OBJECT_ERROR", "PutObject");
+        c = mock_s3_call_for_tag("TEST_PUT_OBJECT_ERROR",
+                                 "TEST_PUT_OBJECT_ERROR_TAG",
+                                 "PutObject", tag, (int) strlen(tag));
+        mock_s3_call_record_uri("PutObject", uri);
     }
     else {
         ret = create_headers(ctx, final_body_md5, &headers, &num_headers, FLB_FALSE);
@@ -1683,10 +2480,13 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t file_first_
             flb_sds_destroy(uri);
             goto decrement_index;
         }
-        c = s3_client->client_vtable->request(s3_client, FLB_HTTP_PUT,
-                                              uri, body, body_size,
-                                              headers, num_headers);
+        c = s3_request(ctx, FLB_HTTP_PUT, uri, body, body_size,
+                         headers, num_headers, &deferred);
         flb_free(headers);
+    }
+    if (deferred) {
+        flb_sds_destroy(uri);
+        return S3_UPLOAD_DEFERRED;
     }
     if (c) {
         flb_plg_debug(ctx->ins, "PutObject http status=%d", c->resp.status);
@@ -1715,7 +2515,7 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t file_first_
     goto decrement_index;
 
 decrement_index:
-    if (ctx->key_fmt_has_seq_index) {
+    if (advance_index && !keep_uri) {
         ctx->seq_index--;
 
         ret = write_seq_index(ctx->seq_index_file, ctx->seq_index);
@@ -1761,7 +2561,14 @@ static struct multipart_upload *get_upload(struct flb_s3 *ctx,
     mk_list_foreach_safe(head, tmp, &ctx->uploads) {
         tmp_upload = mk_list_entry(head, struct multipart_upload, _head);
 
-        if (tmp_upload->upload_state == MULTIPART_UPLOAD_STATE_COMPLETE_IN_PROGRESS) {
+        if (tmp_upload->tag == NULL ||
+            s3_tag_busy(ctx, tmp_upload->tag, flb_sds_len(tmp_upload->tag))) {
+            continue;
+        }
+        if (tmp_upload->upload_state == MULTIPART_UPLOAD_STATE_COMPLETE_IN_PROGRESS ||
+            tmp_upload->upload_state == MULTIPART_UPLOAD_STATE_REJECTED ||
+            (ctx->uploader_gate_initialized && tmp_upload->upload_id != NULL &&
+             s3_uploader_part_pending(ctx, tmp_upload->upload_id))) {
             continue;
         }
         if (tmp_upload->upload_errors > ctx->ins->retry_limit) {
@@ -1800,6 +2607,7 @@ static struct multipart_upload *create_upload(struct flb_s3 *ctx, const char *ta
         flb_free(m_upload);
         return NULL;
     }
+    m_upload->request = s3_request;
     m_upload->s3_key = s3_key;
     tmp_sds = flb_sds_create_len(tag, tag_len);
     if (!tmp_sds) {
@@ -1883,10 +2691,12 @@ void remove_from_queue(struct upload_queue *entry)
 }
 
 /* Validity check for upload queue object */
-static int upload_queue_valid(struct upload_queue *upload_contents, time_t now,
-                              void *out_context)
+static int upload_queue_valid(struct upload_queue *upload_contents,
+                              int *entry_removed, void *out_context)
 {
     struct flb_s3 *ctx = out_context;
+
+    *entry_removed = FLB_FALSE;
 
     if (upload_contents == NULL) {
         flb_plg_error(ctx->ins, "Error getting entry from upload_queue");
@@ -1903,14 +2713,15 @@ static int upload_queue_valid(struct upload_queue *upload_contents, time_t now,
                       "Exiting");
         return -1;
     }
-    if (upload_contents->upload_file->size <= 0) {
-        flb_plg_debug(ctx->ins, "Encountered empty chunk file in upload_queue. "
-                      "Deleting empty chunk file");
+    if (s3_store_file_size_get(upload_contents->upload_file) == 0) {
+        flb_plg_debug(ctx->ins,
+                      "Encountered empty chunk file '%s' for tag '%s' in "
+                      "upload_queue. Deleting empty chunk file",
+                      upload_contents->upload_file->fsf->name,
+                      upload_contents->tag);
+        s3_store_file_delete(ctx, upload_contents->upload_file);
         remove_from_queue(upload_contents);
-        return -1;
-    }
-    if (now < upload_contents->upload_time) {
-        flb_plg_debug(ctx->ins, "Found valid chunk file but not ready to upload");
+        *entry_removed = FLB_TRUE;
         return -1;
     }
     return 0;
@@ -1932,7 +2743,7 @@ static int send_upload_request(void *out_context, flb_sds_t chunk,
     if (ret < 0) {
         flb_plg_error(ctx->ins, "Could not construct request buffer for %s",
                       upload_file->file_path);
-        return -1;
+        return FLB_RETRY;
     }
 
     /* Upload to S3 */
@@ -1943,7 +2754,7 @@ static int send_upload_request(void *out_context, flb_sds_t chunk,
 }
 
 static int buffer_chunk(void *out_context, struct s3_file *upload_file,
-                        flb_sds_t chunk, int chunk_size,
+                        flb_sds_t chunk, size_t chunk_size,
                         const char *tag, int tag_len,
                         time_t file_first_log_time)
 {
@@ -1953,10 +2764,13 @@ static int buffer_chunk(void *out_context, struct s3_file *upload_file,
     ret = s3_store_buffer_put(ctx, upload_file, tag,
                               tag_len, chunk, (size_t) chunk_size, file_first_log_time);
     flb_sds_destroy(chunk);
+    if (ret == S3_STORE_BUFFER_FULL) {
+        return ret;
+    }
     if (ret < 0) {
         flb_plg_warn(ctx->ins, "Could not buffer chunk. Data order preservation "
                      "will be compromised");
-        return -1;
+        return ret;
     }
     return 0;
 }
@@ -1969,7 +2783,6 @@ static int buffer_chunk(void *out_context, struct s3_file *upload_file,
 static void s3_chunk_retry_exhausted_cleanup(struct flb_s3 *ctx,
                                              struct s3_file *chunk_file)
 {
-    size_t reclaim_size;
     int ret;
 
     if (chunk_file == NULL) {
@@ -1977,31 +2790,19 @@ static void s3_chunk_retry_exhausted_cleanup(struct flb_s3 *ctx,
     }
 
     if (ctx->retry_exhausted_action == S3_RETRY_EXHAUSTED_QUARANTINE) {
-        reclaim_size = chunk_file->size;
-
-        if (ctx->quarantine_dir_limit_size > 0 &&
-            ctx->quarantine_buffer_size + reclaim_size > ctx->quarantine_dir_limit_size) {
+        ret = s3_store_file_quarantine(ctx, chunk_file);
+        if (ret == S3_STORE_QUARANTINE_FULL) {
             flb_plg_warn(ctx->ins,
                          "quarantine limit reached, deleting retry-exhausted chunk");
             s3_store_file_delete(ctx, chunk_file);
             return;
         }
-
-        ret = s3_store_file_quarantine(ctx, chunk_file);
         if (ret < 0) {
             flb_plg_error(ctx->ins,
                           "could not quarantine, deleting retry-exhausted chunk");
             s3_store_file_delete(ctx, chunk_file);
             return;
         }
-
-        if (ctx->current_buffer_size >= reclaim_size) {
-            ctx->current_buffer_size -= reclaim_size;
-        }
-        else {
-            ctx->current_buffer_size = 0;
-        }
-        ctx->quarantine_buffer_size += reclaim_size;
 
         flb_plg_warn(ctx->ins,
                      "retry-exhausted chunk moved to quarantine");
@@ -2027,48 +2828,234 @@ static int s3_get_retry_exhausted_action(const char *value)
     return -1;
 }
 
+static void s3_upload_queue_retry_cancel(struct flb_s3 *ctx)
+{
+    if (ctx->upload_queue_retry_timer == NULL) {
+        return;
+    }
+
+    /* Scheduler lists belong to their worker. Let a foreign timer fire. */
+    if (ctx->upload_queue_retry_timer->sched != flb_sched_ctx_get()) {
+        return;
+    }
+
+    flb_sched_timer_invalidate(ctx->upload_queue_retry_timer);
+    ctx->upload_queue_retry_timer = NULL;
+}
+
+/*
+ * The scheduler is destroyed before output exit callbacks run, so a retry
+ * timer cannot be invalidated during shutdown. Release queued file locks so
+ * the regular shutdown drain can make one final upload attempt instead.
+ */
+static void s3_upload_queue_release(struct flb_s3 *ctx)
+{
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct upload_queue *upload_contents;
+
+    ctx->upload_queue_retry_timer = NULL;
+
+    mk_list_foreach_safe(head, tmp, &ctx->upload_queue) {
+        upload_contents = mk_list_entry(head, struct upload_queue, _head);
+        s3_store_file_unlock(upload_contents->upload_file);
+        remove_from_queue(upload_contents);
+    }
+}
+
+static void s3_upload_queue_retry(struct flb_config *config, void *out_context)
+{
+    struct flb_s3 *ctx = out_context;
+
+    pthread_mutex_lock(&ctx->files_mutex);
+    ctx->upload_queue_retry_timer = NULL;
+    s3_upload_queue(config, out_context);
+    pthread_mutex_unlock(&ctx->files_mutex);
+}
+
+static void cb_s3_upload_queue(struct flb_config *config, void *out_context)
+{
+    struct flb_s3 *ctx = out_context;
+
+    pthread_mutex_lock(&ctx->files_mutex);
+    s3_upload_queue(config, out_context);
+    pthread_mutex_unlock(&ctx->files_mutex);
+}
+
+static int s3_upload_queue_retry_schedule(struct flb_s3 *ctx, time_t retry_time)
+{
+    int ret;
+    int delay_ms;
+    int64_t delay_seconds;
+    struct flb_sched *sched;
+
+    if (ctx->upload_queue_retry_timer != NULL) {
+        return 0;
+    }
+
+    delay_seconds = retry_time - time(NULL);
+    if (delay_seconds <= 0) {
+        delay_ms = 1;
+    }
+    else if (delay_seconds > INT_MAX / 1000) {
+        delay_ms = INT_MAX;
+    }
+    else {
+        delay_ms = (int) delay_seconds * 1000;
+    }
+
+    sched = flb_sched_ctx_get();
+    ret = flb_sched_timer_cb_create(sched, FLB_SCHED_TIMER_CB_ONESHOT,
+                                    delay_ms, s3_upload_queue_retry, ctx,
+                                    &ctx->upload_queue_retry_timer);
+    if (ret < 0) {
+        ctx->upload_queue_retry_timer = NULL;
+        flb_plg_warn(ctx->ins,
+                     "Could not schedule upload queue retry; periodic timer will retry");
+        return -1;
+    }
+
+    return 0;
+}
+
+static int upload_queue_tag_is_blocked(struct flb_s3 *ctx,
+                                       struct upload_queue *entry)
+{
+    struct mk_list *head;
+    struct upload_queue *queued_entry;
+
+    mk_list_foreach(head, &ctx->upload_queue) {
+        queued_entry = mk_list_entry(head, struct upload_queue, _head);
+        if (queued_entry == entry) {
+            return FLB_FALSE;
+        }
+        if (queued_entry->tag_len == entry->tag_len &&
+            memcmp(queued_entry->tag, entry->tag, entry->tag_len) == 0) {
+            return FLB_TRUE;
+        }
+    }
+
+    return FLB_FALSE;
+}
+
+static int upload_queue_tag_is_held(struct flb_s3 *ctx, const char *tag,
+                                    int tag_len, time_t now)
+{
+    struct mk_list *head;
+    struct upload_queue *queued_entry;
+
+    mk_list_foreach(head, &ctx->upload_queue) {
+        queued_entry = mk_list_entry(head, struct upload_queue, _head);
+        if (queued_entry->tag_len == tag_len &&
+            memcmp(queued_entry->tag, tag, tag_len) == 0) {
+            return now < queued_entry->upload_time;
+        }
+    }
+
+    return FLB_FALSE;
+}
+
 /* Uploads all chunk files in queue synchronously */
 static void s3_upload_queue(struct flb_config *config, void *out_context)
 {
     int ret;
+    uint64_t scan_id;
+    int entry_removed;
+    int completions_checked;
     time_t now;
+    time_t earliest_retry_time;
     struct upload_queue *upload_contents;
+    struct s3_file *upload_file;
     struct flb_s3 *ctx = out_context;
     struct mk_list *tmp;
     struct mk_list *head;
 
+    (void) config;
+    scan_id = ++ctx->upload_scan_id;
+    completions_checked = FLB_FALSE;
+    earliest_retry_time = 0;
+
     flb_plg_debug(ctx->ins, "Running upload timer callback (upload_queue)..");
+
+    if (ctx->has_old_buffers) {
+        complete_pending_uploads(ctx);
+        return;
+    }
+
+scan:
 
     /* No chunks in upload queue. Scan for timed out chunks. */
     if (mk_list_size(&ctx->upload_queue) == 0) {
         flb_plg_debug(ctx->ins, "No files found in upload_queue. Scanning for timed "
                       "out chunks");
-        cb_s3_upload(config, out_context);
+        ret = enqueue_oldest_timed_out_chunk(ctx, time(NULL), FLB_FALSE);
+        if (ret < 0) {
+            flb_plg_error(ctx->ins,
+                          "Could not add timed out chunk to upload queue");
+        }
+        if (ret <= 0) {
+            complete_pending_uploads_once(ctx, &completions_checked);
+            goto exit;
+        }
     }
 
-    /* Iterate through each file in upload queue */
+restart:
+    /* Never retain list iterators across an unlocked upload. */
     mk_list_foreach_safe(head, tmp, &ctx->upload_queue) {
         upload_contents = mk_list_entry(head, struct upload_queue, _head);
 
+        if (upload_contents->in_flight || upload_contents->scan_id >= scan_id ||
+            s3_tag_busy(ctx, upload_contents->tag, upload_contents->tag_len)) {
+            continue;
+        }
+
+        if (upload_queue_tag_is_blocked(ctx, upload_contents) == FLB_TRUE) {
+            continue;
+        }
+
         now = time(NULL);
 
+        if (now < upload_contents->upload_time) {
+            flb_plg_debug(ctx->ins,
+                          "Found tag queue head but it is not ready to upload");
+            if (ctx->key_fmt_has_seq_index == FLB_TRUE) {
+                s3_upload_queue_retry_schedule(ctx, upload_contents->upload_time);
+                complete_pending_uploads_once(ctx, &completions_checked);
+                goto exit;
+            }
+            if (earliest_retry_time == 0 ||
+                upload_contents->upload_time < earliest_retry_time) {
+                earliest_retry_time = upload_contents->upload_time;
+            }
+            continue;
+        }
+
         /* Checks if upload_contents is valid */
-        ret = upload_queue_valid(upload_contents, now, ctx);
+        ret = upload_queue_valid(upload_contents, &entry_removed, ctx);
         if (ret < 0) {
+            if (entry_removed == FLB_TRUE) {
+                continue;
+            }
+            complete_pending_uploads_once(ctx, &completions_checked);
             goto exit;
         }
 
+        upload_contents->m_upload_file = get_upload(
+                ctx, upload_contents->tag, upload_contents->tag_len);
+
         /* Try to upload file. Return value can be -1, FLB_OK, FLB_ERROR, FLB_RETRY. */
+        upload_contents->scan_id = scan_id;
+        upload_contents->in_flight = FLB_TRUE;
         ret = send_upload_request(ctx, NULL, upload_contents->upload_file,
                                   upload_contents->m_upload_file,
                                   upload_contents->tag, upload_contents->tag_len);
-        if (ret < 0) {
-            goto exit;
-        }
-        else if (ret == FLB_OK) {
+        upload_contents->in_flight = FLB_FALSE;
+        if (ret == FLB_OK) {
+            s3_upload_queue_retry_cancel(ctx);
             remove_from_queue(upload_contents);
             ctx->retry_time = 0;
             ctx->upload_queue_success = FLB_TRUE;
+            complete_pending_uploads_once(ctx, &completions_checked);
         }
         else {
             s3_store_file_lock(upload_contents->upload_file);
@@ -2079,23 +3066,64 @@ static void s3_upload_queue(struct flb_config *config, void *out_context)
             if (upload_contents->retry_counter > ctx->ins->retry_limit) {
                 flb_plg_warn(ctx->ins, "Chunk file failed to send %d times, will not "
                              "retry", upload_contents->retry_counter);
-                s3_chunk_retry_exhausted_cleanup(ctx, upload_contents->upload_file);
-                if (upload_contents->m_upload_file) {
-                    mk_list_del(&upload_contents->m_upload_file->_head);
-                }
-                multipart_upload_destroy(upload_contents->m_upload_file);
+                upload_file = upload_contents->upload_file;
+                /*
+                 * Multipart uploads are shared by tag and may contain parts
+                 * already accepted by S3. Leave their persisted state intact.
+                 */
                 remove_from_queue(upload_contents);
-                continue;
+                s3_chunk_retry_exhausted_cleanup(ctx, upload_file);
+                s3_upload_queue_retry_cancel(ctx);
+                ctx->retry_time = 0;
+                complete_pending_uploads_once(ctx, &completions_checked);
+                goto restart;
             }
 
             /* Retry in N seconds */
             upload_contents->upload_time = now + 2 * upload_contents->retry_counter;
             ctx->retry_time += 2 * upload_contents->retry_counter;
+            if (ctx->key_fmt_has_seq_index == FLB_TRUE) {
+                s3_upload_queue_retry_schedule(ctx, upload_contents->upload_time);
+                flb_plg_debug(ctx->ins,
+                              "Failed to upload file in upload_queue. Will not "
+                              "retry for %d seconds",
+                              2 * upload_contents->retry_counter);
+                complete_pending_uploads_once(ctx, &completions_checked);
+                break;
+            }
+            if (earliest_retry_time == 0 ||
+                upload_contents->upload_time < earliest_retry_time) {
+                earliest_retry_time = upload_contents->upload_time;
+            }
             flb_plg_debug(ctx->ins, "Failed to upload file in upload_queue. Will not "
-                          "retry for %d seconds", 2 * upload_contents->retry_counter);
-            break;
+                          "retry for %d seconds",
+                          2 * upload_contents->retry_counter);
+            complete_pending_uploads_once(ctx, &completions_checked);
         }
+        goto restart;
     }
+
+    if (ctx->key_fmt_has_seq_index == FLB_TRUE) {
+        if (mk_list_size(&ctx->upload_queue) == 0) {
+            goto scan;
+        }
+        goto exit;
+    }
+
+    ret = enqueue_oldest_timed_out_chunk(ctx, time(NULL), FLB_TRUE);
+    if (ret > 0) {
+        goto scan;
+    }
+    if (ret < 0) {
+        flb_plg_error(ctx->ins, "Could not add timed out chunk to upload queue");
+    }
+
+    s3_upload_queue_retry_cancel(ctx);
+    if (earliest_retry_time != 0) {
+        s3_upload_queue_retry_schedule(ctx, earliest_retry_time);
+    }
+
+    complete_pending_uploads_once(ctx, &completions_checked);
 
 exit:
     return;
@@ -2111,6 +3139,7 @@ static int blob_initialize_authorization_endpoint_upstream(struct flb_s3 *contex
     char *port = NULL;
     char *uri = NULL;
     int upstream_flags;
+    int io_flags = FLB_IO_TCP;
 
     context->authorization_endpoint_upstream = NULL;
     context->authorization_endpoint_tls_context = NULL;
@@ -2128,6 +3157,9 @@ static int blob_initialize_authorization_endpoint_upstream(struct flb_s3 *contex
     }
 
     if (scheme != NULL) {
+        if (strcasecmp(scheme, "https") == 0) {
+            io_flags = FLB_IO_TLS;
+        }
         flb_free(scheme);
 
         scheme = NULL;
@@ -2156,14 +3188,22 @@ static int blob_initialize_authorization_endpoint_upstream(struct flb_s3 *contex
     }
 
     tls_context = flb_tls_create(FLB_TLS_CLIENT_MODE,
-                                 FLB_FALSE,
-                                 FLB_FALSE,
+                                 context->ins->tls_verify,
+                                 context->ins->tls_debug,
                                  host,
-                                 NULL,
-                                 NULL,
-                                 NULL,
-                                 NULL,
-                                 NULL);
+                                 context->ins->tls_ca_path,
+                                 context->ins->tls_ca_file,
+                                 context->ins->tls_crt_file,
+                                 context->ins->tls_key_file,
+                                 context->ins->tls_key_passwd);
+
+    if (tls_context != NULL && context->ins->tls_verify == FLB_TRUE) {
+        ret = flb_tls_set_verify_hostname(tls_context, FLB_TRUE);
+        if (ret != 0) {
+            flb_tls_destroy(tls_context);
+            tls_context = NULL;
+        }
+    }
 
     flb_free(host);
     flb_free(uri);
@@ -2177,7 +3217,7 @@ static int blob_initialize_authorization_endpoint_upstream(struct flb_s3 *contex
 
     upstream = flb_upstream_create_url(context->ins->config,
                                        context->authorization_endpoint_url,
-                                       FLB_IO_TCP,
+                                       io_flags,
                                        tls_context);
 
     if (upstream == NULL) {
@@ -2192,6 +3232,9 @@ static int blob_initialize_authorization_endpoint_upstream(struct flb_s3 *contex
     upstream_flags =  flb_stream_get_flags(&upstream->base);
 
     flb_output_upstream_set(upstream, context->ins);
+    if (context->uploader_gate_initialized && upstream->base.net.io_timeout <= 0) {
+        upstream->base.net.io_timeout = S3_UPLOADER_IO_TIMEOUT;
+    }
 
     flb_stream_set_flags(&upstream->base, upstream_flags);
 
@@ -2590,6 +3633,7 @@ static struct multipart_upload *create_blob_upload(struct flb_s3 *ctx, const cha
         flb_free(m_upload);
         return NULL;
     }
+    m_upload->request = s3_request;
     m_upload->s3_key = s3_key;
     tmp_sds = flb_sds_create_len(tag, tag_len);
     if (!tmp_sds) {
@@ -2602,17 +3646,20 @@ static struct multipart_upload *create_blob_upload(struct flb_s3 *ctx, const cha
     m_upload->upload_state = MULTIPART_UPLOAD_STATE_NOT_CREATED;
     m_upload->part_number = 1;
     m_upload->init_time = time(NULL);
-    mk_list_add(&m_upload->_head, &ctx->uploads);
+
+    /* Blob uploads are owned by their caller; ctx->uploads is for log uploads. */
+    m_upload->blob = FLB_TRUE;
 
     /* Update file and increment index value right before request */
     if (ctx->key_fmt_has_seq_index) {
+        pthread_mutex_lock(&ctx->files_mutex);
         ctx->seq_index++;
 
         ret = write_seq_index(ctx->seq_index_file, ctx->seq_index);
         if (ret < 0) {
             ctx->seq_index--;
 
-            mk_list_del(&m_upload->_head);
+            pthread_mutex_unlock(&ctx->files_mutex);
 
             flb_sds_destroy(tmp_sds);
             flb_sds_destroy(s3_key);
@@ -2623,6 +3670,7 @@ static struct multipart_upload *create_blob_upload(struct flb_s3 *ctx, const cha
 
             return NULL;
         }
+        pthread_mutex_unlock(&ctx->files_mutex);
     }
 
     return m_upload;
@@ -2635,11 +3683,11 @@ static int put_blob_object(struct flb_s3 *ctx,
 {
     flb_sds_t s3_key = NULL;
     struct flb_http_client *c = NULL;
-    struct flb_aws_client *s3_client;
     struct flb_aws_header *headers = NULL;
     int len;
     int ret;
     int num_headers = 0;
+    int deferred = FLB_FALSE;
     char *final_key;
     flb_sds_t uri;
     flb_sds_t tmp;
@@ -2693,7 +3741,6 @@ static int put_blob_object(struct flb_s3 *ctx,
         }
     }
 
-    s3_client = ctx->s3_client;
     if (s3_plugin_under_test() == FLB_TRUE) {
         c = mock_s3_call("TEST_PUT_OBJECT_ERROR", "PutObject");
     }
@@ -2705,10 +3752,13 @@ static int put_blob_object(struct flb_s3 *ctx,
             return -1;
         }
 
-        c = s3_client->client_vtable->request(s3_client, FLB_HTTP_PUT,
-                                              uri, body, body_size,
-                                              headers, num_headers);
+        c = s3_blob_request(ctx, FLB_HTTP_PUT, uri, body, body_size,
+                              headers, num_headers, &deferred);
         flb_free(headers);
+    }
+    if (deferred) {
+        flb_sds_destroy(uri);
+        return S3_UPLOAD_DEFERRED;
     }
     if (c) {
         flb_plg_debug(ctx->ins, "PutObject http status=%d", c->resp.status);
@@ -2746,7 +3796,12 @@ static int abort_blob_upload(struct flb_s3 *ctx,
     struct multipart_upload *m_upload;
     flb_sds_t pre_signed_url;
     int ret;
+    uint64_t generation;
 
+    if (ctx->uploader_gate_initialized &&
+        (file_remote_id == NULL || file_remote_id[0] == '\0')) {
+        return 0;
+    }
     pre_signed_url = NULL;
 
     m_upload = create_blob_upload(ctx, file_tag, cfl_sds_len(file_tag), file_path);
@@ -2754,8 +3809,6 @@ static int abort_blob_upload(struct flb_s3 *ctx,
     if (m_upload == NULL) {
         return -1;
     }
-
-    mk_list_del(&m_upload->_head);
 
     m_upload->upload_id = flb_sds_create(file_remote_id);
 
@@ -2769,27 +3822,28 @@ static int abort_blob_upload(struct flb_s3 *ctx,
         return -2;
     }
 
+    ret = 0;
     if (ctx->authorization_endpoint_url != NULL) {
-        ret = blob_fetch_multipart_abort_pre_signed_url(ctx,
-                                                        &pre_signed_url,
-                                                        file_tag,
-                                                        ctx->bucket,
-                                                        file_path,
-                                                        m_upload->upload_id);
-
-        if (ret != 0) {
+        ret = blob_fetch_multipart_abort_pre_signed_url(ctx, &pre_signed_url, file_tag,
+                                                       ctx->bucket, file_path, m_upload->upload_id);
+        if (ret != 0 && !ctx->uploader_gate_initialized) {
             m_upload->part_number = 0;
-
             multipart_upload_destroy(m_upload);
-
             return -3;
         }
     }
-    else {
-        pre_signed_url = NULL;
-    }
 
-    ret = abort_multipart_upload(ctx, m_upload, pre_signed_url);
+    pthread_mutex_lock(&ctx->files_mutex);
+    if (ret == 0) {
+        ret = abort_multipart_upload(ctx, m_upload, pre_signed_url);
+    }
+    else {
+        ret = -1;
+    }
+    if (ret < 0 && !s3_uploader_admit(ctx, &generation)) {
+        ret = S3_UPLOAD_DEFERRED;
+    }
+    pthread_mutex_unlock(&ctx->files_mutex);
 
     if (pre_signed_url != NULL) {
         flb_sds_destroy(pre_signed_url);
@@ -2801,12 +3855,76 @@ static int abort_blob_upload(struct flb_s3 *ctx,
 
     multipart_upload_destroy(m_upload);
 
+    if (ctx->uploader_gate_initialized && ret < 0 && ret != S3_UPLOAD_DEFERRED) {
+        flb_plg_warn(ctx->ins, "Remote abort failed for %s (upload %s), continuing blob delivery",
+                     file_path, file_remote_id);
+    }
+    return ret == S3_UPLOAD_DEFERRED ? ret : 0;
+}
+
+/* Capture the original counters in the same SQLite statement that claims the
+ * part. A crash or lock during refund leaves the claim available for replay. */
+static int s3_blob_refund(struct flb_s3 *ctx)
+{
+#ifdef FLB_HAVE_SQLDB
+    sqlite3 *db;
+    int ret;
+    const char *setup =
+        "CREATE TABLE IF NOT EXISTS s3_blob_claims ("
+        "id INTEGER PRIMARY KEY REFERENCES blob_parts(id) ON DELETE CASCADE,"
+        "part_attempts INTEGER NOT NULL, file_attempts INTEGER NOT NULL);"
+        "CREATE TEMP TRIGGER IF NOT EXISTS s3_claim AFTER UPDATE OF in_progress ON main.blob_parts "
+        "WHEN OLD.in_progress=0 AND NEW.in_progress=1 BEGIN "
+        "INSERT INTO s3_blob_claims SELECT NEW.id, OLD.delivery_attempts, delivery_attempts "
+        "FROM blob_files WHERE id=NEW.file_id; END;"
+        "CREATE TEMP TRIGGER IF NOT EXISTS s3_release AFTER UPDATE OF in_progress ON main.blob_parts "
+        "WHEN NEW.in_progress=0 BEGIN DELETE FROM s3_blob_claims WHERE id=NEW.id; END;";
+    /* System SQLite can predate UPDATE ... FROM. */
+    const char *refund =
+        "UPDATE blob_files SET delivery_attempts=("
+        "SELECT c.file_attempts FROM s3_blob_claims c JOIN blob_parts p ON p.id=c.id "
+        "WHERE p.file_id=blob_files.id AND p.part_id=0) "
+        "WHERE id IN (SELECT p.file_id FROM s3_blob_claims c JOIN blob_parts p ON p.id=c.id "
+        "WHERE p.part_id=0);"
+        "UPDATE blob_parts SET delivery_attempts=("
+        "SELECT part_attempts FROM s3_blob_claims WHERE id=blob_parts.id), in_progress=0 "
+        "WHERE id IN (SELECT id FROM s3_blob_claims);";
+
+    if (!ctx->uploader_gate_initialized || (ctx->blob_claims_initialized && !ctx->blob_refund_pending)) {
+        return 0;
+    }
+    db = ctx->blob_db.db->handler;
+    flb_sqldb_lock(ctx->blob_db.db);
+    ret = sqlite3_exec(db, "BEGIN IMMEDIATE", NULL, NULL, NULL);
+    if (ret == SQLITE_OK) {
+        if (!ctx->blob_claims_initialized) {
+            ret = sqlite3_exec(db, setup, NULL, NULL, NULL);
+        }
+        if (ret == SQLITE_OK) {
+            ret = sqlite3_exec(db, refund, NULL, NULL, NULL);
+        }
+        if (ret == SQLITE_OK) {
+            ret = sqlite3_exec(db, "COMMIT", NULL, NULL, NULL);
+        }
+        if (ret != SQLITE_OK) {
+            sqlite3_exec(db, "ROLLBACK", NULL, NULL, NULL);
+        }
+    }
+    flb_sqldb_unlock(ctx->blob_db.db);
+    if (ret != SQLITE_OK) {
+        flb_plg_error(ctx->ins, "Cannot recover blob claims (%s), will retry", sqlite3_errstr(ret));
+        return -1;
+    }
+    ctx->blob_claims_initialized = FLB_TRUE;
+    ctx->blob_refund_pending = FLB_FALSE;
+#endif
     return 0;
 }
 
 static int cb_s3_upload_blob(struct flb_config *config, void *data)
 {
     int ret;
+    int complete_failed = FLB_FALSE;
     char *out_buf = NULL;
     size_t out_size;
     uint64_t id;
@@ -2842,6 +3960,9 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
         return 0;
     }
 
+    if (s3_blob_refund(ctx) < 0) {
+        return -1;
+    }
     info->active_upload = FLB_TRUE;
     pre_signed_url = NULL;
 
@@ -2870,6 +3991,7 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
                     cfl_sds_destroy(file_path);
                     cfl_sds_destroy(file_remote_id);
                     cfl_sds_destroy(file_destination);
+                    cfl_sds_destroy(source);
 
                     flb_blob_db_unlock(&ctx->blob_db);
 
@@ -2881,10 +4003,12 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
             flb_blob_db_file_reset_upload_states(&ctx->blob_db, file_id);
             flb_blob_db_file_set_aborted_state(&ctx->blob_db, file_id, 0);
 
+            cfl_sds_destroy(file_tag);
             cfl_sds_destroy(file_remote_id);
             cfl_sds_destroy(file_path);
             cfl_sds_destroy(source);
 
+            file_tag = NULL;
             file_remote_id = NULL;
             file_path = NULL;
             source = NULL;
@@ -2913,6 +4037,7 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
                     cfl_sds_destroy(file_path);
                     cfl_sds_destroy(file_remote_id);
                     cfl_sds_destroy(file_destination);
+                    cfl_sds_destroy(source);
 
                     flb_blob_db_unlock(&ctx->blob_db);
 
@@ -2956,10 +4081,12 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
                 }
             }
 
+            cfl_sds_destroy(file_tag);
             cfl_sds_destroy(file_remote_id);
             cfl_sds_destroy(file_path);
             cfl_sds_destroy(source);
 
+            file_tag = NULL;
             file_remote_id = NULL;
             file_path = NULL;
             source = NULL;
@@ -2996,8 +4123,6 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
 
                 return -1;
             }
-
-            mk_list_del(&m_upload->_head);
 
             m_upload->upload_id = flb_sds_create(file_remote_id);
 
@@ -3051,7 +4176,9 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
                 pre_signed_url = NULL;
             }
 
+            pthread_mutex_lock(&ctx->files_mutex);
             ret = complete_multipart_upload(ctx, m_upload, pre_signed_url);
+            pthread_mutex_unlock(&ctx->files_mutex);
 
             if (pre_signed_url != NULL) {
                 flb_sds_destroy(pre_signed_url);
@@ -3061,12 +4188,11 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
 
             if (ret < 0) {
                 multipart_upload_destroy(m_upload);
-
-                flb_plg_error(ctx->ins, "Could not initiate multipart upload");
-
-                flb_blob_db_unlock(&ctx->blob_db);
-
-                return -6;
+                if (ret == S3_UPLOAD_GONE || ret == S3_UPLOAD_REJECTED) {
+                    flb_blob_db_file_set_aborted_state(&ctx->blob_db, file_id, 1);
+                }
+                complete_failed = FLB_TRUE;
+                goto release_blob_metadata;
             }
 
             multipart_upload_destroy(m_upload);
@@ -3117,6 +4243,7 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
         }
     }
 
+release_blob_metadata:
     flb_blob_db_unlock(&ctx->blob_db);
 
     if (file_tag) {
@@ -3142,6 +4269,10 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
     if (file_remote_id) {
         cfl_sds_destroy(file_remote_id);
         file_remote_id = NULL;
+    }
+
+    if (complete_failed) {
+        return -6;
     }
 
     /* check for a next part file and lock it */
@@ -3202,7 +4333,12 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
     }
 
     /* read the file content */
-    ret = flb_utils_read_file_offset(file_path, offset_start, offset_end, &out_buf, &out_size);
+    if (ctx->follow_symlinks) {
+        ret = flb_utils_read_file_offset(file_path, offset_start, offset_end, &out_buf, &out_size);
+    }
+    else {
+        ret = flb_utils_read_file_offset_safe(file_path, offset_start, offset_end, &out_buf, &out_size);
+    }
     if (ret == -1) {
         flb_plg_error(ctx->ins, "cannot read file part %s", file_path);
 
@@ -3238,6 +4374,9 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
                         out_buf,
                         out_size);
 
+        if (ctx->uploader_gate_initialized) {
+            goto blob_send_result;
+        }
         if (ret != 0) {
             flb_free(out_buf);
 
@@ -3263,9 +4402,8 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
             return -1;
         }
 
-        mk_list_del(&m_upload->_head);
-
-        if (part_id == 0) {
+        if (part_id == 0 && (!ctx->uploader_gate_initialized || file_remote_id == NULL ||
+                             file_remote_id[0] == '\0')) {
             if (ctx->authorization_endpoint_url != NULL) {
                 ret = blob_fetch_create_multipart_upload_pre_signed_url(ctx,
                                                                         &pre_signed_url,
@@ -3291,7 +4429,9 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
                 pre_signed_url = NULL;
             }
 
+            pthread_mutex_lock(&ctx->files_mutex);
             ret = create_multipart_upload(ctx, m_upload, pre_signed_url);
+            pthread_mutex_unlock(&ctx->files_mutex);
 
             if (pre_signed_url != NULL) {
                 flb_sds_destroy(pre_signed_url);
@@ -3300,6 +4440,11 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
             }
 
             if (ret < 0) {
+                if (ctx->uploader_gate_initialized) {
+                    m_upload->part_number = 0;
+                    multipart_upload_destroy(m_upload);
+                    goto blob_send_result;
+                }
                 flb_free(out_buf);
 
                 cfl_sds_destroy(file_tag);
@@ -3383,7 +4528,9 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
             pre_signed_url = NULL;
         }
 
+        pthread_mutex_lock(&ctx->files_mutex);
         ret = upload_part(ctx, m_upload, out_buf, out_size, pre_signed_url);
+        pthread_mutex_unlock(&ctx->files_mutex);
 
         if (pre_signed_url != NULL) {
             flb_sds_destroy(pre_signed_url);
@@ -3404,7 +4551,12 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
         multipart_upload_destroy(m_upload);
     }
 
-    if (ret == 0) {
+blob_send_result:
+    if (ret == S3_UPLOAD_DEFERRED) {
+        ctx->blob_refund_pending = FLB_TRUE;
+        ret = s3_blob_refund(ctx);
+    }
+    else if (ret == 0) {
         ret = flb_blob_db_file_part_uploaded(&ctx->blob_db, id);
     }
     else {
@@ -3425,14 +4577,237 @@ static int cb_s3_upload_blob(struct flb_config *config, void *data)
     cfl_sds_destroy(file_remote_id);
     cfl_sds_destroy(file_destination);
 
-    return 0;
+    return ret;
 }
 
 
 
 
 
-static void cb_s3_upload(struct flb_config *config, void *data)
+static int enqueue_oldest_timed_out_chunk(struct flb_s3 *ctx, time_t now,
+                                          int skip_held_tags)
+{
+    int ret;
+    struct s3_file *chunk;
+    struct s3_file *oldest_chunk;
+    struct multipart_upload *m_upload;
+    struct flb_fstore_file *fsf;
+    struct flb_fstore_file *oldest_fsf;
+    struct mk_list *tmp;
+    struct mk_list *head;
+
+    oldest_chunk = NULL;
+    oldest_fsf = NULL;
+
+    mk_list_foreach_safe(head, tmp, &ctx->stream_active->files) {
+        fsf = mk_list_entry(head, struct flb_fstore_file, _head);
+        chunk = fsf->data;
+
+        if (chunk->locked == FLB_TRUE ||
+            s3_tag_busy(ctx, (const char *) fsf->meta_buf, fsf->meta_size)) {
+            continue;
+        }
+
+        if (chunk->failures > ctx->ins->retry_limit) {
+            flb_plg_warn(ctx->ins,
+                         "Chunk for tag %s failed to send %d/%d times, will not retry",
+                         (char *) fsf->meta_buf, chunk->failures,
+                         ctx->ins->retry_limit);
+            s3_chunk_retry_exhausted_cleanup(ctx, chunk);
+            continue;
+        }
+
+        if (now < (chunk->create_time + ctx->upload_timeout + ctx->retry_time)) {
+            continue;
+        }
+
+        if (skip_held_tags == FLB_TRUE &&
+            upload_queue_tag_is_held(ctx, (const char *) fsf->meta_buf,
+                                     fsf->meta_size, now) == FLB_TRUE) {
+            continue;
+        }
+
+        if (oldest_chunk == NULL ||
+            chunk->create_time < oldest_chunk->create_time) {
+            oldest_chunk = chunk;
+            oldest_fsf = fsf;
+        }
+    }
+
+    if (oldest_chunk == NULL) {
+        return 0;
+    }
+
+    m_upload = get_upload(ctx, (const char *) oldest_fsf->meta_buf,
+                          oldest_fsf->meta_size);
+    s3_store_file_lock(oldest_chunk);
+    ret = add_to_queue(ctx, oldest_chunk, m_upload,
+                       (const char *) oldest_fsf->meta_buf,
+                       oldest_fsf->meta_size);
+    if (ret < 0) {
+        s3_store_file_unlock(oldest_chunk);
+        return -1;
+    }
+
+    return 1;
+}
+
+static int s3_uploader_part_pending(struct flb_s3 *ctx, const char *upload_id)
+{
+    struct mk_list *head;
+    struct mk_list *file_head;
+    struct flb_fstore_stream *stream;
+    struct flb_fstore_file *file;
+    struct s3_file *chunk;
+
+    mk_list_foreach(head, &ctx->fs->streams) {
+        stream = mk_list_entry(head, struct flb_fstore_stream, _head);
+        if (stream == ctx->stream_upload || stream == ctx->stream_quarantine ||
+            strcmp(stream->name, "sequence") == 0) {
+            continue;
+        }
+        mk_list_foreach(file_head, &stream->files) {
+            file = mk_list_entry(file_head, struct flb_fstore_file, _head);
+            chunk = file->data;
+            if (chunk != NULL && chunk->part_upload_id != NULL &&
+                strcmp(chunk->part_upload_id, upload_id) == 0) {
+                return FLB_TRUE;
+            }
+        }
+    }
+    return FLB_FALSE;
+}
+
+static void complete_pending_uploads(struct flb_s3 *ctx)
+{
+    struct multipart_upload *m_upload = NULL;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    int complete;
+    int rejected;
+    int abort_empty;
+    int ret;
+    uint64_t scan_id;
+    uint64_t generation;
+    const char *tag;
+    size_t tag_len;
+    struct s3_retry_state retry;
+    struct s3_upload_claim claim;
+
+    scan_id = ++ctx->upload_scan_id;
+
+restart:
+    if (!s3_uploader_admit(ctx, &generation)) {
+        return;
+    }
+    /* Check all uploads and see if any need completion */
+    mk_list_foreach_safe(head, tmp, &ctx->uploads) {
+        m_upload = mk_list_entry(head, struct multipart_upload, _head);
+        tag = m_upload->tag != NULL ? m_upload->tag : m_upload->s3_key;
+        tag_len = strlen(tag);
+        if (m_upload->completion_scan_id >= scan_id ||
+            (m_upload->complete_retry_at > 0 &&
+             m_upload->complete_retry_at > flb_output_throttle_now_ms()) ||
+            s3_tag_busy(ctx, tag, tag_len)) {
+            continue;
+        }
+        rejected = m_upload->upload_state == MULTIPART_UPLOAD_STATE_REJECTED;
+        complete = rejected;
+
+        if (!ctx->uploader_gate_initialized && m_upload->complete_errors > ctx->ins->retry_limit) {
+            flb_plg_error(ctx->ins,
+                          "Upload for %s has reached max completion errors, "
+                          "plugin will give up", m_upload->s3_key);
+            /* Keep the persisted upload available for restart recovery. */
+            mk_list_del(&m_upload->_head);
+            multipart_upload_destroy(m_upload);
+            continue;
+        }
+
+        if (m_upload->upload_state == MULTIPART_UPLOAD_STATE_NOT_CREATED ||
+            (ctx->uploader_gate_initialized && s3_uploader_part_pending(ctx, m_upload->upload_id))) {
+            continue;
+        }
+
+        abort_empty = ctx->uploader_gate_initialized && m_upload->part_number <= 1;
+        if (abort_empty && m_upload->restored) {
+            complete = FLB_TRUE;
+        }
+        if (m_upload->upload_state == MULTIPART_UPLOAD_STATE_COMPLETE_IN_PROGRESS) {
+            complete = FLB_TRUE;
+        }
+        if (time(NULL) >
+            (m_upload->init_time + ctx->upload_timeout + ctx->retry_time)) {
+            flb_plg_info(ctx->ins, "%s upload for %s because upload_timeout has passed",
+                         rejected || abort_empty ? "Aborting" : "Completing", m_upload->s3_key);
+            complete = FLB_TRUE;
+        }
+        if (complete == FLB_TRUE) {
+            if (!rejected) {
+                m_upload->upload_state = MULTIPART_UPLOAD_STATE_COMPLETE_IN_PROGRESS;
+            }
+            m_upload->completion_scan_id = scan_id;
+            s3_claim_start(ctx, &claim, tag, tag_len);
+            mk_list_del(&m_upload->_head);
+            if (rejected || abort_empty) {
+                ret = abort_multipart_upload(ctx, m_upload, NULL);
+            }
+            else {
+                ret = complete_multipart_upload(ctx, m_upload, NULL);
+            }
+            s3_claim_end(&claim);
+            if (ret == S3_UPLOAD_REJECTED) {
+                s3_uploader_count_rejected(ctx, 1);
+                if (ctx->retry_exhausted_action == S3_RETRY_EXHAUSTED_DELETE) {
+                    m_upload->upload_state = MULTIPART_UPLOAD_STATE_REJECTED;
+                    mk_list_add(&m_upload->_head, &ctx->uploads);
+                    goto restart;
+                }
+            }
+            if (ret == 0 || ret == S3_UPLOAD_GONE || ret == S3_UPLOAD_REJECTED) {
+                if (rejected) {
+                    s3_uploader_count_rejected(ctx, -1);
+                }
+                if (ctx->uploader_gate_initialized && ret != S3_UPLOAD_REJECTED) {
+                    s3_uploader_state_delete(ctx, "complete", m_upload->upload_id);
+                }
+                multipart_upload_destroy(m_upload);
+            }
+            else {
+                mk_list_add(&m_upload->_head, &ctx->uploads);
+                if (ret == S3_UPLOAD_DEFERRED) {
+                    return;
+                }
+                /* data was persisted, this can be retried */
+                if (ctx->uploader_gate_initialized) {
+                    retry.failures = m_upload->complete_errors;
+                    retry.uri = rejected ? "rejected" : NULL;
+                    s3_uploader_save_failure(ctx, "complete", m_upload->upload_id, &retry);
+                    m_upload->complete_errors = retry.failures;
+                    m_upload->complete_retry_at = retry.retry_at;
+                }
+                else {
+                    m_upload->complete_errors += 1;
+                }
+                flb_plg_error(ctx->ins, "Could not complete upload %s, will retry..",
+                              m_upload->s3_key);
+            }
+            goto restart;
+        }
+    }
+}
+
+static void complete_pending_uploads_once(struct flb_s3 *ctx, int *checked)
+{
+    if (*checked == FLB_TRUE) {
+        return;
+    }
+
+    complete_pending_uploads(ctx);
+    *checked = FLB_TRUE;
+}
+
+static void s3_upload(struct flb_config *config, void *data)
 {
     struct flb_s3 *ctx = data;
     struct s3_file *chunk = NULL;
@@ -3442,14 +4817,33 @@ static void cb_s3_upload(struct flb_config *config, void *data)
     size_t buffer_size = 0;
     struct mk_list *tmp;
     struct mk_list *head;
-    int complete;
     int ret;
     time_t now;
+    uint64_t scan_id;
+
+    (void) config;
 
     flb_plg_info(ctx->ins, "Running upload timer callback (cb_s3_upload)..");
 
     now = time(NULL);
+    scan_id = ++ctx->upload_scan_id;
 
+    if (ctx->has_old_buffers) {
+        complete_pending_uploads(ctx);
+        return;
+    }
+
+    if (ctx->preserve_data_ordering == FLB_TRUE) {
+        ret = enqueue_oldest_timed_out_chunk(ctx, now, FLB_FALSE);
+        if (ret < 0) {
+            flb_plg_error(ctx->ins,
+                          "Could not add timed out chunk to upload queue");
+        }
+        complete_pending_uploads(ctx);
+        return;
+    }
+
+restart:
     /* Check all chunks and see if any have timed out */
     mk_list_foreach_safe(head, tmp, &ctx->stream_active->files) {
         fsf = mk_list_entry(head, struct flb_fstore_file, _head);
@@ -3460,79 +4854,303 @@ static void cb_s3_upload(struct flb_config *config, void *data)
         }
 
         /* Locked chunks are being processed, skip */
-        if (chunk->locked == FLB_TRUE) {
+        if (chunk->locked == FLB_TRUE || chunk->upload_scan_id >= scan_id ||
+            s3_tag_busy(ctx, (const char *) fsf->meta_buf, fsf->meta_size)) {
             continue;
         }
 
         m_upload = get_upload(ctx, (const char *) fsf->meta_buf, fsf->meta_size);
 
+        chunk->upload_scan_id = scan_id;
         ret = construct_request_buffer(ctx, NULL, chunk, &buffer, &buffer_size);
         if (ret < 0) {
             flb_plg_error(ctx->ins, "Could not construct request buffer for %s",
                           chunk->file_path);
-            continue;
+            chunk->failures += 1;
+        }
+        else {
+            /* FYI: if construct_request_buffer() succeeded, the s3_file is locked */
+            ret = upload_data(ctx, chunk, m_upload, buffer, buffer_size,
+                              (const char *) fsf->meta_buf, fsf->meta_size);
+            flb_free(buffer);
         }
 
-        /* FYI: if construct_request_buffer() succeedeed, the s3_file is locked */
-        ret = upload_data(ctx, chunk, m_upload, buffer, buffer_size,
-                          (const char *) fsf->meta_buf, fsf->meta_size);
-        flb_free(buffer);
         if (ret != FLB_OK) {
             flb_plg_error(ctx->ins, "Could not send chunk with tag %s",
                           (char *) fsf->meta_buf);
-            if(chunk->failures > ctx->ins->retry_limit){
+            if (chunk->failures > ctx->ins->retry_limit) {
                 flb_plg_warn(ctx->ins,
                              "Chunk for tag %s failed to send %d/%d times, will not retry",
-                             (char *) fsf->meta_buf, chunk->failures, ctx->ins->retry_limit);
+                             (char *) fsf->meta_buf, chunk->failures,
+                             ctx->ins->retry_limit);
                 s3_chunk_retry_exhausted_cleanup(ctx, chunk);
+                goto restart;
+            }
+        }
+        goto restart;
+    }
+
+    complete_pending_uploads(ctx);
+
+}
+
+static void cb_s3_upload(struct flb_config *config, void *data)
+{
+    struct flb_s3 *ctx = data;
+
+    pthread_mutex_lock(&ctx->files_mutex);
+    s3_upload(config, data);
+    pthread_mutex_unlock(&ctx->files_mutex);
+}
+
+static int s3_file_ready(struct flb_s3 *ctx, struct s3_file *chunk, uint64_t now, uint64_t scan_id)
+{
+    return !chunk->restore_retry_at && chunk->upload_scan_id < scan_id &&
+           chunk->retry.retry_at <= flb_output_throttle_now_ms() &&
+           (chunk->sealed || s3_store_file_size_get(chunk) >= ctx->upload_chunk_size ||
+            now / 1000 >= (uint64_t) (chunk->create_time + ctx->upload_timeout));
+}
+
+#define S3_UPLOAD_BATCH_SIZE 32
+
+static int s3_batch_blocked(struct flb_hash_table *tags, struct s3_file *global,
+                            struct s3_file *chunk)
+{
+    struct s3_file *barrier;
+
+    if (global && chunk->order >= global->order) {
+        return FLB_TRUE;
+    }
+    if (tags && chunk->fsf->meta_buf && chunk->fsf->meta_size) {
+        barrier = flb_hash_table_get_ptr(tags, chunk->fsf->meta_buf, chunk->fsf->meta_size);
+        return barrier && chunk->order >= barrier->order;
+    }
+    return FLB_FALSE;
+}
+
+static void s3_batch_insert(struct s3_file **batch, size_t *count, struct s3_file *chunk)
+{
+    size_t i = *count;
+
+    while (i > 0 && batch[i - 1]->order > chunk->order) {
+        if (i < S3_UPLOAD_BATCH_SIZE) {
+            batch[i] = batch[i - 1];
+        }
+        i--;
+    }
+    if (i < S3_UPLOAD_BATCH_SIZE) {
+        batch[i] = chunk;
+        if (*count < S3_UPLOAD_BATCH_SIZE) {
+            (*count)++;
+        }
+    }
+}
+
+static size_t s3_uploader_batch(struct flb_s3 *ctx, uint64_t now, uint64_t scan_id,
+                                struct s3_file **batch)
+{
+    struct mk_list *head;
+    struct mk_list *item;
+    struct flb_fstore_stream *stream;
+    struct flb_fstore_file *file;
+    struct flb_hash_table *tags = NULL;
+    struct s3_file *chunk;
+    struct s3_file *global = NULL;
+    size_t count;
+    size_t keep;
+    size_t i;
+    int pass;
+
+    if (ctx->preserve_data_ordering && !ctx->key_fmt_has_seq_index) {
+        tags = flb_hash_table_create(FLB_HASH_TABLE_EVICT_NONE, 256, 0);
+        if (tags == NULL) {
+            return 0;
+        }
+        flb_hash_table_set_case_sensitivity(tags, FLB_TRUE);
+    }
+
+    for (pass = 0; pass < 2; pass++) {
+        count = 0;
+        mk_list_foreach(head, &ctx->fs->streams) {
+            stream = mk_list_entry(head, struct flb_fstore_stream, _head);
+            if (stream == ctx->stream_upload || stream == ctx->stream_quarantine ||
+                strcmp(stream->name, "sequence") == 0) {
                 continue;
             }
+            mk_list_foreach(item, &stream->files) {
+                file = mk_list_entry(item, struct flb_fstore_file, _head);
+                chunk = file->data;
+                if (!chunk) {
+                    continue;
+                }
+                if (chunk->restore_retry_at && pass == 0) {
+                    s3_store_retry_restore(ctx, chunk);
+                }
+                if (s3_batch_blocked(tags, global, chunk)) {
+                    continue;
+                }
+                if (s3_file_ready(ctx, chunk, now, scan_id)) {
+                    s3_batch_insert(batch, &count, chunk);
+                }
+                else if (tags && file->meta_buf && file->meta_size) {
+                    if (flb_hash_table_add(tags, file->meta_buf, file->meta_size, chunk, 0) < 0) {
+                        flb_hash_table_destroy(tags);
+                        return 0;
+                    }
+                }
+                else if (tags || ctx->key_fmt_has_seq_index) {
+                    global = chunk;
+                }
+            }
+        }
+        /* A barrier encountered late may precede candidates already selected.
+         * Rescan only if it invalidated a full batch and hid other ready tags. */
+        keep = 0;
+        for (i = 0; i < count; i++) {
+            if (!s3_batch_blocked(tags, global, batch[i])) {
+                batch[keep++] = batch[i];
+            }
+        }
+        if (keep || count < S3_UPLOAD_BATCH_SIZE) {
+            break;
         }
     }
+    if (tags) {
+        flb_hash_table_destroy(tags);
+    }
+    return keep;
+}
 
-    /* Check all uploads and see if any need completion */
-    mk_list_foreach_safe(head, tmp, &ctx->uploads) {
-        m_upload = mk_list_entry(head, struct multipart_upload, _head);
-        complete = FLB_FALSE;
+static void s3_uploader_run(struct flb_config *config, void *data)
+{
+    int ret;
+    struct s3_file *batch[S3_UPLOAD_BATCH_SIZE];
+    size_t count;
+    size_t i;
+    uint64_t generation;
+    uint64_t scan_id;
+    char *buffer;
+    size_t size;
+    struct s3_file *chunk;
+    struct flb_fstore_file *file;
+    struct multipart_upload *upload;
+    struct mk_list *head;
+    struct flb_s3 *ctx = data;
 
-        if (m_upload->complete_errors > ctx->ins->retry_limit) {
-            flb_plg_error(ctx->ins,
-                          "Upload for %s has reached max completion errors, "
-                          "plugin will give up", m_upload->s3_key);
-            mk_list_del(&m_upload->_head);
-            multipart_upload_destroy(m_upload);
+    pthread_mutex_lock(&ctx->files_mutex);
+    if (!config->is_running || !s3_uploader_admit(ctx, &generation)) {
+        pthread_mutex_unlock(&ctx->files_mutex);
+        return;
+    }
+    scan_id = ++ctx->upload_scan_id;
+    count = s3_uploader_batch(ctx, s3_uploader_wall_ms(), scan_id, batch);
+    /* Only this uploader timer retires gated spool files. Flushes may append
+     * while I/O is unlocked, so recheck readiness and admission each time. */
+    for (i = 0; i < count; i++) {
+        chunk = batch[i];
+        if (!config->is_running || !s3_uploader_admit(ctx, &generation) ||
+            !s3_file_ready(ctx, chunk, s3_uploader_wall_ms(), scan_id)) {
+            break;
+        }
+        if (chunk->retry.failures == S3_CHUNK_RETIRING) {
+            if (s3_store_file_delete(ctx, chunk) < 0) {
+                break;
+            }
+            continue;
+        }
+        if (chunk->retry.failures > ctx->ins->retry_limit) {
+            s3_chunk_retry_exhausted_cleanup(ctx, chunk);
+            break;
+        }
+        if (s3_store_file_size_get(chunk) == 0) {
+            if (s3_store_file_delete(ctx, chunk) < 0) {
+                break;
+            }
             continue;
         }
 
-        if (m_upload->upload_state == MULTIPART_UPLOAD_STATE_NOT_CREATED) {
-            continue;
+        if (chunk->fsf->meta_buf == NULL) {
+            flb_plg_error(ctx->ins, "Missing S3 tag for buffered file %s", chunk->fsf->name);
+            s3_chunk_retry_exhausted_cleanup(ctx, chunk);
+            break;
         }
 
-        if (m_upload->upload_state == MULTIPART_UPLOAD_STATE_COMPLETE_IN_PROGRESS) {
-            complete = FLB_TRUE;
-        }
-        if (time(NULL) > (m_upload->init_time + ctx->upload_timeout + ctx->retry_time)) {
-            flb_plg_info(ctx->ins, "Completing upload for %s because upload_timeout"
-                         " has passed", m_upload->s3_key);
-            complete = FLB_TRUE;
-        }
-        if (complete == FLB_TRUE) {
-            m_upload->upload_state = MULTIPART_UPLOAD_STATE_COMPLETE_IN_PROGRESS;
-            mk_list_del(&m_upload->_head);
-            ret = complete_multipart_upload(ctx, m_upload, NULL);
-            if (ret == 0) {
-                multipart_upload_destroy(m_upload);
+        chunk->sealed = FLB_TRUE;
+        chunk->upload_scan_id = scan_id;
+        file = chunk->fsf;
+        upload = NULL;
+        if (chunk->part_upload_id != NULL) {
+            mk_list_foreach(head, &ctx->uploads) {
+                upload = mk_list_entry(head, struct multipart_upload, _head);
+                if (upload->upload_id != NULL &&
+                    strcmp(upload->upload_id, chunk->part_upload_id) == 0) {
+                    break;
+                }
+                upload = NULL;
             }
-            else {
-                mk_list_add(&m_upload->_head, &ctx->uploads);
-                /* data was persisted, this can be retried */
-                m_upload->complete_errors += 1;
-                flb_plg_error(ctx->ins, "Could not complete upload %s, will retry..",
-                              m_upload->s3_key);
+            if (upload == NULL || chunk->part_number <= 0 || chunk->part_number > 10000) {
+                flb_plg_error(ctx->ins, "Missing multipart state for buffered file %s",
+                              file->name);
+                s3_chunk_retry_exhausted_cleanup(ctx, chunk);
+                break;
             }
+            if (upload->etags[chunk->part_number - 1] != NULL) {
+                /* The ETag checkpoint survived a crash before local file deletion. */
+                if (s3_store_file_delete(ctx, chunk) < 0) {
+                    break;
+                }
+                continue;
+            }
+            if (upload->part_number != chunk->part_number) {
+                flb_plg_error(ctx->ins, "Unexpected multipart part number for %s", file->name);
+                s3_chunk_retry_exhausted_cleanup(ctx, chunk);
+                break;
+            }
+        }
+        else {
+            upload = get_upload(ctx, file->meta_buf, file->meta_size);
+        }
+        ret = construct_request_buffer(ctx, NULL, chunk, &buffer, &size);
+        if (ret == 0) {
+            ret = upload_data(ctx, chunk, upload, buffer, size, file->meta_buf, file->meta_size);
+            flb_free(buffer);
+            if (ret == FLB_OK) {
+                continue;
+            }
+            if (ret == S3_UPLOAD_DEFERRED || ret == S3_UPLOAD_GONE) {
+                break;
+            }
+        }
+        if (ctx->uploader_storage_failed) {
+            break;
+        }
+        if (s3_uploader_save_failure(ctx, "chunk", file->name, &chunk->retry) == 0 &&
+            chunk->retry.failures > ctx->ins->retry_limit) {
+            s3_chunk_retry_exhausted_cleanup(ctx, chunk);
+        }
+        /* A failed older file can now be a barrier for the rest of the batch. */
+        if (ctx->preserve_data_ordering || ctx->key_fmt_has_seq_index) {
+            break;
         }
     }
+    complete_pending_uploads(ctx);
+    pthread_mutex_unlock(&ctx->files_mutex);
+}
 
+static int s3_uploader_timer_create(struct flb_s3 *ctx)
+{
+    int ret;
+
+    if (ctx->timer_created) {
+        return 0;
+    }
+    /* Each instance owns one uploader timer. A tick rechecks the monotonic gate. */
+    ret = flb_sched_timer_cb_create(flb_sched_ctx_get(), FLB_SCHED_TIMER_CB_PERM,
+                                     250, s3_uploader_run, ctx, NULL);
+    if (ret == 0) {
+        ctx->timer_created = FLB_TRUE;
+    }
+    return ret;
 }
 
 static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char *data,
@@ -3621,7 +5239,8 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
             }
 
             if (check == FLB_TRUE) {
-                if (strncmp(ctx->log_key, key_str, key_str_size) == 0) {
+                if (strlen(ctx->log_key) == key_str_size && 
+                    strncmp(ctx->log_key, key_str, key_str_size) == 0) {
                     found = FLB_TRUE;
 
                     /*
@@ -3690,27 +5309,29 @@ static flb_sds_t flb_pack_msgpack_extract_log_key(void *out_context, const char 
     return out_buf;
 }
 
-static void flush_init(void *out_context)
+static int flush_init(void *out_context)
 {
     int ret;
     struct flb_s3 *ctx = out_context;
     struct flb_sched *sched;
 
     /* clean up any old buffers found on startup */
-    if (ctx->has_old_buffers == FLB_TRUE) {
+    if (ctx->has_old_buffers == FLB_TRUE && ctx->draining_backlog == FLB_FALSE) {
         flb_plg_info(ctx->ins,
                      "Sending locally buffered data from previous "
                      "executions to S3; buffer=%s",
                      ctx->fs->root_path);
-        ctx->has_old_buffers = FLB_FALSE;
-        ret = put_all_chunks(ctx);
+        ctx->draining_backlog = FLB_TRUE;
+        ret = put_all_chunks(ctx, FLB_TRUE);
+        ctx->draining_backlog = FLB_FALSE;
+        ctx->has_old_buffers = ret < 0;
         if (ret < 0) {
             ctx->has_old_buffers = FLB_TRUE;
             flb_plg_error(ctx->ins,
                           "Failed to send locally buffered data left over "
                           "from previous executions; will retry. Buffer=%s",
                           ctx->fs->root_path);
-            FLB_OUTPUT_RETURN(FLB_RETRY);
+            return -1;
         }
     }
 
@@ -3728,7 +5349,7 @@ static void flush_init(void *out_context)
 
         if (ctx->preserve_data_ordering) {
             ret = flb_sched_timer_cb_create(sched, FLB_SCHED_TIMER_CB_PERM,
-                                            ctx->timer_ms, s3_upload_queue, ctx, NULL);
+                                            ctx->timer_ms, cb_s3_upload_queue, ctx, NULL);
         }
         else {
             ret = flb_sched_timer_cb_create(sched, FLB_SCHED_TIMER_CB_PERM,
@@ -3736,10 +5357,12 @@ static void flush_init(void *out_context)
         }
         if (ret == -1) {
             flb_plg_error(ctx->ins, "Failed to create upload timer");
-            FLB_OUTPUT_RETURN(FLB_RETRY);
+            return -1;
         }
         ctx->timer_created = FLB_TRUE;
     }
+
+    return 0;
 }
 
 static int blob_chunk_register_parts(struct flb_s3 *ctx, uint64_t file_id, size_t total_size)
@@ -3855,7 +5478,27 @@ static int process_blob_chunk(struct flb_s3 *ctx, struct flb_event_chunk *event_
 
 static void cb_s3_blob_file_upload(struct flb_config *config, void *out_context)
 {
+    uint64_t generation;
+    struct flb_s3 *ctx = out_context;
+    struct worker_info *info = FLB_TLS_GET(s3_worker_info);
+
+    /* Blob database selection and completion span several separate operations. */
+    pthread_mutex_lock(&ctx->files_mutex);
+    if (ctx->blob_upload_in_progress || !s3_uploader_admit(ctx, &generation)) {
+        pthread_mutex_unlock(&ctx->files_mutex);
+        flb_sched_timer_cb_coro_return();
+        return;
+    }
+    ctx->blob_upload_in_progress = FLB_TRUE;
+    pthread_mutex_unlock(&ctx->files_mutex);
+
     cb_s3_upload_blob(config, out_context);
+
+    /* Release ownership on every return path, including failed blob requests. */
+    info->active_upload = FLB_FALSE;
+    pthread_mutex_lock(&ctx->files_mutex);
+    ctx->blob_upload_in_progress = FLB_FALSE;
+    pthread_mutex_unlock(&ctx->files_mutex);
 
     flb_sched_timer_cb_coro_return();
 }
@@ -3932,46 +5575,43 @@ static flb_sds_t s3_format_event_chunk(struct flb_s3 *ctx,
                                            config->json_escape_unicode);
 }
 
-static void cb_s3_flush(struct flb_event_chunk *event_chunk,
-                        struct flb_output_flush *out_flush,
-                        struct flb_input_instance *i_ins,
-                        void *out_context,
-                        struct flb_config *config)
+int s3_uploader_should_seal(struct flb_s3 *ctx, uint64_t size, size_t append_size)
+{
+    uint64_t limit = ctx->upload_chunk_size;
+
+    if (!ctx->use_put_object) {
+        limit = ctx->compression == FLB_AWS_COMPRESS_NONE ?
+                MAX_CHUNKED_UPLOAD_SIZE : MAX_CHUNKED_UPLOAD_COMPRESS_SIZE;
+    }
+    /* Chunk I/O encodes the uncompressed spool content length in four bytes. */
+    if (limit > UINT32_MAX) {
+        limit = UINT32_MAX;
+    }
+    return size >= ctx->upload_chunk_size || append_size > limit || size > limit - append_size;
+}
+
+static int s3_flush_logs(struct flb_event_chunk *event_chunk,
+                         struct flb_s3 *ctx, flb_sds_t chunk)
 {
     int ret;
-    int chunk_size;
+    size_t chunk_size;
     int upload_timeout_check = FLB_FALSE;
     int total_file_size_check = FLB_FALSE;
-    flb_sds_t chunk = NULL;
     struct s3_file *upload_file = NULL;
-    struct flb_s3 *ctx = out_context;
     struct multipart_upload *m_upload_file = NULL;
     time_t file_first_log_time = 0;
     struct flb_log_event_decoder log_decoder;
     struct flb_log_event log_event;
 
-    if (event_chunk->type == FLB_EVENT_TYPE_BLOBS) {
-        /*
-         * For Blob types, we use the flush callback to enqueue the file, then cb_azb_blob_file_upload()
-         * takes care of the rest like reading the file and uploading it to S3.
-         */
-        ret = process_blob_chunk(ctx, event_chunk);
-        if (ret == -1) {
-            FLB_OUTPUT_RETURN(FLB_RETRY);
+    /* Cleanup old buffers and initialize upload timer. */
+    if (!ctx->uploader_gate_initialized) {
+        ret = flush_init(ctx);
+        if (ret < 0) {
+            flb_sds_destroy(chunk);
+            return FLB_RETRY;
         }
-
-        FLB_OUTPUT_RETURN(FLB_OK);
     }
 
-    /* Cleanup old buffers and initialize upload timer */
-    flush_init(ctx);
-
-    /* Process chunk */
-    chunk = s3_format_event_chunk(ctx, event_chunk, config);
-    if (chunk == NULL) {
-        flb_plg_error(ctx->ins, "Could not marshal msgpack to output string");
-        FLB_OUTPUT_RETURN(FLB_ERROR);
-    }
     chunk_size = flb_sds_len(chunk);
 
     /* Get a file candidate matching the given 'tag' */
@@ -3990,7 +5630,7 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
 
             flb_sds_destroy(chunk);
 
-            FLB_OUTPUT_RETURN(FLB_ERROR);
+            return FLB_ERROR;
         }
 
         while ((ret = flb_log_event_decoder_next(
@@ -4011,6 +5651,32 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
 
     if (file_first_log_time == 0) {
         file_first_log_time = time(NULL);
+    }
+
+    if (ctx->uploader_gate_initialized) {
+        if (ctx->uploader_storage_failed || ctx->unknown_spool_sizes > 0) {
+            flb_sds_destroy(chunk);
+            return FLB_THROTTLE;
+        }
+        /* A multipart file may cross its target on the flush that fills it. */
+        if (upload_file != NULL &&
+            s3_uploader_should_seal(ctx, s3_store_file_size_get(upload_file), chunk_size)) {
+            upload_file->sealed = FLB_TRUE;
+            upload_file = NULL;
+        }
+        ret = buffer_chunk(ctx, upload_file, chunk, chunk_size,
+                           event_chunk->tag, flb_sds_len(event_chunk->tag), file_first_log_time);
+        if (ret == S3_STORE_BUFFER_FULL || ctx->uploader_storage_failed) {
+            return FLB_THROTTLE;
+        }
+        return ret < 0 ? FLB_RETRY : FLB_OK;
+    }
+
+    if (ctx->has_old_buffers ||
+        s3_tag_busy(ctx, event_chunk->tag, flb_sds_len(event_chunk->tag))) {
+        ret = buffer_chunk(ctx, upload_file, chunk, chunk_size,
+                           event_chunk->tag, flb_sds_len(event_chunk->tag), file_first_log_time);
+        return ret < 0 ? FLB_RETRY : FLB_OK;
     }
 
     /* Discard upload_file if it has failed to upload retry_limit times */
@@ -4039,7 +5705,8 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
     }
 
     /* If total_file_size has been reached, upload file */
-    if ((upload_file && upload_file->size + chunk_size > ctx->upload_chunk_size) ||
+    if ((upload_file &&
+         s3_store_file_size_get(upload_file) + chunk_size > ctx->upload_chunk_size) ||
         (m_upload_file && m_upload_file->bytes + chunk_size > ctx->file_size)) {
         total_file_size_check = FLB_TRUE;
     }
@@ -4053,7 +5720,7 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
                                file_first_log_time);
 
             if (ret < 0) {
-                FLB_OUTPUT_RETURN(FLB_RETRY);
+                return FLB_RETRY;
             }
             s3_store_file_lock(upload_file);
 
@@ -4061,16 +5728,16 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
             ret = add_to_queue(ctx, upload_file, m_upload_file,
                                event_chunk->tag, flb_sds_len(event_chunk->tag));
             if (ret < 0) {
-                FLB_OUTPUT_RETURN(FLB_ERROR);
+                return FLB_ERROR;
             }
 
             /* Go through upload queue and return error if something went wrong */
-            s3_upload_queue(config, ctx);
+            s3_upload_queue(ctx->ins->config, ctx);
             if (ctx->upload_queue_success == FLB_FALSE) {
                 ctx->upload_queue_success = FLB_TRUE;
-                FLB_OUTPUT_RETURN(FLB_ERROR);
+                return FLB_ERROR;
             }
-            FLB_OUTPUT_RETURN(FLB_OK);
+            return FLB_OK;
         }
         else {
             /* Send upload directly without upload queue */
@@ -4078,9 +5745,9 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
                                       event_chunk->tag,
                                       flb_sds_len(event_chunk->tag));
             if (ret < 0) {
-                FLB_OUTPUT_RETURN(FLB_ERROR);
+                return FLB_ERROR;
             }
-            FLB_OUTPUT_RETURN(ret);
+            return ret;
         }
     }
 
@@ -4090,9 +5757,44 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
                        file_first_log_time);
 
     if (ret < 0) {
-        FLB_OUTPUT_RETURN(FLB_RETRY);
+        return FLB_RETRY;
     }
-    FLB_OUTPUT_RETURN(FLB_OK);
+    return FLB_OK;
+}
+
+static void cb_s3_flush(struct flb_event_chunk *event_chunk,
+                        struct flb_output_flush *out_flush,
+                        struct flb_input_instance *i_ins,
+                        void *out_context,
+                        struct flb_config *config)
+{
+    int ret;
+    flb_sds_t chunk;
+    struct flb_s3 *ctx = out_context;
+
+    if (event_chunk->type == FLB_EVENT_TYPE_BLOBS) {
+        ret = process_blob_chunk(ctx, event_chunk);
+        if (ret == -1) {
+            FLB_OUTPUT_RETURN(FLB_RETRY);
+        }
+        FLB_OUTPUT_RETURN(FLB_OK);
+    }
+
+    chunk = s3_format_event_chunk(ctx, event_chunk, config);
+    if (chunk == NULL) {
+        flb_plg_error(ctx->ins, "Could not marshal msgpack to output string");
+        FLB_OUTPUT_RETURN(FLB_ERROR);
+    }
+
+    /*
+     * Protect store and queue changes. Upload claims let the request paths
+     * release this mutex without exposing their objects to another worker.
+     */
+    pthread_mutex_lock(&ctx->files_mutex);
+    ret = s3_flush_logs(event_chunk, ctx, chunk);
+    pthread_mutex_unlock(&ctx->files_mutex);
+
+    FLB_OUTPUT_RETURN(ret);
 }
 
 static int cb_s3_exit(void *data, struct flb_config *config)
@@ -4107,15 +5809,25 @@ static int cb_s3_exit(void *data, struct flb_config *config)
         return 0;
     }
 
-    if (s3_store_has_data(ctx) == FLB_TRUE) {
+    pthread_mutex_lock(&ctx->files_mutex);
+    s3_upload_queue_release(ctx);
+
+    if (ctx->uploader_gate_initialized) {
+        /* The uploader resumes acknowledged files from store_dir on startup. */
+        if (s3_store_has_data(ctx) || s3_store_has_uploads(ctx)) {
+            flb_plg_info(ctx->ins, "Leaving buffered uploads in %s for restart", ctx->buffer_dir);
+        }
+        flb_output_throttle_stop(&ctx->uploader_gate);
+    }
+    else if (s3_store_has_data(ctx) == FLB_TRUE) {
         flb_plg_info(ctx->ins, "Sending all locally buffered data to S3");
-        ret = put_all_chunks(ctx);
+        ret = put_all_chunks(ctx, FLB_FALSE);
         if (ret < 0) {
             flb_plg_error(ctx->ins, "Could not send all chunks on exit");
         }
     }
 
-    if (s3_store_has_uploads(ctx) == FLB_TRUE) {
+    if (!ctx->uploader_gate_initialized && s3_store_has_uploads(ctx) == FLB_TRUE) {
         mk_list_foreach_safe(head, tmp, &ctx->uploads) {
             m_upload = mk_list_entry(head, struct multipart_upload, _head);
 
@@ -4142,10 +5854,21 @@ static int cb_s3_exit(void *data, struct flb_config *config)
     if (ctx->blob_database_file != NULL &&
         ctx->blob_db.db != NULL) {
 
+        if (ctx->blob_refund_pending && s3_blob_refund(ctx) < 0 && config->exit_status_code == 0) {
+            config->exit_status_code = EXIT_FAILURE;
+        }
         flb_blob_db_close(&ctx->blob_db);
     }
 
+    if (ctx->uploader_storage_failed && ctx->uploader_db != NULL &&
+        s3_uploader_storage_recover(ctx) < 0) {
+        flb_plg_error(ctx->ins, "Shutdown failed to persist pending S3 uploader state");
+        if (config->exit_status_code == 0) {
+            config->exit_status_code = EXIT_FAILURE;
+        }
+    }
     s3_store_exit(ctx);
+    pthread_mutex_unlock(&ctx->files_mutex);
     s3_context_destroy(ctx);
 
     return 0;
@@ -4154,9 +5877,17 @@ static int cb_s3_exit(void *data, struct flb_config *config)
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
     {
+     FLB_CONFIG_MAP_BOOL, "follow_symlinks", "true",
+     0, FLB_TRUE, offsetof(struct flb_s3, follow_symlinks),
+     "Follow symbolic links when accessing files. Set false to reject symbolic links "
+     "and Windows reparse points in file paths."
+    },
+    {
      FLB_CONFIG_MAP_STR, "format", "json_lines",
      0, FLB_FALSE, 0,
-     "Set record output format. Supported values are json_lines, and otlp_json."
+     "Set output format. Supported values: json_lines, otlp_json, parquet. "
+     "When format is parquet, the 'compression' option controls the page-level "
+     "codec inside the Parquet file (snappy, zstd, gzip). Default: uncompressed."
     },
     {
      FLB_CONFIG_MAP_STR, "json_date_format", NULL,
@@ -4227,12 +5958,10 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "compression", NULL,
      0, FLB_FALSE, 0,
-    "Compression type for S3 objects. Supported values: 'gzip', 'zstd', 'snappy'. "
-    "'arrow' and 'parquet' are also available if Apache Arrow was enabled at compile time. "
-    "Defaults to no compression. "
-    "If 'gzip' is selected, the Content-Encoding HTTP Header will be set to 'gzip'. "
-    "If 'zstd' is selected, the Content-Encoding HTTP Header will be set to 'zstd'. "
-    "If 'snappy' is selected, the Content-Encoding HTTP Header will be set to 'snappy'."
+    "Compression type for S3 objects. Supported values: 'gzip', 'zstd', 'snappy', "
+    "'arrow'. When format is 'parquet', this sets the page-level codec inside the "
+    "Parquet file. 'compression=parquet' is deprecated; use 'format parquet' instead. "
+    "Defaults to no compression."
     },
     {
      FLB_CONFIG_MAP_STR, "content_type", NULL,
@@ -4244,9 +5973,10 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "store_dir", "/tmp/fluent-bit/s3",
      0, FLB_TRUE, offsetof(struct flb_s3, store_dir),
-     "Directory to locally buffer data before sending. Plugin uses the S3 Multipart "
-     "upload API to send data in chunks of 5 MB at a time- only a small amount of"
-     " data will be locally buffered at any given point in time."
+     "Directory to locally buffer data before sending. When throttle is enabled, "
+     "shutdown leaves pending uploads here for restart. Use persistent storage "
+     "and configure store_dir_limit_size to bound buffered data. After journal corruption, "
+     "buffered logs replay with fresh keys under s3_key_format and may duplicate earlier uploads."
     },
 
     {
@@ -4254,8 +5984,8 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_s3, store_dir_limit_size),
      "S3 plugin has its own buffering system with files in the `store_dir`. "
      "Use the `store_dir_limit_size` to limit the amount of data S3 buffers in "
-     "the `store_dir` to limit disk usage. If the limit is reached, "
-     "data will be discarded. Default is 0 which means unlimited."
+     "the `store_dir` to limit disk usage. With throttling enabled, temporary "
+     "capacity pressure defers incoming chunks. Default is 0 which means unlimited."
     },
     {
      FLB_CONFIG_MAP_SIZE, "quarantine_dir_limit_size", "0",
@@ -4294,7 +6024,8 @@ static struct flb_config_map config_map[] = {
      "does not affect the normal Fluent Bit retry mechanism with backoff. "
      "Instead, it enables an immediate retry with no delay for networking "
      "errors, which may help improve throughput when there are transient/random "
-     "networking issues."
+     "networking issues. Enabling throttle disables immediate client retries; the S3 "
+     "uploader schedules retries through its admission gate."
     },
 
     {
@@ -4321,7 +6052,8 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_s3, retry_exhausted_action_str),
      "Action for chunks that exceeded retry_limit. Supported values are "
      "'delete' (remove permanently) and 'quarantine' (move to quarantine and "
-     "remove from active buffer accounting)."
+     "remove from active buffer accounting). With throttle enabled, delete aborts rejected "
+     "multipart uploads. Quarantine retains their manifests and billable remote parts."
     },
 
     {
@@ -4400,7 +6132,9 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "authorization_endpoint_url", NULL,
      0, FLB_TRUE, offsetof(struct flb_s3, authorization_endpoint_url),
-     "Authorization endpoint URL"
+     "Authorization endpoint URL. With tls.verify enabled, tls.ca_file must "
+     "trust both the S3 and authorization endpoints when tls.ca_path is unset. "
+     "If tls.ca_path is set, it takes precedence over tls.ca_file."
     },
 
     {

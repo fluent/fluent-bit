@@ -12,6 +12,7 @@ pipeline:
       port: ${FLUENT_BIT_TEST_LISTENER_PORT}
       http_server.idle_timeout: 2s
       http_server.max_connections: 1
+      http_server.workers: 2
 
   outputs:
     - name: http

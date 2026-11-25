@@ -1,0 +1,24 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: debug
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+  scheduler.base: 1
+  scheduler.cap: 2
+
+pipeline:
+  inputs:
+    - name: ${TEST_LOG_INPUT}
+      port: ${FLUENT_BIT_TEST_LISTENER_PORT}
+
+  outputs:
+    - name: opentelemetry
+      match: "*"
+      host: 127.0.0.1
+      port: ${TEST_SUITE_HTTP_PORT}
+      grpc: off
+      http2: off
+      logs_uri: /v1/logs
+      batch_size: ${TEST_LOG_BATCH_SIZE}
+      retry_limit: no_limits

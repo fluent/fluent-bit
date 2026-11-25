@@ -1,0 +1,44 @@
+---
+name: Retry failed rebuilds of released container images
+
+# Rebuilds run many jobs on shared runners, so one of them occasionally fails for reasons a new
+# runner solves: a download that times out, or an ARM64 runner without 32-bit ARM support. Re-run
+# only the failed jobs, a bounded number of times, instead of leaving that to a maintainer.
+on:
+  workflow_run:
+    workflows:
+      - Rebuild released container images on updated base images
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+jobs:
+  rebuild-retry-failed-jobs:
+    name: Re-run the failed jobs
+    if: github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.run_attempt < 3
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    # One decision at a time for a run, so two completion events cannot both start an attempt.
+    concurrency:
+      group: rebuild-retry-${{ github.event.workflow_run.id }}
+      cancel-in-progress: false
+    steps:
+      # The event is a snapshot. By the time this runs a maintainer or an earlier event may have
+      # started another attempt, and a re-run targets the run, not the attempt of the event.
+      - name: Re-run the failed jobs of attempt ${{ github.event.workflow_run.run_attempt }}
+        run: |
+          CURRENT=$(gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --json attempt,status,conclusion --jq '"\(.attempt) \(.status) \(.conclusion)"')
+          if [[ "$CURRENT" != "$ATTEMPT completed failure" ]]; then
+            echo "Attempt $ATTEMPT is not the current failed attempt (now: $CURRENT), nothing to do"
+            exit 0
+          fi
+          gh run rerun "$RUN_ID" --failed --repo "$GITHUB_REPOSITORY"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+        shell: bash

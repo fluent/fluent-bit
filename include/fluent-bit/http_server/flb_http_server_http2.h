@@ -24,6 +24,10 @@
 
 #include <nghttp2/nghttp2.h>
 
+/* Decoded header-list budgets per stream, including pseudo-headers and trailers. */
+#define FLB_HTTP2_MAX_HEADER_LIST_SIZE 65536
+#define FLB_HTTP2_MAX_HEADER_COUNT     100
+
 struct flb_http_server_session;
 struct flb_http_stream;
 
@@ -51,6 +55,10 @@ int flb_http2_response_set_body(struct flb_http_response *response,
                             unsigned char *body, size_t body_length);
 
 int flb_http2_response_commit(struct flb_http_response *response);
+
+/* STREAM */
+
+void flb_http2_server_stream_release(struct flb_http_stream *stream);
 
 /* SESSION */
 

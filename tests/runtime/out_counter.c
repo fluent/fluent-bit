@@ -12,7 +12,9 @@
 #define flb_test_dup2   _dup2
 #define flb_test_fileno _fileno
 #else
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 #define flb_test_close  close
 #define flb_test_dup    dup
 #define flb_test_dup2   dup2

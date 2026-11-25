@@ -114,6 +114,7 @@ static inline int process_pack(struct udp_conn *conn,
     int len;
 
     ctx = conn->ctx;
+    ret = FLB_EVENT_ENCODER_SUCCESS;
 
     flb_log_event_encoder_reset(ctx->log_encoder);
 
@@ -210,10 +211,19 @@ static inline int process_pack(struct udp_conn *conn,
     msgpack_unpacked_destroy(&result);
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-        flb_input_log_append(conn->ins, NULL, 0,
-                             ctx->log_encoder->output_buffer,
-                             ctx->log_encoder->output_length);
-        ret = 0;
+        if (ctx->log_encoder->output_length > 0) {
+            ret = udp_ingest_logs(ctx,
+                                  ctx->log_encoder->output_buffer,
+                                  ctx->log_encoder->output_length);
+            if (ret != 0) {
+                flb_plg_error(ctx->ins,
+                              "could not append UDP logs for %s:%s. ret=%d",
+                              ctx->listen, ctx->port, ret);
+                return -1;
+            }
+        }
+
+        return 0;
     }
     else {
         flb_plg_error(ctx->ins, "log event encoding error : %d", ret);
@@ -248,8 +258,12 @@ static ssize_t parse_payload_json(struct udp_conn *conn)
     }
 
     /* Process the packaged JSON and return the last byte used */
-    process_pack(conn, pack, out_size);
+    ret = process_pack(conn, pack, out_size);
     flb_free(pack);
+
+    if (ret != 0) {
+        return -1;
+    }
 
     return conn->pack_state.last_byte;
 }
@@ -441,9 +455,17 @@ static ssize_t parse_payload_none(struct udp_conn *conn)
     }
 
     if (ret == FLB_EVENT_ENCODER_SUCCESS) {
-        flb_input_log_append(conn->ins, NULL, 0,
-                             ctx->log_encoder->output_buffer,
-                             ctx->log_encoder->output_length);
+        if (ctx->log_encoder->output_length > 0) {
+            ret = udp_ingest_logs(ctx,
+                                  ctx->log_encoder->output_buffer,
+                                  ctx->log_encoder->output_length);
+            if (ret != 0) {
+                flb_plg_error(ctx->ins,
+                              "could not append UDP logs for %s:%s. ret=%d",
+                              ctx->listen, ctx->port, ret);
+                return -1;
+            }
+        }
     }
     else {
         flb_plg_error(ctx->ins, "log event encoding error : %d", ret);

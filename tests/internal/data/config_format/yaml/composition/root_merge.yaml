@@ -1,0 +1,8 @@
+defaults:
+  base: &base
+    Service: {flush: 9}
+    pipeline:
+      inputs:
+        - {name: dummy}
+<<: *base
+service: {flush: 1}

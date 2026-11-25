@@ -35,7 +35,7 @@ static inline void consume_bytes(char *buf, int bytes, int length)
 static inline int process_pack(struct unix_socket_conn *conn,
                                char *pack, size_t size)
 {
-    int ret;
+    int ret = FLB_EVENT_ENCODER_ERROR_SERIALIZATION_FAILURE;
     size_t off = 0;
     msgpack_unpacked result;
     msgpack_object entry;

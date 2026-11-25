@@ -575,13 +575,15 @@ static int decode_histogram_points(struct cmt *cmt,
 
     if (result == CMT_DECODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
         if (hist->n_negative_spans > 0) {
-            for (i = 0; i < hist->n_negative_counts; i++) {
+            for (i = 0; i < hist->n_negative_counts &&
+                        (size_t) i < histogram->buckets->count; i++) {
                 cmt_metric_hist_set(metric, hist->timestamp * 1000000,
                                     i, hist->negative_counts[i]);
             }
         }
         else if (hist->n_positive_spans > 0) {
-            for (i = 0; i < hist->n_positive_counts; i++) {
+            for (i = 0; i < hist->n_positive_counts &&
+                        (size_t) i < histogram->buckets->count; i++) {
                 cmt_metric_hist_set(metric, hist->timestamp * 1000000,
                                     i, hist->positive_counts[i]);
             }
@@ -745,6 +747,16 @@ static int decode_metrics_entry(struct cmt *cmt,
         else if (metadata == NULL) {
             type = PROMETHEUS__METRIC_METADATA__METRIC_TYPE__GAUGE;
             metric_description = "-";
+        }
+        else if (metadata->type == PROMETHEUS__METRIC_METADATA__METRIC_TYPE__HISTOGRAM) {
+            /* the series only carries plain samples, there are no native
+             * histogram points to build the buckets from: decode it as a
+             * gauge instead of creating a histogram without buckets */
+            type = PROMETHEUS__METRIC_METADATA__METRIC_TYPE__GAUGE;
+            metric_description = metadata->help;
+            if (metric_description == NULL) {
+                metric_description = "-";
+            }
         }
         else {
             type = metadata->type;

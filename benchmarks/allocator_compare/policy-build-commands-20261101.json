@@ -1,0 +1,28 @@
+[
+  [
+    "cmake",
+    "-S",
+    "/tmp/flb-jemalloc54-special-20261101",
+    "-B",
+    "/tmp/flb-jemalloc54-special-20261101/build",
+    "-DCMAKE_BUILD_TYPE=Release",
+    "-DFLB_RELEASE=Off",
+    "-DFLB_DEBUG=Off",
+    "-DFLB_JEMALLOC=On",
+    "-DFLB_PREFER_SYSTEM_LIB_JEMALLOC=Off",
+    "-DFLB_YYJSON=On",
+    "-DFLB_SHARED_LIB=Off",
+    "-DFLB_EXAMPLES=Off",
+    "-DFLB_TESTS_RUNTIME=On",
+    "-DFLB_TESTS_INTERNAL=On",
+    "-DFLB_JEMALLOC_OPTIONS=--with-lg-quantum=3 --with-malloc-conf=disable_large_size_classes:false,lg_extent_max_active_fit:30"
+  ],
+  [
+    "cmake",
+    "--build",
+    "/tmp/flb-jemalloc54-special-20261101/build",
+    "--target",
+    "fluent-bit-bin",
+    "-j8"
+  ]
+]

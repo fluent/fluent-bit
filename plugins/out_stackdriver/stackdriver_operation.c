@@ -39,14 +39,11 @@ void add_operation_field(flb_sds_t *operation_id, flb_sds_t *operation_producer,
 
     msgpack_pack_str(mp_pck, OPERATION_ID_SIZE);
     msgpack_pack_str_body(mp_pck, OPERATION_ID, OPERATION_ID_SIZE);
-    msgpack_pack_str(mp_pck, flb_sds_len(*operation_id));
-    msgpack_pack_str_body(mp_pck, *operation_id, flb_sds_len(*operation_id));
+    pack_sds_safe(mp_pck, *operation_id);
 
     msgpack_pack_str(mp_pck, OPERATION_PRODUCER_SIZE);
     msgpack_pack_str_body(mp_pck, OPERATION_PRODUCER, OPERATION_PRODUCER_SIZE);
-    msgpack_pack_str(mp_pck, flb_sds_len(*operation_producer));
-    msgpack_pack_str_body(mp_pck, *operation_producer,
-                          flb_sds_len(*operation_producer));
+    pack_sds_safe(mp_pck, *operation_producer);
 
     msgpack_pack_str(mp_pck, OPERATION_FIRST_SIZE);
     msgpack_pack_str_body(mp_pck, OPERATION_FIRST, OPERATION_FIRST_SIZE);

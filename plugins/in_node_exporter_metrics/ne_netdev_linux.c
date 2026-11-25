@@ -21,6 +21,9 @@
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_input_plugin.h>
 
+#include <cmetrics/cmt_counter.h>
+#include <cmetrics/cmt_map.h>
+
 #include "ne.h"
 #include "ne_utils.h"
 
@@ -98,7 +101,7 @@ static int netdev_configure(struct flb_ne *ctx)
     mk_list_init(&rx_list);
     mk_list_init(&tx_list);
 
-    ret = ne_utils_file_read_lines(ctx->path_procfs, "/net/dev", &list);
+    ret = ne_utils_file_read_lines(ctx, ctx->path_procfs, "/net/dev", &list);
     if (ret == -1) {
         return -1;
     }
@@ -227,6 +230,7 @@ static int netdev_update(struct flb_ne *ctx)
     struct flb_slist_entry *tx_header;
     struct flb_slist_entry *prop;
     struct flb_slist_entry *prop_name;
+    struct flb_hash_table_entry *hash_entry;
 
     struct cmt_counter *c;
 
@@ -236,7 +240,7 @@ static int netdev_update(struct flb_ne *ctx)
     mk_list_init(&rx_list);
     mk_list_init(&tx_list);
 
-    ret = ne_utils_file_read_lines(ctx->path_procfs, "/net/dev", &list);
+    ret = ne_utils_file_read_lines(ctx, ctx->path_procfs, "/net/dev", &list);
     if (ret == -1) {
         return -1;
     }
@@ -331,6 +335,13 @@ static int netdev_update(struct flb_ne *ctx)
             n++;
         }
         flb_slist_destroy(&split_list);
+    }
+
+    /* Remove label sets for network devices not observed during this scan. */
+    mk_list_foreach(head, &ctx->netdev_ht->entries) {
+        hash_entry = mk_list_entry(head, struct flb_hash_table_entry, _head_parent);
+        c = hash_entry->val;
+        cmt_map_metrics_expire(c->map, ts);
     }
 
     flb_slist_destroy(&head_list);

@@ -122,7 +122,7 @@ static int ne_thermalzone_update_thermal_zones(struct flb_ne *ctx)
         entry = mk_list_entry(head, struct flb_slist_entry, _head);
 
         /* Core ID */
-        ret = ne_utils_file_read_uint64(ctx->path_sysfs,
+        ret = ne_utils_file_read_uint64(ctx, ctx->path_sysfs,
                                         entry->str,
                                         "temp", NULL,
                                         &temp);
@@ -130,7 +130,7 @@ static int ne_thermalzone_update_thermal_zones(struct flb_ne *ctx)
             continue;
         }
 
-        ret = ne_utils_file_read_sds(ctx->path_sysfs, entry->str, "type", NULL, &type);
+        ret = ne_utils_file_read_sds(ctx, ctx->path_sysfs, entry->str, "type", NULL, &type);
         if (ret != 0) {
             flb_plg_error(ctx->ins, "unable to get type for zone: %s", entry->str);
             continue;
@@ -206,7 +206,7 @@ static int ne_thermalzone_update_cooling_devices(struct flb_ne *ctx)
         entry = mk_list_entry(head, struct flb_slist_entry, _head);
 
         /* Core ID */
-        ret = ne_utils_file_read_uint64(ctx->path_sysfs,
+        ret = ne_utils_file_read_uint64(ctx, ctx->path_sysfs,
                                         entry->str,
                                         "cur_state", NULL,
                                         &cur_state);
@@ -214,7 +214,7 @@ static int ne_thermalzone_update_cooling_devices(struct flb_ne *ctx)
             continue;
         }
 
-        ret = ne_utils_file_read_uint64(ctx->path_sysfs,
+        ret = ne_utils_file_read_uint64(ctx, ctx->path_sysfs,
                                         entry->str,
                                         "max_state", NULL,
                                         &max_state);
@@ -222,7 +222,7 @@ static int ne_thermalzone_update_cooling_devices(struct flb_ne *ctx)
             continue;
         }
 
-        ret = ne_utils_file_read_sds(ctx->path_sysfs, entry->str, "type", NULL, &type);
+        ret = ne_utils_file_read_sds(ctx, ctx->path_sysfs, entry->str, "type", NULL, &type);
         if (ret != 0) {
             flb_plg_error(ctx->ins, "unable to get type for zone: %s", entry->str);
             continue;

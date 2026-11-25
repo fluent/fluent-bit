@@ -28,4 +28,10 @@ int opentelemetry_process_logs(struct flb_opentelemetry *ctx,
                                size_t tag_len,
                                void *data, size_t size);
 
+int opentelemetry_process_logs_with_budget(struct flb_opentelemetry *ctx,
+                                           flb_sds_t content_type,
+                                           flb_sds_t tag, size_t tag_len,
+                                           void *data, size_t size,
+                                           size_t *remaining);
+
 #endif

@@ -15,6 +15,7 @@ set(src
   cmt_summary.c
   cmt_histogram.c
   cmt_exp_histogram.c
+  cmt_otlp_metadata.c
   cmt_metric.c
   cmt_metric_histogram.c
   cmt_map.c
@@ -26,6 +27,7 @@ set(src
   cmt_filter.c
   cmetrics.c
   cmt_encode_opentelemetry.c
+  cmt_encode_opentelemetry_batch.c
   cmt_decode_opentelemetry.c
   cmt_encode_prometheus.c
   cmt_encode_prometheus_remote_write.c

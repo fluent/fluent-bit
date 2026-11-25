@@ -1,0 +1,55 @@
+fixture_version: 1
+signal: logs
+processor:
+  name: fts
+  recipe_version: 1
+  packs:
+  - ../pack.json
+  error_mode: keep
+  recipe:
+  - id: policy
+    use: org.fluentbit.policy.stable-log-sampling/apply
+    with:
+      basis_points: 5000
+cases:
+- name: half-budget-independent-xxh3-vectors
+  input:
+  - body:
+      request_id: a
+      level: INFO
+  - body:
+      request_id: b
+      level: INFO
+  - body:
+      request_id: c
+      level: INFO
+  - body:
+      request_id: d
+      level: INFO
+  - body:
+      request_id: request-01
+      level: INFO
+  - body:
+      request_id: request-02
+      level: INFO
+  - body:
+      request_id: a
+      level: INFO
+  expected:
+    records:
+    - body:
+        request_id: a
+        level: INFO
+    - body:
+        request_id: d
+        level: INFO
+    - body:
+        request_id: request-01
+        level: INFO
+    - body:
+        request_id: a
+        level: INFO
+    outcomes:
+      kept: 4
+      dropped: 3
+      errors: 0

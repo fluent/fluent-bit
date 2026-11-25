@@ -22,6 +22,9 @@
 
 #include <fluent-bit/flb_http_common.h>
 
+int http_prot_authorize_ng(struct flb_http_request *request,
+                               struct flb_http_response *response);
+
 int http_prot_handle_ng(struct flb_http_request *request,
                         struct flb_http_response *response);
 

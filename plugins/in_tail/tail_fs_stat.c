@@ -34,6 +34,18 @@
 #include "win32.h"
 #endif
 
+static int tail_fs_stat_path(struct flb_tail_config *ctx, const char *path,
+                             struct stat *st)
+{
+#ifdef FLB_SYSTEM_WINDOWS
+    if (ctx->windows_path_encoding == FLB_TAIL_WINDOWS_PATH_ENCODING_UTF8) {
+        return win32_stat_utf8(path, st);
+    }
+#endif
+
+    return stat(path, st);
+}
+
 struct fs_stat {
     /* last time check */
     time_t checked;
@@ -85,7 +97,7 @@ static int tail_fs_check(struct flb_input_instance *ins,
                          struct flb_config *config, void *in_context)
 {
     int ret;
-    int64_t offset;
+    int64_t size_delta;
     char *name;
     struct mk_list *tmp;
     struct mk_list *head;
@@ -119,31 +131,20 @@ static int tail_fs_check(struct flb_input_instance *ins,
             continue;
         }
 
-        int64_t size_delta = st.st_size - file->size;
+        size_delta = st.st_size - file->size;
         if (size_delta != 0) {
             file->size = st.st_size;
         }
 
-        /* Check if the file was truncated */
-        if (size_delta < 0) {
-            offset = lseek(file->fd, 0, SEEK_SET);
-            if (offset == -1) {
-                flb_errno();
+        /* Confirm a size/offset discrepancy through the raw read position. */
+        if (size_delta < 0 ||
+            (st.st_size < file->offset &&
+             flb_tail_file_read_offset_is_valid(file) != FLB_TRUE)) {
+            ret = flb_tail_file_reset_on_truncate(file, size_delta, "tail_fs_check");
+            if (ret == -1) {
                 return -1;
             }
-
-            flb_plg_debug(ctx->ins, "tail_fs_check: file truncated %s (diff: %"PRId64" bytes)", 
-                         file->name, size_delta);
-            file->offset = offset;
-            file->buf_len = 0;
             memcpy(&fst->st, &st, sizeof(struct stat));
-
-#ifdef FLB_HAVE_SQLDB
-            /* Update offset in database file */
-            if (ctx->db) {
-                flb_tail_db_file_offset(file, ctx);
-            }
-#endif
         }
 
         if (file->offset < st.st_size) {
@@ -233,7 +234,7 @@ int flb_tail_fs_stat_add(struct flb_tail_file *file)
     }
 
     fst->checked = time(NULL);
-    ret = stat(file->name, &fst->st);
+    ret = tail_fs_stat_path(file->config, file->name, &fst->st);
     if (ret == -1) {
         flb_errno();
         flb_free(fst);

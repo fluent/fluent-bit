@@ -160,7 +160,12 @@ static int textfile_update(struct flb_ne *ctx)
         if (ret == 0) {
             flb_plg_debug(ctx->ins, "parse a payload of prometheus: %s",
                           entry->str);
-            cmt_cat(ctx->cmt, cmt);
+            ret = cmt_cat(ctx->cmt, cmt);
+            if (ret != 0) {
+                flb_plg_error(ctx->ins, "could not merge textfile metrics from %s", entry->str);
+                cmt_counter_set(ctx->load_errors, timestamp, 1.0, 1,
+                                (char *[]) {"merge error"});
+            }
             cmt_decode_prometheus_destroy(cmt);
         }
         else {

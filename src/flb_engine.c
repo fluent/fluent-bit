@@ -18,6 +18,8 @@
  */
 
 #include <math.h>
+#include <float.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,6 +42,7 @@
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_config.h>
 #include <fluent-bit/flb_engine.h>
+#include <fluent-bit/flb_fips.h>
 #include <fluent-bit/flb_event.h>
 #include <fluent-bit/flb_engine_dispatch.h>
 #include <fluent-bit/flb_network.h>
@@ -57,8 +60,22 @@
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_downstream.h>
 #include <fluent-bit/flb_ring_buffer.h>
+
+#ifdef __linux__
+#include <fcntl.h>
+
+/* F_GETPIPE_SZ is only exposed with _GNU_SOURCE */
+#ifdef F_GETPIPE_SZ
+#define FLB_ENGINE_F_GETPIPE_SZ F_GETPIPE_SZ
+#else
+#define FLB_ENGINE_F_GETPIPE_SZ 1032
+#endif
+#endif
 #include <fluent-bit/flb_notification.h>
 #include <fluent-bit/flb_simd.h>
+#ifdef __EMSCRIPTEN__
+#include <fluent-bit/wasm/flb_wasm_http.h>
+#endif
 
 #ifdef FLB_HAVE_METRICS
 #include <fluent-bit/flb_metrics_exporter.h>
@@ -145,6 +162,7 @@ void flb_engine_reschedule_retries(struct flb_config *config)
     struct mk_list *tmp_task;
     struct mk_list *tmp_retry_task;
     struct flb_task *task;
+    struct flb_task_route *route;
     struct flb_input_instance *ins;
     struct flb_task_retry *retry;
 
@@ -164,6 +182,12 @@ void flb_engine_reschedule_retries(struct flb_config *config)
 
             mk_list_foreach_safe(rt_head, tmp_retry_task, &task->retries) {
                 retry = mk_list_entry(rt_head, struct flb_task_retry, _head);
+                route = flb_task_route_get(task, retry->o_ins);
+                if (route != NULL &&
+                    route->dispatch_state == FLB_TASK_ROUTE_DISPATCH_DEFERRED) {
+                    flb_output_throttle_wakeup_schedule(retry->o_ins);
+                    continue;
+                }
                 flb_sched_request_invalidate(config, retry);
                 ret = flb_sched_retry_now(config, retry);
                 if (ret == -1) {
@@ -252,6 +276,247 @@ static inline double calculate_chunk_capacity_percent(struct flb_output_instance
                   ((double)ins->total_limit_size));
 }
 
+static inline double adaptive_flush_clamp(double value, double min, double max)
+{
+    if (value < min) {
+        return min;
+    }
+
+    if (value > max) {
+        return max;
+    }
+
+    return value;
+}
+
+static double flb_engine_get_chunk_backpressure_percent(struct flb_config *config)
+{
+    double pressure;
+    double max_pressure;
+    struct mk_list *head;
+    struct flb_output_instance *ins;
+
+    max_pressure = 0.0;
+
+    mk_list_foreach(head, &config->outputs) {
+        ins = mk_list_entry(head, struct flb_output_instance, _head);
+
+        if (ins->total_limit_size <= 0) {
+            continue;
+        }
+
+        pressure = ((double) (ins->fs_backlog_chunks_size + ins->fs_chunks_size) * 100.0)
+                   / ((double) ins->total_limit_size);
+
+        pressure = adaptive_flush_clamp(pressure, 0.0, 100.0);
+
+        if (pressure > max_pressure) {
+            max_pressure = pressure;
+        }
+    }
+
+    return max_pressure;
+}
+
+static int flb_engine_flush_timer_reset(struct flb_config *config, double interval)
+{
+    struct mk_event *event;
+    struct flb_time t_flush;
+    double fallback_interval;
+
+    event = &config->event_flush;
+    fallback_interval = config->flush_adaptive_current_interval;
+
+    if (event->status != MK_EVENT_NONE) {
+        mk_event_timeout_destroy(config->evl, event);
+    }
+
+    flb_time_from_double(&t_flush, interval);
+
+    config->flush_fd = mk_event_timeout_create(config->evl,
+                                               t_flush.tm.tv_sec,
+                                               t_flush.tm.tv_nsec,
+                                               event);
+    event->priority = FLB_ENGINE_PRIORITY_FLUSH;
+
+    if (config->flush_fd == -1) {
+        flb_utils_error(FLB_ERR_CFG_FLUSH_CREATE);
+
+        if (fallback_interval > 0.0 &&
+            fabs(fallback_interval - interval) > DBL_EPSILON) {
+            flb_time_from_double(&t_flush, fallback_interval);
+            config->flush_fd = mk_event_timeout_create(config->evl,
+                                                       t_flush.tm.tv_sec,
+                                                       t_flush.tm.tv_nsec,
+                                                       event);
+            event->priority = FLB_ENGINE_PRIORITY_FLUSH;
+        }
+
+        if (config->flush_fd == -1) {
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+int flb_engine_adaptive_flush_target_level(struct flb_config *config,
+                                           double pressure)
+{
+    if (pressure >= config->flush_adaptive_high_pressure) {
+        return 3;
+    }
+    else if (pressure >= config->flush_adaptive_medium_pressure) {
+        return 2;
+    }
+    else if (pressure <= config->flush_adaptive_low_pressure) {
+        return 0;
+    }
+
+    return 1;
+}
+
+double flb_engine_adaptive_flush_interval(struct flb_config *config,
+                                          int level)
+{
+    double interval;
+    static const double multipliers[] = {2.0, 1.0, 0.75, 0.5};
+
+    if (level < 0) {
+        level = 0;
+    }
+    else if (level > 3) {
+        level = 3;
+    }
+
+    interval = config->flush * multipliers[level];
+
+    return adaptive_flush_clamp(interval,
+                                config->flush_adaptive_min_interval,
+                                config->flush_adaptive_max_interval);
+}
+
+static void flb_engine_adaptive_flush_update(struct flb_config *config)
+{
+    int target_level;
+    double pressure;
+    double interval;
+
+    if (config->flush_adaptive == FLB_FALSE) {
+        return;
+    }
+
+    pressure = flb_engine_get_chunk_backpressure_percent(config);
+
+    target_level = flb_engine_adaptive_flush_target_level(config, pressure);
+
+    if (target_level > config->flush_adaptive_level) {
+        if (config->flush_adaptive_direction != 1) {
+            config->flush_adaptive_direction = 1;
+            config->flush_adaptive_hits = 0;
+        }
+
+        config->flush_adaptive_hits++;
+
+        if (config->flush_adaptive_hits >= config->flush_adaptive_up_steps) {
+            config->flush_adaptive_level++;
+            config->flush_adaptive_hits = 0;
+        }
+    }
+    else if (target_level < config->flush_adaptive_level) {
+        if (config->flush_adaptive_direction != -1) {
+            config->flush_adaptive_direction = -1;
+            config->flush_adaptive_hits = 0;
+        }
+
+        config->flush_adaptive_hits++;
+
+        if (config->flush_adaptive_hits >= config->flush_adaptive_down_steps) {
+            config->flush_adaptive_level--;
+            config->flush_adaptive_hits = 0;
+        }
+    }
+    else {
+        config->flush_adaptive_direction = 0;
+        config->flush_adaptive_hits = 0;
+    }
+
+    if (config->flush_adaptive_level < 0) {
+        config->flush_adaptive_level = 0;
+    }
+    else if (config->flush_adaptive_level > 3) {
+        config->flush_adaptive_level = 3;
+    }
+
+    interval = flb_engine_adaptive_flush_interval(config,
+                                                  config->flush_adaptive_level);
+
+    if (fabs(interval - config->flush_adaptive_current_interval)
+        <= (DBL_EPSILON * fmax(fabs(interval),
+                               fabs(config->flush_adaptive_current_interval)))) {
+        return;
+    }
+
+    if (flb_engine_flush_timer_reset(config, interval) == 0) {
+        config->flush_adaptive_current_interval = interval;
+        flb_debug("[engine] adaptive flush interval %.3f sec (pressure=%.2f%%, level=%i)",
+                  interval,
+                  pressure,
+                  config->flush_adaptive_level);
+    }
+}
+
+static void flb_engine_adaptive_flush_init(struct flb_config *config)
+{
+    if (config->flush_adaptive == FLB_FALSE) {
+        config->flush_adaptive_current_interval = config->flush;
+        return;
+    }
+
+    if (config->flush_adaptive_min_interval <= 0.0) {
+        config->flush_adaptive_min_interval = 0.1;
+    }
+
+    if (config->flush_adaptive_max_interval <
+        config->flush_adaptive_min_interval) {
+        config->flush_adaptive_max_interval =
+            config->flush_adaptive_min_interval;
+    }
+
+    if (config->flush_adaptive_up_steps < 1) {
+        config->flush_adaptive_up_steps = 1;
+    }
+
+    if (config->flush_adaptive_down_steps < 1) {
+        config->flush_adaptive_down_steps = 1;
+    }
+
+    if (config->flush_adaptive_low_pressure < 0.0) {
+        config->flush_adaptive_low_pressure = 0.0;
+    }
+
+    if (config->flush_adaptive_high_pressure > 100.0) {
+        config->flush_adaptive_high_pressure = 100.0;
+    }
+
+    if (config->flush_adaptive_low_pressure >
+        config->flush_adaptive_medium_pressure) {
+        config->flush_adaptive_medium_pressure =
+            config->flush_adaptive_low_pressure;
+    }
+
+    if (config->flush_adaptive_medium_pressure >
+        config->flush_adaptive_high_pressure) {
+        config->flush_adaptive_medium_pressure =
+            config->flush_adaptive_high_pressure;
+    }
+
+    config->flush_adaptive_current_interval =
+        flb_engine_adaptive_flush_interval(config,
+                                           config->flush_adaptive_level);
+
+}
+
 static void handle_dlq_if_available(struct flb_config *config,
                                     struct flb_task *task,
                                     struct flb_output_instance *ins,
@@ -309,6 +574,8 @@ static inline int handle_output_event(uint64_t ts,
     int effective_records = 0;
     int retries;
     int retry_seconds;
+    uint64_t now_ms;
+    uint64_t remaining_ms;
     uint32_t type;
     uint32_t key;
     double latency_seconds;
@@ -318,6 +585,7 @@ static inline int handle_output_event(uint64_t ts,
     struct flb_task *task;
     struct flb_task_retry *retry;
     struct flb_output_instance *ins;
+    struct flb_output_throttle_snapshot throttle_snapshot;
 
     /* Get type and key */
     type = FLB_BITS_U64_HIGH(val);
@@ -337,6 +605,11 @@ static inline int handle_output_event(uint64_t ts,
     task_id = FLB_TASK_ID(key);
     out_id  = FLB_TASK_OUT(key);
 
+    /* the flush request is not in flight anymore (flb_output_task_flush()) */
+    if (config->flush_in_flight > 0) {
+        config->flush_in_flight--;
+    }
+
 #ifdef FLB_HAVE_TRACE
     char *trace_st = NULL;
 
@@ -349,6 +622,12 @@ static inline int handle_output_event(uint64_t ts,
     else if (ret == FLB_RETRY) {
         trace_st = "RETRY";
     }
+    else if (ret == FLB_THROTTLE) {
+        trace_st = "THROTTLE";
+    }
+    else if (ret == FLB_OUTPUT_DEFERRED) {
+        trace_st = "DEFERRED";
+    }
 
     flb_trace("%s[engine] [task event]%s task_id=%i out_id=%i return=%s",
               ANSI_YELLOW, ANSI_RESET,
@@ -357,11 +636,34 @@ static inline int handle_output_event(uint64_t ts,
 
     task = config->task_map[task_id].task;
     ins  = flb_output_get_instance(config, out_id);
+    if (task == NULL || ins == NULL) {
+        flb_error("[engine] stale output event task_id=%i out_id=%i",
+                  task_id, out_id);
+        return -1;
+    }
+
+    if (ret == FLB_OUTPUT_DEFERRED) {
+        if (flb_task_route_defer(task, ins, FLB_TRUE) == -1) {
+            flb_error("[engine] could not transfer task_id=%i output=%s "
+                      "to deferred ownership", task_id, flb_output_name(ins));
+            return -1;
+        }
+
+        if (ins->flags & FLB_OUTPUT_SYNCHRONOUS) {
+            flb_output_task_singleplex_complete(ins->singleplex_queue);
+            flb_output_task_singleplex_flush_next(ins->singleplex_queue);
+        }
+        flb_output_throttle_wakeup_schedule(ins);
+        flb_output_throttle_metrics_update(ins, flb_output_throttle_now_ms());
+        return 0;
+    }
+
     if (flb_output_is_threaded(ins) == FLB_FALSE) {
         flb_output_flush_finished(config, out_id);
     }
     in_name = (char *) flb_input_name(task->i_ins);
     out_name = (char *) flb_output_name(ins);
+    flb_output_throttle_metrics_update(ins, flb_output_throttle_now_ms());
     flb_task_acquire_lock(task);
     if (flb_task_get_route_data(task, ins,
                                 &effective_records,
@@ -371,9 +673,23 @@ static inline int handle_output_event(uint64_t ts,
     }
     flb_task_release_lock(task);
 
+    flb_task_acquire_lock(task);
+    if (flb_task_route_unqueue(task, ins) == -1) {
+        flb_warn("[engine] task_id=%i output=%s completed from an unexpected "
+                 "dispatch state", task_id, flb_output_name(ins));
+    }
+    flb_task_release_lock(task);
+
+    if ((ins->flags & FLB_OUTPUT_NO_MULTIPLEX) &&
+        ins->throttle_deferred_count > 0) {
+        flb_output_throttle_wakeup_schedule(ins);
+    }
+
     /* If we are in synchronous mode, flush the next waiting task */
     if (ins->flags & FLB_OUTPUT_SYNCHRONOUS) {
-        if (ret == FLB_OK || ret == FLB_RETRY || ret == FLB_ERROR) {
+        if (ret == FLB_OK || ret == FLB_RETRY || ret == FLB_ERROR ||
+            ret == FLB_THROTTLE) {
+            flb_output_task_singleplex_complete(ins->singleplex_queue);
             flb_output_task_singleplex_flush_next(ins->singleplex_queue);
         }
     }
@@ -443,7 +759,7 @@ static inline int handle_output_event(uint64_t ts,
         flb_task_retry_clean(task, ins);
         flb_task_users_dec(task, FLB_TRUE);
     }
-    else if (ret == FLB_RETRY) {
+    else if (ret == FLB_RETRY || ret == FLB_THROTTLE) {
         if (ins->retry_limit == FLB_OUT_RETRY_NONE) {
             handle_dlq_if_available(config, task, ins, 0);
 
@@ -480,6 +796,42 @@ static inline int handle_output_event(uint64_t ts,
             flb_task_retry_clean(task, ins);
             flb_task_users_dec(task, FLB_TRUE);
 
+            return 0;
+        }
+
+        if (ret == FLB_THROTTLE) {
+            if (flb_task_route_defer(task, ins, FLB_FALSE) == -1) {
+                flb_task_users_dec(task, FLB_TRUE);
+                return -1;
+            }
+
+            /* Transfer callback ownership to the output deadline queue. */
+            flb_task_users_dec(task, FLB_FALSE);
+            flb_output_throttle_snapshot(&ins->throttle,
+                                         &throttle_snapshot);
+            now_ms = flb_output_throttle_now_ms();
+            if (throttle_snapshot.until_ms > now_ms) {
+                remaining_ms = throttle_snapshot.until_ms - now_ms;
+            }
+            else {
+                remaining_ms = 1;
+            }
+
+            if (remaining_ms > (uint64_t) INT_MAX * 1000) {
+                retry_seconds = INT_MAX;
+            }
+            else {
+                retry_seconds = (int) ((remaining_ms + 999) / 1000);
+            }
+            flb_output_throttle_wakeup_schedule(ins);
+
+            flb_warn("[engine] throttled flush for chunk '%s', resume in %i seconds: "
+                     "task_id=%i, input=%s > output=%s (out_id=%i)",
+                     flb_input_chunk_get_name(task->ic),
+                     retry_seconds,
+                     task->id,
+                     flb_input_name(task->i_ins),
+                     flb_output_name(ins), out_id);
             return 0;
         }
 
@@ -624,6 +976,34 @@ static inline int handle_output_event(uint64_t ts,
     return 0;
 }
 
+static inline void handle_dispatch_result_fallback(
+                                       struct flb_output_dispatch *dispatch,
+                                       int result,
+                                       struct flb_config *config)
+{
+    uint32_t set;
+    uint64_t value;
+
+    set = FLB_TASK_SET(result, dispatch->task->id, dispatch->out->id);
+    value = FLB_BITS_U64_SET(FLB_ENGINE_TASK, set);
+    flb_output_dispatch_destroy(dispatch);
+    handle_output_event(cfl_time_now(), config, value);
+}
+
+static inline void handle_dispatch_result_fallbacks(struct flb_config *config)
+{
+    struct flb_output_dispatch *dispatch;
+
+    while (1) {
+        dispatch = flb_output_thread_result_fallback_pop(config);
+        if (dispatch == NULL) {
+            break;
+        }
+
+        handle_dispatch_result_fallback(dispatch, dispatch->result, config);
+    }
+}
+
 static inline int handle_output_events(flb_pipefd_t fd,
                                        struct flb_config *config)
 {
@@ -636,7 +1016,11 @@ static inline int handle_output_events(flb_pipefd_t fd,
 
     memset(&values, 0, sizeof(values));
 
+#ifdef _WIN32
+    bytes = flb_pipe_read_all(fd, &values[0], sizeof(values[0]));
+#else
     bytes = flb_pipe_r(fd, &values, sizeof(values));
+#endif
 
     if (bytes == -1) {
         flb_pipe_error();
@@ -688,6 +1072,17 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
     type = FLB_BITS_U64_HIGH(val);
     key  = FLB_BITS_U64_LOW(val);
 
+#ifdef __EMSCRIPTEN__
+    if (val == FLB_ENGINE_EV_WASM_DRAIN && config->cb_wasm_drain != NULL) {
+        config->cb_wasm_drain(config, FLB_WASM_DRAIN_BEGIN);
+        return 0;
+    }
+    if (val == FLB_ENGINE_EV_WASM_INGEST && config->cb_wasm_drain != NULL) {
+        config->cb_wasm_drain(config, FLB_WASM_INGEST);
+        return 0;
+    }
+#endif
+
     /* Flush all remaining data */
     if (type == 1) {                  /* Engine type */
         if (key == FLB_ENGINE_STOP) {
@@ -725,6 +1120,7 @@ static FLB_INLINE int flb_engine_handle_event(flb_pipefd_t fd, int mask,
         if (config->flush_fd == fd) {
             flb_utils_timer_consume(fd);
             flb_engine_flush(config, NULL);
+            flb_engine_adaptive_flush_update(config);
             return 0;
         }
         else if (config->shutdown_fd == fd) {
@@ -794,6 +1190,16 @@ int flb_engine_failed(struct flb_config *config)
     ret = flb_pipe_w(config->ch_notif[1], &val, sizeof(uint64_t));
     if (ret == -1) {
         flb_error("[engine] fail to dispatch FAILED message");
+
+        /*
+         * A library mode caller may be blocked on the notification
+         * channel waiting for this message: close the write end so the
+         * reader wakes up with EOF instead of waiting forever.
+         */
+        if (config->ch_notif[1] != config->ch_notif[0]) {
+            mk_event_closesocket(config->ch_notif[1]);
+            config->ch_notif[1] = -1;
+        }
     }
 
     /* Waiting flushing log */
@@ -856,7 +1262,6 @@ int flb_engine_start(struct flb_config *config)
     uint64_t ts;
     char tmp[16];
     int rb_flush_flag;
-    struct flb_time t_flush;
     struct mk_event *event;
     struct mk_event_loop *evl;
     struct flb_bucket_queue *evl_bktq;
@@ -893,17 +1298,37 @@ int flb_engine_start(struct flb_config *config)
      *  - FLB engine uses 'ch_self_events[1]' to dispatch tasks to self
      *  - Self to receive message on ch_parent_events[0]
      *
-     * The mk_event_channel_create() will attach the pipe read end ch_self_events[0]
+     * The flb_pipe_event_channel_create() will attach the pipe read end ch_self_events[0]
      * to the local event loop 'evl'.
      */
-    ret = mk_event_channel_create(config->evl,
-                                  &config->ch_self_events[0],
-                                  &config->ch_self_events[1],
-                                  &config->event_thread_init);
+    ret = flb_pipe_event_channel_create(config->evl,
+                                        &config->ch_self_events[0],
+                                        &config->ch_self_events[1],
+                                        &config->event_thread_init);
     if (ret == -1) {
         flb_error("[engine] could not create engine thread channel");
         return -1;
     }
+
+#ifdef __linux__
+    /*
+     * Pipes are usually 64KiB but the kernel creates them with a single page
+     * once the user exceeds fs.pipe-user-pages-soft, keep the number of
+     * flush requests in flight below the capacity of the engine channels.
+     */
+    ret = fcntl(config->ch_self_events[1], FLB_ENGINE_F_GETPIPE_SZ);
+    if (ret > 0) {
+        ret = (ret / (int) sizeof(uint64_t)) / 2;
+        if (ret < 1) {
+            ret = 1;
+        }
+        if (ret < config->flush_in_flight_limit) {
+            flb_warn("[engine] engine channel capacity is low, limiting flush "
+                     "requests in flight to %i", ret);
+            config->flush_in_flight_limit = ret;
+        }
+    }
+#endif
     /* Signal type to indicate a "flush" request */
     config->event_thread_init.type = FLB_ENGINE_EV_THREAD_ENGINE;
     config->event_thread_init.priority = FLB_ENGINE_PRIORITY_THREAD;
@@ -916,6 +1341,11 @@ int flb_engine_start(struct flb_config *config)
     ret = flb_engine_log_start(config);
     if (ret == -1) {
         fprintf(stderr, "[engine] log start failed\n");
+        return -1;
+    }
+
+    ret = flb_fips_init(config);
+    if (ret != 0) {
         return -1;
     }
 
@@ -940,19 +1370,19 @@ int flb_engine_start(struct flb_config *config)
      * signal the Engine event loop. It's useful to stop the event loop
      * or to instruct anything else without break.
      */
-    ret = mk_event_channel_create(config->evl,
-                                  &config->ch_manager[0],
-                                  &config->ch_manager[1],
-                                  &config->ch_event);
+    ret = flb_pipe_event_channel_create(config->evl,
+                                        &config->ch_manager[0],
+                                        &config->ch_manager[1],
+                                        &config->ch_event);
     if (ret != 0) {
         flb_error("[engine] could not create manager channels");
         return -1;
     }
 
-    ret = mk_event_channel_create(config->evl,
-                                  &config->notification_channels[0],
-                                  &config->notification_channels[1],
-                                  &config->notification_event);
+    ret = flb_pipe_event_channel_create(config->evl,
+                                        &config->notification_channels[0],
+                                        &config->notification_channels[1],
+                                        &config->notification_event);
     if (ret == -1) {
         flb_error("could not create main notification channel");
 
@@ -1034,14 +1464,13 @@ int flb_engine_start(struct flb_config *config)
     event->mask = MK_EVENT_EMPTY;
     event->status = MK_EVENT_NONE;
 
-    flb_time_from_double(&t_flush, config->flush);
-    config->flush_fd = mk_event_timeout_create(evl,
-                                               t_flush.tm.tv_sec,
-                                               t_flush.tm.tv_nsec,
-                                               event);
-    event->priority = FLB_ENGINE_PRIORITY_FLUSH;
-    if (config->flush_fd == -1) {
-        flb_utils_error(FLB_ERR_CFG_FLUSH_CREATE);
+    flb_engine_adaptive_flush_init(config);
+
+    if (flb_engine_flush_timer_reset(config,
+                                     config->flush_adaptive_current_interval) == -1) {
+        flb_error("[engine] could not initialize flush timer (interval=%.3f sec)",
+                  config->flush_adaptive_current_interval);
+        return -1;
     }
 
 
@@ -1075,7 +1504,16 @@ int flb_engine_start(struct flb_config *config)
     if (config->http_server == FLB_TRUE) {
         config->http_ctx = flb_hs_create(config->http_listen, config->http_port,
                                          config);
-        flb_hs_start(config->http_ctx);
+        if (!config->http_ctx) {
+            flb_error("[engine] could not initialize HTTP server");
+            return -1;
+        }
+
+        ret = flb_hs_start(config->http_ctx);
+        if (ret != 0) {
+            flb_error("[engine] could not start HTTP server");
+            return -1;
+        }
     }
 #endif
 
@@ -1123,16 +1561,24 @@ int flb_engine_start(struct flb_config *config)
         return -1;
     }
 
-    /* Signal that we have started */
-    flb_engine_started(config);
-
+    /*
+     * Segregate the backlog chunks before notifying the library mode
+     * caller: segregation closes chunks that cannot be routed, so it must
+     * not run concurrently with callers inspecting storage right after
+     * flb_start() returns.
+     */
     ret = sb_segregate_chunks(config);
 
     if (ret < 0)
     {
         flb_error("[engine] could not segregate backlog chunks");
+        flb_engine_failed(config);
+        flb_engine_shutdown(config);
         return -2;
     }
+
+    /* Signal that we have started */
+    flb_engine_started(config);
 
     config->grace_input  = config->grace / 2;
     flb_info("[engine] Shutdown Grace Period=%d, Shutdown Input Grace Period=%d", config->grace, config->grace_input);
@@ -1176,7 +1622,8 @@ int flb_engine_start(struct flb_config *config)
                     event->priority = FLB_ENGINE_PRIORITY_SHUTDOWN;
 
                     /*
-                     * Configure a timer of 1 second, on expiration the code will
+                     * Configure a timer of 1 second (immediate for browser
+                     * zero-grace shutdown). On expiration the code will
                      * jump into the FLB_ENGINE_SHUTDOWN condition where it will
                      * check if the grace period has finished, or if there are
                      * any remaining tasks.
@@ -1186,8 +1633,13 @@ int flb_engine_start(struct flb_config *config)
                      */
                     if (config->shutdown_fd <= 0) {
                         config->shutdown_fd = mk_event_timeout_create(evl,
+#ifdef __EMSCRIPTEN__
+                                                                      config->grace == 0 ? 0 : 1,
+                                                                      config->grace == 0 ? 1 : 0,
+#else
                                                                       1,
                                                                       0,
+#endif
                                                                       event);
 
 	                    if (config->shutdown_fd == -1) {
@@ -1247,7 +1699,8 @@ int flb_engine_start(struct flb_config *config)
                     else {
                         flb_info("[engine] service has stopped (%i pending tasks)",
                                  tasks);
-                        ret = config->exit_status_code;
+                        /* This event bypasses the loop's final cleanup. */
+                        flb_net_dns_lookup_context_cleanup(&dns_ctx);
                         flb_engine_shutdown(config);
 
                         if (config->shutdown_fd > 0) {
@@ -1255,7 +1708,7 @@ int flb_engine_start(struct flb_config *config)
                                                      &config->event_shutdown);
                         }
 
-                        return ret;
+                        return config->exit_status_code;
                     }
                 }
             }
@@ -1264,14 +1717,83 @@ int flb_engine_start(struct flb_config *config)
                 flb_sched_event_handler(config, event);
             }
             else if (event->type == FLB_ENGINE_EV_THREAD_ENGINE) {
+                uint64_t generation;
+                size_t route_status;
                 struct flb_output_flush *output_flush;
+                struct flb_output_dispatch *dispatch;
 
-                /* Read the coroutine reference */
-                ret = flb_pipe_r(event->fd, &output_flush, sizeof(struct flb_output_flush *));
-                if (ret <= 0 || output_flush == 0) {
+                ret = flb_pipe_read_all(event->fd, &dispatch,
+                                        sizeof(struct flb_output_dispatch *));
+                if (ret != sizeof(struct flb_output_dispatch *) ||
+                    dispatch == NULL) {
                     flb_pipe_error();
                     continue;
                 }
+
+                if (dispatch->magic != FLB_OUTPUT_DISPATCH_MAGIC ||
+                    dispatch->config != config) {
+                    flb_error("[engine] invalid output dispatch envelope");
+                    flb_output_dispatch_destroy(dispatch);
+                    continue;
+                }
+
+                if (dispatch->type != FLB_OUTPUT_DISPATCH_TASK) {
+                    flb_error("[engine] invalid output dispatch envelope type");
+                    flb_output_dispatch_destroy(dispatch);
+                    continue;
+                }
+
+                flb_task_acquire_lock(dispatch->task);
+                route_status = flb_task_get_route_status(dispatch->task,
+                                                         dispatch->out);
+                flb_task_release_lock(dispatch->task);
+                if (route_status == FLB_TASK_ROUTE_DROPPED) {
+                    ret = flb_output_dispatch_post_result(
+                              dispatch, FLB_ERROR,
+                              dispatch->out->ch_events[1]);
+                    if (ret == -1) {
+                        handle_dispatch_result_fallback(
+                            dispatch, FLB_ERROR, config);
+                        continue;
+                    }
+                    flb_output_dispatch_destroy(dispatch);
+                    continue;
+                }
+
+                if (flb_output_throttle_admit(&dispatch->out->throttle,
+                                              flb_output_throttle_now_ms(),
+                                              &generation) == FLB_FALSE) {
+                    ret = flb_output_dispatch_post_result(
+                              dispatch, FLB_OUTPUT_DEFERRED,
+                              dispatch->out->ch_events[1]);
+                    if (ret == -1) {
+                        handle_dispatch_result_fallback(
+                            dispatch, FLB_OUTPUT_DEFERRED, config);
+                        continue;
+                    }
+                    flb_output_dispatch_destroy(dispatch);
+                    continue;
+                }
+
+                output_flush = flb_output_flush_create(dispatch->task,
+                                                       dispatch->task->i_ins,
+                                                       dispatch->out,
+                                                       dispatch->config);
+                if (output_flush == NULL) {
+                    ret = flb_output_dispatch_post_result(
+                              dispatch, FLB_ERROR,
+                              dispatch->out->ch_events[1]);
+                    if (ret == -1) {
+                        handle_dispatch_result_fallback(
+                            dispatch, FLB_ERROR, config);
+                        continue;
+                    }
+                    flb_output_dispatch_destroy(dispatch);
+                    continue;
+                }
+
+                output_flush->admission_generation = generation;
+                flb_output_dispatch_destroy(dispatch);
 
                 /* Init coroutine */
                 flb_coro_resume(output_flush->coro);
@@ -1292,7 +1814,12 @@ int flb_engine_start(struct flb_config *config)
                 if (connection->coroutine) {
                     flb_trace("[engine] resuming coroutine=%p", connection->coroutine);
 
-                    flb_coro_resume(connection->coroutine);
+                    if (connection->event_coroutine != NULL) {
+                        flb_downstream_conn_event_resume(connection);
+                    }
+                    else {
+                        flb_coro_resume(connection->coroutine);
+                    }
                 }
             }
             else if (event->type == FLB_ENGINE_EV_OUTPUT) {
@@ -1322,12 +1849,21 @@ int flb_engine_start(struct flb_config *config)
             }
         }
 
+#ifdef __EMSCRIPTEN__
+        if (config->cb_wasm_drain != NULL) {
+            config->cb_wasm_drain(config, FLB_WASM_DRAIN_CHECK);
+        }
+#endif
+
         if (rb_flush_flag) {
             flb_input_chunk_ring_buffer_collector(config, NULL);
         }
 
+        handle_dispatch_result_fallbacks(config);
+
         /* Cleanup functions associated to events and timers */
         if (config->is_running == FLB_TRUE) {
+            flb_output_throttle_wakeup_scan(config);
             flb_net_dns_lookup_context_cleanup(&dns_ctx);
             flb_sched_timer_cleanup(config->sched);
             flb_upstream_conn_pending_destroy_list(&config->upstreams);
@@ -1346,13 +1882,80 @@ int flb_engine_start(struct flb_config *config)
     }
 }
 
+/* The shutdown deadline can leave unstarted dispatches in the engine channel. */
+static void flb_engine_cancel_pending_dispatches(struct flb_config *config)
+{
+    struct flb_output_dispatch *dispatch;
+    ssize_t bytes;
+    size_t received;
+
+    if (!(config->event_thread_init.status & MK_EVENT_REGISTERED)) {
+        return;
+    }
+    if (flb_pipe_set_nonblocking(config->ch_self_events[0]) == -1) {
+        flb_pipe_error();
+        return;
+    }
+
+    received = 0;
+    while (1) {
+        bytes = flb_pipe_r(config->ch_self_events[0],
+                           (char *) &dispatch + received, sizeof(dispatch) - received);
+        if (bytes <= 0) {
+            if (bytes == -1 &&
+#ifdef _WIN32
+                WSAGetLastError() == WSAEINTR) {
+#else
+                errno == EINTR) {
+#endif
+                continue;
+            }
+            break;
+        }
+        received += bytes;
+        if (received != sizeof(dispatch)) {
+            continue;
+        }
+        received = 0;
+
+        if (dispatch != NULL) {
+            if (flb_task_route_unqueue(dispatch->task, dispatch->out) == 0) {
+                flb_task_users_dec(dispatch->task, FLB_FALSE);
+            }
+            flb_output_dispatch_destroy(dispatch);
+            config->flush_in_flight--;
+        }
+    }
+}
+
 /* Release all resources associated to the engine */
 int flb_engine_shutdown(struct flb_config *config)
 {
+    int ret;
+    struct flb_notification *notification;
     struct flb_sched_timer_coro_cb_params *sched_params;
+#ifdef __EMSCRIPTEN__
+    struct mk_list *head;
+    struct flb_output_instance *output;
+#endif
 
+#ifdef __EMSCRIPTEN__
+    if (config->cb_wasm_drain != NULL) {
+        config->cb_wasm_drain(config, FLB_WASM_DRAIN_CANCEL);
+    }
+#endif
     config->is_running = FLB_FALSE;
     config->is_ingestion_active = FLB_FALSE;
+#ifdef __EMSCRIPTEN__
+    /* Resume cancelled HTTP flushes before destroying their plugin contexts. */
+    config->is_shutting_down = FLB_TRUE;
+    flb_wasm_http_shutdown(config);
+    /* The event loop has stopped, so it cannot reap the completed flushes. */
+    mk_list_foreach(head, &config->outputs) {
+        output = mk_list_entry(head, struct flb_output_instance, _head);
+        flb_output_flush_finished(config, output->id);
+    }
+#endif
     flb_input_pause_all(config);
 
 #ifdef FLB_HAVE_STREAM_PROCESSOR
@@ -1364,7 +1967,14 @@ int flb_engine_shutdown(struct flb_config *config)
     /* router */
     flb_router_exit(config);
 
+    /* Detach queued events before their owning plugins release the event memory. */
+    if (config->evl_bktq) {
+        while (flb_bucket_queue_pop_min(config->evl_bktq) != NULL) {
+        }
+    }
+
     /* cleanup plugins */
+    flb_engine_cancel_pending_dispatches(config);
     flb_filter_exit(config);
     flb_output_exit(config);
     flb_custom_exit(config);
@@ -1400,6 +2010,20 @@ int flb_engine_shutdown(struct flb_config *config)
     }
 
     if (config->notification_channels_initialized == FLB_TRUE) {
+        /* Workers can enqueue notifications after the event loop stops.
+         * All producers and plugin contexts are now gone: release queued
+         * notifications without delivering them to destroyed instances.
+         */
+        ret = flb_pipe_set_nonblocking(config->notification_channels[0]);
+        if (ret == 0) {
+            while (flb_pipe_r(config->notification_channels[0], &notification,
+                              sizeof(notification)) == sizeof(notification)) {
+                flb_notification_cleanup(notification);
+            }
+        }
+        else {
+            flb_errno();
+        }
         mk_event_channel_destroy(config->evl,
                                  config->notification_channels[0],
                                  config->notification_channels[1],

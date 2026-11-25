@@ -41,11 +41,6 @@
 #include <sys/wait.h>
 #endif
 
-#ifdef EVENT__HAVE_PTHREADS
-#include <pthread.h>
-#elif defined(_WIN32)
-#include <process.h>
-#endif
 #include <assert.h>
 #ifdef EVENT__HAVE_UNISTD_H
 #include <unistd.h>
@@ -192,9 +187,11 @@ thread_basic(void *arg)
 		/* This piggybacks on the th_notify_fd weirdly, and looks
 		 * inside libevent internals.  Not a good idea in non-testing
 		 * code! */
+		tt_assert(sigchld_event);
 		notification_event = event_new(base,
 		    base->th_notify_fd[0], EV_READ|EV_PERSIST, notify_fd_cb,
 		    NULL);
+		tt_assert(notification_event);
 		event_add(sigchld_event, NULL);
 		event_add(notification_event, NULL);
 
@@ -376,7 +373,7 @@ thread_conditions_simple(void *arg)
 		}
 		evutil_timeradd(target_delay, &launched_at, &target_time);
 		test_timeval_diff_leq(&target_time, &alerted[i].alerted_at,
-		    0, 50);
+		    0, 200);
 	}
 	tt_int_op(n_broadcast + n_signal + n_timed_out, ==, NUM_THREADS);
 	tt_int_op(n_signal, ==, 1);
@@ -564,8 +561,37 @@ end:
 	;
 }
 
-#define TEST(name)							\
-	{ #name, thread_##name, TT_FORK|TT_NEED_THREADS|TT_NEED_BASE,	\
+#define N_PARALLEL_BASES 20
+
+static THREAD_FN
+create_base_thread(void *arg)
+{
+	struct event_base *base;
+	struct event ev;
+
+	base = event_base_new();
+	assert(base);
+	event_assign(&ev, base, -1, 0, NULL, NULL);
+	event_add(&ev, NULL);
+	event_del(&ev);
+	event_base_free(base);
+	THREAD_RETURN();
+}
+
+static void
+thread_debug_mode_too_late_race(void *arg)
+{
+	THREAD_T threads[N_PARALLEL_BASES];
+	int i;
+
+	for (i = 0; i < N_PARALLEL_BASES; ++i)
+		THREAD_START(threads[i], create_base_thread, NULL);
+	for (i = 0; i < N_PARALLEL_BASES; ++i)
+		THREAD_JOIN(threads[i]);
+}
+
+#define TEST(name, f)							\
+	{ #name, thread_##name, TT_FORK|TT_NEED_THREADS|TT_NEED_BASE|(f),	\
 	  &basic_setup, NULL }
 
 struct testcase_t thread_testcases[] = {
@@ -574,8 +600,11 @@ struct testcase_t thread_testcases[] = {
 #ifndef _WIN32
 	{ "forking", thread_basic, TT_FORK|TT_NEED_THREADS|TT_NEED_BASE,
 	  &basic_setup, (char*)"forking" },
+	{ "priority_inheritance", thread_basic,
+	  TT_FORK|TT_NEED_THREADS|TT_NEED_BASE|TT_ENABLE_PRIORITY_INHERITANCE,
+	  &basic_setup, (char*)"priority_inheritance" },
 #endif
-	TEST(conditions_simple),
+	TEST(conditions_simple, TT_RETRIABLE),
 	{ "deferred_cb_skew", thread_deferred_cb_skew,
 	  TT_FORK|TT_NEED_THREADS|TT_OFF_BY_DEFAULT,
 	  &basic_setup, NULL },
@@ -583,8 +612,10 @@ struct testcase_t thread_testcases[] = {
 	/****** XXX TODO FIXME windows seems to be having some timing trouble,
 	 * looking into it now. / ellzey
 	 ******/
-	TEST(no_events),
+	TEST(no_events, TT_RETRIABLE),
 #endif
+	{ "debug_mode_too_late_race", thread_debug_mode_too_late_race,
+	  TT_FORK|TT_NEED_THREADS, &basic_setup, NULL },
 	END_OF_TESTCASES
 };
 

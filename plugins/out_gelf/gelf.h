@@ -25,6 +25,7 @@
 #define FLB_GELF_TLS 2
 
 #include <fluent-bit/flb_output_plugin.h>
+#include <fluent-bit/flb_pthread.h>
 
 struct flb_out_gelf_config {
 
@@ -33,6 +34,7 @@ struct flb_out_gelf_config {
     /* Upstream connection to the backend server */
     struct flb_upstream *u;
     flb_sockfd_t fd;
+    pthread_mutex_t udp_mutex;
 
     int pckt_size;
     char *pckt_buf;

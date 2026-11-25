@@ -176,7 +176,12 @@ static int flb_hs_buf_set(struct flb_hs_buf *buffer, flb_sds_t data,
 
     pthread_mutex_lock(&buffer->lock);
     if (buffer->users > 0) {
-        buffer->pending_free = FLB_TRUE;
+        /*
+         * A request is still reading the current payload: skip this update
+         * and keep serving the previous one until the next push. Do not mark
+         * it for release, otherwise the last reader frees it and the endpoint
+         * has no data until the next successful push.
+         */
         pthread_mutex_unlock(&buffer->lock);
         return -1;
     }

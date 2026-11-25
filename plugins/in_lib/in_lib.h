@@ -26,7 +26,10 @@
 #include <fluent-bit/flb_log_event_encoder.h>
 #include <fluent-bit/flb_pthread.h>
 
-#define LIB_BUF_CHUNK   65536
+#define LIB_BUF_CHUNK       65536
+
+/* Bound each collector dispatch so other engine events keep making progress. */
+#define LIB_MAX_READ_SIZE   (LIB_BUF_CHUNK * 64)
 
 pthread_key_t flb_active_lib_context;
 

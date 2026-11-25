@@ -130,6 +130,7 @@ static int in_fluentbit_logs_init(struct flb_input_instance *in,
     }
 
     ctx->ins = in;
+    ctx->coll_fd = -1;
     ctx->log_encoder = flb_log_event_encoder_create(FLB_LOG_EVENT_FORMAT_DEFAULT);
     if (ctx->log_encoder == NULL) {
         flb_plg_error(in, "could not initialize event encoder");
@@ -170,6 +171,11 @@ static int in_fluentbit_logs_exit(void *data, struct flb_config *config)
 
     if (ctx == NULL) {
         return 0;
+    }
+
+    if (ctx->coll_fd >= 0) {
+        flb_input_collector_delete(ctx->coll_fd, ctx->ins);
+        ctx->coll_fd = -1;
     }
 
     flb_log_pipeline_disable(config);

@@ -1,0 +1,22 @@
+{
+  "pack_version": 1,
+  "fts_api_version": 1,
+  "id": "org.fluentbit.policy.cloudtrail",
+  "version": "1.0.0",
+  "title": "CloudTrail investigation normalization",
+  "description": "One already-decoded CloudTrail event per record, eventVersion major 1 with additive minor versions. Parse explicit RFC3339 eventTime, retain original security fields and read events. Does not unroll Records arrays or collect S3. Unknown major versions pass unchanged. Reference: https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-event-reference-record-contents.html",
+  "blocks": [
+    {
+      "name": "apply",
+      "signals": [
+        "logs"
+      ],
+      "source": "blocks/apply.lua",
+      "parameters": {},
+      "privacy": false
+    }
+  ],
+  "fixtures": [
+    "tests/policy.yaml"
+  ]
+}

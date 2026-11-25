@@ -13,7 +13,11 @@
 
 #include "flb_tests_internal.h"
 
-#ifdef _WIN32
+#ifdef FLB_SYSTEM_WINDOWS
+#include <Windows.h>
+#endif
+
+#ifdef FLB_SYSTEM_WINDOWS
 #define FLB_TESTS_CONF_PATH FLB_TESTS_DATA_PATH "\\data\\config_format\\yaml"
 #else
 #define FLB_TESTS_CONF_PATH FLB_TESTS_DATA_PATH "/data/config_format/yaml"
@@ -23,7 +27,7 @@
 #define FLB_001 FLB_TESTS_CONF_PATH "/issue_7559.yaml"
 #define FLB_002 FLB_TESTS_CONF_PATH "/processors.yaml"
 
-#ifdef _WIN32
+#ifdef FLB_SYSTEM_WINDOWS
 #define FLB_003 FLB_TESTS_CONF_PATH "\\parsers_and_multiline_parsers.yaml"
 #else
 #define FLB_003 FLB_TESTS_CONF_PATH "/parsers_and_multiline_parsers.yaml"
@@ -33,13 +37,15 @@
 #define FLB_005 FLB_TESTS_CONF_PATH "/plugins.yaml"
 #define FLB_006 FLB_TESTS_CONF_PATH "/upstream.yaml"
 #define FLB_007 FLB_TESTS_CONF_PATH "/missing_include.yaml"
+#define FLB_008 FLB_TESTS_CONF_PATH "/other_with_nested_map.yaml"
+#define FLB_009 FLB_TESTS_CONF_PATH "/extensions.yaml"
 #define FLB_VARIANT_ARRAY FLB_TESTS_CONF_PATH "/processor_variant_array.yaml"
 
 #define FLB_000_WIN FLB_TESTS_CONF_PATH "\\fluent-bit-windows.yaml"
 #define FLB_BROKEN_PLUGIN_VARIANT FLB_TESTS_CONF_PATH "/broken_plugin_variant.yaml"
 #define FLB_CLUSTERFUZZ_VARIANT_MISSING_KEY FLB_TESTS_CONF_PATH "/clusterfuzz_variant_missing_key.yaml"
 
-#ifdef _WIN32
+#ifdef FLB_SYSTEM_WINDOWS
 #define FLB_BASIC FLB_000_WIN
 #else
 #define FLB_BASIC FLB_000
@@ -376,8 +382,12 @@ static void test_processors()
     struct cfl_variant *v;
     struct cfl_variant *logs;
     struct cfl_variant *record_modifier_filter;
+    struct cfl_variant *second_processor;
     struct cfl_variant *records;
     struct cfl_variant *record;
+    struct cfl_variant *sampling_type;
+    struct cfl_variant *sampling_settings;
+    struct cfl_variant *sampling_percentage;
     int idx = 0;
 
     cf = flb_cf_yaml_create(NULL, FLB_002, NULL, 0);
@@ -444,7 +454,7 @@ static void test_processors()
 
         TEST_CHECK(logs->type == CFL_VARIANT_ARRAY);
         if (logs->type == CFL_VARIANT_ARRAY) {
-            TEST_CHECK(logs->data.as_array->entry_count == 1);
+            TEST_CHECK(logs->data.as_array->entry_count == 2);
 
             record_modifier_filter = cfl_array_fetch_by_index(logs->data.as_array, 0);
             TEST_CHECK(record_modifier_filter != NULL);
@@ -471,6 +481,34 @@ static void test_processors()
                     case 1:
                         TEST_CHECK(strcmp(record->data.as_string, "powered_by calyptia") == 0);
                         break;
+                    }
+                }
+            }
+
+            second_processor = cfl_array_fetch_by_index(logs->data.as_array, 1);
+            TEST_CHECK(second_processor != NULL);
+            TEST_CHECK(second_processor->type == CFL_VARIANT_KVLIST);
+
+            if (second_processor != NULL && second_processor->type == CFL_VARIANT_KVLIST) {
+                sampling_type = cfl_kvlist_fetch(second_processor->data.as_kvlist, "type");
+                TEST_CHECK(sampling_type != NULL);
+                TEST_CHECK(sampling_type->type == CFL_VARIANT_STRING);
+                TEST_CHECK(strcmp(sampling_type->data.as_string, "probabilistic") == 0);
+
+                sampling_settings = cfl_kvlist_fetch(second_processor->data.as_kvlist,
+                                                     "sampling_settings");
+                TEST_CHECK(sampling_settings != NULL);
+                TEST_CHECK(sampling_settings->type == CFL_VARIANT_KVLIST);
+
+                if (sampling_settings != NULL &&
+                    sampling_settings->type == CFL_VARIANT_KVLIST) {
+                    sampling_percentage = cfl_kvlist_fetch(sampling_settings->data.as_kvlist,
+                                                           "sampling_percentage");
+                    TEST_CHECK(sampling_percentage != NULL);
+                    TEST_CHECK(sampling_percentage->type == CFL_VARIANT_UINT);
+                    if (sampling_percentage != NULL &&
+                        sampling_percentage->type == CFL_VARIANT_UINT) {
+                        TEST_CHECK(sampling_percentage->data.as_uint64 == 25);
                     }
                 }
             }
@@ -901,6 +939,86 @@ static void test_upstream_servers()
     flb_cf_destroy(cf);
 }
 
+static void test_extensions_section()
+{
+    struct flb_cf *cf;
+    struct flb_cf_section *s;
+    struct cfl_variant *v;
+    struct cfl_variant *endpoint;
+    struct cfl_variant *insecure;
+    struct cfl_variant *config_version;
+
+    cf = flb_cf_yaml_create(NULL, FLB_009, NULL, 0);
+    TEST_CHECK(cf != NULL);
+    if (!cf) {
+        exit(EXIT_FAILURE);
+    }
+
+    s = flb_cf_section_get_by_name(cf, "extensions");
+    if (!TEST_CHECK(s != NULL)) {
+        flb_cf_destroy(cf);
+        exit(EXIT_FAILURE);
+    }
+
+    v = flb_cf_section_property_get(cf, s, "opamp");
+    TEST_CHECK(v != NULL);
+
+    if (v != NULL) {
+        TEST_CHECK(v->type == CFL_VARIANT_KVLIST);
+    }
+
+    if (v != NULL && v->type == CFL_VARIANT_KVLIST) {
+        endpoint = cfl_kvlist_fetch(v->data.as_kvlist, "endpoint");
+        TEST_CHECK(endpoint != NULL);
+        if (endpoint != NULL) {
+            TEST_CHECK(endpoint->type == CFL_VARIANT_STRING);
+            if (endpoint->type == CFL_VARIANT_STRING) {
+                TEST_CHECK(strcmp(endpoint->data.as_string, "127.0.0.1:4318") == 0);
+            }
+        }
+
+        insecure = cfl_kvlist_fetch(v->data.as_kvlist, "insecure");
+        TEST_CHECK(insecure != NULL);
+        if (insecure != NULL) {
+            TEST_CHECK(insecure->type == CFL_VARIANT_BOOL);
+            if (insecure->type == CFL_VARIANT_BOOL) {
+                TEST_CHECK(insecure->data.as_bool == CFL_TRUE);
+            }
+        }
+    }
+
+    v = flb_cf_section_property_get(cf, s, "deployment");
+    TEST_CHECK(v != NULL);
+
+    if (v != NULL) {
+        TEST_CHECK(v->type == CFL_VARIANT_KVLIST);
+    }
+
+    if (v != NULL && v->type == CFL_VARIANT_KVLIST) {
+        config_version = cfl_kvlist_fetch(v->data.as_kvlist, "config_version");
+        TEST_CHECK(config_version != NULL);
+        if (config_version != NULL) {
+            TEST_CHECK(config_version->type == CFL_VARIANT_UINT);
+            if (config_version->type == CFL_VARIANT_UINT) {
+                TEST_CHECK(config_version->data.as_uint64 == 12345);
+            }
+        }
+    }
+
+    flb_cf_destroy(cf);
+}
+
+static void test_other_nested_map_rejected()
+{
+    struct flb_cf *cf;
+
+    cf = flb_cf_yaml_create(NULL, FLB_008, NULL, 0);
+    TEST_CHECK(cf == NULL);
+    if (cf != NULL) {
+        flb_cf_destroy(cf);
+    }
+}
+
 static void test_invalid_property()
 {
     char* test_cases[] = {
@@ -946,7 +1064,280 @@ static void test_caller_owned_error()
     flb_cf_destroy(cf);
 }
 
+#ifdef FLB_SYSTEM_WINDOWS
+/* Exercise native file identities in the Windows internal-test matrix. */
+static void test_include_hardlink_cycle()
+{
+    char directory[MAX_PATH];
+    char main_file[MAX_PATH];
+    char alias_file[MAX_PATH];
+    char pattern[MAX_PATH];
+    DWORD length;
+    DWORD handles_before;
+    DWORD handles_after;
+    int i;
+    int ret;
+    FILE *file;
+    struct flb_cf *cf;
+
+    length = GetTempPathA(sizeof(directory), directory);
+    if (!TEST_CHECK(length > 0 && length < sizeof(directory))) {
+        return;
+    }
+    if (!TEST_CHECK(GetTempFileNameA(directory, "fby", 0, main_file) != 0)) {
+        return;
+    }
+    ret = snprintf(alias_file, sizeof(alias_file), "%s.link.yaml", main_file);
+    if (!TEST_CHECK(ret > 0 && (size_t) ret < sizeof(alias_file))) {
+        DeleteFileA(main_file);
+        return;
+    }
+    file = fopen(main_file, "w");
+    if (!TEST_CHECK(file != NULL)) {
+        DeleteFileA(main_file);
+        return;
+    }
+    fprintf(file, "includes:\n  - '%s'\n", alias_file);
+    fclose(file);
+    if (!TEST_CHECK(CreateHardLinkA(alias_file, main_file, NULL) != 0)) {
+        DeleteFileA(main_file);
+        return;
+    }
+
+    cf = flb_cf_yaml_create(NULL, main_file, NULL, 0);
+    TEST_CHECK(cf == NULL);
+    if (cf != NULL) {
+        flb_cf_destroy(cf);
+    }
+
+    /* Failed wildcard includes must release their Windows search handles. */
+    ret = snprintf(pattern, sizeof(pattern), "%s.link*.yaml", main_file);
+    if (!TEST_CHECK(ret > 0 && (size_t) ret < sizeof(pattern))) {
+        DeleteFileA(alias_file);
+        DeleteFileA(main_file);
+        return;
+    }
+    file = fopen(main_file, "w");
+    if (!TEST_CHECK(file != NULL)) {
+        DeleteFileA(alias_file);
+        DeleteFileA(main_file);
+        return;
+    }
+    fprintf(file, "includes:\n  - '%s'\n", pattern);
+    fclose(file);
+    if (!TEST_CHECK(GetProcessHandleCount(GetCurrentProcess(), &handles_before) != 0)) {
+        DeleteFileA(alias_file);
+        DeleteFileA(main_file);
+        return;
+    }
+    for (i = 0; i < 8; i++) {
+        cf = flb_cf_yaml_create(NULL, main_file, NULL, 0);
+        TEST_CHECK(cf == NULL);
+        if (cf != NULL) {
+            flb_cf_destroy(cf);
+        }
+    }
+    if (TEST_CHECK(GetProcessHandleCount(GetCurrentProcess(), &handles_after) != 0)) {
+        TEST_CHECK(handles_after == handles_before);
+    }
+    TEST_CHECK(DeleteFileA(alias_file) != 0);
+    TEST_CHECK(DeleteFileA(main_file) != 0);
+}
+#endif
+
+static void test_entry_stream(void)
+{
+    struct flb_cf *cf;
+    struct flb_cf *parsed;
+    FILE *stream;
+
+    stream = fopen(FLB_BASIC, "rb");
+    TEST_ASSERT(stream != NULL);
+    cf = flb_cf_create();
+    TEST_ASSERT(cf != NULL);
+    cf->entry_file = stream;
+    /* The named fixture fails on its own; the opened entry supplies the data. */
+    parsed = flb_cf_create_from_file(cf, FLB_007);
+    TEST_CHECK(parsed == cf);
+    TEST_CHECK(mk_list_size(&cf->inputs) > 0);
+    cf->entry_file = NULL;
+    TEST_CHECK(fclose(stream) == 0);
+    flb_cf_destroy(cf);
+}
+
+static void test_composition_property(struct flb_cf *cf, char *key, char *expected)
+{
+    struct cfl_variant *value;
+
+    if (!TEST_CHECK(cf->service != NULL)) {
+        return;
+    }
+    value = flb_cf_section_property_get(cf, cf->service, key);
+    if (TEST_CHECK(value != NULL && value->type == CFL_VARIANT_STRING)) {
+        TEST_CHECK(strcmp(value->data.as_string, expected) == 0);
+    }
+}
+
+static void test_composition_entry_stream(void)
+{
+    struct flb_cf *cf;
+    struct flb_cf *parsed;
+    FILE *stream;
+
+    stream = fopen(FLB_TESTS_CONF_PATH "/composition/main.yaml", "rb");
+    TEST_ASSERT(stream != NULL);
+    cf = flb_cf_create();
+    TEST_ASSERT(cf != NULL);
+    cf->entry_file = stream;
+
+    /* Resolve the stream's relative includes using the supplied path. */
+    parsed = flb_cf_create_from_file(cf, FLB_TESTS_CONF_PATH "/composition/open_root.yaml");
+    if (TEST_CHECK(parsed == cf)) {
+        test_composition_property(cf, "flush", "1");
+        test_composition_property(cf, "grace", "3");
+        TEST_CHECK(mk_list_size(&cf->inputs) == 2);
+    }
+    cf->entry_file = NULL;
+    TEST_CHECK(fclose(stream) == 0);
+    flb_cf_destroy(cf);
+}
+
+static void test_composition()
+{
+    struct flb_cf *cf;
+    struct flb_cf_section *section;
+    struct cfl_variant *value;
+    struct mk_list *head;
+    int index = 0;
+
+    cf = flb_cf_yaml_create(NULL, FLB_TESTS_CONF_PATH "/composition/main.yaml", NULL, 0);
+    if (!TEST_CHECK(cf != NULL)) {
+        return;
+    }
+    test_composition_property(cf, "flush", "1");
+    test_composition_property(cf, "grace", "3");
+    test_composition_property(cf, "log_level", "debug");
+    test_composition_property(cf, "daemon", "true");
+    test_composition_property(cf, "log_file", "second");
+    TEST_CHECK(mk_list_size(&cf->inputs) == 2);
+    TEST_CHECK(mk_list_size(&cf->outputs) == 2);
+    TEST_CHECK(mk_list_size(&cf->others) == 0);
+    mk_list_foreach(head, &cf->inputs) {
+        section = mk_list_entry(head, struct flb_cf_section, _head_section);
+        value = flb_cf_section_property_get(cf, section, "tag");
+        if (TEST_CHECK(value != NULL && value->type == CFL_VARIANT_STRING)) {
+            TEST_CHECK(strcmp(value->data.as_string, index++ == 0 ? "first" : "second") == 0);
+        }
+    }
+    flb_cf_destroy(cf);
+
+    cf = flb_cf_yaml_create(NULL, FLB_TESTS_CONF_PATH "/composition/rebinding.yaml", NULL, 0);
+    if (TEST_CHECK(cf != NULL)) {
+        test_composition_property(cf, "log_file", "first");
+        test_composition_property(cf, "log_level", "second");
+        flb_cf_destroy(cf);
+    }
+    cf = flb_cf_yaml_create(NULL, FLB_TESTS_CONF_PATH "/composition/literal_keys.yaml", NULL, 0);
+    if (TEST_CHECK(cf != NULL)) {
+        test_composition_property(cf, "<<", "literal");
+        test_composition_property(cf, "flush", "9");
+        test_composition_property(cf, "grace", "1");
+        test_composition_property(cf, "log_file", "1");
+        flb_cf_destroy(cf);
+    }
+    cf = flb_cf_yaml_create(NULL, FLB_TESTS_CONF_PATH "/composition/root_merge.yaml", NULL, 0);
+    if (TEST_CHECK(cf != NULL)) {
+        test_composition_property(cf, "flush", "1");
+        TEST_CHECK(mk_list_size(&cf->inputs) == 1);
+        flb_cf_destroy(cf);
+    }
+    cf = flb_cf_yaml_create(NULL, FLB_TESTS_CONF_PATH "/composition/alias_includes.yaml", NULL, 0);
+    if (TEST_CHECK(cf != NULL)) {
+        test_composition_property(cf, "flush", "5");
+        test_composition_property(cf, "grace", "3");
+        flb_cf_destroy(cf);
+    }
+    cf = flb_cf_yaml_create(NULL, FLB_TESTS_CONF_PATH "/composition/list_alias.yaml", NULL, 0);
+    if (TEST_CHECK(cf != NULL)) {
+        test_composition_property(cf, "log_file", "list_alias_second.yaml");
+        test_composition_property(cf, "log_level", "changed");
+        flb_cf_destroy(cf);
+    }
+    cf = flb_cf_yaml_create(NULL, FLB_TESTS_CONF_PATH "/composition/precedence.yaml", NULL, 0);
+    if (TEST_CHECK(cf != NULL)) {
+        if (TEST_CHECK(cf->service != NULL)) {
+            TEST_CHECK(cfl_list_size(&cf->service->properties->list) == 3);
+        }
+        test_composition_property(cf, "flush", "9");
+        test_composition_property(cf, "grace", "1");
+        test_composition_property(cf, "log_level", "info");
+        flb_cf_destroy(cf);
+    }
+}
+
+static void test_composition_include_order()
+{
+    struct flb_cf *cf;
+    struct flb_cf_section *section;
+    struct cfl_variant *value;
+    struct mk_list *head;
+    char *tags[] = {"before", "first", "second", "third", "after"};
+    size_t index = 0;
+
+    cf = flb_cf_yaml_create(NULL, FLB_TESTS_CONF_PATH "/composition/list_order.yaml", NULL, 0);
+    if (!TEST_CHECK(cf != NULL)) {
+        return;
+    }
+    test_composition_property(cf, "log_file", "info");
+    test_composition_property(cf, "storage.path", "debug");
+    test_composition_property(cf, "log_level", "error");
+    TEST_CHECK(mk_list_size(&cf->inputs) == 5);
+    mk_list_foreach(head, &cf->inputs) {
+        section = mk_list_entry(head, struct flb_cf_section, _head_section);
+        value = flb_cf_section_property_get(cf, section, "tag");
+        if (TEST_CHECK(value != NULL && value->type == CFL_VARIANT_STRING && index < 5)) {
+            TEST_CHECK(strcmp(value->data.as_string, tags[index]) == 0);
+        }
+        index++;
+    }
+    flb_cf_destroy(cf);
+}
+
+static void test_composition_errors()
+{
+    char *files[] = {"duplicate", "unresolved", "recursive", "invalid_merge",
+                     "invalid_defaults", "open_root"};
+    char path[1024];
+    FILE *fixture;
+    struct flb_cf *cf;
+    size_t i;
+
+    for (i = 0; i < sizeof(files) / sizeof(files[0]); i++) {
+        snprintf(path, sizeof(path), "%s/composition/%s.yaml", FLB_TESTS_CONF_PATH, files[i]);
+        fixture = fopen(path, "rb");
+        if (!TEST_CHECK(fixture != NULL)) {
+            TEST_MSG("missing fixture: %s", path);
+            continue;
+        }
+        fclose(fixture);
+        cf = flb_cf_yaml_create(NULL, path, NULL, 0);
+        TEST_CHECK(cf == NULL);
+        TEST_MSG("configuration: %s", path);
+        if (cf != NULL) {
+            flb_cf_destroy(cf);
+        }
+    }
+}
+
 TEST_LIST = {
+    {"entry_stream", test_entry_stream},
+    { "composition", test_composition},
+    { "composition_entry_stream", test_composition_entry_stream},
+    { "composition_include_order", test_composition_include_order},
+    { "composition_errors", test_composition_errors},
+#ifdef FLB_SYSTEM_WINDOWS
+    { "include_hardlink_cycle", test_include_hardlink_cycle},
+#endif
     { "basic"    , test_basic},
     { "customs section", test_customs_section},
     { "broken_plugin_variant_yaml", test_broken_plugin_variant_yaml},
@@ -960,6 +1351,8 @@ TEST_LIST = {
     { "stream_processor", test_stream_processor},
     { "plugins", test_plugins},
     { "upstream_servers", test_upstream_servers},
+    { "extensions_section", test_extensions_section},
+    { "other_nested_map_rejected", test_other_nested_map_rejected},
     { "invalid_input_property", test_invalid_property},
     { "caller_owned_error", test_caller_owned_error},
     { 0 }

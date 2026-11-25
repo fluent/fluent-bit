@@ -44,6 +44,7 @@
 #include <fluent-bit/flb_http_client.h>
 #include <fluent-bit/tls/flb_tls.h>
 #include <fluent-bit/flb_output_thread.h>
+#include <fluent-bit/flb_output_throttle.h>
 #include <fluent-bit/flb_upstream.h>
 #include <fluent-bit/flb_upstream_ha.h>
 #include <fluent-bit/flb_event.h>
@@ -109,6 +110,20 @@ int flb_chunk_trace_output(struct flb_chunk_trace *trace, struct flb_output_inst
 
 struct flb_output_flush;
 struct flb_http_server_config;
+struct flb_sched_timer;
+
+#define FLB_OUTPUT_DISPATCH_MAGIC 0x4f445350u
+#define FLB_OUTPUT_DISPATCH_TASK  1
+
+struct flb_output_dispatch {
+    uint32_t magic;
+    uint32_t type;
+    int result;
+    struct flb_task *task;
+    struct flb_output_instance *out;
+    struct flb_config *config;
+    struct mk_list _head;
+};
 
 /*
  * Tests callbacks
@@ -154,8 +169,23 @@ struct flb_test_out_formatter {
      */
     void *rt_data;
 
-    /* optional context for flush callback */
+    /* optional context for "flush context callback" */
     void *flush_ctx;
+
+    /*
+     * Callback
+     * =========
+     * Optional "flush context callback": it references the function that extracts
+     * optional flush context for "formatter callback".
+     */
+    void *(*flush_ctx_callback) (/* Fluent Bit context */
+                                 struct flb_config *,
+                                 /* plugin that ingested the records */
+                                 struct flb_input_instance *,
+                                 /* plugin instance context */
+                                 void *plugin_context,
+                                 /* context for "flush context callback" */
+                                 void *flush_ctx);
 
     /*
      * Callback
@@ -356,7 +386,17 @@ struct flb_output_instance {
     /* Plugin properties */
     int retry_limit;                     /* max of retries allowed       */
     int retry_limit_is_set;              /* explicitly set by user?      */
+    struct flb_output_throttle throttle; /* destination cooldown gate    */
+    struct mk_list throttle_deferred_routes; /* engine-owned route index */
+    size_t throttle_deferred_count;
+    size_t dispatches_inflight;          /* queued, active, or completing */
+    struct flb_sched_timer *throttle_wakeup;
+    int throttle_wakeup_pending;
+    uint64_t throttle_duration_accounted_ms;
     int use_tls;                         /* bool, try to use TLS for I/O */
+#ifdef __EMSCRIPTEN__
+    flb_sds_t browser_url;               /* optional complete HTTPS URL override */
+#endif
     char *match;                         /* match rule for tag/routing   */
 #ifdef FLB_HAVE_REGEX
     struct flb_regex *match_regex;       /* match rule (regex) based on Tags */
@@ -372,6 +412,7 @@ struct flb_output_instance {
     char *tls_crt_file;                  /* Certificate                  */
     char *tls_key_file;                  /* Cert Key                     */
     char *tls_key_passwd;                /* Cert Key Password            */
+    char *tls_crl_file;                  /* Certificate Revocation List  */
     char *tls_min_version;               /* Minimum protocol version of TLS */
     char *tls_max_version;               /* Maximum protocol version of TLS */
     char *tls_ciphers;                   /* TLS ciphers */
@@ -380,6 +421,16 @@ struct flb_output_instance {
     int tls_win_use_enterprise_certstore;    /* Use enterprise CertStore */
     char *tls_win_thumbprints;               /* CertStore Thumbprints (Windows) */
 # endif
+
+    /*
+     * HTTPS proxy TLS settings: independent from the destination tls.*
+     * settings above, since the proxy leg and the destination leg are
+     * different TLS peers.
+     */
+    int tls_proxy_verify;                /* Verify proxy cert (default: true) */
+    int tls_proxy_verify_hostname;       /* Verify proxy hostname (default: true) */
+    char *tls_proxy_ca_path;             /* Path to CA certs for proxy verification */
+    char *tls_proxy_ca_file;             /* CA root cert for proxy verification */
 #endif
 
     /*
@@ -472,6 +523,11 @@ struct flb_output_instance {
     struct cmt_histogram *cmt_latency;
     /* m: output_backpressure_wait_seconds */
     struct cmt_histogram *cmt_backpressure_wait;
+    struct cmt_counter *cmt_throttle_events;
+    struct cmt_gauge *cmt_throttle_active;
+    struct cmt_gauge *cmt_throttle_remaining;
+    struct cmt_gauge *cmt_throttle_deferred_routes;
+    struct cmt_counter *cmt_throttle_duration;
 
     /* OLD Metrics API */
 #ifdef FLB_HAVE_METRICS
@@ -564,6 +620,9 @@ struct flb_output_flush {
     struct flb_config *config;         /* FLB context        */
     struct flb_output_instance *o_ins; /* output instance    */
     struct flb_coro *coro;             /* parent coro addr   */
+    uint64_t admission_generation;     /* throttle permit generation */
+    uint64_t retry_after_ms;           /* flush-local destination hint */
+    int retry_after_present;
 
     /*
      * if the original event_chunk has been processed, a new
@@ -572,8 +631,77 @@ struct flb_output_flush {
      */
     struct flb_event_chunk *processed_event_chunk;
 
+    /* Route-effective totals reported by an output on successful completion. */
+    int successful_route_data_set;
+    int successful_records;
+    size_t successful_bytes;
+
     struct mk_list _head;              /* Link to flb_task->threads */
 };
+
+static FLB_INLINE int flb_output_set_successful_route_data(
+                        struct flb_output_flush *out_flush,
+                        int records,
+                        size_t bytes)
+{
+    if (out_flush == NULL || records < 0) {
+        return -1;
+    }
+
+    out_flush->successful_records = records;
+    out_flush->successful_bytes = bytes;
+    out_flush->successful_route_data_set = FLB_TRUE;
+
+    return 0;
+}
+
+static FLB_INLINE void flb_output_set_retry_after(struct flb_output_flush *out_flush,
+                                                  uint64_t delay_ms)
+{
+    out_flush->retry_after_ms = delay_ms;
+    out_flush->retry_after_present = FLB_TRUE;
+}
+
+static FLB_INLINE void *flb_output_get_retry_context(
+                        struct flb_output_flush *out_flush,
+                        int *records,
+                        size_t *bytes)
+{
+    void *context;
+
+    flb_task_acquire_lock(out_flush->task);
+    context = flb_task_get_route_retry_context(out_flush->task,
+                                               out_flush->o_ins,
+                                               records, bytes);
+    flb_task_release_lock(out_flush->task);
+
+    return context;
+}
+
+static FLB_INLINE int flb_output_set_retry_context(
+                        struct flb_output_flush *out_flush,
+                        void *context,
+                        void (*destroy)(void *),
+                        int records,
+                        size_t bytes)
+{
+    int result;
+
+    flb_task_acquire_lock(out_flush->task);
+    result = flb_task_set_route_retry_context(out_flush->task,
+                                              out_flush->o_ins,
+                                              context, destroy,
+                                              records, bytes);
+    flb_task_release_lock(out_flush->task);
+
+    return result;
+}
+
+static FLB_INLINE int flb_output_clear_retry_context(
+                        struct flb_output_flush *out_flush)
+{
+    return flb_output_set_retry_context(out_flush, NULL, NULL, 0, 0);
+}
 
 static FLB_INLINE int flb_output_is_threaded(struct flb_output_instance *ins)
 {
@@ -584,6 +712,14 @@ static FLB_INLINE int flb_output_is_threaded(struct flb_output_instance *ins)
 static FLB_INLINE void flb_output_flush_destroy(struct flb_output_flush *out_flush)
 {
     flb_debug("[out flush] cb_destroy coro_id=%i", out_flush->id);
+
+    /* A cancelled flush has not released its output processor result yet. */
+    if (out_flush->processed_event_chunk != NULL) {
+        if (out_flush->processed_event_chunk->data != out_flush->buffer) {
+            flb_free(out_flush->processed_event_chunk->data);
+        }
+        flb_event_chunk_destroy(out_flush->processed_event_chunk);
+    }
 
     mk_list_del(&out_flush->_head);
     flb_coro_destroy(out_flush->coro);
@@ -806,9 +942,10 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
             normalized_buf = NULL;
             normalized_size = 0;
 
-            ret = flb_mp_normalize_log_buffer_groups_msgpack(p_buf, p_size,
-                                                             &normalized_buf,
-                                                             &normalized_size);
+            /* keep only the group markers that span chunks in the stored data */
+            ret = flb_mp_normalize_log_buffer_groups_msgpack_ex(
+                    p_buf, p_size, &normalized_buf, &normalized_size,
+                    flb_mp_log_group_boundaries(evc->data, evc->size));
             if (ret == 0) {
                 if (p_buf != evc->data) {
                     flb_free(p_buf);
@@ -1055,6 +1192,8 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
                 return NULL;
             }
 
+            /* Capacity can exceed the serialized trace bytes after processing. */
+            p_size = serialization_buffer_offset;
             out_flush->processed_event_chunk = flb_event_chunk_create(
                                                 evc->type,
                                                 0,
@@ -1155,6 +1294,8 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
                 return NULL;
             }
 
+            /* Capacity can exceed the serialized profile bytes after processing. */
+            p_size = serialization_buffer_offset;
             out_flush->processed_event_chunk = flb_event_chunk_create(
                                                 evc->type,
                                                 0,
@@ -1208,6 +1349,20 @@ struct flb_output_flush *flb_output_flush_create(struct flb_task *task,
     return out_flush;
 }
 
+struct flb_output_dispatch *flb_output_dispatch_create(
+                                struct flb_task *task,
+                                struct flb_output_instance *out,
+                                struct flb_config *config);
+void flb_output_dispatch_destroy(struct flb_output_dispatch *dispatch);
+int flb_output_dispatch_post_result(struct flb_output_dispatch *dispatch,
+                                    int result, flb_pipefd_t pipe_fd);
+int flb_output_throttle_complete(struct flb_output_flush *out_flush, int result);
+int flb_output_throttle_wakeup_schedule(struct flb_output_instance *ins);
+void flb_output_throttle_wakeup_cancel(struct flb_output_instance *ins);
+void flb_output_throttle_wakeup_scan(struct flb_config *config);
+void flb_output_throttle_metrics_update(struct flb_output_instance *ins,
+                                        uint64_t now_ms);
+
 /*
  * This function is used by the output plugins to return. It's mandatory
  * as it will take care to signal the event loop letting know the flush
@@ -1232,6 +1387,7 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
     out_flush = (struct flb_output_flush *) co->data;
     o_ins = out_flush->o_ins;
     task = out_flush->task;
+    ret = flb_output_throttle_complete(out_flush, ret);
 
     if (out_flush->processed_event_chunk) {
         counted_event_chunk = out_flush->processed_event_chunk;
@@ -1247,8 +1403,19 @@ static inline void flb_output_return(int ret, struct flb_coro *co) {
     bytes = counted_event_chunk->size;
 
     flb_task_acquire_lock(task);
+    if (ret == FLB_OK && out_flush->successful_route_data_set == FLB_TRUE) {
+        records = out_flush->successful_records;
+        bytes = out_flush->successful_bytes;
+    }
+    else if (ret != FLB_OK &&
+        flb_task_get_route_retry_context(task, o_ins,
+                                         &records, &bytes) == NULL) {
+        records = counted_event_chunk->total_events;
+        bytes = counted_event_chunk->size;
+    }
     flb_task_set_route_data(task, o_ins, records, bytes);
     flb_task_deactivate_route(task, o_ins);
+    flb_task_route_complete(task, o_ins);
     flb_task_release_lock(task);
 
 #ifdef FLB_HAVE_CHUNK_TRACE
@@ -1397,6 +1564,7 @@ int flb_output_task_singleplex_enqueue(struct flb_task_queue *queue,
                                        struct flb_task *task,
                                        struct flb_output_instance *out_ins,
                                        struct flb_config *config);
+void flb_output_task_singleplex_complete(struct flb_task_queue *queue);
 int flb_output_task_singleplex_flush_next(struct flb_task_queue *queue);
 struct flb_output_instance *flb_output_new(struct flb_config *config,
                                            const char *output, void *data,
@@ -1423,6 +1591,9 @@ int flb_output_oauth2_property_check(struct flb_output_instance *ins,
                                       struct flb_config *config);
 int flb_output_plugin_property_check(struct flb_output_instance *ins,
                                      struct flb_config *config);
+#ifdef FLB_HAVE_TLS
+int flb_output_proxy_tls_ca_check(struct flb_output_instance *ins);
+#endif
 int flb_output_init_all(struct flb_config *config);
 int flb_output_check(struct flb_config *config);
 int flb_output_log_check(struct flb_output_instance *ins, int l);
@@ -1436,6 +1607,8 @@ int flb_output_set_http_debug_callbacks(struct flb_output_instance *ins);
 int flb_output_task_flush(struct flb_task *task,
                           struct flb_output_instance *out_ins,
                           struct flb_config *config);
+int flb_output_task_flush_error(struct flb_task *task,
+                                struct flb_output_instance *out_ins);
 
 struct mk_list *flb_output_get_global_config_map(struct flb_config *config);
 

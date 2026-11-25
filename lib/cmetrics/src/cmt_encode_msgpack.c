@@ -19,6 +19,7 @@
 
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_metric.h>
+#include <cmetrics/cmt_otlp_metadata.h>
 #include <cmetrics/cmt_map.h>
 #include <cmetrics/cmt_histogram.h>
 #include <cmetrics/cmt_exp_histogram.h>
@@ -58,6 +59,7 @@ static void pack_header(mpack_writer_t *writer, struct cmt *cmt, struct cmt_map 
     size_t                index;
     struct cmt_summary   *summary = NULL;
     struct cmt_histogram *histogram = NULL;
+    struct cmt_exp_histogram *exp_histogram = NULL;
     struct cmt_counter   *counter = NULL;
     size_t                meta_field_count;
 
@@ -66,6 +68,11 @@ static void pack_header(mpack_writer_t *writer, struct cmt *cmt, struct cmt_map 
 
     if (map->type == CMT_HISTOGRAM) {
         histogram = (struct cmt_histogram *) map->parent;
+
+        meta_field_count += 2;
+    }
+    else if (map->type == CMT_EXP_HISTOGRAM) {
+        exp_histogram = (struct cmt_exp_histogram *) map->parent;
 
         meta_field_count++;
     }
@@ -156,6 +163,15 @@ static void pack_header(mpack_writer_t *writer, struct cmt *cmt, struct cmt_map 
         }
 
         mpack_finish_array(writer);
+
+        /* aggregation_type */
+        mpack_write_cstr(writer, "aggregation_type");
+        mpack_write_int(writer, histogram->aggregation_type);
+    }
+    else if (map->type == CMT_EXP_HISTOGRAM) {
+        /* aggregation_type */
+        mpack_write_cstr(writer, "aggregation_type");
+        mpack_write_int(writer, exp_histogram->aggregation_type);
     }
     else if (map->type == CMT_SUMMARY) {
         /* 'quantiles' (summary quantiles) */
@@ -249,6 +265,7 @@ static int pack_metric(mpack_writer_t *writer, struct cmt_map *map, struct cmt_m
         for (index = 0 ;
              index <= histogram->buckets->count ;
              index++) {
+            /* Wire buckets stay cumulative, as every released reader expects. */
             mpack_write_uint(writer, cmt_metric_hist_get_value(metric, index));
         }
 
@@ -462,14 +479,14 @@ static int pack_context_header(mpack_writer_t *writer, struct cmt *cmt)
     mpack_start_map(writer, 3);
 
     mpack_write_cstr(writer, "cmetrics");
-    result = pack_cfl_variant_kvlist(writer, cmt->internal_metadata);
+    result = cmt_otlp_metadata_pack(writer, cmt);
 
     if (result != 0) {
         return -1;
     }
 
     mpack_write_cstr(writer, "external");
-    result = pack_cfl_variant_kvlist(writer, cmt->external_metadata);
+    result = cmt_otlp_metadata_pack_external(writer, cmt);
 
     if (result != 0) {
         return -2;

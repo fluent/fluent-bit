@@ -1,10 +1,30 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 #include <fluent-bit.h>
+#include "../../plugins/out_s3/s3.h"
+#define TEST_FINI flb_s3_test_env_reset()
 #include "flb_tests_runtime.h"
+#include "../include/flb_tests_tmpdir.h"
 #include "../../plugins/in_opentelemetry/opentelemetry.h"
 #include "../../plugins/in_opentelemetry/opentelemetry_logs.h"
 
 #define OTLP_LOGS_JSON "{\"resourceLogs\":[{\"resource\":{\"attributes\":[{\"key\":\"service.name\",\"value\":{\"stringValue\":\"my.service\"}}]},\"scopeLogs\":[{\"scope\":{\"name\":\"my.library\",\"version\":\"1.0.0\"},\"logRecords\":[{\"timeUnixNano\":\"1774877764000000000\",\"observedTimeUnixNano\":\"1774877764000000000\",\"severityNumber\":2,\"severityText\":\"INFO\",\"body\":{\"stringValue\":\"otlp runtime test\"}}]}]}]}"
+
+static char *create_test_store_directory(const char *postfix)
+{
+    char *store_dir;
+
+    store_dir = flb_test_tmpdir_cat(postfix);
+    if (store_dir == NULL) {
+        return NULL;
+    }
+
+    if (mkdtemp(store_dir) == NULL) {
+        flb_free(store_dir);
+        return NULL;
+    }
+
+    return store_dir;
+}
 
 static struct flb_input_instance *get_opentelemetry_instance(flb_ctx_t *flb_ctx)
 {
@@ -55,9 +75,15 @@ void flb_test_s3_format_otlp_json(void)
     int out_ffd;
     char *call_count_str;
     int call_count;
-    char store_dir[] = "/tmp/flb-s3-test-otlp-json-XXXXXX";
+    char *store_dir;
 
-    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    store_dir = create_test_store_directory("/flb-s3-test-otlp-json-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (store_dir == NULL) {
+        return;
+    }
+
+    flb_s3_test_env_set("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
 
     ctx = flb_create();
     in_ffd = flb_input(ctx, (char *) "opentelemetry", NULL);
@@ -86,15 +112,16 @@ void flb_test_s3_format_otlp_json(void)
     TEST_CHECK(ret == 0);
     sleep(10);
 
-    call_count_str = getenv("TEST_PutObject_CALL_COUNT");
+    call_count_str = flb_s3_test_env_get("TEST_PutObject_CALL_COUNT");
     call_count = call_count_str ? atoi(call_count_str) : 0;
     TEST_CHECK_(call_count == 1,
                 "Expected 1 PutObject call, got %d", call_count);
 
     flb_stop(ctx);
     flb_destroy(ctx);
-    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
-    unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_s3_test_env_unset("FLB_S3_PLUGIN_UNDER_TEST");
+    flb_s3_test_env_unset("TEST_PutObject_CALL_COUNT");
+    flb_free(store_dir);
 }
 
 void flb_test_s3_format_otlp_json_with_compression(void)
@@ -105,9 +132,15 @@ void flb_test_s3_format_otlp_json_with_compression(void)
     int out_ffd;
     char *call_count_str;
     int call_count;
-    char store_dir[] = "/tmp/flb-s3-test-otlp-comp-XXXXXX";
+    char *store_dir;
 
-    setenv("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    store_dir = create_test_store_directory("/flb-s3-test-otlp-comp-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (store_dir == NULL) {
+        return;
+    }
+
+    flb_s3_test_env_set("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
 
     ctx = flb_create();
 
@@ -138,15 +171,16 @@ void flb_test_s3_format_otlp_json_with_compression(void)
     TEST_CHECK(ret == 0);
     sleep(10);
 
-    call_count_str = getenv("TEST_PutObject_CALL_COUNT");
+    call_count_str = flb_s3_test_env_get("TEST_PutObject_CALL_COUNT");
     call_count = call_count_str ? atoi(call_count_str) : 0;
     TEST_CHECK_(call_count == 1,
                 "Expected 1 PutObject call, got %d", call_count);
 
     flb_stop(ctx);
     flb_destroy(ctx);
-    unsetenv("FLB_S3_PLUGIN_UNDER_TEST");
-    unsetenv("TEST_PutObject_CALL_COUNT");
+    flb_s3_test_env_unset("FLB_S3_PLUGIN_UNDER_TEST");
+    flb_s3_test_env_unset("TEST_PutObject_CALL_COUNT");
+    flb_free(store_dir);
 }
 
 TEST_LIST = {

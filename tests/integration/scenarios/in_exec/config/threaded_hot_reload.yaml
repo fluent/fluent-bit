@@ -1,0 +1,19 @@
+service:
+  flush: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+  hot_reload: on
+  hot_reload.timeout: 30
+
+pipeline:
+  inputs:
+    - name: exec
+      command: 'echo $$ > "${EXEC_CHILD_PID_FILE}"; exec tail -f /dev/null'
+      interval_sec: 1
+      threaded: on
+      tag: exec
+
+  outputs:
+    - name: null
+      match: "*"

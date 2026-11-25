@@ -74,6 +74,7 @@
                                      * private key and certificate are required.
                                      */
 #define FLB_INPUT_HTTP_SERVER 4096  /* input uses the generic HTTP server     */
+#define FLB_INPUT_SHUTDOWN_FLUSH         8192 /* allow publishing while shutdown flushes */
 
 /* Input status */
 #define FLB_INPUT_RUNNING     1
@@ -82,7 +83,11 @@
 /* Owner-side ingress queue status */
 #define FLB_INPUT_INGRESS_BUSY -2
 
+/* 1 second in nsec unit */
+#define FLB_NSEC_IN_SEC 1000000000ULL
+
 struct flb_input_instance;
+struct flb_sched_timer;
 struct flb_http_server_config;
 
 /*
@@ -199,12 +204,22 @@ struct flb_input_plugin {
      */
     void (*cb_pause) (void *, struct flb_config *);
     void (*cb_resume) (void *, struct flb_config *);
+    int (*cb_pause_checked) (void *, struct flb_config *);
+    int (*cb_resume_checked) (void *, struct flb_config *);
 
     /*
      * Optional callback that can be used from a parent caller to ingest
      * data into the engine.
      */
     int (*cb_ingest) (void *in_context, void *, size_t);
+
+    /*
+     * Notify a threaded input from the parent thread immediately before its
+     * event loop is asked to exit. This callback must only interrupt blocking
+     * work; the input thread remains responsible for releasing its context in
+     * cb_exit.
+     */
+    void (*cb_pre_exit) (void *, struct flb_config *);
 
     /* Exit */
     int (*cb_exit) (void *, struct flb_config *);
@@ -242,6 +257,7 @@ struct flb_input_instance {
      * as the tags will be composed used the file name being watched.
      */
     int flags;
+    int initialized;                     /* successful instance initialization */
 
     int id;                              /* instance id                  */
 #ifdef FLB_HAVE_CHUNK_TRACE
@@ -263,6 +279,7 @@ struct flb_input_instance {
     char *tag;                           /* Input tag for routing        */
     int tag_len;
     int tag_default;                     /* is it using the default tag? */
+    int telemetry_metrics_logs_tag_records;   /* override service tag records */
 
     /* By default all input instances are 'routable' */
     int routable;
@@ -403,6 +420,8 @@ struct flb_input_instance {
     struct cmt *cmt;                     /* parent context              */
     struct cmt_counter *cmt_bytes;       /* metric: input_bytes_total   */
     struct cmt_counter *cmt_records;     /* metric: input_records_total */
+    struct cmt_counter *cmt_logs_tag_records;
+    struct cmt_counter *cmt_logs_tag_records_untracked;
 
     /* is the input instance overlimit ?: 1 or 0 */
     struct cmt_gauge   *cmt_storage_overlimit;
@@ -440,6 +459,39 @@ struct flb_input_instance {
     struct cmt_gauge   *cmt_ingress_queue_pending_events;
     struct cmt_gauge   *cmt_ingress_queue_pending_bytes;
 
+#ifdef FLB_HAVE_METRICS
+    /* flow rate metrics */
+    struct cmt_gauge   *cmt_rate_bytes;  /* metric: input_rate_bytes/window  */
+    struct cmt_gauge   *cmt_rate_records;/* metric: input_rate_records/window */
+    struct cmt_gauge   *cmt_rate_gate_limited; /* metric: input rate gate */
+    struct cmt_gauge   *cmt_rate_gate_busy_chunks;
+    struct cmt_gauge   *cmt_rate_gate_retry_attempts;
+    struct cmt_gauge   *cmt_rate_gate_deferred_routes;
+
+    /*
+     * Input rate accounting state
+     * ---------------------------
+     */
+    uint64_t rate_window_start;
+    /* Window length used by rate accounting, in nanoseconds */
+    uint64_t rate_window_size;
+    size_t   rate_window_bytes;
+    size_t   rate_window_records;
+    double   rate_bytes;
+    double   rate_records;
+    int      rate_gate_enabled;
+    int      rate_gate_status;
+    int      rate_gate_use_backpressure;
+    double   rate_gate_resume_ratio;
+    size_t   rate_gate_max_bytes;
+    size_t   rate_gate_max_records;
+    size_t   rate_gate_busy_chunks;
+    size_t   rate_gate_busy_deferred_chunks;
+    size_t   rate_gate_retry_attempts;
+    size_t   rate_gate_deferred_routes;
+    struct flb_sched_timer *rate_gate_timer; /* one-shot recovery wakeup */
+#endif
+
     /*
      * Indexes for generated chunks: simple hash tables that keeps the latest
      * available chunks for writing data operations. This optimizes the
@@ -463,6 +515,7 @@ struct flb_input_instance {
     char *tls_crt_file;                  /* Certificate                  */
     char *tls_key_file;                  /* Cert Key                     */
     char *tls_key_passwd;                /* Cert Key Password            */
+    char *tls_crl_file;                  /* Certificate Revocation List  */
     char *tls_min_version;               /* Minimum protocol version of TLS */
     char *tls_max_version;               /* Maximum protocol version of TLS */
     char *tls_ciphers;                   /* TLS ciphers */
@@ -585,6 +638,7 @@ struct flb_libco_in_params {
 
 extern pthread_key_t libco_in_param_key;
 extern struct flb_libco_in_params libco_in_param;
+int flb_input_coro_params_init();
 void flb_input_coro_prepare_destroy(struct flb_input_coro *input_coro);
 
 static FLB_INLINE void input_params_set(struct flb_coro *coro,
@@ -640,13 +694,6 @@ static FLB_INLINE void flb_input_coro_resume(struct flb_input_coro *input_coro)
     flb_coro_resume(input_coro->coro);
 }
 
-static void libco_in_param_key_destroy(void *data)
-{
-    struct flb_libco_inparams *params = (struct flb_libco_inparams*)data;
-
-    flb_free(params);
-}
-
 static FLB_INLINE
 struct flb_input_coro *flb_input_coro_collect(struct flb_input_collector *coll,
                                               struct flb_config *config)
@@ -655,12 +702,15 @@ struct flb_input_coro *flb_input_coro_collect(struct flb_input_collector *coll,
     struct flb_coro *coro;
     struct flb_input_coro *input_coro;
 
+    if (flb_input_coro_params_init() != 0) {
+        flb_error("[input] could not initialize coroutine parameter storage");
+        return NULL;
+    }
+
     input_coro = flb_input_coro_create(coll->instance, config);
     if (!input_coro) {
         return NULL;
     }
-
-    pthread_key_create(&libco_in_param_key, libco_in_param_key_destroy);
 
     coro = input_coro->coro;
     if (!coro) {
@@ -739,6 +789,21 @@ static inline int flb_input_buf_paused(struct flb_input_instance *i)
     if (i->storage_buf_status == FLB_INPUT_PAUSED) {
         return FLB_TRUE;
     }
+
+    return FLB_FALSE;
+}
+
+static inline int flb_input_paused(struct flb_input_instance *i)
+{
+    if (flb_input_buf_paused(i) == FLB_TRUE) {
+        return FLB_TRUE;
+    }
+
+#ifdef FLB_HAVE_METRICS
+    if (i->rate_gate_status == FLB_INPUT_PAUSED) {
+        return FLB_TRUE;
+    }
+#endif
 
     return FLB_FALSE;
 }
@@ -854,7 +919,17 @@ void *flb_input_flush(struct flb_input_instance *ins, size_t *size);
 int flb_input_test_pause_resume(struct flb_input_instance *ins, int sleep_seconds);
 int flb_input_pause(struct flb_input_instance *ins);
 int flb_input_pause_all(struct flb_config *config);
+int flb_input_plugin_pause(struct flb_input_instance *ins);
+int flb_input_plugin_resume(struct flb_input_instance *ins);
 int flb_input_resume(struct flb_input_instance *ins);
+#ifdef FLB_HAVE_METRICS
+void flb_input_rate_update(struct flb_input_instance *ins,
+                           uint64_t timestamp,
+                           size_t records,
+                           size_t bytes);
+int flb_input_rate_gate_protect(struct flb_input_instance *ins);
+void flb_input_rate_gate_maybe_resume(struct flb_input_instance *ins);
+#endif
 
 const char *flb_input_name(struct flb_input_instance *ins);
 int flb_input_name_exists(const char *name, struct flb_config *config);
@@ -870,22 +945,50 @@ int flb_input_downstream_set(struct flb_downstream *stream,
                              struct flb_input_instance *ins);
 void flb_input_ingress_destroy(struct flb_input_instance *ins);
 int flb_input_ingress_enable(struct flb_input_instance *ins);
+/* Nonblocking resume: success transfers *buf and clears it. Every failure
+ * preserves caller ownership. Call only while the input instance is alive. */
+int flb_input_ingress_try_resume_log(struct flb_input_instance *ins,
+                                     size_t starting_stage,
+                                     const char *tag, size_t tag_len,
+                                     void **buf, size_t buf_size, size_t records);
+/* Metrics counterpart: acceptance alone adopts *context and clears it.
+ * BUSY/error preserve both the pointer and its original list membership. */
+int flb_input_ingress_try_resume_metrics(struct flb_input_instance *ins,
+                                         size_t starting_stage,
+                                         const char *tag, size_t tag_len,
+                                         struct cmt **context, size_t payload_size);
 int flb_input_ingress_queue_log(struct flb_input_instance *ins,
                                 const char *tag, size_t tag_len,
                                 const void *buf, size_t buf_size);
+/* The take and decoded-signal queue functions always consume their payload. */
 int flb_input_ingress_queue_log_take(struct flb_input_instance *ins,
                                      const char *tag, size_t tag_len,
                                      void *buf, size_t buf_size,
                                      size_t allocation_size);
+int flb_input_ingress_queue_log_take_records(struct flb_input_instance *ins,
+                                             size_t records,
+                                             const char *tag, size_t tag_len,
+                                             void *buf, size_t buf_size,
+                                             size_t allocation_size);
+int flb_input_ingress_queue_log_processed_take_records(
+                                             struct flb_input_instance *ins,
+                                             size_t records,
+                                             const char *tag, size_t tag_len,
+                                             void *buf, size_t buf_size,
+                                             size_t allocation_size);
 int flb_input_ingress_queue_metrics(struct flb_input_instance *ins,
                                     const char *tag, size_t tag_len,
-                                    struct cmt *cmt);
+                                    struct cmt *cmt, size_t payload_size);
+int flb_input_ingress_queue_metrics_list(struct flb_input_instance *ins,
+                                         const char *tag, size_t tag_len,
+                                         struct cfl_list *contexts,
+                                         size_t payload_size);
 int flb_input_ingress_queue_traces(struct flb_input_instance *ins,
                                    const char *tag, size_t tag_len,
-                                   struct ctrace *ctr);
+                                   struct ctrace *ctr, size_t payload_size);
 int flb_input_ingress_queue_profiles(struct flb_input_instance *ins,
                                      const char *tag, size_t tag_len,
-                                     struct cprof *profile);
+                                     struct cprof *profile, size_t payload_size);
 
 
 /* processors */

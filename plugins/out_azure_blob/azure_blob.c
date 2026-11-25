@@ -712,11 +712,6 @@ static int create_blob(struct flb_azure_blob *ctx, const char *path_prefix, char
         return FLB_RETRY;
     }
 
-    if (ctx->buffering_enabled == FLB_TRUE){
-        ctx->u->base.flags &= ~(FLB_IO_ASYNC);
-        ctx->u->base.net.io_timeout = ctx->io_timeout;
-    }
-
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
@@ -829,7 +824,7 @@ static int delete_blob(struct flb_azure_blob *ctx,
         goto cleanup_delete;
     }
 
-    if (c->resp.status == 201) {
+    if (c->resp.status == 202) {
         /* delete "&sig=..." in the c->uri for security */
         char *p = strstr(c->uri, "&sig=");
         if (p) {
@@ -913,11 +908,6 @@ static int http_send_blob(struct flb_config *config, struct flb_azure_blob *ctx,
     struct flb_connection *u_conn;
 
     flb_plg_debug(ctx->ins, "generated blob uri ::: %s", uri);
-
-    if (ctx->buffering_enabled == FLB_TRUE){
-        ctx->u->base.flags &= ~(FLB_IO_ASYNC);
-        ctx->u->base.net.io_timeout = ctx->io_timeout;
-    }
 
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
@@ -1127,6 +1117,16 @@ static int send_blob(struct flb_config *config,
         }
         else if (event_type == FLB_EVENT_TYPE_BLOBS) {
             block_id = azb_block_blob_id_blob(ctx, name, part_id);
+            if (!block_id) {
+                flb_plg_error(ctx->ins, "could not generate block id");
+                flb_free(generated_random_string);
+                generated_random_string = NULL;
+                flb_sds_destroy(ref_name);
+                if (tmp_path_prefix) {
+                    flb_sds_destroy(tmp_path_prefix);
+                }
+                return FLB_RETRY;
+            }
             uri = azb_block_blob_uri(ctx, path_prefix, name,
                                      block_id, 0, generated_random_string);
             ref_name = flb_sds_printf(&ref_name, "file=%s:%" PRIu64, name, part_id);
@@ -1201,11 +1201,6 @@ static int create_container(struct flb_azure_blob *ctx, char *name)
     flb_sds_t uri;
     struct flb_http_client *c;
     struct flb_connection *u_conn;
-
-    if (ctx->buffering_enabled == FLB_TRUE){
-        ctx->u->base.flags &= ~(FLB_IO_ASYNC);
-        ctx->u->base.net.io_timeout = ctx->io_timeout;
-    }
 
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
@@ -1300,11 +1295,6 @@ static int ensure_container(struct flb_azure_blob *ctx)
         return FLB_FALSE;
     }
 
-    if (ctx->buffering_enabled == FLB_TRUE){
-        ctx->u->base.flags &= ~(FLB_IO_ASYNC);
-        ctx->u->base.net.io_timeout = ctx->io_timeout;
-    }
-
     /* Get upstream connection */
     u_conn = flb_upstream_conn_get(ctx->u);
     if (!u_conn) {
@@ -1369,6 +1359,9 @@ static int ensure_container(struct flb_azure_blob *ctx)
     return FLB_FALSE;
 }
 
+/*
+ * Create the output context, buffered store, and mutex shared by workers.
+ */
 static int cb_azure_blob_init(struct flb_output_instance *ins,
                               struct flb_config *config, void *data)
 {
@@ -1413,6 +1406,12 @@ static int cb_azure_blob_init(struct flb_output_instance *ins,
         ctx->timer_created = FLB_FALSE;
         ctx->timer_ms = (int) (ctx->upload_timeout / 6) * 1000;
         flb_plg_info(ctx->ins, "Using upload size %lu bytes", ctx->file_size);
+    }
+
+    if (pthread_mutex_init(&ctx->buffer_mutex, NULL) != 0) {
+        azure_blob_store_exit(ctx);
+        flb_azure_blob_conf_destroy(ctx);
+        return -1;
     }
 
     flb_output_set_context(ins, ctx);
@@ -1528,7 +1527,6 @@ static int process_blob_chunk(struct flb_azure_blob *ctx, struct flb_event_chunk
         if (path_prefix) {
             flb_sds_destroy(path_prefix);
         }
-        cfl_sds_destroy(file_path);
         cfl_sds_destroy(source);
 
         /* generate the parts by using the newest id created (ret) */
@@ -1537,11 +1535,14 @@ static int process_blob_chunk(struct flb_azure_blob *ctx, struct flb_event_chunk
         if (ret == -1) {
             flb_plg_error(ctx->ins, "cannot register blob file '%s 'parts into database",
                             file_path);
+            cfl_sds_destroy(file_path);
+            flb_log_event_decoder_destroy(&log_decoder);
             return -1;
         }
 
         flb_plg_debug(ctx->ins, "blob file '%s' (id=%zu) registered with %zu parts",
                       file_path, file_id, ret);
+        cfl_sds_destroy(file_path);
     }
 
     flb_log_event_decoder_destroy(&log_decoder);
@@ -1805,7 +1806,12 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
     }
 
     /* read the file content */
-    ret = flb_utils_read_file_offset(file_path, offset_start, offset_end, &out_buf, &out_size);
+    if (ctx->follow_symlinks) {
+        ret = flb_utils_read_file_offset(file_path, offset_start, offset_end, &out_buf, &out_size);
+    }
+    else {
+        ret = flb_utils_read_file_offset_safe(file_path, offset_start, offset_end, &out_buf, &out_size);
+    }
     if (ret == -1) {
         flb_plg_error(ctx->ins, "cannot read file part %s", file_path);
 
@@ -1891,6 +1897,24 @@ static int azb_timer_create(struct flb_azure_blob *ctx)
     return 0;
 }
 
+/*
+ * Wait without blocking other workers from buffering. The caller holds
+ * buffer_mutex, and the file stays locked until this callback finishes with it.
+ * Return a refreshed list cursor because other files may have been removed
+ * while the mutex was released.
+ */
+static struct mk_list *azure_blob_retry_wait(struct flb_azure_blob *ctx,
+                                   struct azure_blob_file *file,
+                                   unsigned int delay)
+{
+    azure_blob_store_file_lock(file);
+    pthread_mutex_unlock(&ctx->buffer_mutex);
+    sleep(delay);
+    pthread_mutex_lock(&ctx->buffer_mutex);
+
+    return file->fsf->_head.next;
+}
+
 /**
  * Azure Blob Storage ingestion callback function
  * This function handles the upload of data chunks to Azure Blob Storage with retry mechanism
@@ -1915,6 +1939,8 @@ static void cb_azure_blob_ingest(struct flb_config *config, void *data) {
     int retry_count;
     int backoff_time;
     const int max_backoff_time = 64;  /* Maximum backoff time in seconds */
+
+    pthread_mutex_lock(&ctx->buffer_mutex);
 
     /* Log entry point and container information */
     flb_plg_debug(ctx->ins, "Running upload timer callback (cb_azure_blob_ingest)..");
@@ -1963,7 +1989,7 @@ static void cb_azure_blob_ingest(struct flb_config *config, void *data) {
                 int jitter = rand() % backoff_time;
                 flb_plg_warn(ctx->ins, "cb_azure_blob_ingest :: failure in construct_request_buffer :: Retrying in %d seconds (attempt %d of %d) with jitter %d for file %s",
                              backoff_time + jitter, retry_count, ctx->scheduler_max_retries, jitter, file->fsf->name);
-                sleep(backoff_time + jitter);
+                tmp = azure_blob_retry_wait(ctx, file, backoff_time + jitter);
                 backoff_time = (backoff_time * 2 < max_backoff_time) ? backoff_time * 2 : max_backoff_time;
                 continue;
             }
@@ -1973,9 +1999,12 @@ static void cb_azure_blob_ingest(struct flb_config *config, void *data) {
             tag_sds = flb_sds_create(fsf->meta_buf);
             flb_plg_debug(ctx->ins, "cb_azure_blob_ingest ::: tag of the file %s", tag_sds);
 
-            /* Attempt to send blob */
+            /* Keep the file owned while other workers buffer during the upload. */
+            pthread_mutex_unlock(&ctx->buffer_mutex);
             ret = send_blob(config, NULL, ctx, FLB_EVENT_TYPE_LOGS,ctx->btype , (char *) tag_sds,0, (char *) tag_sds,
                             flb_sds_len(tag_sds), NULL, payload, flb_sds_len(payload));
+            pthread_mutex_lock(&ctx->buffer_mutex);
+            tmp = fsf->_head.next;
 
             /* Handle blob send failure */
             if (ret != FLB_OK) {
@@ -1997,17 +2026,16 @@ static void cb_azure_blob_ingest(struct flb_config *config, void *data) {
                 int jitter = rand() % backoff_time;
                 flb_plg_warn(ctx->ins, "cb_azure_blob_ingest :: error sending blob :: Retrying in %d seconds (attempt %d of %d) with jitter %d for file %s",
                              backoff_time + jitter, retry_count, ctx->scheduler_max_retries, jitter, file->fsf->name);
-                sleep(backoff_time + jitter);
+                tmp = azure_blob_retry_wait(ctx, file, backoff_time + jitter);
                 backoff_time = (backoff_time * 2 < max_backoff_time) ? backoff_time * 2 : max_backoff_time;
                 continue;
             }
 
             /* Handle successful upload */
+            flb_plg_debug(ctx->ins, "cb_azure_blob_ingest :: deleting successfully ingested file %s",
+                          fsf->name);
             ret = azure_blob_store_file_delete(ctx, file);
-            if (ret == 0) {
-                flb_plg_debug(ctx->ins, "cb_azure_blob_ingest :: deleted successfully ingested file %s", fsf->name);
-            }
-            else {
+            if (ret != 0) {
                 flb_plg_error(ctx->ins, "cb_azure_blob_ingest :: failed to delete ingested file %s", fsf->name);
                 if (file) {
                     azure_blob_store_file_unlock(file);
@@ -2036,6 +2064,7 @@ static void cb_azure_blob_ingest(struct flb_config *config, void *data) {
 
         flb_plg_debug(ctx->ins, "Exited upload timer callback (cb_azure_blob_ingest)..");
     }
+    pthread_mutex_unlock(&ctx->buffer_mutex);
 }
 
 
@@ -2121,7 +2150,11 @@ static int ingest_all_chunks(struct flb_azure_blob *ctx, struct flb_config *conf
     return 0;
 }
 
-static void flush_init(void *out_context, struct flb_config *config)
+/*
+ * Drain startup buffers and create the upload timer under buffer_mutex.
+ * Return -1 on failure so the caller can unlock and request an engine retry.
+ */
+static int flush_init(void *out_context, struct flb_config *config)
 {
     int ret;
     struct flb_azure_blob *ctx = out_context;
@@ -2141,7 +2174,7 @@ static void flush_init(void *out_context, struct flb_config *config)
                           "Failed to send locally buffered data left over "
                           "from previous executions; will retry. Buffer=%s",
                           ctx->fs->root_path);
-            FLB_OUTPUT_RETURN(FLB_RETRY);
+            return -1;
         }
     }
     else {
@@ -2167,12 +2200,18 @@ static void flush_init(void *out_context, struct flb_config *config)
                                         ctx->timer_ms, cb_azure_blob_ingest, ctx, NULL);
         if (ret == -1) {
             flb_plg_error(ctx->ins, "Failed to create upload timer");
-            FLB_OUTPUT_RETURN(FLB_RETRY);
+            return -1;
         }
         ctx->timer_created = FLB_TRUE;
     }
+
+    return 0;
 }
 
+/*
+ * Flush a chunk to Azure or serialize its local buffering with buffer_mutex.
+ * Release the mutex on every buffered success and retry path.
+ */
 static void cb_azure_blob_flush(struct flb_event_chunk *event_chunk,
                                 struct flb_output_flush *out_flush,
                                 struct flb_input_instance *i_ins,
@@ -2197,6 +2236,9 @@ static void cb_azure_blob_flush(struct flb_event_chunk *event_chunk,
             size_t final_payload_size = 0;
             flb_sds_t tag_name = NULL;
 
+            /* Buffered requests use synchronous I/O while the store is locked. */
+            pthread_mutex_lock(&ctx->buffer_mutex);
+
             flb_plg_trace(ctx->ins, "flushing bytes for event tag %s and size %zu", event_chunk->tag, event_chunk->size);
 
             if (ctx->unify_tag == FLB_TRUE) {
@@ -2205,9 +2247,14 @@ static void cb_azure_blob_flush(struct flb_event_chunk *event_chunk,
             else {
                 tag_name = event_chunk->tag;
             }
+            if (!tag_name) {
+                goto error;
+            }
             tag_len = flb_sds_len(tag_name);
 
-            flush_init(ctx, config);
+            if (flush_init(ctx, config) != 0) {
+                goto error;
+            }
             /* Reformat msgpack to JSON payload */
             ret = azure_blob_format(config, i_ins, ctx, NULL, FLB_EVENT_TYPE_LOGS, tag_name, tag_len, event_chunk->data, event_chunk->size, (void **)&json, &json_size);
             if (ret != 0) {
@@ -2242,9 +2289,8 @@ static void cb_azure_blob_flush(struct flb_event_chunk *event_chunk,
                 ret = construct_request_buffer(ctx, json, upload_file, &final_payload, &final_payload_size);
                 if (ret != 0) {
                     flb_plg_error(ctx->ins, "error constructing request buffer for %s", event_chunk->tag);
-                    flb_sds_destroy(json);
                     upload_file->failures += 1;
-                    FLB_OUTPUT_RETURN(FLB_RETRY);
+                    goto error;
                 }
 
                 /*
@@ -2256,7 +2302,8 @@ static void cb_azure_blob_flush(struct flb_event_chunk *event_chunk,
                 */
                 ret = ensure_container(ctx);
                 if (ret == FLB_FALSE) {
-                    FLB_OUTPUT_RETURN(FLB_RETRY);
+                    azure_blob_store_file_unlock(upload_file);
+                    goto error;
                 }
 
                 /* Upload the file */
@@ -2300,6 +2347,7 @@ static void cb_azure_blob_flush(struct flb_event_chunk *event_chunk,
             if (final_payload) {
                 flb_free(final_payload);
             }
+            pthread_mutex_unlock(&ctx->buffer_mutex);
             FLB_OUTPUT_RETURN(FLB_OK);
 
             error:
@@ -2312,6 +2360,7 @@ static void cb_azure_blob_flush(struct flb_event_chunk *event_chunk,
             if (final_payload) {
                 flb_free(final_payload);
             }
+            pthread_mutex_unlock(&ctx->buffer_mutex);
             FLB_OUTPUT_RETURN(FLB_RETRY);
         }
         else {
@@ -2365,6 +2414,10 @@ static void cb_azure_blob_flush(struct flb_event_chunk *event_chunk,
     FLB_OUTPUT_RETURN(ret);
 }
 
+/*
+ * Upload remaining buffers after workers have joined, then destroy the store
+ * and its mutex. A NULL context requires no cleanup.
+ */
 static int cb_azure_blob_exit(void *data, struct flb_config *config)
 {
     struct flb_azure_blob *ctx = data;
@@ -2390,6 +2443,7 @@ static int cb_azure_blob_exit(void *data, struct flb_config *config)
         ctx->u = NULL;
     }
 
+    pthread_mutex_destroy(&ctx->buffer_mutex);
     flb_azure_blob_conf_destroy(ctx);
     return 0;
 }
@@ -2443,6 +2497,12 @@ static int cb_worker_exit(void *data, struct flb_config *config)
 
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_BOOL, "follow_symlinks", "true",
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, follow_symlinks),
+     "Follow symbolic links when accessing files. Set false to reject symbolic links "
+     "and Windows reparse points in file paths."
+    },
     {
      FLB_CONFIG_MAP_STR, "account_name", NULL,
      0, FLB_TRUE, offsetof(struct flb_azure_blob, account_name),
@@ -2562,7 +2622,9 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_STR, "configuration_endpoint_url", NULL,
      0, FLB_TRUE, offsetof(struct flb_azure_blob, configuration_endpoint_url),
-     "Configuration endpoint URL"
+     "Configuration endpoint URL. With tls.verify enabled, tls.ca_file must "
+     "trust both the Blob and configuration endpoints when tls.ca_path is unset. "
+     "If tls.ca_path is set, it takes precedence over tls.ca_file."
     },
 
     {
@@ -2653,7 +2715,7 @@ static struct flb_config_map config_map[] = {
 
     {
      FLB_CONFIG_MAP_TIME, "io_timeout", "60s",0, FLB_TRUE, offsetof(struct flb_azure_blob, io_timeout),
-     "HTTP IO timeout. Default is 60s"
+     "Buffered HTTP I/O timeout when net.io_timeout is unset. Default is 60s"
     },
 
     /* EOF */

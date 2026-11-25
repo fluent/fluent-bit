@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_kv.h>
 #include <fluent-bit/flb_compat.h>
+#include <fluent-bit/flb_utils.h>
 
 #include <monkey/mk_core.h>
 
@@ -191,10 +192,27 @@ static int read_glob(struct flb_cf *cf, struct local_ctx *ctx, const char *path,
     char *star, *p0, *p1;
     char pattern[MAX_PATH];
     char buf[MAX_PATH];
+    char full_path[MAX_PATH];
     int ret;
     struct stat st;
     HANDLE h;
     WIN32_FIND_DATA data;
+
+    if (ctx->root_path && path[0] != '/' && path[0] != '\\' &&
+        !(path[0] != '\0' && path[1] == ':')) {
+        ret = snprintf(buf, sizeof(buf), "%s\\%s", ctx->root_path, path);
+        if (ret < 0 || ret >= sizeof(buf)) {
+            return -1;
+        }
+        path = buf;
+    }
+
+    /* Resolve relative includes against the config directory and normalize
+     * forward slashes before splitting the Windows wildcard components. */
+    if (_fullpath(full_path, path, sizeof(full_path)) == NULL) {
+        return -1;
+    }
+    path = full_path;
 
     if (strlen(path) > MAX_PATH - 1) {
         return -1;
@@ -271,7 +289,7 @@ static int read_glob(struct flb_cf *cf, struct local_ctx *ctx, const char *path,
 }
 #endif
 
-static int local_init(struct local_ctx *ctx, char *file)
+static int local_init(struct local_ctx *ctx, char *file, int held_entry)
 {
     char *end;
     char path[PATH_MAX + 1] = {0};
@@ -283,7 +301,12 @@ static int local_init(struct local_ctx *ctx, char *file)
 #ifdef _MSC_VER
         p = _fullpath(path, file, PATH_MAX + 1);
 #else
-        p = realpath(file, path);
+        if (held_entry) {
+            p = strlen(file) < sizeof(path) ? strcpy(path, file) : NULL;
+        }
+        else {
+            p = realpath(file, path);
+        }
 #endif
         if (!p) {
             flb_errno();
@@ -351,7 +374,11 @@ static int is_file_included(struct local_ctx *ctx, const char *path)
 
     mk_list_foreach(head, &ctx->includes) {
         file = mk_list_entry(head, struct local_file, _head);
+#ifdef _WIN32
+        if (strcasecmp(file->path, path) == 0) {
+#else
         if (strcmp(file->path, path) == 0) {
+#endif
             return FLB_TRUE;
         }
     }
@@ -416,14 +443,15 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
     int key_len;
     char *val = NULL;
     int val_len;
-    char *buf;
+    char *buf = NULL;
     char *fgets_ptr;
     size_t bufsize = FLB_DEFAULT_CF_BUF_SIZE;
     char tmp[PATH_MAX];
+    char *full_path = NULL;
     flb_sds_t section = NULL;
     flb_sds_t indent = NULL;
     struct stat st;
-    struct local_file *file;
+    struct local_file *file = NULL;
     struct flb_cf_meta *meta;
     struct flb_cf_section *current_section = NULL;
     struct flb_cf_group *current_group = NULL;
@@ -433,31 +461,26 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
     line_hard_limit = 32 * 1024 * 1024; /* 32MiB */
 
     FILE *f = NULL;
+    FILE *entry_file = ctx->level == 0 ? cf->entry_file : NULL;
 
     if (*ino_num >= FLB_CF_FILE_NUM_LIMIT) {
         return -1;
     }
 
-    /* Check if the path exists (relative cases for included files) */
 #ifndef FLB_HAVE_STATIC_CONF
     if (ctx->level >= 0) {
-        ret = stat(cfg_file, &st);
-        if (ret == -1 && errno == ENOENT) {
-            /* Try to resolve the real path (if exists) */
-            if (cfg_file[0] == '/') {
+        /* Keep the main file as supplied; resolve only included files. */
+        if (ctx->level > 0) {
+            cfg_file = (char *) flb_utils_resolve_config_path(cfg_file, ctx->root_path,
+                                                             tmp, sizeof(tmp));
+            if (!cfg_file) {
                 return -1;
             }
-
-            if (ctx->root_path) {
-                snprintf(tmp, PATH_MAX, "%s/%s", ctx->root_path, cfg_file);
-                cfg_file = tmp;
-            }
-            /* stat again */
-            ret = stat(cfg_file, &st);
-            if (ret < 0) {
-                flb_errno();
-                return -1;
-            }
+        }
+        ret = entry_file ? fstat(fileno(entry_file), &st) : stat(cfg_file, &st);
+        if (ret < 0) {
+            flb_errno();
+            return -1;
         }
 #ifndef _WIN32
         /* check if readed file */
@@ -473,21 +496,46 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
     }
 #endif
 
-    /* Check this file have not been included before */
+#if defined(_WIN32) && !defined(FLB_HAVE_STATIC_CONF)
+    full_path = realpath(cfg_file, NULL);
+    if (full_path == NULL) {
+        return -1;
+    }
+    cfg_file = full_path;
+#endif
+
+    /* Check both active and previously parsed files. */
     ret = is_file_included(ctx, cfg_file);
     if (ret) {
         flb_error("[config] file already included %s", cfg_file);
+        flb_free(full_path);
         return -1;
     }
-    ctx->level++;
 
 #ifndef FLB_HAVE_STATIC_CONF
     /* Open configuration file */
-    if ((f = fopen(cfg_file, "rb")) == NULL) {
+    f = entry_file ? entry_file : fopen(cfg_file, "rb");
+    if (f == NULL) {
         flb_warn("[config] I cannot open %s file", cfg_file);
+        flb_free(full_path);
         return -1;
     }
 #endif
+
+    ctx->level++;
+    file = flb_malloc(sizeof(struct local_file));
+    if (!file) {
+        flb_errno();
+        goto error;
+    }
+    file->path = flb_sds_create(cfg_file);
+    if (!file->path) {
+        flb_free(file);
+        file = NULL;
+        goto error;
+    }
+    /* Register before parsing so recursive includes cannot re-enter this file. */
+    mk_list_add(&file->_head, &ctx->includes);
 
     /* Allocate temporal buffer to read file content */
     buf = flb_malloc(bufsize);
@@ -734,7 +782,7 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
         /* No key, no warning */
     }
 
-    if (f) {
+    if (f && f != entry_file) {
         fclose(f);
     }
 
@@ -744,21 +792,21 @@ static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
     }
     flb_free(buf);
 
-    /* Append this file to the list */
-    file = flb_malloc(sizeof(struct local_file));
-    if (!file) {
-        flb_errno();
-        ctx->level--;
-        goto error;
-    }
-    file->path = flb_sds_create(cfg_file);
-    mk_list_add(&file->_head, &ctx->includes);
+    /* Keep successful files registered to reject later duplicates. */
+    flb_free(full_path);
     ctx->level--;
 
     return 0;
 
 error:
-    if (f) {
+    flb_free(full_path);
+    if (file) {
+        mk_list_del(&file->_head);
+        flb_sds_destroy(file->path);
+        flb_free(file);
+    }
+    ctx->level--;
+    if (f && f != entry_file) {
         fclose(f);
     }
     if (indent) {
@@ -787,7 +835,7 @@ struct flb_cf *flb_cf_fluentbit_create(struct flb_cf *cf,
         flb_cf_set_origin_format(cf, FLB_CF_CLASSIC);
     }
 
-    ret = local_init(&ctx, file_path);
+    ret = local_init(&ctx, file_path, cf->entry_file != NULL);
     if (ret != 0) {
         if (cf_created == FLB_TRUE) {
             flb_cf_destroy(cf);

@@ -231,6 +231,434 @@ onig_get_capture_tree(OnigRegion* region)
 }
 #endif /* USE_CAPTURE_HISTORY */
 
+#ifdef USE_CACHE_MATCH_OPT
+
+/* Count cache points; return -1 if this regex cannot use the cache optimizer. */
+static long
+count_num_cache_opcode(regex_t* reg, OnigRepeatRange* ranges, long* table_size)
+{
+  long num = 0;
+  UChar* p = reg->p;
+  UChar* pend = p + reg->used;
+  LengthType len;
+  MemNumType mem;
+  MemNumType current_mem = -1;
+  long current_mem_num = 0;
+  OnigEncoding enc = reg->enc;
+
+  while (p < pend) {
+    switch (*p++) {
+    case OP_FINISH:
+    case OP_END:
+      break;
+
+    case OP_EXACT1: p++; break;
+    case OP_EXACT2: p += 2; break;
+    case OP_EXACT3: p += 3; break;
+    case OP_EXACT4: p += 4; break;
+    case OP_EXACT5: p += 5; break;
+    case OP_EXACTN:
+      GET_LENGTH_INC(len, p); p += len; break;
+    case OP_EXACTMB2N1: p += 2; break;
+    case OP_EXACTMB2N2: p += 4; break;
+    case OP_EXACTMB2N3: p += 6; break;
+    case OP_EXACTMB2N:
+      GET_LENGTH_INC(len, p); p += len * 2; break;
+    case OP_EXACTMB3N:
+      GET_LENGTH_INC(len, p); p += len * 3; break;
+    case OP_EXACTMBN:
+      {
+	int mb_len;
+	GET_LENGTH_INC(mb_len, p);
+	GET_LENGTH_INC(len, p);
+	p += mb_len * len;
+      }
+      break;
+
+    case OP_EXACT1_IC:
+      len = enclen(enc, p, pend); p += len; break;
+    case OP_EXACTN_IC:
+      GET_LENGTH_INC(len, p); p += len; break;
+
+    case OP_CCLASS:
+    case OP_CCLASS_NOT:
+      p += SIZE_BITSET; break;
+    case OP_CCLASS_MB:
+    case OP_CCLASS_MB_NOT:
+      GET_LENGTH_INC(len, p); p += len; break;
+    case OP_CCLASS_MIX:
+    case OP_CCLASS_MIX_NOT:
+      p += SIZE_BITSET;
+      GET_LENGTH_INC(len, p);
+      p += len;
+      break;
+
+    case OP_ANYCHAR:
+    case OP_ANYCHAR_ML:
+      break;
+    case OP_ANYCHAR_STAR:
+    case OP_ANYCHAR_ML_STAR:
+      num++; *table_size += 1; break;
+    case OP_ANYCHAR_STAR_PEEK_NEXT:
+    case OP_ANYCHAR_ML_STAR_PEEK_NEXT:
+      p++; num++; *table_size += 1; break;
+
+    case OP_WORD:
+    case OP_NOT_WORD:
+    case OP_WORD_BOUND:
+    case OP_NOT_WORD_BOUND:
+    case OP_WORD_BEGIN:
+    case OP_WORD_END:
+    case OP_ASCII_WORD:
+    case OP_NOT_ASCII_WORD:
+    case OP_ASCII_WORD_BOUND:
+    case OP_NOT_ASCII_WORD_BOUND:
+    case OP_ASCII_WORD_BEGIN:
+    case OP_ASCII_WORD_END:
+    case OP_BEGIN_BUF:
+    case OP_END_BUF:
+    case OP_BEGIN_LINE:
+    case OP_END_LINE:
+    case OP_SEMI_END_BUF:
+    case OP_BEGIN_POSITION:
+      break;
+
+    case OP_BACKREF1:
+    case OP_BACKREF2:
+    case OP_BACKREFN:
+    case OP_BACKREFN_IC:
+    case OP_BACKREF_MULTI:
+    case OP_BACKREF_MULTI_IC:
+    case OP_BACKREF_WITH_LEVEL:
+      return NUM_CACHE_OPCODE_FAIL;
+
+    case OP_MEMORY_START:
+    case OP_MEMORY_START_PUSH:
+    case OP_MEMORY_END_PUSH:
+    case OP_MEMORY_END_PUSH_REC:
+    case OP_MEMORY_END:
+    case OP_MEMORY_END_REC:
+      p += SIZE_MEMNUM; break;
+
+    case OP_KEEP:
+    case OP_FAIL:
+      break;
+    case OP_JUMP:
+      p += SIZE_RELADDR; break;
+    case OP_PUSH:
+      p += SIZE_RELADDR;
+      num++;
+      *table_size += 1;
+      break;
+    case OP_POP:
+      break;
+    case OP_PUSH_OR_JUMP_EXACT1:
+    case OP_PUSH_IF_PEEK_NEXT:
+      p += SIZE_RELADDR + 1; num++; *table_size += 1; break;
+    case OP_REPEAT:
+    case OP_REPEAT_NG:
+      if (current_mem != -1) return NUM_CACHE_OPCODE_FAIL;
+      GET_MEMNUM_INC(mem, p);
+      p += SIZE_RELADDR;
+      if (ranges[mem].lower == 0) {
+	num++;
+	*table_size += 1;
+      }
+      ranges[mem].base_num = num;
+      current_mem = mem;
+      current_mem_num = num;
+      break;
+    case OP_REPEAT_INC:
+    case OP_REPEAT_INC_NG:
+      GET_MEMNUM_INC(mem, p);
+      if (mem != current_mem) return NUM_CACHE_OPCODE_FAIL;
+      {
+	long inner_num = num - current_mem_num;
+	OnigRepeatRange* repeat_range = &ranges[mem];
+        /* Reject excessive repeat products before signed arithmetic. */
+        if ((unsigned long)(inner_num + 1) > MATCH_CACHE_MAX_BYTES * 8 /
+            ((unsigned long)(repeat_range->upper == 0x7fffffff ?
+                             repeat_range->lower : repeat_range->upper) + 1)) {
+          return NUM_CACHE_OPCODE_FAIL;
+        }
+	repeat_range->inner_num = inner_num;
+	num -= inner_num;
+	num += inner_num * repeat_range->lower +
+	       (inner_num + 1) * (repeat_range->upper == 0x7fffffff ? 1 : repeat_range->upper - repeat_range->lower);
+	if (repeat_range->lower < repeat_range->upper)
+	  *table_size += 1;
+	current_mem = -1;
+	current_mem_num = 0;
+      }
+      break;
+    case OP_REPEAT_INC_SG:
+    case OP_REPEAT_INC_NG_SG:
+      return NUM_CACHE_OPCODE_FAIL;
+    case OP_NULL_CHECK_START:
+    case OP_NULL_CHECK_END:
+      p += SIZE_MEMNUM; break;
+    /* Capture-dependent empty repeats require more state than a cache point
+     * and input offset. Keep their capture semantics on the budgeted path. */
+    case OP_NULL_CHECK_END_MEMST:
+    case OP_NULL_CHECK_END_MEMST_PUSH:
+      return NUM_CACHE_OPCODE_FAIL;
+
+    case OP_PUSH_POS:
+    case OP_POP_POS:
+    case OP_PUSH_POS_NOT:
+    case OP_FAIL_POS:
+    case OP_PUSH_STOP_BT:
+    case OP_POP_STOP_BT:
+    case OP_LOOK_BEHIND:
+    case OP_PUSH_LOOK_BEHIND_NOT:
+    case OP_FAIL_LOOK_BEHIND_NOT:
+    case OP_PUSH_ABSENT_POS:
+    case OP_ABSENT_END:
+    case OP_ABSENT:
+    case OP_CALL:
+    case OP_RETURN:
+    case OP_CONDITION:
+    case OP_STATE_CHECK_PUSH:
+    case OP_STATE_CHECK_PUSH_OR_JUMP:
+    case OP_STATE_CHECK:
+    case OP_STATE_CHECK_ANYCHAR_STAR:
+    case OP_STATE_CHECK_ANYCHAR_ML_STAR:
+      return NUM_CACHE_OPCODE_FAIL;
+
+    case OP_SET_OPTION_PUSH:
+    case OP_SET_OPTION:
+      p += SIZE_OPTION;
+      break;
+    default:
+      return NUM_CACHE_OPCODE_FAIL;
+    }
+    if (num > (long)(MATCH_CACHE_MAX_BYTES * 8) ||
+        *table_size > (long)(MATCH_CACHE_MAX_BYTES / sizeof(OnigCacheIndex))) {
+      return NUM_CACHE_OPCODE_FAIL;
+    }
+  }
+
+  return num;
+}
+
+static void
+init_cache_index_table(regex_t* reg, OnigRepeatRange* ranges, OnigCacheIndex* table)
+{
+  UChar* pbegin;
+  UChar* p = reg->p;
+  UChar* pend = p + reg->used;
+  LengthType len;
+  MemNumType mem;
+  MemNumType current_mem = -1;
+  long num = 0;
+  long current_mem_num = 0;
+  OnigEncoding enc = reg->enc;
+
+  while (p < pend) {
+    pbegin = p;
+    switch (*p++) {
+    case OP_FINISH:
+    case OP_END:
+      break;
+
+    case OP_EXACT1: p++; break;
+    case OP_EXACT2: p += 2; break;
+    case OP_EXACT3: p += 3; break;
+    case OP_EXACT4: p += 4; break;
+    case OP_EXACT5: p += 5; break;
+    case OP_EXACTN:
+      GET_LENGTH_INC(len, p); p += len; break;
+    case OP_EXACTMB2N1: p += 2; break;
+    case OP_EXACTMB2N2: p += 4; break;
+    case OP_EXACTMB2N3: p += 6; break;
+    case OP_EXACTMB2N:
+      GET_LENGTH_INC(len, p); p += len * 2; break;
+    case OP_EXACTMB3N:
+      GET_LENGTH_INC(len, p); p += len * 3; break;
+    case OP_EXACTMBN:
+      {
+	int mb_len;
+	GET_LENGTH_INC(mb_len, p);
+	GET_LENGTH_INC(len, p);
+	p += mb_len * len;
+      }
+      break;
+
+    case OP_EXACT1_IC:
+      len = enclen(enc, p, pend); p += len; break;
+    case OP_EXACTN_IC:
+      GET_LENGTH_INC(len, p); p += len; break;
+
+    case OP_CCLASS:
+    case OP_CCLASS_NOT:
+      p += SIZE_BITSET; break;
+    case OP_CCLASS_MB:
+    case OP_CCLASS_MB_NOT:
+      GET_LENGTH_INC(len, p); p += len; break;
+    case OP_CCLASS_MIX:
+    case OP_CCLASS_MIX_NOT:
+      p += SIZE_BITSET;
+      GET_LENGTH_INC(len, p);
+      p += len;
+      break;
+
+    case OP_ANYCHAR:
+    case OP_ANYCHAR_ML:
+      break;
+    case OP_ANYCHAR_STAR:
+    case OP_ANYCHAR_ML_STAR:
+      table->addr = pbegin;
+      table->num = num - current_mem_num;
+      table->outer_repeat = current_mem;
+      num++;
+      table++;
+      break;
+    case OP_ANYCHAR_STAR_PEEK_NEXT:
+    case OP_ANYCHAR_ML_STAR_PEEK_NEXT:
+      p++;
+      table->addr = pbegin;
+      table->num = num - current_mem_num;
+      table->outer_repeat = current_mem;
+      num++;
+      table++;
+      break;
+
+    case OP_WORD:
+    case OP_NOT_WORD:
+    case OP_WORD_BOUND:
+    case OP_NOT_WORD_BOUND:
+    case OP_WORD_BEGIN:
+    case OP_WORD_END:
+    case OP_ASCII_WORD:
+    case OP_NOT_ASCII_WORD:
+    case OP_ASCII_WORD_BOUND:
+    case OP_NOT_ASCII_WORD_BOUND:
+    case OP_ASCII_WORD_BEGIN:
+    case OP_ASCII_WORD_END:
+    case OP_BEGIN_BUF:
+    case OP_END_BUF:
+    case OP_BEGIN_LINE:
+    case OP_END_LINE:
+    case OP_SEMI_END_BUF:
+    case OP_BEGIN_POSITION:
+      break;
+
+    case OP_BACKREF1:
+    case OP_BACKREF2:
+    case OP_BACKREFN:
+    case OP_BACKREFN_IC:
+    case OP_BACKREF_MULTI:
+    case OP_BACKREF_MULTI_IC:
+    case OP_BACKREF_WITH_LEVEL:
+      return;
+
+    case OP_MEMORY_START:
+    case OP_MEMORY_START_PUSH:
+    case OP_MEMORY_END_PUSH:
+    case OP_MEMORY_END_PUSH_REC:
+    case OP_MEMORY_END:
+    case OP_MEMORY_END_REC:
+      p += SIZE_MEMNUM; break;
+
+    case OP_KEEP:
+    case OP_FAIL:
+      break;
+    case OP_JUMP:
+      p += SIZE_RELADDR; break;
+    case OP_PUSH:
+      p += SIZE_RELADDR;
+      table->addr = pbegin;
+      table->num = num - current_mem_num;
+      table->outer_repeat = current_mem;
+      num++;
+      table++;
+      break;
+    case OP_POP:
+      break;
+    case OP_PUSH_OR_JUMP_EXACT1:
+    case OP_PUSH_IF_PEEK_NEXT:
+      p += SIZE_RELADDR + 1;
+      table->addr = pbegin;
+      table->num = num - current_mem_num;
+      table->outer_repeat = current_mem;
+      num++;
+      table++;
+      break;
+    case OP_REPEAT:
+    case OP_REPEAT_NG:
+      GET_MEMNUM_INC(mem, p);
+      p += SIZE_RELADDR;
+      if (ranges[mem].lower == 0) {
+        /* The initial exit decision owns a global slot before base_num.
+         * Mark it global so lookup and reset both use num directly. */
+	table->addr = pbegin;
+	table->num = num;
+	table->outer_repeat = -1;
+	num++;
+	table++;
+      }
+      current_mem = mem;
+      current_mem_num = num;
+      break;
+    case OP_REPEAT_INC:
+    case OP_REPEAT_INC_NG:
+      GET_MEMNUM_INC(mem, p);
+      {
+	long inner_num = num - current_mem_num;
+	OnigRepeatRange* repeat_range = &ranges[mem];
+	if (repeat_range->lower < repeat_range->upper) {
+	  table->addr = pbegin;
+	  table->num = num - current_mem_num;
+	  table->outer_repeat = mem;
+	  table++;
+	}
+	num -= inner_num;
+	num += inner_num * repeat_range->lower +
+	       (inner_num + 1) * (repeat_range->upper == 0x7fffffff ? 1 : repeat_range->upper - repeat_range->lower);
+	current_mem = -1;
+	current_mem_num = 0;
+      }
+      break;
+    case OP_REPEAT_INC_SG:
+    case OP_REPEAT_INC_NG_SG:
+      return;
+    case OP_NULL_CHECK_START:
+    case OP_NULL_CHECK_END:
+    case OP_NULL_CHECK_END_MEMST:
+    case OP_NULL_CHECK_END_MEMST_PUSH:
+      p += SIZE_MEMNUM; break;
+
+    case OP_PUSH_POS:
+    case OP_POP_POS:
+    case OP_PUSH_POS_NOT:
+    case OP_FAIL_POS:
+    case OP_PUSH_STOP_BT:
+    case OP_POP_STOP_BT:
+    case OP_LOOK_BEHIND:
+    case OP_PUSH_LOOK_BEHIND_NOT:
+    case OP_FAIL_LOOK_BEHIND_NOT:
+    case OP_PUSH_ABSENT_POS:
+    case OP_ABSENT_END:
+    case OP_ABSENT:
+    case OP_CALL:
+    case OP_RETURN:
+    case OP_CONDITION:
+    case OP_STATE_CHECK_PUSH:
+    case OP_STATE_CHECK_PUSH_OR_JUMP:
+    case OP_STATE_CHECK:
+    case OP_STATE_CHECK_ANYCHAR_STAR:
+    case OP_STATE_CHECK_ANYCHAR_ML_STAR:
+      return;
+
+    case OP_SET_OPTION_PUSH:
+    case OP_SET_OPTION:
+      p += SIZE_OPTION;
+      break;
+    }
+  }
+}
+#endif /* USE_CACHE_MATCH_OPT */
+
 extern void
 onig_region_clear(OnigRegion* region)
 {
@@ -413,8 +841,62 @@ onig_region_copy(OnigRegion* to, const OnigRegion* from)
 #define STK_MASK_TO_VOID_TARGET    0x10ff
 #define STK_MASK_MEM_END_OR_MARK   0x8000  /* MEM_END or MEM_END_MARK */
 
+#ifdef USE_CACHE_MATCH_OPT
+# define MATCH_ARG_INIT_CACHE_MATCH_OPT(msa) do {\
+  (msa).enable_cache_match_opt = 0;\
+  (msa).num_fail = 0;\
+  (msa).num_cache_opcode = NUM_CACHE_OPCODE_UNINIT;\
+  (msa).num_cache_table = 0;\
+  (msa).cache_index_table = (OnigCacheIndex* )0;\
+  (msa).match_cache = (uint8_t* )0;\
+  (msa).cache_repeat_range = (OnigRepeatRange* )0;\
+} while(0)
+# define MATCH_ARG_FREE_CACHE_MATCH_OPT(msa) do {\
+  if ((msa).cache_index_table) xfree((msa).cache_index_table);\
+  if ((msa).match_cache) xfree((msa).match_cache);\
+  if ((msa).cache_repeat_range) xfree((msa).cache_repeat_range);\
+} while(0)
+#else
+# define MATCH_ARG_INIT_CACHE_MATCH_OPT(msa)
+# define MATCH_ARG_FREE_CACHE_MATCH_OPT(msa)
+#endif
+
+/* Embedders can establish a default without a runtime global write. */
+#ifndef DEFAULT_MATCH_OPERATION_LIMIT
+# define DEFAULT_MATCH_OPERATION_LIMIT 0
+#endif
+
+/* Overrides must be set before starting concurrent searches. */
+static unsigned long MatchOperationLimit = DEFAULT_MATCH_OPERATION_LIMIT;
+
+extern unsigned long
+onig_get_match_operation_limit(void)
+{
+  return MatchOperationLimit;
+}
+
+extern int
+onig_set_match_operation_limit(unsigned long limit)
+{
+  MatchOperationLimit = limit;
+  return 0;
+}
+
+/* Shared by every candidate position in one search; zero means unlimited. */
+#define CHECK_MATCH_OPERATION_LIMIT do {\
+  if (msa->operation_limit != 0) {\
+    if (msa->operations_remaining == 0) {\
+      best_len = ONIGERR_MATCH_OPERATION_LIMIT_OVER;\
+      goto finish;\
+    }\
+    msa->operations_remaining--;\
+  }\
+} while (0)
+
 #ifdef USE_FIND_LONGEST_SEARCH_ALL_OF_RANGE
 # define MATCH_ARG_INIT(msa, arg_option, arg_region, arg_start, arg_gpos) do {\
+  (msa).operation_limit = MatchOperationLimit;\
+  (msa).operations_remaining = MatchOperationLimit;\
   (msa).stack_p  = (void* )0;\
   (msa).options  = (arg_option);\
   (msa).region   = (arg_region);\
@@ -422,15 +904,19 @@ onig_region_copy(OnigRegion* to, const OnigRegion* from)
   (msa).gpos     = (arg_gpos);\
   (msa).best_len = ONIG_MISMATCH;\
   (msa).counter  = 0;\
+  MATCH_ARG_INIT_CACHE_MATCH_OPT(msa);\
 } while(0)
 #else
 # define MATCH_ARG_INIT(msa, arg_option, arg_region, arg_start, arg_gpos) do {\
+  (msa).operation_limit = MatchOperationLimit;\
+  (msa).operations_remaining = MatchOperationLimit;\
   (msa).stack_p  = (void* )0;\
   (msa).options  = (arg_option);\
   (msa).region   = (arg_region);\
   (msa).start    = (arg_start);\
   (msa).gpos     = (arg_gpos);\
   (msa).counter  = 0;\
+  MATCH_ARG_INIT_CACHE_MATCH_OPT(msa);\
 } while(0)
 #endif
 
@@ -466,12 +952,16 @@ onig_region_copy(OnigRegion* to, const OnigRegion* from)
 
 # define MATCH_ARG_FREE(msa) do {\
   if ((msa).stack_p) xfree((msa).stack_p);\
+  MATCH_ARG_FREE_CACHE_MATCH_OPT(msa);\
   if ((msa).state_check_buff_size >= STATE_CHECK_BUFF_MALLOC_THRESHOLD_SIZE) { \
     if ((msa).state_check_buff) xfree((msa).state_check_buff);\
   }\
 } while(0)
 #else /* USE_COMBINATION_EXPLOSION_CHECK */
-# define MATCH_ARG_FREE(msa)  if ((msa).stack_p) xfree((msa).stack_p)
+# define MATCH_ARG_FREE(msa) do {\
+  if ((msa).stack_p) xfree((msa).stack_p);\
+  MATCH_ARG_FREE_CACHE_MATCH_OPT(msa);\
+} while(0)
 #endif /* USE_COMBINATION_EXPLOSION_CHECK */
 
 
@@ -575,6 +1065,132 @@ stack_double(OnigStackType** arg_stk_base, OnigStackType** arg_stk_end,
   *arg_stk_end  = x + n;
   return 0;
 }
+
+#ifdef USE_CACHE_MATCH_OPT
+# define DO_CACHE_MATCH_OPT(reg,stk,repeat_stk,enable,p,num_cache_table,num_cache_size,table,pos,match_cache) do {\
+  if (enable) {\
+    long cache_index = find_cache_index_table(msa->cache_repeat_range, (stk), (repeat_stk), (table), (num_cache_table), (p));\
+    if (cache_index >= 0) {\
+      long key = (num_cache_size) * (long)(pos) + cache_index;\
+      long index = key >> 3;\
+      long mask = 1 << (key & 7);\
+      if ((match_cache)[index] & mask) {\
+	goto match_cache_hit;\
+      }\
+      (match_cache)[index] |= mask;\
+    }\
+  }\
+} while (0)
+
+static long
+find_cache_index_table(OnigRepeatRange* ranges, OnigStackType* stk,
+    OnigStackIndex* repeat_stk, OnigCacheIndex* table,
+    long num_cache_table, UChar* p)
+{
+  long l = 0, r = num_cache_table - 1, m = 0;
+  OnigCacheIndex* item;
+  OnigRepeatRange* range;
+  OnigStackType* stkp;
+  int count = 0;
+
+  while (l <= r) {
+    m = (l + r) / 2;
+    if (table[m].addr == p) break;
+    if (table[m].addr < p) l = m + 1;
+    else r = m - 1;
+  }
+
+  if (!(0 <= m && m < num_cache_table && table[m].addr == p))
+    return -1;
+
+  item = &table[m];
+  if (item->outer_repeat == -1)
+    return item->num;
+
+  range = &ranges[item->outer_repeat];
+  stkp = &stk[repeat_stk[item->outer_repeat]];
+  /* Increment opcodes run after count is advanced. Each optional iteration
+   * owns inner_num body slots followed by one increment/exit slot. Using
+   * count - 1 would alias the lower-bound decision with the next body. */
+  count = stkp->u.repeat.count;
+
+  if (count < range->lower)
+    return range->base_num + range->inner_num * count + item->num;
+
+  if (range->upper == 0x7fffffff)
+    return range->base_num + range->inner_num * range->lower + item->num;
+
+  return range->base_num + range->inner_num * range->lower +
+         (range->inner_num + 1) * (count - range->lower) + item->num;
+}
+
+static void
+reset_match_cache(OnigRepeatRange* ranges, UChar* pbegin, UChar* pend, long pos,
+    uint8_t* match_cache, OnigCacheIndex* table,
+    long num_cache_size, long num_cache_table)
+{
+  long l = 0, r = num_cache_table - 1, m1 = 0, m2 = 0;
+  int is_inc = *pend == OP_REPEAT_INC || *pend == OP_REPEAT_INC_NG;
+  OnigCacheIndex *item1, *item2;
+  long k1, k2, base;
+
+  while (l <= r) {
+    m1 = (l + r) / 2;
+    if (table[m1].addr == pbegin) break;
+    if (table[m1].addr < pbegin) l = m1 + 1;
+    else r = m1 - 1;
+  }
+
+  l = 0, r = num_cache_table - 1;
+  while (l <= r) {
+    m2 = (l + r) / 2;
+    if (table[m2].addr == pend) break;
+    if (table[m2].addr < pend) l = m2 + 1;
+    else r = m2 - 1;
+  }
+
+  if (table[m1].addr < pbegin && m1 + 1 < num_cache_table) m1++;
+  if (table[m2].addr > pend && m2 - 1 > 0) m2--;
+
+  item1 = &table[m1];
+  item2 = &table[m2];
+
+  if (item1->outer_repeat < 0) k1 = item1->num;
+  else k1 = ranges[item1->outer_repeat].base_num + item1->num;
+
+  if (item2->outer_repeat < 0) k2 = item2->num;
+  else {
+    OnigRepeatRange* range = &ranges[item2->outer_repeat];
+    if (range->upper == 0x7fffffff)
+      k2 = range->base_num + range->inner_num * range->lower + (is_inc ? 0 : 1) + item2->num;
+    else
+      k2 = range->base_num + range->inner_num * range->lower +
+           (range->inner_num + 1) * (range->upper - range->lower - (is_inc ? 1 : 0)) + item2->num;
+  }
+
+  base = pos * num_cache_size;
+  k1 += base;
+  k2 += base;
+
+  if ((k1 >> 3) == (k2 >> 3)) {
+    match_cache[k1 >> 3] &= (((1 << (8 - (k2 & 7) - 1)) - 1) << ((k2 & 7) + 1)) | ((1 << (k1 & 7)) - 1);
+  }
+  else {
+    long i = k1 >> 3;
+    if (k1 & 7) {
+      match_cache[k1 >> 3] &= (1 << ((k1 & 7) - 1)) - 1;
+      i++;
+    }
+    if (i < (k2 >> 3)) {
+      xmemset(&match_cache[i], 0, (k2 >> 3) - i);
+      if (k2 & 7)
+        match_cache[k2 >> 3] &= (((1 << (8 - (k2 & 7) - 1)) - 1) << ((k2 & 7) + 1));
+    }
+  }
+}
+#else
+# define DO_CACHE_MATCH_OPT(reg,stk,repeat_stk,enable,p,num_cache_table,num_cache_size,table,pos,match_cache)
+#endif
 
 #define STACK_ENSURE(n)	do {\
   if (stk_end - stk < (n)) {\
@@ -992,7 +1608,7 @@ stack_double(OnigStackType** arg_stk_base, OnigStackType** arg_stk_end,
   }\
 } while(0)
 
-#define STACK_NULL_CHECK_MEMST(isnull,id,s,reg) do {\
+#define STACK_NULL_CHECK_MEMST(isnull,ischange,id,s,reg) do {\
   OnigStackType* k = stk;\
   while (1) {\
     k--;\
@@ -1009,14 +1625,14 @@ stack_double(OnigStackType** arg_stk_base, OnigStackType** arg_stk_end,
           while (k < stk) {\
             if (k->type == STK_MEM_START) {\
               if (k->u.mem.end == INVALID_STACK_INDEX) {\
-                (isnull) = 0; break;\
+                (isnull) = 0; (ischange) = 1; break;\
               }\
               if (BIT_STATUS_AT(reg->bt_mem_end, k->u.mem.num))\
                 endp = STACK_AT(k->u.mem.end)->u.mem.pstr;\
               else\
                 endp = (UChar* )k->u.mem.end;\
               if (STACK_AT(k->u.mem.start)->u.mem.pstr != endp) {\
-                (isnull) = 0; break;\
+                (isnull) = 0; (ischange) = 1; break;\
               }\
               else if (endp != s) {\
                 (isnull) = -1; /* empty, but position changed */ \
@@ -1446,6 +2062,7 @@ match_at(regex_t* reg, const UChar* str, const UChar* end,
   OnigCaseFoldType case_fold_flag = reg->case_fold_flag;
   UChar *s, *q, *sbegin;
   UChar *p = reg->p;
+  UChar *pbegin = p;
   UChar *pkeep;
   char *alloca_base;
   char *xmalloc_base = NULL;
@@ -1464,10 +2081,10 @@ match_at(regex_t* reg, const UChar* str, const UChar* end,
 # define OP_OFFSET  1
 # define VM_LOOP JUMP;
 # define VM_LOOP_END
-# define CASE(x) L_##x: sbegin = s; OPCODE_EXEC_HOOK;
+# define CASE(x) L_##x: sbegin = s; CHECK_MATCH_OPERATION_LIMIT; OPCODE_EXEC_HOOK;
 # define DEFAULT L_DEFAULT:
 # define NEXT sprev = sbegin; JUMP
-# define JUMP RB_GNUC_EXTENSION_BLOCK(goto *oplabels[*p++])
+# define JUMP pbegin = p; RB_GNUC_EXTENSION_BLOCK(goto *oplabels[*p++])
 
   RB_GNUC_EXTENSION static const void *oplabels[] = {
     &&L_OP_FINISH,               /* matching process terminator (no more alternative) */
@@ -1642,7 +2259,9 @@ match_at(regex_t* reg, const UChar* str, const UChar* end,
 # define OP_OFFSET  0
 # define VM_LOOP                                \
   while (1) {                                   \
+  CHECK_MATCH_OPERATION_LIMIT;                 \
   OPCODE_EXEC_HOOK;                             \
+  pbegin = p;                                   \
   sbegin = s;                                   \
   switch (*p++) {
 # define VM_LOOP_END } sprev = sbegin; }
@@ -2156,6 +2775,7 @@ match_at(regex_t* reg, const UChar* str, const UChar* end,
 
     CASE(OP_ANYCHAR_STAR)  MOP_IN(OP_ANYCHAR_STAR);
       while (DATA_ENSURE_CHECK1) {
+	DO_CACHE_MATCH_OPT(reg, stk_base, repeat_stk, msa->enable_cache_match_opt, pbegin, msa->num_cache_table, msa->num_cache_opcode, msa->cache_index_table, s - str, msa->match_cache);
 	STACK_PUSH_ALT(p, s, sprev, pkeep);
 	n = enclen(encode, s, end);
 	DATA_ENSURE(n);
@@ -2168,6 +2788,7 @@ match_at(regex_t* reg, const UChar* str, const UChar* end,
 
     CASE(OP_ANYCHAR_ML_STAR)  MOP_IN(OP_ANYCHAR_ML_STAR);
       while (DATA_ENSURE_CHECK1) {
+	DO_CACHE_MATCH_OPT(reg, stk_base, repeat_stk, msa->enable_cache_match_opt, pbegin, msa->num_cache_table, msa->num_cache_opcode, msa->cache_index_table, s - str, msa->match_cache);
 	STACK_PUSH_ALT(p, s, sprev, pkeep);
 	n = enclen(encode, s, end);
 	if (n > 1) {
@@ -2186,6 +2807,7 @@ match_at(regex_t* reg, const UChar* str, const UChar* end,
     CASE(OP_ANYCHAR_STAR_PEEK_NEXT)  MOP_IN(OP_ANYCHAR_STAR_PEEK_NEXT);
       while (DATA_ENSURE_CHECK1) {
 	if (*p == *s) {
+	  DO_CACHE_MATCH_OPT(reg, stk_base, repeat_stk, msa->enable_cache_match_opt, pbegin, msa->num_cache_table, msa->num_cache_opcode, msa->cache_index_table, s - str, msa->match_cache);
 	  STACK_PUSH_ALT(p + 1, s, sprev, pkeep);
 	}
 	n = enclen(encode, s, end);
@@ -2201,6 +2823,7 @@ match_at(regex_t* reg, const UChar* str, const UChar* end,
     CASE(OP_ANYCHAR_ML_STAR_PEEK_NEXT)MOP_IN(OP_ANYCHAR_ML_STAR_PEEK_NEXT);
       while (DATA_ENSURE_CHECK1) {
 	if (*p == *s) {
+	  DO_CACHE_MATCH_OPT(reg, stk_base, repeat_stk, msa->enable_cache_match_opt, pbegin, msa->num_cache_table, msa->num_cache_opcode, msa->cache_index_table, s - str, msa->match_cache);
 	  STACK_PUSH_ALT(p + 1, s, sprev, pkeep);
 	}
 	n = enclen(encode, s, end);
@@ -2778,9 +3401,10 @@ match_at(regex_t* reg, const UChar* str, const UChar* end,
     CASE(OP_NULL_CHECK_END_MEMST)  MOP_IN(OP_NULL_CHECK_END_MEMST);
       {
 	int isnull;
+	int ischanged = 0;
 
 	GET_MEMNUM_INC(mem, p); /* mem: null check id */
-	STACK_NULL_CHECK_MEMST(isnull, mem, s, reg);
+	STACK_NULL_CHECK_MEMST(isnull, ischanged, mem, s, reg);
 	if (isnull) {
 # ifdef ONIG_DEBUG_MATCH
 	  fprintf(stderr, "NULL_CHECK_END_MEMST: skip  id:%d, s:%"PRIuPTR" (%p)\n",
@@ -2789,6 +3413,30 @@ match_at(regex_t* reg, const UChar* str, const UChar* end,
 	  if (isnull == -1) goto fail;
 	  goto null_check_found;
 	}
+# ifdef USE_CACHE_MATCH_OPT
+	if (ischanged && msa->enable_cache_match_opt) {
+	  RelAddrType rel;
+	  OnigUChar* addr;
+	  int mem;
+	  UChar* tmp = p;
+	  switch (*tmp++) {
+	  case OP_JUMP:
+	  case OP_PUSH:
+	    GET_RELADDR_INC(rel, tmp);
+	    addr = tmp + rel;
+	    break;
+	  case OP_REPEAT_INC:
+	  case OP_REPEAT_INC_NG:
+	    GET_MEMNUM_INC(mem, tmp);
+	    addr = STACK_AT(repeat_stk[mem])->u.repeat.pcode;
+	    break;
+	  default:
+	    goto unexpected_bytecode_error;
+	  }
+	  reset_match_cache(msa->cache_repeat_range, addr, pbegin, (long)(s - str), msa->match_cache,
+	      msa->cache_index_table, msa->num_cache_opcode, msa->num_cache_table);
+	}
+# endif
       }
       MOP_OUT;
       JUMP;
@@ -2831,6 +3479,7 @@ match_at(regex_t* reg, const UChar* str, const UChar* end,
 
     CASE(OP_PUSH)  MOP_IN(OP_PUSH);
       GET_RELADDR_INC(addr, p);
+      DO_CACHE_MATCH_OPT(reg, stk_base, repeat_stk, msa->enable_cache_match_opt, pbegin, msa->num_cache_table, msa->num_cache_opcode, msa->cache_index_table, s - str, msa->match_cache);
       STACK_PUSH_ALT(p + addr, s, sprev, pkeep);
       MOP_OUT;
       JUMP;
@@ -2871,6 +3520,12 @@ match_at(regex_t* reg, const UChar* str, const UChar* end,
 
     CASE(OP_POP)  MOP_IN(OP_POP);
       STACK_POP_ONE;
+#ifdef USE_CACHE_MATCH_OPT
+      if (msa->num_cache_opcode == NUM_CACHE_OPCODE_UNINIT &&
+          msa->num_fail != (size_t)-1) {
+        msa->num_fail++;
+      }
+#endif
       MOP_OUT;
       JUMP;
 
@@ -2879,6 +3534,7 @@ match_at(regex_t* reg, const UChar* str, const UChar* end,
       GET_RELADDR_INC(addr, p);
       if (*p == *s && DATA_ENSURE_CHECK1) {
 	p++;
+	DO_CACHE_MATCH_OPT(reg, stk_base, repeat_stk, msa->enable_cache_match_opt, pbegin, msa->num_cache_table, msa->num_cache_opcode, msa->cache_index_table, s - str, msa->match_cache);
 	STACK_PUSH_ALT(p + addr, s, sprev, pkeep);
 	MOP_OUT;
 	JUMP;
@@ -2892,6 +3548,7 @@ match_at(regex_t* reg, const UChar* str, const UChar* end,
       GET_RELADDR_INC(addr, p);
       if (*p == *s) {
 	p++;
+	DO_CACHE_MATCH_OPT(reg, stk_base, repeat_stk, msa->enable_cache_match_opt, pbegin, msa->num_cache_table, msa->num_cache_opcode, msa->cache_index_table, s - str, msa->match_cache);
 	STACK_PUSH_ALT(p + addr, s, sprev, pkeep);
 	MOP_OUT;
 	JUMP;
@@ -2910,6 +3567,7 @@ match_at(regex_t* reg, const UChar* str, const UChar* end,
 	STACK_PUSH_REPEAT(mem, p);
 
 	if (reg->repeat_range[mem].lower == 0) {
+	  DO_CACHE_MATCH_OPT(reg, stk_base, repeat_stk, msa->enable_cache_match_opt, pbegin, msa->num_cache_table, msa->num_cache_opcode, msa->cache_index_table, s - str, msa->match_cache);
 	  STACK_PUSH_ALT(p + addr, s, sprev, pkeep);
 	}
       }
@@ -2926,6 +3584,7 @@ match_at(regex_t* reg, const UChar* str, const UChar* end,
 	STACK_PUSH_REPEAT(mem, p);
 
 	if (reg->repeat_range[mem].lower == 0) {
+	  DO_CACHE_MATCH_OPT(reg, stk_base, repeat_stk, msa->enable_cache_match_opt, pbegin, msa->num_cache_table, msa->num_cache_opcode, msa->cache_index_table, s - str, msa->match_cache);
 	  STACK_PUSH_ALT(p, s, sprev, pkeep);
 	  p += addr;
 	}
@@ -2944,6 +3603,9 @@ match_at(regex_t* reg, const UChar* str, const UChar* end,
 	/* end of repeat. Nothing to do. */
       }
       else if (stkp->u.repeat.count >= reg->repeat_range[mem].lower) {
+	if (*pbegin == OP_REPEAT_INC) {
+	  DO_CACHE_MATCH_OPT(reg, stk_base, repeat_stk, msa->enable_cache_match_opt, pbegin, msa->num_cache_table, msa->num_cache_opcode, msa->cache_index_table, s - str, msa->match_cache);
+	}
 	STACK_PUSH_ALT(p, s, sprev, pkeep);
 	p = STACK_AT(si)->u.repeat.pcode; /* Don't use stkp after PUSH. */
       }
@@ -2973,6 +3635,9 @@ match_at(regex_t* reg, const UChar* str, const UChar* end,
 	  UChar* pcode = stkp->u.repeat.pcode;
 
 	  STACK_PUSH_REPEAT_INC(si);
+	  if (*pbegin == OP_REPEAT_INC_NG) {
+	    DO_CACHE_MATCH_OPT(reg, stk_base, repeat_stk, msa->enable_cache_match_opt, pbegin, msa->num_cache_table, msa->num_cache_opcode, msa->cache_index_table, s - str, msa->match_cache);
+	  }
 	  STACK_PUSH_ALT(pcode, s, sprev, pkeep);
 	}
 	else {
@@ -3143,6 +3808,16 @@ match_at(regex_t* reg, const UChar* str, const UChar* end,
     CASE(OP_FINISH)
       goto finish;
 
+#ifdef USE_CACHE_MATCH_OPT
+    match_cache_hit:
+      /* Greedy increments have advanced the count but have not yet pushed
+       * their undo entry. Restore it before the cache hit backtracks. */
+      if (*pbegin == OP_REPEAT_INC) {
+        STACK_AT(repeat_stk[mem])->u.repeat.count--;
+      }
+      goto fail;
+#endif
+
     CASE(OP_FAIL)
       if (0) {
 	/* fall */
@@ -3155,6 +3830,54 @@ match_at(regex_t* reg, const UChar* str, const UChar* end,
       s     = stk->u.state.pstr;
       sprev = stk->u.state.pstr_prev;
       pkeep = stk->u.state.pkeep;
+
+#ifdef USE_CACHE_MATCH_OPT
+      if (msa->num_cache_opcode == NUM_CACHE_OPCODE_UNINIT &&
+          (msa->num_fail == (size_t)-1 ||
+           ++msa->num_fail >= (size_t)(end - str) + 1)) {
+        long table_size = 0;
+        size_t len = (size_t)(end - str) + 1;
+        size_t cache_bits;
+        size_t cache_bytes;
+
+        /* The compiled regex may be shared by concurrent searches. */
+        msa->num_cache_opcode = NUM_CACHE_OPCODE_FAIL;
+        if (reg->num_repeat > 0) {
+          if ((size_t)reg->num_repeat >
+              MATCH_CACHE_MAX_BYTES / sizeof(OnigRepeatRange)) {
+            goto fail_match_cache_opt;
+          }
+          msa->cache_repeat_range = (OnigRepeatRange*)
+              xmalloc(reg->num_repeat * sizeof(OnigRepeatRange));
+          if (msa->cache_repeat_range == NULL) goto fail_match_cache_opt;
+          xmemcpy(msa->cache_repeat_range, reg->repeat_range,
+                  reg->num_repeat * sizeof(OnigRepeatRange));
+        }
+        msa->num_cache_opcode = count_num_cache_opcode(reg,
+            msa->cache_repeat_range, &table_size);
+        if (msa->num_cache_opcode <= 0) goto fail_match_cache_opt;
+
+        /* Caching is optional. Oversized or failed allocations fall back to
+         * ordinary matching, with the caller's operation budget intact. */
+        if (len == 0 || (size_t)msa->num_cache_opcode >
+            (MATCH_CACHE_MAX_BYTES * 8) / len) {
+          goto fail_match_cache_opt;
+        }
+        cache_bits = (size_t)msa->num_cache_opcode * len;
+        cache_bytes = (cache_bits >> 3) + (cache_bits & 7 ? 1 : 0);
+        msa->cache_index_table = (OnigCacheIndex*)
+            xmalloc(table_size * sizeof(OnigCacheIndex));
+        if (msa->cache_index_table == NULL) goto fail_match_cache_opt;
+        init_cache_index_table(reg, msa->cache_repeat_range,
+                               msa->cache_index_table);
+        msa->num_cache_table = table_size;
+        msa->match_cache = (uint8_t*)xmalloc(cache_bytes);
+        if (msa->match_cache == NULL) goto fail_match_cache_opt;
+        xmemset(msa->match_cache, 0, cache_bytes);
+        msa->enable_cache_match_opt = 1;
+      }
+    fail_match_cache_opt:
+#endif
 
 #ifdef USE_COMBINATION_EXPLOSION_CHECK
       if (stk->u.state.state_check != 0) {

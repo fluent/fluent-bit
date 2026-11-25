@@ -28,6 +28,7 @@
 
 #define DEFAULT_INTERVAL_SEC "0"
 #define DEFAULT_INTERVAL_NSEC "500000000"
+#define DEFAULT_WATCH_TIMEOUT "10m"
 
 /* Filter context */
 struct k8s_events {
@@ -36,6 +37,7 @@ struct k8s_events {
     int interval_sec;             /* interval collection time (Second)     */
     int interval_nsec;            /* interval collection time (Nanosecond) */
     int retention_time;           /* retention time limit, default 1 hour */
+    int watch_timeout;            /* watch request timeout */
 
     /* Configuration parameters */
     char *api_host;

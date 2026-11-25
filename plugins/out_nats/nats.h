@@ -28,6 +28,7 @@
 struct flb_out_nats_config {
     struct flb_upstream *u;
     struct flb_output_instance *ins;
+    char *invalid_subject_action;
 };
 
 #endif

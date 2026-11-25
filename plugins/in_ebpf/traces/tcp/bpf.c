@@ -15,6 +15,7 @@
 #include <gadget/types.h>
 
 #include "common/events.h"
+#include "common/event_id.bpf.h"
 
 #ifndef AF_UNSPEC
 #define AF_UNSPEC 0
@@ -81,6 +82,7 @@ static __always_inline void fill_common(struct event *event, __u64 mntns_id)
     pid_tgid = bpf_get_current_pid_tgid();
     uid_gid = bpf_get_current_uid_gid();
 
+    generate_event_id(&event->common.event_id);
     event->common.timestamp_raw = bpf_ktime_get_boot_ns();
     event->common.pid = (__u32) (pid_tgid >> 32);
     event->common.tid = (__u32) pid_tgid;

@@ -18,11 +18,11 @@ jobs:
       matrix:
         format: [ rpm, deb ]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           submodules: true
 
-      - uses: uraimo/run-on-arch-action@v3.1.0
+      - uses: uraimo/run-on-arch-action@v3.2.1
         name: Build the ${{matrix.format}} packages
         with:
           arch: aarch64
@@ -54,7 +54,7 @@ jobs:
 
     runs-on: [ ubuntu-latest ]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           submodules: true
 
@@ -81,7 +81,7 @@ jobs:
             ext: pkg
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           submodules: true
 

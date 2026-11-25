@@ -9,7 +9,7 @@ pipeline:
   inputs:
     - name: forward
       unix_path: ${FORWARD_UNIX_PATH}
-      unix_perm: "0600"
+      unix_perm: "${FORWARD_UNIX_PERM}"
 
   outputs:
     - name: http

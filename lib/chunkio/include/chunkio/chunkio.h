@@ -45,6 +45,7 @@
 #define CIO_FULL_SYNC            8         /* force sync to fs through MAP_SYNC */
 #define CIO_DELETE_IRRECOVERABLE 16        /* delete irrecoverable chunks from disk */
 #define CIO_TRIM_FILES           32        /* trim files to their required size */
+#define CIO_FIXED_GROWTH         64        /* disable default adaptive growth */
 
 /* Return status */
 #define CIO_CORRUPTED      -3         /* Indicate that a chunk is corrupted */
@@ -63,6 +64,7 @@
 #define CIO_MAX_CHUNKS_UP               64  /* default limit for cio_ctx->max_chunks_up */
 #define CIO_DISABLE_REALLOC_HINT        -1  /* default value of size of realloc hint */
 #define CIO_DEFAULT_REALLOC_HINT        CIO_REALLOC_HINT_MIN
+#define CIO_ADAPTIVE_GROWTH_MAX         (256 * 1024)
 #define CIO_INITIALIZED                 1337
 
 struct cio_ctx;

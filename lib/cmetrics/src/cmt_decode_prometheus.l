@@ -19,7 +19,7 @@ static void set_allocation_error(struct cmt_decode_prometheus_context *context)
 
     if (context->opts.errbuf != NULL && context->opts.errbuf_size > 0) {
         snprintf(context->opts.errbuf,
-                 context->opts.errbuf_size - 1,
+                 context->opts.errbuf_size,
                  "memory allocation failed");
     }
 }
@@ -252,6 +252,16 @@ static int append_strbuf(struct cmt_decode_prometheus_context *context,
 [0-9.eE+-]+ {
     strncpy(yylval->numstr, yytext, sizeof(yylval->numstr) - 1);
     return NUMSTR;
+}
+
+<INQUOTE,INHELPTAG,INTYPETAG>. {
+    // Catch all for the exclusive start conditions which do not have a rule
+    // for every possible character (unknown escape sequences, a bare "\r" or
+    // an unknown metric type). Without it flex runs its default jam action
+    // which terminates the process. Return the character to the parser so it
+    // is reported as a syntax error instead.
+    BEGIN(INITIAL);
+    return (unsigned char) *yytext;
 }
 
 . {

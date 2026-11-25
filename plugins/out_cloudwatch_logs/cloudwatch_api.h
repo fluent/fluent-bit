@@ -48,7 +48,7 @@
  * https://docs.aws.amazon.com/AmazonCloudWatchLogs/latest/APIReference/API_PutLogEvents.html
  * AWS CloudWatch's documented maximum event size is 1,048,576 bytes (1 MiB),
  * including JSON encoding overhead (structure, escaping, etc.).
- * 
+ *
  * Setting MAX_EVENT_LEN to 1,000,000 bytes (1 MB) provides a ~4.6% safety margin
  * to account for JSON encoding overhead and ensure reliable operation.
  * Testing confirmed messages up to 1,048,546 bytes (encoding to 1,048,586 bytes)
@@ -69,6 +69,9 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
                      const char *data, size_t bytes, int event_type,
                      struct flb_config *config);
 int create_log_stream(struct flb_cloudwatch *ctx, struct log_stream *stream, int can_retry);
+flb_sds_t flb_cloudwatch_create_log_stream_body(struct log_stream *stream);
+int flb_cloudwatch_init_put_payload(struct flb_cloudwatch *ctx, struct cw_flush *buf,
+                                    struct log_stream *stream, int *offset);
 struct log_stream *get_log_stream(struct flb_cloudwatch *ctx, flb_sds_t tag,
                                   const msgpack_object map);
 int put_log_events(struct flb_cloudwatch *ctx, struct cw_flush *buf,
@@ -76,5 +79,9 @@ int put_log_events(struct flb_cloudwatch *ctx, struct cw_flush *buf,
                    size_t payload_size);
 int create_log_group(struct flb_cloudwatch *ctx, struct log_stream *stream);
 int compare_events(const void *a_arg, const void *b_arg);
+void reset_flush_buf(struct flb_cloudwatch *ctx, struct cw_flush *buf);
+void cloudwatch_mock_call_count_reset(void);
+int cloudwatch_mock_call_count_get(const char *api);
+int cloudwatch_mock_create_after_put_count_get(void);
 
 #endif

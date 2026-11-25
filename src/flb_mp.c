@@ -32,8 +32,10 @@
 #include <fluent-bit/flb_log_event_encoder.h>
 #include <fluent-bit/flb_log_event_decoder.h>
 
+#include <cfl/cfl_arena.h>
 #include <msgpack.h>
 #include <mpack/mpack.h>
+#include <ctraces/ctr_decode_msgpack.h>
 
 /* don't do this at home */
 #define pack_uint16(buf, d) _msgpack_store16(buf, (uint16_t) d)
@@ -45,6 +47,725 @@ int flb_mp_count(const void *data, size_t bytes)
     return flb_mp_count_remaining(data, bytes, NULL);
 }
 
+/*
+ * Walk one serialized MessagePack object. Every format of the specification
+ * is handled here:
+ *
+ *   0x00 - 0x7f  positive fixint       0xcc - 0xcf  uint 8/16/32/64
+ *   0x80 - 0x8f  fixmap                0xd0 - 0xd3  int 8/16/32/64
+ *   0x90 - 0x9f  fixarray              0xd4 - 0xd8  fixext 1/2/4/8/16
+ *   0xa0 - 0xbf  fixstr                0xd9 - 0xdb  str 8/16/32
+ *   0xc0         nil                   0xdc - 0xdd  array 16/32
+ *   0xc1         (never used)          0xde - 0xdf  map 16/32
+ *   0xc2 - 0xc3  false, true           0xe0 - 0xff  negative fixint
+ *   0xc4 - 0xc6  bin 8/16/32
+ *   0xc7 - 0xc9  ext 8/16/32
+ *   0xca - 0xcb  float 32/64
+ *
+ * The objects pending on each nesting level are kept in a small array, there
+ * is no recursion. When no depth limit is requested and the array is full,
+ * the children of deeper containers are added to the last level: the number
+ * of objects left to read is all that is needed to find the end.
+ *
+ * With 'minimal' set, a value that msgpack_pack_object() would write in a
+ * different way is an error. A NaN is included because the conversion of a
+ * float 32 done by the unpacker can change its payload.
+ */
+static FLB_INLINE int mp_raw_skip(const unsigned char **cursor,
+                                  const unsigned char *end,
+                                  int max_depth, int minimal)
+{
+    int depth = 0;
+    int unlimited = FLB_FALSE;
+    unsigned char c;
+    uint32_t high;
+    uint32_t low;
+    uint64_t skip;
+    uint64_t children;
+    uint64_t pending[FLB_MP_RAW_MAX_DEPTH];
+    const unsigned char *p = *cursor;
+
+    if (max_depth <= 0) {
+        unlimited = FLB_TRUE;
+        max_depth = FLB_MP_RAW_MAX_DEPTH;
+    }
+    else if (max_depth > FLB_MP_RAW_MAX_DEPTH) {
+        max_depth = FLB_MP_RAW_MAX_DEPTH;
+    }
+
+    pending[0] = 1;
+
+    while (depth >= 0) {
+        if (pending[depth] == 0) {
+            depth--;
+            continue;
+        }
+
+        pending[depth]--;
+
+        if (p >= end) {
+            return -1;
+        }
+
+        c = *p++;
+        skip = 0;
+        children = 0;
+
+        if (c <= 0x7f || c >= 0xe0) {
+            /* positive and negative fixint */
+            continue;
+        }
+        else if (c <= 0x8f) {
+            /* fixmap */
+            children = (uint64_t) (c & 0x0f) * 2;
+        }
+        else if (c <= 0x9f) {
+            /* fixarray */
+            children = c & 0x0f;
+        }
+        else if (c <= 0xbf) {
+            /* fixstr */
+            skip = c & 0x1f;
+        }
+        else {
+            switch (c) {
+            case 0xc0: /* nil */
+            case 0xc2: /* false */
+            case 0xc3: /* true */
+                break;
+            case 0xc4: /* bin 8 */
+                if (end - p < 1) {
+                    return -1;
+                }
+
+                skip = p[0];
+                p += 1;
+                break;
+            case 0xc5: /* bin 16 */
+                if (end - p < 2) {
+                    return -1;
+                }
+
+                skip = flb_mp_raw_be16(p);
+                p += 2;
+
+                if (minimal && skip < 256) {
+                    return -1;
+                }
+
+                break;
+            case 0xc6: /* bin 32 */
+                if (end - p < 4) {
+                    return -1;
+                }
+
+                skip = flb_mp_raw_be32(p);
+                p += 4;
+
+                if (minimal && skip < 65536) {
+                    return -1;
+                }
+
+                break;
+            case 0xc7: /* ext 8: length, type, data */
+                if (end - p < 2) {
+                    return -1;
+                }
+
+                skip = p[0];
+                p += 1;
+
+                /* these lengths have a fixext format */
+                if (minimal && (skip == 1 || skip == 2 || skip == 4 ||
+                                skip == 8 || skip == 16)) {
+                    return -1;
+                }
+
+                skip++;
+                break;
+            case 0xc8: /* ext 16: length, type, data */
+                if (end - p < 3) {
+                    return -1;
+                }
+
+                skip = flb_mp_raw_be16(p);
+                p += 2;
+
+                if (minimal && skip < 256) {
+                    return -1;
+                }
+
+                skip++;
+                break;
+            case 0xc9: /* ext 32: length, type, data */
+                if (end - p < 5) {
+                    return -1;
+                }
+
+                skip = flb_mp_raw_be32(p);
+                p += 4;
+
+                if (minimal && skip < 65536) {
+                    return -1;
+                }
+
+                skip++;
+                break;
+            case 0xca: /* float 32 */
+                if (minimal) {
+                    if (end - p < 4) {
+                        return -1;
+                    }
+
+                    high = flb_mp_raw_be32(p);
+
+                    if ((high & 0x7f800000) == 0x7f800000 &&
+                        (high & 0x007fffff) != 0) {
+                        return -1;
+                    }
+                }
+
+                skip = 4;
+                break;
+            case 0xcb: /* float 64 */
+                if (minimal) {
+                    if (end - p < 8) {
+                        return -1;
+                    }
+
+                    high = flb_mp_raw_be32(p);
+                    low = flb_mp_raw_be32(p + 4);
+
+                    if ((high & 0x7ff00000) == 0x7ff00000 &&
+                        ((high & 0x000fffff) != 0 || low != 0)) {
+                        return -1;
+                    }
+                }
+
+                skip = 8;
+                break;
+            case 0xcc: /* uint 8 */
+                /* up to 127 is a positive fixint */
+                if (minimal && (end - p < 1 || p[0] < 0x80)) {
+                    return -1;
+                }
+
+                skip = 1;
+                break;
+            case 0xcd: /* uint 16 */
+                /* up to 255 is a uint 8 */
+                if (minimal && (end - p < 2 || p[0] == 0)) {
+                    return -1;
+                }
+
+                skip = 2;
+                break;
+            case 0xce: /* uint 32 */
+                /* up to 65535 is a uint 16 */
+                if (minimal && (end - p < 4 || flb_mp_raw_be16(p) == 0)) {
+                    return -1;
+                }
+
+                skip = 4;
+                break;
+            case 0xcf: /* uint 64 */
+                /* up to 4294967295 is a uint 32 */
+                if (minimal && (end - p < 8 || flb_mp_raw_be32(p) == 0)) {
+                    return -1;
+                }
+
+                skip = 8;
+                break;
+            case 0xd0: /* int 8 */
+                /* only -128 to -33: the rest is a fixint */
+                if (minimal && (end - p < 1 || p[0] < 0x80 || p[0] >= 0xe0)) {
+                    return -1;
+                }
+
+                skip = 1;
+                break;
+            case 0xd1: /* int 16 */
+                /* only -32768 to -129 */
+                if (minimal &&
+                    (end - p < 2 || (int16_t) flb_mp_raw_be16(p) >= -128)) {
+                    return -1;
+                }
+
+                skip = 2;
+                break;
+            case 0xd2: /* int 32 */
+                /* only below -32768 */
+                if (minimal &&
+                    (end - p < 4 || (int32_t) flb_mp_raw_be32(p) >= -32768)) {
+                    return -1;
+                }
+
+                skip = 4;
+                break;
+            case 0xd3: /* int 64 */
+                /* only below -2147483648 */
+                if (minimal) {
+                    if (end - p < 8) {
+                        return -1;
+                    }
+
+                    high = flb_mp_raw_be32(p);
+                    low = flb_mp_raw_be32(p + 4);
+
+                    if ((high & 0x80000000) == 0 ||
+                        (high == UINT32_MAX && low >= UINT32_C(0x80000000))) {
+                        return -1;
+                    }
+                }
+
+                skip = 8;
+                break;
+            case 0xd4: /* fixext 1: type, data */
+                skip = 2;
+                break;
+            case 0xd5: /* fixext 2 */
+                skip = 3;
+                break;
+            case 0xd6: /* fixext 4 */
+                skip = 5;
+                break;
+            case 0xd7: /* fixext 8 */
+                skip = 9;
+                break;
+            case 0xd8: /* fixext 16 */
+                skip = 17;
+                break;
+            case 0xd9: /* str 8 */
+                if (end - p < 1) {
+                    return -1;
+                }
+
+                skip = p[0];
+                p += 1;
+
+                if (minimal && skip < 32) {
+                    return -1;
+                }
+
+                break;
+            case 0xda: /* str 16 */
+                if (end - p < 2) {
+                    return -1;
+                }
+
+                skip = flb_mp_raw_be16(p);
+                p += 2;
+
+                if (minimal && skip < 256) {
+                    return -1;
+                }
+
+                break;
+            case 0xdb: /* str 32 */
+                if (end - p < 4) {
+                    return -1;
+                }
+
+                skip = flb_mp_raw_be32(p);
+                p += 4;
+
+                if (minimal && skip < 65536) {
+                    return -1;
+                }
+
+                break;
+            case 0xdc: /* array 16 */
+                if (end - p < 2) {
+                    return -1;
+                }
+
+                children = flb_mp_raw_be16(p);
+                p += 2;
+
+                if (minimal && children < 16) {
+                    return -1;
+                }
+
+                break;
+            case 0xdd: /* array 32 */
+                if (end - p < 4) {
+                    return -1;
+                }
+
+                children = flb_mp_raw_be32(p);
+                p += 4;
+
+                if (minimal && children < 65536) {
+                    return -1;
+                }
+
+                break;
+            case 0xde: /* map 16 */
+                if (end - p < 2) {
+                    return -1;
+                }
+
+                children = flb_mp_raw_be16(p);
+                p += 2;
+
+                if (minimal && children < 16) {
+                    return -1;
+                }
+
+                children *= 2;
+                break;
+            case 0xdf: /* map 32 */
+                if (end - p < 4) {
+                    return -1;
+                }
+
+                children = flb_mp_raw_be32(p);
+                p += 4;
+
+                if (minimal && children < 65536) {
+                    return -1;
+                }
+
+                children *= 2;
+                break;
+            default:
+                /* 0xc1 is never used */
+                return -1;
+            }
+        }
+
+        if (skip > 0) {
+            if ((uint64_t) (end - p) < skip) {
+                return -1;
+            }
+
+            p += skip;
+        }
+        else if (children > 0) {
+            if (depth + 1 < max_depth) {
+                depth++;
+                pending[depth] = children;
+            }
+            else if (unlimited) {
+                /*
+                 * Every pending object needs at least one byte, the check
+                 * also keeps the counter from overflowing.
+                 */
+                if ((uint64_t) (end - p) < children ||
+                    (uint64_t) (end - p) - children < pending[depth]) {
+                    return -1;
+                }
+
+                pending[depth] += children;
+            }
+            else {
+                return -1;
+            }
+        }
+    }
+
+    *cursor = p;
+
+    return 0;
+}
+
+int flb_mp_raw_skip(const unsigned char **cursor, const unsigned char *end,
+                    int max_depth)
+{
+    return mp_raw_skip(cursor, end, max_depth, FLB_FALSE);
+}
+
+int flb_mp_raw_skip_minimal(const unsigned char **cursor,
+                            const unsigned char *end, int max_depth)
+{
+    return mp_raw_skip(cursor, end, max_depth, FLB_TRUE);
+}
+
+size_t flb_mp_raw_object_size(const char *buf, size_t size, int max_depth)
+{
+    const unsigned char *p = (const unsigned char *) buf;
+
+    if (buf == NULL || size == 0 ||
+        mp_raw_skip(&p, p + size, max_depth, FLB_FALSE) != 0) {
+        return 0;
+    }
+
+    return (size_t) (p - (const unsigned char *) buf);
+}
+
+/*
+ * Validate a MessagePack value with a read-only traversal: no msgpack object
+ * tree or zone is constructed. Unusual or deeper inputs are rejected so the
+ * counting API can fall back to the event decoder.
+ */
+static int scan_log_value(mpack_reader_t *reader, mpack_tag_t tag, int depth)
+{
+    int ret;
+    uint32_t index;
+    uint32_t count;
+    mpack_tag_t key;
+
+    if (depth >= 64 || mpack_reader_error(reader) != mpack_ok) {
+        return -1;
+    }
+
+    switch (mpack_tag_type(&tag)) {
+    case mpack_type_array:
+        count = mpack_tag_array_count(&tag);
+        for (index = 0; index < count; index++) {
+            ret = scan_log_value(reader, mpack_read_tag(reader), depth + 1);
+            if (ret != 0) {
+                return -1;
+            }
+        }
+        mpack_done_array(reader);
+        break;
+    case mpack_type_map:
+        count = mpack_tag_map_count(&tag);
+        for (index = 0; index < count; index++) {
+            key = mpack_read_tag(reader);
+            if (scan_log_value(reader, key, depth + 1) != 0) {
+                return -1;
+            }
+
+            ret = scan_log_value(reader, mpack_read_tag(reader), depth + 1);
+            if (ret != 0) {
+                return -1;
+            }
+        }
+        mpack_done_map(reader);
+        break;
+    case mpack_type_str:
+        mpack_skip_bytes(reader, mpack_tag_str_length(&tag));
+        mpack_done_str(reader);
+        break;
+    case mpack_type_bin:
+        mpack_skip_bytes(reader, mpack_tag_bin_length(&tag));
+        mpack_done_bin(reader);
+        break;
+    case mpack_type_ext:
+        mpack_skip_bytes(reader, mpack_tag_ext_length(&tag));
+        mpack_done_ext(reader);
+        break;
+    default:
+        break;
+    }
+
+    if (mpack_reader_error(reader) != mpack_ok) {
+        return -1;
+    }
+
+    return 0;
+}
+
+/*
+ * Scan a buffer where every event uses the layout generated by the log event
+ * encoder:
+ *
+ *    [[EventTime, {metadata}], {body}]
+ *
+ * The serialized bytes are walked directly, which is several times faster
+ * than reading every element as a tag. Returns -1 as soon as something else
+ * is found: the caller runs the generic scan, which remains authoritative for
+ * any other layout and for invalid data.
+ */
+static int scan_log_events_raw(const void *data, size_t bytes,
+                               int *records, int *group_markers)
+{
+    int i;
+    int count = 0;
+    int markers = 0;
+    uint32_t sec;
+    uint32_t nsec;
+    const unsigned char *p = data;
+    const unsigned char *end = p + bytes;
+
+    while (p < end) {
+        if (end - p < 12 ||
+            p[0] != 0x92 || p[1] != 0x92 || p[2] != 0xd7 || p[3] != 0x00) {
+            return -1;
+        }
+
+        sec = flb_mp_raw_be32(p + 4);
+        nsec = flb_mp_raw_be32(p + 8);
+        p += 12;
+
+        /* metadata and body */
+        for (i = 0; i < 2; i++) {
+            if (p >= end ||
+                ((p[0] & 0xf0) != 0x80 && p[0] != 0xde && p[0] != 0xdf) ||
+                mp_raw_skip(&p, end, 64, FLB_FALSE) != 0) {
+                return -1;
+            }
+        }
+
+        /* group markers are not counted as records */
+        if (sec >= UINT32_MAX - 1) {
+            if (nsec != 0 || markers == INT_MAX) {
+                return -1;
+            }
+
+            markers++;
+            continue;
+        }
+
+        if (nsec >= 1000000000 || count == INT_MAX) {
+            return -1;
+        }
+
+        count++;
+    }
+
+    *records = count;
+
+    if (group_markers) {
+        *group_markers = markers;
+    }
+
+    return 0;
+}
+
+int flb_mp_scan_log_records(const void *data, size_t bytes, int *records)
+{
+    return flb_mp_scan_log_events(data, bytes, records, NULL);
+}
+
+/*
+ * Count the log records of a buffer and, optionally, its group markers. A
+ * buffer with no group markers has no groups to normalize.
+ */
+int flb_mp_scan_log_events(const void *data, size_t bytes,
+                           int *records, int *group_markers)
+{
+    mpack_reader_t reader;
+    mpack_tag_t tag;
+    msgpack_object timestamp = {0};
+    struct flb_time time;
+    char extension[8];
+    int header;
+    int count = 0;
+    int markers = 0;
+    int ret = -1;
+
+    /* mpack asserts on a NULL buffer even when it is empty */
+    if (!data) {
+        if (bytes) {
+            return -1;
+        }
+        *records = 0;
+        if (group_markers) {
+            *group_markers = 0;
+        }
+
+        return 0;
+    }
+
+    if (scan_log_events_raw(data, bytes, records, group_markers) == 0) {
+        return 0;
+    }
+
+    mpack_reader_init_data(&reader, data, bytes);
+
+    while (mpack_reader_remaining(&reader, NULL) > 0) {
+        /* every event is a two entries array: [header|timestamp, body] */
+        tag = mpack_read_tag(&reader);
+        if (mpack_tag_type(&tag) != mpack_type_array || mpack_tag_array_count(&tag) != 2) {
+            goto done;
+        }
+
+        /* the header form is [timestamp, metadata] */
+        tag = mpack_read_tag(&reader);
+        header = mpack_tag_type(&tag) == mpack_type_array;
+        if (header) {
+            if (mpack_tag_array_count(&tag) != 2) {
+                goto done;
+            }
+            tag = mpack_read_tag(&reader);
+        }
+
+        if (mpack_tag_type(&tag) == mpack_type_uint) {
+            timestamp.type = MSGPACK_OBJECT_POSITIVE_INTEGER;
+            timestamp.via.u64 = mpack_tag_uint_value(&tag);
+        }
+        else if (mpack_tag_type(&tag) == mpack_type_ext &&
+                 mpack_tag_ext_length(&tag) == 8 && mpack_tag_ext_exttype(&tag) == 0) {
+            mpack_read_bytes(&reader, extension, sizeof(extension));
+            mpack_done_ext(&reader);
+
+            timestamp.type = MSGPACK_OBJECT_EXT;
+            timestamp.via.ext.ptr = extension;
+            timestamp.via.ext.size = sizeof(extension);
+            timestamp.via.ext.type = 0;
+        }
+        else {
+            /* the legacy decoder remains authoritative for float/int timestamps */
+            goto done;
+        }
+
+        if (mpack_reader_error(&reader) != mpack_ok ||
+            flb_log_event_decoder_decode_timestamp(&timestamp, &time) != 0) {
+            goto done;
+        }
+
+        /* metadata */
+        if (header) {
+            tag = mpack_read_tag(&reader);
+            if (mpack_tag_type(&tag) != mpack_type_map ||
+                scan_log_value(&reader, tag, 0) != 0) {
+                goto done;
+            }
+            mpack_done_array(&reader);
+        }
+
+        /* body */
+        tag = mpack_read_tag(&reader);
+        if (mpack_tag_type(&tag) != mpack_type_map ||
+            scan_log_value(&reader, tag, 0) != 0) {
+            goto done;
+        }
+        mpack_done_array(&reader);
+
+        if (mpack_reader_error(&reader) != mpack_ok) {
+            goto done;
+        }
+
+        /* group markers are not counted as records */
+        if (time.tm.tv_sec == FLB_LOG_EVENT_GROUP_START ||
+            time.tm.tv_sec == FLB_LOG_EVENT_GROUP_END) {
+            if (markers == INT_MAX) {
+                goto done;
+            }
+
+            markers++;
+            continue;
+        }
+        else if (flb_time_is_valid_eventtime(&time) == FLB_TRUE && count < INT_MAX) {
+            count++;
+        }
+        else {
+            goto done;
+        }
+    }
+
+    *records = count;
+    if (group_markers) {
+        *group_markers = markers;
+    }
+    ret = 0;
+
+done:
+    /*
+     * Flag an error on early exits so the reader does not complain about
+     * unfinished compound types when it is destroyed.
+     */
+    if (ret != 0) {
+        mpack_reader_flag_error(&reader, mpack_error_invalid);
+    }
+    mpack_reader_destroy(&reader);
+
+    return ret;
+}
+
 /* Return the number of log events excluding group markers */
 int flb_mp_count_log_records(const void *data, size_t bytes)
 {
@@ -52,6 +773,10 @@ int flb_mp_count_log_records(const void *data, size_t bytes)
     int ret;
     struct flb_log_event log_event;
     struct flb_log_event_decoder decoder;
+
+    if (flb_mp_scan_log_records(data, bytes, &count) == 0) {
+        return count;
+    }
 
     count = 0;
 
@@ -70,6 +795,298 @@ int flb_mp_count_log_records(const void *data, size_t bytes)
     return count;
 }
 
+/*
+ * Report the group markers of a log buffer that belong to neighbouring
+ * appends: an end marker before any start (FLB_MP_GROUPS_KEEP_LEADING_END) and
+ * a single group still open at the end (FLB_MP_GROUPS_KEEP_TRAILING_OPEN).
+ * Returns the flags, or 0 when the buffer cannot be scanned.
+ */
+static int log_group_scan(const void *data, size_t bytes, int *starts);
+
+int flb_mp_log_group_boundaries(const void *data, size_t bytes)
+{
+    return log_group_scan(data, bytes, NULL);
+}
+
+/* number of group start markers in a log buffer, 0 when it cannot be scanned */
+int flb_mp_log_group_starts(const void *data, size_t bytes)
+{
+    int starts = 0;
+
+    log_group_scan(data, bytes, &starts);
+    return starts;
+}
+
+static int log_group_scan(const void *data, size_t bytes, int *starts)
+{
+    mpack_reader_t reader;
+    mpack_tag_t tag;
+    msgpack_object timestamp = {0};
+    struct flb_time time;
+    char extension[8];
+    int header;
+    int flags = 0;
+    int depth = 0;
+    int seen_start = FLB_FALSE;
+    int failed = FLB_TRUE;
+
+    if (!data || bytes == 0) {
+        return 0;
+    }
+
+    mpack_reader_init_data(&reader, data, bytes);
+
+    while (mpack_reader_remaining(&reader, NULL) > 0) {
+        tag = mpack_read_tag(&reader);
+        if (mpack_tag_type(&tag) != mpack_type_array || mpack_tag_array_count(&tag) != 2) {
+            goto done;
+        }
+
+        tag = mpack_read_tag(&reader);
+        header = mpack_tag_type(&tag) == mpack_type_array;
+        if (header) {
+            if (mpack_tag_array_count(&tag) != 2) {
+                goto done;
+            }
+            tag = mpack_read_tag(&reader);
+        }
+
+        /* only group markers matter, and they use the EventTime extension */
+        timestamp.type = MSGPACK_OBJECT_POSITIVE_INTEGER;
+        if (mpack_tag_type(&tag) == mpack_type_ext &&
+            mpack_tag_ext_length(&tag) == 8 && mpack_tag_ext_exttype(&tag) == 0) {
+            mpack_read_bytes(&reader, extension, sizeof(extension));
+            mpack_done_ext(&reader);
+            timestamp.type = MSGPACK_OBJECT_EXT;
+            timestamp.via.ext.ptr = extension;
+            timestamp.via.ext.size = sizeof(extension);
+            timestamp.via.ext.type = 0;
+        }
+        else if (mpack_tag_type(&tag) == mpack_type_ext) {
+            mpack_skip_bytes(&reader, mpack_tag_ext_length(&tag));
+            mpack_done_ext(&reader);
+        }
+        else if (mpack_tag_type(&tag) == mpack_type_array ||
+                 mpack_tag_type(&tag) == mpack_type_map ||
+                 mpack_tag_type(&tag) == mpack_type_str ||
+                 mpack_tag_type(&tag) == mpack_type_bin) {
+            goto done;
+        }
+
+        if (header) {
+            mpack_discard(&reader);
+            mpack_done_array(&reader);
+        }
+        mpack_discard(&reader);
+        mpack_done_array(&reader);
+
+        if (mpack_reader_error(&reader) != mpack_ok) {
+            goto done;
+        }
+
+        if (timestamp.type != MSGPACK_OBJECT_EXT ||
+            flb_log_event_decoder_decode_timestamp(&timestamp, &time) != 0) {
+            continue;
+        }
+
+        if (time.tm.tv_sec == FLB_LOG_EVENT_GROUP_START) {
+            seen_start = FLB_TRUE;
+            depth++;
+            if (starts) {
+                (*starts)++;
+            }
+        }
+        else if (time.tm.tv_sec == FLB_LOG_EVENT_GROUP_END) {
+            if (depth > 0) {
+                depth--;
+            }
+            else if (!seen_start) {
+                flags |= FLB_MP_GROUPS_KEEP_LEADING_END;
+            }
+        }
+    }
+
+    if (depth == 1) {
+        flags |= FLB_MP_GROUPS_KEEP_TRAILING_OPEN;
+    }
+    failed = FLB_FALSE;
+
+done:
+    if (failed) {
+        mpack_reader_flag_error(&reader, mpack_error_invalid);
+    }
+    mpack_reader_destroy(&reader);
+
+    return failed ? 0 : flags;
+}
+
+/* TRUE when the event starting at 'data' is a group end marker */
+static int log_event_is_group_end(const char *data, size_t bytes)
+{
+    mpack_reader_t reader;
+    mpack_tag_t tag;
+    msgpack_object timestamp = {0};
+    struct flb_time time;
+    char extension[8];
+    int result = FLB_FALSE;
+
+    mpack_reader_init_data(&reader, data, bytes);
+
+    tag = mpack_read_tag(&reader);
+    if (mpack_tag_type(&tag) == mpack_type_array && mpack_tag_array_count(&tag) == 2) {
+        tag = mpack_read_tag(&reader);
+        if (mpack_tag_type(&tag) == mpack_type_array && mpack_tag_array_count(&tag) == 2) {
+            tag = mpack_read_tag(&reader);
+        }
+
+        /* group markers always use the EventTime extension */
+        if (mpack_tag_type(&tag) == mpack_type_ext &&
+            mpack_tag_ext_length(&tag) == 8 && mpack_tag_ext_exttype(&tag) == 0) {
+            mpack_read_bytes(&reader, extension, sizeof(extension));
+            if (mpack_reader_error(&reader) == mpack_ok) {
+                timestamp.type = MSGPACK_OBJECT_EXT;
+                timestamp.via.ext.ptr = extension;
+                timestamp.via.ext.size = sizeof(extension);
+                timestamp.via.ext.type = 0;
+                result = flb_log_event_decoder_decode_timestamp(&timestamp, &time) == 0 &&
+                         time.tm.tv_sec == FLB_LOG_EVENT_GROUP_END;
+            }
+        }
+    }
+
+    /* only the event header was read */
+    mpack_reader_flag_error(&reader, mpack_error_invalid);
+    mpack_reader_destroy(&reader);
+
+    return result;
+}
+
+/*
+ * Find the end of the log window starting at 'offset'. A window closes after
+ * 'limit_bytes' of serialized events or 'limit_records' log records, but only
+ * outside a group: every group stays whole within one window, which can exceed
+ * the limits by up to one group.
+ */
+int flb_mp_log_window_next(const void *data, size_t bytes, size_t offset,
+                           size_t limit_bytes, int limit_records,
+                           size_t *window_end, int *window_records)
+{
+    mpack_reader_t reader;
+    mpack_tag_t tag;
+    msgpack_object timestamp = {0};
+    struct flb_time time;
+    char extension[8];
+    size_t position = 0;
+    int header;
+    int records = 0;
+    int in_group = FLB_FALSE;
+    int ret = -1;
+
+    if (!data || !window_end || !window_records || offset >= bytes) {
+        return -1;
+    }
+
+    mpack_reader_init_data(&reader, (const char *) data + offset, bytes - offset);
+
+    while (mpack_reader_remaining(&reader, NULL) > 0) {
+        /* every event is a two entries array: [header|timestamp, body] */
+        tag = mpack_read_tag(&reader);
+        if (mpack_tag_type(&tag) != mpack_type_array || mpack_tag_array_count(&tag) != 2) {
+            goto done;
+        }
+
+        /* the header form is [timestamp, metadata] */
+        tag = mpack_read_tag(&reader);
+        header = mpack_tag_type(&tag) == mpack_type_array;
+        if (header) {
+            if (mpack_tag_array_count(&tag) != 2) {
+                goto done;
+            }
+            tag = mpack_read_tag(&reader);
+        }
+
+        if (mpack_tag_type(&tag) == mpack_type_uint) {
+            timestamp.type = MSGPACK_OBJECT_POSITIVE_INTEGER;
+            timestamp.via.u64 = mpack_tag_uint_value(&tag);
+        }
+        else if (mpack_tag_type(&tag) == mpack_type_double) {
+            timestamp.type = MSGPACK_OBJECT_FLOAT;
+            timestamp.via.f64 = mpack_tag_double_value(&tag);
+        }
+        else if (mpack_tag_type(&tag) == mpack_type_float) {
+            timestamp.type = MSGPACK_OBJECT_FLOAT;
+            timestamp.via.f64 = mpack_tag_float_value(&tag);
+        }
+        else if (mpack_tag_type(&tag) == mpack_type_ext &&
+                 mpack_tag_ext_length(&tag) == 8 && mpack_tag_ext_exttype(&tag) == 0) {
+            mpack_read_bytes(&reader, extension, sizeof(extension));
+            mpack_done_ext(&reader);
+
+            timestamp.type = MSGPACK_OBJECT_EXT;
+            timestamp.via.ext.ptr = extension;
+            timestamp.via.ext.size = sizeof(extension);
+            timestamp.via.ext.type = 0;
+        }
+        else {
+            goto done;
+        }
+
+        if (header) {
+            mpack_discard(&reader);
+            mpack_done_array(&reader);
+        }
+
+        /* body */
+        mpack_discard(&reader);
+        mpack_done_array(&reader);
+
+        if (mpack_reader_error(&reader) != mpack_ok ||
+            flb_log_event_decoder_decode_timestamp(&timestamp, &time) != 0) {
+            goto done;
+        }
+
+        if (time.tm.tv_sec == FLB_LOG_EVENT_GROUP_START) {
+            in_group = FLB_TRUE;
+        }
+        else if (time.tm.tv_sec == FLB_LOG_EVENT_GROUP_END) {
+            in_group = FLB_FALSE;
+        }
+        else if (records < INT_MAX) {
+            records++;
+        }
+
+        position = (bytes - offset) - mpack_reader_remaining(&reader, NULL);
+
+        /*
+         * Never start the next window with an end marker: per window it would
+         * look like the end of a group opened by a previous append.
+         */
+        if (!in_group && (position >= limit_bytes || records >= limit_records) &&
+            (offset + position >= bytes ||
+             !log_event_is_group_end((const char *) data + offset + position,
+                                     bytes - offset - position))) {
+            break;
+        }
+    }
+
+    if (position > 0) {
+        *window_end = offset + position;
+        *window_records = records;
+        ret = 0;
+    }
+
+done:
+    /* flag early exits so unfinished compound types are not reported */
+    if (ret != 0) {
+        mpack_reader_flag_error(&reader, mpack_error_invalid);
+    }
+    if (mpack_reader_destroy(&reader) != mpack_ok) {
+        ret = -1;
+    }
+
+    return ret;
+}
+
 struct flb_mp_record_span {
     const char *base;
     size_t length;
@@ -80,10 +1097,27 @@ struct flb_mp_record_span {
 int flb_mp_normalize_log_buffer_groups_msgpack(const void *in_buf, size_t in_size,
                                                char **out_buf, size_t *out_size)
 {
+    return flb_mp_normalize_log_buffer_groups_msgpack_ex(in_buf, in_size, out_buf, out_size, 0);
+}
+
+/*
+ * Group normalization removes empty groups, end markers without a start and
+ * groups left open at the end of the buffer. 'flags' keeps the markers at the
+ * append boundaries when the caller knows the input already had them: a group
+ * split across appends keeps its first end marker before any start
+ * (FLB_MP_GROUPS_KEEP_LEADING_END) and its single open trailing group
+ * (FLB_MP_GROUPS_KEEP_TRAILING_OPEN).
+ */
+int flb_mp_normalize_log_buffer_groups_msgpack_ex(const void *in_buf, size_t in_size,
+                                                  char **out_buf, size_t *out_size,
+                                                  int flags)
+{
     int i;
     int ret;
     int entry_count;
     int stack_count;
+    int seen_start = FLB_FALSE;
+    int leading_end = FLB_FALSE;
     int *group_stack;
     int *group_has_content;
     struct flb_log_event log_event;
@@ -171,12 +1205,19 @@ int flb_mp_normalize_log_buffer_groups_msgpack(const void *in_buf, size_t in_siz
             group_stack[stack_count] = i;
             group_has_content[stack_count] = FLB_FALSE;
             stack_count++;
+            seen_start = FLB_TRUE;
             continue;
         }
 
         if (entries[i].type == FLB_LOG_EVENT_GROUP_END) {
             if (stack_count == 0) {
-                entries[i].keep = FLB_FALSE;
+                /* the first end before any start closes a previous append's group */
+                if ((flags & FLB_MP_GROUPS_KEEP_LEADING_END) && !seen_start && !leading_end) {
+                    leading_end = FLB_TRUE;
+                }
+                else {
+                    entries[i].keep = FLB_FALSE;
+                }
                 continue;
             }
 
@@ -196,6 +1237,11 @@ int flb_mp_normalize_log_buffer_groups_msgpack(const void *in_buf, size_t in_siz
         if (stack_count > 0) {
             group_has_content[stack_count - 1] = FLB_TRUE;
         }
+    }
+
+    /* a single open group continues in the next append, nested ones are dropped */
+    if ((flags & FLB_MP_GROUPS_KEEP_TRAILING_OPEN) && stack_count == 1) {
+        stack_count = 0;
     }
 
     while (stack_count > 0) {
@@ -381,6 +1427,33 @@ error:
     *processed_bytes = pre_off;
 
     return -1;
+}
+
+int flb_mp_validate_trace_chunk(const void *data, size_t bytes,
+                                int *out_contexts, size_t *processed_bytes)
+{
+    int ret;
+    int count;
+    size_t offset;
+    struct ctrace *trace;
+
+    count = 0;
+    offset = 0;
+    *out_contexts = 0;
+    *processed_bytes = 0;
+
+    while (offset < bytes) {
+        ret = ctr_decode_msgpack_create(&trace, (char *) data, bytes, &offset);
+        if (ret != CTR_DECODE_MSGPACK_SUCCESS) {
+            return -1;
+        }
+        ctr_destroy(trace);
+        count++;
+        *out_contexts = count;
+        *processed_bytes = offset;
+    }
+
+    return 0;
 }
 
 int flb_mp_validate_log_chunk(const void *data, size_t bytes,
@@ -1002,210 +2075,288 @@ void flb_mp_accessor_destroy(struct flb_mp_accessor *mpa)
 }
 
 
-static int mp_object_to_cfl(void **ptr, msgpack_object *o)
+/*
+ * Convert a msgpack object into a CFL variant. When 'arena' is set, the
+ * variant and its children are allocated from it, otherwise from the heap.
+ */
+static struct cfl_variant *mp_variant_to_cfl(msgpack_object *object, struct cfl_arena *arena)
 {
-    int i;
-    int ret = -1;
+    struct cfl_variant *value;
+    struct cfl_variant *child;
     struct cfl_array *array;
-    struct cfl_kvlist *kvlist;
-    void *var;
-    msgpack_object key;
-    msgpack_object val;
+    struct cfl_kvlist *map;
+    msgpack_object_kv *pair;
+    size_t index;
 
-    switch(o->type) {
+    switch (object->type) {
     case MSGPACK_OBJECT_NIL:
-        var = cfl_variant_create_from_null();
-        if (!var) {
-            return -1;
-        }
-        *ptr = var;
-        ret = CFL_OBJECT_VARIANT;
-        break;
+        return cfl_variant_create_from_null_in(arena);
     case MSGPACK_OBJECT_BOOLEAN:
-        var = cfl_variant_create_from_bool(o->via.boolean);
-        if (!var) {
-            return -1;
-        }
-        *ptr = var;
-        ret = CFL_OBJECT_VARIANT;
-        break;
+        return cfl_variant_create_from_bool_in(arena, object->via.boolean);
     case MSGPACK_OBJECT_POSITIVE_INTEGER:
-        var = cfl_variant_create_from_uint64(o->via.u64);
-        if (!var) {
-            return -1;
-        }
-        *ptr = var;
-        ret = CFL_OBJECT_VARIANT;
-        break;
+        return cfl_variant_create_from_uint64_in(arena, object->via.u64);
     case MSGPACK_OBJECT_NEGATIVE_INTEGER:
-        var = cfl_variant_create_from_int64(o->via.i64);
-        if (!var) {
-            return -1;
-        }
-        *ptr = var;
-        ret = CFL_OBJECT_VARIANT;
-        break;
+        return cfl_variant_create_from_int64_in(arena, object->via.i64);
     case MSGPACK_OBJECT_FLOAT32:
     case MSGPACK_OBJECT_FLOAT64:
-        var = cfl_variant_create_from_double(o->via.f64);
-        if (!var) {
-            return -1;
-        }
-        *ptr = var;
-        ret = CFL_OBJECT_VARIANT;
-        break;
+        return cfl_variant_create_from_double_in(arena, object->via.f64);
     case MSGPACK_OBJECT_STR:
-        var = cfl_variant_create_from_string_s((char *) o->via.str.ptr,
-                                               o->via.str.size, CFL_TRUE);
-        if (!var) {
-            return -1;
-        }
-        *ptr = var;
-        ret = CFL_OBJECT_VARIANT;
-        break;
+        return cfl_variant_create_from_string_s_in(arena, (char *) object->via.str.ptr,
+                                                   object->via.str.size, CFL_TRUE);
     case MSGPACK_OBJECT_BIN:
-        var = cfl_variant_create_from_bytes((char *) o->via.str.ptr,
-                                            o->via.str.size, CFL_TRUE);
-        if (!var) {
-            return -1;
-        }
-
-        *ptr = var;
-        ret = CFL_OBJECT_VARIANT;
-        break;
-    case MSGPACK_OBJECT_EXT:
-        /* we do not pack extension type content */
-        *ptr = NULL;
-        ret = CFL_OBJECT_NONE;
-        break;
+        return cfl_variant_create_from_bytes_in(arena, (char *) object->via.bin.ptr,
+                                                object->via.bin.size, CFL_TRUE);
     case MSGPACK_OBJECT_ARRAY:
-        array = cfl_array_create(o->via.map.size);
+        array = cfl_array_create_in(arena, object->via.array.size);
         if (!array) {
-            return -1;
+            return NULL;
         }
-        ret = 0;
 
-        for (i = 0; i < o->via.map.size; i++) {
-            ret = mp_object_to_cfl((void *) &var, &o->via.array.ptr[i]);
-            if (ret == CFL_OBJECT_KVLIST) {
-                ret = cfl_array_append_kvlist(array, var);
-            }
-            else if (ret == CFL_OBJECT_VARIANT) {
-                ret = cfl_array_append(array, var);
-            }
-            else if (ret == CFL_OBJECT_ARRAY) {
-                ret = cfl_array_append_array(array, var);
-            }
-            else {
-                ret = -1;
-                break;
+        for (index = 0; index < object->via.array.size; index++) {
+            child = mp_variant_to_cfl(&object->via.array.ptr[index], arena);
+            if (!child || cfl_array_append(array, child) != 0) {
+                cfl_variant_destroy(child);
+                cfl_array_destroy(array);
+                return NULL;
             }
         }
 
-        if (ret == -1) {
+        value = cfl_variant_create_from_array_in(arena, array);
+        if (!value) {
             cfl_array_destroy(array);
-            return -1;
         }
-
-        *ptr = array;
-        ret = CFL_OBJECT_ARRAY;
-        break;
+        return value;
     case MSGPACK_OBJECT_MAP:
-        kvlist = cfl_kvlist_create();
-        if (!kvlist) {
-            return -1;
+        map = cfl_kvlist_create_in(arena);
+        if (!map) {
+            return NULL;
         }
 
-        ret = 0;
-        for (i = 0; i < o->via.map.size; i++) {
-            key = o->via.map.ptr[i].key;
-            val = o->via.map.ptr[i].val;
+        for (index = 0; index < object->via.map.size; index++) {
+            pair = &object->via.map.ptr[index];
 
-            /* force key type to be strin, otherwise just abort */
-            if (key.type != MSGPACK_OBJECT_STR) {
-                ret = -1;
-                break;
+            /* only string keys are supported */
+            if (pair->key.type != MSGPACK_OBJECT_STR) {
+                cfl_kvlist_destroy(map);
+                return NULL;
             }
 
-            /* key variant is ready, now we need the value variant */
-            ret = mp_object_to_cfl((void *) &var, &val);
-            if (ret == -1) {
-                 break;
-            }
-
-            if (ret == CFL_OBJECT_KVLIST) {
-                ret = cfl_kvlist_insert_kvlist_s(kvlist,
-                                                 (char *) key.via.str.ptr, key.via.str.size,
-                                                 var);
-            }
-            else if (ret == CFL_OBJECT_VARIANT) {
-                ret = cfl_kvlist_insert_s(kvlist,
-                                          (char *) key.via.str.ptr, key.via.str.size,
-                                          var);
-            }
-            else if (ret == CFL_OBJECT_ARRAY) {
-                ret = cfl_kvlist_insert_array_s(kvlist,
-                                                (char *) key.via.str.ptr, key.via.str.size,
-                                                var);
-            }
-            else {
-                ret = -1;
-                break;
+            child = mp_variant_to_cfl(&pair->val, arena);
+            if (!child || cfl_kvlist_insert_s(map, (char *) pair->key.via.str.ptr,
+                                              pair->key.via.str.size, child) != 0) {
+                cfl_variant_destroy(child);
+                cfl_kvlist_destroy(map);
+                return NULL;
             }
         }
 
-        if (ret == -1) {
-            cfl_kvlist_destroy(kvlist);
-            return -1;
+        value = cfl_variant_create_from_kvlist_in(arena, map);
+        if (!value) {
+            cfl_kvlist_destroy(map);
         }
-
-        *ptr = kvlist;
-        ret = CFL_OBJECT_KVLIST;
-        break;
+        return value;
     default:
-        break;
+        /* extension types are not converted */
+        return NULL;
     }
-
-    return ret;
 }
 
+/* Only maps (kvlist) and arrays can be converted to a cfl_object */
+static struct cfl_object *mp_object_to_cfl_in(msgpack_object *object, struct cfl_arena *arena)
+{
+    struct cfl_object *result;
+
+    if (object->type != MSGPACK_OBJECT_MAP && object->type != MSGPACK_OBJECT_ARRAY) {
+        return NULL;
+    }
+
+    result = cfl_object_create();
+    if (!result) {
+        return NULL;
+    }
+
+    result->variant = mp_variant_to_cfl(object, arena);
+    if (!result->variant) {
+        cfl_object_destroy(result);
+        return NULL;
+    }
+
+    if (object->type == MSGPACK_OBJECT_MAP) {
+        result->type = CFL_OBJECT_KVLIST;
+    }
+    else {
+        result->type = CFL_OBJECT_ARRAY;
+    }
+
+    return result;
+}
 
 /* Convert a msgpack object to a cfl_object */
 struct cfl_object *flb_mp_object_to_cfl(msgpack_object *o)
 {
-    int ret;
-    void *out = NULL;
-    struct cfl_object *obj;
+    return mp_object_to_cfl_in(o, NULL);
+}
 
-    /* For now, only allow to convert to map (kvlist) or array */
-    if (o->type != MSGPACK_OBJECT_MAP && o->type != MSGPACK_OBJECT_ARRAY) {
+/*
+ * Bytes a chunk value pool can hold before new record trees use the heap, and
+ * its arena block size. Trees already in the pool can keep growing, so edits
+ * on them never fail because the pool is full.
+ */
+#define FLB_MP_VALUE_POOL_LIMIT (1024 * 1024)
+#define FLB_MP_VALUE_POOL_BLOCK 16384
+
+/* Prefix of every pool allocation, it keeps the size for accounting */
+union value_pool_header {
+    size_t size;
+    long double alignment;
+    void *pointer;
+};
+
+static void *value_pool_malloc(void *context, size_t size)
+{
+    struct flb_mp_chunk_cobj *chunk = context;
+    union value_pool_header *header;
+
+    if (size > SIZE_MAX - sizeof(*header)) {
         return NULL;
     }
 
-    obj = cfl_object_create();
-    if (!obj) {
+    header = flb_malloc(sizeof(*header) + size);
+    if (!header) {
+        flb_errno();
         return NULL;
     }
 
-    ret = mp_object_to_cfl(&out, o);
-    if (ret < 0) {
-        cfl_object_destroy(obj);
+    header->size = sizeof(*header) + size;
+    chunk->value_pool_bytes += header->size;
+
+    return header + 1;
+}
+
+static void value_pool_free(void *context, void *pointer)
+{
+    struct flb_mp_chunk_cobj *chunk = context;
+    union value_pool_header *header = (union value_pool_header *) pointer - 1;
+
+    chunk->value_pool_bytes -= header->size;
+    flb_free(header);
+}
+
+void flb_mp_chunk_cobj_value_pool_enable(struct flb_mp_chunk_cobj *chunk)
+{
+    struct cfl_arena_options options;
+
+    if (chunk->value_pool) {
+        return;
+    }
+
+    /* fixed size blocks, accounted against the chunk through the hooks */
+    cfl_arena_options_init(&options);
+    options.chunk_size = FLB_MP_VALUE_POOL_BLOCK;
+    options.maximum_chunk_size = FLB_MP_VALUE_POOL_BLOCK;
+    options.large_object_threshold = FLB_MP_VALUE_POOL_BLOCK;
+    options.malloc_fn = value_pool_malloc;
+    options.free_fn = value_pool_free;
+    options.allocator_context = chunk;
+
+    chunk->value_pool = cfl_arena_create_with_options(&options);
+    if (chunk->value_pool) {
+        cfl_arena_external_cache_limit_set(chunk->value_pool, 0);
+    }
+}
+
+struct cfl_arena *flb_mp_chunk_cobj_value_pool_get(struct flb_mp_chunk_cobj *chunk,
+                                                  size_t estimated_bytes)
+{
+    size_t available;
+
+    if (!chunk || !chunk->value_pool ||
+        chunk->value_pool_bytes >= FLB_MP_VALUE_POOL_LIMIT) {
         return NULL;
     }
 
-    ret = cfl_object_set(obj, ret, out);
-    if (ret == -1) {
-        if (ret == CFL_OBJECT_KVLIST) {
-            cfl_kvlist_destroy(out);
+    available = FLB_MP_VALUE_POOL_LIMIT - chunk->value_pool_bytes;
+
+    /*
+     * Leave room for a new arena block and its allocation headers. Oversized
+     * roots use heap ownership as a whole, never mixed container ownership.
+     */
+    if (available < 2 * FLB_MP_VALUE_POOL_BLOCK ||
+        estimated_bytes > available - 2 * FLB_MP_VALUE_POOL_BLOCK) {
+        return NULL;
+    }
+
+    return chunk->value_pool;
+}
+
+/*
+ * Upper estimate for arena nodes, aligned slots, kvpairs and copied map keys.
+ * MessagePack string/byte payloads themselves remain borrowed from the decoder.
+ */
+static size_t mp_value_pool_cost(msgpack_object *object, int depth)
+{
+    size_t cost = 512;
+    size_t child;
+    size_t index;
+    msgpack_object *value;
+
+    if (depth >= 64) {
+        return SIZE_MAX;
+    }
+
+    if (object->type != MSGPACK_OBJECT_MAP && object->type != MSGPACK_OBJECT_ARRAY) {
+        return cost;
+    }
+
+    /* maps and arrays share the same 'size' layout in the msgpack union */
+    for (index = 0; index < object->via.array.size; index++) {
+        if (object->type == MSGPACK_OBJECT_MAP) {
+            value = &object->via.map.ptr[index].val;
+
+            child = 0;
+            if (object->via.map.ptr[index].key.type == MSGPACK_OBJECT_STR) {
+                child = object->via.map.ptr[index].key.via.str.size;
+            }
+
+            if (cost > SIZE_MAX - 512 || child > (SIZE_MAX - cost - 512) / 2) {
+                return SIZE_MAX;
+            }
+            cost += 512 + 2 * child;
         }
-        else if (ret == CFL_OBJECT_ARRAY) {
-            cfl_array_destroy(out);
+        else {
+            value = &object->via.array.ptr[index];
         }
-        cfl_object_destroy(obj);
-        return NULL;
+
+        child = mp_value_pool_cost(value, depth + 1);
+        if (child > SIZE_MAX - cost) {
+            return SIZE_MAX;
+        }
+        cost += child;
     }
 
-    return obj;
+    return cost;
+}
+
+/*
+ * Convert a decoded msgpack object for a chunk record. The chunk value pool is
+ * used when enabled and large enough, falling back to heap allocations.
+ */
+static struct cfl_object *chunk_object_from_msgpack(struct flb_mp_chunk_cobj *chunk,
+                                                    msgpack_object *object)
+{
+    struct cfl_arena *arena = NULL;
+    struct cfl_object *result;
+
+    if (chunk->value_pool) {
+        arena = flb_mp_chunk_cobj_value_pool_get(chunk, mp_value_pool_cost(object, 0));
+    }
+
+    result = mp_object_to_cfl_in(object, arena);
+    if (!result && arena) {
+        result = mp_object_to_cfl_in(object, NULL);
+    }
+
+    return result;
 }
 
 static int mp_cfl_to_msgpack(struct cfl_variant *var,
@@ -1319,20 +2470,76 @@ int flb_mp_cfl_to_msgpack(struct cfl_object *obj, char **out_buf, size_t *out_si
     return 0;
 }
 
+/* Records per pool block and maximum number of blocks per chunk */
+#define FLB_MP_RECORD_BLOCK_ENTRIES 64
+#define FLB_MP_RECORD_BLOCK_LIMIT 8
+
+/*
+ * A block has one owner reference plus one reference per live record. Moving
+ * records between chunks does not change their storage lifetime.
+ */
+struct flb_mp_record_block {
+    struct flb_mp_record_block *next;
+    size_t references;
+    size_t used;
+    struct flb_mp_chunk_record records[FLB_MP_RECORD_BLOCK_ENTRIES];
+};
+
+static void record_block_release(struct flb_mp_record_block *block)
+{
+    block->references--;
+    if (block->references == 0) {
+        flb_free(block);
+    }
+}
+
+static void record_storage_release(struct flb_mp_chunk_record *record)
+{
+    if (record->storage_block) {
+        record_block_release(record->storage_block);
+    }
+    else {
+        flb_free(record);
+    }
+}
+
 struct flb_mp_chunk_record *flb_mp_chunk_record_create(struct flb_mp_chunk_cobj *chunk_cobj)
 {
     struct flb_mp_chunk_record *record;
+    struct flb_mp_record_block *block;
 
+    if (chunk_cobj && chunk_cobj->record_pool_enabled) {
+        block = chunk_cobj->record_pool;
+
+        /* the current block is full (or missing), try to add a new one */
+        if ((!block || block->used == FLB_MP_RECORD_BLOCK_ENTRIES) &&
+            chunk_cobj->record_pool_blocks < FLB_MP_RECORD_BLOCK_LIMIT) {
+            block = flb_calloc(1, sizeof(struct flb_mp_record_block));
+            if (!block) {
+                flb_errno();
+            }
+            else {
+                block->references = 1;
+                block->next = chunk_cobj->record_pool;
+                chunk_cobj->record_pool = block;
+                chunk_cobj->record_pool_blocks++;
+            }
+        }
+
+        if (block && block->used < FLB_MP_RECORD_BLOCK_ENTRIES) {
+            record = &block->records[block->used++];
+            record->storage_block = block;
+            block->references++;
+            return record;
+        }
+    }
+
+    /* pool disabled or exhausted: allocate the record individually */
     record = flb_calloc(1, sizeof(struct flb_mp_chunk_record));
     if (!record) {
         flb_errno();
         return NULL;
     }
-    record->modified = FLB_FALSE;
-    record->cobj_group_metadata = NULL;
-    record->cobj_group_attributes = NULL;
-    record->owns_group_metadata = FLB_FALSE;
-    record->owns_group_attributes = FLB_FALSE;
 
     return record;
 }
@@ -1341,7 +2548,11 @@ struct flb_mp_chunk_cobj *flb_mp_chunk_cobj_create(struct flb_log_event_encoder 
 {
     struct flb_mp_chunk_cobj *chunk_cobj;
 
-    if (!log_encoder || !log_decoder) {
+    /*
+     * Both codecs can be NULL for a chunk whose records are built directly as
+     * CFL objects, the codecs are bound later by the processor that runs it.
+     */
+    if ((log_encoder == NULL) != (log_decoder == NULL)) {
         return NULL;
     }
 
@@ -1361,116 +2572,110 @@ struct flb_mp_chunk_cobj *flb_mp_chunk_cobj_create(struct flb_log_event_encoder 
     return chunk_cobj;
 }
 
-static int generate_empty_msgpack_map(char **out_buf, size_t *out_size)
+/*
+ * Pack a record field into the scratch buffer, an empty map when the field is
+ * not set. The buffer capacity is reused by every field of an encode call.
+ */
+static int encode_cfl_field(struct cfl_object *obj, msgpack_sbuffer *buffer,
+                            msgpack_packer *packer)
 {
-    msgpack_sbuffer mp_sbuf;
-    msgpack_packer mp_pck;
+    msgpack_sbuffer_clear(buffer);
 
-    /* initialize msgpack buffer */
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+    if (!obj) {
+        return msgpack_pack_map(packer, 0);
+    }
 
-    msgpack_pack_map(&mp_pck, 0);
-
-    *out_buf = mp_sbuf.data;
-    *out_size = mp_sbuf.size;
-
-    return 0;
-}
-
-int flb_mp_chunk_cobj_encode(struct flb_mp_chunk_cobj *chunk_cobj, char **out_buf, size_t *out_size)
-{
-    int ret;
-    int record_type;
-    char *mp_buf;
-    size_t mp_size;
-    struct cfl_list *head;
-    struct flb_mp_chunk_record *record;
-
-    if (!chunk_cobj) {
+    if (obj->type == CFL_OBJECT_NONE || !obj->variant) {
         return -1;
     }
+
+    return mp_cfl_to_msgpack(obj->variant, buffer, packer);
+}
+
+/*
+ * Append the chunk records to its log encoder output. A failure resets the
+ * encoder, including the output of previous appends.
+ */
+int flb_mp_chunk_cobj_encode_append(struct flb_mp_chunk_cobj *chunk_cobj)
+{
+    int ret;
+    struct cfl_list *head;
+    struct flb_mp_chunk_record *record;
+    struct cfl_object *body;
+    msgpack_sbuffer buffer;
+    msgpack_packer packer;
+
+    if (!chunk_cobj || !chunk_cobj->log_encoder) {
+        return -1;
+    }
+
+    msgpack_sbuffer_init(&buffer);
+    msgpack_packer_init(&packer, &buffer, msgpack_sbuffer_write);
 
     /* Iterate all records */
     cfl_list_foreach(head, &chunk_cobj->records) {
         record = cfl_list_entry(head, struct flb_mp_chunk_record, _head);
 
         ret = flb_log_event_encoder_begin_record(chunk_cobj->log_encoder);
-        if (ret == -1) {
-            return -1;
-        }
-
-        ret = flb_log_event_encoder_set_timestamp(chunk_cobj->log_encoder, &record->event.timestamp);
-        if (ret == -1) {
-            return -1;
-        }
-
-        /* Determine record type from timestamp */
-        if (record->event.timestamp.tm.tv_sec >= 0) {
-            record_type = FLB_LOG_EVENT_NORMAL;
-        }
-        else if (record->event.timestamp.tm.tv_sec == FLB_LOG_EVENT_GROUP_START) {
-            record_type = FLB_LOG_EVENT_GROUP_START;
-        }
-        else if (record->event.timestamp.tm.tv_sec == FLB_LOG_EVENT_GROUP_END) {
-            record_type = FLB_LOG_EVENT_GROUP_END;
-        }
-        else {
-            record_type = FLB_LOG_EVENT_NORMAL;
-        }
-
-
-        if (record->cobj_metadata) {
-            ret = flb_mp_cfl_to_msgpack(record->cobj_metadata, &mp_buf, &mp_size);
-            if (ret == -1) {
-                return -1;
-            }
-        }
-        else {
-            ret = generate_empty_msgpack_map(&mp_buf, &mp_size);
-            if (ret == -1) {
-                return -1;
-            }
-        }
-
-        ret = flb_log_event_encoder_set_metadata_from_raw_msgpack(chunk_cobj->log_encoder, mp_buf, mp_size);
         if (ret != FLB_EVENT_ENCODER_SUCCESS) {
-            flb_free(mp_buf);
-            return -1;
-        }
-        flb_free(mp_buf);
-
-        /* For group start records, use group attributes as body if available */
-        if (record_type == FLB_LOG_EVENT_GROUP_START && record->cobj_group_attributes) {
-            ret = flb_mp_cfl_to_msgpack(record->cobj_group_attributes, &mp_buf, &mp_size);
-            if (ret == -1) {
-                return -1;
-            }
-        }
-        else if (record->cobj_record) {
-            ret = flb_mp_cfl_to_msgpack(record->cobj_record, &mp_buf, &mp_size);
-            if (ret == -1) {
-                return -1;
-            }
-        }
-        else {
-            ret = generate_empty_msgpack_map(&mp_buf, &mp_size);
-            if (ret == -1) {
-                return -1;
-            }
+            goto failure;
         }
 
-        ret = flb_log_event_encoder_set_body_from_raw_msgpack(chunk_cobj->log_encoder, mp_buf, mp_size);
+        ret = flb_log_event_encoder_set_timestamp(chunk_cobj->log_encoder,
+                                                  &record->event.timestamp);
         if (ret != FLB_EVENT_ENCODER_SUCCESS) {
-            flb_free(mp_buf);
-            return -1;
+            goto failure;
         }
-        flb_free(mp_buf);
+
+        /* metadata */
+        if (encode_cfl_field(record->cobj_metadata, &buffer, &packer) != 0) {
+            goto failure;
+        }
+
+        ret = flb_log_event_encoder_set_metadata_from_raw_msgpack(chunk_cobj->log_encoder,
+                                                                 buffer.data, buffer.size);
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            goto failure;
+        }
+
+        /* for group start records, use group attributes as body if available */
+        body = record->cobj_record;
+        if (record->event.timestamp.tm.tv_sec == FLB_LOG_EVENT_GROUP_START &&
+            record->cobj_group_attributes) {
+            body = record->cobj_group_attributes;
+        }
+
+        if (encode_cfl_field(body, &buffer, &packer) != 0) {
+            goto failure;
+        }
+
+        ret = flb_log_event_encoder_set_body_from_raw_msgpack(chunk_cobj->log_encoder,
+                                                             buffer.data, buffer.size);
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            goto failure;
+        }
 
         ret = flb_log_event_encoder_commit_record(chunk_cobj->log_encoder);
-        if (ret == -1) {
-            return -1;
+        if (ret != FLB_EVENT_ENCODER_SUCCESS) {
+            goto failure;
         }
+    }
+
+    msgpack_sbuffer_destroy(&buffer);
+    return 0;
+
+failure:
+    /* never leave partial records behind for the next chunk using this encoder */
+    flb_log_event_encoder_reset(chunk_cobj->log_encoder);
+    msgpack_sbuffer_destroy(&buffer);
+
+    return -1;
+}
+
+int flb_mp_chunk_cobj_encode(struct flb_mp_chunk_cobj *chunk_cobj, char **out_buf, size_t *out_size)
+{
+    if (flb_mp_chunk_cobj_encode_append(chunk_cobj) != 0) {
+        return -1;
     }
 
     /* set new output buffer */
@@ -1540,8 +2745,16 @@ static int cobj_remove_list_add(struct flb_mp_chunk_record **remove_list,
 
 int flb_mp_chunk_cobj_normalize_groups(struct flb_mp_chunk_cobj *chunk_cobj)
 {
+    return flb_mp_chunk_cobj_normalize_groups_ex(chunk_cobj, 0);
+}
+
+/* see flb_mp_normalize_log_buffer_groups_msgpack_ex() for 'flags' */
+int flb_mp_chunk_cobj_normalize_groups_ex(struct flb_mp_chunk_cobj *chunk_cobj, int flags)
+{
     int ret;
     int record_type;
+    int seen_start = FLB_FALSE;
+    int leading_end = FLB_FALSE;
     size_t index;
     size_t stack_size;
     size_t stack_count;
@@ -1599,12 +2812,19 @@ int flb_mp_chunk_cobj_normalize_groups(struct flb_mp_chunk_cobj *chunk_cobj)
                 group_has_content[stack_count] = FLB_FALSE;
                 stack_count++;
             }
+            seen_start = FLB_TRUE;
             continue;
         }
 
         if (record_type == FLB_LOG_EVENT_GROUP_END) {
             if (stack_count == 0) {
-                cobj_remove_list_add(remove_list, stack_size, &remove_count, record);
+                /* the first end before any start closes a previous append's group */
+                if ((flags & FLB_MP_GROUPS_KEEP_LEADING_END) && !seen_start && !leading_end) {
+                    leading_end = FLB_TRUE;
+                }
+                else {
+                    cobj_remove_list_add(remove_list, stack_size, &remove_count, record);
+                }
                 continue;
             }
 
@@ -1625,6 +2845,11 @@ int flb_mp_chunk_cobj_normalize_groups(struct flb_mp_chunk_cobj *chunk_cobj)
         for (index = 0; index < stack_count; index++) {
             group_has_content[index] = FLB_TRUE;
         }
+    }
+
+    /* a single open group continues in the next append, nested ones are dropped */
+    if ((flags & FLB_MP_GROUPS_KEEP_TRAILING_OPEN) && stack_count == 1) {
+        stack_count = 0;
     }
 
     while (stack_count > 0) {
@@ -1649,6 +2874,7 @@ int flb_mp_chunk_cobj_destroy(struct flb_mp_chunk_cobj *chunk_cobj)
     struct cfl_list *tmp;
     struct cfl_list *head;
     struct flb_mp_chunk_record *record;
+    struct flb_mp_record_block *block;
 
     if (!chunk_cobj) {
         return -1;
@@ -1671,9 +2897,17 @@ int flb_mp_chunk_cobj_destroy(struct flb_mp_chunk_cobj *chunk_cobj)
             cfl_object_destroy(record->cobj_group_attributes);
         }
         cfl_list_del(&record->_head);
-        flb_free(record);
+        record_storage_release(record);
     }
 
+    /* drop the owner reference, blocks still used by moved records survive */
+    while (chunk_cobj->record_pool) {
+        block = chunk_cobj->record_pool;
+        chunk_cobj->record_pool = block->next;
+        record_block_release(block);
+    }
+
+    cfl_arena_destroy(chunk_cobj->value_pool);
     flb_free(chunk_cobj);
     return 0;
 }
@@ -1688,182 +2922,206 @@ int flb_mp_chunk_cobj_record_next(struct flb_mp_chunk_cobj *chunk_cobj,
     struct flb_condition *condition = NULL;
 
     *out_record = NULL;
-    bytes = chunk_cobj->log_decoder->length - chunk_cobj->log_decoder->offset;
 
     /* Check if we have a condition */
     condition = chunk_cobj->condition;
 
     /*
-     * if there are remaining decoder bytes, keep iterating msgpack and populate
-     * the cobj list. Otherwise it means all the content is ready as a chunk_cobj_record.
+     * Iterate until a record that matches the condition (if one is configured)
+     * is found, or until the end of the chunk is reached.
+     *
+     * This was previously implemented with tail recursion: whenever a record
+     * did not match the condition, the function called itself to advance to the
+     * next record. With a large run of non-matching records (for example a
+     * condition that filters out most of a chunk) the recursion depth grew
+     * proportionally to the number of records and could exhaust the stack. An
+     * explicit loop keeps the stack usage constant.
      */
-    if (bytes > 0) {
-        record = flb_mp_chunk_record_create(chunk_cobj);
-        if (!record) {
-            return FLB_MP_CHUNK_RECORD_ERROR;
+    while (1) {
+        /*
+         * if there are remaining decoder bytes, keep iterating msgpack and
+         * populate the cobj list. Otherwise it means all the content is ready
+         * as a chunk_cobj_record.
+         */
+        bytes = 0;
+        if (chunk_cobj->log_decoder) {
+            bytes = chunk_cobj->log_decoder->length - chunk_cobj->log_decoder->offset;
         }
 
-        ret = flb_log_event_decoder_next(chunk_cobj->log_decoder, &record->event);
-        if (ret != FLB_EVENT_DECODER_SUCCESS) {
-            flb_free(record);
-            return -1;
-        }
-
-        record->cobj_metadata = flb_mp_object_to_cfl(record->event.metadata);
-        if (!record->cobj_metadata) {
-            flb_free(record);
-            return FLB_MP_CHUNK_RECORD_ERROR;
-        }
-
-        record->cobj_record = flb_mp_object_to_cfl(record->event.body);
-        if (!record->cobj_record) {
-            cfl_object_destroy(record->cobj_metadata);
-            flb_free(record);
-            return -1;
-        }
-
-        ret = flb_log_event_decoder_get_record_type(&record->event, &record_type);
-        if (ret != FLB_EVENT_DECODER_SUCCESS) {
-            cfl_object_destroy(record->cobj_record);
-            cfl_object_destroy(record->cobj_metadata);
-            flb_free(record);
-            return FLB_MP_CHUNK_RECORD_ERROR;
-        }
-
-        record->owns_group_metadata = FLB_FALSE;
-        record->owns_group_attributes = FLB_FALSE;
-
-        if (record_type == FLB_LOG_EVENT_GROUP_START) {
-            if (record->cobj_metadata) {
-                record->cobj_group_metadata = record->cobj_metadata;
-                record->owns_group_metadata = FLB_TRUE;
-            }
-            if (record->cobj_record) {
-                record->cobj_group_attributes = record->cobj_record;
-                record->owns_group_attributes = FLB_TRUE;
-            }
-
-            chunk_cobj->active_group_metadata = record->cobj_group_metadata;
-            chunk_cobj->active_group_attributes = record->cobj_group_attributes;
-        }
-        else if (record_type == FLB_LOG_EVENT_GROUP_END) {
-            record->cobj_group_metadata = chunk_cobj->active_group_metadata;
-            record->cobj_group_attributes = chunk_cobj->active_group_attributes;
-
-            chunk_cobj->active_group_metadata = NULL;
-            chunk_cobj->active_group_attributes = NULL;
-        }
-        else {
-            record->cobj_group_metadata = chunk_cobj->active_group_metadata;
-            record->cobj_group_attributes = chunk_cobj->active_group_attributes;
-        }
-
-        if (!record->cobj_group_metadata &&
-            record->event.group_metadata &&
-            (record->event.group_metadata->type == MSGPACK_OBJECT_MAP ||
-             record->event.group_metadata->type == MSGPACK_OBJECT_ARRAY)) {
-            record->cobj_group_metadata = flb_mp_object_to_cfl(record->event.group_metadata);
-            if (!record->cobj_group_metadata) {
-                if (record->owns_group_attributes && record->cobj_group_attributes) {
-                    cfl_object_destroy(record->cobj_group_attributes);
-                }
-                cfl_object_destroy(record->cobj_record);
-                cfl_object_destroy(record->cobj_metadata);
-                flb_free(record);
+        if (bytes > 0) {
+            record = flb_mp_chunk_record_create(chunk_cobj);
+            if (!record) {
                 return FLB_MP_CHUNK_RECORD_ERROR;
             }
-            record->owns_group_metadata = FLB_TRUE;
-            if (!chunk_cobj->active_group_metadata) {
+
+            ret = flb_log_event_decoder_next(chunk_cobj->log_decoder, &record->event);
+            if (ret != FLB_EVENT_DECODER_SUCCESS) {
+                record_storage_release(record);
+                return -1;
+            }
+
+            record->cobj_metadata = chunk_object_from_msgpack(chunk_cobj,
+                                                              record->event.metadata);
+            if (!record->cobj_metadata) {
+                record_storage_release(record);
+                return FLB_MP_CHUNK_RECORD_ERROR;
+            }
+
+            record->cobj_record = chunk_object_from_msgpack(chunk_cobj, record->event.body);
+            if (!record->cobj_record) {
+                cfl_object_destroy(record->cobj_metadata);
+                record_storage_release(record);
+                return -1;
+            }
+
+            ret = flb_log_event_decoder_get_record_type(&record->event, &record_type);
+            if (ret != FLB_EVENT_DECODER_SUCCESS) {
+                cfl_object_destroy(record->cobj_record);
+                cfl_object_destroy(record->cobj_metadata);
+                record_storage_release(record);
+                return FLB_MP_CHUNK_RECORD_ERROR;
+            }
+
+            record->owns_group_metadata = FLB_FALSE;
+            record->owns_group_attributes = FLB_FALSE;
+
+            if (record_type == FLB_LOG_EVENT_GROUP_START) {
+                if (record->cobj_metadata) {
+                    record->cobj_group_metadata = record->cobj_metadata;
+                    record->owns_group_metadata = FLB_TRUE;
+                }
+                if (record->cobj_record) {
+                    record->cobj_group_attributes = record->cobj_record;
+                    record->owns_group_attributes = FLB_TRUE;
+                }
+
                 chunk_cobj->active_group_metadata = record->cobj_group_metadata;
-            }
-        }
-
-        if (!record->cobj_group_attributes &&
-            record->event.group_attributes &&
-            (record->event.group_attributes->type == MSGPACK_OBJECT_MAP ||
-             record->event.group_attributes->type == MSGPACK_OBJECT_ARRAY)) {
-            record->cobj_group_attributes = flb_mp_object_to_cfl(record->event.group_attributes);
-            if (!record->cobj_group_attributes) {
-                if (record->owns_group_metadata && record->cobj_group_metadata) {
-                    cfl_object_destroy(record->cobj_group_metadata);
-                }
-                cfl_object_destroy(record->cobj_record);
-                cfl_object_destroy(record->cobj_metadata);
-                flb_free(record);
-                return FLB_MP_CHUNK_RECORD_ERROR;
-            }
-            record->owns_group_attributes = FLB_TRUE;
-            if (!chunk_cobj->active_group_attributes) {
                 chunk_cobj->active_group_attributes = record->cobj_group_attributes;
             }
-        }
+            else if (record_type == FLB_LOG_EVENT_GROUP_END) {
+                record->cobj_group_metadata = chunk_cobj->active_group_metadata;
+                record->cobj_group_attributes = chunk_cobj->active_group_attributes;
 
-        cfl_list_add(&record->_head, &chunk_cobj->records);
-
-        /* If there's a condition, check if the record matches */
-        if (condition != NULL && record != NULL) {
-            flb_trace("[mp] evaluating condition for record");
-            ret = flb_condition_evaluate(condition, record);
-            flb_trace("[mp] condition evaluation result: %s", ret ? "TRUE" : "FALSE");
-            if (ret == FLB_FALSE) {
-                flb_trace("[mp] record didn't match condition, skipping");
-                /* Record doesn't match the condition, continue to next record */
-                return flb_mp_chunk_cobj_record_next(chunk_cobj, out_record);
+                chunk_cobj->active_group_metadata = NULL;
+                chunk_cobj->active_group_attributes = NULL;
             }
-            flb_trace("[mp] record matched condition, processing");
-        }
-
-        ret = FLB_MP_CHUNK_RECORD_OK;
-    }
-    else if (chunk_cobj->record_pos != NULL) {
-        /* is the actual record the last one ? */
-        if (chunk_cobj->record_pos == cfl_list_entry_last(&chunk_cobj->records, struct flb_mp_chunk_record, _head)) {
-            chunk_cobj->record_pos = NULL;
-            return FLB_MP_CHUNK_RECORD_EOF;
-        }
-
-        record = cfl_list_entry_next(&chunk_cobj->record_pos->_head, struct flb_mp_chunk_record,
-                                    _head, &chunk_cobj->records);
-
-        /* If there's a condition, check if the record matches */
-        if (condition != NULL && record != NULL) {
-            flb_trace("[mp] evaluating condition for next record");
-            ret = flb_condition_evaluate(condition, record);
-            flb_trace("[mp] next record condition evaluation result: %s", ret ? "TRUE" : "FALSE");
-            if (ret == FLB_FALSE) {
-                flb_trace("[mp] next record didn't match condition, skipping");
-                /* Record doesn't match the condition, set as current and try again */
-                chunk_cobj->record_pos = record;
-                return flb_mp_chunk_cobj_record_next(chunk_cobj, out_record);
+            else {
+                record->cobj_group_metadata = chunk_cobj->active_group_metadata;
+                record->cobj_group_attributes = chunk_cobj->active_group_attributes;
             }
-            flb_trace("[mp] next record matched condition, processing");
-        }
 
-        ret = FLB_MP_CHUNK_RECORD_OK;
-    }
-    else {
-        if (cfl_list_size(&chunk_cobj->records) == 0) {
-            return FLB_MP_CHUNK_RECORD_EOF;
-        }
-
-        /* check if we are the last in the list */
-        record = cfl_list_entry_first(&chunk_cobj->records, struct flb_mp_chunk_record, _head);
-
-        /* If there's a condition, check if the record matches */
-        if (condition != NULL && record != NULL) {
-            flb_trace("[mp] evaluating condition for first record");
-            ret = flb_condition_evaluate(condition, record);
-            flb_trace("[mp] first record condition evaluation result: %s", ret ? "TRUE" : "FALSE");
-            if (ret == FLB_FALSE) {
-                flb_trace("[mp] first record didn't match condition, skipping");
-                /* Record doesn't match the condition, set as current and try again */
-                chunk_cobj->record_pos = record;
-                return flb_mp_chunk_cobj_record_next(chunk_cobj, out_record);
+            if (!record->cobj_group_metadata &&
+                record->event.group_metadata &&
+                (record->event.group_metadata->type == MSGPACK_OBJECT_MAP ||
+                 record->event.group_metadata->type == MSGPACK_OBJECT_ARRAY)) {
+                record->cobj_group_metadata =
+                    chunk_object_from_msgpack(chunk_cobj, record->event.group_metadata);
+                if (!record->cobj_group_metadata) {
+                    if (record->owns_group_attributes && record->cobj_group_attributes) {
+                        cfl_object_destroy(record->cobj_group_attributes);
+                    }
+                    cfl_object_destroy(record->cobj_record);
+                    cfl_object_destroy(record->cobj_metadata);
+                    record_storage_release(record);
+                    return FLB_MP_CHUNK_RECORD_ERROR;
+                }
+                record->owns_group_metadata = FLB_TRUE;
+                if (!chunk_cobj->active_group_metadata) {
+                    chunk_cobj->active_group_metadata = record->cobj_group_metadata;
+                }
             }
-            flb_trace("[mp] first record matched condition, processing");
+
+            if (!record->cobj_group_attributes &&
+                record->event.group_attributes &&
+                (record->event.group_attributes->type == MSGPACK_OBJECT_MAP ||
+                 record->event.group_attributes->type == MSGPACK_OBJECT_ARRAY)) {
+                record->cobj_group_attributes =
+                    chunk_object_from_msgpack(chunk_cobj, record->event.group_attributes);
+                if (!record->cobj_group_attributes) {
+                    if (record->owns_group_metadata && record->cobj_group_metadata) {
+                        cfl_object_destroy(record->cobj_group_metadata);
+                    }
+                    cfl_object_destroy(record->cobj_record);
+                    cfl_object_destroy(record->cobj_metadata);
+                    record_storage_release(record);
+                    return FLB_MP_CHUNK_RECORD_ERROR;
+                }
+                record->owns_group_attributes = FLB_TRUE;
+                if (!chunk_cobj->active_group_attributes) {
+                    chunk_cobj->active_group_attributes = record->cobj_group_attributes;
+                }
+            }
+
+            cfl_list_add(&record->_head, &chunk_cobj->records);
+
+            /* If there's a condition, check if the record matches */
+            if (condition != NULL && record != NULL) {
+                flb_trace("[mp] evaluating condition for record");
+                ret = flb_condition_evaluate(condition, record);
+                flb_trace("[mp] condition evaluation result: %s", ret ? "TRUE" : "FALSE");
+                if (ret == FLB_FALSE) {
+                    flb_trace("[mp] record didn't match condition, skipping");
+                    /* Record doesn't match the condition, continue to next record */
+                    continue;
+                }
+                flb_trace("[mp] record matched condition, processing");
+            }
+
+            ret = FLB_MP_CHUNK_RECORD_OK;
+        }
+        else if (chunk_cobj->record_pos != NULL) {
+            /* is the actual record the last one ? */
+            if (chunk_cobj->record_pos == cfl_list_entry_last(&chunk_cobj->records, struct flb_mp_chunk_record, _head)) {
+                chunk_cobj->record_pos = NULL;
+                return FLB_MP_CHUNK_RECORD_EOF;
+            }
+
+            record = cfl_list_entry_next(&chunk_cobj->record_pos->_head, struct flb_mp_chunk_record,
+                                        _head, &chunk_cobj->records);
+
+            /* If there's a condition, check if the record matches */
+            if (condition != NULL && record != NULL) {
+                flb_trace("[mp] evaluating condition for next record");
+                ret = flb_condition_evaluate(condition, record);
+                flb_trace("[mp] next record condition evaluation result: %s", ret ? "TRUE" : "FALSE");
+                if (ret == FLB_FALSE) {
+                    flb_trace("[mp] next record didn't match condition, skipping");
+                    /* Record doesn't match the condition, set as current and try again */
+                    chunk_cobj->record_pos = record;
+                    continue;
+                }
+                flb_trace("[mp] next record matched condition, processing");
+            }
+
+            ret = FLB_MP_CHUNK_RECORD_OK;
+        }
+        else {
+            if (cfl_list_size(&chunk_cobj->records) == 0) {
+                return FLB_MP_CHUNK_RECORD_EOF;
+            }
+
+            /* check if we are the last in the list */
+            record = cfl_list_entry_first(&chunk_cobj->records, struct flb_mp_chunk_record, _head);
+
+            /* If there's a condition, check if the record matches */
+            if (condition != NULL && record != NULL) {
+                flb_trace("[mp] evaluating condition for first record");
+                ret = flb_condition_evaluate(condition, record);
+                flb_trace("[mp] first record condition evaluation result: %s", ret ? "TRUE" : "FALSE");
+                if (ret == FLB_FALSE) {
+                    flb_trace("[mp] first record didn't match condition, skipping");
+                    /* Record doesn't match the condition, set as current and try again */
+                    chunk_cobj->record_pos = record;
+                    continue;
+                }
+                flb_trace("[mp] first record matched condition, processing");
+            }
+
+            ret = FLB_MP_CHUNK_RECORD_OK;
         }
 
-        ret = FLB_MP_CHUNK_RECORD_OK;
+        /* A matching record (or the next record) was found; stop iterating. */
+        break;
     }
 
     chunk_cobj->record_pos = record;
@@ -1875,19 +3133,24 @@ int flb_mp_chunk_cobj_record_next(struct flb_mp_chunk_cobj *chunk_cobj,
 int flb_mp_chunk_cobj_record_destroy(struct flb_mp_chunk_cobj *chunk_cobj,
                                      struct flb_mp_chunk_record *record)
 {
-    struct flb_mp_chunk_record *first;
-    struct flb_mp_chunk_record *last;
-
     if (!record) {
         return -1;
     }
 
-    if (chunk_cobj && chunk_cobj->record_pos) {
-        first = cfl_list_entry_first(&chunk_cobj->records, struct flb_mp_chunk_record, _head);
-        last = cfl_list_entry_last(&chunk_cobj->records, struct flb_mp_chunk_record, _head);
-
-        if (record == first || record == last) {
+    /*
+     * If the record being removed is the one under the iterator cursor, move
+     * the cursor back to the previous entry so the next call to
+     * flb_mp_chunk_cobj_record_next() continues with the record that follows
+     * the removed one. If it was the first entry, reset the cursor so the
+     * iteration restarts from the new head of the list.
+     */
+    if (chunk_cobj && chunk_cobj->record_pos == record) {
+        if (record->_head.prev == &chunk_cobj->records) {
             chunk_cobj->record_pos = NULL;
+        }
+        else {
+            chunk_cobj->record_pos = cfl_list_entry(record->_head.prev,
+                                                    struct flb_mp_chunk_record, _head);
         }
     }
 
@@ -1916,7 +3179,7 @@ int flb_mp_chunk_cobj_record_destroy(struct flb_mp_chunk_cobj *chunk_cobj,
     }
 
     cfl_list_del(&record->_head);
-    flb_free(record);
+    record_storage_release(record);
 
     return 0;
 }

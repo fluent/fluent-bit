@@ -65,6 +65,7 @@ struct flb_kube_meta {
 #define FLB_KUBE_POD "pod"
 #define FLB_KUBE_CONFIGMAP "configmap"
 
+int flb_kube_get_http_auth_header(struct flb_kube *ctx);
 int flb_kube_meta_init(struct flb_kube *ctx, struct flb_config *config);
 int flb_kube_meta_fetch(struct flb_kube *ctx);
 int flb_kube_dummy_meta_get(char **out_buf, size_t *out_size);
@@ -76,7 +77,16 @@ int flb_kube_meta_get(struct flb_kube *ctx,
                       size_t *namespace_out_size,
                       struct flb_kube_meta *meta,
                       struct flb_kube_props *props,
-                      struct flb_kube_meta *namespace_meta);
+                      struct flb_kube_meta *namespace_meta,
+                      struct flb_kube_props *namespace_props);
+int flb_kube_meta_get_local(struct flb_kube *ctx,
+                            const char **out_buf, size_t *out_size,
+                            const char **namespace_out_buf,
+                            size_t *namespace_out_size,
+                            struct flb_kube_meta *meta,
+                            struct flb_kube_props *props,
+                            struct flb_kube_meta *namespace_meta,
+                            struct flb_kube_props *namespace_props);
 int flb_kube_meta_release(struct flb_kube_meta *meta);
 int flb_kube_pod_association_init(struct flb_kube *ctx, struct flb_config *config);
 int get_api_server_configmap(struct flb_kube *ctx, const char *namespace, const char *configmap, char **out_buf, size_t *out_size);

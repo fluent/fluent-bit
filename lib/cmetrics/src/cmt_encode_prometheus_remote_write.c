@@ -16,6 +16,8 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
+#include <string.h>
+
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_metric.h>
 #include <cmetrics/cmt_map.h>
@@ -277,6 +279,17 @@ size_t count_metrics_with_matching_label_set(struct cfl_list *metrics,
     }
 
     return matches;
+}
+
+int compare_prometheus_labels(const void *first, const void *second)
+{
+    Prometheus__Label *label_a;
+    Prometheus__Label *label_b;
+
+    label_a = *(Prometheus__Label * const *) first;
+    label_b = *(Prometheus__Label * const *) second;
+
+    return strcmp(label_a->name, label_b->name);
 }
 
 int append_entry_to_prometheus_label_list(Prometheus__Label **label_list,
@@ -572,6 +585,12 @@ int set_up_time_series_for_label_set(struct cmt_prometheus_remote_write_context 
 
         return result;
     }
+    
+    /* The Prometheus Remote Write specification requires that labels be sorted
+     * lexicographically by name, so sort the assembled label list (which includes
+     * __name__, static labels, and per-metric labels) before it is emitted.
+     */
+    qsort(label_list, label_index, sizeof(Prometheus__Label *), compare_prometheus_labels);
 
     /* Add the time series to the context so we can find it when we try to format
      * a metric with these same labels;
@@ -735,6 +754,11 @@ static int check_staled_timestamp(struct cmt_metric *metric, uint64_t now, uint6
     uint64_t diff;
 
     ts = cmt_metric_get_timestamp(metric);
+
+    if (ts >= now) {
+        return CMT_FALSE;
+    }
+
     diff = now - ts;
 
     return diff > cutoff;
@@ -751,6 +775,7 @@ int pack_basic_type(struct cmt_prometheus_remote_write_context *context,
 
     context->sequence_number++;
     add_metadata = CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_ADD_METADATA;
+    result = CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS;
 
     now = cfl_time_now();
 
@@ -758,13 +783,14 @@ int pack_basic_type(struct cmt_prometheus_remote_write_context *context,
         if (check_staled_timestamp(&map->metric, now,
                                    CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_CUTOFF_THRESHOLD)) {
             /* Skip processing metrics which are staled over the threshold */
-            return CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_CUTOFF_ERROR;
+            result = CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS;
         }
-
-        result = pack_basic_metric_sample(context, map, &map->metric, add_metadata);
-
-        if (result != CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
-            return result;
+        else {
+            result = pack_basic_metric_sample(context, map, &map->metric, add_metadata);
+            if (result != CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
+                return result;
+            }
+            add_metadata = CMT_FALSE;
         }
     }
 
@@ -774,7 +800,7 @@ int pack_basic_type(struct cmt_prometheus_remote_write_context *context,
         if (check_staled_timestamp(metric, now,
                                    CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_CUTOFF_THRESHOLD)) {
             /* Skip processing metrics which are staled over over the threshold */
-            return CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_CUTOFF_ERROR;
+            continue;
         }
 
         result = pack_basic_metric_sample(context, map, metric, add_metadata);
@@ -1208,6 +1234,12 @@ int pack_complex_type(struct cmt_prometheus_remote_write_context *context,
 
     if (map->metric_static_set == CMT_TRUE) {
         result = pack_complex_metric_sample(context, map, &map->metric, add_metadata);
+        if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_CUTOFF_ERROR) {
+            result = CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS;
+        }
+        else if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
+            add_metadata = CMT_FALSE;
+        }
     }
 
     if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
@@ -1216,10 +1248,17 @@ int pack_complex_type(struct cmt_prometheus_remote_write_context *context,
 
             result = pack_complex_metric_sample(context, map, metric, add_metadata);
 
-            if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
-                if (add_metadata == CMT_TRUE) {
-                    add_metadata = CMT_FALSE;
-                }
+            if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_CUTOFF_ERROR) {
+                result = CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS;
+                continue;
+            }
+
+            if (result != CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
+                break;
+            }
+
+            if (add_metadata == CMT_TRUE) {
+                add_metadata = CMT_FALSE;
             }
         }
     }
@@ -1266,6 +1305,7 @@ cfl_sds_t cmt_encode_prometheus_remote_write_create(struct cmt *cmt)
         result = pack_basic_type(&context, counter->map);
 
         if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_CUTOFF_ERROR) {
+            result = CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS;
             continue;
         }
 
@@ -1281,6 +1321,7 @@ cfl_sds_t cmt_encode_prometheus_remote_write_create(struct cmt *cmt)
             result = pack_basic_type(&context, gauge->map);
 
             if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_CUTOFF_ERROR) {
+                result = CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS;
                 continue;
             }
 
@@ -1294,10 +1335,15 @@ cfl_sds_t cmt_encode_prometheus_remote_write_create(struct cmt *cmt)
         /* Untyped */
         cfl_list_foreach(head, &cmt->untypeds) {
             untyped = cfl_list_entry(head, struct cmt_untyped, _head);
-            pack_basic_type(&context, untyped->map);
+            result = pack_basic_type(&context, untyped->map);
 
             if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_CUTOFF_ERROR) {
+                result = CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS;
                 continue;
+            }
+
+            if (result != CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS) {
+                break;
             }
         }
     }
@@ -1309,6 +1355,7 @@ cfl_sds_t cmt_encode_prometheus_remote_write_create(struct cmt *cmt)
             result = pack_complex_type(&context, summary->map);
 
             if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_CUTOFF_ERROR) {
+                result = CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS;
                 continue;
             }
 
@@ -1325,6 +1372,7 @@ cfl_sds_t cmt_encode_prometheus_remote_write_create(struct cmt *cmt)
             result = pack_complex_type(&context, histogram->map);
 
             if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_CUTOFF_ERROR) {
+                result = CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS;
                 continue;
             }
 
@@ -1341,6 +1389,7 @@ cfl_sds_t cmt_encode_prometheus_remote_write_create(struct cmt *cmt)
             result = pack_complex_type(&context, exp_histogram->map);
 
             if (result == CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_CUTOFF_ERROR) {
+                result = CMT_ENCODE_PROMETHEUS_REMOTE_WRITE_SUCCESS;
                 continue;
             }
 

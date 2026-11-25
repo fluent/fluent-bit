@@ -20,6 +20,7 @@
 #include <cmetrics/cmetrics.h>
 #include <cmetrics/cmt_map.h>
 #include <cmetrics/cmt_math.h>
+#include <cmetrics/cmt_atomic.h>
 #include <cmetrics/cmt_cat.h>
 #include <cmetrics/cmt_filter.h>
 #include <cmetrics/cmt_exp_histogram.h>
@@ -719,6 +720,134 @@ void test_exp_histogram_cat_sparse_merge()
     cmt_destroy(target);
 }
 
+/* merging two samples whose bucket offsets are far apart must not allocate
+ * a bucket array sized from the offset distance
+ */
+void test_exp_histogram_cat_rejects_oversized_merge()
+{
+    int                       result;
+    int                       negative;
+    uint64_t                  buckets_a[1] = {1};
+    uint64_t                  buckets_b[1] = {1};
+    struct cmt               *source_a;
+    struct cmt               *source_b;
+    struct cmt               *target;
+    struct cmt_exp_histogram *exp_histogram;
+    struct cmt_metric        *metric;
+
+    cmt_initialize();
+
+    for (negative = 0; negative < 2; negative++) {
+        source_a = cmt_create();
+        source_b = cmt_create();
+        target = cmt_create();
+        TEST_ASSERT(source_a != NULL && source_b != NULL && target != NULL);
+
+        TEST_CHECK(create_test_metric_custom(source_a, cfl_time_now(),
+                                             0, 0, 0.0,
+                                             0, negative ? 0 : 1,
+                                             negative ? NULL : buckets_a,
+                                             0, negative ? 1 : 0,
+                                             negative ? buckets_a : NULL,
+                                             CMT_FALSE, 0.0, 1) != NULL);
+        TEST_CHECK(create_test_metric_custom(source_b, cfl_time_now(),
+                                             0, 0, 0.0,
+                                             negative ? 0 : 200000000,
+                                             negative ? 0 : 1,
+                                             negative ? NULL : buckets_b,
+                                             negative ? 200000000 : 0,
+                                             negative ? 1 : 0,
+                                             negative ? buckets_b : NULL,
+                                             CMT_FALSE, 0.0, 1) != NULL);
+
+        result = cmt_cat(target, source_a);
+        TEST_CHECK(result == 0);
+        result = cmt_cat(target, source_b);
+        TEST_CHECK(result != 0);
+
+        exp_histogram = cfl_list_entry_first(&target->exp_histograms,
+                                             struct cmt_exp_histogram, _head);
+        metric = cmt_map_metric_get(&exp_histogram->opts, exp_histogram->map,
+                                    1, (char *[]) {"api"}, CMT_FALSE);
+        TEST_CHECK(metric != NULL);
+        if (metric != NULL) {
+            if (negative) {
+                TEST_CHECK(metric->exp_hist_negative_count == 1);
+            }
+            else {
+                TEST_CHECK(metric->exp_hist_positive_count == 1);
+            }
+        }
+
+        cmt_destroy(source_a);
+        cmt_destroy(source_b);
+        cmt_destroy(target);
+    }
+}
+
+/* when only the negative range is oversized the merge must fail without
+ * having already merged the positive buckets into the destination
+ */
+void test_exp_histogram_cat_oversized_merge_is_atomic()
+{
+    int                       result;
+    int                       attempt;
+    uint64_t                  buckets_a[1] = {1};
+    uint64_t                  buckets_b[1] = {2};
+    struct cmt               *source_a;
+    struct cmt               *source_b;
+    struct cmt               *target;
+    struct cmt_exp_histogram *exp_histogram;
+    struct cmt_metric        *metric;
+
+    cmt_initialize();
+
+    source_a = cmt_create();
+    source_b = cmt_create();
+    target = cmt_create();
+    TEST_ASSERT(source_a != NULL && source_b != NULL && target != NULL);
+
+    TEST_CHECK(create_test_metric_custom(source_a, cfl_time_now(),
+                                         0, 3, 0.0,
+                                         0, 1, buckets_a,
+                                         0, 1, buckets_a,
+                                         CMT_TRUE, 1.0, 5) != NULL);
+    TEST_CHECK(create_test_metric_custom(source_b, cfl_time_now(),
+                                         0, 4, 0.0,
+                                         0, 1, buckets_b,
+                                         200000000, 1, buckets_b,
+                                         CMT_TRUE, 2.0, 8) != NULL);
+
+    result = cmt_cat(target, source_a);
+    TEST_CHECK(result == 0);
+
+    /* retrying must not accumulate a partial merge either */
+    for (attempt = 0; attempt < 2; attempt++) {
+        result = cmt_cat(target, source_b);
+        TEST_CHECK(result != 0);
+    }
+
+    exp_histogram = cfl_list_entry_first(&target->exp_histograms,
+                                         struct cmt_exp_histogram, _head);
+    metric = cmt_map_metric_get(&exp_histogram->opts, exp_histogram->map,
+                                1, (char *[]) {"api"}, CMT_FALSE);
+    TEST_CHECK(metric != NULL);
+    if (metric != NULL) {
+        TEST_CHECK(metric->exp_hist_positive_offset == 0);
+        TEST_CHECK(metric->exp_hist_positive_count == 1);
+        TEST_CHECK(metric->exp_hist_positive_buckets[0] == 1);
+        TEST_CHECK(metric->exp_hist_negative_offset == 0);
+        TEST_CHECK(metric->exp_hist_negative_count == 1);
+        TEST_CHECK(metric->exp_hist_negative_buckets[0] == 1);
+        TEST_CHECK(metric->exp_hist_zero_count == 3);
+        TEST_CHECK(cmt_atomic_load(&metric->exp_hist_count) == 5);
+    }
+
+    cmt_destroy(source_a);
+    cmt_destroy(source_b);
+    cmt_destroy(target);
+}
+
 void test_exp_histogram_prometheus_no_sum()
 {
     uint64_t positive[3] = {3, 5, 7};
@@ -795,6 +924,8 @@ TEST_LIST = {
     {"exp_histogram_nonzero_zero_threshold", test_exp_histogram_nonzero_zero_threshold},
     {"exp_histogram_cat_filter_smoke",  test_exp_histogram_cat_filter_smoke},
     {"exp_histogram_cat_sparse_merge",  test_exp_histogram_cat_sparse_merge},
+    {"exp_histogram_cat_rejects_oversized_merge", test_exp_histogram_cat_rejects_oversized_merge},
+    {"exp_histogram_cat_oversized_merge_is_atomic", test_exp_histogram_cat_oversized_merge_is_atomic},
     {"exp_histogram_prometheus_no_sum", test_exp_histogram_prometheus_no_sum},
     {"exp_histogram_remote_write_no_sum", test_exp_histogram_remote_write_no_sum},
     { 0 }

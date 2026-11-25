@@ -72,6 +72,7 @@
 
 #define KNOWN_FIELDS     17
 #define SECTOR_SIZE      512
+#define MS_TO_SECONDS    .001
 
 struct dt_metric {
     void *metric;
@@ -81,15 +82,13 @@ struct dt_metric {
 static void metric_cache_set(struct flb_ne *ctx, void *metric, double factor, int *offset)
 {
     int id;
-    struct dt_metric *m;
-    struct dt_metric **cache;
+    struct dt_metric *cache;
 
     id = *offset;
 
-    cache = (struct dt_metric **) ctx->dt_metrics;
-    m = (struct dt_metric *) &cache[id];
-    m->metric = metric;
-    m->factor = factor;
+    cache = (struct dt_metric *) ctx->dt_metrics;
+    cache[id].metric = metric;
+    cache[id].factor = factor;
     (*offset)++;
 }
 
@@ -100,12 +99,12 @@ static void metric_cache_update(struct flb_ne *ctx, int id, flb_sds_t device,
     uint64_t ts;
     double val;
     struct dt_metric *m;
-    struct dt_metric **cache;
+    struct dt_metric *cache;
     struct cmt_gauge *g;
     struct cmt_counter *c;
 
-    cache = (struct dt_metric **) ctx->dt_metrics;
-    m = (struct dt_metric *) &cache[id];
+    cache = (struct dt_metric *) ctx->dt_metrics;
+    m = &cache[id];
 
     ret = ne_utils_str_to_double(str_val, &val);
     if (ret == -1) {
@@ -197,7 +196,7 @@ static int ne_diskstats_configure(struct flb_ne *ctx)
     if (!c) {
         return -1;
     }
-    metric_cache_set(ctx, c, .001, &offset);
+    metric_cache_set(ctx, c, MS_TO_SECONDS, &offset);
 
     /* node_disk_writes_completed_total */
     c = cmt_counter_create(ctx->cmt, "node", "disk", "writes_completed_total",
@@ -233,7 +232,7 @@ static int ne_diskstats_configure(struct flb_ne *ctx)
     if (!c) {
         return -1;
     }
-    metric_cache_set(ctx, c, .001, &offset);
+    metric_cache_set(ctx, c, MS_TO_SECONDS, &offset);
 
     /* node_disk_io_now */
     g = cmt_gauge_create(ctx->cmt, "node", "disk", "io_now",
@@ -251,7 +250,7 @@ static int ne_diskstats_configure(struct flb_ne *ctx)
     if (!c) {
         return -1;
     }
-    metric_cache_set(ctx, c, .001, &offset);
+    metric_cache_set(ctx, c, MS_TO_SECONDS, &offset);
 
     /* node_disk_io_time_weighted_seconds */
     c = cmt_counter_create(ctx->cmt, "node", "disk", "io_time_weighted_seconds_total",
@@ -260,7 +259,7 @@ static int ne_diskstats_configure(struct flb_ne *ctx)
     if (!c) {
         return -1;
     }
-    metric_cache_set(ctx, c, .001, &offset);
+    metric_cache_set(ctx, c, MS_TO_SECONDS, &offset);
 
     /*
      * Linux Kernel >= 4.18
@@ -301,7 +300,7 @@ static int ne_diskstats_configure(struct flb_ne *ctx)
     if (!c) {
         return -1;
     }
-    metric_cache_set(ctx, c, .001, &offset);
+    metric_cache_set(ctx, c, MS_TO_SECONDS, &offset);
 
     /*
      * Linux Kernel >= 5.5
@@ -325,7 +324,7 @@ static int ne_diskstats_configure(struct flb_ne *ctx)
     if (!c) {
         return -1;
     }
-    metric_cache_set(ctx, c, .001, &offset);
+    metric_cache_set(ctx, c, MS_TO_SECONDS, &offset);
 
     return 0;
 }
@@ -404,7 +403,7 @@ static int diskstats_update(struct flb_ne *ctx)
     mk_list_init(&list);
     mk_list_init(&split_list);
 
-    ret = ne_utils_file_read_lines(ctx->path_procfs, "/diskstats", &list);
+    ret = ne_utils_file_read_lines(ctx, ctx->path_procfs, "/diskstats", &list);
     if (ret == -1) {
         return -1;
     }
