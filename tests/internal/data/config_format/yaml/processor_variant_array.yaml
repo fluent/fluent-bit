@@ -1,0 +1,22 @@
+pipeline:
+  inputs:
+    - name: dummy
+      processors:
+        logs:
+          - name: record_modifier
+            record:
+              - key_00 value_00
+              - key_01 value_01
+              - key_02 value_02
+              - key_03 value_03
+              - key_04 value_04
+              - key_05 value_05
+              - key_06 value_06
+              - key_07 value_07
+              - key_08 value_08
+              - key_09 value_09
+              - key_10 value_10
+              - key_11 value_11
+  outputs:
+    - name: stdout
+      match: "*"
