@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_opentelemetry.h>
 #include <fluent-bit/flb_ra_key.h>
+#include <fluent-bit/flb_slist.h>
 #include <fluent-bit/flb_gzip.h>
 
 #include <stdint.h>
@@ -359,6 +360,31 @@ static inline int log_record_set_body(struct opentelemetry_context *ctx,
     return 0;
 }
 
+/* Check whether a record key is listed in logs_body_key_attributes_exclude */
+static int log_record_attribute_is_excluded(struct opentelemetry_context *ctx,
+                                            msgpack_object_kv *kv)
+{
+    struct mk_list *head;
+    struct flb_slist_entry *entry;
+
+    if (ctx->logs_body_key_attributes_exclude == NULL ||
+        kv->key.type != MSGPACK_OBJECT_STR) {
+        return FLB_FALSE;
+    }
+
+    mk_list_foreach(head, ctx->logs_body_key_attributes_exclude) {
+        entry = mk_list_entry(head, struct flb_slist_entry, _head);
+
+        if (flb_sds_len(entry->str) == kv->key.via.str.size &&
+            strncmp(entry->str, kv->key.via.str.ptr,
+                    kv->key.via.str.size) == 0) {
+            return FLB_TRUE;
+        }
+    }
+
+    return FLB_FALSE;
+}
+
 static int log_record_set_attributes(struct opentelemetry_context *ctx,
                                      Opentelemetry__Proto__Logs__V1__LogRecord *log_record, struct flb_log_event *event,
                                      struct flb_record_accessor *ra_match)
@@ -457,6 +483,11 @@ static int log_record_set_attributes(struct opentelemetry_context *ctx,
         /* iterate the map and reference each elemento as an OTLP value */
         for (i = 0; i < result.data.via.map.size; i++) {
             kv = &result.data.via.map.ptr[i];
+
+            if (log_record_attribute_is_excluded(ctx, kv)) {
+                continue;
+            }
+
             buf[attr_count] = msgpack_kv_to_otlp_any_value(kv);
             if (buf[attr_count] != NULL) {
                 attr_count++;

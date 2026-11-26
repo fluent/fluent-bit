@@ -1794,6 +1794,12 @@ static struct flb_config_map config_map[] = {
      "If logs_body_key is set and it matched a pattern, this option will include the "
      "remaining fields in the record as attributes."
     },
+    {
+     FLB_CONFIG_MAP_CLIST, "logs_body_key_attributes_exclude", NULL,
+     0, FLB_TRUE, offsetof(struct opentelemetry_context, logs_body_key_attributes_exclude),
+     "Comma separated list of record keys that logs_body_key_attributes doesn't add "
+     "as attributes, for example keys already used for the trace ID or severity."
+    },
 
     {
      FLB_CONFIG_MAP_STR, "traces_uri", "/v1/traces",
