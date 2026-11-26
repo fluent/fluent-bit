@@ -77,10 +77,23 @@ typedef enum {
 #define FLB_AZURE_IMDS_RESOURCE "https://api.kusto.windows.net/"
 
 
+/*
+ * Small set of TLS contexts shared by all resource nodes for the plugin
+ * lifetime. Each context loads the trust store once; nodes are spread across
+ * the contexts so concurrent workers rarely contend on the same context lock.
+ */
+struct flb_azure_kusto_tls_pool {
+    struct flb_tls **contexts;
+    int size;
+    int next;
+};
+
 struct flb_azure_kusto_resources {
     struct flb_upstream_ha *blob_ha;
     struct flb_upstream_ha *queue_ha;
     flb_sds_t identity_token;
+    /* Outlives every resource generation; freed only on clear */
+    struct flb_azure_kusto_tls_pool *tls;
 
     /* used to reload resouces after some time */
     uint64_t load_time;
