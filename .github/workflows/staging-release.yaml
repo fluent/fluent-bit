@@ -38,6 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       major-version: ${{ steps.get_major_version.outputs.value }}
+      make-latest: ${{ steps.latest.outputs.value }}
     permissions:
       contents: read
     steps:
@@ -79,6 +80,32 @@ jobs:
 
     - name: Checkout repository
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+    - name: Decide whether this release updates Latest
+      id: latest
+      env:
+        GH_TOKEN: ${{ github.token }}
+        RELEASE_VERSION: ${{ inputs.version }}
+      run: |
+        make_latest=false
+        case "$RELEASE_VERSION" in
+          6.0.*)
+            make_latest=true
+            ;;
+          5.2.*)
+            latest_tag=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
+            if [[ ! "$latest_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::Unexpected Latest release tag: $latest_tag"
+              exit 1
+            fi
+            newest=$(printf '%s\n' "${latest_tag#v}" "$RELEASE_VERSION" | sort -V | tail -n 1)
+            if [[ "$newest" == "$RELEASE_VERSION" ]]; then
+              make_latest=true
+            fi
+            ;;
+        esac
+        echo "value=$make_latest" >> "$GITHUB_OUTPUT"
+      shell: bash
 
   staging-release-validate-schema:
     name: Validate staged metadata against the release image
@@ -719,11 +746,12 @@ jobs:
           TAG: ${{ steps.get-tag.outputs.tag }}
 
   staging-release-images-latest-tags:
-    # Only update latest tags for 6.0 releases
-    if: startsWith(inputs.version, '6.0.')
+    if: needs.staging-release-version-check.outputs.make-latest == 'true'
     name: Release latest Linux container images
     runs-on: ubuntu-latest
     needs:
+      - staging-release-version-check
+      - staging-release-create-release
       - staging-release-images
       - staging-release-validate-schema
     environment: release
@@ -988,6 +1016,7 @@ jobs:
   staging-release-create-release:
     name: Create the Github Release once packages and containers are up
     needs:
+      - staging-release-version-check
       - staging-release-publish-schema
       - staging-release-images
       - staging-release-apt-packages
@@ -1182,7 +1211,7 @@ jobs:
           target_commitish: '5.1'
           make_latest: false
 
-      - name: Release 5.2 - not latest
+      - name: Release 5.2
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         if: startsWith(inputs.version, '5.2.')
         with:
@@ -1197,7 +1226,7 @@ jobs:
           name: "Fluent Bit ${{ inputs.version }}"
           tag_name: v${{ inputs.version }}
           target_commitish: '5.2'
-          make_latest: false
+          make_latest: ${{ needs.staging-release-version-check.outputs.make-latest }}
 
       - name: Release 6.0 and latest
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
@@ -1575,6 +1604,7 @@ jobs:
         shell: bash
         env:
           NEW_VERSION: ${{ steps.semvers.outputs.patch }}
+          BITBAKE_VERSION: ${{ inputs.version }}
           # Ensure we use the PR action to do the work
           DISABLE_COMMIT: 'yes'
 
