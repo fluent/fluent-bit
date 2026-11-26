@@ -82,7 +82,7 @@ jobs:
       - uses: ./.github/actions/generate-package-build-matrix
         id: set-matrix
         with:
-          ref: master
+          ref: ${{ github.event.pull_request.head.sha }}
 
   pr-package-test-build-packages:
     name: PR - packages build Linux
