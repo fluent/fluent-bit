@@ -31,6 +31,7 @@ set(UNIT_TESTS_FILES
   config_map_fuzzer.c
   record_ac_fuzzer.c
   config_yaml_fuzzer.c
+  otlp_json_fuzzer.c
   opentelemetry_logs_fuzzer.c
   )
 
