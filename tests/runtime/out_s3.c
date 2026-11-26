@@ -247,6 +247,27 @@ static void wait_for_s3_call_count_with_timeout(const char *api, int expected,
     }
 }
 
+static char *wait_for_s3_test_value(const char *name)
+{
+    uint64_t elapsed_ms;
+    struct flb_time start_time;
+    struct flb_time end_time;
+    struct flb_time diff_time;
+    char *value;
+
+    elapsed_ms = 0;
+    flb_time_get(&start_time);
+    value = flb_s3_test_env_get(name);
+    while (value == NULL && elapsed_ms < S3_TEST_WAIT_TIMEOUT_MS) {
+        flb_time_msleep(S3_TEST_WAIT_STEP_MS);
+        flb_time_get(&end_time);
+        flb_time_diff(&end_time, &start_time, &diff_time);
+        elapsed_ms = flb_time_to_nanosec(&diff_time) / 1000000;
+        value = flb_s3_test_env_get(name);
+    }
+    return value;
+}
+
 static void wait_for_s3_call_count(const char *api, int expected)
 {
     wait_for_s3_call_count_with_timeout(api, expected,
@@ -2177,21 +2198,19 @@ void flb_test_s3_putobject_index_per_tag(void)
         goto cleanup;
     }
 
-    wait_for_s3_call_count("PutObject", 1);
-    uri = flb_s3_test_env_get("TEST_PutObject_URI_1");
+    uri = wait_for_s3_test_value("TEST_PutObject_URI_1");
     TEST_CHECK_(uri != NULL && strcmp(uri, "/fluent/queue/oldest/0") == 0,
                 "Expected oldest tag to start at index 0, got %s",
                 uri ? uri : "(null)");
 
     flb_s3_test_env_unset("TEST_PUT_OBJECT_ERROR");
-    wait_for_s3_call_count("PutObject", 3);
 
-    uri = flb_s3_test_env_get("TEST_PutObject_URI_2");
+    uri = wait_for_s3_test_value("TEST_PutObject_URI_2");
     TEST_CHECK_(uri != NULL && strcmp(uri, "/fluent/queue/oldest/0") == 0,
                 "Expected failed per-tag index to roll back to 0, got %s",
                 uri ? uri : "(null)");
 
-    uri = flb_s3_test_env_get("TEST_PutObject_URI_3");
+    uri = wait_for_s3_test_value("TEST_PutObject_URI_3");
     TEST_CHECK_(uri != NULL && strcmp(uri, "/fluent/queue/later/0") == 0,
                 "Expected independent later tag to start at index 0, got %s",
                 uri ? uri : "(null)");
@@ -2204,8 +2223,7 @@ void flb_test_s3_putobject_index_per_tag(void)
                                        time(NULL) - 30, NULL, 0);
     TEST_CHECK_(ret == 0, "Expected another oldest-tag chunk");
 
-    wait_for_s3_call_count("PutObject", 4);
-    uri = flb_s3_test_env_get("TEST_PutObject_URI_4");
+    uri = wait_for_s3_test_value("TEST_PutObject_URI_4");
     TEST_CHECK_(uri != NULL && strcmp(uri, "/fluent/queue/oldest/1") == 0,
                 "Expected oldest tag to advance independently to index 1, got %s",
                 uri ? uri : "(null)");
