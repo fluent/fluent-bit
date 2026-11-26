@@ -194,6 +194,79 @@ def test_out_s3_put_object_uploads_json_lines_payload():
     assert "date" in payload[0]
 
 
+def test_out_s3_index_per_tag_persists_independent_counters(tmp_path):
+    tags = ["first.tag", "second.tag"]
+    config = {
+        "env": {
+            "S3_INDEX_BUCKET": "index-per-tag-bucket",
+            "S3_INDEX_REGION": "us-east-1",
+            "S3_INDEX_STORE_DIR": str(tmp_path / "store"),
+        },
+        "service": {
+            "flush": 0.1,
+            "grace": 5,
+            "log_level": "info",
+            "http_server": "on",
+            "http_port": "${FLUENT_BIT_HTTP_MONITORING_PORT}",
+        },
+        "pipeline": {
+            "inputs": [
+                {
+                    "name": "dummy",
+                    "tag": tag,
+                    "samples": 1,
+                    "dummy": json.dumps({"source": tag}),
+                }
+                for tag in tags
+            ],
+            "outputs": [{
+                "name": "s3",
+                "match": "*",
+                "bucket": "${S3_INDEX_BUCKET}",
+                "region": "${S3_INDEX_REGION}",
+                "endpoint": "http://127.0.0.1:${TEST_SUITE_HTTP_PORT}",
+                "use_put_object": True,
+                "total_file_size": "1M",
+                "upload_timeout": "1s",
+                "s3_key_format": "/$TAG/$INDEX",
+                "index_per_tag": True,
+                "store_dir": "${S3_INDEX_STORE_DIR}",
+            }],
+        },
+    }
+    config_file = tmp_path / "index_per_tag.yaml"
+    config_file.write_text(yaml.safe_dump(config), encoding="utf-8")
+
+    def run_and_collect_paths():
+        service = Service(str(config_file))
+        service.start()
+
+        requests = service.service.wait_for_condition(
+            lambda: list(data_storage["requests"])
+            if len(data_storage["requests"]) >= len(tags) else None,
+            timeout=30,
+            interval=0.1,
+            description="one S3 upload from each tag",
+        )
+        process = service.service.flb.process
+        service.stop()
+        assert process.returncode == 0
+
+        return {request["path"] for request in requests if request["method"] == "PUT"}
+
+    first_paths = run_and_collect_paths()
+    assert first_paths == {
+        "/index-per-tag-bucket/first.tag/0",
+        "/index-per-tag-bucket/second.tag/0",
+    }
+
+    second_paths = run_and_collect_paths()
+    assert second_paths == {
+        "/index-per-tag-bucket/first.tag/1",
+        "/index-per-tag-bucket/second.tag/1",
+    }
+
+
 def test_out_s3_format_json_uploads_logs_only_as_json_lines():
     service = Service("out_s3_format_json.yaml")
     _start_or_skip_unsupported_s3_format(service, "format")
