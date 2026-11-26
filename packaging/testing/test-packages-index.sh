@@ -35,6 +35,8 @@ setup_local_fixture()
         "$root/4.2.7" \
         "$root/centos/9" \
         "$root/macos" \
+        "$root/opensuse/16.1" \
+        "$root/sles/15.7" \
         "$root/windows" \
         "$root/ubuntu/jammy/pool/main/f/fluent-bit"
 
@@ -43,6 +45,8 @@ setup_local_fixture()
         "$root/centos/9/fluent-bit-4.2.6-1.x86_64.rpm" \
         "$root/centos/9/fluent-bit-4.2.7-1.x86_64.rpm" \
         "$root/macos/fluent-bit-4.2.7.pkg" \
+        "$root/opensuse/16.1/fluent-bit-4.2.7-1.x86_64.rpm" \
+        "$root/sles/15.7/fluent-bit-4.2.7-1.aarch64.rpm" \
         "$root/ubuntu/jammy/pool/main/f/fluent-bit/fluent-bit_4.2.6_amd64.deb" \
         "$root/ubuntu/jammy/pool/main/f/fluent-bit/fluent-bit_4.2.7_amd64.deb" \
         "$root/windows/fluent-bit-4.2.6-win64.exe" \
@@ -68,6 +72,8 @@ setup_s3_listing_fixture()
 centos/9/fluent-bit-4.2.6-1.x86_64.rpm
 centos/9/fluent-bit-4.2.7-1.x86_64.rpm
 macos/fluent-bit-4.2.7.pkg
+opensuse/16.1/fluent-bit-4.2.7-1.x86_64.rpm
+sles/15.7/fluent-bit-4.2.7-1.aarch64.rpm
 ubuntu/jammy/pool/main/f/fluent-bit/fluent-bit_4.2.6_amd64.deb
 ubuntu/jammy/pool/main/f/fluent-bit/fluent-bit_4.2.7_amd64.deb
 windows/fluent-bit-4.2.6-win64.exe
@@ -196,6 +202,15 @@ if ! jq -e '.versions[] | select(.version == "4.2.7") | .artifacts.linux[] | sel
     echo "ERROR: versions.json missing Linux RPM artifact for 4.2.7" >&2
     exit 1
 fi
+
+for label in 'opensuse/16.1 x86_64 rpm' 'sles/15.7 aarch64 rpm'; do
+    if ! jq -e --arg label "$label" \
+        '.versions[] | select(.version == "4.2.7") | .artifacts.linux[] | select(.label == $label)' \
+        "$OUTPUT_DIR/versions.json" >/dev/null; then
+        echo "ERROR: versions.json missing $label artifact for 4.2.7" >&2
+        exit 1
+    fi
+done
 
 if ! jq -e '.versions[] | select(.version == "4.2.7") | .artifacts.linux[] | select(.label == "ubuntu/jammy amd64 deb")' \
     "$OUTPUT_DIR/versions.json" >/dev/null; then
