@@ -24,7 +24,6 @@
 #include <fluent-bit/flb_time.h>
 
 #include <cmetrics/cmetrics.h>
-#include <cmetrics/cmt_cat.h>
 #include <cmetrics/cmt_encode_opentelemetry.h>
 
 #include <ctraces/ctraces.h>
@@ -1437,36 +1436,53 @@ flb_sds_t flb_opentelemetry_metrics_msgpack_to_otlp_proto(const void *data,
     size_t offset;
     cfl_sds_t encoded;
     cfl_sds_t output;
+    cfl_sds_t tmp;
     struct cmt *context;
-    struct cmt *merged_context;
 
     if (data == NULL || size == 0) {
         set_error(result, FLB_OPENTELEMETRY_OTLP_PROTO_INVALID_ARGUMENT, EINVAL);
         return NULL;
     }
 
-    merged_context = cmt_create();
-    if (merged_context == NULL) {
+    output = cfl_sds_create_size(size);
+    if (output == NULL) {
         set_error(result, FLB_OPENTELEMETRY_OTLP_PROTO_NOT_SUPPORTED, ENOMEM);
         return NULL;
     }
 
-    output = NULL;
     offset = 0;
     decoded_count = 0;
 
+    /*
+     * Encode every context on its own and append it, as out_opentelemetry
+     * does: the repeated fields of concatenated protobuf messages are
+     * joined, so the result is one ExportMetricsServiceRequest. Merging the
+     * contexts first with cmt_cat() fails when two of them carry a metric
+     * with the same name and different label keys, and the whole chunk was
+     * lost.
+     */
     while ((ret = cmt_decode_msgpack_create(&context,
                                             (char *) data,
                                             size,
                                             &offset)) == CMT_DECODE_MSGPACK_SUCCESS) {
-        ret = cmt_cat(merged_context, context);
+        encoded = cmt_encode_opentelemetry_create(context);
         cmt_destroy(context);
 
-        if (ret != 0) {
-            cmt_destroy(merged_context);
+        if (encoded == NULL) {
+            cfl_sds_destroy(output);
             set_error(result, FLB_OPENTELEMETRY_OTLP_PROTO_NOT_SUPPORTED, ENOMEM);
             return NULL;
         }
+
+        tmp = cfl_sds_cat(output, encoded, cfl_sds_len(encoded));
+        cmt_encode_opentelemetry_destroy(encoded);
+
+        if (tmp == NULL) {
+            cfl_sds_destroy(output);
+            set_error(result, FLB_OPENTELEMETRY_OTLP_PROTO_NOT_SUPPORTED, ENOMEM);
+            return NULL;
+        }
+        output = tmp;
 
         decoded_count++;
     }
@@ -1475,33 +1491,13 @@ flb_sds_t flb_opentelemetry_metrics_msgpack_to_otlp_proto(const void *data,
            offset == size &&
            decoded_count > 0) ||
           (ret == CMT_DECODE_MSGPACK_SUCCESS && offset == size))) {
-        cmt_destroy(merged_context);
+        cfl_sds_destroy(output);
         set_error(result, FLB_OPENTELEMETRY_OTLP_PROTO_INVALID_ARGUMENT, EINVAL);
         return NULL;
     }
 
-    if (decoded_count == 0) {
-        cmt_destroy(merged_context);
-        output = cfl_sds_create_size(0);
-        if (output == NULL) {
-            set_error(result, FLB_OPENTELEMETRY_OTLP_PROTO_NOT_SUPPORTED, ENOMEM);
-            return NULL;
-        }
-
-        set_result(result, FLB_OPENTELEMETRY_OTLP_PROTO_SUCCESS);
-        return (flb_sds_t) output;
-    }
-
-    encoded = cmt_encode_opentelemetry_create(merged_context);
-    cmt_destroy(merged_context);
-
-    if (encoded == NULL) {
-        set_error(result, FLB_OPENTELEMETRY_OTLP_PROTO_NOT_SUPPORTED, ENOMEM);
-        return NULL;
-    }
-
     set_result(result, FLB_OPENTELEMETRY_OTLP_PROTO_SUCCESS);
-    return (flb_sds_t) encoded;
+    return (flb_sds_t) output;
 }
 
 flb_sds_t flb_opentelemetry_traces_to_otlp_proto(struct ctrace *context,

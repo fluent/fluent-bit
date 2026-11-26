@@ -3310,6 +3310,201 @@ void test_opentelemetry_metrics_msgpack_otlp_proto_merges_contexts()
     destroy_metrics_context_list(&contexts);
 }
 
+static int metrics_counter_msgpack_create(int label_count, char **label_keys,
+                                          char **label_values,
+                                          char **out_buf, size_t *out_size)
+{
+    int ret;
+    struct cmt *context;
+    struct cmt_counter *counter;
+
+    context = cmt_create();
+    if (context == NULL) {
+        return -1;
+    }
+
+    counter = cmt_counter_create(context, "test", "otel", "requests",
+                                 "requests", label_count, label_keys);
+    if (counter == NULL) {
+        cmt_destroy(context);
+        return -1;
+    }
+
+    ret = cmt_counter_set(counter, 1704067200000000000ULL, 1,
+                          label_count, label_values);
+    if (ret == 0) {
+        ret = cmt_encode_msgpack_create(context, out_buf, out_size);
+    }
+
+    cmt_destroy(context);
+
+    return ret;
+}
+
+/*
+ * Return FLB_TRUE when a data point has exactly the given string attributes,
+ * in any order.
+ */
+static int data_point_has_labels(Opentelemetry__Proto__Metrics__V1__NumberDataPoint *point,
+                                 int label_count, char **label_keys,
+                                 char **label_values)
+{
+    int index;
+    size_t attribute_index;
+    Opentelemetry__Proto__Common__V1__KeyValue *attribute;
+
+    if (point->n_attributes != (size_t) label_count) {
+        return FLB_FALSE;
+    }
+
+    for (index = 0; index < label_count; index++) {
+        for (attribute_index = 0; attribute_index < point->n_attributes;
+             attribute_index++) {
+            attribute = point->attributes[attribute_index];
+
+            if (strcmp(attribute->key, label_keys[index]) == 0) {
+                break;
+            }
+        }
+
+        if (attribute_index == point->n_attributes) {
+            return FLB_FALSE;
+        }
+
+        if (attribute->value == NULL ||
+            attribute->value->value_case !=
+            OPENTELEMETRY__PROTO__COMMON__V1__ANY_VALUE__VALUE_STRING_VALUE ||
+            strcmp(attribute->value->string_value, label_values[index]) != 0) {
+            return FLB_FALSE;
+        }
+    }
+
+    return FLB_TRUE;
+}
+
+void test_opentelemetry_metrics_msgpack_otlp_proto_label_key_mismatch()
+{
+    int ret;
+    int result;
+    size_t index;
+    size_t scope_index;
+    size_t metric_index;
+    size_t point_index;
+    size_t data_points;
+    size_t points_a;
+    size_t points_b;
+    size_t combined_size;
+    size_t msgpack_size_a;
+    size_t msgpack_size_b;
+    char *combined_buffer;
+    char *msgpack_buffer_a;
+    char *msgpack_buffer_b;
+    char *keys_a[] = {"method", "status", "host"};
+    char *values_a[] = {"GET", "200", "a"};
+    char *keys_b[] = {"method", "status", "host", "route"};
+    char *values_b[] = {"GET", "200", "a", "/v1"};
+    flb_sds_t actual;
+    Opentelemetry__Proto__Collector__Metrics__V1__ExportMetricsServiceRequest *decoded;
+    Opentelemetry__Proto__Metrics__V1__ScopeMetrics *scope_metrics;
+    Opentelemetry__Proto__Metrics__V1__Metric *metric;
+    Opentelemetry__Proto__Metrics__V1__NumberDataPoint *point;
+
+    /*
+     * The same counter name with three label keys in one context and four
+     * in the other.
+     */
+    ret = metrics_counter_msgpack_create(3, keys_a, values_a,
+                                         &msgpack_buffer_a, &msgpack_size_a);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        return;
+    }
+
+    ret = metrics_counter_msgpack_create(4, keys_b, values_b,
+                                         &msgpack_buffer_b, &msgpack_size_b);
+    TEST_CHECK(ret == 0);
+    if (ret != 0) {
+        flb_free(msgpack_buffer_a);
+        return;
+    }
+
+    combined_size = msgpack_size_a + msgpack_size_b;
+    combined_buffer = flb_malloc(combined_size);
+    TEST_CHECK(combined_buffer != NULL);
+    if (combined_buffer == NULL) {
+        flb_free(msgpack_buffer_a);
+        flb_free(msgpack_buffer_b);
+        return;
+    }
+
+    memcpy(combined_buffer, msgpack_buffer_a, msgpack_size_a);
+    memcpy(combined_buffer + msgpack_size_a, msgpack_buffer_b, msgpack_size_b);
+
+    actual = flb_opentelemetry_metrics_msgpack_to_otlp_proto(combined_buffer,
+                                                             combined_size,
+                                                             &result);
+    TEST_CHECK(actual != NULL);
+    TEST_CHECK(result == FLB_OPENTELEMETRY_OTLP_PROTO_SUCCESS);
+
+    if (actual != NULL) {
+        decoded =
+            opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__unpack(
+                NULL, flb_sds_len(actual), (uint8_t *) actual);
+        TEST_CHECK(decoded != NULL);
+
+        if (decoded != NULL) {
+            /* both data points are kept, each with its own attributes */
+            data_points = 0;
+            points_a = 0;
+            points_b = 0;
+
+            for (index = 0; index < decoded->n_resource_metrics; index++) {
+                for (scope_index = 0;
+                     scope_index < decoded->resource_metrics[index]->n_scope_metrics;
+                     scope_index++) {
+                    scope_metrics = decoded->resource_metrics[index]->scope_metrics[scope_index];
+
+                    for (metric_index = 0; metric_index < scope_metrics->n_metrics;
+                         metric_index++) {
+                        metric = scope_metrics->metrics[metric_index];
+                        TEST_CHECK(strcmp(metric->name, "test_otel_requests") == 0);
+
+                        if (metric->sum == NULL) {
+                            continue;
+                        }
+
+                        for (point_index = 0; point_index < metric->sum->n_data_points;
+                             point_index++) {
+                            point = metric->sum->data_points[point_index];
+                            data_points++;
+
+                            if (data_point_has_labels(point, 3, keys_a, values_a)) {
+                                points_a++;
+                            }
+                            else if (data_point_has_labels(point, 4, keys_b, values_b)) {
+                                points_b++;
+                            }
+                        }
+                    }
+                }
+            }
+
+            TEST_CHECK_(data_points == 2, "data points = %zu", data_points);
+            TEST_CHECK_(points_a == 1, "points with 3 labels = %zu", points_a);
+            TEST_CHECK_(points_b == 1, "points with 4 labels = %zu", points_b);
+
+            opentelemetry__proto__collector__metrics__v1__export_metrics_service_request__free_unpacked(decoded,
+                                                                                                         NULL);
+        }
+
+        cmt_encode_opentelemetry_destroy((cfl_sds_t) actual);
+    }
+
+    flb_free(combined_buffer);
+    flb_free(msgpack_buffer_a);
+    flb_free(msgpack_buffer_b);
+}
+
 void test_opentelemetry_metrics_otlp_proto_data_point_batches()
 {
     int index;
@@ -4610,6 +4805,8 @@ TEST_LIST = {
       test_opentelemetry_metrics_otlp_proto_roundtrip },
     { "opentelemetry_metrics_msgpack_otlp_proto_merges_contexts",
       test_opentelemetry_metrics_msgpack_otlp_proto_merges_contexts },
+    { "opentelemetry_metrics_msgpack_otlp_proto_label_key_mismatch",
+      test_opentelemetry_metrics_msgpack_otlp_proto_label_key_mismatch },
     { "opentelemetry_metrics_otlp_proto_data_point_batches",
       test_opentelemetry_metrics_otlp_proto_data_point_batches },
     { "opentelemetry_metrics_otlp_proto_batches_all_metric_types",
