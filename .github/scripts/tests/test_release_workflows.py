@@ -1,5 +1,6 @@
 """Guard required release metadata dependencies and explicit file transfers."""
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -80,6 +81,90 @@ class WorkflowTests(unittest.TestCase):
         for name in ("staging-release-create-docs-pr", "staging-release-create-version-update-pr"):
             self.assertIn("staging-release-create-release", self.ancestors(name))
 
+    def test_current_release_series_publication(self):
+        release_job = self.release["staging-release-create-release"]
+        steps = release_job["steps"]
+        latest_check = next(step for step in steps if step.get("id") == "latest")
+        latest_output = "${{ steps.latest.outputs.value }}"
+        for series, branch, latest in (("5.2", "5.2", latest_output), ("6.0", "master", True)):
+            with self.subTest(series=series):
+                condition = f"startsWith(inputs.version, '{series}.')"
+                release = next(step for step in steps if step.get("if") == condition and "uses" in step)
+                self.assertEqual(release["with"]["target_commitish"], branch)
+                self.assertEqual(release["with"]["make_latest"], latest)
+                if series == "5.2":
+                    self.assertEqual(steps.index(latest_check) + 1, steps.index(release))
+                    self.assertEqual(latest_check["if"], condition)
+
+        latest_images = self.release["staging-release-images-latest-tags"]
+        self.assertEqual(latest_images["if"],
+                         "startsWith(inputs.version, '5.2.') || startsWith(inputs.version, '6.0.')")
+        self.assertIn("staging-release-create-release", latest_images["needs"])
+        self.assertEqual(latest_images["steps"][0]["id"], "latest")
+        for step in latest_images["steps"][1:]:
+            self.assertEqual(step["if"], "steps.latest.outputs.value == 'true'")
+        self.assertEqual(workflow("staging-release.yaml")["concurrency"], "staging-build-release")
+        rebuild = workflow("release-rebuild-images.yaml")["jobs"]["rebuild-release-images"]
+        self.assertEqual(rebuild["concurrency"]["group"], "staging-build-release")
+
+    def test_latest_selection_for_maintenance_releases(self):
+        cases = [
+            ("5.2.2", "v5.2.1", True, False), ("5.2.2", "v5.2.2", True, True),
+            ("5.2.2", "v5.2.10", False, False), ("5.2.10", "v5.2.9", True, False),
+            ("5.2.2", "v6.0.0", False, False), ("5.2.2", "not-a-release", None, None),
+            ("5.2.2", "", None, None),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            gh = Path(directory) / "gh"
+            gh.write_text('#!/bin/sh\n[ -n "$LATEST_TAG" ] && printf "%s\\n" "$LATEST_TAG"\n')
+            gh.chmod(0o755)
+            output = Path(directory) / "output"
+            for index, job_name in enumerate(("create-release", "images-latest-tags")):
+                job = self.release[f"staging-release-{job_name}"]
+                check = next(step for step in job["steps"] if step.get("id") == "latest")
+                for version, latest, *expected_by_job in cases:
+                    with self.subTest(job=job_name, version=version, latest=latest):
+                        output.unlink(missing_ok=True)
+                        result = subprocess.run(
+                            ["bash", "-e", "-o", "pipefail", "-c", check["run"]],
+                            env={**os.environ, "PATH": f"{directory}:{os.environ['PATH']}",
+                                 "RELEASE_VERSION": version, "LATEST_TAG": latest,
+                                 "GITHUB_OUTPUT": str(output), "GITHUB_REPOSITORY": "fluent/fluent-bit"},
+                            capture_output=True, text=True)
+                        expected = expected_by_job[index]
+                        if expected is None:
+                            self.assertNotEqual(result.returncode, 0)
+                            self.assertFalse(output.exists())
+                        else:
+                            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                            self.assertEqual(output.read_text(), f"value={str(expected).lower()}\n")
+
+    def test_version_update_keeps_bitbake_on_the_published_tag(self):
+        steps = self.release["staging-release-create-version-update-pr"]["steps"]
+        update = next(step for step in steps if step.get("run") == "./update_version.sh")
+        self.assertEqual(update["env"]["BITBAKE_VERSION"], "${{ inputs.version }}")
+
+        files = ["update_version.sh", "CMakeLists.txt", "dockerfiles/Dockerfile",
+                 "snap/snapcraft.yaml", "include/fluent-bit/flb_version.h.in"]
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            for file in files:
+                destination = directory / file
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(ROOT / file, destination)
+            recipe = directory / "fluent-bit-5.2.1.bb"
+            recipe.write_text('PV = "5.2.1"\nSRCREV = "v${PV}"\n')
+            env = {**os.environ, "NEW_VERSION": "5.2.3", "BITBAKE_VERSION": "5.2.2",
+                   "DISABLE_COMMIT": "yes"}
+            for _ in range(2):
+                subprocess.run(["bash", str(directory / "update_version.sh")], env=env, check=True)
+            self.assertEqual(list(directory.glob("fluent-bit-*.bb")), [directory / "fluent-bit-5.2.2.bb"])
+            self.assertEqual((directory / "fluent-bit-5.2.2.bb").read_text(),
+                             'PV = "5.2.2"\nSRCREV = "v${PV}"\n')
+            self.assertIn("set(FLB_VERSION_PATCH  3)", (directory / "CMakeLists.txt").read_text())
+            self.assertIn("ARG RELEASE_VERSION=5.2.3", (directory / "dockerfiles/Dockerfile").read_text())
+            self.assertIn("version: '5.2.3'", (directory / "snap/snapcraft.yaml").read_text())
+
     def test_release_prs_use_verified_branch_as_explicit_base(self):
         for suffix in ("docs", "version-update"):
             job = self.release[f"staging-release-create-{suffix}-pr"]
@@ -90,10 +175,11 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(create["with"]["base"], "${{ steps.release-branch.outputs.name }}")
             self.assertEqual(guard["env"]["RELEASE_VERSION"], "${{ inputs.version }}")
             self.assertLess(steps.index(guard), steps.index(create))
-            for series, expected in (("5.0", "5.0"), ("5.1", "5.1"), ("5.2", "master")):
-                with self.subTest(job=suffix, series=series):
+            for prefix, expected in (("5.0", "5.0"), ("5.1", "5.1"),
+                                     ("5.2.", "5.2"), ("6.0.", "master")):
+                with self.subTest(job=suffix, prefix=prefix):
                     checkouts = [step for step in steps if "actions/checkout@" in step.get("uses", "")
-                                 and step.get("if") == f"startsWith(inputs.version, '{series}')"]
+                                 and step.get("if") == f"startsWith(inputs.version, '{prefix}')"]
                     self.assertEqual(len(checkouts), 1)
                     self.assertEqual(checkouts[0]["with"]["ref"], expected)
                     self.assertLess(steps.index(checkouts[0]), steps.index(guard))
@@ -103,9 +189,11 @@ class WorkflowTests(unittest.TestCase):
             self.assertLess(steps.index(guard), steps.index(update))
 
     def test_release_branch_guard_rejects_wrong_checkout_before_updates(self):
-        cases = [("5.1.5", "5.1", "5.1"), ("5.2.0", "master", "master"),
-                 ("5.0.9", "5.0", "5.0"), ("5.1.5", "master", None),
-                 ("5.2.0", "5.1", None), ("5.10.0", "5.1", None),
+        cases = [("5.1.5", "5.1", "5.1"), ("5.2.2", "5.2", "5.2"),
+                 ("6.0.0", "master", "master"), ("5.0.9", "5.0", "5.0"),
+                 ("5.1.5", "master", None), ("5.2.2", "master", None),
+                 ("6.0.0", "5.2", None), ("5.10.0", "5.1", None),
+                 ("5.20.0", "5.2", None), ("6.1.0", "master", None),
                  ("invalid", "master", None), ("5.1", "5.1", None)]
         for suffix in ("docs", "version-update"):
             steps = self.release[f"staging-release-create-{suffix}-pr"]["steps"]
