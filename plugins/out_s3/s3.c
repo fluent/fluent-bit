@@ -40,6 +40,9 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+#ifndef FLB_SYSTEM_WINDOWS
+#include <dirent.h>
+#endif
 
 #include <msgpack.h>
 
@@ -860,7 +863,7 @@ static int write_seq_index(char *seq_index_file, uint64_t seq_index)
     return 0;
 }
 
-static int write_tag_seq_index(const char *seq_index_file, uint64_t seq_index)
+static int write_seq_index_atomic(const char *seq_index_file, uint64_t seq_index)
 {
     FILE *fp;
     int ret;
@@ -979,7 +982,7 @@ static int prepare_tag_seq_index(struct flb_s3 *ctx,
 
         /* Start beyond keys previously allocated by the shared counter. */
         *value = ctx->seq_index;
-        ret = write_tag_seq_index(path, *value);
+        ret = write_seq_index_atomic(path, *value);
         if (ret < 0) {
             flb_plg_error(ctx->ins,
                           "Failed to initialize sequential index metadata file %s",
@@ -999,6 +1002,9 @@ static int prepare_tag_seq_index(struct flb_s3 *ctx,
         }
     }
 
+    if (*value < ctx->seq_index) {
+        *value = ctx->seq_index;
+    }
     *file_path = path;
     return 0;
 }
@@ -1006,10 +1012,124 @@ static int prepare_tag_seq_index(struct flb_s3 *ctx,
 static int write_selected_seq_index(struct flb_s3 *ctx, char *path, uint64_t index)
 {
     if (ctx->index_per_tag == FLB_TRUE) {
-        return write_tag_seq_index(path, index);
+        return write_seq_index_atomic(path, index);
     }
 
     return write_seq_index(path, index);
+}
+
+static int check_tag_seq_index(struct flb_s3 *ctx, const char *name,
+                               const char *prefix, size_t prefix_len, uint64_t *highest)
+{
+    int ret;
+    uint64_t value;
+    const char *hash;
+    flb_sds_t path;
+
+    if (strncmp(name, prefix, prefix_len) != 0) {
+        return 0;
+    }
+
+    hash = name + prefix_len;
+    if (strlen(hash) != 64 || strspn(hash, "0123456789abcdef") != 64) {
+        return 0;
+    }
+
+    path = flb_sds_create_size(flb_sds_len(ctx->metadata_dir) + strlen(name) + 2);
+    if (path == NULL) {
+        return -1;
+    }
+    if (flb_sds_printf(&path, "%s/%s", ctx->metadata_dir, name) == NULL) {
+        flb_sds_destroy(path);
+        return -1;
+    }
+    ret = read_seq_index(path, &value);
+    if (ret < 0) {
+        flb_plg_error(ctx->ins, "Failed to read sequential index metadata file %s", path);
+    }
+    else if (value == UINT64_MAX) {
+        flb_plg_error(ctx->ins, "Sequential index exhausted in metadata file %s", path);
+        ret = -1;
+    }
+    else if (value > *highest) {
+        *highest = value;
+    }
+    flb_sds_destroy(path);
+    return ret;
+}
+
+static int reconcile_shared_seq_index(struct flb_s3 *ctx)
+{
+    int ret = 0;
+    char prefix[32];
+    size_t prefix_len;
+    uint64_t highest = ctx->seq_index;
+#ifdef FLB_SYSTEM_WINDOWS
+    flb_sds_t pattern;
+    HANDLE handle;
+    WIN32_FIND_DATAA entry;
+#else
+    DIR *dir;
+    struct dirent *entry;
+#endif
+
+    prefix_len = snprintf(prefix, sizeof(prefix), "seq_index_%d_", ctx->ins->id);
+#ifdef FLB_SYSTEM_WINDOWS
+    pattern = flb_sds_create(ctx->metadata_dir);
+    if (pattern == NULL) {
+        return -1;
+    }
+    if (flb_sds_cat_safe(&pattern, "\\*", 2) < 0) {
+        flb_sds_destroy(pattern);
+        return -1;
+    }
+    handle = FindFirstFileA(pattern, &entry);
+    if (handle == INVALID_HANDLE_VALUE) {
+        ret = GetLastError() == ERROR_FILE_NOT_FOUND ? 0 : -1;
+        flb_sds_destroy(pattern);
+        return ret;
+    }
+    flb_sds_destroy(pattern);
+    do {
+        ret = check_tag_seq_index(ctx, entry.cFileName, prefix, prefix_len, &highest);
+        if (ret < 0) {
+            break;
+        }
+    } while (FindNextFileA(handle, &entry));
+    if (ret == 0 && GetLastError() != ERROR_NO_MORE_FILES) {
+        ret = -1;
+    }
+    FindClose(handle);
+#else
+    dir = opendir(ctx->metadata_dir);
+    if (dir == NULL) {
+        return -1;
+    }
+    for (;;) {
+        errno = 0;
+        entry = readdir(dir);
+        if (entry == NULL) {
+            ret = errno == 0 ? 0 : -1;
+            break;
+        }
+        ret = check_tag_seq_index(ctx, entry->d_name, prefix, prefix_len, &highest);
+        if (ret < 0) {
+            break;
+        }
+    }
+    closedir(dir);
+#endif
+    if (ret < 0) {
+        return -1;
+    }
+    if (highest > ctx->seq_index) {
+        ret = write_seq_index_atomic(ctx->seq_index_file, highest);
+        if (ret < 0) {
+            return -1;
+        }
+        ctx->seq_index = highest;
+    }
+    return 0;
 }
 
 static int init_seq_index(void *context) {
@@ -1094,6 +1214,10 @@ static int init_seq_index(void *context) {
         }
         flb_plg_info(ctx->ins, "Successfully recovered index. "
                      "Continuing at index=%"PRIu64, ctx->seq_index);
+    }
+    if (ctx->index_per_tag == FLB_FALSE && reconcile_shared_seq_index(ctx) < 0) {
+        flb_plg_error(ctx->ins, "Failed to reconcile shared sequential index with per-tag metadata");
+        return -1;
     }
     return 0;
 }
@@ -6264,7 +6388,9 @@ static struct flb_config_map config_map[] = {
     {
      FLB_CONFIG_MAP_BOOL, "index_per_tag", "false",
      0, FLB_TRUE, offsetof(struct flb_s3, index_per_tag),
-     "Maintain an independent persistent $INDEX counter for each complete tag."
+     "Maintain an independent $INDEX counter for each complete tag. "
+     "Changing modes with retained counter metadata reconciles the next index. "
+     "If the metadata is lost, use a new object key prefix to avoid reusing keys."
     },
 
     {
