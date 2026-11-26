@@ -1330,9 +1330,139 @@ void test_hostname_verification_from_output_instance(void)
     flb_config_exit(config);
 }
 
+void test_hostname_verification_from_settings(void)
+{
+    int verify_hostname;
+    struct flb_config *config;
+    struct flb_oauth2 *ctx;
+    struct flb_oauth2_config cfg = {0};
+
+    config = flb_config_init();
+    TEST_CHECK(config != NULL);
+    if (!config) {
+        return;
+    }
+
+    cfg.enabled = FLB_TRUE;
+    cfg.token_url = flb_sds_create("https://localhost/token");
+    TEST_CHECK(cfg.token_url != NULL);
+    if (!cfg.token_url) {
+        flb_config_exit(config);
+        return;
+    }
+
+    for (verify_hostname = FLB_FALSE; verify_hostname <= FLB_TRUE; verify_hostname++) {
+        ctx = flb_oauth2_create_from_settings(config, verify_hostname, &cfg);
+        TEST_CHECK(ctx != NULL);
+        if (ctx) {
+            TEST_CHECK(ctx->tls->verify_hostname == verify_hostname);
+            flb_oauth2_destroy(ctx);
+        }
+    }
+
+    flb_oauth2_config_destroy(&cfg);
+    flb_config_exit(config);
+}
+
+void test_create_from_settings_rejects_null_args(void)
+{
+    struct flb_config *config;
+    struct flb_oauth2 *ctx;
+    struct flb_oauth2_config cfg = {0};
+
+    config = flb_config_init();
+    TEST_CHECK(config != NULL);
+    if (!config) {
+        return;
+    }
+
+    cfg.enabled = FLB_TRUE;
+    cfg.token_url = flb_sds_create("https://localhost/token");
+    TEST_CHECK(cfg.token_url != NULL);
+
+    ctx = flb_oauth2_create_from_settings(NULL, FLB_TRUE, &cfg);
+    TEST_CHECK(ctx == NULL);
+
+    ctx = flb_oauth2_create_from_settings(config, FLB_TRUE, NULL);
+    TEST_CHECK(ctx == NULL);
+
+    flb_oauth2_config_destroy(&cfg);
+    flb_config_exit(config);
+}
+
+void test_create_from_config_rejects_null_instance(void)
+{
+    struct flb_oauth2 *ctx;
+    struct flb_oauth2_config cfg = {0};
+
+    cfg.enabled = FLB_TRUE;
+    cfg.token_url = flb_sds_create("https://localhost/token");
+    TEST_CHECK(cfg.token_url != NULL);
+
+    ctx = flb_oauth2_create_from_config(NULL, &cfg);
+    TEST_CHECK(ctx == NULL);
+
+    flb_oauth2_config_destroy(&cfg);
+}
+
+void test_create_from_settings_fetches_token(void)
+{
+    int ret;
+    flb_sds_t token = NULL;
+    struct flb_config *config;
+    struct flb_oauth2 *ctx;
+    struct flb_oauth2_config cfg = {0};
+    struct oauth2_mock_server server;
+
+    config = flb_config_init();
+    TEST_CHECK(config != NULL);
+
+    ret = oauth2_mock_server_start(&server, 3600, 0);
+    TEST_CHECK(ret == 0);
+
+    cfg.enabled = FLB_TRUE;
+    cfg.auth_method = FLB_OAUTH2_AUTH_METHOD_BASIC;
+    cfg.refresh_skew = 58;
+    cfg.client_id = flb_sds_create("id");
+    cfg.client_secret = flb_sds_create("secret");
+    cfg.token_url = flb_sds_create_size(64);
+    flb_sds_printf(&cfg.token_url, "http://127.0.0.1:%d/token", server.port);
+
+    ctx = flb_oauth2_create_from_settings(config, FLB_TRUE, &cfg);
+    TEST_CHECK(ctx != NULL);
+    flb_oauth2_config_destroy(&cfg);
+
+#ifdef FLB_SYSTEM_MACOS
+    ret = oauth2_mock_server_wait_ready(&server);
+    TEST_CHECK(ret == 0);
+    flb_time_msleep(50);
+#endif
+
+    if (ctx) {
+        ret = flb_oauth2_get_access_token(ctx, &token, FLB_FALSE);
+        TEST_CHECK(ret == 0);
+        if (ret == 0) {
+            TEST_CHECK(strcmp(token, "mock-token-1") == 0);
+        }
+        TEST_CHECK(server.token_requests == 1);
+        flb_oauth2_destroy(ctx);
+    }
+
+    oauth2_mock_server_stop(&server);
+    flb_config_exit(config);
+}
+
 TEST_LIST = {
     {"hostname_verification_from_output_instance",
      test_hostname_verification_from_output_instance},
+    {"hostname_verification_from_settings",
+     test_hostname_verification_from_settings},
+    {"create_from_settings_rejects_null_args",
+     test_create_from_settings_rejects_null_args},
+    {"create_from_settings_fetches_token",
+     test_create_from_settings_fetches_token},
+    {"create_from_config_rejects_null_instance",
+     test_create_from_config_rejects_null_instance},
     {"parse_refreshes_token_transactionally",
      test_parse_refreshes_token_transactionally},
     {"parse_accepts_quoted_expires_in", test_parse_accepts_quoted_expires_in},

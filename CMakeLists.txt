@@ -955,6 +955,12 @@ if(FLB_TLS)
     # early instead.
     MESSAGE(FATAL_ERROR "OpenSSL required on Windows, see DEVELOPER_GUIDE.md")
   endif()
+else()
+  # in_gcs needs the shared GCP auth helper (src/flb_gcp_auth.c), built only with TLS
+  if(FLB_IN_GCS)
+    message(STATUS "Disabling FLB_IN_GCS: TLS support is disabled")
+    set(FLB_IN_GCS Off)
+  endif()
 endif()
 
 # Metrics

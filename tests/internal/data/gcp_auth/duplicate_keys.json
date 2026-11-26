@@ -1,0 +1,1 @@
+{"type": "service_account", "private_key": "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----\n", "private_key": "-----BEGIN PRIVATE KEY-----\ndef\n-----END PRIVATE KEY-----\n", "client_email": "a@b.c", "client_email": "d@e.f"}

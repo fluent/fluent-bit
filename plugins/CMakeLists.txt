@@ -270,6 +270,7 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux" OR ${CMAKE_SYSTEM_NAME} MATCHES "Darwin"
 endif()
 
 REGISTER_IN_PLUGIN("in_kubernetes_events")
+REGISTER_IN_PLUGIN("in_gcs")
 
 if(FLB_KAFKA)
   REGISTER_IN_PLUGIN("in_kafka")

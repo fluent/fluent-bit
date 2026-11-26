@@ -185,6 +185,7 @@ if(FLB_TLS)
     "tls/flb_tls.c"
     "flb_oauth2.c"
     "flb_oauth2_jwt.c"
+    "flb_gcp_auth.c"
     )
 
   # Make sure our output targets links to the TLS library

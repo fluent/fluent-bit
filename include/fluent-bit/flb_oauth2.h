@@ -100,6 +100,10 @@ struct flb_oauth2 *flb_oauth2_create(struct flb_output_instance *ins,
 struct flb_oauth2 *flb_oauth2_create_from_config(
                                 struct flb_output_instance *ins,
                                 const struct flb_oauth2_config *cfg);
+struct flb_oauth2 *flb_oauth2_create_from_settings(
+                                struct flb_config *config,
+                                int tls_verify_hostname,
+                                const struct flb_oauth2_config *cfg);
 void flb_oauth2_destroy(struct flb_oauth2 *ctx);
 void flb_oauth2_config_destroy(struct flb_oauth2_config *cfg);
 int flb_oauth2_token_len(struct flb_oauth2 *ctx);
