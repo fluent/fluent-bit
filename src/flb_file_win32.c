@@ -404,14 +404,13 @@ static HANDLE file_open_path(const char *root, const char *path, UINT code_page,
     return handle;
 }
 
-static int file_open_safe(const char *root, const char *path, int flags,
-                          int mkdir_mode, UINT code_page)
+static HANDLE file_open_safe_handle(const char *root, const char *path, int flags,
+                                    int mkdir_mode, UINT code_page)
 {
     ACCESS_MASK access = FILE_READ_ATTRIBUTES;
     ULONG disposition = FILE_OPEN;
     HANDLE handle;
     LARGE_INTEGER zero = {0};
-    int fd;
 
     if ((flags & O_WRONLY) == 0) {
         access |= GENERIC_READ;
@@ -427,12 +426,30 @@ static int file_open_safe(const char *root, const char *path, int flags,
                             FILE_NON_DIRECTORY_FILE, mkdir_mode != 0);
     handle = file_check_type(handle, 0);
     if (handle == INVALID_HANDLE_VALUE) {
-        return -1;
+        return INVALID_HANDLE_VALUE;
     }
     if ((flags & O_TRUNC) &&
         (!SetFilePointerEx(handle, zero, NULL, FILE_BEGIN) || !SetEndOfFile(handle))) {
         file_set_errno(GetLastError());
         CloseHandle(handle);
+        return INVALID_HANDLE_VALUE;
+    }
+    return handle;
+}
+
+HANDLE flb_file_open_safe_for_read(const char *path, UINT code_page)
+{
+    return file_open_safe_handle(NULL, path, O_RDONLY, 0, code_page);
+}
+
+static int file_open_safe(const char *root, const char *path, int flags,
+                          int mkdir_mode, UINT code_page)
+{
+    HANDLE handle;
+    int fd;
+
+    handle = file_open_safe_handle(root, path, flags, mkdir_mode, code_page);
+    if (handle == INVALID_HANDLE_VALUE) {
         return -1;
     }
     if ((flags & O_TEXT) == 0) {

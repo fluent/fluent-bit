@@ -23,6 +23,9 @@
 
 #include <fluent-bit/flb_sds.h>
 #include <stdio.h>
+#ifdef FLB_SYSTEM_WINDOWS
+#include <fluent-bit/flb_compat.h>
+#endif
 
 flb_sds_t flb_file_read(const char *path);
 /*
@@ -39,6 +42,8 @@ int flb_file_mkdir_safe(const char *path, int mode);
 int flb_file_rename_safe(const char *source, const char *destination);
 int flb_file_unlink_safe(const char *path);
 #ifdef FLB_SYSTEM_WINDOWS
+/* Apply the same path checks and return a handle owned by the caller. */
+HANDLE flb_file_open_safe_for_read(const char *path, UINT code_page);
 int flb_file_open_safe_utf8(const char *path, int flags);
 int flb_file_remove_tree_safe(const char *path);
 #endif
