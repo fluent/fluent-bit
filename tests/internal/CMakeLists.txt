@@ -32,6 +32,7 @@ set(UNIT_TESTS_FILES
   config_map.c
   mp.c
   mp_chunk_cobj.c
+  opentelemetry_logs_view.c
   input_chunk.c
   input_chunk_routes.c
   input_pause.c
