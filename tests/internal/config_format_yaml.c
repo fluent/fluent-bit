@@ -39,6 +39,7 @@
 #define FLB_007 FLB_TESTS_CONF_PATH "/missing_include.yaml"
 #define FLB_008 FLB_TESTS_CONF_PATH "/other_with_nested_map.yaml"
 #define FLB_009 FLB_TESTS_CONF_PATH "/extensions.yaml"
+#define FLB_VARIANT_ARRAY FLB_TESTS_CONF_PATH "/processor_variant_array.yaml"
 
 #define FLB_000_WIN FLB_TESTS_CONF_PATH "\\fluent-bit-windows.yaml"
 #define FLB_BROKEN_PLUGIN_VARIANT FLB_TESTS_CONF_PATH "/broken_plugin_variant.yaml"
@@ -514,6 +515,60 @@ static void test_processors()
         }
     }
 
+    flb_cf_destroy(cf);
+}
+
+static void test_processor_variant_array_resize()
+{
+    int idx;
+    char expected[64];
+    struct flb_cf *cf;
+    struct flb_cf_section *s;
+    struct flb_cf_group *g;
+    struct cfl_variant *logs;
+    struct cfl_variant *processor;
+    struct cfl_variant *records;
+    struct cfl_variant *record;
+
+    cf = flb_cf_yaml_create(NULL, FLB_VARIANT_ARRAY, NULL, 0);
+    TEST_ASSERT(cf != NULL);
+
+    s = flb_cf_section_get_by_name(cf, "input");
+    if (!TEST_CHECK(s != NULL)) {
+        goto cleanup;
+    }
+    if (!TEST_CHECK(mk_list_size(&s->groups) == 1)) {
+        goto cleanup;
+    }
+
+    g = mk_list_entry(s->groups.next, struct flb_cf_group, _head);
+    logs = cfl_kvlist_fetch(g->properties, "logs");
+    if (!TEST_CHECK(logs != NULL && logs->type == CFL_VARIANT_ARRAY)) {
+        goto cleanup;
+    }
+
+    processor = cfl_array_fetch_by_index(logs->data.as_array, 0);
+    if (!TEST_CHECK(processor != NULL && processor->type == CFL_VARIANT_KVLIST)) {
+        goto cleanup;
+    }
+
+    records = cfl_kvlist_fetch(processor->data.as_kvlist, "record");
+    if (!TEST_CHECK(records != NULL && records->type == CFL_VARIANT_ARRAY)) {
+        goto cleanup;
+    }
+    TEST_CHECK(records->data.as_array->entry_count == 12);
+
+    for (idx = 0; idx < 12; idx++) {
+        record = cfl_array_fetch_by_index(records->data.as_array, idx);
+        if (!TEST_CHECK(record != NULL && record->type == CFL_VARIANT_STRING)) {
+            continue;
+        }
+
+        snprintf(expected, sizeof(expected), "key_%02d value_%02d", idx, idx);
+        TEST_CHECK(strcmp(record->data.as_string, expected) == 0);
+    }
+
+cleanup:
     flb_cf_destroy(cf);
 }
 
@@ -1291,6 +1346,7 @@ TEST_LIST = {
     { "parsers file conf", test_parser_conf},
     { "camel_case_key", test_camel_case_key},
     { "processors", test_processors},
+    { "processor_variant_array_resize", test_processor_variant_array_resize},
     { "parsers_and_multiline_parsers", test_parsers_and_multiline_parsers},
     { "stream_processor", test_stream_processor},
     { "plugins", test_plugins},
