@@ -1,0 +1,4 @@
+{"message":"valid record no special fields"}
+{"message":"bad insertId", "logging.googleapis.com/insertId": 123}
+{"message":"bad labels", "logging.googleapis.com/labels": "not_a_map"}
+{"message":"valid record with labels", "logging.googleapis.com/labels": {"testA": "valA"}}
