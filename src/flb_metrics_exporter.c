@@ -32,6 +32,7 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_http_server.h>
 #include <fluent-bit/flb_storage.h>
+#include <fluent-bit/flb_mem_monitor.h>
 #include <fluent-bit/flb_metrics.h>
 #include <fluent-bit/flb_metrics_exporter.h>
 #include <fluent-bit/flb_router.h>
@@ -295,6 +296,16 @@ struct cmt *flb_me_get_cmetrics(struct flb_config *ctx)
         ret = cmt_cat(cmt, ctx->storage_metrics_ctx->cmt);
         if (ret == -1) {
             flb_error("[metrics exporter] could not append global storage_metrics");
+            cmt_destroy(cmt);
+            return NULL;
+        }
+    }
+
+    if (ctx->mem_monitor != NULL) {
+        flb_mem_monitor_metrics_update(ctx->mem_monitor);
+        ret = cmt_cat(cmt, ctx->mem_monitor->cmt);
+        if (ret == -1) {
+            flb_error("[metrics exporter] could not append memory monitor metrics");
             cmt_destroy(cmt);
             return NULL;
         }
