@@ -212,8 +212,12 @@ validation and explicit uploads of both files to staging are required.
 `staging-test` starts automatically only on successful staging builds. Its manual
 trigger cannot publish an official release.
 
-`staging-release` is the official manual promotion path for current and maintenance
-versions (2.0, 2.1, 3.0, 3.1, 3.2, 4.0, 4.1, 4.2, 5.0, 5.1, and 5.2 in the existing release steps).
+`staging-release` is the official manual promotion path. Run it from `master`
+for both 5.2 and 6.0 releases. The workflow targets the matching `5.2` branches
+for 5.2 GitHub releases, documentation PRs, and version bumps. It targets
+`master` for 6.0 and reserves the GitHub Latest designation and the Linux
+`latest` and `latest-debug` tags for 6.0 promotions.
+
 It resolves version-specific immutable production/debug manifests, regenerates
 metadata from the production image and compares it with both staged files.
 It retains the validated staging files as a run artifact before any publication.
@@ -372,7 +376,7 @@ Review and merge that PR. It also opens the PR in this repository that moves the
 ## Unstable/nightly builds
 
 These run on a schedule and [reuse the same workflows](./cron-unstable-build.yaml) as the staging build.
-The schedule in that workflow decides the branches: currently `master` at 06:00 and 18:00 UTC and `3.2` at 12:00 UTC.
+The schedule builds `master` at 06:00 and 18:00 UTC and `5.2` at 12:00 UTC.
 A manual run can build another branch. The branch name becomes part of file names, so it must not contain a `/`.
 All targets are built, including container images and Linux, macOS and Windows packages.
 
