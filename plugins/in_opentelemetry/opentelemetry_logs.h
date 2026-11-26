@@ -28,6 +28,16 @@ int opentelemetry_process_logs(struct flb_opentelemetry *ctx,
                                size_t tag_len,
                                void *data, size_t size);
 
+/*
+ * Protobuf logs straight from the encoded request, for a request that was not
+ * validated beforehand. '*handled' stays FLB_FALSE when the request has to be
+ * validated and processed by opentelemetry_process_logs_with_budget().
+ */
+int opentelemetry_process_logs_direct(struct flb_opentelemetry *ctx,
+                                      flb_sds_t tag,
+                                      void *data, size_t size,
+                                      size_t *remaining, int *handled);
+
 int opentelemetry_process_logs_with_budget(struct flb_opentelemetry *ctx,
                                            flb_sds_t content_type,
                                            flb_sds_t tag, size_t tag_len,

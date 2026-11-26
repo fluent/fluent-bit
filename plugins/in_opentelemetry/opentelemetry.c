@@ -218,6 +218,14 @@ static int in_opentelemetry_resume(void *data, struct flb_config *config)
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
     {
+     FLB_CONFIG_MAP_BOOL, "otlp_log_views", "true",
+     0, FLB_TRUE, offsetof(struct flb_opentelemetry, otlp_log_views),
+     "Decode OTLP protobuf logs straight from the encoded request, and let log "
+     "processor chains that support it edit records through CFL map views. "
+     "Requests and chains that do not qualify use the unpacking decoder. Set to "
+     "off to use that decoder for every request"
+    },
+    {
      FLB_CONFIG_MAP_BOOL, "profiles_support", "false",
      0, FLB_TRUE, offsetof(struct flb_opentelemetry, profile_support_enabled),
      "This is an experimental feature whoses specification is not stable yet, " \
