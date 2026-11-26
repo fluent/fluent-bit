@@ -343,6 +343,22 @@ static int flush_callback(struct flb_ml_parser *parser,
     }
 }
 
+/* true when the filter runs as a processor attached to an output plugin */
+static int is_output_processor(struct flb_filter_instance *ins)
+{
+    struct flb_processor_unit *pu;
+    struct flb_processor *proc;
+
+    if (ins->parent_processor == NULL) {
+        return FLB_FALSE;
+    }
+
+    pu = (struct flb_processor_unit *) ins->parent_processor;
+    proc = (struct flb_processor *) pu->parent;
+
+    return (proc->source_plugin_type == FLB_PLUGIN_OUTPUT);
+}
+
 static int cb_ml_init(struct flb_filter_instance *ins,
                       struct flb_config *config,
                       void *data)
@@ -352,6 +368,7 @@ static int cb_ml_init(struct flb_filter_instance *ins,
     flb_sds_t tmp;
     flb_sds_t emitter_name = NULL;
     int len;
+    int64_t min_idle;
     uint64_t stream_id;
     (void) config;
 
@@ -494,6 +511,34 @@ static int cb_ml_init(struct flb_filter_instance *ins,
         /* OLD api */
         flb_metrics_add(FLB_MULTILINE_METRIC_EMITTED,
                         "emit_records", ctx->ins->metrics);
+
+        ctx->cmt_streams_evicted = cmt_counter_create(ins->cmt,
+                                                      "fluentbit", "filter",
+                                                      "multiline_streams_evicted_total",
+                                                      "Total number of idle multiline "
+                                                      "streams evicted",
+                                                      1, (char *[]) {"name"});
+        if (!ctx->cmt_streams_evicted) {
+            flb_errno();
+            flb_free(ctx);
+
+            return -1;
+        }
+
+        ctx->cmt_streams_active = cmt_gauge_create(ins->cmt,
+                                                   "fluentbit", "filter",
+                                                   "multiline_streams_active",
+                                                   "Number of multiline streams "
+                                                   "currently allocated",
+                                                   1, (char *[]) {"name"});
+        if (!ctx->cmt_streams_active) {
+            flb_errno();
+            flb_free(ctx);
+
+            return -1;
+        }
+        cmt_gauge_set(ctx->cmt_streams_active, cfl_time_now(), 0,
+                      1, (char *[]) {(char *) flb_filter_name(ins)});
 #endif
     }
         /* Register a metric to count the number of emitted records */
@@ -541,6 +586,38 @@ static int cb_ml_init(struct flb_filter_instance *ins,
             ret = flb_ml_auto_flush_init(ctx->m);
             if (ret == -1) {
                 return -1;
+            }
+
+            /* output processors run on worker threads, away from the
+             * flush timer: eviction is not safe there (see evict_idle_streams) */
+            if (ctx->stream_idle_timeout > 0 &&
+                is_output_processor(ins) == FLB_TRUE) {
+                flb_plg_info(ctx->ins, "idle multiline stream eviction is not "
+                             "supported in an output processor, disabling it");
+                ctx->stream_idle_timeout = 0;
+            }
+
+            /* the timer flushes a group within 2 x flush_ms: a shorter
+             * idle timeout could split a record it would still have grouped */
+            if (ctx->stream_idle_timeout > 0) {
+                min_idle = ((int64_t) ctx->flush_ms * 2 + 999) / 1000;
+                if ((int64_t) ctx->stream_idle_timeout < min_idle) {
+                    /* only warn about a value the user actually set */
+                    if (flb_filter_get_property("stream_idle_timeout", ins)) {
+                        flb_plg_warn(ctx->ins,
+                                     "stream_idle_timeout=%is is shorter "
+                                     "than 2 x flush_ms, raising it to %is",
+                                     ctx->stream_idle_timeout, (int) min_idle);
+                    }
+                    ctx->stream_idle_timeout = (int) min_idle;
+                }
+                flb_plg_info(ctx->ins,
+                             "idle multiline streams are evicted after %is",
+                             ctx->stream_idle_timeout);
+            }
+            else {
+                flb_plg_info(ctx->ins, "idle multiline stream eviction is "
+                             "disabled");
             }
         } else {
             /* Create a stream for this file */
@@ -624,6 +701,10 @@ static struct ml_stream *get_or_create_stream(struct ml_ctx *ctx,
         tag_check = strcmp(stream->tag, tag);
         if (tag_check == 0 && name_check == 0) {
             flb_plg_trace(ctx->ins, "using stream %s_%s", stream->input_name, stream->tag);
+            stream->last_used = cfl_time_now();
+            /* keep the list ordered by last use: most recent at the tail */
+            mk_list_del(&stream->_head);
+            mk_list_add(&stream->_head, &ctx->ml_streams);
             return stream;
         }
     }
@@ -665,7 +746,7 @@ static struct ml_stream *get_or_create_stream(struct ml_ctx *ctx,
     stream->input_name = tmp_sds;
 
     /* Create an flb_ml_stream for this stream */
-    flb_plg_info(ctx->ins, "created new multiline stream for %s", stream_name);
+    flb_plg_debug(ctx->ins, "created new multiline stream for %s", stream_name);
     len = flb_sds_len(stream_name);
     ret = flb_ml_stream_create(ctx->m,
                                stream_name, len,
@@ -679,11 +760,108 @@ static struct ml_stream *get_or_create_stream(struct ml_ctx *ctx,
         return NULL;
     }
     stream->stream_id = stream_id;
+    stream->last_used = cfl_time_now();
     mk_list_add(&stream->_head, &ctx->ml_streams);
-    flb_plg_debug(ctx->ins, "Created new ML stream for %s", stream_name);
     flb_sds_destroy(stream_name);
 
+#ifdef FLB_HAVE_METRICS
+    cmt_gauge_set(ctx->cmt_streams_active, cfl_time_now(),
+                  (double) mk_list_size(&ctx->ml_streams),
+                  1, (char *[]) {(char *) flb_filter_name(ctx->ins)});
+#endif
+
     return stream;
+}
+
+/*
+ * Evict streams idle for more than 'stream_idle_timeout'. Pending content is
+ * flushed first (flb_ml_stream_id_destroy_all); a returning tag gets a new
+ * stream. The list is ordered by last use, so the sweep stops at the first
+ * live stream; it runs at most once per second and evicts at most
+ * FLB_MULTILINE_STREAM_EVICT_MAX streams per call.
+ *
+ * Runs on the thread of cb_ml_filter, which also owns the flush timer
+ * (main thread for a classic filter, input thread for an input processor),
+ * so ctx->ml_streams needs no lock. Not used for output processors.
+ */
+static void evict_idle_streams(struct ml_ctx *ctx, uint64_t now)
+{
+    int evicted = 0;
+    uint64_t idle_ns;
+    uint64_t timeout_ns;
+    struct mk_list *tmp;
+    struct mk_list *head;
+    struct ml_stream *stream;
+
+    if (ctx->stream_idle_timeout <= 0) {
+        return;
+    }
+
+    if (ctx->ins_emitter && flb_input_buf_paused(ctx->ins_emitter) == FLB_TRUE) {
+        return;
+    }
+
+    /* throttle: at most one sweep per second (wall clock, see below) */
+    if (now < ctx->last_evict_check) {
+        ctx->last_evict_check = now;
+    }
+    if (now < ctx->last_evict_check + 1000000000ULL) {
+        return;
+    }
+    ctx->last_evict_check = now;
+
+    timeout_ns = (uint64_t) ctx->stream_idle_timeout * 1000000000ULL;
+
+    mk_list_foreach_safe(head, tmp, &ctx->ml_streams) {
+        stream = mk_list_entry(head, struct ml_stream, _head);
+
+        /* wall clock: a backwards step restarts the idle period */
+        if (now < stream->last_used) {
+            stream->last_used = now;
+            mk_list_del(&stream->_head);
+            mk_list_add(&stream->_head, &ctx->ml_streams);
+            continue;
+        }
+
+        idle_ns = now - stream->last_used;
+        if (idle_ns < timeout_ns) {
+            /* ordered by last use: everything after this one is newer */
+            break;
+        }
+
+        flb_plg_debug(ctx->ins,
+                      "evicting idle multiline stream for %s_%s (idle %lus)",
+                      stream->input_name, stream->tag,
+                      (unsigned long) (idle_ns / 1000000000ULL));
+
+        /* flush pending content and release the core parser streams */
+        flb_ml_stream_id_destroy_all(ctx->m, stream->stream_id);
+
+        mk_list_del(&stream->_head);
+        ml_stream_destroy(stream);
+        evicted++;
+
+        if (evicted >= FLB_MULTILINE_STREAM_EVICT_MAX) {
+            /* resume on the next sweep */
+            ctx->last_evict_check = 0;
+            break;
+        }
+    }
+
+    if (evicted == 0) {
+        return;
+    }
+
+    flb_plg_debug(ctx->ins, "evicted %i idle multiline stream(s), %i active",
+                  evicted, mk_list_size(&ctx->ml_streams));
+
+#ifdef FLB_HAVE_METRICS
+    cmt_counter_add(ctx->cmt_streams_evicted, now, (double) evicted,
+                    1, (char *[]) {(char *) flb_filter_name(ctx->ins)});
+    cmt_gauge_set(ctx->cmt_streams_active, now,
+                  (double) mk_list_size(&ctx->ml_streams),
+                  1, (char *[]) {(char *) flb_filter_name(ctx->ins)});
+#endif
 }
 
 static void partial_timer_cb(struct flb_config *config, void *data)
@@ -900,6 +1078,7 @@ static int cb_ml_filter(const void *data, size_t bytes,
     struct flb_log_event         event;
     int                          ret;
     int                          callback_active;
+    uint64_t                     now;
     struct ml_ctx               *ctx;
 #ifdef FLB_HAVE_METRICS
     uint64_t ts;
@@ -1063,6 +1242,12 @@ static int cb_ml_filter(const void *data, size_t bytes,
 
         flb_log_event_decoder_destroy(&decoder);
 
+        /* re-stamp with the sweep's own clock value so a slow batch cannot
+         * evict the stream it just appended to */
+        now = cfl_time_now();
+        stream->last_used = now;
+        evict_idle_streams(ctx, now);
+
         active_callback_leave(ctx);
 
         /*
@@ -1133,6 +1318,19 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_INT, "flush_ms", "2000",
      0, FLB_TRUE, offsetof(struct ml_ctx, flush_ms),
      "Flush time for pending multiline records"
+    },
+
+    {
+     FLB_CONFIG_MAP_TIME, "stream_idle_timeout", "5m",
+     0, FLB_TRUE, offsetof(struct ml_ctx, stream_idle_timeout),
+     "Evict the internal per-tag multiline stream (and free its buffers) "
+     "after it has not received records for this long. Accepts an integer "
+     "number of seconds or a value with an s, m, h or d suffix (e.g. '5m'); "
+     "sub-second values are not supported. Idle streams are checked when "
+     "records pass through the filter. Pending content is flushed before "
+     "eviction and the stream is re-created on demand. Only applies to "
+     "buffered 'parser' mode. Set to 0 to disable eviction (streams then "
+     "live until shutdown)."
     },
 
     /* Multiline Core Engine based API */
