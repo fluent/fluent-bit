@@ -28,6 +28,15 @@
 #include <fcntl.h>
 #include "flb_tests_internal.h"
 
+/* Keep CRLF fixtures byte for byte on platforms that translate newlines. */
+#ifndef O_BINARY
+#ifdef _O_BINARY
+#define O_BINARY _O_BINARY
+#else
+#define O_BINARY 0
+#endif
+#endif
+
 /* https://github.com/fluent/fluent-bit/issues/6313 */
 void test_translate_long_env()
 {
@@ -159,7 +168,7 @@ void test_file_env_var_crlf()
     int fd;
     int ret;
 
-    fd = open(test_file, O_CREAT | O_WRONLY | O_TRUNC, 0644);
+    fd = open(test_file, O_CREAT | O_WRONLY | O_TRUNC | O_BINARY, 0644);
     if (!TEST_CHECK(fd >= 0)) {
         TEST_MSG("Failed to create CRLF test file");
         return;
@@ -205,7 +214,7 @@ void test_file_env_var_crlf()
     flb_sds_destroy(buf);
 
     /* The refresh path must strip CRLF the same way as the initial load */
-    fd = open(test_file, O_WRONLY | O_TRUNC, 0644);
+    fd = open(test_file, O_WRONLY | O_TRUNC | O_BINARY, 0644);
     if (!TEST_CHECK(fd >= 0)) {
         TEST_MSG("Failed to open CRLF test file for update");
         flb_env_destroy(env);
