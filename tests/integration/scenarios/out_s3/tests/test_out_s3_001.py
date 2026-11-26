@@ -695,14 +695,14 @@ def test_out_s3_sequence_directory_after_shutdown(tmp_path, throttle):
     assert sequence.exists() == throttle
 
 
-def test_out_s3_index_per_tag_starts_at_recovered_shared_index(tmp_path):
+def test_out_s3_index_per_tag_reconciles_retained_indexes(tmp_path):
     config = _s3_throttle_config(tmp_path)
     settings = yaml.safe_load(config.read_text())
     output = settings["pipeline"]["outputs"][0]
     settings["pipeline"]["outputs"] = [output]
     output["s3_key_format"] = "/$TAG/$INDEX"
 
-    for per_tag, index in [(False, 0), (True, 1)]:
+    for index, per_tag in enumerate([False, True, False, True]):
         output["index_per_tag"] = per_tag
         config.write_text(yaml.safe_dump(settings))
         service = Service(str(config))
