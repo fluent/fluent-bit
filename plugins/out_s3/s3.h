@@ -205,10 +205,13 @@ struct flb_s3 {
     struct flb_aws_client *s3_client;
     int out_format;
     int json_date_format;
+    flb_sds_t schema_file;
+    struct flb_arrow_schema *arrow_schema;
     flb_sds_t json_date_key;
     flb_sds_t date_key;
 
     flb_sds_t buffer_dir;
+    flb_sds_t buffer_root;      /* bucket buffer path, same in every buffer mode */
 
     char *store_dir;
     struct flb_fstore *fs;

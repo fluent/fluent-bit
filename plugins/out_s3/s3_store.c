@@ -632,6 +632,11 @@ int s3_store_init(struct flb_s3 *ctx)
     struct tm *tm;
     struct flb_fstore *fs;
     struct flb_fstore_stream *fs_stream;
+    struct flb_fstore_file *file;
+    struct mk_list *head;
+    struct mk_list *tmp_head;
+    struct mk_list *file_head;
+    struct mk_list *file_tmp;
 
     if (s3_store_under_travis_ci() == FLB_TRUE) {
         type = FLB_FSTORE_MEM;
@@ -649,6 +654,23 @@ int s3_store_init(struct flb_s3 *ctx)
     ctx->fs = fs;
     if (ctx->ins->throttle.enabled) {
         fs->cio->options.flags |= CIO_FULL_SYNC;
+    }
+
+    /*
+     * The nested MessagePack root is not a schema-less stream. Detach it
+     * without deleting files so empty-stream cleanup cannot remove its tree.
+     */
+    if (ctx->arrow_schema == NULL) {
+        mk_list_foreach_safe(head, tmp_head, &fs->streams) {
+            fs_stream = mk_list_entry(head, struct flb_fstore_stream, _head);
+            if (strcmp(fs_stream->name, "msgpack") == 0) {
+                mk_list_foreach_safe(file_head, file_tmp, &fs_stream->files) {
+                    file = mk_list_entry(file_head, struct flb_fstore_file, _head);
+                    flb_fstore_file_inactive(fs, file);
+                }
+                flb_fstore_stream_destroy(fs_stream, FLB_FALSE);
+            }
+        }
     }
 
     /*
@@ -730,7 +752,7 @@ int s3_store_exit(struct flb_s3 *ctx)
         fs_stream = mk_list_entry(head, struct flb_fstore_stream, _head);
         /* The sequence allocator lives in a subdirectory outside the chunk list.
          * An empty fstore stream would otherwise be deleted recursively on exit. */
-        if (ctx->uploader_gate_initialized && strcmp(fs_stream->name, "sequence") == 0 &&
+        if (strcmp(fs_stream->name, "sequence") == 0 &&
             mk_list_is_empty(&fs_stream->files) == 0) {
             flb_fstore_stream_destroy(fs_stream, FLB_FALSE);
             ctx->stream_metadata = NULL;
