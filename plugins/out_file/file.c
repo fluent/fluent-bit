@@ -40,8 +40,8 @@
 #include <fcntl.h>
 
 #ifdef FLB_SYSTEM_WINDOWS
-#include <Shlobj.h>
-#include <Shlwapi.h>
+#include <shlobj.h>
+#include <shlwapi.h>
 #include <fluent-bit/record_accessor/flb_ra_parser.h>
 #endif
 

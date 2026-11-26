@@ -23,7 +23,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#ifndef _MSC_VER
+#ifndef _WIN32
 #include <glob.h>
 #endif
 
@@ -33,7 +33,7 @@
 #include <mk_core/mk_list.h>
 
 #ifdef _WIN32
-#include <Windows.h>
+#include <windows.h>
 #include <strsafe.h>
 #define PATH_MAX MAX_PATH
 #endif
@@ -604,7 +604,7 @@ static int mk_rconf_path_set(struct mk_rconf *conf, char *file)
     char *end;
     char path[PATH_MAX + 1];
 
-#ifdef _MSC_VER
+#ifdef _WIN32
     p = _fullpath(path, file, PATH_MAX + 1);
 #else
     p = realpath(file, path);

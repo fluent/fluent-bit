@@ -48,14 +48,14 @@
 #include "in_calyptia_fleet.h"
 
 /* Glob support */
-#ifndef _MSC_VER
+#ifndef _WIN32
 #include <glob.h>
 #include <dirent.h>
 #include <fcntl.h>
 #endif
 
 #ifdef _WIN32
-#include <Windows.h>
+#include <windows.h>
 #include <strsafe.h>
 #define PATH_MAX MAX_PATH
 #define S_ISDIR(m) (((m) & S_IFMT) == S_IFDIR)
