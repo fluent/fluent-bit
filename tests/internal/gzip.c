@@ -2,6 +2,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
+#include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_gzip.h>
 #include <fluent-bit/flb_compression.h>
 

@@ -1,6 +1,7 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
 #include <fluent-bit.h>
+#include <fluent-bit/flb_time.h>
 #include "flb_tests_runtime.h"
 #include <stdio.h>
 
