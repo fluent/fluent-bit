@@ -18,7 +18,7 @@ LIC_FILES_CHKSUM = "file://LICENSE;md5=2ee41112a44fe7014dce33e26468ba93"
 SECTION = "net"
 
 PR = "r0"
-PV = "1.1-git"
+PV = "6.0.0-git"
 
 SRCREV = "${AUTOREV}"
 SRC_URI = "git://github.com/fluent/fluent-bit"
