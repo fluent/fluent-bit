@@ -215,8 +215,11 @@ trigger cannot publish an official release.
 `staging-release` is the official manual promotion path. Run it from `master`
 for both 5.2 and 6.0 releases. The workflow targets the matching `5.2` branches
 for 5.2 GitHub releases, documentation PRs, and version bumps. It targets
-`master` for 6.0 and reserves the GitHub Latest designation and the Linux
-`latest` and `latest-debug` tags for 6.0 promotions.
+`master` for 6.0. A 5.2 promotion updates GitHub Latest and the Linux
+`latest` and `latest-debug` tags only when its version is at least as new as
+the current GitHub Latest release. The first 6.0 promotion takes over those tags.
+The version update PR advances the source to the next patch and pins the
+stable BitBake recipe to the tag that was just published.
 
 It resolves version-specific immutable production/debug manifests, regenerates
 metadata from the production image and compares it with both staged files.
