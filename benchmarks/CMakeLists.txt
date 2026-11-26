@@ -23,3 +23,9 @@ target_link_libraries(flb-bench-output_throttle
   fluent-bit-static
   ${CMAKE_THREAD_LIBS_INIT}
 )
+
+add_executable(flb-bench-otlp_log_views flb-bench-otlp_log_views.c)
+target_link_libraries(flb-bench-otlp_log_views
+  fluent-bit-static
+  ${CMAKE_THREAD_LIBS_INIT}
+)
