@@ -237,6 +237,17 @@ int flb_ring_buffer_read(struct flb_ring_buffer *rb, void *ptr, size_t size)
     return 0;
 }
 
+size_t flb_ring_buffer_get_used(struct flb_ring_buffer *rb)
+{
+    size_t used;
+
+    pthread_mutex_lock(&rb->lock);
+    used = lwrb_get_full(rb->ctx);
+    pthread_mutex_unlock(&rb->lock);
+
+    return used;
+}
+
 void flb_ring_buffer_mark_flushed(struct flb_ring_buffer *rb)
 {
     size_t pending_bytes;
