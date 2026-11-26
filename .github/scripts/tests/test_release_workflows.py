@@ -82,49 +82,62 @@ class WorkflowTests(unittest.TestCase):
             self.assertIn("staging-release-create-release", self.ancestors(name))
 
     def test_current_release_series_publication(self):
-        steps = self.release["staging-release-create-release"]["steps"]
-        latest_output = "${{ needs.staging-release-version-check.outputs.make-latest }}"
+        release_job = self.release["staging-release-create-release"]
+        steps = release_job["steps"]
+        latest_check = next(step for step in steps if step.get("id") == "latest")
+        latest_output = "${{ steps.latest.outputs.value }}"
         for series, branch, latest in (("5.2", "5.2", latest_output), ("6.0", "master", True)):
             with self.subTest(series=series):
                 condition = f"startsWith(inputs.version, '{series}.')"
-                releases = [step["with"] for step in steps if step.get("if") == condition]
-                self.assertEqual(len(releases), 1)
-                self.assertEqual(releases[0]["target_commitish"], branch)
-                self.assertEqual(releases[0]["make_latest"], latest)
+                release = next(step for step in steps if step.get("if") == condition and "uses" in step)
+                self.assertEqual(release["with"]["target_commitish"], branch)
+                self.assertEqual(release["with"]["make_latest"], latest)
+                if series == "5.2":
+                    self.assertEqual(steps.index(latest_check) + 1, steps.index(release))
+                    self.assertEqual(latest_check["if"], condition)
+
         latest_images = self.release["staging-release-images-latest-tags"]
         self.assertEqual(latest_images["if"],
-                         "needs.staging-release-version-check.outputs.make-latest == 'true'")
+                         "startsWith(inputs.version, '5.2.') || startsWith(inputs.version, '6.0.')")
         self.assertIn("staging-release-create-release", latest_images["needs"])
+        self.assertEqual(latest_images["steps"][0]["id"], "latest")
+        for step in latest_images["steps"][1:]:
+            self.assertEqual(step["if"], "steps.latest.outputs.value == 'true'")
+        self.assertEqual(workflow("staging-release.yaml")["concurrency"], "staging-build-release")
+        rebuild = workflow("release-rebuild-images.yaml")["jobs"]["rebuild-release-images"]
+        self.assertEqual(rebuild["concurrency"]["group"], "staging-build-release")
 
     def test_latest_selection_for_maintenance_releases(self):
-        job = self.release["staging-release-version-check"]
-        step = next(step for step in job["steps"] if step.get("id") == "latest")
         cases = [
-            ("5.2.2", "v5.2.1", True), ("5.2.2", "v5.2.2", True),
-            ("5.2.2", "v5.2.10", False), ("5.2.10", "v5.2.9", True),
-            ("5.2.2", "v6.0.0", False), ("5.2.2", "not-a-release", None),
-            ("5.2.2", "", None), ("5.1.5", "", False), ("6.0.0", "", True),
+            ("5.2.2", "v5.2.1", True, False), ("5.2.2", "v5.2.2", True, True),
+            ("5.2.2", "v5.2.10", False, False), ("5.2.10", "v5.2.9", True, False),
+            ("5.2.2", "v6.0.0", False, False), ("5.2.2", "not-a-release", None, None),
+            ("5.2.2", "", None, None),
         ]
         with tempfile.TemporaryDirectory() as directory:
             gh = Path(directory) / "gh"
             gh.write_text('#!/bin/sh\n[ -n "$LATEST_TAG" ] && printf "%s\\n" "$LATEST_TAG"\n')
             gh.chmod(0o755)
             output = Path(directory) / "output"
-            for version, latest, expected in cases:
-                with self.subTest(version=version, latest=latest):
-                    output.unlink(missing_ok=True)
-                    result = subprocess.run(
-                        ["bash", "-e", "-o", "pipefail", "-c", step["run"]],
-                        env={**os.environ, "PATH": f"{directory}:{os.environ['PATH']}",
-                             "RELEASE_VERSION": version, "LATEST_TAG": latest,
-                             "GITHUB_OUTPUT": str(output), "GITHUB_REPOSITORY": "fluent/fluent-bit"},
-                        capture_output=True, text=True)
-                    if expected is None:
-                        self.assertNotEqual(result.returncode, 0)
-                        self.assertFalse(output.exists())
-                    else:
-                        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                        self.assertEqual(output.read_text(), f"value={str(expected).lower()}\n")
+            for index, job_name in enumerate(("create-release", "images-latest-tags")):
+                job = self.release[f"staging-release-{job_name}"]
+                check = next(step for step in job["steps"] if step.get("id") == "latest")
+                for version, latest, *expected_by_job in cases:
+                    with self.subTest(job=job_name, version=version, latest=latest):
+                        output.unlink(missing_ok=True)
+                        result = subprocess.run(
+                            ["bash", "-e", "-o", "pipefail", "-c", check["run"]],
+                            env={**os.environ, "PATH": f"{directory}:{os.environ['PATH']}",
+                                 "RELEASE_VERSION": version, "LATEST_TAG": latest,
+                                 "GITHUB_OUTPUT": str(output), "GITHUB_REPOSITORY": "fluent/fluent-bit"},
+                            capture_output=True, text=True)
+                        expected = expected_by_job[index]
+                        if expected is None:
+                            self.assertNotEqual(result.returncode, 0)
+                            self.assertFalse(output.exists())
+                        else:
+                            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                            self.assertEqual(output.read_text(), f"value={str(expected).lower()}\n")
 
     def test_version_update_keeps_bitbake_on_the_published_tag(self):
         steps = self.release["staging-release-create-version-update-pr"]["steps"]
