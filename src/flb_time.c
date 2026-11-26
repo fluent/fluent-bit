@@ -293,9 +293,9 @@ int flb_time_msgpack_to_time(struct flb_time *time, msgpack_object *obj)
                      obj->via.ext.type, obj->via.ext.size);
             return -1;
         }
-        memcpy(&tmp, &obj->via.ext.ptr[0], 4);
+        tmp = FLB_ALIGNED_DWORD_READ((unsigned char *) &obj->via.ext.ptr[0]);
         time->tm.tv_sec = (uint32_t) ntohl(tmp);
-        memcpy(&tmp, &obj->via.ext.ptr[4], 4);
+        tmp = FLB_ALIGNED_DWORD_READ((unsigned char *) &obj->via.ext.ptr[4]);
         time->tm.tv_nsec = (uint32_t) ntohl(tmp);
         if (flb_time_is_valid_eventtime(time) != FLB_TRUE) {
             flb_warn("[time] invalid EventTime value");

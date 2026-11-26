@@ -1138,7 +1138,12 @@ def test_in_forward_preflight_incomplete_repro_keeps_listener_responsive():
         service.stop()
 
 
-def test_in_forward_message_mode_eventtime_ext():
+@pytest.mark.parametrize("seconds,nanoseconds", [
+    (TEST_TS, 123456789),
+    (2209072510, 808241446),
+    (4294967293, 999999999),
+])
+def test_in_forward_message_mode_eventtime_ext(seconds, nanoseconds):
     service = Service("in_forward.yaml")
     service.start()
 
@@ -1146,8 +1151,8 @@ def test_in_forward_message_mode_eventtime_ext():
         payload = _message_mode_eventtime_payload(
             TEST_TAG,
             {"message": "eventtime"},
-            seconds=TEST_TS,
-            nanoseconds=123456789,
+            seconds=seconds,
+            nanoseconds=nanoseconds,
         )
         _send_tcp_payload(service.flb_listener_port, payload)
         records = service.wait_for_record_count(1)
@@ -1155,6 +1160,9 @@ def test_in_forward_message_mode_eventtime_ext():
         service.stop()
 
     assert records[0]["message"] == "eventtime"
+    assert records[0]["date"] == pytest.approx(
+        seconds + nanoseconds / 1_000_000_000, rel=0, abs=0.000001
+    )
 
 
 def test_in_forward_forward_mode_multiple_entries():

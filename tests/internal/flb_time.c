@@ -20,6 +20,7 @@
 
 #include <fluent-bit.h>
 #include <fluent-bit/flb_time.h>
+#include <fluent-bit/flb_log_event_decoder.h>
 #include <fluent-bit/flb_pack.h>
 #include <mpack/mpack.h>
 #include <msgpack.h>
@@ -213,6 +214,67 @@ void test_msgpack_to_time_eventtime()
 
     msgpack_sbuffer_destroy(&mp_sbuf);
     msgpack_unpacked_destroy(&result);
+}
+
+void test_eventtime_alignment()
+{
+    union {
+        uint32_t alignment;
+        char bytes[16];
+    } buffer;
+    const uint32_t values[][2] = {
+        {0, 0},
+        {1647061992, 123456789},
+        {2209072510U, 808241446},
+        {UINT32_MAX - 2, 999999999},
+        {1647061992, 1000000000}
+    };
+    struct flb_time tm;
+    msgpack_unpacked result;
+    uint32_t seconds;
+    uint32_t nanoseconds;
+    size_t index;
+    size_t offset;
+    char *wire;
+    int ret;
+
+    for (offset = 0; offset < sizeof(uint32_t); offset++) {
+        for (index = 0; index < sizeof(values) / sizeof(values[0]); index++) {
+            wire = buffer.bytes + offset;
+            wire[0] = (char) 0xd7; /* fixext8 */
+            wire[1] = 0;           /* EventTime */
+            seconds = htonl(values[index][0]);
+            nanoseconds = htonl(values[index][1]);
+            memcpy(wire + 2, &seconds, sizeof(seconds));
+            memcpy(wire + 6, &nanoseconds, sizeof(nanoseconds));
+
+            msgpack_unpacked_init(&result);
+            ret = msgpack_unpack_next(&result, wire, 10, NULL);
+            TEST_CHECK(ret == MSGPACK_UNPACK_SUCCESS);
+            TEST_CHECK(result.data.via.ext.ptr == wire + 2);
+
+            ret = flb_time_msgpack_to_time(&tm, &result.data);
+            if (values[index][1] < 1000000000) {
+                TEST_CHECK(ret == 0);
+                TEST_CHECK(tm.tm.tv_sec == (time_t) values[index][0]);
+                TEST_CHECK(tm.tm.tv_nsec == values[index][1]);
+            }
+            else {
+                TEST_CHECK(ret == -1);
+            }
+
+            ret = flb_log_event_decoder_decode_timestamp(&result.data, &tm);
+            if (values[index][1] < 1000000000) {
+                TEST_CHECK(ret == FLB_EVENT_DECODER_SUCCESS);
+                TEST_CHECK(tm.tm.tv_sec == (time_t) values[index][0]);
+                TEST_CHECK(tm.tm.tv_nsec == values[index][1]);
+            }
+            else {
+                TEST_CHECK(ret == FLB_EVENT_DECODER_ERROR_WRONG_TIMESTAMP_TYPE);
+            }
+            msgpack_unpacked_destroy(&result);
+        }
+    }
 }
 
 void test_eventtime_boundaries()
@@ -856,6 +918,7 @@ TEST_LIST = {
     { "msgpack_to_time_int"           , test_msgpack_to_time_int},
     { "msgpack_to_time_double"        , test_msgpack_to_time_double},
     { "msgpack_to_time_eventtime"     , test_msgpack_to_time_eventtime},
+    { "eventtime_alignment"          , test_eventtime_alignment},
     { "eventtime_boundaries"          , test_eventtime_boundaries},
     { "from_uint64_post_2038"         , test_from_uint64_post_2038},
     { "msgpack_to_time_invalid"       , test_msgpack_to_time_invalid},
