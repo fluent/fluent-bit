@@ -1,5 +1,6 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 #include <fluent-bit.h>
+#include <fluent-bit/flb_hash.h>
 #include <fluent-bit/flb_time.h>
 #include <cfl/cfl_atomic.h>
 #include "../../plugins/out_s3/s3.h"
@@ -494,6 +495,163 @@ static char *create_test_store_directory(const char *postfix)
     }
 
     return store_dir;
+}
+
+static int read_tag_seq_index(struct flb_s3 *ctx, const char *tag,
+                              uint64_t *value)
+{
+    int ret;
+    size_t i;
+    FILE *fp;
+    unsigned char digest[32];
+    char digest_hex[65];
+    char path[2048];
+
+    ret = flb_hash_simple(FLB_HASH_SHA256,
+                          (unsigned char *) tag, strlen(tag),
+                          digest, sizeof(digest));
+    if (ret != FLB_CRYPTO_SUCCESS) {
+        return -1;
+    }
+
+    for (i = 0; i < sizeof(digest); i++) {
+        snprintf(digest_hex + (i * 2), 3, "%02x",
+                 (unsigned int) digest[i]);
+    }
+    digest_hex[64] = '\0';
+
+    ret = snprintf(path, sizeof(path), "%s/seq_index_%d_%s",
+                   ctx->metadata_dir, ctx->ins->id, digest_hex);
+    if (ret < 0 || (size_t) ret >= sizeof(path)) {
+        return -1;
+    }
+
+    fp = fopen(path, "r");
+    if (fp == NULL) {
+        return -1;
+    }
+
+    ret = fscanf(fp, "%" PRIu64, value);
+    fclose(fp);
+
+    return ret == 1 ? 0 : -1;
+}
+
+void flb_test_s3_index_per_tag_requires_index(void)
+{
+    int ret;
+    int in_ffd;
+    int out_ffd;
+    flb_ctx_t *ctx;
+    char *store_dir;
+
+    store_dir = create_test_store_directory(
+                    "/flb-s3-test-index-per-tag-config-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (store_dir == NULL) {
+        return;
+    }
+
+    flb_s3_test_env_set("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+
+    ctx = flb_create();
+
+    in_ffd = flb_input(ctx, (char *) "lib", NULL);
+    TEST_CHECK(in_ffd >= 0);
+    flb_input_set(ctx, in_ffd, "tag", "test", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "s3", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "region", "us-west-2", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+    flb_output_set(ctx, out_ffd, "s3_key_format", "/$TAG/no-index", NULL);
+    flb_output_set(ctx, out_ffd, "index_per_tag", "true", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK_(ret != 0,
+                "Expected index_per_tag without $INDEX to fail initialization");
+
+    flb_destroy(ctx);
+    flb_s3_test_env_unset("FLB_S3_PLUGIN_UNDER_TEST");
+    flb_free(store_dir);
+}
+
+void flb_test_s3_multipart_index_per_tag(void)
+{
+    int ret;
+    int index;
+    int out_ffd;
+    int input_fds[2];
+    uint64_t first_index;
+    uint64_t second_index;
+    flb_ctx_t *ctx;
+    char *store_dir;
+    struct flb_s3 *s3_ctx;
+
+    store_dir = create_test_store_directory(
+                    "/flb-s3-test-index-per-tag-multipart-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (store_dir == NULL) {
+        return;
+    }
+
+    flb_s3_test_env_set("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+
+    ctx = flb_create();
+    for (index = 0; index < 2; index++) {
+        input_fds[index] = flb_input(ctx, (char *) "lib", NULL);
+        TEST_CHECK(input_fds[index] >= 0);
+    }
+    flb_input_set(ctx, input_fds[0], "tag", "first", NULL);
+    flb_input_set(ctx, input_fds[1], "tag", "second", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "s3", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "region", "us-west-2", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "upload_timeout", S3_TEST_UPLOAD_TIMEOUT, NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+    flb_output_set(ctx, out_ffd,
+                   "s3_key_format", "/multipart/$TAG/$INDEX", NULL);
+    flb_output_set(ctx, out_ffd, "index_per_tag", "true", NULL);
+    flb_output_set(ctx, out_ffd, "retry_limit", "1", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+
+    for (index = 0; index < 2; index++) {
+        ret = flb_lib_push(ctx, input_fds[index], (char *) JSON_TD,
+                           (int) sizeof(JSON_TD) - 1);
+        TEST_CHECK(ret >= 0);
+    }
+
+    wait_for_s3_call_count("CompleteMultipartUpload", 2);
+
+    s3_ctx = get_s3_context(ctx);
+    TEST_CHECK(s3_ctx != NULL);
+
+    ret = read_tag_seq_index(s3_ctx, "first", &first_index);
+    TEST_CHECK_(ret == 0 && first_index == 1,
+                "Expected first multipart tag counter to be 1");
+
+    ret = read_tag_seq_index(s3_ctx, "second", &second_index);
+    TEST_CHECK_(ret == 0 && second_index == 1,
+                "Expected second multipart tag counter to be 1");
+
+    TEST_CHECK_(s3_ctx->seq_index == 0,
+                "Expected multipart per-tag indexing to leave global counter unchanged");
+
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    flb_s3_test_env_unset("FLB_S3_PLUGIN_UNDER_TEST");
+    flb_s3_test_env_unset("TEST_CreateMultipartUpload_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_UploadPart_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_CompleteMultipartUpload_CALL_COUNT");
+    flb_free(store_dir);
 }
 
 void flb_test_s3_multipart_success(void)
@@ -1955,6 +2113,118 @@ cleanup:
     flb_free(store_dir);
 }
 
+void flb_test_s3_putobject_index_per_tag(void)
+{
+    int ret;
+    int index;
+    int out_ffd;
+    int input_fds[2];
+    char *uri;
+    flb_ctx_t *ctx;
+    char *store_dir;
+    struct flb_s3 *s3_ctx;
+
+    store_dir = create_test_store_directory(
+                    "/flb-s3-test-index-per-tag-put-XXXXXX");
+    TEST_CHECK(store_dir != NULL);
+    if (store_dir == NULL) {
+        return;
+    }
+
+    flb_s3_test_env_set("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    flb_s3_test_env_set("TEST_RECORD_S3_URIS", "true", 1);
+    flb_s3_test_env_set("TEST_PUT_OBJECT_ERROR_TAG", "oldest", 1);
+
+    ctx = flb_create();
+    for (index = 0; index < 2; index++) {
+        input_fds[index] = flb_input(ctx, (char *) "lib", NULL);
+        TEST_CHECK(input_fds[index] >= 0);
+    }
+    flb_input_set(ctx, input_fds[0], "tag", "oldest", NULL);
+    flb_input_set(ctx, input_fds[1], "tag", "later", NULL);
+
+    out_ffd = flb_output(ctx, (char *) "s3", NULL);
+    TEST_CHECK(out_ffd >= 0);
+    flb_output_set(ctx, out_ffd, "match", "*", NULL);
+    flb_output_set(ctx, out_ffd, "region", "us-west-2", NULL);
+    flb_output_set(ctx, out_ffd, "bucket", "fluent", NULL);
+    flb_output_set(ctx, out_ffd, "use_put_object", "true", NULL);
+    flb_output_set(ctx, out_ffd, "total_file_size", "5M", NULL);
+    flb_output_set(ctx, out_ffd, "upload_timeout", "10s", NULL);
+    flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
+    flb_output_set(ctx, out_ffd, "s3_key_format", "/queue/$TAG/$INDEX", NULL);
+    flb_output_set(ctx, out_ffd, "index_per_tag", "true", NULL);
+    flb_output_set(ctx, out_ffd, "static_file_path", "true", NULL);
+    flb_output_set(ctx, out_ffd, "retry_limit", "1", NULL);
+    flb_output_set(ctx, out_ffd, "retry_exhausted_action", "delete", NULL);
+
+    ret = flb_start(ctx);
+    TEST_CHECK(ret == 0);
+    for (index = 0; index < 2; index++) {
+        ret = flb_lib_push(ctx, input_fds[index], (char *) JSON_TD,
+                           (int) sizeof(JSON_TD) - 1);
+        TEST_CHECK(ret >= 0);
+    }
+
+    s3_ctx = get_s3_context(ctx);
+    TEST_CHECK(s3_ctx != NULL);
+
+    flb_s3_test_env_set("TEST_PUT_OBJECT_ERROR", ERROR_ACCESS_DENIED, 1);
+    ret = prepare_s3_ordered_files(s3_ctx);
+    TEST_CHECK_(ret == 0, "Expected both per-tag indexed chunks to be created");
+    if (ret != 0) {
+        goto cleanup;
+    }
+
+    wait_for_s3_call_count("PutObject", 1);
+    uri = flb_s3_test_env_get("TEST_PutObject_URI_1");
+    TEST_CHECK_(uri != NULL && strcmp(uri, "/fluent/queue/oldest/0") == 0,
+                "Expected oldest tag to start at index 0, got %s",
+                uri ? uri : "(null)");
+
+    flb_s3_test_env_unset("TEST_PUT_OBJECT_ERROR");
+    wait_for_s3_call_count("PutObject", 3);
+
+    uri = flb_s3_test_env_get("TEST_PutObject_URI_2");
+    TEST_CHECK_(uri != NULL && strcmp(uri, "/fluent/queue/oldest/0") == 0,
+                "Expected failed per-tag index to roll back to 0, got %s",
+                uri ? uri : "(null)");
+
+    uri = flb_s3_test_env_get("TEST_PutObject_URI_3");
+    TEST_CHECK_(uri != NULL && strcmp(uri, "/fluent/queue/later/0") == 0,
+                "Expected independent later tag to start at index 0, got %s",
+                uri ? uri : "(null)");
+
+    ret = flb_lib_push(ctx, input_fds[0], (char *) JSON_TD,
+                       (int) sizeof(JSON_TD) - 1);
+    TEST_CHECK(ret >= 0);
+
+    ret = wait_for_s3_file_create_time(s3_ctx, "oldest", 6,
+                                       time(NULL) - 30, NULL, 0);
+    TEST_CHECK_(ret == 0, "Expected another oldest-tag chunk");
+
+    wait_for_s3_call_count("PutObject", 4);
+    uri = flb_s3_test_env_get("TEST_PutObject_URI_4");
+    TEST_CHECK_(uri != NULL && strcmp(uri, "/fluent/queue/oldest/1") == 0,
+                "Expected oldest tag to advance independently to index 1, got %s",
+                uri ? uri : "(null)");
+
+cleanup:
+    flb_stop(ctx);
+    flb_destroy(ctx);
+
+    flb_s3_test_env_unset("FLB_S3_PLUGIN_UNDER_TEST");
+    flb_s3_test_env_unset("TEST_PUT_OBJECT_ERROR");
+    flb_s3_test_env_unset("TEST_PUT_OBJECT_ERROR_TAG");
+    flb_s3_test_env_unset("TEST_RECORD_S3_URIS");
+    flb_s3_test_env_unset("TEST_PutObject_CALL_COUNT");
+    flb_s3_test_env_unset("TEST_PutObject_URI_1");
+    flb_s3_test_env_unset("TEST_PutObject_URI_2");
+    flb_s3_test_env_unset("TEST_PutObject_URI_3");
+    flb_s3_test_env_unset("TEST_PutObject_URI_4");
+    flb_free(store_dir);
+}
+
 void flb_test_s3_empty_upload_queue_file_deleted(void)
 {
     int ret;
@@ -2552,7 +2822,9 @@ static void flb_test_s3_credentials_serialized(void)
 /* Test list */
 TEST_LIST = {
     {"hostname_verification_propagates", flb_test_s3_hostname_verification_propagates },
+    {"index_per_tag_requires_index", flb_test_s3_index_per_tag_requires_index },
     {"credentials_serialized", flb_test_s3_credentials_serialized },
+    {"multipart_index_per_tag", flb_test_s3_multipart_index_per_tag },
     {"multipart_success", flb_test_s3_multipart_success },
     {"putobject_success", flb_test_s3_putobject_success },
     {"putobject_error", flb_test_s3_putobject_error },
@@ -2569,6 +2841,7 @@ TEST_LIST = {
     {"ordered_retry_uses_backoff_deadline", flb_test_s3_ordered_retry_uses_backoff_deadline },
     {"ordered_timer_isolates_tag_backoff", flb_test_s3_ordered_timer_isolates_tag_backoff },
     {"ordered_index_keeps_global_queue_order", flb_test_s3_ordered_index_keeps_global_queue_order },
+    {"putobject_index_per_tag", flb_test_s3_putobject_index_per_tag },
     {"ordered_construct_error_exhausts_chunk", flb_test_s3_ordered_construct_error_exhausts_chunk },
     {"ordered_backoff_does_not_starve_completion", flb_test_s3_ordered_backoff_does_not_starve_completion },
     {"ordered_shared_upload_retries_safely", flb_test_s3_ordered_shared_upload_retries_safely },
