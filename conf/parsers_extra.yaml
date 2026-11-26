@@ -1,0 +1,159 @@
+# Extra set of common parsers
+#
+
+parsers:
+  - name: crowbar
+    # https://rubular.com/r/cCVd1HLCAO
+    format: regex
+    regex: '^.*\[(?<log_time>[^ ][-.\d\+:]+T[:\d]*)([^\]])*?\]\s+?(?<severity>[^ ]\w+)([\s-]*):?\s+(?<message>.*)'
+    time_format: '%Y-%m-%dT%H:%M:%S'
+    time_keep: Off
+    time_key: log_time
+
+  - name: chefclient
+    # https://rubular.com/r/frDgnElXW9
+    format: regex
+    regex: '^\[(?<log_time>[^ ][-.\d\+:]+T[:\d]*)([^\]])*?\]\s+(?<severity>[^ ]\w+):\s+(?<message>.*)$'
+    time_format: '%Y-%m-%dT%H:%M:%S'
+    time_keep: Off
+    time_key: log_time
+
+  - name: mysql_error
+    format: regex
+    #regex: '^(?<log_time>[^ +][ -:0-9TZ]+|[[:upper:]][[:lower:]]{2})(\+\d+:\d+[TZ]*){0,1}\s*(?<myid>[^ ]\d+)\s+\[(?<severity>[^ ]\w+)\](\s+(?<subsystem>[^ ]\w+):){0,1}\s+(?<message>.*)$'
+    regex: '^(?<log_time>[^ +][-\d]+[\ T]*[:\dZ]+)\s*(?<myid>[^ ]\d+)\s+\[(?<severity>[^ ]\w+)\](\s+(?<subsystem>[^ ]\w+):){0,1}\s+(?<message>.*)$'
+    time_format: '%Y-%m-%d %H:%M:%S'
+    time_keep: Off
+    time_key: log_time
+
+  - name: mysql_slow
+    format: regex
+    regex: '^# User\@Host:\s+(?<user>[^\@][\w\[\]]+)[@\s]+(?<dbhost>[^ ][-.\w]+)\s+(\[(?<dbhost_address>[.\d]+)\]){0,1}\s+(?<message>.*)$'
+
+  - name: pacemaker
+    format: regex
+    regex: '^\s*(?<log_time>[^ ]* {1,2}[^ ]* [^ ]*) \[(?<pid>\d+)\] (?<node>[\-\w]*)\s*(?<component>\w*):\s+(?<severity>\w+):\s+(?<message>.*)$'
+    #time_format: '%Y-%m-%dT%H:%M:%S'
+    time_format: '%b %d %H:%M:%S'
+    time_keep: Off
+    time_key: log_time
+    #types: 'pid:integer'
+    #
+
+  - name: rabbitmq
+    format: regex
+    regex: '^=(?<severity>[^ ]\w+)\s+REPORT[=\s]*(?<log_time>[^ =][-:.\d\w]+)[\s=]+(?<message>.*)$'
+    time_format: '%d-%b-%Y::%H:%M:%S'
+    time_keep: Off
+    time_key: log_time
+
+  - name: http_statement
+    format: regex
+    regex: '^.*((?<req_method>GET|POST|PUT|DELETE|CONNECT|OPTIONS|HEAD[^ ]\w+)\s*(?<req_path>[^ ][-._?=%&\/[:alnum:]]*)\s*(?<req_protocol>[^ ][.\/\dHTFSP]+){0,1})([''"\s]*){0,1}((\s*status:\s*(?<req_status>[^ ]\d+)){0,1}(\s*len:\ (?<req_len>[^ ]\d+)){0,1}(\s*time:\s*(?<req_log_time>[^ ][.\d]+)){0,1}(\s*microversion:\s*(?<req_mver>[^ ][.\d]+)){0,1}){0,1}$'
+
+  - name: universal
+    format: regex
+    regex: ^(?<message>.*)$
+
+  - name: uuid
+    format: regex
+    regex: (?<uuid>[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})
+    #UUID v1 :
+    #/^[0-9A-F]{8}-[0-9A-F]{4}-[1][0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/i
+    #UUID v2 :
+    #/^[0-9A-F]{8}-[0-9A-F]{4}-[2][0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/i
+    #UUID v3 :
+    #/^[0-9A-F]{8}-[0-9A-F]{4}-[3][0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/i
+    #UUID v4 :
+    #/^[0-9A-F]{8}-[0-9A-F]{4}-[4][0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/i
+    #UUID v5 :
+    #/^[0-9A-F]{8}-[0-9A-F]{4}-[5][0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/i
+    #
+    # Parse IP Tables rules - this one regex should capture pretty much any IP Tables rule and split it into the various fields
+
+  - name: iptables
+    format: regex
+    regex: '\[(?<rule_chain>\w*)-(?<rule_name>\w*)-(?<accept_or_drop>\w*)\]IN=(?<in_interface>[\w.]+)? OUT=(?<out_interface>[\w.]+)? MAC=(?<mac_address>[\w:]+)? SRC=(?<source>(?:[0-9]{1,3}\.){3}[0-9]{1,3}) DST=(?<dest>(?:[0-9]{1,3}\.){3}[0-9]{1,3}) LEN=(?<pkt_len>\d+) TOS=(?<pkt_tos>[\w\d]+) PREC=(?<pkt_prec>[\w\d]+) TTL=(?<pkt_ttl>\d+) ID=(?<pkt_id>\d+)\s?(?<pkg_frg>[A-Z\s].?)\s?PROTO=(?<protocol>[\w\d]+) (SPT=(?<source_port>.*) DPT=(?<dest_port>.*) (LEN=(?<proto_pkt_len>\w+)?)?(WINDOW=(?<proto_window_size>\d+) RES=(?<pkt_res>\w+)? (?<pkt_type>\w+)\s((?<pkt_flag>\w+)?)\s?URGP=(?<pkg_urgency>\d))? )?(TYPE=(?<pkt_icmp_type>\d+) CODE=(?<pkt_icmp_code>\d+) ID=(?<pkt_icmp_id>\d+) SEQ=(?<pkt_icmp_seq>\d+) )?$'
+    types: 'source_port:integer,dest_port:integer,pkt_ttl:integer,pkt_tos:integer,pkt_len:integer'
+
+  - name: couchbase_json_log_nanoseconds
+    # Various parsers for Couchbase Server logs
+    #
+    format: json
+    time_key: timestamp
+    time_format: '%Y-%m-%dT%H:%M:%S.%L'
+    time_keep: On
+    # Do not remove the time field from the output we ship
+    #
+
+  - name: couchbase_rebalance_report
+    format: json
+    time_key: timestamp
+    time_format: '%Y-%m-%dT%H:%M:%SZ'
+    time_keep: On
+
+  - name: couchbase_simple_log
+    # The level may have optional brackets around it
+    format: regex
+    regex: '^(?<timestamp>\d+-\d+-\d+T\d+:\d+:\d+\.\d+(\+|-)\d+:\d+)\s+\[(?<level>\w+)\](?<message>.*)$'
+    time_key: timestamp
+    time_format: '%Y-%m-%dT%H:%M:%S.%L%z'
+    time_keep: On
+
+  - name: couchbase_simple_log_space_separated
+    format: regex
+    regex: '^(?<timestamp>\d+-\d+-\d+T\d+:\d+:\d+\.\d+(\+|-)\d+:\d+)\s+(?<level>\w+)\s+(?<message>.*)$'
+    time_key: timestamp
+    time_format: '%Y-%m-%dT%H:%M:%S.%L%z'
+    time_keep: On
+
+  - name: couchbase_simple_log_utc
+    # Slight change in time format to use Z at end instead of offset:
+    # 2021-03-09T17:32:02.136Z INFO ...
+    # https://rubular.com/r/EpG3M1dHb5AnTC
+    format: regex
+    regex: '^(?<timestamp>\d+-\d+-\d+T\d+:\d+:\d+\.\d+Z)\s+(?<level>\w+)(?<message>.*)$'
+    time_key: timestamp
+    time_format: '%Y-%m-%dT%H:%M:%S.%LZ'
+    time_keep: On
+
+  - name: couchbase_simple_log_mixed
+    # Cope with two different log formats, e.g.:
+    # 2021/03/09 17:32:15 cbauth: ...
+    # 2021-03-09T17:32:15.303+00:00 [INFO] ...
+    # https://rubular.com/r/XUt7xQqEJnrF2M
+    format: regex
+    regex: '^(?<timestamp>\d+(-|/)\d+(-|/)\d+(T|\s+)\d+:\d+:\d+(\.\d+(\+|-)\d+:\d+|))\s+((\[)?(?<level>\w+)(\]|:))(?<message>.*)$'
+    time_key: timestamp
+    time_keep: On
+    # We cannot parse the time as different formats directly, it could be done downstream and/or left as current time
+    #
+
+  - name: couchbase_erlang_multiline
+    format: regex
+    # For some reason this cannot parse an ending close bracket ] followed by a new line immediately
+    #regex: '\[(?<logger>\w+):(?<level>\w+),(?<timestamp>\d+-\d+-\d+T\d+:\d+:\d+.\d+Z),.*\](?<message>.*)$'
+    regex: '\[(?<logger>\w+):(?<level>\w+),(?<timestamp>\d+-\d+-\d+T\d+:\d+:\d+.\d+Z),(?<message>.*)$'
+    time_key: timestamp
+    time_format: '%Y-%m-%dT%H:%M:%S.%L'
+    time_keep: On
+
+  - name: couchbase_java_multiline
+    # 2021-03-09T17:32:25.339+00:00 INFO CBAS.bootstrap.AnalyticsNCApplication [main] ...
+    # https://rubular.com/r/9jh1oKtXBN5GEV
+    # Can include an exception stack trace or a thread dump as well but ignoring these for now
+    format: regex
+    regex: '^(?<timestamp>\d+-\d+-\d+T\d+:\d+:\d+\.\d+(\+|-)\d+:\d+)\s+(?<level>\w+)\s+(?<class>.*)\s+\[(?<thread>.*)\]\s+(?<message>.*)$'
+    time_key: timestamp
+    time_format: '%Y-%m-%dT%H:%M:%S.%L%z'
+    time_keep: On
+
+  - name: couchbase_http
+    # A slight modification of the usual Apache/Apache2 parsers
+    format: regex
+    regex: '^(?<host>[^ ]*) [^ ]* (?<user>[^ ]*) \[(?<timestamp>[^\]]*)\] "(?<method>\S+)(?: +(?<path>[^ ]*) +\S*)?" (?<code>[^ ]*) (?<size>[^ ]*) - (?<client>.*)$'
+    time_key: timestamp
+    time_format: '%d/%b/%Y:%H:%M:%S %z'
+    time_keep: On
+
+# End of Couchbase Server parsers
