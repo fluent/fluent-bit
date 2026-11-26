@@ -28,6 +28,15 @@
 #include <fcntl.h>
 #include "flb_tests_internal.h"
 
+/* Keep CRLF fixtures byte for byte on platforms that translate newlines. */
+#ifndef O_BINARY
+#ifdef _O_BINARY
+#define O_BINARY _O_BINARY
+#else
+#define O_BINARY 0
+#endif
+#endif
+
 /* https://github.com/fluent/fluent-bit/issues/6313 */
 void test_translate_long_env()
 {
@@ -140,6 +149,158 @@ void test_file_env_var_basic()
 
     if (!TEST_CHECK(strcmp(buf, test_content) == 0)) {
         TEST_MSG("Content mismatch. Got=%s expect=%s", buf, test_content);
+    }
+
+    flb_sds_destroy(buf);
+    flb_env_destroy(env);
+    unlink(test_file);
+}
+
+/* CRLF files must not leave a trailing carriage return in the value */
+void test_file_env_var_crlf()
+{
+    struct flb_env *env;
+    flb_sds_t buf = NULL;
+    char *test_file = "flb_test_crlf.txt";
+    char initial_content[] = "crlf_value_123\r\n";
+    char updated_content[] = "crlf_value_456\r\n";
+    char *template = "${CRLF_SECRET}";
+    int fd;
+    int ret;
+
+    fd = open(test_file, O_CREAT | O_WRONLY | O_TRUNC | O_BINARY, 0644);
+    if (!TEST_CHECK(fd >= 0)) {
+        TEST_MSG("Failed to create CRLF test file");
+        return;
+    }
+    ret = write(fd, initial_content, sizeof(initial_content) - 1);
+    close(fd);
+    if (!TEST_CHECK(ret == sizeof(initial_content) - 1)) {
+        TEST_MSG("Failed to write CRLF test content");
+        unlink(test_file);
+        return;
+    }
+
+    env = flb_env_create();
+    if (!TEST_CHECK(env != NULL)) {
+        TEST_MSG("flb_env_create failed");
+        unlink(test_file);
+        return;
+    }
+
+    ret = flb_env_set_extended(env, "CRLF_SECRET", NULL,
+                               "file://flb_test_crlf.txt", 1);
+    if (!TEST_CHECK(ret >= 0)) {
+        TEST_MSG("flb_env_set_extended failed");
+        flb_env_destroy(env);
+        unlink(test_file);
+        return;
+    }
+
+    buf = flb_env_var_translate(env, template);
+    if (!TEST_CHECK(buf != NULL)) {
+        TEST_MSG("flb_env_var_translate failed");
+        flb_env_destroy(env);
+        unlink(test_file);
+        return;
+    }
+    if (!TEST_CHECK(flb_sds_len(buf) == strlen("crlf_value_123"))) {
+        TEST_MSG("CRLF length mismatch. got=%d expect=14",
+                 (int) flb_sds_len(buf));
+    }
+    if (!TEST_CHECK(strcmp(buf, "crlf_value_123") == 0)) {
+        TEST_MSG("CRLF content mismatch. Got=%s expect=crlf_value_123", buf);
+    }
+    flb_sds_destroy(buf);
+
+    /* The refresh path must strip CRLF the same way as the initial load */
+    fd = open(test_file, O_WRONLY | O_TRUNC | O_BINARY, 0644);
+    if (!TEST_CHECK(fd >= 0)) {
+        TEST_MSG("Failed to open CRLF test file for update");
+        flb_env_destroy(env);
+        unlink(test_file);
+        return;
+    }
+    ret = write(fd, updated_content, sizeof(updated_content) - 1);
+    close(fd);
+    if (!TEST_CHECK(ret == sizeof(updated_content) - 1)) {
+        TEST_MSG("Failed to write updated CRLF content");
+        flb_env_destroy(env);
+        unlink(test_file);
+        return;
+    }
+
+    sleep(2);
+
+    buf = flb_env_var_translate(env, template);
+    if (!TEST_CHECK(buf != NULL)) {
+        TEST_MSG("flb_env_var_translate failed after refresh");
+        flb_env_destroy(env);
+        unlink(test_file);
+        return;
+    }
+    if (!TEST_CHECK(flb_sds_len(buf) == strlen("crlf_value_456"))) {
+        TEST_MSG("refreshed CRLF length mismatch. got=%d expect=14",
+                 (int) flb_sds_len(buf));
+    }
+    if (!TEST_CHECK(strcmp(buf, "crlf_value_456") == 0)) {
+        TEST_MSG("refreshed CRLF mismatch. Got=%s expect=crlf_value_456", buf);
+    }
+
+    flb_sds_destroy(buf);
+    flb_env_destroy(env);
+    unlink(test_file);
+}
+
+/* A lone LF must still be stripped by exactly one byte */
+void test_file_env_var_lf(void)
+{
+    struct flb_env *env;
+    flb_sds_t buf = NULL;
+    char *test_file = "flb_test_lf.txt";
+    char test_content[] = "lf_value_456\n";
+    char *template = "${LF_SECRET}";
+    int fd;
+    int ret;
+
+    fd = open(test_file, O_CREAT | O_WRONLY | O_TRUNC, 0644);
+    if (!TEST_CHECK(fd >= 0)) {
+        TEST_MSG("Failed to create LF test file");
+        return;
+    }
+    ret = write(fd, test_content, sizeof(test_content) - 1);
+    close(fd);
+    if (!TEST_CHECK(ret == sizeof(test_content) - 1)) {
+        TEST_MSG("Failed to write LF test content");
+        unlink(test_file);
+        return;
+    }
+
+    env = flb_env_create();
+    if (!TEST_CHECK(env != NULL)) {
+        TEST_MSG("flb_env_create failed");
+        unlink(test_file);
+        return;
+    }
+
+    ret = flb_env_set_extended(env, "LF_SECRET", NULL,
+                               "file://flb_test_lf.txt", 0);
+    if (!TEST_CHECK(ret >= 0)) {
+        TEST_MSG("flb_env_set_extended failed");
+        flb_env_destroy(env);
+        unlink(test_file);
+        return;
+    }
+
+    buf = flb_env_var_translate(env, template);
+    if (!TEST_CHECK(buf != NULL)) {
+        TEST_MSG("flb_env_var_translate failed");
+        flb_env_destroy(env);
+        unlink(test_file);
+        return;
+    }
+    if (!TEST_CHECK(strcmp(buf, "lf_value_456") == 0)) {
+        TEST_MSG("LF content mismatch. Got=%s expect=lf_value_456", buf);
     }
 
     flb_sds_destroy(buf);
@@ -626,6 +787,8 @@ TEST_LIST = {
 #endif
     { "translate_long_env"           , test_translate_long_env},
     { "file_env_var_basic"           , test_file_env_var_basic},
+    { "file_env_var_crlf"            , test_file_env_var_crlf},
+    { "file_env_var_lf"              , test_file_env_var_lf},
     { "file_env_var_refresh"         , test_file_env_var_refresh},
     { "file_env_var_uri"             , test_file_env_var_uri},
     { "mixed_env_vars"               , test_mixed_env_vars},
