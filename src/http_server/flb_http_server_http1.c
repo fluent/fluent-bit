@@ -72,9 +72,21 @@ static int http1_evict_request(struct flb_http1_server_session *session)
 
     session_buffer_length = cfl_sds_len(session_buffer);
 
-    request_length = mk_http_parser_request_size(&session->inner_parser,
-                                                 session_buffer,
-                                                 session_buffer_length);
+    if (!mk_http_parser_is_content_chunked(&session->inner_parser) &&
+        session->inner_parser.header_content_length <= 0 &&
+        session->inner_parser.i >= 0) {
+        /*
+         * A request without a body, such as a GET, ends at the blank line
+         * after its headers, and the parser stops on that final LF. Keep
+         * whatever follows it, which is the next pipelined request.
+         */
+        request_length = (size_t) session->inner_parser.i + 1;
+    }
+    else {
+        request_length = mk_http_parser_request_size(&session->inner_parser,
+                                                     session_buffer,
+                                                     session_buffer_length);
+    }
 
     if (request_length == -1 ||
         request_length > session_buffer_length) {
@@ -91,6 +103,7 @@ static int http1_evict_request(struct flb_http1_server_session *session)
                 session_buffer_length);
 
         session_buffer[session_buffer_length] = '\0';
+        cfl_sds_set_len(session_buffer, session_buffer_length);
     }
     else {
         cfl_sds_set_len(session_buffer, 0);
