@@ -199,7 +199,7 @@ def wait_completed(metrics_function, port, process, expected, timeout):
     raise TimeoutError(f"completion did not reach {expected}")
 
 
-def make_payloads(batch_records):
+def make_payloads(batch_records, encodings=ENCODINGS):
     attributes = [
         {"key": f"field{index}", "value": {"stringValue": "representative attribute"}}
         for index in range(10)
@@ -223,10 +223,12 @@ def make_payloads(batch_records):
         }]
     }
     json_payload = json.dumps(request, separators=(",", ":")).encode()
-    from google.protobuf.json_format import ParseDict
-    from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import ExportLogsServiceRequest
-    protobuf_payload = ParseDict(request, ExportLogsServiceRequest()).SerializeToString()
-    return {"json": json_payload, "protobuf": protobuf_payload}
+    payloads = {"json": json_payload}
+    if "protobuf" in encodings:
+        from google.protobuf.json_format import ParseDict
+        from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import ExportLogsServiceRequest
+        payloads["protobuf"] = ParseDict(request, ExportLogsServiceRequest()).SerializeToString()
+    return payloads
 
 
 def system_kind(name):
@@ -235,7 +237,7 @@ def system_kind(name):
     return "fluent-bit"
 
 
-def fluent_config(input_port, metrics_port, modified, flush_seconds, storage_dir):
+def fluent_config(input_port, metrics_port, modified, flush_seconds, storage_dir, workers=4):
     processor = ""
     service_storage = ""
     input_storage = ""
@@ -270,7 +272,7 @@ def fluent_config(input_port, metrics_port, modified, flush_seconds, storage_dir
       http2: off
       tls: off
       threaded: true
-      http_server.workers: 4
+      http_server.workers: {workers}
 {input_storage}{processor}  outputs:
     - name: null
       match: '*'
