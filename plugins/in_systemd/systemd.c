@@ -464,11 +464,16 @@ static int in_systemd_collect(struct flb_input_instance *ins,
     }
 
 #ifdef FLB_HAVE_SQLDB
-    /* Save cursor */
-    if (ctx->db) {
+    /* Save cursor only when it moved or a previous save has not succeeded */
+    if (rows > 0) {
+        ctx->cursor_pending = FLB_TRUE;
+    }
+    if (ctx->db && ctx->cursor_pending) {
         sd_journal_get_cursor(ctx->j, &cursor);
         if (cursor) {
-            flb_systemd_db_set_cursor(ctx, cursor);
+            if (flb_systemd_db_set_cursor(ctx, cursor) == 0) {
+                ctx->cursor_pending = FLB_FALSE;
+            }
             flb_free(cursor);
         }
     }
