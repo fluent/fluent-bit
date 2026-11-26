@@ -931,6 +931,17 @@ else()
   add_subdirectory(${FLB_PATH_LIB_MONKEY}/mk_core EXCLUDE_FROM_ALL)
 endif()
 
+# Ensure Fluent Bit always builds and links lib/flb_libco rather than
+# Monkey's bundled deps/flb_libco copy.
+if(TARGET co)
+  set_property(TARGET co PROPERTY SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/${FLB_PATH_LIB_CO}/libco.c")
+  target_include_directories(co BEFORE PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/${FLB_PATH_LIB_CO}")
+else()
+  add_subdirectory(${FLB_PATH_LIB_CO})
+endif()
+
 if(FLB_TLS)
   FLB_DEFINITION(FLB_HAVE_TLS)
 
@@ -1093,10 +1104,6 @@ if(FLB_HTTP_SERVER)
   FLB_OPTION(FLB_METRICS ON)
   FLB_DEFINITION(FLB_HAVE_METRICS)
   FLB_DEFINITION(FLB_HAVE_HTTP_SERVER)
-endif()
-
-if(NOT TARGET co)
-  add_subdirectory(${FLB_PATH_LIB_CO})
 endif()
 
 if(NOT TARGET rbtree)

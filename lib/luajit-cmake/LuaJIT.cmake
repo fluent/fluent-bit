@@ -183,6 +183,31 @@ if (MSVC)
   endif()
 endif()
 
+include(CheckCSourceCompiles)
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND
+   LJ_TARGET_ARCH STREQUAL "arm64")
+
+  check_c_source_compiles("
+    #if !defined(__ARM_FEATURE_BTI_DEFAULT)
+    #error BTI is not enabled
+    #endif
+
+    #if !(__ARM_FEATURE_BTI_DEFAULT & 1)
+    #error BTI is not enabled
+    #endif
+
+    int main(void) { return 0; }
+  " LUAJIT_COMPILER_BTI_ENABLED)
+
+  if(LUAJIT_COMPILER_BTI_ENABLED)
+    list(APPEND DASM_FLAGS -D BRANCH_TRACK)
+    list(APPEND TARGET_ARCH -DLJ_ABI_BRANCH_TRACK=1)
+    add_compile_definitions(LJ_ABI_BRANCH_TRACK=1)
+  endif()
+
+endif()
+
 include(${CMAKE_CURRENT_LIST_DIR}/Modules/FindUnwind.cmake)
 if (NOT unwind_FOUND)
   if(${CMAKE_SYSTEM_NAME} STREQUAL Darwin)

@@ -255,6 +255,17 @@ if(NOT LIBBACKTRACE_FOUND)
       set(DEPS_C_COMPILER "${CMAKE_C_COMPILER}")
     endif()
 
+    set(libbacktrace_cflags "${CMAKE_C_FLAGS}")
+    if(CMAKE_CONFIGURATION_TYPES)
+      foreach(config IN LISTS CMAKE_CONFIGURATION_TYPES)
+        string(TOUPPER "${config}" config_upper)
+        string(APPEND libbacktrace_cflags "$<$<CONFIG:${config}>: ${CMAKE_C_FLAGS_${config_upper}}>")
+      endforeach()
+    else()
+      string(TOUPPER "${CMAKE_BUILD_TYPE}" config_upper)
+      string(APPEND libbacktrace_cflags " ${CMAKE_C_FLAGS_${config_upper}}")
+    endif()
+
     # Set up build paths
     set(FLB_LIBBACKTRACE_PATH "${CMAKE_CURRENT_BINARY_DIR}/backtrace-prefix/lib/libbacktrace.a")
 
@@ -263,6 +274,8 @@ if(NOT LIBBACKTRACE_FOUND)
       SOURCE_DIR ${LIBBACKTRACE_SOURCE_DIR}
       CONFIGURE_COMMAND ${LIBBACKTRACE_SOURCE_DIR}/configure
                         ${AUTOCONF_HOST_OPT}
+                        "CC=${DEPS_C_COMPILER}"
+                        "CFLAGS=${libbacktrace_cflags}"
                         --prefix=<INSTALL_DIR>
                         --enable-shared=no
                         --enable-static=yes

@@ -33,6 +33,7 @@ asm (
       ".globl _co_switch_aarch64\n"
       "co_switch_aarch64:\n"
       "_co_switch_aarch64:\n"
+      "  hint #34\n" /* bti c */
       "  stp x8,  x9,  [x1]\n"
       "  stp x10, x11, [x1, #16]\n"
       "  stp x12, x13, [x1, #32]\n"
