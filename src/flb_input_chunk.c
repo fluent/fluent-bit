@@ -2802,7 +2802,7 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
             ic = NULL;
         }
         else if (cio_chunk_is_up(ic->chunk) == CIO_FALSE) {
-            ret = cio_chunk_up_force(ic->chunk);
+            ret = cio_chunk_up_append(ic->chunk);
 
             if (ret == CIO_CORRUPTED) {
                 if (in->config->storage_del_bad_chunks) {
@@ -2847,7 +2847,7 @@ static struct flb_input_chunk *input_chunk_get(struct flb_input_instance *in,
          * do for reused chunks, and restore it after the write.
          */
         if (cio_chunk_is_up(ic->chunk) == CIO_FALSE) {
-            ret = cio_chunk_up_force(ic->chunk);
+            ret = cio_chunk_up_append(ic->chunk);
             if (ret != CIO_OK) {
                 flb_input_chunk_destroy(ic, FLB_TRUE);
                 return NULL;

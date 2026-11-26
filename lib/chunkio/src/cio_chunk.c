@@ -711,6 +711,27 @@ int cio_chunk_up_force(struct cio_chunk *ch)
     return CIO_OK;
 }
 
+/*
+ * Same as cio_chunk_up_force() for a caller that brings the chunk up only to
+ * append to it, see cio_file_up_append().
+ */
+int cio_chunk_up_append(struct cio_chunk *ch)
+{
+    int ret;
+    int type;
+
+    cio_error_reset(ch);
+
+    type = ch->st->type;
+    if (type == CIO_STORE_FS) {
+        ret = cio_file_up_append(ch);
+        chunk_state_sync(ch);
+        return ret;
+    }
+
+    return CIO_OK;
+}
+
 char *cio_version()
 {
     return CIO_VERSION_STR;

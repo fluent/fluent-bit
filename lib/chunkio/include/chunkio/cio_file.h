@@ -50,6 +50,8 @@ struct cio_file {
     char *st_content;
     crc_t crc_cur;            /* crc: current value calculated */
     int crc_reset;            /* crc: must recalculate from the beginning ? */
+    int crc_down_valid;       /* crc: header matched crc_cur when put down ? */
+    size_t crc_down_size;     /* crc: content length when put down */
     int auto_remap_warned;    /* has sync auto-remap warning been emitted? */
     int map_truncated_warned; /* has RO truncation warning been emitted? */
     size_t initial_size;      /* opening capacity hint, including the file header */
@@ -81,6 +83,7 @@ int cio_file_is_up(struct cio_chunk *ch, struct cio_file *cf);
 int cio_file_down(struct cio_chunk *ch);
 int cio_file_up(struct cio_chunk *ch);
 int cio_file_up_force(struct cio_chunk *ch);
+int cio_file_up_append(struct cio_chunk *ch);
 int cio_file_lookup_user(char *user, void **result);
 int cio_file_lookup_group(char *group, void **result);
 int cio_file_update_size(struct cio_file *cf);
