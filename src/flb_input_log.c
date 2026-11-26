@@ -494,6 +494,8 @@ static int build_payload_for_route(struct flb_input_instance *ins,
     struct flb_log_event_encoder *encoder;
     struct flb_mp_chunk_record *group_end = NULL;
     struct flb_mp_chunk_record *group_start_record = NULL;
+    int group_start_emitted = FLB_FALSE;
+    int group_continued = FLB_FALSE;
     uint8_t *matched_by_route = NULL;
 #ifdef __EMSCRIPTEN__
     size_t trace_record = 0;
@@ -562,7 +564,12 @@ static int build_payload_for_route(struct flb_input_instance *ins,
         return 0;
     }
 
-    /* Second pass: encode records in order, preserving group structure */
+    /*
+     * Second pass: encode records in order, preserving group structure. The
+     * first pass leaves group_end on the last end marker; it is set again for
+     * each group below.
+     */
+    group_end = NULL;
     for (i = 0; i < record_count; i++) {
         if (flb_log_event_decoder_get_record_type(&records[i]->event, &record_type) != 0) {
             continue;
@@ -570,6 +577,7 @@ static int build_payload_for_route(struct flb_input_instance *ins,
 
         if (record_type == FLB_LOG_EVENT_GROUP_START) {
             group_start_record = records[i];
+            group_start_emitted = FLB_FALSE;
             group_end = NULL;
             continue;
         }
@@ -585,13 +593,25 @@ static int build_payload_for_route(struct flb_input_instance *ins,
                 }
                 group_end = NULL;
             }
+            else if (group_start_record == NULL && group_continued == FLB_TRUE) {
+                /* end of a group started by the previous append */
+                ret = encode_chunk_record(encoder, records[i]);
+                if (ret != 0) {
+                    flb_free(matched_by_route);
+                    flb_log_event_encoder_destroy(encoder);
+                    return -1;
+                }
+            }
             group_start_record = NULL;
+            group_continued = FLB_FALSE;
             continue;
         }
         else if (record_type == FLB_LOG_EVENT_NORMAL && matched_by_route[i]) {
             if (group_start_record != NULL &&
                 records[i]->cobj_group_metadata == group_start_record->cobj_group_metadata) {
-                if (group_end == NULL) {
+                /* a group without an end in this append starts only once */
+                if (group_start_emitted == FLB_FALSE) {
+                    group_start_emitted = FLB_TRUE;
                     ret = encode_chunk_record(encoder, group_start_record);
                     if (ret != 0) {
                         flb_free(matched_by_route);
@@ -607,6 +627,9 @@ static int build_payload_for_route(struct flb_input_instance *ins,
                         }
                     }
                 }
+            }
+            else if (group_start_record == NULL) {
+                group_continued = FLB_TRUE;
             }
 
             ret = encode_chunk_record(encoder, records[i]);
@@ -668,6 +691,8 @@ static int build_payload_for_default_route(struct flb_input_instance *ins,
     struct flb_log_event_encoder *encoder;
     struct flb_mp_chunk_record *group_end = NULL;
     struct flb_mp_chunk_record *group_start_record = NULL;
+    int group_start_emitted = FLB_FALSE;
+    int group_continued = FLB_FALSE;
     int *matched_by_default = NULL;
 #ifdef __EMSCRIPTEN__
     size_t trace_record = 0;
@@ -752,7 +777,12 @@ static int build_payload_for_default_route(struct flb_input_instance *ins,
         }
     }
 
-    /* Second pass: encode records in order, preserving group structure */
+    /*
+     * Second pass: encode records in order, preserving group structure. The
+     * first pass leaves group_end on the last end marker; it is set again for
+     * each group below.
+     */
+    group_end = NULL;
     for (i = 0; i < record_count; i++) {
         if (flb_log_event_decoder_get_record_type(&records[i]->event, &record_type) != 0) {
             continue;
@@ -760,6 +790,7 @@ static int build_payload_for_default_route(struct flb_input_instance *ins,
 
         if (record_type == FLB_LOG_EVENT_GROUP_START) {
             group_start_record = records[i];
+            group_start_emitted = FLB_FALSE;
             group_end = NULL;
             continue;
         }
@@ -775,13 +806,25 @@ static int build_payload_for_default_route(struct flb_input_instance *ins,
                 }
                 group_end = NULL;
             }
+            else if (group_start_record == NULL && group_continued == FLB_TRUE) {
+                /* end of a group started by the previous append */
+                ret = encode_chunk_record(encoder, records[i]);
+                if (ret != 0) {
+                    flb_free(matched_by_default);
+                    flb_log_event_encoder_destroy(encoder);
+                    return -1;
+                }
+            }
             group_start_record = NULL;
+            group_continued = FLB_FALSE;
             continue;
         }
         else if (record_type == FLB_LOG_EVENT_NORMAL && matched_by_default[i]) {
             if (group_start_record != NULL &&
                 records[i]->cobj_group_metadata == group_start_record->cobj_group_metadata) {
-                if (group_end == NULL) {
+                /* a group without an end in this append starts only once */
+                if (group_start_emitted == FLB_FALSE) {
+                    group_start_emitted = FLB_TRUE;
                     ret = encode_chunk_record(encoder, group_start_record);
                     if (ret != 0) {
                         flb_free(matched_by_default);
@@ -797,6 +840,9 @@ static int build_payload_for_default_route(struct flb_input_instance *ins,
                         }
                     }
                 }
+            }
+            else if (group_start_record == NULL) {
+                group_continued = FLB_TRUE;
             }
 
             ret = encode_chunk_record(encoder, records[i]);
