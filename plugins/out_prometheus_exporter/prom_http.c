@@ -19,9 +19,188 @@
 
 #include <fluent-bit/flb_output_plugin.h>
 #include <fluent-bit/flb_http_server.h>
+#include <fluent-bit/flb_gzip.h>
+#include <fluent-bit/flb_snappy.h>
+#include <fluent-bit/flb_zstd.h>
 #include <fluent-bit/http_server/flb_hs_utils.h>
 #include "prom.h"
 #include "prom_http.h"
+
+enum prom_http_encoding {
+    PROM_HTTP_IDENTITY,
+    PROM_HTTP_GZIP,
+    PROM_HTTP_ZSTD,
+    PROM_HTTP_SNAPPY,
+    PROM_HTTP_WILDCARD,
+    PROM_HTTP_ENCODING_COUNT
+};
+
+static const char *const prom_http_encoding_name[] = {
+    [PROM_HTTP_IDENTITY] = "identity",
+    [PROM_HTTP_GZIP] = "gzip",
+    [PROM_HTTP_ZSTD] = "zstd",
+    [PROM_HTTP_SNAPPY] = "snappy",
+    [PROM_HTTP_WILDCARD] = "*"
+};
+
+/* Parse an HTTP quality value as an integer in thousandths. */
+static int prom_http_encoding_quality(const char *parameter, const char *end)
+{
+    int quality;
+    int factor = 100;
+
+    while (parameter < end && (*parameter == ' ' || *parameter == '\t')) {
+        parameter++;
+    }
+    if (parameter == end) {
+        return 1000;
+    }
+    if (*parameter++ != ';') {
+        return 0;
+    }
+    while (parameter < end && (*parameter == ' ' || *parameter == '\t')) {
+        parameter++;
+    }
+    while (end > parameter && (end[-1] == ' ' || end[-1] == '\t')) {
+        end--;
+    }
+    if (end - parameter < 3 || strncasecmp(parameter, "q=", 2) != 0) {
+        return 0;
+    }
+    parameter += 2;
+    if (*parameter != '0' && *parameter != '1') {
+        return 0;
+    }
+    quality = (*parameter++ - '0') * 1000;
+    if (parameter < end && *parameter++ != '.') {
+        return 0;
+    }
+    while (parameter < end) {
+        if (factor == 0 || *parameter < '0' || *parameter > '9' ||
+            (quality == 1000 && *parameter != '0')) {
+            return 0;
+        }
+        quality += (*parameter++ - '0') * factor;
+        factor /= 10;
+    }
+    return quality;
+}
+
+static int prom_http_response_encoding(const char *header, int *identity_allowed)
+{
+    int encoding;
+    int selected;
+    int quality;
+    int selected_quality;
+    int qualities[PROM_HTTP_ENCODING_COUNT] = {-1, -1, -1, -1, -1};
+    size_t name_length;
+    const char *cursor;
+    const char *end;
+    const char *name;
+
+    cursor = header;
+    while (cursor != NULL && *cursor != '\0') {
+        cursor += strspn(cursor, " \t,");
+        end = cursor + strcspn(cursor, ",");
+        name_length = strcspn(cursor, " \t;,");
+        for (encoding = 0; encoding < PROM_HTTP_ENCODING_COUNT; encoding++) {
+            name = prom_http_encoding_name[encoding];
+            if (name_length == strlen(name) && strncasecmp(cursor, name, name_length) == 0) {
+                quality = prom_http_encoding_quality(cursor + name_length, end);
+                if (qualities[encoding] < 0 || quality < qualities[encoding]) {
+                    qualities[encoding] = quality;
+                }
+                break;
+            }
+        }
+        cursor = *end == ',' ? end + 1 : end;
+    }
+
+    quality = qualities[PROM_HTTP_IDENTITY];
+    *identity_allowed = quality != 0 && (quality > 0 || qualities[PROM_HTTP_WILDCARD] != 0);
+    selected = PROM_HTTP_IDENTITY;
+    selected_quality = *identity_allowed ? quality : 0;
+
+    /* Keep gzip first on ties. Only offer raw Snappy to clients that name it. */
+    for (encoding = PROM_HTTP_GZIP; encoding < PROM_HTTP_WILDCARD; encoding++) {
+        quality = qualities[encoding];
+        if (quality < 0 && encoding != PROM_HTTP_SNAPPY) {
+            quality = qualities[PROM_HTTP_WILDCARD];
+        }
+        if (quality > 0 && (quality > selected_quality ||
+                            (quality == selected_quality && selected == PROM_HTTP_IDENTITY))) {
+            selected = encoding;
+            selected_quality = quality;
+        }
+    }
+    return selected;
+}
+
+static int prom_http_send_metrics(struct flb_http_request *request,
+                                  struct flb_http_response *response,
+                                  char *payload, size_t size)
+{
+    int encoding;
+    int identity_allowed;
+    int ret;
+    void *compressed = NULL;
+    char *snappy_payload;
+    size_t compressed_size;
+
+    ret = flb_http_response_set_header(response, "Vary", 0, "Accept-Encoding", 0);
+    if (ret != 0) {
+        flb_http_response_set_status(response, 500);
+        return flb_http_response_commit(response);
+    }
+
+    encoding = prom_http_response_encoding(
+        flb_http_request_get_header(request, "accept-encoding"), &identity_allowed);
+    if (encoding == PROM_HTTP_IDENTITY && !identity_allowed) {
+        flb_http_response_set_status(response, 406);
+        return flb_http_response_commit(response);
+    }
+
+    ret = 0;
+    if (size > 0 || !identity_allowed) {
+        switch (encoding) {
+        case PROM_HTTP_GZIP:
+            ret = flb_gzip_compress(payload, size, &compressed, &compressed_size);
+            break;
+        case PROM_HTTP_ZSTD:
+            ret = flb_zstd_compress(payload, size, &compressed, &compressed_size);
+            break;
+        case PROM_HTTP_SNAPPY:
+            ret = flb_snappy_compress(payload, size, &snappy_payload, &compressed_size);
+            if (ret == 0) {
+                compressed = snappy_payload;
+            }
+            break;
+        }
+    }
+
+    if (ret != 0 && !identity_allowed) {
+        flb_http_response_set_status(response, 500);
+        return flb_http_response_commit(response);
+    }
+    flb_http_response_set_status(response, 200);
+    flb_hs_response_set_content_type(response, FLB_HS_CONTENT_TYPE_PROMETHEUS);
+    if (compressed != NULL) {
+        ret = flb_http_response_set_body(response, compressed, compressed_size);
+        flb_free(compressed);
+        if (ret == 0) {
+            ret = flb_http_response_set_header(response, "Content-Encoding", 0,
+                                               (char *) prom_http_encoding_name[encoding], 0);
+        }
+    }
+    else {
+        ret = flb_http_response_set_body(response, (unsigned char *) payload, size);
+    }
+    if (ret != 0) {
+        flb_http_response_set_body(response, NULL, 0);
+        flb_http_response_set_status(response, 500);
+    }
+    return flb_http_response_commit(response);
+}
 
 static int prom_http_request_handler(struct flb_http_request *request,
                                      struct flb_http_response *response)
@@ -62,24 +241,13 @@ static int prom_http_request_handler(struct flb_http_request *request,
     }
     pthread_mutex_unlock(&ph->metrics_mutex);
 
-    if (payload == NULL) {
-        if (source_payload == NULL) {
-            return flb_hs_response_set_payload(response,
-                                               200,
-                                               FLB_HS_CONTENT_TYPE_PROMETHEUS,
-                                               NULL,
-                                               0);
-        }
-
+    if (source_payload != NULL && payload == NULL) {
         flb_http_response_set_status(response, 500);
         return flb_http_response_commit(response);
     }
-    ret = flb_hs_response_set_payload(response,
-                                      200,
-                                      FLB_HS_CONTENT_TYPE_PROMETHEUS,
-                                      payload,
-                                      cfl_sds_len(payload));
 
+    ret = prom_http_send_metrics(request, response, payload ? payload : "",
+                                 cfl_sds_len(payload));
     cfl_sds_destroy(payload);
 
     return ret;
