@@ -21,7 +21,7 @@ on:
         required: false
 
 # We do not want a new staging build to run whilst we are releasing the current staging build.
-# We also do not want multiples to run for the same version.
+# This also serializes the Latest checks and writes across promotions and image rebuilds.
 concurrency: staging-build-release
 
 permissions:
@@ -38,7 +38,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       major-version: ${{ steps.get_major_version.outputs.value }}
-      make-latest: ${{ steps.latest.outputs.value }}
     permissions:
       contents: read
     steps:
@@ -80,32 +79,6 @@ jobs:
 
     - name: Checkout repository
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-    - name: Decide whether this release updates Latest
-      id: latest
-      env:
-        GH_TOKEN: ${{ github.token }}
-        RELEASE_VERSION: ${{ inputs.version }}
-      run: |
-        make_latest=false
-        case "$RELEASE_VERSION" in
-          6.0.*)
-            make_latest=true
-            ;;
-          5.2.*)
-            latest_tag=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
-            if [[ ! "$latest_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              echo "::error::Unexpected Latest release tag: $latest_tag"
-              exit 1
-            fi
-            newest=$(printf '%s\n' "${latest_tag#v}" "$RELEASE_VERSION" | sort -V | tail -n 1)
-            if [[ "$newest" == "$RELEASE_VERSION" ]]; then
-              make_latest=true
-            fi
-            ;;
-        esac
-        echo "value=$make_latest" >> "$GITHUB_OUTPUT"
-      shell: bash
 
   staging-release-validate-schema:
     name: Validate staged metadata against the release image
@@ -746,11 +719,10 @@ jobs:
           TAG: ${{ steps.get-tag.outputs.tag }}
 
   staging-release-images-latest-tags:
-    if: needs.staging-release-version-check.outputs.make-latest == 'true'
+    if: startsWith(inputs.version, '5.2.') || startsWith(inputs.version, '6.0.')
     name: Release latest Linux container images
     runs-on: ubuntu-latest
     needs:
-      - staging-release-version-check
       - staging-release-create-release
       - staging-release-images
       - staging-release-validate-schema
@@ -765,10 +737,32 @@ jobs:
           "latest-debug"
         ]
     permissions:
+      contents: read
       packages: write
     steps:
+      # This job can be retried after a newer release has been promoted.
+      - name: Check whether these images still belong to Latest
+        id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          latest_tag=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
+          if [[ ! "$latest_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Unexpected Latest release tag: $latest_tag"
+            exit 1
+          fi
+          if [[ "$latest_tag" == "v$RELEASE_VERSION" ]]; then
+            echo 'value=true' >> "$GITHUB_OUTPUT"
+          else
+            echo "Leaving latest image tags on $latest_tag"
+            echo 'value=false' >> "$GITHUB_OUTPUT"
+          fi
+        shell: bash
+
       # Primarily because the skopeo errors are hard to parse and non-obvious
       - name: Check the image exists
+        if: steps.latest.outputs.value == 'true'
         run: |
           docker pull "$STAGING_IMAGE_NAME@$SOURCE_DIGEST"
         env:
@@ -777,6 +771,7 @@ jobs:
 
       # Use the container to prevent any rootless issues and we do not need to use GPG signing as DockerHub does not support it.
       - name: Promote container images from staging to Dockerhub
+        if: steps.latest.outputs.value == 'true'
         run: |
           docker run --rm  \
             quay.io/skopeo/stable:latest \
@@ -794,6 +789,7 @@ jobs:
         shell: bash
 
       - name: Promote container images from staging to GHCR.io
+        if: steps.latest.outputs.value == 'true'
         run: |
           docker run --rm  \
             quay.io/skopeo/stable:latest \
@@ -1016,7 +1012,6 @@ jobs:
   staging-release-create-release:
     name: Create the Github Release once packages and containers are up
     needs:
-      - staging-release-version-check
       - staging-release-publish-schema
       - staging-release-images
       - staging-release-apt-packages
@@ -1211,6 +1206,27 @@ jobs:
           target_commitish: '5.1'
           make_latest: false
 
+      # Keep the API check in the publishing job so a job retry recomputes it.
+      - name: Decide whether the 5.2 release updates Latest
+        if: startsWith(inputs.version, '5.2.')
+        id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          latest_tag=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
+          if [[ ! "$latest_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Unexpected Latest release tag: $latest_tag"
+            exit 1
+          fi
+          newest=$(printf '%s\n' "${latest_tag#v}" "$RELEASE_VERSION" | sort -V | tail -n 1)
+          if [[ "$newest" == "$RELEASE_VERSION" ]]; then
+            echo 'value=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'value=false' >> "$GITHUB_OUTPUT"
+          fi
+        shell: bash
+
       - name: Release 5.2
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         if: startsWith(inputs.version, '5.2.')
@@ -1226,7 +1242,7 @@ jobs:
           name: "Fluent Bit ${{ inputs.version }}"
           tag_name: v${{ inputs.version }}
           target_commitish: '5.2'
-          make_latest: ${{ needs.staging-release-version-check.outputs.make-latest }}
+          make_latest: ${{ steps.latest.outputs.value }}
 
       - name: Release 6.0 and latest
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
