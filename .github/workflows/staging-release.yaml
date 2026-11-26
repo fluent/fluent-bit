@@ -719,8 +719,8 @@ jobs:
           TAG: ${{ steps.get-tag.outputs.tag }}
 
   staging-release-images-latest-tags:
-    # Only update latest tags for 5.2 releases
-    if: startsWith(github.event.inputs.version, '5.2')
+    # Only update latest tags for 6.0 releases
+    if: startsWith(inputs.version, '6.0.')
     name: Release latest Linux container images
     runs-on: ubuntu-latest
     needs:
@@ -1182,9 +1182,26 @@ jobs:
           target_commitish: '5.1'
           make_latest: false
 
-      - name: Release 5.2 and latest
+      - name: Release 5.2 - not latest
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
-        if: startsWith(inputs.version, '5.2')
+        if: startsWith(inputs.version, '5.2.')
+        with:
+          body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
+          files: |
+            metadata/fluent-bit-schema-${{ inputs.version }}.json
+            metadata/fluent-bit-schema-pretty-${{ inputs.version }}.json
+          fail_on_unmatched_files: true
+          overwrite_files: true
+          draft: false
+          generate_release_notes: true
+          name: "Fluent Bit ${{ inputs.version }}"
+          tag_name: v${{ inputs.version }}
+          target_commitish: '5.2'
+          make_latest: false
+
+      - name: Release 6.0 and latest
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        if: startsWith(inputs.version, '6.0.')
         with:
           body: "https://fluentbit.io/announcements/v${{ inputs.version }}/"
           files: |
@@ -1198,7 +1215,7 @@ jobs:
           tag_name: v${{ inputs.version }}
           target_commitish: master
           make_latest: true
-          
+
       - name: Verify anonymous GitHub release asset downloads
         run: |
           python3 .github/scripts/release_metadata.py verify --version "$VERSION" \
@@ -1356,8 +1373,16 @@ jobs:
           token: ${{ secrets.GH_PA_TOKEN }}
           ref: '5.1'
 
-      - name: Release 5.2 and latest
-        if: startsWith(inputs.version, '5.2')
+      - name: Release 5.2 - not latest
+        if: startsWith(inputs.version, '5.2.')
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: fluent/fluent-bit-docs
+          token: ${{ secrets.GH_PA_TOKEN }}
+          ref: '5.2'
+
+      - name: Release 6.0 and latest
+        if: startsWith(inputs.version, '6.0.')
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: fluent/fluent-bit-docs
@@ -1375,7 +1400,7 @@ jobs:
             exit 1
           fi
           release_branch="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
-          if [[ "$release_branch" == "5.2" ]]; then
+          if [[ "$release_branch" == "6.0" ]]; then
             release_branch=master
           fi
           if [[ "$(git branch --show-current)" != "$release_branch" ]]; then
@@ -1507,11 +1532,17 @@ jobs:
           ref: '5.1'
 
       - name: Release 5.2
-        if: startsWith(inputs.version, '5.2')
+        if: startsWith(inputs.version, '5.2.')
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: '5.2'
+
+      - name: Release 6.0
+        if: startsWith(inputs.version, '6.0.')
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: master
-          
+
       - name: Verify release branch
         id: release-branch
         shell: bash
@@ -1523,7 +1554,7 @@ jobs:
             exit 1
           fi
           release_branch="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
-          if [[ "$release_branch" == "5.2" ]]; then
+          if [[ "$release_branch" == "6.0" ]]; then
             release_branch=master
           fi
           if [[ "$(git branch --show-current)" != "$release_branch" ]]; then
