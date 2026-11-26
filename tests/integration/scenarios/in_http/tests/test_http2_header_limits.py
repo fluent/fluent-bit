@@ -1,4 +1,4 @@
-"""Bound decoded HTTP/2 headers, including indexed fields and trailers."""
+"""Validate HTTP/2 header budgets and request-body buffering."""
 
 import http.client
 import socket
@@ -177,6 +177,44 @@ def test_http2_header_budget(listener, case, rejected):
         # Rejection releases the stream and preserves the connection.
         client.headers(3, BASE_HEADERS)
         assert client.result(3).type == 1
+        assert service.flb.process.poll() is None
+    finally:
+        client.socket.close()
+
+
+@pytest.mark.parametrize("content_type,chunks,content_length", [
+    ("application/grpc", [b"\0" * 5 + b"\0\0\0\0\1x"], False),
+    ("application/grpc", [b"\0\0\0\0\1x" + b"\0\0\0\0\2yz"], False),
+    ("application/grpc+proto", [b"\0" * 10], False),
+    ("application/grpc", [b"\0\0\0\x13\x88" + b"x" * 20, b"x" * 4980], False),
+    ("application/grpc", [b"\0\0", b"\0\0", b"\1x"], False),
+    ("application/octet-stream", [b"x" * 1024, b"y" * 1024], True),
+    ("application/octet-stream", [b"x" * 1024, b"y" * 1024], False),
+], ids=[
+    "coalesced-empty-grpc-message", "coalesced-grpc-messages", "grpc-content-type-suffix",
+    "fragmented-grpc-message", "fragmented-grpc-header", "content-length", "fallback",
+])
+def test_http2_body_preallocation(listener, content_type, chunks, content_length):
+    service, tls = listener
+    client = Client(service.flb_listener_port, tls)
+    headers = list(BASE_HEADERS)
+    if tls:
+        headers[1] = (b":scheme", b"https")
+    headers.append((b"content-type", content_type.encode()))
+    if content_length:
+        headers.append((b"content-length", str(sum(len(chunk) for chunk in chunks)).encode()))
+
+    # The health handler ignores bodies, isolating HTTP/2 buffering from gRPC decoding.
+    frames = bytearray(client.header_frames(1, headers, end=False))
+    for index, chunk in enumerate(chunks):
+        frame = DataFrame(1)
+        frame.data = chunk
+        if index == len(chunks) - 1:
+            frame.flags.add("END_STREAM")
+        frames.extend(frame.serialize())
+    try:
+        client.socket.sendall(frames)
+        assert client.result(1).type == 1
         assert service.flb.process.poll() is None
     finally:
         client.socket.close()

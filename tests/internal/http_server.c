@@ -1037,6 +1037,69 @@ void test_http1_header_limit_binary_units(void)
     }
 }
 
+void test_http2_body_preallocation(void)
+{
+    struct flb_http_server server;
+    struct flb_http_server_session *session;
+    struct flb_http_stream *stream;
+    /* Client preface, SETTINGS, then HPACK GET / with application/grpc on stream 1. */
+    unsigned char headers[] =
+        "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
+        "\x00\x00\x00\x04\x00\x00\x00\x00\x00"
+        "\x00\x00\x21\x01\x04\x00\x00\x00\x01"
+        "\x82\x86\x84\x01\x09" "localhost"
+        "\x0f\x10\x10" "application/grpc";
+    unsigned char frame[32];
+    struct {
+        const char *body;
+        size_t length;
+        size_t limit;
+        size_t capacity;
+        int rejected;
+    } cases[] = {
+        {"\0\0\0\0\0\0\0\0\0\1x", 11, 64, 11, FLB_FALSE},
+        {"\0\0\0\0\1x\0\0\0\0\2yz", 13, 64, 13, FLB_FALSE},
+        {"\0\0\0\0\x20x", 6, 64, 37, FLB_FALSE},
+        {"\0", 1, 64, 1, FLB_FALSE},
+        {"\0\0\0\0\x3b", 5, 64, 64, FLB_FALSE},
+        {"\0\0\0\0\x3c", 5, 64, 0, FLB_TRUE},
+        {"\0\xff\xff\xff\xff", 5, 64, 0, FLB_TRUE},
+        {"\0\0\0\0\0xxxx", 9, 8, 0, FLB_TRUE}
+    };
+    size_t index;
+    int result;
+
+    memset(&server, 0, sizeof(server));
+    for (index = 0; index < sizeof(cases) / sizeof(cases[0]); index++) {
+        server.buffer_max_size = cases[index].limit;
+        session = flb_http_server_session_create(HTTP_PROTOCOL_VERSION_20);
+        TEST_ASSERT(session != NULL);
+        session->parent = &server;
+        result = flb_http2_server_session_ingest(&session->http2, headers, sizeof(headers) - 1);
+        TEST_ASSERT(result == HTTP_SERVER_SUCCESS);
+        stream = nghttp2_session_get_stream_user_data(session->http2.inner_session, 1);
+        TEST_ASSERT(stream != NULL);
+
+        memset(frame, 0, 9);
+        frame[2] = cases[index].length;
+        frame[8] = 1;
+        memcpy(frame + 9, cases[index].body, cases[index].length);
+        result = flb_http2_server_session_ingest(&session->http2, frame, 9 + cases[index].length);
+        if (cases[index].rejected) {
+            TEST_CHECK_(stream->status == HTTP_STREAM_STATUS_ERROR, "case %zu", index);
+            TEST_CHECK(stream->request.body == NULL);
+        }
+        else {
+            TEST_CHECK_(result == HTTP_SERVER_SUCCESS, "case %zu", index);
+            TEST_ASSERT(stream->request.body != NULL);
+            TEST_CHECK(cfl_sds_len(stream->request.body) == cases[index].length);
+            TEST_CHECK(cfl_sds_alloc(stream->request.body) == cases[index].capacity);
+            TEST_CHECK(memcmp(stream->request.body, cases[index].body, cases[index].length) == 0);
+        }
+        flb_http_server_session_destroy(session);
+    }
+}
+
 void test_http1_rejects_invalid_partial_request_line(void)
 {
     struct flb_http_server server;
@@ -1325,6 +1388,7 @@ static void test_http_request_compression_roundtrip(void)
 }
 
 TEST_LIST = {
+    { "http2_body_preallocation", test_http2_body_preallocation },
     { "http_request_compression_roundtrip", test_http_request_compression_roundtrip },
     { "http_server_rejects_invalid_decoded_body_limit",
       test_http_server_rejects_invalid_decoded_body_limit },
