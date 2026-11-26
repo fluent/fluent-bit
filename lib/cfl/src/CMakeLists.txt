@@ -12,6 +12,7 @@ set(src
   cfl_variant.c
   cfl_arena.c
   cfl_container.c
+  cfl_view.c
   cfl_checksum.c
   cfl_utils.c
   )

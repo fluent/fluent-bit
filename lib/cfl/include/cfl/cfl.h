@@ -40,6 +40,7 @@
 #include <cfl/cfl_variant.h>
 #include <cfl/cfl_arena.h>
 #include <cfl/cfl_object.h>
+#include <cfl/cfl_view.h>
 #include <cfl/cfl_utils.h>
 
 int cfl_init();
