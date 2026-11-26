@@ -8,19 +8,20 @@ For how releases, backports and container image rebuilds are carried out, see th
 
 | Branch     | Version | Status           | Maintainer                                                  | Notes                                                              |
 |------------|---------|------------------|-------------------------------------------------------------|--------------------------------------------------------------------|
-| `master`   | v5.2.x  | Development      | [Eduardo Silva](https://github.com/edsiper)                 | Next release series. All new features and bug fixes land here first. |
-| `5.1`      | v5.1.x  | Stable           | [Eduardo Silva](https://github.com/edsiper)                 | Current stable release series. |
+| `master`   | v6.0.x  | Development      | [Eduardo Silva](https://github.com/edsiper)                 | Planned for March 2027. All new features and bug fixes land here first. |
+| `5.2`      | v5.2.x  | Stable           | [Eduardo Silva](https://github.com/edsiper)                 | Current stable release series. |
+| `5.1`      | v5.1.x  | Maintenance only | [Eduardo Silva](https://github.com/edsiper)                 | Critical bug fixes, security fixes, and selected low-risk backports. |
 | `5.0`      | v5.0.x  | Maintenance only | [Eduardo Silva](https://github.com/edsiper) [Hiroshi Hatake (@cosmo0920)](https://github.com/cosmo0920) | Critical bug fixes, security fixes, and selected low-risk backports until **November 30, 2026**. |
 
 ---
 
 ## Maintenance Policy
 
-The `master` branch tracks development of **v5.2.0**. Fluent Bit **v5.1** is
-the current stable release series and is tracked in the `5.1` branch. The
-**v5.0** branch is in maintenance mode and receives bug fixes, security updates,
-and selected low-risk backports until its
-End-of-Maintenance date. Older release lines are End-of-Life (EOL).
+The `master` branch tracks development of **v6.0.0**. Fluent Bit **v5.2** is
+the current stable release series and is tracked in the `5.2` branch. The
+**v5.1** and **v5.0** branches receive critical bug fixes, security updates,
+and selected low-risk backports until their End-of-Maintenance dates. Older
+release lines are End-of-Life (EOL).
 
 ### Accepted Changes for Maintenance Branches
 
@@ -32,14 +33,19 @@ End-of-Maintenance date. Older release lines are End-of-Life (EOL).
 
 Maintenance releases continue on an as-needed basis depending on urgency and impact.
 
-### v5.2 Development
+### v6.0 Development
 
-**v5.2.0** is under development in `master`.
+**v6.0.0** is under development in `master` and is planned for **March 2027**.
 
-### v5.1 Stable Series
+### v5.2 Stable Series
 
-**v5.1** is the current stable release series and is recommended for production
+**v5.2** is the current stable release series and is recommended for production
 use. New features and bug fixes land in `master` first.
+
+### v5.1 Maintenance
+
+**v5.1** receives critical bug fixes, security updates, and selected low-risk
+backports. Its End-of-Maintenance date will be announced when finalized.
 
 ### v5.0 Maintenance
 
