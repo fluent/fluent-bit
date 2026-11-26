@@ -97,11 +97,11 @@
           "type": "rpm"
         },
         {
-          "target": "opensuse/15.6",
+          "target": "opensuse/16.1",
           "type": "rpm"
         },
         {
-          "target": "opensuse/15.6.arm64v8",
+          "target": "opensuse/16.1.arm64v8",
           "type": "rpm"
         },
         {

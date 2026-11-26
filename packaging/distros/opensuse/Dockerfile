@@ -1,6 +1,4 @@
-# Dockerfile to build latest opensuse leap
-# Set this to the base image to use in each case, so if we want to build for opensuse/leap
-# we would set BASE_BUILDER=opensuse-leap-base.
+# Build openSUSE Leap RPMs for amd64 and arm64.
 ARG BASE_BUILDER
 # Lookup the name to use below but should follow the '<distro>-base' convention with slashes replaced.
 # Use buildkit to skip unused base images: DOCKER_BUILDKIT=1
@@ -9,8 +7,7 @@ ARG BASE_BUILDER
 FROM multiarch/qemu-user-static:x86_64-aarch64 AS multiarch-aarch64
 
 # opensuse/leap base image
-# hadolint ignore=DL3006
-FROM opensuse/leap AS opensuse-leap-base
+FROM registry.opensuse.org/opensuse/leap:16.1 AS opensuse-16.1-base
 
 # hadolint ignore=DL3037,DL3033
 RUN zypper up -y && \
@@ -22,34 +19,15 @@ RUN zypper up -y && \
         make \
         bash \
         systemd-devel \
-        postgresql postgresql-devel postgresql-server \
-        cyrus-sasl cyrus-sasl-devel \
-        libopenssl3 libopenssl-3-devel \
-        libyaml-devel && \
-    zypper clean -a && rm -rf /var/cache/zypp/*
-
-# opensuse/leap base image
-FROM opensuse/leap:15.6 AS opensuse-15.6-base 
-
-# hadolint ignore=DL3037,DL3033
-RUN zypper up -y && \
-    zypper install -y --no-recommends \
-        rpm-build \
-        curl ca-certificates wget unzip flex bison \
-        gcc gcc-c++ \
-        cmake-full \
-        make \
-        bash \
-        systemd-devel \
-        postgresql postgresql-devel postgresql-server \
-        cyrus-sasl cyrus-sasl-devel \
-        libopenssl3 libopenssl-3-devel \
+        postgresql-devel \
+        cyrus-sasl-devel \
+        libopenssl-3-devel \
         libyaml-devel && \
     zypper clean -a && rm -rf /var/cache/zypp/*
 
 # opensuse/leap.arm64v8 base image
 # hadolint ignore=DL3037,DL3029
-FROM --platform=linux/arm64 opensuse/leap:15.6 AS opensuse-15.6.arm64v8-base
+FROM --platform=linux/arm64 registry.opensuse.org/opensuse/leap:16.1 AS opensuse-16.1.arm64v8-base
 
 COPY --from=multiarch-aarch64 /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 
@@ -63,9 +41,9 @@ RUN zypper up -y && \
         make \
         bash \
         systemd-devel \
-        postgresql postgresql-devel postgresql-server \
-        cyrus-sasl cyrus-sasl-devel \
-        libopenssl3 libopenssl-3-devel \
+        postgresql-devel \
+        cyrus-sasl-devel \
+        libopenssl-3-devel \
         libyaml-devel && \
     zypper clean -a && rm -rf /var/cache/zypp/*
 
