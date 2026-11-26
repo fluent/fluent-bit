@@ -275,6 +275,7 @@ static char *ra_value_type_to_str(struct flb_ra_value *val)
 static int rule_apply(struct flb_expect *ctx, msgpack_object map, struct flb_config *config)
 {
     int n = 0;
+    int matched = FLB_TRUE;
     char *json;
     size_t size = 1024;
     struct mk_list *head;
@@ -298,7 +299,7 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map, struct flb_con
                           "not found. Record content:\n%s",
                           n, rule->value, json);
             flb_free(json);
-            return FLB_FALSE;
+            matched = FLB_FALSE;
         }
         else if (rule->type == FLB_EXP_KEY_NOT_EXISTS) {
             if (!val) {
@@ -312,7 +313,7 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map, struct flb_con
                           n, rule->value, json);
             flb_free(json);
             flb_ra_key_value_destroy(val);
-            return FLB_FALSE;
+            matched = FLB_FALSE;
         }
         else if (rule->type == FLB_EXP_KEY_VAL_NULL) {
             if (!val) {
@@ -322,9 +323,9 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map, struct flb_con
                               "key '%s' not found. Record content:\n%s",
                               n, rule->value, json);
                 flb_free(json);
-                return FLB_FALSE;
+                matched = FLB_FALSE;
             }
-            if (val->type != FLB_RA_NULL) {
+            else if (val->type != FLB_RA_NULL) {
                 json = flb_msgpack_to_json_str(size, &map, config->json_escape_unicode);
                 flb_plg_error(ctx->ins,
                               "exception on rule #%i 'key_val_is_null', "
@@ -334,9 +335,11 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map, struct flb_con
                               ra_value_type_to_str(val), json);
                 flb_free(json);
                 flb_ra_key_value_destroy(val);
-                return FLB_FALSE;
+                matched = FLB_FALSE;
             }
-            flb_ra_key_value_destroy(val);
+            else {
+                flb_ra_key_value_destroy(val);
+            }
         }
         else if (rule->type == FLB_EXP_KEY_VAL_NOT_NULL) {
             if (!val) {
@@ -346,9 +349,9 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map, struct flb_con
                               "key '%s' not found. Record content:\n%s",
                               n, rule->value, json);
                 flb_free(json);
-                return FLB_FALSE;
+                matched = FLB_FALSE;
             }
-            if (val->type == FLB_RA_NULL) {
+            else if (val->type == FLB_RA_NULL) {
                 json = flb_msgpack_to_json_str(size, &map, config->json_escape_unicode);
                 flb_plg_error(ctx->ins,
                               "exception on rule #%i 'key_val_is_not_null', "
@@ -358,9 +361,11 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map, struct flb_con
                               ra_value_type_to_str(val), json);
                 flb_free(json);
                 flb_ra_key_value_destroy(val);
-                return FLB_FALSE;
+                matched = FLB_FALSE;
             }
-            flb_ra_key_value_destroy(val);
+            else {
+                flb_ra_key_value_destroy(val);
+            }
         }
         else if (rule->type == FLB_EXP_KEY_VAL_EQ) {
             if (!val) {
@@ -370,10 +375,9 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map, struct flb_con
                               "key '%s' not found. Record content:\n%s",
                               n, rule->value, json);
                 flb_free(json);
-                return FLB_FALSE;
+                matched = FLB_FALSE;
             }
-
-            if (val->type == FLB_RA_STRING) {
+            else if (val->type == FLB_RA_STRING) {
                 if (flb_sds_cmp(val->val.string, rule->expect,
                                 flb_sds_len(rule->expect)) != 0) {
                     json = flb_msgpack_to_json_str(size, &map, config->json_escape_unicode);
@@ -384,15 +388,20 @@ static int rule_apply(struct flb_expect *ctx, msgpack_object map, struct flb_con
                                   n, val->val.string, rule->expect, json);
                     flb_free(json);
                     flb_ra_key_value_destroy(val);
-                    return FLB_FALSE;
+                    matched = FLB_FALSE;
+                }
+                else {
+                    flb_ra_key_value_destroy(val);
                 }
             }
-            flb_ra_key_value_destroy(val);
+            else {
+                flb_ra_key_value_destroy(val);
+            }
         }
         n++;
     }
 
-    return FLB_TRUE;
+    return matched;
 }
 
 static int cb_expect_filter(const void *data, size_t bytes,
