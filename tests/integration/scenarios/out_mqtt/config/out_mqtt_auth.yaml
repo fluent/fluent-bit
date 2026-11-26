@@ -1,0 +1,36 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+  scheduler.base: 1
+  scheduler.cap: 2
+
+pipeline:
+  inputs:
+    # Two inputs flush at the same time: chunks of both tags share the
+    # single session of the fixed client identifier
+    - name: dummy
+      tag: auth.a
+      dummy: '{"message":"authenticated"}'
+      rate: 10
+      samples: 10
+
+    - name: dummy
+      tag: auth.b
+      dummy: '{"message":"authenticated"}'
+      rate: 10
+      samples: 10
+
+  outputs:
+    - name: mqtt
+      match: auth.*
+      host: 127.0.0.1
+      port: ${MQTT_BROKER_PORT}
+      topic: secure/logs
+      client_id: fluent-bit-gateway
+      username: flb
+      password: s3cret
+      keep_alive: 30s
+      retry_limit: 10

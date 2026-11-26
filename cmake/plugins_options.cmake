@@ -153,6 +153,7 @@ DEFINE_OPTION(FLB_OUT_KINESIS_STREAMS         "Enable AWS Kinesis output plugin"
 DEFINE_OPTION(FLB_OUT_LIB                     "Enable library mode output plugin"            ON)
 DEFINE_OPTION(FLB_OUT_LOGDNA                  "Enable LogDNA output plugin"                  ON)
 DEFINE_OPTION(FLB_OUT_LOKI                    "Enable Loki output plugin"                    ON)
+DEFINE_OPTION(FLB_OUT_MQTT                    "Enable MQTT output plugin"                    ON)
 DEFINE_OPTION(FLB_OUT_NATS                    "Enable NATS output plugin"                    ON)
 DEFINE_OPTION(FLB_OUT_NRLOGS                  "Enable New Relic output plugin"               ON)
 DEFINE_OPTION(FLB_OUT_NULL                    "Enable dev null output plugin"                ON)
