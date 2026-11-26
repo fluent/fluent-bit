@@ -327,7 +327,7 @@ def test_in_tail_discovers_new_files_from_head(workspace):
         service.stop()
 
 
-def write_windows_utf8_path_config(path, tail_path, db_path, exclude_path):
+def write_windows_utf8_path_config(path, tail_path, db_path, exclude_path, follow_symlinks):
     path.write_text(
         f"""service:
   flush: 1
@@ -342,6 +342,7 @@ pipeline:
       path: {tail_path}
       exclude_path: {exclude_path}
       windows.path_encoding: utf-8
+      follow_symlinks: {str(follow_symlinks).lower()}
       read_from_head: true
       read_newly_discovered_files_from_head: true
       refresh_interval: 1
@@ -369,7 +370,8 @@ pipeline:
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows-only path API mode")
-def test_in_tail_windows_utf8_path_encoding_discovers_unicode_file(workspace):
+@pytest.mark.parametrize("follow_symlinks", [True, False], ids=["follow", "no-follow"])
+def test_in_tail_windows_utf8_path_encoding_discovers_unicode_file(workspace, follow_symlinks):
     log_dir = workspace / "utf8-\U0001f600"
     db_path = workspace / "tail.db"
     config_path = workspace / "tail_windows_utf8_path.yaml"
@@ -386,6 +388,7 @@ def test_in_tail_windows_utf8_path_encoding_discovers_unicode_file(workspace):
         log_dir / "*.log",
         db_path,
         excluded_log_file.name,
+        follow_symlinks,
     )
 
     service = Service(
@@ -414,6 +417,75 @@ def test_in_tail_windows_utf8_path_encoding_discovers_unicode_file(workspace):
         db.close()
 
     assert {item[0] for item in row} == {str(log_file), str(long_log_file)}
+
+
+    write_and_sync(log_file, "utf8-path-after-restart\n")
+    try:
+        service.start()
+        resumed = service.wait_for_records(1)
+        service.assert_no_new_records_for(1)
+    finally:
+        service.stop()
+
+    assert_log_set(resumed, ["utf8-path-after-restart"])
+    assert resumed[0]["file"] == str(log_file)
+
+
+def test_in_tail_reads_more_than_8192_files(workspace):
+    file_count = 8193
+    if sys.platform != "win32":
+        import resource
+
+        fd_limit, _ = resource.getrlimit(resource.RLIMIT_NOFILE)
+        required_fds = file_count + 64
+        if fd_limit != resource.RLIM_INFINITY and fd_limit < required_fds:
+            pytest.skip(f"requires at least {required_fds} open descriptors on POSIX")
+
+    logs = workspace / "logs"
+    logs.mkdir()
+    for index in range(file_count):
+        (logs / f"file-{index}.log").write_bytes(f"record-{index}\n".encode("ascii"))
+
+    config_path = workspace / "tail_many_files.yaml"
+    config_path.write_text(
+        """service:
+  flush: 1
+  grace: 1
+  log_level: error
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: tail
+      path: ${TAIL_TEST_PATH}
+      follow_symlinks: false
+      read_from_head: true
+      buffer_chunk_size: 4k
+      buffer_max_size: 4k
+  outputs:
+    - name: http
+      match: '*'
+      host: 127.0.0.1
+      port: ${TEST_SUITE_HTTP_PORT}
+      uri: /data
+      format: json
+      json_date_key: false
+""",
+        encoding="utf-8",
+    )
+
+    service = Service(config_path, tail_path=logs / "*.log", db_path=workspace / "unused.db")
+    try:
+        service.start()
+        records = service.wait_for_records(file_count, timeout=60)
+        assert len(records) == file_count
+        assert {record["log"] for record in records} == {
+            f"record-{index}" for index in range(file_count)
+        }
+        service.assert_no_new_records_for(file_count)
+    finally:
+        service.stop()
 
 
 def test_in_tail_newly_discovered_files_can_start_from_tail(workspace):

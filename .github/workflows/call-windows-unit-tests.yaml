@@ -283,6 +283,17 @@ jobs:
           python -m pytest -q tests/integration/scenarios/out_http/tests/test_out_http_001.py tests/integration/scenarios/tls/tests/test_windows_root_update.py -k windows_certstore
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Check Windows Tail file I/O
+        if: matrix.config.arch == 'x64'
+        shell: pwsh
+        run: |
+          $env:FLUENT_BIT_BINARY = "$PWD/build/bin/fluent-bit.exe"
+          python -m pytest -q `
+            tests/integration/scenarios/in_tail/tests/test_tail_read_lock.py `
+            tests/integration/scenarios/in_tail/tests/test_in_tail_001.py `
+            -k "recovers_after_read_lock or windows_utf8_path_encoding or reads_more_than_8192_files or reads_gzip_static_file"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Run unit tests for Fluent Bit packages (x86, x64, and ARM64)
         run: |
             $nparallel = 1

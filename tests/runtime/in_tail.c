@@ -38,6 +38,7 @@ Approach for this tests is basing on filter_kubernetes tests
 #ifdef _WIN32
 #include <io.h>
 #include <sys/utime.h>
+#include <fluent-bit/flb_file.h>
 #include "../../plugins/in_tail/win32/interface.h"
 #endif
 #include "flb_tests_runtime.h"
@@ -1636,77 +1637,83 @@ void flb_test_exclude_path()
 }
 
 #ifdef _WIN32
-static void test_windows_open_descriptor_exhaustion(int (*open_file)(const char *, int))
+static void flb_test_windows_native_handles(void)
 {
+    const char *path = FLB_TESTS_DATA_PATH "/data/tail/parsers.conf";
+    const int handle_limit = 8193;
+    const int descriptor_limit = 16384;
+    const int64_t large_offset = INT64_C(1) << 32;
+    int descriptors = 0;
+    int opened = 0;
     int *fds;
-    int count;
     int fd;
-    int i;
-    int saved_errno;
-    char buf;
-    DWORD handles_before;
-    DWORD handles_after;
+    HANDLE *handles;
+    HANDLE handle;
+    struct win32_stat info;
+    char buf[3];
 
-    /* Leave room to detect exhaustion without depending on the exact CRT limit. */
-    fds = flb_malloc(16384 * sizeof(int));
-    if (!TEST_CHECK(fds != NULL)) {
-        return;
+    fds = flb_malloc(descriptor_limit * sizeof(*fds));
+    handles = flb_malloc(handle_limit * sizeof(*handles));
+    if (!TEST_CHECK(fds != NULL && handles != NULL)) {
+        goto cleanup;
     }
 
-    for (count = 0; count < 16384; count++) {
+    while (descriptors < descriptor_limit) {
         fd = _open("NUL", _O_RDONLY);
         if (fd == -1) {
             break;
         }
-        fds[count] = fd;
+        fds[descriptors++] = fd;
     }
-    saved_errno = errno;
-    if (!TEST_CHECK(count > 0 && count < 16384)) {
+    if (!TEST_CHECK(descriptors > 0 && descriptors < descriptor_limit && errno == EMFILE)) {
         goto cleanup;
     }
-    TEST_CHECK(saved_errno == EMFILE);
 
-    if (!TEST_CHECK(GetProcessHandleCount(GetCurrentProcess(), &handles_before))) {
-        goto cleanup;
-    }
-    for (i = 0; i < 32; i++) {
-        errno = 0;
-        fd = open_file("NUL", O_RDONLY);
-        saved_errno = errno;
-        TEST_CHECK(fd == -1);
-        TEST_CHECK(saved_errno == EMFILE);
-        if (fd != -1) {
-            _close(fd);
+    /* Hold more handles than the CRT supports while its descriptor table is full. */
+    while (opened < handle_limit) {
+        switch (opened % 4) {
+        case 0:
+            handle = win32_open(path, FLB_FALSE);
+            break;
+        case 1:
+            handle = win32_open(path, FLB_TRUE);
+            break;
+        case 2:
+            handle = flb_file_open_safe_for_read(path, CP_ACP);
+            break;
+        default:
+            handle = flb_file_open_safe_for_read(path, CP_UTF8);
+            break;
         }
-    }
-    if (TEST_CHECK(GetProcessHandleCount(GetCurrentProcess(), &handles_after))) {
-        TEST_CHECK(handles_after == handles_before);
-        TEST_MSG("handle count before=%lu after=%lu", handles_before, handles_after);
+
+        if (!TEST_CHECK(handle != INVALID_HANDLE_VALUE)) {
+            TEST_MSG("opened=%d errno=%d", opened, errno);
+            goto cleanup;
+        }
+        handles[opened++] = handle;
     }
 
-    /* Releasing one descriptor must allow a usable open and normal cleanup. */
-    _close(fds[--count]);
-    fd = open_file("NUL", O_RDONLY);
-    if (TEST_CHECK(fd != -1)) {
-        TEST_CHECK(_read(fd, &buf, 1) == 0);
-        TEST_CHECK(_close(fd) == 0);
+    TEST_CHECK(win32_fstat(handle, &info) == 0);
+    TEST_CHECK(win32_seek(handle, large_offset, SEEK_SET) == large_offset);
+    TEST_CHECK(win32_read(handle, buf, sizeof(buf)) == 0);
+    TEST_CHECK(win32_seek(handle, 0, SEEK_SET) == 0);
+    if (TEST_CHECK(LockFile(handles[0], 0, 0, sizeof(buf), 0) != 0)) {
+        TEST_CHECK(win32_read(handle, buf, sizeof(buf)) == -1 && errno == EACCES);
+        TEST_CHECK(UnlockFile(handles[0], 0, 0, sizeof(buf), 0) != 0);
+    }
+    if (TEST_CHECK(win32_read(handle, buf, sizeof(buf)) == sizeof(buf))) {
+        TEST_CHECK(memcmp(buf, "[PA", sizeof(buf)) == 0);
     }
 
 cleanup:
-    for (i = 0; i < count; i++) {
-        _close(fds[i]);
+    while (opened > 0) {
+        TEST_CHECK(CloseHandle(handles[--opened]) != 0);
     }
+    while (descriptors > 0) {
+        _close(fds[--descriptors]);
+    }
+    flb_free(handles);
     flb_free(fds);
-}
-
-void flb_test_windows_open_descriptor_exhaustion(void)
-{
-    test_windows_open_descriptor_exhaustion(win32_open);
-}
-
-void flb_test_windows_open_utf8_descriptor_exhaustion(void)
-{
-    test_windows_open_descriptor_exhaustion(win32_open_utf8);
 }
 
 void flb_test_windows_extended_path_prefixes(void)
@@ -3207,8 +3214,7 @@ TEST_LIST = {
     {"path_key", flb_test_path_key},
     {"exclude_path", flb_test_exclude_path},
 #ifdef _WIN32
-    {"windows_open_descriptor_exhaustion", flb_test_windows_open_descriptor_exhaustion},
-    {"windows_open_utf8_descriptor_exhaustion", flb_test_windows_open_utf8_descriptor_exhaustion},
+    {"windows_native_handles", flb_test_windows_native_handles},
     {"windows_extended_path_prefixes", flb_test_windows_extended_path_prefixes},
 #endif
     {"offset_key", flb_test_offset_key},

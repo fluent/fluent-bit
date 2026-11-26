@@ -177,7 +177,7 @@ static int reconcile_file_state(struct flb_tail_config *ctx,
         *pending_data_detected = FLB_FALSE;
     }
 
-    ret = fstat(file->fd, &st);
+    ret = tail_file_fstat(file->fd, &st);
     if (ret == -1) {
         flb_plg_debug(ctx->ins, "inode=%"PRIu64" error stat(2) %s, removing",
                       file->inode, file->name);

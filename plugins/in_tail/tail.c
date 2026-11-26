@@ -78,7 +78,7 @@ static int in_tail_collect_pending(struct flb_input_instance *ins,
         if (file->watch_fd == -1 ||
             (file->offset >= file->size)) {
             /* Gather current file size */
-            ret = fstat(file->fd, &st);
+            ret = tail_file_fstat(file->fd, &st);
             if (ret == -1) {
                 flb_errno();
                 flb_tail_file_remove(file);
