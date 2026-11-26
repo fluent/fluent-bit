@@ -143,6 +143,10 @@ int pgsql_next_connection(struct flb_pgsql_config *ctx)
     struct mk_list *head;
     int ret_conn = 1;
 
+    if (ctx == NULL) {
+        return 1;
+    }
+
     if (PQconsumeInput(ctx->conn_current->conn) == 1) {
         if (PQisBusy(ctx->conn_current->conn) == 0) {
             res = PQgetResult(ctx->conn_current->conn);
