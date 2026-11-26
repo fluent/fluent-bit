@@ -218,6 +218,9 @@ for 5.2 GitHub releases, documentation PRs, and version bumps. It targets
 `master` for 6.0. A 5.2 promotion updates GitHub Latest and the Linux
 `latest` and `latest-debug` tags only when its version is at least as new as
 the current GitHub Latest release. The first 6.0 promotion takes over those tags.
+Release and image publishing jobs each query GitHub Latest when they run, including
+on retries. Staging promotions and image rebuild publications share the
+`staging-build-release` concurrency group.
 The version update PR advances the source to the next patch and pins the
 stable BitBake recipe to the tag that was just published.
 
