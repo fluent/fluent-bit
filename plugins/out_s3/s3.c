@@ -28,6 +28,7 @@
 #include <fluent-bit/flb_aws_util.h>
 #include <fluent-bit/aws/flb_aws_compress.h>
 #include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_random.h>
 #include <fluent-bit/flb_crypto.h>
 #include <fluent-bit/flb_signv4.h>
 #include <fluent-bit/flb_scheduler.h>
@@ -859,6 +860,56 @@ static int write_seq_index(char *seq_index_file, uint64_t seq_index)
     return 0;
 }
 
+static int write_tag_seq_index(const char *seq_index_file, uint64_t seq_index)
+{
+    FILE *fp;
+    int ret;
+    uint64_t suffix;
+    flb_sds_t temp_path;
+
+    if (flb_random_bytes((unsigned char *) &suffix, sizeof(suffix)) != 0) {
+        return -1;
+    }
+
+    temp_path = flb_sds_create_size(strlen(seq_index_file) + sizeof(".tmp.") + 16);
+    if (temp_path == NULL) {
+        return -1;
+    }
+
+    if (!flb_sds_printf(&temp_path, "%s.tmp.%016" PRIx64, seq_index_file, suffix)) {
+        flb_sds_destroy(temp_path);
+        return -1;
+    }
+
+    fp = fopen(temp_path, "wx");
+    if (fp == NULL) {
+        flb_errno();
+        flb_sds_destroy(temp_path);
+        return -1;
+    }
+
+    ret = 0;
+    if (fprintf(fp, "%" PRIu64, seq_index) < 0 || fflush(fp) != 0) {
+        ret = -1;
+    }
+    if (fclose(fp) != 0) {
+        ret = -1;
+    }
+    if (ret == 0) {
+#ifdef FLB_SYSTEM_WINDOWS
+        ret = MoveFileExA(temp_path, seq_index_file, MOVEFILE_REPLACE_EXISTING) ? 0 : -1;
+#else
+        ret = rename(temp_path, seq_index_file);
+#endif
+    }
+    if (ret != 0) {
+        remove(temp_path);
+    }
+
+    flb_sds_destroy(temp_path);
+    return ret;
+}
+
 static int prepare_tag_seq_index(struct flb_s3 *ctx,
                                  const char *tag, size_t tag_len,
                                  uint64_t *value, flb_sds_t *file_path)
@@ -926,8 +977,9 @@ static int prepare_tag_seq_index(struct flb_s3 *ctx,
             return -1;
         }
 
-        *value = 0;
-        ret = write_seq_index(path, *value);
+        /* Start beyond keys previously allocated by the shared counter. */
+        *value = ctx->seq_index;
+        ret = write_tag_seq_index(path, *value);
         if (ret < 0) {
             flb_plg_error(ctx->ins,
                           "Failed to initialize sequential index metadata file %s",
@@ -949,6 +1001,15 @@ static int prepare_tag_seq_index(struct flb_s3 *ctx,
 
     *file_path = path;
     return 0;
+}
+
+static int write_selected_seq_index(struct flb_s3 *ctx, char *path, uint64_t index)
+{
+    if (ctx->index_per_tag == FLB_TRUE) {
+        return write_tag_seq_index(path, index);
+    }
+
+    return write_seq_index(path, index);
 }
 
 static int init_seq_index(void *context) {
@@ -1243,6 +1304,8 @@ static int cb_s3_init(struct flb_output_instance *ins,
         strstr(ctx->s3_key_format, "$INDEX") == NULL) {
         flb_plg_error(ctx->ins,
                       "'index_per_tag' requires '$INDEX' in 's3_key_format'");
+        s3_context_destroy(ctx);
+        flb_output_set_context(ins, NULL);
         return -1;
     }
 
@@ -2576,7 +2639,7 @@ prepare_request:
 
         (*selected_seq_index)++;
 
-        ret = write_seq_index(selected_seq_index_file, *selected_seq_index);
+        ret = write_selected_seq_index(ctx, selected_seq_index_file, *selected_seq_index);
         if (ctx->index_per_tag == FLB_TRUE && ret < 0) {
             (*selected_seq_index)--;
             flb_plg_error(ctx->ins,
@@ -2664,7 +2727,7 @@ decrement_index:
     if (advance_index && !keep_uri) {
         (*selected_seq_index)--;
 
-        ret = write_seq_index(selected_seq_index_file, *selected_seq_index);
+        ret = write_selected_seq_index(ctx, selected_seq_index_file, *selected_seq_index);
         if (ret < 0) {
             flb_plg_error(ctx->ins,
                           "Failed to persist sequential index rollback after request error");
@@ -2805,7 +2868,7 @@ static struct multipart_upload *create_upload(struct flb_s3 *ctx, const char *ta
     if (ctx->key_fmt_has_seq_index) {
         (*selected_seq_index)++;
 
-        ret = write_seq_index(selected_seq_index_file, *selected_seq_index);
+        ret = write_selected_seq_index(ctx, selected_seq_index_file, *selected_seq_index);
         if (ret < 0) {
             (*selected_seq_index)--;
 
