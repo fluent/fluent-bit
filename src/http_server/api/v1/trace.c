@@ -28,9 +28,11 @@
 #include <fluent-bit/flb_lib.h>
 #include <fluent-bit/flb_chunk_trace.h>
 #include <fluent-bit/flb_kv.h>
+#include <fluent-bit/flb_slist.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/http_server/flb_hs_utils.h>
 #include <msgpack.h>
+#include <ctype.h>
 #include <limits.h>
 
 #define STR_INPUTS "inputs"
@@ -81,8 +83,10 @@ static struct flb_input_instance *find_input(struct flb_hs *hs, const char *name
  * not let a remote client instantiate arbitrary output plugins: outputs such
  * as file, http or s3 can write files, open connections or run the AWS
  * credential_process. Only stdout, and the calyptia output which reuses the
- * properties of the configured instance, can be requested. Any other output
- * can still be used locally through the --trace command line option.
+ * properties of the configured instance, can be requested. The http output is
+ * only accepted when the operator allowlists its destinations through the
+ * chunk_trace_http_allowed_endpoints service option. Any other output can
+ * still be used locally through the --trace command line option.
  */
 static const char *trace_allowed_outputs[] = {
     "stdout",
@@ -94,6 +98,24 @@ static const char *trace_allowed_params[] = {
     "format",
     "json_date_key",
     "json_date_format",
+    NULL
+};
+
+/*
+ * Only parameters that select the endpoint and encode the payload: proxy,
+ * file based TLS settings, AWS and OAuth2 options could redirect the records
+ * or read local files and credentials, so they are rejected.
+ */
+static const char *trace_http_allowed_params[] = {
+    "host",
+    "port",
+    "uri",
+    "format",
+    "json_date_key",
+    "json_date_format",
+    "header",
+    "compress",
+    "tls",
     NULL
 };
 
@@ -123,10 +145,197 @@ static int trace_name_allowed(const char **list, const char *name, int ignore_ca
     return FLB_FALSE;
 }
 
-static int trace_output_allowed(const char *output_name, struct mk_list *props)
+static const char *trace_prop_get(struct mk_list *props, const char *key)
 {
     struct mk_list *head;
     struct flb_kv *kv;
+
+    if (props == NULL) {
+        return NULL;
+    }
+
+    mk_list_foreach(head, props) {
+        kv = mk_list_entry(head, struct flb_kv, _head);
+        if (strcasecmp(kv->key, key) == 0) {
+            return kv->val;
+        }
+    }
+
+    return NULL;
+}
+
+static int trace_http_port_parse(const char *str, size_t len, int *port)
+{
+    size_t i;
+    int val = 0;
+
+    if (len == 0 || len > 5) {
+        return -1;
+    }
+
+    for (i = 0; i < len; i++) {
+        if (!isdigit((unsigned char) str[i])) {
+            return -1;
+        }
+        val = (val * 10) + (str[i] - '0');
+    }
+
+    if (val < 1 || val > 65535) {
+        return -1;
+    }
+
+    *port = val;
+    return 0;
+}
+
+/*
+ * Match an allowlist entry against the requested destination. Entries use
+ * the form host:port or [ipv6]:port, optionally followed by a path, in which
+ * case the requested uri must be exactly that path. Host names are compared
+ * case-insensitively and are never resolved here.
+ */
+static int trace_http_endpoint_match(const char *entry, const char *host,
+                                     int port, const char *uri)
+{
+    int entry_port;
+    const char *p;
+    const char *host_start;
+    const char *host_end;
+    const char *path;
+    const char *port_end;
+
+    if (entry[0] == '[') {
+        host_start = entry + 1;
+        host_end = strchr(host_start, ']');
+        if (host_end == NULL || host_end[1] != ':') {
+            return -1;
+        }
+        p = host_end + 2;
+    }
+    else {
+        host_start = entry;
+        host_end = strchr(entry, ':');
+        if (host_end == NULL) {
+            return -1;
+        }
+        p = host_end + 1;
+    }
+
+    if (host_end == host_start) {
+        return -1;
+    }
+
+    path = strchr(p, '/');
+    port_end = path != NULL ? path : p + strlen(p);
+    if (trace_http_port_parse(p, port_end - p, &entry_port) != 0) {
+        return -1;
+    }
+
+    if (strlen(host) != (size_t) (host_end - host_start) ||
+        strncasecmp(host, host_start, host_end - host_start) != 0 ||
+        port != entry_port) {
+        return FLB_FALSE;
+    }
+
+    if (path != NULL && strcmp(path, uri) != 0) {
+        return FLB_FALSE;
+    }
+
+    return FLB_TRUE;
+}
+
+static int trace_http_endpoint_allowed(struct flb_config *config, struct mk_list *props)
+{
+    int ret;
+    int port = 80;
+    int allowed = FLB_FALSE;
+    const char *host;
+    const char *port_str;
+    const char *uri;
+    struct mk_list entries;
+    struct mk_list *head;
+    struct flb_kv *kv;
+    struct flb_slist_entry *entry;
+
+    if (config->chunk_trace_http_allowed_endpoints == NULL) {
+        flb_error("trace output 'http' is disabled, allow destinations with "
+                  "the '%s' service option",
+                  FLB_CONF_STR_CHUNK_TRACE_HTTP_ALLOWED_ENDPOINTS);
+        return FLB_FALSE;
+    }
+
+    if (props != NULL) {
+        mk_list_foreach(head, props) {
+            kv = mk_list_entry(head, struct flb_kv, _head);
+            if (trace_name_allowed(trace_http_allowed_params, kv->key, FLB_TRUE) == FLB_FALSE) {
+                flb_error("trace output parameter '%s' is not allowed", kv->key);
+                return FLB_FALSE;
+            }
+            /* Output properties expand ${VAR}, which could leak the environment. */
+            if (kv->val != NULL && strstr(kv->val, "${") != NULL) {
+                flb_error("trace output parameter '%s' must not reference "
+                          "environment variables", kv->key);
+                return FLB_FALSE;
+            }
+        }
+    }
+
+    host = trace_prop_get(props, "host");
+    if (host == NULL || host[0] == '\0') {
+        flb_error("trace output 'http' requires the 'host' parameter");
+        return FLB_FALSE;
+    }
+
+    port_str = trace_prop_get(props, "port");
+    if (port_str != NULL &&
+        trace_http_port_parse(port_str, strlen(port_str), &port) != 0) {
+        flb_error("trace output 'http' has an invalid port '%s'", port_str);
+        return FLB_FALSE;
+    }
+
+    uri = trace_prop_get(props, "uri");
+    if (uri == NULL) {
+        uri = "/";
+    }
+
+    flb_slist_create(&entries);
+    if (flb_slist_split_string(&entries, config->chunk_trace_http_allowed_endpoints,
+                               ',', -1) == -1) {
+        flb_slist_destroy(&entries);
+        return FLB_FALSE;
+    }
+
+    mk_list_foreach(head, &entries) {
+        entry = mk_list_entry(head, struct flb_slist_entry, _head);
+        ret = trace_http_endpoint_match(entry->str, host, port, uri);
+        if (ret == -1) {
+            flb_warn("invalid entry '%s' in '%s', expected host:port[/uri]",
+                     entry->str, FLB_CONF_STR_CHUNK_TRACE_HTTP_ALLOWED_ENDPOINTS);
+        }
+        else if (ret == FLB_TRUE) {
+            allowed = FLB_TRUE;
+            break;
+        }
+    }
+    flb_slist_destroy(&entries);
+
+    if (allowed == FLB_FALSE) {
+        flb_error("trace output 'http' endpoint '%s:%i%s' is not allowed",
+                  host, port, uri);
+    }
+
+    return allowed;
+}
+
+static int trace_output_allowed(struct flb_config *config, const char *output_name,
+                                struct mk_list *props)
+{
+    struct mk_list *head;
+    struct flb_kv *kv;
+
+    if (strcmp(output_name, "http") == 0) {
+        return trace_http_endpoint_allowed(config, props);
+    }
 
     if (trace_name_allowed(trace_allowed_outputs, output_name, FLB_FALSE) == FLB_FALSE) {
         flb_error("trace output '%s' is not allowed", output_name);
@@ -153,7 +362,7 @@ static int enable_trace_input(struct flb_hs *hs, const char *name, ssize_t nlen,
 {
     struct flb_input_instance *in;
 
-    if (trace_output_allowed(output_name, props) == FLB_FALSE) {
+    if (trace_output_allowed(hs->config, output_name, props) == FLB_FALSE) {
         return 403;
     }
 

@@ -1,0 +1,20 @@
+service:
+  flush: 1
+  grace: 1
+  log_level: info
+  http_server: on
+  http_listen: 127.0.0.1
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+  enable_chunk_trace: on
+  chunk_trace_http_allowed_endpoints: invalid-entry, 127.0.0.1:${TEST_SUITE_HTTP_PORT}/data
+
+pipeline:
+  inputs:
+    - name: dummy
+      alias: traced
+      tag: test
+      dummy: '{"message":"hello"}'
+
+  outputs:
+    - name: null
+      match: "*"
