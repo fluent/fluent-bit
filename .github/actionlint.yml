@@ -1,3 +1,7 @@
 self-hosted-runner:
-  labels:
-    - actuated-arm64-8cpu-16gb
+  labels: []
+paths:
+  .github/workflows/release-rebuild-images.yaml:
+    ignore:
+      # GitHub Actions supports concurrency.queue; actionlint 1.7.12 does not.
+      - '^unexpected key "queue" for "concurrency" section'

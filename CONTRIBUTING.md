@@ -19,9 +19,24 @@ Our development coding style for C is based on the Apache C style guidelines, we
 
  - https://httpd.apache.org/dev/styleguide.html
 
-You have to pay attention to the code indentation, tabs are 4 spaces, spaces on conditionals, etc. If your code submission is not aligned, it will be rejected.
-
 ### General requirements
+
+#### Indentation
+
+Use spaces for indentation in Fluent Bit C source and headers. Indent each block level by four spaces.
+When a function call, declaration, or definition wraps, align continuation lines with the first argument or parameter.
+Apply this alignment when editing an existing continuation line, and keep unrelated lines out of the formatting change.
+
+```c
+static void warn_failed_output(const char *output_name,
+                               const char *reason)
+{
+    if (reason) {
+        flb_warn("output '%s' failed: %s",
+                 output_name, reason);
+    }
+}
+```
 
 #### Line Length
 
@@ -220,13 +235,19 @@ Despite the effort that took for you to create the contribution, that is not an 
 Fluent Bit follows this general branching strategy:
 
 * `master` is the next major version (not yet released)
-* `<major>` is the branch for an existing stable release
+* `<major>.<minor>` is the branch for an existing stable release, e.g. `5.1`
 
 Generally a PR will target the default `master` branch so the changes will go into the next major release.
 
 Once merged, this does not mean they will automatically go into the next minor release of the current series.
 
-A particular set of changes might want to be applied to the current or previous releases so please also submit a PR targeting the branch for the particular release series you want or think it should be applied to, e.g. if a change should go into a 1.8.X release then target the `1.8` branch.
+A particular set of changes might want to be applied to the current or previous releases. Changes are merged into `master` first and then cherry-picked into the maintained branches by the maintainers, see [MAINTENANCE.md](MAINTENANCE.md) for the branches that accept changes and how to request a backport.
+
+## Bundled libraries
+
+The third-party libraries bundled in the `lib/` directory are updated only by the project maintainers. This is for trust and supply chain security reasons: the update has to be taken from the upstream project by someone accountable for Fluent Bit.
+
+Pull requests from non-maintainers that update, replace or add a bundled library are not accepted. If a bundled library needs an update or a fix, open an issue explaining why, and send the fix itself to the upstream project.
 
 ## Unit Tests
 

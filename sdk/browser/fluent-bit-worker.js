@@ -28,6 +28,9 @@ let checkpointFailures = 0;
 let lastCheckpointTime = null;
 let acceptedBytes = 0;
 let acceptedRecords = 0;
+let features = [];
+// One OTLP/JSON document is one stdout line; the host may ask for longer lines.
+let lineLimit = 4096;
 
 async function checkpoint() {
     checkpointRequired = true;
@@ -228,9 +231,10 @@ async function drainLogs() {
 }
 function log(stream, value) {
     const raw = String(value);
-    const text = raw.length > 4096 ? raw.slice(0, 4096) + ' [truncated]' : raw;
+    const text = raw.length > lineLimit ? raw.slice(0, lineLimit) + ' [truncated]' : raw;
     const size = text.length * 2;
-    if (logs.length >= 256 || logBytes + size > 65536) { dropped++; }
+    // The window always has room for two lines of the longest accepted length.
+    if (logs.length >= 256 || logBytes + size > Math.max(65536, (lineLimit + 12) * 4)) { dropped++; }
     else { logs.push({stream, text}); logBytes += size; }
     if (logTimer === null) { logTimer = setTimeout(flushLogs, 16); }
 }
@@ -266,6 +270,9 @@ async function initialize(options) {
     progress('loading-runtime');
     const {default: createRuntime} = await import('./fluent-bit-runtime.js');
     const persistent = options.storage.persistent;
+    if (Number.isInteger(options.lineLimit) && options.lineLimit >= 4096 && options.lineLimit <= 1048576) {
+        lineLimit = options.lineLimit;
+    }
     const path = persistent ? `/flb-${options.storage.namespace}` : '/storage';
     if (persistent) { await lockStorage(options.storage.namespace); }
     // Bootstrap one script at a time, before creating Emscripten's runtime.
@@ -298,12 +305,19 @@ async function initialize(options) {
         print: text => log('stdout', text),
         printErr: text => log('stderr', text),
         onAbort: fatal,
-        onSdkReady: (abi, engineVersion) => ready({abi, engineVersion}),
-        onSdkResult: (id, result, engineMs) => {
+        onSdkReady: (abi, engineVersion, features = '') => ready({abi, engineVersion,
+            features: String(features).split(',').filter(Boolean)}),
+        onSdkResult: (id, result, engineMs, pointer = 0, length = 0) => {
+            // The engine hands over a result buffer; copy it out of shared memory and free it.
+            let output = null;
+            if (pointer) {
+                output = runtime.HEAPU8.slice(pointer, pointer + length);
+                runtime._free(pointer);
+            }
             if (!active || active.id !== id) { fatal('Unexpected engine response'); return; }
             const request = active;
             active = null;
-            request.resolve({result, engineMs});
+            request.resolve({result, engineMs, output});
         },
         onExit: code => {
             if (active?.operation === 4 && code === 0) {
@@ -316,9 +330,20 @@ async function initialize(options) {
     });
     const info = await started;
     if (info.abi !== ABI) { throw fail('E_ABI', 'SDK and WASM ABI versions do not match'); }
+    features = info.features;
     runtime.FS.mkdirTree('/config');
     state = 'ready';
     post({type: 'ready', info: {...info, storagePath: path, persistent}});
+}
+
+function inspection(response, code, message) {
+    let value = null;
+    if (response.result === 0 && response.output) {
+        try { value = JSON.parse(new TextDecoder().decode(response.output)); }
+        catch (_) { value = null; }
+    }
+    if (!value || typeof value !== 'object') { throw fail(code, message); }
+    return value;
 }
 
 function command(id, operation, data = new Uint8Array(), name = '', grace = 5) {
@@ -369,6 +394,12 @@ async function execute(request) {
         if (checkpointRequired) { throw fail('E_STORAGE', 'Retry syncStorage() before restarting'); }
         // Failed engine initialization can also modify restored chunk files.
         checkpointRequired = runtime.flbStorage.persistent;
+        // Tracing is per start: the previous run's events never leak into this one.
+        if (features.includes('trace')) {
+            response = await command(id, 8, undefined, '', payload.trace ? 1 : 2);
+            if (response.result !== 0) { throw fail('E_TRACE', 'Unable to configure tracing'); }
+        }
+        else if (payload.trace) { throw fail('E_UNSUPPORTED', 'This runtime cannot trace records'); }
         response = await command(id, 1, payload.yaml, '', payload.grace);
         if (response.result !== 0) { throw fail('E_CONFIG', 'Engine startup failed; inspect stderr'); }
         state = 'running';
@@ -393,6 +424,22 @@ async function execute(request) {
         await drainLogs();
         return null;
     }
+    if (method === 'evaluateCondition') {
+        if (!features.includes('condition')) { throw fail('E_UNSUPPORTED', 'This runtime cannot evaluate conditions'); }
+        response = await command(id, 6, payload.data);
+        const value = inspection(response, 'E_CONDITION', 'Condition evaluation failed');
+        if (typeof value.error === 'string') { throw fail('E_CONDITION', value.error); }
+        return value;
+    }
+    if (method === 'getTopology') {
+        if (!features.includes('topology')) { throw fail('E_UNSUPPORTED', 'This runtime cannot report its topology'); }
+        if (state !== 'running') { throw fail('E_STATE', 'Engine is not running'); }
+        return inspection(await command(id, 7), 'E_TOPOLOGY', 'Topology is unavailable');
+    }
+    if (method === 'takeTrace') {
+        if (!features.includes('trace')) { throw fail('E_UNSUPPORTED', 'This runtime cannot trace records'); }
+        return inspection(await command(id, 8, undefined, '', 0), 'E_TRACE', 'Trace is unavailable');
+    }
     if (method === 'push') {
         if (state !== 'running') { throw fail('E_STATE', 'Engine is not running'); }
         response = await command(id, 3, payload.data, payload.input);
@@ -405,6 +452,16 @@ async function execute(request) {
         acceptedBytes += response.result;
         acceptedRecords += payload.count;
         return {acceptedBytes: response.result, acceptedRecords: payload.count};
+    }
+    if (method === 'pushOtlp') {
+        if (!features.includes('otlp')) { throw fail('E_UNSUPPORTED', 'This runtime does not accept OTLP metrics or traces'); }
+        if (state !== 'running') { throw fail('E_STATE', 'Engine is not running'); }
+        response = await command(id, payload.signal === 'metrics' ? 9 : 10, payload.data, payload.input);
+        if (response.result === -2) { throw fail('E_INPUT', 'Select a unique alias of a configured lib input'); }
+        if (response.result === -4) { throw fail('E_ARGUMENT', `payload is not an OTLP/JSON ${payload.signal} request`); }
+        if (response.result !== 0) { throw fail('E_INGEST', 'Input did not accept the payload'); }
+        acceptedBytes += payload.data.byteLength;
+        return {acceptedBytes: payload.data.byteLength};
     }
     if (state === 'running') { throw fail('E_STATE', 'Stop the engine before filesystem operations'); }
     if (method === 'writeFile') {

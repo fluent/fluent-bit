@@ -593,7 +593,12 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
 
     /* Create another config format context */
     if (file != NULL) {
+        new_cf->entry_file = old_config->hot_reload_config_file;
+        if (new_cf->entry_file != NULL) {
+            rewind(new_cf->entry_file);
+        }
         loaded_cf = flb_cf_create_from_file(new_cf, file);
+        new_cf->entry_file = NULL;
 
         if (!loaded_cf) {
             flb_sds_destroy(file);
@@ -676,6 +681,7 @@ int flb_reload(flb_ctx_t *ctx, struct flb_cf *cf_opts)
 
     flb_info("[reload] stop everything of the old context");
     flb_stop(ctx);
+    new_config->prior_reload_exit_status = old_config->exit_status_code;
     flb_destroy(ctx);
 
     flb_info("[reload] start everything");

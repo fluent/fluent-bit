@@ -1077,6 +1077,10 @@ static inline int flb_engine_manager(flb_pipefd_t fd, struct flb_config *config)
         config->cb_wasm_drain(config, FLB_WASM_DRAIN_BEGIN);
         return 0;
     }
+    if (val == FLB_ENGINE_EV_WASM_INGEST && config->cb_wasm_drain != NULL) {
+        config->cb_wasm_drain(config, FLB_WASM_INGEST);
+        return 0;
+    }
 #endif
 
     /* Flush all remaining data */
@@ -1695,7 +1699,6 @@ int flb_engine_start(struct flb_config *config)
                     else {
                         flb_info("[engine] service has stopped (%i pending tasks)",
                                  tasks);
-                        ret = config->exit_status_code;
                         /* This event bypasses the loop's final cleanup. */
                         flb_net_dns_lookup_context_cleanup(&dns_ctx);
                         flb_engine_shutdown(config);
@@ -1705,7 +1708,7 @@ int flb_engine_start(struct flb_config *config)
                                                      &config->event_shutdown);
                         }
 
-                        return ret;
+                        return config->exit_status_code;
                     }
                 }
             }

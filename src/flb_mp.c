@@ -48,6 +48,452 @@ int flb_mp_count(const void *data, size_t bytes)
 }
 
 /*
+ * Walk one serialized MessagePack object. Every format of the specification
+ * is handled here:
+ *
+ *   0x00 - 0x7f  positive fixint       0xcc - 0xcf  uint 8/16/32/64
+ *   0x80 - 0x8f  fixmap                0xd0 - 0xd3  int 8/16/32/64
+ *   0x90 - 0x9f  fixarray              0xd4 - 0xd8  fixext 1/2/4/8/16
+ *   0xa0 - 0xbf  fixstr                0xd9 - 0xdb  str 8/16/32
+ *   0xc0         nil                   0xdc - 0xdd  array 16/32
+ *   0xc1         (never used)          0xde - 0xdf  map 16/32
+ *   0xc2 - 0xc3  false, true           0xe0 - 0xff  negative fixint
+ *   0xc4 - 0xc6  bin 8/16/32
+ *   0xc7 - 0xc9  ext 8/16/32
+ *   0xca - 0xcb  float 32/64
+ *
+ * The objects pending on each nesting level are kept in a small array, there
+ * is no recursion. When no depth limit is requested and the array is full,
+ * the children of deeper containers are added to the last level: the number
+ * of objects left to read is all that is needed to find the end.
+ *
+ * With 'minimal' set, a value that msgpack_pack_object() would write in a
+ * different way is an error. A NaN is included because the conversion of a
+ * float 32 done by the unpacker can change its payload.
+ */
+static FLB_INLINE int mp_raw_skip(const unsigned char **cursor,
+                                  const unsigned char *end,
+                                  int max_depth, int minimal)
+{
+    int depth = 0;
+    int unlimited = FLB_FALSE;
+    unsigned char c;
+    uint32_t high;
+    uint32_t low;
+    uint64_t skip;
+    uint64_t children;
+    uint64_t pending[FLB_MP_RAW_MAX_DEPTH];
+    const unsigned char *p = *cursor;
+
+    if (max_depth <= 0) {
+        unlimited = FLB_TRUE;
+        max_depth = FLB_MP_RAW_MAX_DEPTH;
+    }
+    else if (max_depth > FLB_MP_RAW_MAX_DEPTH) {
+        max_depth = FLB_MP_RAW_MAX_DEPTH;
+    }
+
+    pending[0] = 1;
+
+    while (depth >= 0) {
+        if (pending[depth] == 0) {
+            depth--;
+            continue;
+        }
+
+        pending[depth]--;
+
+        if (p >= end) {
+            return -1;
+        }
+
+        c = *p++;
+        skip = 0;
+        children = 0;
+
+        if (c <= 0x7f || c >= 0xe0) {
+            /* positive and negative fixint */
+            continue;
+        }
+        else if (c <= 0x8f) {
+            /* fixmap */
+            children = (uint64_t) (c & 0x0f) * 2;
+        }
+        else if (c <= 0x9f) {
+            /* fixarray */
+            children = c & 0x0f;
+        }
+        else if (c <= 0xbf) {
+            /* fixstr */
+            skip = c & 0x1f;
+        }
+        else {
+            switch (c) {
+            case 0xc0: /* nil */
+            case 0xc2: /* false */
+            case 0xc3: /* true */
+                break;
+            case 0xc4: /* bin 8 */
+                if (end - p < 1) {
+                    return -1;
+                }
+
+                skip = p[0];
+                p += 1;
+                break;
+            case 0xc5: /* bin 16 */
+                if (end - p < 2) {
+                    return -1;
+                }
+
+                skip = flb_mp_raw_be16(p);
+                p += 2;
+
+                if (minimal && skip < 256) {
+                    return -1;
+                }
+
+                break;
+            case 0xc6: /* bin 32 */
+                if (end - p < 4) {
+                    return -1;
+                }
+
+                skip = flb_mp_raw_be32(p);
+                p += 4;
+
+                if (minimal && skip < 65536) {
+                    return -1;
+                }
+
+                break;
+            case 0xc7: /* ext 8: length, type, data */
+                if (end - p < 2) {
+                    return -1;
+                }
+
+                skip = p[0];
+                p += 1;
+
+                /* these lengths have a fixext format */
+                if (minimal && (skip == 1 || skip == 2 || skip == 4 ||
+                                skip == 8 || skip == 16)) {
+                    return -1;
+                }
+
+                skip++;
+                break;
+            case 0xc8: /* ext 16: length, type, data */
+                if (end - p < 3) {
+                    return -1;
+                }
+
+                skip = flb_mp_raw_be16(p);
+                p += 2;
+
+                if (minimal && skip < 256) {
+                    return -1;
+                }
+
+                skip++;
+                break;
+            case 0xc9: /* ext 32: length, type, data */
+                if (end - p < 5) {
+                    return -1;
+                }
+
+                skip = flb_mp_raw_be32(p);
+                p += 4;
+
+                if (minimal && skip < 65536) {
+                    return -1;
+                }
+
+                skip++;
+                break;
+            case 0xca: /* float 32 */
+                if (minimal) {
+                    if (end - p < 4) {
+                        return -1;
+                    }
+
+                    high = flb_mp_raw_be32(p);
+
+                    if ((high & 0x7f800000) == 0x7f800000 &&
+                        (high & 0x007fffff) != 0) {
+                        return -1;
+                    }
+                }
+
+                skip = 4;
+                break;
+            case 0xcb: /* float 64 */
+                if (minimal) {
+                    if (end - p < 8) {
+                        return -1;
+                    }
+
+                    high = flb_mp_raw_be32(p);
+                    low = flb_mp_raw_be32(p + 4);
+
+                    if ((high & 0x7ff00000) == 0x7ff00000 &&
+                        ((high & 0x000fffff) != 0 || low != 0)) {
+                        return -1;
+                    }
+                }
+
+                skip = 8;
+                break;
+            case 0xcc: /* uint 8 */
+                /* up to 127 is a positive fixint */
+                if (minimal && (end - p < 1 || p[0] < 0x80)) {
+                    return -1;
+                }
+
+                skip = 1;
+                break;
+            case 0xcd: /* uint 16 */
+                /* up to 255 is a uint 8 */
+                if (minimal && (end - p < 2 || p[0] == 0)) {
+                    return -1;
+                }
+
+                skip = 2;
+                break;
+            case 0xce: /* uint 32 */
+                /* up to 65535 is a uint 16 */
+                if (minimal && (end - p < 4 || flb_mp_raw_be16(p) == 0)) {
+                    return -1;
+                }
+
+                skip = 4;
+                break;
+            case 0xcf: /* uint 64 */
+                /* up to 4294967295 is a uint 32 */
+                if (minimal && (end - p < 8 || flb_mp_raw_be32(p) == 0)) {
+                    return -1;
+                }
+
+                skip = 8;
+                break;
+            case 0xd0: /* int 8 */
+                /* only -128 to -33: the rest is a fixint */
+                if (minimal && (end - p < 1 || p[0] < 0x80 || p[0] >= 0xe0)) {
+                    return -1;
+                }
+
+                skip = 1;
+                break;
+            case 0xd1: /* int 16 */
+                /* only -32768 to -129 */
+                if (minimal &&
+                    (end - p < 2 || (int16_t) flb_mp_raw_be16(p) >= -128)) {
+                    return -1;
+                }
+
+                skip = 2;
+                break;
+            case 0xd2: /* int 32 */
+                /* only below -32768 */
+                if (minimal &&
+                    (end - p < 4 || (int32_t) flb_mp_raw_be32(p) >= -32768)) {
+                    return -1;
+                }
+
+                skip = 4;
+                break;
+            case 0xd3: /* int 64 */
+                /* only below -2147483648 */
+                if (minimal) {
+                    if (end - p < 8) {
+                        return -1;
+                    }
+
+                    high = flb_mp_raw_be32(p);
+                    low = flb_mp_raw_be32(p + 4);
+
+                    if ((high & 0x80000000) == 0 ||
+                        (high == UINT32_MAX && low >= UINT32_C(0x80000000))) {
+                        return -1;
+                    }
+                }
+
+                skip = 8;
+                break;
+            case 0xd4: /* fixext 1: type, data */
+                skip = 2;
+                break;
+            case 0xd5: /* fixext 2 */
+                skip = 3;
+                break;
+            case 0xd6: /* fixext 4 */
+                skip = 5;
+                break;
+            case 0xd7: /* fixext 8 */
+                skip = 9;
+                break;
+            case 0xd8: /* fixext 16 */
+                skip = 17;
+                break;
+            case 0xd9: /* str 8 */
+                if (end - p < 1) {
+                    return -1;
+                }
+
+                skip = p[0];
+                p += 1;
+
+                if (minimal && skip < 32) {
+                    return -1;
+                }
+
+                break;
+            case 0xda: /* str 16 */
+                if (end - p < 2) {
+                    return -1;
+                }
+
+                skip = flb_mp_raw_be16(p);
+                p += 2;
+
+                if (minimal && skip < 256) {
+                    return -1;
+                }
+
+                break;
+            case 0xdb: /* str 32 */
+                if (end - p < 4) {
+                    return -1;
+                }
+
+                skip = flb_mp_raw_be32(p);
+                p += 4;
+
+                if (minimal && skip < 65536) {
+                    return -1;
+                }
+
+                break;
+            case 0xdc: /* array 16 */
+                if (end - p < 2) {
+                    return -1;
+                }
+
+                children = flb_mp_raw_be16(p);
+                p += 2;
+
+                if (minimal && children < 16) {
+                    return -1;
+                }
+
+                break;
+            case 0xdd: /* array 32 */
+                if (end - p < 4) {
+                    return -1;
+                }
+
+                children = flb_mp_raw_be32(p);
+                p += 4;
+
+                if (minimal && children < 65536) {
+                    return -1;
+                }
+
+                break;
+            case 0xde: /* map 16 */
+                if (end - p < 2) {
+                    return -1;
+                }
+
+                children = flb_mp_raw_be16(p);
+                p += 2;
+
+                if (minimal && children < 16) {
+                    return -1;
+                }
+
+                children *= 2;
+                break;
+            case 0xdf: /* map 32 */
+                if (end - p < 4) {
+                    return -1;
+                }
+
+                children = flb_mp_raw_be32(p);
+                p += 4;
+
+                if (minimal && children < 65536) {
+                    return -1;
+                }
+
+                children *= 2;
+                break;
+            default:
+                /* 0xc1 is never used */
+                return -1;
+            }
+        }
+
+        if (skip > 0) {
+            if ((uint64_t) (end - p) < skip) {
+                return -1;
+            }
+
+            p += skip;
+        }
+        else if (children > 0) {
+            if (depth + 1 < max_depth) {
+                depth++;
+                pending[depth] = children;
+            }
+            else if (unlimited) {
+                /*
+                 * Every pending object needs at least one byte, the check
+                 * also keeps the counter from overflowing.
+                 */
+                if ((uint64_t) (end - p) < children ||
+                    (uint64_t) (end - p) - children < pending[depth]) {
+                    return -1;
+                }
+
+                pending[depth] += children;
+            }
+            else {
+                return -1;
+            }
+        }
+    }
+
+    *cursor = p;
+
+    return 0;
+}
+
+int flb_mp_raw_skip(const unsigned char **cursor, const unsigned char *end,
+                    int max_depth)
+{
+    return mp_raw_skip(cursor, end, max_depth, FLB_FALSE);
+}
+
+int flb_mp_raw_skip_minimal(const unsigned char **cursor,
+                            const unsigned char *end, int max_depth)
+{
+    return mp_raw_skip(cursor, end, max_depth, FLB_TRUE);
+}
+
+size_t flb_mp_raw_object_size(const char *buf, size_t size, int max_depth)
+{
+    const unsigned char *p = (const unsigned char *) buf;
+
+    if (buf == NULL || size == 0 ||
+        mp_raw_skip(&p, p + size, max_depth, FLB_FALSE) != 0) {
+        return 0;
+    }
+
+    return (size_t) (p - (const unsigned char *) buf);
+}
+
+/*
  * Validate a MessagePack value with a read-only traversal: no msgpack object
  * tree or zone is constructed. Unusual or deeper inputs are rejected so the
  * counting API can fall back to the event decoder.
@@ -112,7 +558,84 @@ static int scan_log_value(mpack_reader_t *reader, mpack_tag_t tag, int depth)
     return 0;
 }
 
+/*
+ * Scan a buffer where every event uses the layout generated by the log event
+ * encoder:
+ *
+ *    [[EventTime, {metadata}], {body}]
+ *
+ * The serialized bytes are walked directly, which is several times faster
+ * than reading every element as a tag. Returns -1 as soon as something else
+ * is found: the caller runs the generic scan, which remains authoritative for
+ * any other layout and for invalid data.
+ */
+static int scan_log_events_raw(const void *data, size_t bytes,
+                               int *records, int *group_markers)
+{
+    int i;
+    int count = 0;
+    int markers = 0;
+    uint32_t sec;
+    uint32_t nsec;
+    const unsigned char *p = data;
+    const unsigned char *end = p + bytes;
+
+    while (p < end) {
+        if (end - p < 12 ||
+            p[0] != 0x92 || p[1] != 0x92 || p[2] != 0xd7 || p[3] != 0x00) {
+            return -1;
+        }
+
+        sec = flb_mp_raw_be32(p + 4);
+        nsec = flb_mp_raw_be32(p + 8);
+        p += 12;
+
+        /* metadata and body */
+        for (i = 0; i < 2; i++) {
+            if (p >= end ||
+                ((p[0] & 0xf0) != 0x80 && p[0] != 0xde && p[0] != 0xdf) ||
+                mp_raw_skip(&p, end, 64, FLB_FALSE) != 0) {
+                return -1;
+            }
+        }
+
+        /* group markers are not counted as records */
+        if (sec >= UINT32_MAX - 1) {
+            if (nsec != 0 || markers == INT_MAX) {
+                return -1;
+            }
+
+            markers++;
+            continue;
+        }
+
+        if (nsec >= 1000000000 || count == INT_MAX) {
+            return -1;
+        }
+
+        count++;
+    }
+
+    *records = count;
+
+    if (group_markers) {
+        *group_markers = markers;
+    }
+
+    return 0;
+}
+
 int flb_mp_scan_log_records(const void *data, size_t bytes, int *records)
+{
+    return flb_mp_scan_log_events(data, bytes, records, NULL);
+}
+
+/*
+ * Count the log records of a buffer and, optionally, its group markers. A
+ * buffer with no group markers has no groups to normalize.
+ */
+int flb_mp_scan_log_events(const void *data, size_t bytes,
+                           int *records, int *group_markers)
 {
     mpack_reader_t reader;
     mpack_tag_t tag;
@@ -121,6 +644,7 @@ int flb_mp_scan_log_records(const void *data, size_t bytes, int *records)
     char extension[8];
     int header;
     int count = 0;
+    int markers = 0;
     int ret = -1;
 
     /* mpack asserts on a NULL buffer even when it is empty */
@@ -129,6 +653,14 @@ int flb_mp_scan_log_records(const void *data, size_t bytes, int *records)
             return -1;
         }
         *records = 0;
+        if (group_markers) {
+            *group_markers = 0;
+        }
+
+        return 0;
+    }
+
+    if (scan_log_events_raw(data, bytes, records, group_markers) == 0) {
         return 0;
     }
 
@@ -200,6 +732,11 @@ int flb_mp_scan_log_records(const void *data, size_t bytes, int *records)
         /* group markers are not counted as records */
         if (time.tm.tv_sec == FLB_LOG_EVENT_GROUP_START ||
             time.tm.tv_sec == FLB_LOG_EVENT_GROUP_END) {
+            if (markers == INT_MAX) {
+                goto done;
+            }
+
+            markers++;
             continue;
         }
         else if (flb_time_is_valid_eventtime(&time) == FLB_TRUE && count < INT_MAX) {
@@ -211,6 +748,9 @@ int flb_mp_scan_log_records(const void *data, size_t bytes, int *records)
     }
 
     *records = count;
+    if (group_markers) {
+        *group_markers = markers;
+    }
     ret = 0;
 
 done:

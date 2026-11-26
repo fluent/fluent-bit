@@ -1804,6 +1804,7 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                     uint8_t *append_ptr;
                     size_t available_space;
                     size_t decomp_len;
+                    size_t previous_input_length;
                     size_t total_decompressed;
                     int decomp_ret;
                     size_t required_size;
@@ -1854,18 +1855,18 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                     }
 
                     do {
+                        previous_input_length = conn->d_ctx->input_buffer_length;
                         decomp_len = ctx->buffer_chunk_size;
                         decomp_ret = flb_decompress(conn->d_ctx, decomp_buf, &decomp_len);
 
-                        if (decomp_ret == FLB_DECOMPRESSOR_FAILURE) {
-                            if (decomp_len > 0) {
-                                flb_plg_error(ctx->ins, "decompression failed, data may be corrupt");
-                                flb_free(decoded_payload);
-                                flb_free(decomp_buf);
+                        if (decomp_ret != FLB_DECOMPRESSOR_SUCCESS ||
+                            (decomp_len == 0 &&
+                             conn->d_ctx->input_buffer_length == previous_input_length)) {
+                            flb_plg_error(ctx->ins, "invalid compressed payload");
+                            flb_free(decoded_payload);
+                            flb_free(decomp_buf);
 
-                                goto cleanup_decompress;
-                            }
-                            break;
+                            goto cleanup_decompress;
                         }
 
                         if (decomp_len > 0) {
@@ -1894,9 +1895,18 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                                    decomp_buf,
                                    decomp_len);
                         }
-                    } while (decomp_len > 0);
+                    } while (conn->d_ctx->input_buffer_length > 0);
 
                     flb_free(decomp_buf);
+
+                    /* Only append gzip records once the last member's footer has been verified. */
+                    if (conn->compression_type == FLB_COMPRESSION_ALGORITHM_GZIP &&
+                        conn->d_ctx->state != FLB_DECOMPRESSOR_STATE_EXPECTING_HEADER) {
+                        flb_plg_error(ctx->ins, "incomplete compressed payload");
+                        flb_free(decoded_payload);
+
+                        goto cleanup_decompress;
+                    }
 
                     if (total_decompressed > 0) {
                         if (append_log(ins,

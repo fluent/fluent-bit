@@ -64,6 +64,7 @@ def reset_s3_server_state():
     data_storage["credential_requests"] = 0
     data_storage["auth_failures"] = set()
     data_storage["state_lock"] = threading.Lock()
+    data_storage["response_override"] = None
 
 
 class _S3RequestHandler(BaseHTTPRequestHandler):
@@ -84,6 +85,22 @@ class _S3RequestHandler(BaseHTTPRequestHandler):
         data_storage["requests"].append(request)
         return request
 
+    def _finish_request(self, request, status, body, headers=()):
+        override = data_storage["response_override"]
+        if override is not None:
+            response = override(request)
+            if response is not None:
+                status, body, headers = response
+        request["finished"] = time.monotonic()
+        self.send_response(status)
+        for name, value in headers:
+            self.send_header(name, value)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if body:
+            self.wfile.write(body)
+        request["status"] = status
+
     def do_PUT(self):
         request = self._record_request()
         status = data_storage["put_status"]
@@ -99,14 +116,10 @@ class _S3RequestHandler(BaseHTTPRequestHandler):
         body = b""
         if status == 403:
             body = b"<Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>"
-        request["finished"] = time.monotonic()
-        self.send_response(status)
-        self.send_header("ETag", '"fake-s3-etag"')
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        if body:
-            self.wfile.write(body)
-        request["status"] = status
+        self._finish_request(request, status, body, [("ETag", '"fake-s3-etag"')])
+
+    def do_DELETE(self):
+        self._finish_request(self._record_request(), 204, b"")
 
     def do_POST(self):
         request = self._record_request()
@@ -117,13 +130,7 @@ class _S3RequestHandler(BaseHTTPRequestHandler):
             body = ("<InitiateMultipartUploadResult><UploadId>"
                     f"{request['upload_id']}"
                     "</UploadId></InitiateMultipartUploadResult>").encode()
-        request["finished"] = time.monotonic()
-        self.send_response(200)
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        if body:
-            self.wfile.write(body)
-        request["status"] = 200
+        self._finish_request(request, 200, body)
 
     def do_GET(self):
         if self.path == "/credentials":

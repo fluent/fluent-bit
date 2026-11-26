@@ -1334,6 +1334,38 @@ def test_in_forward_packed_forward_gzip():
     assert records[0]["message"] == "gzip-packed-forward"
 
 
+@pytest.mark.parametrize("footer", ["missing", "invalid_crc"])
+def test_in_forward_packed_forward_gzip_rejects_invalid_member(footer):
+    service = Service("in_forward.yaml")
+    service.start()
+
+    try:
+        first = gzip.compress(_pack_obj([TEST_TS, {"message": "first member"}]))
+        second = gzip.compress(_pack_obj([TEST_TS, {"message": "second member"}]))
+        if footer == "missing":
+            second = second[:-8]
+        else:
+            second = second[:-8] + bytes([second[-8] ^ 1]) + second[-7:]
+        payload = _pack_obj([TEST_TAG, first + second, {"compressed": "gzip", "chunk": "bad"}])
+
+        with socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=5) as sock:
+            sock.sendall(payload)
+            assert sock.recv(4096) == b""
+
+        packed = _pack_obj([TEST_TS, {"message": "accepted"}])
+        payload = _pack_obj([TEST_TAG, gzip.compress(b"") + gzip.compress(packed),
+                             {"compressed": "gzip", "chunk": "good"}])
+        with socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=5) as sock:
+            sock.sendall(payload)
+            assert _recv_msgpack_value(sock) == {"ack": "good"}
+
+        records = service.wait_for_record_count(1)
+    finally:
+        service.stop()
+
+    assert [record["message"] for record in records] == ["accepted"]
+
+
 def test_in_forward_packed_forward_uncompressed_with_ack():
     service = Service("in_forward.yaml")
     service.start()

@@ -111,7 +111,8 @@ if(NOT FLB_WASM_BROWSER)
   list(APPEND src flb_http_common.c flb_http_client_http1.c
     flb_http_client_http2.c flb_http_client.c)
 else()
-  list(APPEND src flb_http_common.c flb_http_client.c wasm/http.c wasm/http_client.c)
+  list(APPEND src flb_http_common.c flb_http_client.c wasm/http.c wasm/http_client.c
+    wasm/inspect.c)
 endif()
 
 set(src
@@ -151,6 +152,7 @@ if(FLB_SYSTEM_WINDOWS)
   set(src
     ${src}
     flb_dlfcn_win32.c
+    flb_file_win32.c
     )
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W2")
 endif()
@@ -162,6 +164,7 @@ if(FLB_PARSER)
     flb_parser_regex.c
     flb_parser_json.c
     flb_parser_decoder.c
+    flb_parser_cri.c
     flb_parser_ltsv.c
     flb_parser_logfmt.c
     )
@@ -304,6 +307,7 @@ check_symbol_exists(accept4 "sys/socket.h" HAVE_ACCEPT4)
 if(FLB_SYSTEM_WINDOWS)
   set(FLB_DEPS
     "ws2_32.lib"
+    "ntdll.lib"
     "crypt32.lib"
     "Bcrypt.lib"
     "Shlwapi.lib"

@@ -1,0 +1,19 @@
+defaults:
+  level: &level info
+pipeline:
+  inputs:
+    - {name: dummy, tag: before}
+includes:
+  - list_first.yaml
+  - *next_file
+  - &level list_third.yaml
+  - optional/*.yaml
+defaults: *saved
+service:
+  <<:
+    - *saved
+    - *middle
+  log_level: *level
+pipeline:
+  inputs:
+    - {name: dummy, tag: after}

@@ -100,7 +100,8 @@ class FluentBit {
                 this.#detachAbort = () => options.signal.removeEventListener('abort', abort);
                 if (options.signal.aborted) { abort(); return; }
             }
-            this.#worker.postMessage({abi: ABI, type: 'init', options: {storage: options.storage}});
+            this.#worker.postMessage({abi: ABI, type: 'init', options: {storage: options.storage,
+                lineLimit: options.outputLineLimit}});
         }
         catch (cause) { this.#fatal(error('E_WORKER', `Unable to create SDK worker: ${cause.message}`)); }
     }
@@ -167,7 +168,8 @@ class FluentBit {
             if (!Array.isArray(message.entries) || message.entries.length > 256 ||
                 !Number.isSafeInteger(message.dropped) || message.dropped < 0 ||
                 message.entries.some(entry => !entry || !['stdout', 'stderr'].includes(entry.stream) ||
-                    typeof entry.text !== 'string' || entry.text.length > 4120)) {
+                    typeof entry.text !== 'string' ||
+                    entry.text.length > this.#options.outputLineLimit + 24)) {
                 this.#fatal(error('E_PROTOCOL', 'Invalid SDK log batch'));
                 return;
             }
@@ -187,7 +189,10 @@ class FluentBit {
             }
             clearTimeout(this.#loadTimer);
             this.#detachAbort();
-            this.#info = Object.freeze({...message.info, sdkVersion: SDK_VERSION});
+            const features = Array.isArray(message.info.features) ?
+                message.info.features.filter(name => typeof name === 'string') : [];
+            this.#info = Object.freeze({...message.info, features: Object.freeze(features),
+                sdkVersion: SDK_VERSION});
             this.#setState('ready');
             this.#resolveReady();
         }
@@ -262,11 +267,16 @@ class FluentBit {
         }
         const yaml = bytes(options.yaml, 65536, 'yaml');
         const grace = integer(options.graceSeconds ?? 5, 0, 30, 'graceSeconds');
+        if (options.trace !== undefined && typeof options.trace !== 'boolean') {
+            throw error('E_ARGUMENT', 'trace must be boolean');
+        }
+        const trace = options.trace === true;
+        this.#feature(trace ? 'trace' : null);
         return this.#enqueue(async () => {
             if (!['ready', 'stopped'].includes(this.#state)) { throw error('E_STATE', 'Stop before starting again'); }
             this.#setState('starting');
             try {
-                const result = await this.#send('start', {yaml, grace});
+                const result = await this.#send('start', {yaml, grace, trace});
                 if (['failed', 'destroyed'].includes(this.#state)) {
                     throw error('E_STATE', 'SDK instance is unavailable');
                 }
@@ -294,6 +304,80 @@ class FluentBit {
             if (this.#state !== 'running') { throw error('E_STATE', 'Engine is not running'); }
             return this.#send('drain');
         });
+    }
+
+    #feature(name) {
+        if (name && !this.#info.features.includes(name)) {
+            throw error('E_UNSUPPORTED', `This runtime does not support ${name} inspection`);
+        }
+    }
+    async evaluateCondition(options) {
+        object(options, 'evaluateCondition options');
+        object(options.condition, 'condition');
+        if (!Array.isArray(options.records) || options.records.length > 1000) {
+            throw error('E_ARGUMENT', 'records must contain at most 1000 JSON objects');
+        }
+        if (options.metadata !== undefined && (!Array.isArray(options.metadata) ||
+            options.metadata.length !== options.records.length)) {
+            throw error('E_ARGUMENT', 'metadata must have one entry per record');
+        }
+        this.#feature('condition');
+        let json;
+        try {
+            options.records.forEach(record => object(record, 'record'));
+            json = JSON.stringify({condition: options.condition, records: options.records,
+                                   metadata: options.metadata});
+        }
+        catch (cause) {
+            throw error('E_ARGUMENT', 'Condition and records must be JSON-serializable objects');
+        }
+        const data = bytes(json, MAX_PAYLOAD, 'condition request');
+        const count = options.records.length;
+        return this.#enqueue(async () => {
+            const value = await this.#send('evaluateCondition', {data});
+            if (!Array.isArray(value?.matched) || value.matched.length !== count) {
+                throw error('E_PROTOCOL', 'Invalid condition result');
+            }
+            return Object.freeze({matched: Object.freeze(value.matched.map(Boolean))});
+        }, data.byteLength);
+    }
+    getTopology() {
+        return this.#enqueue(() => {
+            this.#feature('topology');
+            if (this.#state !== 'running') { throw error('E_STATE', 'Engine is not running'); }
+            return this.#send('getTopology');
+        });
+    }
+    takeTrace() {
+        return this.#enqueue(async () => {
+            this.#feature('trace');
+            const value = await this.#send('takeTrace');
+            if (!Array.isArray(value?.events)) { throw error('E_PROTOCOL', 'Invalid trace result'); }
+            return {events: value.events, dropped: Number(value.dropped) || 0};
+        });
+    }
+
+    async pushOtlp(options) {
+        object(options, 'pushOtlp options');
+        if (typeof options.input !== 'string' || !/^[A-Za-z0-9_.-]{1,128}$/.test(options.input)) {
+            throw error('E_ARGUMENT', 'input must be a lib input alias');
+        }
+        if (options.signal !== 'metrics' && options.signal !== 'traces') {
+            throw error('E_ARGUMENT', 'signal must be metrics or traces');
+        }
+        if (!this.#info.features.includes('otlp')) {
+            throw error('E_UNSUPPORTED', 'This runtime does not accept OTLP metrics or traces');
+        }
+        // Text is passed as written, so 64-bit values keep every digit.
+        let json = options.payload;
+        if (typeof json !== 'string') {
+            object(json, 'payload');
+            try { json = JSON.stringify(json); }
+            catch (cause) { throw error('E_ARGUMENT', 'payload must be JSON-serializable'); }
+        }
+        const data = bytes(json, MAX_PAYLOAD, 'payload');
+        const {input, signal} = options;
+        return this.#enqueue(() => this.#send('pushOtlp', {input, signal, data}), data.byteLength);
     }
 
     async push(options) {
@@ -420,7 +504,8 @@ export async function createFluentBit(options = {}) {
         storage: {persistent: storage.persistent === true, namespace: storage.namespace},
         initTimeoutMs: integer(options.initTimeoutMs ?? 45000, 100, 120000, 'initTimeoutMs'),
         operationTimeoutMs: integer(options.operationTimeoutMs ?? 45000, 100, 120000, 'operationTimeoutMs'),
-        destroyTimeoutMs: integer(options.destroyTimeoutMs ?? 15000, 100, 60000, 'destroyTimeoutMs')
+        destroyTimeoutMs: integer(options.destroyTimeoutMs ?? 15000, 100, 60000, 'destroyTimeoutMs'),
+        outputLineLimit: integer(options.outputLineLimit ?? 4096, 4096, 1048576, 'outputLineLimit')
     }, workerUrl);
     return instance.ready();
 }

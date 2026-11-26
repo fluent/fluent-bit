@@ -1,0 +1,40 @@
+service:
+  flush: 0.5
+  log_level: info
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: dummy
+      alias: routed
+      tag: rate_gate.routed
+      dummy: '{"message":"fanout during cooldown"}'
+      rate: 4
+      rate_gate: true
+      rate_gate.max_records: 9
+      rate_window: 1s
+
+    - name: dummy
+      alias: independent
+      tag: rate_gate.independent
+      dummy: '{"message":"independent input"}'
+      rate: 4
+      rate_gate: true
+      rate_gate.max_records: 9
+      rate_window: 1s
+
+  outputs:
+    - name: stdout
+      match: 'rate_gate.*'
+
+    - name: http
+      match: rate_gate.routed
+      host: 127.0.0.1
+      port: ${TEST_SUITE_HTTP_PORT}
+      uri: /data
+      format: json
+      json_date_key: false
+      workers: 2
+      throttle: true
+      retry_limit: no_retries

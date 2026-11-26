@@ -1,6 +1,7 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 #include <fluent-bit.h>
 #include <fluent-bit/flb_hash.h>
+#include <fluent-bit/aws/flb_aws_compress.h>
 #include <fluent-bit/flb_time.h>
 #include <cfl/cfl_atomic.h>
 #include "../../plugins/out_s3/s3.h"
@@ -2302,7 +2303,7 @@ void flb_test_s3_empty_upload_queue_file_deleted(void)
     flb_free(store_dir);
 }
 
-void flb_test_s3_near_full_buffer_append_succeeds(void)
+static void check_near_full_buffer(int uploader)
 {
     int ret;
     int in_ffd;
@@ -2340,29 +2341,36 @@ void flb_test_s3_near_full_buffer_append_succeeds(void)
     flb_output_set(ctx, out_ffd, "store_dir", store_dir, NULL);
     flb_output_set(ctx, out_ffd, "store_dir_limit_size", "100", NULL);
 
+    flb_output_set(ctx, out_ffd, "throttle", uploader ? "true" : "false", NULL);
     ret = flb_start(ctx);
     TEST_CHECK(ret == 0);
 
     s3_ctx = get_s3_context(ctx);
     TEST_CHECK(s3_ctx != NULL);
+    pthread_mutex_lock(&s3_ctx->files_mutex);
     ret = s3_store_buffer_put(s3_ctx, NULL, "test", 4, payload,
-                              sizeof(payload), time(NULL));
+                              sizeof(payload) - 1, time(NULL));
     TEST_CHECK_(ret == 0,
                 "Expected a committed near-full append to return success, got %d",
                 ret);
-    TEST_CHECK(cfl_atomic_load(&s3_ctx->current_buffer_size) == sizeof(payload));
-
     s3_file = s3_store_file_get(s3_ctx, "test", 4);
     TEST_CHECK(s3_file != NULL);
+    TEST_CHECK(cio_chunk_down(s3_file->fsf->chunk) == CIO_OK);
+    ret = s3_store_buffer_put(s3_ctx, s3_file, "test", 4, payload, 1, time(NULL));
+    TEST_CHECK(ret == 0);
+    TEST_CHECK(cio_chunk_is_up(s3_file->fsf->chunk) == CIO_FALSE);
     TEST_CHECK(s3_store_file_size_get(s3_file) == sizeof(payload));
 
     ret = s3_store_buffer_put(s3_ctx, s3_file, "test", 4, excess_payload,
                               sizeof(excess_payload), time(NULL));
-    TEST_CHECK_(ret == -1,
+    TEST_CHECK_(ret == (uploader ? S3_STORE_BUFFER_FULL : -1),
                 "Expected an over-limit append to fail, got %d",
                 ret);
     TEST_CHECK(cfl_atomic_load(&s3_ctx->current_buffer_size) == sizeof(payload));
     TEST_CHECK(s3_store_file_size_get(s3_file) == sizeof(payload));
+
+    TEST_CHECK(s3_file->sealed == uploader);
+    pthread_mutex_unlock(&s3_ctx->files_mutex);
 
     flb_stop(ctx);
     flb_destroy(ctx);
@@ -2370,6 +2378,16 @@ void flb_test_s3_near_full_buffer_append_succeeds(void)
     flb_s3_test_env_unset("FLB_S3_PLUGIN_UNDER_TEST");
     flb_s3_test_env_unset("TEST_PutObject_CALL_COUNT");
     flb_free(store_dir);
+}
+
+void flb_test_s3_near_full_buffer_append_succeeds(void)
+{
+    check_near_full_buffer(FLB_FALSE);
+}
+
+static void flb_test_s3_uploader_seals_full_buffer(void)
+{
+    check_near_full_buffer(FLB_TRUE);
 }
 
 void flb_test_s3_startup_index_order_after_failure(void)
@@ -2764,10 +2782,11 @@ static struct flb_http_client *s3_test_concurrent_request(struct flb_aws_client 
 
 static void *s3_test_request_worker(void *data)
 {
+    int deferred;
     struct flb_s3 *ctx = data;
 
     pthread_mutex_lock(&ctx->files_mutex);
-    s3_request(ctx, FLB_HTTP_PUT, "/test", NULL, 0, NULL, 0);
+    s3_request(ctx, FLB_HTTP_PUT, "/test", NULL, 0, NULL, 0, &deferred);
     pthread_mutex_unlock(&ctx->files_mutex);
     return NULL;
 }
@@ -2819,8 +2838,210 @@ static void flb_test_s3_credentials_serialized(void)
     pthread_mutex_destroy(&credentials_test.mutex);
 }
 
+static struct flb_http_client *check_last_part_request(struct flb_s3 *ctx, int method,
+                                                       const char *uri, const char *body, size_t size,
+                                                       struct flb_aws_header *headers, size_t count,
+                                                       int *deferred)
+{
+    TEST_CHECK(strstr(body, "<Part><ETag>last-part</ETag><PartNumber>10000</PartNumber></Part>") != NULL);
+    return mock_s3_call("TEST_COMPLETE_MULTIPART_UPLOAD_ERROR", "CompleteMultipartUpload");
+}
+
+static void flb_test_s3_restore_last_multipart_part(void)
+{
+    flb_ctx_t *ctx;
+    struct flb_s3 *s3;
+    struct multipart_upload *upload;
+    struct flb_fstore_file *manifest;
+    flb_sds_t key;
+    flb_sds_t part;
+    char *dir;
+    int out;
+
+    dir = create_test_store_directory("/flb-s3-manifest-XXXXXX");
+    TEST_ASSERT(dir != NULL);
+    flb_s3_test_env_set("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    ctx = flb_create();
+    flb_input(ctx, "lib", NULL);
+    out = flb_output(ctx, "s3", NULL);
+    flb_output_set(ctx, out, "match", "*", "region", "us-west-2", "bucket", "fluent",
+                   "throttle", "true", "store_dir", dir, NULL);
+    TEST_ASSERT(flb_start(ctx) == 0);
+    s3 = get_s3_context(ctx);
+    pthread_mutex_lock(&s3->files_mutex);
+    key = flb_sds_create("/test-key\ntest-id");
+    part = flb_sds_create("part_number=10000\tetag=last-part\n");
+    TEST_ASSERT(s3_store_file_upload_put(s3, NULL, key, part, NULL) == 0);
+    manifest = s3_store_file_upload_get(s3, key, flb_sds_len(key));
+    TEST_ASSERT(manifest != NULL);
+    TEST_CHECK(cio_chunk_down(manifest->chunk) == CIO_OK);
+    TEST_CHECK(s3_store_file_upload_put(s3, manifest, key, part, NULL) == 0);
+    TEST_CHECK(cio_chunk_is_up(manifest->chunk) == CIO_FALSE);
+
+    TEST_ASSERT(sqlite3_exec(s3->uploader_db, "ALTER TABLE retry RENAME TO unavailable",
+                             NULL, NULL, NULL) == SQLITE_OK);
+    TEST_CHECK(multipart_read_uploads_from_fs(s3) < 0);
+    TEST_CHECK(mk_list_size(&s3->uploads) == 0);
+    TEST_ASSERT(sqlite3_exec(s3->uploader_db, "ALTER TABLE unavailable RENAME TO retry",
+                             NULL, NULL, NULL) == SQLITE_OK);
+    TEST_CHECK(s3_uploader_storage_recover(s3) == 0);
+    TEST_ASSERT(multipart_read_uploads_from_fs(s3) == 0);
+    upload = mk_list_entry_first(&s3->uploads, struct multipart_upload, _head);
+    TEST_CHECK(upload->part_number == S3_MAX_PARTS + 1);
+    TEST_CHECK(strcmp(upload->etags[S3_MAX_PARTS - 1], "last-part") == 0);
+    upload->request = check_last_part_request;
+    flb_s3_test_env_unset("FLB_S3_PLUGIN_UNDER_TEST");
+    TEST_CHECK(complete_multipart_upload(s3, upload, NULL) == 0);
+    flb_s3_test_env_set("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    mk_list_del(&upload->_head);
+    multipart_upload_destroy(upload);
+    flb_sds_destroy(part);
+    part = flb_sds_create("part_number=2\tetag=\n");
+    TEST_ASSERT(s3_store_file_upload_put(s3, NULL, key, part, NULL) == 0);
+    TEST_CHECK(multipart_read_uploads_from_fs(s3) < 0);
+    TEST_CHECK(mk_list_size(&s3->uploads) == 0);
+    flb_sds_destroy(part);
+    flb_sds_destroy(key);
+    pthread_mutex_unlock(&s3->files_mutex);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+    flb_s3_test_env_unset("FLB_S3_PLUGIN_UNDER_TEST");
+    flb_free(dir);
+}
+
+static void flb_test_s3_retry_accepted_part_checkpoint(void)
+{
+    flb_ctx_t *ctx;
+    struct flb_s3 *s3;
+    struct multipart_upload *upload;
+    struct flb_fstore_file *manifest;
+    char held_dir[PATH_MAX];
+    flb_sds_t key;
+    flb_sds_t part;
+    char *dir;
+    int calls;
+    int out;
+
+    dir = create_test_store_directory("/flb-s3-part-checkpoint-XXXXXX");
+    TEST_ASSERT(dir != NULL);
+    flb_s3_test_env_set("FLB_S3_PLUGIN_UNDER_TEST", "true", 1);
+    ctx = flb_create();
+    flb_input(ctx, "lib", NULL);
+    out = flb_output(ctx, "s3", NULL);
+    flb_output_set(ctx, out, "match", "*", "region", "us-west-2", "bucket", "fluent",
+                   "throttle", "true", "retry_limit", "0", "store_dir", dir, NULL);
+    TEST_ASSERT(flb_start(ctx) == 0);
+    s3 = get_s3_context(ctx);
+    pthread_mutex_lock(&s3->files_mutex);
+    key = flb_sds_create("/test-key\ntest-id");
+    part = flb_sds_create("part_number=1\tetag=first-part\n");
+    TEST_ASSERT(s3_store_file_upload_put(s3, NULL, key, part, NULL) == 0);
+    TEST_ASSERT(multipart_read_uploads_from_fs(s3) == 0);
+    upload = mk_list_entry_first(&s3->uploads, struct multipart_upload, _head);
+    manifest = s3_store_file_upload_get(s3, key, flb_sds_len(key));
+    TEST_ASSERT(manifest != NULL);
+    if (cio_chunk_is_up(manifest->chunk)) {
+        TEST_ASSERT(cio_chunk_down(manifest->chunk) == CIO_OK);
+    }
+    snprintf(held_dir, sizeof(held_dir), "%s.held", s3->stream_upload->path);
+    TEST_ASSERT(rename(s3->stream_upload->path, held_dir) == 0);
+    calls = get_s3_call_count("UploadPart");
+    TEST_CHECK(upload_part(s3, upload, "body", 4, NULL) == S3_UPLOAD_DEFERRED);
+    TEST_CHECK(s3_uploader_storage_recover(s3) < 0);
+    TEST_CHECK(upload->part_number == 2);
+    TEST_CHECK(upload->etags[1] == NULL);
+    TEST_ASSERT(rename(held_dir, s3->stream_upload->path) == 0);
+    TEST_CHECK(s3_uploader_storage_recover(s3) == 0);
+    TEST_CHECK(upload->part_number == 3);
+    TEST_CHECK(upload->etags[1] != NULL);
+    TEST_CHECK(upload->bytes == 4);
+    TEST_CHECK(get_s3_call_count("UploadPart") == calls + 1);
+    mk_list_del(&upload->_head);
+    multipart_upload_destroy(upload);
+    TEST_ASSERT(multipart_read_uploads_from_fs(s3) == 0);
+    upload = mk_list_entry_first(&s3->uploads, struct multipart_upload, _head);
+    TEST_CHECK(upload->part_number == 3);
+    TEST_CHECK(upload->etags[1] != NULL);
+    flb_sds_destroy(part);
+    flb_sds_destroy(key);
+    pthread_mutex_unlock(&s3->files_mutex);
+    flb_stop(ctx);
+    flb_destroy(ctx);
+    flb_s3_test_env_unset("FLB_S3_PLUGIN_UNDER_TEST");
+    flb_free(dir);
+}
+
+static void flb_test_s3_uploader_spool_format_limit(void)
+{
+    struct flb_s3 ctx = {0};
+
+    ctx.compression = FLB_AWS_COMPRESS_GZIP;
+    ctx.upload_chunk_size = 4294000000ULL;
+    TEST_CHECK(!s3_uploader_should_seal(&ctx, 4293000000ULL, UINT32_MAX - 4293000000ULL));
+    TEST_CHECK(s3_uploader_should_seal(&ctx, 4293000000ULL, UINT32_MAX - 4293000000ULL + 1));
+    TEST_CHECK(s3_uploader_should_seal(&ctx, 4293000000ULL, 3000000));
+    TEST_CHECK(s3_uploader_should_seal(&ctx, ctx.upload_chunk_size, 1));
+}
+
+static void flb_test_s3_uploader_restored_deadline(void)
+{
+    struct flb_s3 ctx = {0};
+    struct flb_output_instance ins = {0};
+    struct s3_retry_state state = {0};
+    char *dir;
+    uint64_t before;
+    int ret;
+
+    dir = create_test_store_directory("/flb-s3-gate-XXXXXX");
+    TEST_CHECK(dir != NULL);
+    if (dir == NULL) {
+        return;
+    }
+    ctx.buffer_dir = dir;
+    ctx.ins = &ins;
+    ins.throttle.enabled = FLB_TRUE;
+    ins.throttle.base_ms = 100;
+    ins.throttle.cap_ms = 1000;
+    mk_list_init(&ctx.pending_checkpoints);
+    ret = s3_uploader_init(&ctx);
+    TEST_CHECK(ret == 0);
+    if (ret == 0) {
+        state.until_ms = INT64_MAX;
+        TEST_CHECK(s3_uploader_state_write(&ctx, "gate", "", &state) == 0);
+        s3_uploader_destroy(&ctx);
+        before = s3_uploader_wall_ms();
+        ret = s3_uploader_init(&ctx);
+        TEST_CHECK(ret == 0);
+        if (ret == 0) {
+            TEST_CHECK(ctx.uploader_gate.until_ms - ctx.uploader_gate.started_ms == 1000);
+            TEST_CHECK(s3_uploader_state_read(&ctx, "gate", "", &state) == 0);
+            TEST_CHECK(state.until_ms >= before + 1000);
+            TEST_CHECK(state.until_ms <= s3_uploader_wall_ms() + 1000);
+            state.until_ms = INT64_MAX;
+            state.failures = 2;
+            TEST_CHECK(s3_uploader_state_write(&ctx, "complete", "old", &state) == 0);
+            TEST_CHECK(s3_uploader_state_write(&ctx, "chunk", "old", &state) == 0);
+            before = flb_output_throttle_now_ms();
+            TEST_CHECK(s3_uploader_state_read(&ctx, "complete", "old", &state) == 0);
+            TEST_CHECK(state.retry_at >= before + 4000);
+            TEST_CHECK(state.retry_at <= flb_output_throttle_now_ms() + 4000);
+            state.retry_at = 0;
+            TEST_CHECK(s3_uploader_state_read(&ctx, "chunk", "old", &state) == 0);
+            TEST_CHECK(state.retry_at >= before + 4000);
+            TEST_CHECK(state.retry_at <= flb_output_throttle_now_ms() + 4000);
+        }
+    }
+    s3_uploader_destroy(&ctx);
+    flb_free(dir);
+}
+
 /* Test list */
 TEST_LIST = {
+    {"uploader_spool_format_limit", flb_test_s3_uploader_spool_format_limit},
+    {"retry_accepted_part_checkpoint", flb_test_s3_retry_accepted_part_checkpoint},
+    {"restore_last_multipart_part", flb_test_s3_restore_last_multipart_part},
+    {"uploader_seals_full_buffer", flb_test_s3_uploader_seals_full_buffer},
+    {"uploader_restored_deadline", flb_test_s3_uploader_restored_deadline},
     {"hostname_verification_propagates", flb_test_s3_hostname_verification_propagates },
     {"index_per_tag_requires_index", flb_test_s3_index_per_tag_requires_index },
     {"credentials_serialized", flb_test_s3_credentials_serialized },

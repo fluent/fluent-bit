@@ -1527,7 +1527,6 @@ static int process_blob_chunk(struct flb_azure_blob *ctx, struct flb_event_chunk
         if (path_prefix) {
             flb_sds_destroy(path_prefix);
         }
-        cfl_sds_destroy(file_path);
         cfl_sds_destroy(source);
 
         /* generate the parts by using the newest id created (ret) */
@@ -1536,11 +1535,14 @@ static int process_blob_chunk(struct flb_azure_blob *ctx, struct flb_event_chunk
         if (ret == -1) {
             flb_plg_error(ctx->ins, "cannot register blob file '%s 'parts into database",
                             file_path);
+            cfl_sds_destroy(file_path);
+            flb_log_event_decoder_destroy(&log_decoder);
             return -1;
         }
 
         flb_plg_debug(ctx->ins, "blob file '%s' (id=%zu) registered with %zu parts",
                       file_path, file_id, ret);
+        cfl_sds_destroy(file_path);
     }
 
     flb_log_event_decoder_destroy(&log_decoder);
@@ -1804,7 +1806,12 @@ static void cb_azb_blob_file_upload(struct flb_config *config, void *out_context
     }
 
     /* read the file content */
-    ret = flb_utils_read_file_offset(file_path, offset_start, offset_end, &out_buf, &out_size);
+    if (ctx->follow_symlinks) {
+        ret = flb_utils_read_file_offset(file_path, offset_start, offset_end, &out_buf, &out_size);
+    }
+    else {
+        ret = flb_utils_read_file_offset_safe(file_path, offset_start, offset_end, &out_buf, &out_size);
+    }
     if (ret == -1) {
         flb_plg_error(ctx->ins, "cannot read file part %s", file_path);
 
@@ -2490,6 +2497,12 @@ static int cb_worker_exit(void *data, struct flb_config *config)
 
 /* Configuration properties map */
 static struct flb_config_map config_map[] = {
+    {
+     FLB_CONFIG_MAP_BOOL, "follow_symlinks", "true",
+     0, FLB_TRUE, offsetof(struct flb_azure_blob, follow_symlinks),
+     "Follow symbolic links when accessing files. Set false to reject symbolic links "
+     "and Windows reparse points in file paths."
+    },
     {
      FLB_CONFIG_MAP_STR, "account_name", NULL,
      0, FLB_TRUE, offsetof(struct flb_azure_blob, account_name),

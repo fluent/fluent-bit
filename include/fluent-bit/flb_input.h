@@ -466,6 +466,7 @@ struct flb_input_instance {
     struct cmt_gauge   *cmt_rate_gate_limited; /* metric: input rate gate */
     struct cmt_gauge   *cmt_rate_gate_busy_chunks;
     struct cmt_gauge   *cmt_rate_gate_retry_attempts;
+    struct cmt_gauge   *cmt_rate_gate_deferred_routes;
 
     /*
      * Input rate accounting state
@@ -485,7 +486,9 @@ struct flb_input_instance {
     size_t   rate_gate_max_bytes;
     size_t   rate_gate_max_records;
     size_t   rate_gate_busy_chunks;
+    size_t   rate_gate_busy_deferred_chunks;
     size_t   rate_gate_retry_attempts;
+    size_t   rate_gate_deferred_routes;
     struct flb_sched_timer *rate_gate_timer; /* one-shot recovery wakeup */
 #endif
 

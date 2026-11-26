@@ -418,7 +418,12 @@ struct flb_tls *flb_tls_create(int mode,
     tls->mode = mode;
     tls->verify_hostname = FLB_FALSE;
     tls->system_certificates_loaded = FLB_FALSE;
-#if defined(FLB_SYSTEM_WINDOWS) || defined(FLB_SYSTEM_MACOS)
+#if defined(FLB_SYSTEM_WINDOWS)
+    if (ca_path == NULL && ca_file == NULL &&
+        (mode == FLB_TLS_CLIENT_MODE || mode == FLB_TLS_CLIENT_MODE_DGRAM)) {
+        tls->system_certificates_loaded = FLB_TRUE;
+    }
+#elif defined(FLB_SYSTEM_MACOS)
     if (ca_path == NULL && ca_file == NULL && mode == FLB_TLS_CLIENT_MODE) {
         tls->system_certificates_loaded = FLB_TRUE;
     }
@@ -1099,7 +1104,12 @@ int flb_tls_session_create(struct flb_tls *tls,
     int                     flag;
     int                     restore_blocking;
 
-    flb_tls_reload_if_needed(tls);
+    result = flb_tls_reload_if_needed(tls);
+#ifdef FLB_SYSTEM_WINDOWS
+    if (result < 0 && tls->system_certificates_loaded && !tls->ca_file && !tls->ca_path) {
+        return -1;
+    }
+#endif
 
     session = flb_calloc(1, sizeof(struct flb_tls_session));
 

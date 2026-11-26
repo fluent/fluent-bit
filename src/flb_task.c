@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_input_chunk.h>
 #include <fluent-bit/flb_output.h>
+#include <fluent-bit/wasm/flb_wasm_inspect.h>
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_task.h>
 #include <fluent-bit/flb_mem.h>
@@ -748,6 +749,10 @@ struct flb_task *flb_task_create(uint64_t ref_id,
                                         evc->total_events, evc->size);
                         mk_list_add(&route->_head, &task->routes);
                         direct_count++;
+                        FLB_WASM_TRACE(flb_wasm_trace_output(
+                                           stored_matches[stored_match_index], i_ins,
+                                           evc->tag, flb_sds_len(evc->tag),
+                                           evc->total_events));
                     }
 
                     flb_free(stored_matches);
@@ -850,9 +855,15 @@ struct flb_task *flb_task_create(uint64_t ref_id,
                             evc->total_events, evc->size);
             mk_list_add(&route->_head, &task->routes);
             direct_count++;
+            FLB_WASM_TRACE(flb_wasm_trace_output(o_ins, i_ins, evc->tag,
+                                                 flb_sds_len(evc->tag),
+                                                 evc->total_events));
         }
 
         if (direct_count == 0) {
+            FLB_WASM_TRACE(flb_wasm_trace_undelivered(i_ins, evc->tag,
+                                                      flb_sds_len(evc->tag),
+                                                      evc->total_events));
             flb_debug("[task] dropping direct task=%p id=%i without matching routes",
                       task, task->id);
             if (router_context_initialized) {
@@ -896,11 +907,17 @@ struct flb_task *flb_task_create(uint64_t ref_id,
                             evc->total_events, evc->size);
             mk_list_add(&route->_head, &task->routes);
             count++;
+            FLB_WASM_TRACE(flb_wasm_trace_output(o_ins, i_ins, evc->tag,
+                                                 flb_sds_len(evc->tag),
+                                                 evc->total_events));
         }
     }
 
     /* no destinations ?, useless task. */
     if (count == 0) {
+        FLB_WASM_TRACE(flb_wasm_trace_undelivered(i_ins, evc->tag,
+                                                  flb_sds_len(evc->tag),
+                                                  evc->total_events));
 #ifdef FLB_HAVE_METRICS
         record_unmatched_route_drop_metrics(i_ins, task_ic, size);
 #endif

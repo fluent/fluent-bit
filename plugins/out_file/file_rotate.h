@@ -34,7 +34,7 @@ struct file_rotate_entry;
  */
 struct file_rotate_ctx *file_rotate_create(struct flb_output_instance *ins,
                                            int enabled, size_t max_size,
-                                           int max_files, int gzip);
+                                           int max_files, int gzip, int follow_symlinks);
 
 void file_rotate_destroy(struct file_rotate_ctx *rot);
 

@@ -1,0 +1,4 @@
+service:
+  <<:
+    - flush: 1
+    - invalid

@@ -40,6 +40,7 @@ struct mqtt_conn {
     int  buf_len;                    /* Buffer content length             */
     size_t  buf_size;                /* Buffer size                       */
     unsigned char *buf;              /* Buffer data                       */
+    uint8_t *qos2_pending;           /* QoS 2 ids waiting for a PUBREL    */
     struct flb_in_mqtt_config *ctx;  /* Plugin configuration context      */
     struct flb_connection *connection;
     struct mk_list _head;            /* Link to flb_in_mqtt_config->conns */

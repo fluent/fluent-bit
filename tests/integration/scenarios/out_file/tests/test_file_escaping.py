@@ -40,12 +40,13 @@ def file_output(tmp_path, record, format_name, options=None, forward_message=Non
         while time.monotonic() < deadline:
             if forward_message is not None:
                 try:
-                    with socket.create_connection(('127.0.0.1', port), timeout=0.1) as connection:
-                        connection.sendall(forward_message)
-                    forward_message = None
-                except ConnectionRefusedError:
+                    connection = socket.create_connection(('127.0.0.1', port), timeout=0.1)
+                except (ConnectionRefusedError, TimeoutError):
                     time.sleep(0.05)
                     continue
+                with connection:
+                    connection.sendall(forward_message)
+                forward_message = None
             if target.exists() and target.stat().st_size:
                 return target.read_bytes().decode('utf-8')
             if manager.process.poll() is not None:

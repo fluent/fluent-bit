@@ -114,6 +114,7 @@ struct mqtt_conn *mqtt_conn_add(struct flb_connection *connection,
     }
 
     conn->buf_size = ctx->buffer_size;
+    conn->qos2_pending = NULL;
 
     conn->connection = connection;
 
@@ -145,6 +146,10 @@ static void mqtt_conn_release(struct mqtt_conn *conn)
 
     if (conn->buf != NULL) {
         flb_free(conn->buf);
+    }
+
+    if (conn->qos2_pending != NULL) {
+        flb_free(conn->qos2_pending);
     }
 
     flb_free(conn);

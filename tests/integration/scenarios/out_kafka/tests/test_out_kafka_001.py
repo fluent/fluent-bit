@@ -2,10 +2,12 @@ import json
 import os
 import struct
 import time
+from collections import Counter
 from copy import deepcopy
 
 import requests
 import pytest
+import yaml
 from google.protobuf import json_format
 from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import ExportLogsServiceRequest
 from opentelemetry.proto.collector.metrics.v1.metrics_service_pb2 import ExportMetricsServiceRequest
@@ -691,6 +693,56 @@ def test_out_kafka_dynamic_topic_routes_to_record_topic():
     payload = json.loads(message["value"].decode("utf-8"))
     assert payload["message"] == "hello dynamic topic"
     assert payload["topic_name"] == "topic-dynamic"
+
+
+@pytest.mark.parametrize("dynamic", [True, False])
+def test_out_kafka_dynamic_topic_workers(tmp_path, dynamic):
+    template = os.path.join(os.path.dirname(__file__), "../config/out_kafka_dynamic_topic.yaml")
+    with open(template, encoding="utf-8") as config_file:
+        config = yaml.safe_load(config_file)
+
+    # Separate tags produce separate chunks that compete for the same topics.
+    names = ["test", "test-default", "topic-other", "x" * 249,
+             "", "invalid,topic", "x" * 250, "invalid\0topic"]
+    valid = set(names[:4])
+    config["pipeline"]["inputs"] = [
+        {
+            "name": "dummy",
+            "tag": f"kafka.workers.{index}",
+            "dummy": json.dumps({"topic_name": name, "source_id": index}),
+            "samples": 3,
+        }
+        for index, name in enumerate(names * 8)
+    ]
+    output = config["pipeline"]["outputs"][0]
+    output.update({"match": "kafka.workers.*", "workers": 4,
+                   "topics": "test-default", "dynamic_topic": dynamic})
+    config_path = tmp_path / "dynamic-workers.yaml"
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+    service = Service(str(config_path))
+    service.start()
+    try:
+        messages = service.wait_for_messages(192, timeout=60)
+    finally:
+        service.stop()
+
+    assert len(messages) == 192
+    counts = Counter()
+    for message in messages:
+        payload = json.loads(message["value"].decode("utf-8"))
+        name = payload["topic_name"]
+        expected = name if dynamic and name in valid else "test-default"
+        assert message["topic"] == expected
+        counts[payload["source_id"]] += 1
+    assert counts == Counter({index: 3 for index in range(64)})
+
+    with open(service.flb.log_file, encoding="utf-8") as log_file:
+        registrations = Counter(
+            line.split("new topic added: ", 1)[1].strip()
+            for line in log_file if "new topic added: " in line
+        )
+    expected = Counter({name: 1 for name in valid - {"test-default"}}) if dynamic else Counter()
+    assert registrations == expected
 
 
 def test_out_kafka_msgpack_format_sends_msgpack_payload():

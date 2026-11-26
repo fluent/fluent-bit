@@ -21,6 +21,7 @@
 #define FLB_CONFIG_H
 
 #include <time.h>
+#include <stdio.h>
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_pipe.h>
@@ -229,6 +230,7 @@ struct flb_config {
 
     /* Exit status code */
     int exit_status_code;
+    int prior_reload_exit_status;
 
     /* Workers: threads spawn using flb_worker_create() */
     struct mk_list workers;
@@ -351,6 +353,7 @@ struct flb_config {
     int fips_mode_active;
 
     int enable_hot_reload;
+    FILE *hot_reload_config_file;
     int ensure_thread_safety_on_hot_reloading;
     unsigned int hot_reloaded_count;
     int shutdown_by_hot_reloading;

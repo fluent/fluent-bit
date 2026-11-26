@@ -219,7 +219,11 @@ adjust_ptr(uint8 **p_ptr, intptr_t offset)
      */
     uintptr_t offset_val = 0;
 #if UINTPTR_MAX == UINT64_MAX
+#ifdef BH_PLATFORM_WINDOWS
+    offset_val = llabs(offset);
+#else
     offset_val = labs(offset);
+#endif
 #else
     offset_val = abs(offset);
 #endif

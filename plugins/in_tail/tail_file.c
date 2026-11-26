@@ -30,6 +30,7 @@
 #endif
 
 #include <fluent-bit/flb_compat.h>
+#include <fluent-bit/flb_file.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_parser.h>
@@ -63,9 +64,15 @@ static inline int tail_file_open(struct flb_tail_config *ctx, const char *path,
                                  int flags)
 {
     if (ctx->windows_path_encoding == FLB_TAIL_WINDOWS_PATH_ENCODING_UTF8) {
+        if (!ctx->follow_symlinks) {
+            return flb_file_open_safe_utf8(path, flags);
+        }
         return win32_open_utf8(path, flags);
     }
 
+    if (!ctx->follow_symlinks) {
+        return flb_file_open_safe(NULL, path, flags, 0, 0);
+    }
     return open(path, flags);
 }
 
@@ -92,9 +99,10 @@ static inline int tail_file_lstat(struct flb_tail_config *ctx, const char *path,
 static inline int tail_file_open(struct flb_tail_config *ctx, const char *path,
                                  int flags)
 {
-    (void) ctx;
-
-    return open(path, flags);
+    if (ctx->follow_symlinks) {
+        return open(path, flags);
+    }
+    return flb_file_open_safe(NULL, path, flags, 0, 0);
 }
 
 static inline int tail_file_stat(struct flb_tail_config *ctx, const char *path,
@@ -1446,6 +1454,12 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
         return -1;
     }
 
+    /* Use the opened inode, not metadata collected before the open. */
+    if (fstat(fd, st) != 0 || !S_ISREG(st->st_mode) ||
+        flb_tail_file_exists(st, ctx) == FLB_TRUE) {
+        goto err_close_fd;
+    }
+
     file = flb_calloc(1, sizeof(struct flb_tail_file));
     if (!file) {
         flb_errno();
@@ -2364,7 +2378,10 @@ char *flb_tail_file_name(struct flb_tail_file *file)
     }
 
     s = readlink(tmp, buf, PATH_MAX);
-    if (s == -1) {
+    if (s < 0 || s >= PATH_MAX) {
+        if (s >= PATH_MAX) {
+            errno = ENAMETOOLONG;
+        }
         flb_free(buf);
         flb_errno();
         return NULL;

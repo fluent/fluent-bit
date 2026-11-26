@@ -236,7 +236,12 @@ static int tail_scan_path(const char *path, struct flb_tail_config *ctx)
     /* For every entry found, generate an output list */
     now = time(NULL);
     for (i = 0; i < globbuf.gl_pathc; i++) {
-        ret = stat(globbuf.gl_pathv[i], &st);
+        if (ctx->follow_symlinks) {
+            ret = stat(globbuf.gl_pathv[i], &st);
+        }
+        else {
+            ret = lstat(globbuf.gl_pathv[i], &st);
+        }
         if (ret == 0 && S_ISREG(st.st_mode)) {
             /* Check if this file is blacklisted */
             if (tail_is_excluded(globbuf.gl_pathv[i], ctx) == FLB_TRUE) {

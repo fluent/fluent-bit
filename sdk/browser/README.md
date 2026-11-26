@@ -91,6 +91,71 @@ Configure `FLB_WASM_PTHREAD_POOL_SIZE` (3–16, default 3) at build time if a wo
 needs additional pthreads. CMake sets both the runtime pool and worker limit.
 One or two threads cannot host the current SDK's three concurrent C threads.
 
+## Inspecting routing decisions
+
+Three calls report what the engine decides. They never change routing, and each
+is listed in `info.features` (`condition`, `topology`, `trace`) so a caller can
+detect a runtime that lacks them.
+
+```js
+// Which sample log records a route condition takes. Needs no running pipeline.
+const {matched} = await fluent.evaluateCondition({
+  condition: {op: 'or', rules: [{field: '$level', op: 'eq', value: 'error'}]},
+  records: [{level: 'error'}, {level: 'info'}]
+});                                        // [true, false]
+
+await fluent.start({yaml, trace: true});
+// Connections made for this configuration: each route output with the instance
+// it resolved to, whether its fallback was used and why it was skipped
+// (`not_found`, `signal_not_supported`, `already_connected`), plus the outputs
+// and filters whose match selects each input's configured tag.
+const topology = await fluent.getTopology();
+
+await fluent.push({input: 'application', records});
+await fluent.drain();
+// Decisions since the last call: the route each record followed (`route`,
+// `unrouted`), each filter call with record counts in and out, and each chunk
+// an output received (`output`) or that had no destination (`undelivered`).
+const {events, dropped} = await fluent.takeTrace();
+```
+
+A condition the engine rejects fails with `E_CONDITION` and the engine's reason.
+`evaluateCondition` takes log records only; `metadata`, when given, is one entry
+per record. Route events name a record by its position among the log records of
+the appended chunk (`append`, `record`), group markers left out; filter and
+output events are per chunk, identified by the chunk tag, because filters
+rewrite chunks and records carry no identity. Routes with a condition are split
+into chunks tagged with the route name. A route without a condition is not
+split: its outputs receive the input's own chunk with every record, so an input
+that has one reports no record as `unrouted`. The trace
+holds at most 20,000 events or 512 KiB between calls and counts the rest in
+`dropped`. Tracing is off unless `start` asks for it, and the engine checks one
+flag per decision while it is off.
+
+## Metrics and traces
+
+`pushOtlp()` gives a `lib` input one OTLP/JSON export request, as an OTLP
+exporter would send it over HTTP. It is listed in `info.features` as `otlp`.
+
+```js
+await fluent.start({yaml});     // a lib input with `processors.metrics` or `.traces`
+await fluent.pushOtlp({input: 'application', signal: 'metrics',
+                       payload: '{"resourceMetrics":[...]}'});
+await fluent.pushOtlp({input: 'application', signal: 'traces',
+                       payload: {resourceSpans: [...]}});
+await fluent.drain();           // stdout with `format: otlp_json` prints the result
+```
+
+`otlp_json` prints each export request as a single line; create the instance with
+`outputLineLimit` when a result can be longer than 4096 characters.
+
+The engine decodes the request with the decoder of the `opentelemetry` input and
+appends it under the input's tag; the input's processors have run when the
+promise resolves. A string is passed as written, so 64-bit integers written as
+JSON strings or numbers keep every digit; an object is serialized with
+`JSON.stringify`. A request the engine cannot decode, or one without any metric,
+fails with `E_ARGUMENT` and nothing is appended. Logs keep using `push()`.
+
 ## Lifecycle and delivery contract
 
 - Creation resolves when the command worker and C runtime are ready. `start()`
@@ -102,7 +167,7 @@ One or two threads cannot host the current SDK's three concurrent C threads.
 - `push()` copies its batch and resolves with bytes/records accepted by the input
   pipe, not records processed or delivered. Timestamps are assigned at submission.
   JSON number precision and JSON serialization semantics apply; BigInt/cycles are
-  rejected. This is a logs API, not an arbitrary MessagePack/OTLP ingestion API.
+  rejected. This is a logs API; `pushOtlp()` takes metrics and traces.
 - A partial input write makes the instance unusable: it cannot be replayed safely.
   Queue-full errors mean the command was not sent and may be retried after draining.
 - `drain()` immediately collects pending `lib` pipe data, flushes chunks through
@@ -149,7 +214,9 @@ The API bounds YAML to 64 KiB; batches to 1000 records/1 MiB; pending operations
 to 16/8 MiB. Files are limited to 1 MiB each, 32 files/8 MiB total beneath
 `/config/`. Log delivery has bounded batches and an acknowledgment window;
 individual lines are truncated at 4096 characters and overload is reported as
-`E_LOG_DROPPED`. Configure Fluent Bit chunk/retry/memory limits too: SDK admission
+`E_LOG_DROPPED`. `createFluentBit({outputLineLimit})` raises the line length to at
+most 1 MiB characters, with a window of two such lines, for outputs that print
+one document per line such as `stdout` with `format: otlp_json`. Configure Fluent Bit chunk/retry/memory limits too: SDK admission
 limits alone do not bound downstream backlog. WASM growth is capped at 1 GiB;
 worker and JS heap allocations are additional, not included in that cap.
 The SDK defaults to three pthread workers (command, engine, logging) and rejects dedicated threaded

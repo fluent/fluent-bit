@@ -96,7 +96,7 @@ void flb_test_filter_parser_extract_fields()
     ctx = flb_create();
 
     /* Configure service */
-    flb_service_set(ctx, "Flush", FLUSH_INTERVAL, "Grace" "1", "Log_Level", "debug", NULL);
+    flb_service_set(ctx, "Flush", FLUSH_INTERVAL, "Grace", "1", "Log_Level", "debug", NULL);
 
     /* Input */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -183,7 +183,7 @@ void flb_test_filter_parser_record_accessor()
     ctx = flb_create();
 
     /* Configure service */
-    flb_service_set(ctx, "Flush", FLUSH_INTERVAL, "Grace" "1", "Log_Level", "debug", NULL);
+    flb_service_set(ctx, "Flush", FLUSH_INTERVAL, "Grace", "1", "Log_Level", "debug", NULL);
 
     /* Input */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -589,6 +589,9 @@ void test_parser_timestamp_timezone(char *tz,
     int bytes;
     char *output, *original_tz = NULL;
     char *saved_tz = NULL;
+#ifdef _WIN32
+    long saved_dstbias = _dstbias;
+#endif
     char p[256];
     char expected[256];
     flb_ctx_t *ctx;
@@ -624,6 +627,12 @@ void test_parser_timestamp_timezone(char *tz,
         ret = setenv("TZ", tz, 1);
         TEST_CHECK(ret == 0);
         tzset(); /* Make sure timezone changes take effect */
+#ifdef _WIN32
+        /* UCRT retains the host's DST bias when TZ is set. Both test zones
+         * advance clocks by one hour during daylight saving time.
+         */
+        _dstbias = -3600;
+#endif
     }
 
     ctx = flb_create();
@@ -711,6 +720,9 @@ void test_parser_timestamp_timezone(char *tz,
         unsetenv("TZ");
     }
     tzset();
+#ifdef _WIN32
+    _dstbias = saved_dstbias;
+#endif
 }
 
 void flb_test_filter_parser_use_system_timezone()
@@ -723,19 +735,18 @@ void flb_test_filter_parser_use_system_timezone()
     } test_cases[] = {
         /* Confirm that daylight savings time is properly detected. */
         {"EST5EDT", "2023-02-14 12:00:00", "1676394000"}, /* Should be ST */
-#ifdef _WIN32
-        /* MSVCRT applies the standard offset to TZ strings and IANA names. */
-        {"EST5EDT", "2023-10-17 05:00:00", "1697536800"},
-
-        /* Examples from https://github.com/fluent/fluent-bit/issues/9197. */
-        {"Europe/London", "2024-01-20 10:00:00", "1705744800"},
-        {"Europe/London", "2024-08-20 11:00:00", "1724151600"},
-#else
         {"EST5EDT", "2023-10-17 05:00:00", "1697533200"}, /* Should be DST */
 
         /* Examples from https://github.com/fluent/fluent-bit/issues/9197. */
+#ifdef _WIN32
+        /* UCRT accepts abbreviation/offset TZ strings and uses US DST rules.
+         * These dates are well inside winter and summer in both countries.
+         */
+        {"GMT0BST", "2024-01-20 10:00:00", "1705744800"}, /* Should be ST */
+        {"GMT0BST", "2024-08-20 11:00:00", "1724148000"}, /* Should be DST */
+#else
         {"Europe/London", "2024-01-20 10:00:00", "1705744800"}, /* Should be ST */
-        {"Europe/London", "2024-08-20 11:00:00", "1724148000"},
+        {"Europe/London", "2024-08-20 11:00:00", "1724148000"}, /* Should be DST */
 #endif
 
         {NULL, NULL, NULL}
@@ -945,7 +956,7 @@ void flb_test_filter_parser_first_matched_when_mutilple_parser()
     ctx = flb_create();
 
     /* Configure service */
-    flb_service_set(ctx, "Flush", FLUSH_INTERVAL, "Grace" "1", "Log_Level", "debug", NULL);
+    flb_service_set(ctx, "Flush", FLUSH_INTERVAL, "Grace", "1", "Log_Level", "debug", NULL);
 
     /* Input */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);
@@ -1032,7 +1043,7 @@ void flb_test_filter_parser_skip_empty_values_false()
     ctx = flb_create();
 
     /* Configure service */
-    flb_service_set(ctx, "Flush", FLUSH_INTERVAL, "Grace" "1", "Log_Level", "debug", NULL);
+    flb_service_set(ctx, "Flush", FLUSH_INTERVAL, "Grace", "1", "Log_Level", "debug", NULL);
 
     /* Input */
     in_ffd = flb_input(ctx, (char *) "lib", NULL);

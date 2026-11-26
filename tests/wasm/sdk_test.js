@@ -69,12 +69,216 @@ pipeline:
               'FTS reports the unsupported JIT option');
         console.log('Browser FTS processor passed: typed values, nested views, drop and JIT rejection');
     };
+    // Inspection reports what the engine decides: it must agree with delivery.
+    const checkInspection = async fluent => {
+        check(['condition', 'topology', 'trace'].every(name => fluent.info.features.includes(name)),
+              'Inspection features are advertised');
+        const records = [{level: 'error', service: 'web'}, {level: 'info', service: 'payments'},
+                         {level: 'error', service: 'payments'}, {level: 'info', service: 'web'}];
+        const errors = {rules: [{field: '$level', op: 'eq', value: 'error'}]};
+        const either = {op: 'or', rules: [...errors.rules,
+                                          {field: '$service', op: 'regex', value: '^pay'}]};
+        check(JSON.stringify((await fluent.evaluateCondition({condition: errors, records})).matched) ===
+              '[true,false,true,false]', 'Condition result before any pipeline runs');
+        check(JSON.stringify((await fluent.evaluateCondition({condition: either, records})).matched) ===
+              '[true,true,true,false]', 'Rules combined with or');
+        try {
+            await fluent.evaluateCondition({condition: {rules: [{field: '$level', op: 'eq'}]}, records});
+            throw new Error('Expected E_CONDITION');
+        }
+        catch (error) {
+            check(error.code === 'E_CONDITION' && error.message.includes("'value'"),
+                  `Rejected condition carries the engine reason: ${error.code}: ${error.message}`);
+        }
+        await rejected(() => fluent.getTopology(), 'E_STATE');
+        const routedYaml = `service:
+  flush: 60
+  log_level: error
+pipeline:
+  inputs:
+    - name: lib
+      alias: app
+      tag: app
+      routes:
+        logs:
+          - name: errors
+            condition:
+              rules:
+                - field: $level
+                  op: eq
+                  value: error
+            to:
+              outputs:
+                - alerts
+                - name: absent
+                  fallback: archive
+          - name: rest
+            condition:
+              default: true
+            to:
+              outputs:
+                - other
+                - alerts
+                - nowhere
+  filters:
+    - name: grep
+      match: errors
+      exclude: service payments
+  outputs:
+    - name: stdout
+      alias: alerts
+      match: nothing
+      format: json_lines
+    - name: 'null'
+      alias: archive
+      match: nothing
+    - name: 'null'
+      alias: other
+      match: nothing
+`;
+        await fluent.start({yaml: routedYaml, graceSeconds: 0, trace: true});
+        const topology = await fluent.getTopology();
+        const [errorsRoute, restRoute] = topology.inputs[0].routes;
+        check(topology.inputs[0].matchedOutputs.length === 0 &&
+              JSON.stringify(topology.inputs[0].directOutputs) === '[0,1,2]', 'Routes replace tag matching');
+        check(errorsRoute.outputs[0].status === 'connected' && errorsRoute.outputs[0].resolved === 0 &&
+              errorsRoute.outputs[1].usedFallback && errorsRoute.outputs[1].resolved === 1,
+              'Route outputs resolve by alias, then by fallback');
+        // Only the first route of an input that names an output is connected to it.
+        check(restRoute.isDefault && restRoute.outputs[0].status === 'connected' &&
+              restRoute.outputs[1].status === 'already_connected' &&
+              restRoute.outputs[2].status === 'not_found' && restRoute.outputs[2].resolved === null,
+              'Skipped route outputs carry the engine reason');
+        check(topology.filters[0].match === 'errors' && topology.filters[0].matchesInputs.length === 0,
+              'Filter matches are reported against configured tags');
+        await fluent.push({input: 'app', records});
+        await fluent.drain();
+        const {events, dropped} = await fluent.takeTrace();
+        const routed = name => events.filter(event => event.stage === 'route' && event.route === name)
+            .map(event => event.record).join();
+        check(dropped === 0 && routed('errors') === '0,2' && routed('rest') === '1,3',
+              `Each record is traced to its route: ${JSON.stringify(events)}`);
+        check(events.some(event => event.stage === 'filter' && event.tag === 'errors' &&
+              event.recordsIn === 2 && event.recordsOut === 1 && event.modified),
+              'Filters are traced on the route tag');
+        check(events.some(event => event.stage === 'output' && event.tag === 'errors' &&
+              event.output === 0 && event.records === 1) &&
+              events.some(event => event.stage === 'output' && event.tag === 'rest' &&
+              event.output === 2 && event.records === 2) &&
+              !events.some(event => event.stage === 'output' && event.tag === 'rest' && event.output === 0),
+              'Outputs are traced with what they receive');
+        check(!events.some(event => event.stage === 'unrouted'), 'Every record found a route');
+        check(logs.filter(line => {
+            try { return JSON.parse(line).level === 'error'; }
+            catch (_) { return false; }
+        }).length === 1, 'The trace agrees with what the output received');
+        check((await fluent.takeTrace()).events.length === 0, 'Taking the trace empties it');
+        await fluent.stop();
+        // Tracing is per start.
+        await fluent.start({yaml: routedYaml, graceSeconds: 0});
+        await fluent.push({input: 'app', records});
+        await fluent.drain();
+        check((await fluent.takeTrace()).events.length === 0, 'A start without trace records nothing');
+        await fluent.stop();
+        console.log('Browser SDK inspection passed: conditions, topology and record trace');
+    };
+    // Metrics and traces enter as OTLP/JSON and pass the input's processors.
+    const checkOtlp = async fluent => {
+        check(fluent.info.features.includes('otlp'), 'OTLP ingestion is advertised');
+        const metrics = JSON.stringify({resourceMetrics: [{
+            resource: {attributes: [{key: 'service.name', value: {stringValue: 'shop'}}]},
+            scopeMetrics: [{scope: {name: 'sdk'}, metrics: [
+                {name: 'requests', unit: '1', sum: {aggregationTemporality: 2, isMonotonic: true,
+                    dataPoints: [{attributes: [{key: 'route', value: {stringValue: '/'}}],
+                                  timeUnixNano: '1700000000000000000', asInt: 'EXACT'}]}},
+                {name: 'discarded', gauge: {dataPoints: [
+                    {timeUnixNano: '1700000000000000000', asDouble: 1.5}]}}]}]}]})
+            .replace('"EXACT"', '"9007199254740993"');
+        const span = (name, id) => ({traceId: '5b8efff798038103d269b633813fc60c', spanId: id,
+            name, kind: 2, startTimeUnixNano: '1700000000000000000',
+            endTimeUnixNano: '1700000000500000000',
+            attributes: [{key: 'http.route', value: {stringValue: `/${name}`}}]});
+        const traces = {resourceSpans: [{
+            resource: {attributes: [{key: 'service.name', value: {stringValue: 'shop'}}]},
+            scopeSpans: [{scope: {name: 'sdk'},
+                          spans: [span('checkout', 'eee19b7ec3c1b174'), span('health', 'eee19b7ec3c1b175')]}]}]};
+        await rejected(() => fluent.pushOtlp({input: 'app', signal: 'metrics', payload: metrics}), 'E_STATE');
+        await fluent.writeFile('/config/metrics.lua', `local fb = require("fluentbit")
+            function process(metric)
+                if metric.name == "discarded" then return fb.DROP end
+                metric.name = "shop." .. metric.name
+            end`);
+        await fluent.writeFile('/config/traces.lua', `local fb = require("fluentbit")
+            function process(span)
+                if span.name == "health" then return fb.DROP end
+                span.attributes:set("fts", "seen")
+            end`);
+        const otlpYaml = yaml.replace('      tag: app', `      tag: app
+      processors:
+        metrics:
+          - name: fts
+            script: /config/metrics.lua
+        traces:
+          - name: fts
+            script: /config/traces.lua`).replace('json_lines', 'otlp_json').replace('flush: 0.1', 'flush: 60');
+        await fluent.start({yaml: otlpYaml, graceSeconds: 0});
+        await rejected(() => fluent.pushOtlp({input: 'app', signal: 'logs', payload: {}}), 'E_ARGUMENT');
+        await rejected(() => fluent.pushOtlp({input: 'absent', signal: 'metrics', payload: metrics}), 'E_INPUT');
+        await rejected(() => fluent.pushOtlp({input: 'app', signal: 'metrics', payload: '{"resourceMetrics":'}),
+                       'E_ARGUMENT');
+        await rejected(() => fluent.pushOtlp({input: 'app', signal: 'metrics', payload: traces}), 'E_ARGUMENT');
+        await rejected(() => fluent.pushOtlp({input: 'app', signal: 'metrics',
+            payload: {resourceMetrics: [{scopeMetrics: [{metrics: []}]}]}}), 'E_ARGUMENT');
+        await rejected(() => fluent.pushOtlp({input: 'app', signal: 'traces', payload: 'null'}), 'E_ARGUMENT');
+        const from = logs.length;
+        for (const [signal, payload] of [['metrics', metrics], ['traces', JSON.stringify(traces)]]) {
+            await rejected(() => fluent.pushOtlp({input: 'app', signal, payload: ' \t\r\n'}),
+                           'E_ARGUMENT');
+            for (const suffix of [`\n${payload}`, '\n{}', '\n{"partial":', '\ntrailing', '\u0000']) {
+                await rejected(() => fluent.pushOtlp({input: 'app', signal, payload: payload + suffix}),
+                               'E_ARGUMENT');
+            }
+        }
+        const accepted = await fluent.pushOtlp({input: 'app', signal: 'metrics', payload: metrics});
+        check(accepted.acceptedBytes === new TextEncoder().encode(metrics).length, 'Metrics acceptance');
+        await fluent.pushOtlp({input: 'app', signal: 'traces', payload: ` \n${JSON.stringify(traces)}\t\r\n`});
+        await fluent.drain();
+        const printed = logs.slice(from).flatMap(line => {
+            try { return [JSON.parse(line)]; }
+            catch (_) { return []; }
+        });
+        const families = printed.flatMap(request => request.resourceMetrics || [])
+            .flatMap(resource => resource.scopeMetrics).flatMap(scope => scope.metrics);
+        check(families.length === 1 && families[0].name === 'shop.requests',
+              `The metrics processor renames and drops families: ${logs.slice(from).join('\n')}`);
+        check(logs.slice(from).some(line => line.includes('9007199254740993')),
+              'A 64-bit metric value keeps every digit');
+        const spans = printed.flatMap(request => request.resourceSpans || [])
+            .flatMap(resource => resource.scopeSpans).flatMap(scope => scope.spans);
+        check(spans.length === 1 && spans[0].name === 'checkout' &&
+              spans[0].attributes.some(item => item.key === 'fts' && item.value.stringValue === 'seen'),
+              `The traces processor edits and drops spans: ${logs.slice(from).join('\n')}`);
+        // A result longer than the default line limit arrives whole when the host asks for it.
+        const many = {resourceSpans: [{scopeSpans: [{spans: Array.from({length: 40}, (_, index) =>
+            span(`step-${index}`, (0xeee19b7ec3c1b200n + BigInt(index)).toString(16)))}]}]};
+        const lines = logs.length;
+        await fluent.pushOtlp({input: 'app', signal: 'traces', payload: many});
+        await fluent.drain();
+        const long = logs.slice(lines).find(line => line.includes('step-39'));
+        check(long && long.length > 4096 && JSON.parse(long).resourceSpans[0].scopeSpans[0].spans.length === 40,
+              'A long OTLP line is delivered whole');
+        // Logs and telemetry share the input.
+        await fluent.push({input: 'app', records: [{message: 'beside telemetry'}]});
+        await fluent.drain();
+        await fluent.stop();
+        console.log('Browser SDK OTLP ingestion passed: metrics, traces and rejected payloads');
+    };
     check(getBrowserSupport().supported, 'Browser preflight');
     const logs = [];
     const errors = [];
     const states = [];
     const progress = [];
-    const fluent = await createFluentBit({onStdout: line => logs.push(line),
+    const fluent = await createFluentBit({outputLineLimit: 65536, onStdout: line => logs.push(line),
         onStderr: line => logs.push(line), onError: error => errors.push(error.code),
         onStateChange: state => states.push(state), onProgress: update => {
             progress.push(update);
@@ -209,6 +413,8 @@ pipeline:
             catch (_) { return false; }
         }));
         await fluent.stop();
+        await checkInspection(fluent);
+        await checkOtlp(fluent);
         await checkFts(fluent);
         await fluent.start({yaml, graceSeconds: 1});
         await fluent.stop();

@@ -3,9 +3,12 @@ name: Test release configuration metadata
 on:
   pull_request:
     paths:
+      - '.github/scripts/release_image_rebuild.py'
       - '.github/scripts/release_metadata.py'
       - '.github/scripts/tests/test_release_*.py'
       - '.github/workflows/call-build-images.yaml'
+      - '.github/workflows/release-rebuild-images.yaml'
+      - '.github/workflows/release-rebuild-images-retry.yaml'
       - '.github/workflows/staging-build.yaml'
       - '.github/workflows/staging-release.yaml'
       - '.github/workflows/test-release-metadata.yaml'
@@ -13,9 +16,12 @@ on:
   push:
     branches: [master]
     paths:
+      - '.github/scripts/release_image_rebuild.py'
       - '.github/scripts/release_metadata.py'
       - '.github/scripts/tests/test_release_*.py'
       - '.github/workflows/call-build-images.yaml'
+      - '.github/workflows/release-rebuild-images.yaml'
+      - '.github/workflows/release-rebuild-images-retry.yaml'
       - '.github/workflows/staging-build.yaml'
       - '.github/workflows/staging-release.yaml'
       - '.github/workflows/test-release-metadata.yaml'
@@ -36,6 +42,8 @@ jobs:
         run: |
           go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -shellcheck='' \
             .github/workflows/call-build-images.yaml \
+            .github/workflows/release-rebuild-images.yaml \
+            .github/workflows/release-rebuild-images-retry.yaml \
             .github/workflows/staging-build.yaml \
             .github/workflows/staging-release.yaml \
             .github/workflows/test-release-metadata.yaml

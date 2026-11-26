@@ -1,0 +1,10 @@
+defaults:
+  path: &path list_alias_first.yaml
+  files: &files
+    - *path
+    - &path list_alias_second.yaml
+includes: *files
+service:
+  <<:
+    - *snapshot_first
+    - *snapshot_second

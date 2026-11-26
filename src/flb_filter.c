@@ -21,6 +21,7 @@
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_env.h>
+#include <fluent-bit/wasm/flb_wasm_inspect.h>
 #include <fluent-bit/flb_router.h>
 #include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_kv.h>
@@ -245,6 +246,8 @@ void flb_filter_do(struct flb_input_chunk *ic,
 
                 /* all records removed, no data to continue processing */
                 if (out_size == 0) {
+                    FLB_WASM_TRACE(flb_wasm_trace_filter(f_ins, i_ins, ntag, tag_len,
+                                                         in_records, 0, FLB_TRUE));
 #ifdef FLB_HAVE_CHUNK_TRACE
                     if (ic->trace) {
                         flb_chunk_trace_filter(ic->trace, (void *)f_ins, &tm_start, &tm_finish, "", 0);
@@ -270,6 +273,9 @@ void flb_filter_do(struct flb_input_chunk *ic,
                 }
                 else {
                     out_records = flb_mp_count_log_records(out_buf, out_size);
+                    FLB_WASM_TRACE(flb_wasm_trace_filter(f_ins, i_ins, ntag, tag_len,
+                                                         in_records, out_records,
+                                                         FLB_TRUE));
 
 #ifdef FLB_HAVE_METRICS
                     if (out_records > in_records) {
@@ -314,6 +320,11 @@ void flb_filter_do(struct flb_input_chunk *ic,
                     flb_chunk_trace_filter(ic->trace, (void *)f_ins, &tm_start, &tm_finish, out_buf, out_size);
                 }
 #endif /* FLB_HAVE_CHUNK_TRACE */
+            }
+            else {
+                FLB_WASM_TRACE(flb_wasm_trace_filter(f_ins, i_ins, ntag, tag_len,
+                                                     in_records, in_records,
+                                                     FLB_FALSE));
             }
         }
     }

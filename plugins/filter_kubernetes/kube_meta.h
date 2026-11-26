@@ -65,6 +65,7 @@ struct flb_kube_meta {
 #define FLB_KUBE_POD "pod"
 #define FLB_KUBE_CONFIGMAP "configmap"
 
+int flb_kube_get_http_auth_header(struct flb_kube *ctx);
 int flb_kube_meta_init(struct flb_kube *ctx, struct flb_config *config);
 int flb_kube_meta_fetch(struct flb_kube *ctx);
 int flb_kube_dummy_meta_get(char **out_buf, size_t *out_size);

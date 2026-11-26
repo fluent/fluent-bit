@@ -2141,6 +2141,7 @@ static int processor_run(struct flb_processor *proc, struct chunk_codec *codec,
     int raw_result;
     int unit_lock_held;
     int log_buffer_normalized = FLB_FALSE;
+    int group_markers = 0;
     int log_buffer_records = input_records;
     void *cur_buf = NULL;
     size_t cur_size;
@@ -2461,8 +2462,19 @@ static int processor_run(struct flb_processor *proc, struct chunk_codec *codec,
                 /* set new buffer */
                 cur_buf = tmp_buf;
                 cur_size = tmp_size;
-                out_records = flb_mp_count_log_records(tmp_buf, tmp_size);
-                log_buffer_normalized = FLB_FALSE;
+
+                /*
+                 * A buffer with no group markers has no groups to normalize,
+                 * the scan that counts the records reports them.
+                 */
+                if (flb_mp_scan_log_events(tmp_buf, tmp_size, &out_records,
+                                           &group_markers) == 0) {
+                    log_buffer_normalized = group_markers == 0;
+                }
+                else {
+                    out_records = flb_mp_count_log_records(tmp_buf, tmp_size);
+                    log_buffer_normalized = FLB_FALSE;
+                }
                 log_buffer_records = out_records;
                 unit_out_items = out_records;
 #ifdef FLB_HAVE_METRICS

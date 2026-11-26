@@ -747,6 +747,20 @@ static int flb_gzip_decompressor_process_header(
     return FLB_DECOMPRESSOR_SUCCESS;
 }
 
+static void *gzip_inflate_alloc(void *opaque, size_t items, size_t size)
+{
+    (void) opaque;
+
+    return flb_calloc(items, size);
+}
+
+static void gzip_inflate_free(void *opaque, void *ptr)
+{
+    (void) opaque;
+
+    flb_free(ptr);
+}
+
 static int flb_gzip_decompressor_process_optional_headers(
             struct flb_decompression_context *context)
 {
@@ -858,6 +872,9 @@ static int flb_gzip_decompressor_process_optional_headers(
         inner_context->gzip_header.header_flags &= (~FHCRC);
     }
 
+    /* Start each member with a zeroed inflate history window. */
+    inner_context->miniz_stream.zalloc = gzip_inflate_alloc;
+    inner_context->miniz_stream.zfree = gzip_inflate_free;
     status = mz_inflateInit2(&inner_context->miniz_stream,
                              -Z_DEFAULT_WINDOW_BITS);
 

@@ -286,6 +286,8 @@ struct flb_aws_provider *flb_endpoint_provider_create(struct flb_config *config,
                                                       flb_aws_client_generator
                                                       *generator)
 {
+    size_t tls_host_len;
+    flb_sds_t tls_host;
     struct flb_aws_provider_http *implementation = NULL;
     struct flb_aws_provider *provider = NULL;
     struct flb_upstream *upstream = NULL;
@@ -297,6 +299,8 @@ struct flb_aws_provider *flb_endpoint_provider_create(struct flb_config *config,
     provider = flb_calloc(1, sizeof(struct flb_aws_provider));
     if (!provider) {
         flb_errno();
+        flb_sds_destroy(host);
+        flb_sds_destroy(path);
         return NULL;
     }
 
@@ -305,8 +309,10 @@ struct flb_aws_provider *flb_endpoint_provider_create(struct flb_config *config,
     implementation = flb_calloc(1, sizeof(struct flb_aws_provider_http));
 
     if (!implementation) {
-        flb_free(provider);
         flb_errno();
+        flb_aws_provider_destroy(provider);
+        flb_sds_destroy(host);
+        flb_sds_destroy(path);
         return NULL;
     }
 
@@ -316,7 +322,27 @@ struct flb_aws_provider *flb_endpoint_provider_create(struct flb_config *config,
     implementation->host = host;
     implementation->path = path;
 
-    upstream = flb_upstream_create(config, host, port, io_flags, NULL);
+    if (io_flags == FLB_IO_TLS) {
+        /* Bind verification to the credential host, including through a proxy. */
+        tls_host_len = flb_sds_len(host);
+        if (tls_host_len > 0 && host[tls_host_len - 1] == '.') {
+            tls_host_len--;
+        }
+        tls_host = tls_host_len > 0 ? flb_sds_create_len(host, tls_host_len) : NULL;
+        if (tls_host != NULL) {
+            provider->cred_tls = flb_tls_create(FLB_TLS_CLIENT_MODE, FLB_TRUE, 0,
+                                               tls_host, NULL, NULL, NULL, NULL, NULL);
+            flb_sds_destroy(tls_host);
+        }
+
+        if (!provider->cred_tls) {
+            flb_error("[aws_credentials] HTTP Provider: TLS initialization error");
+            flb_aws_provider_destroy(provider);
+            return NULL;
+        }
+    }
+
+    upstream = flb_upstream_create(config, host, port, io_flags, provider->cred_tls);
 
     if (!upstream) {
         flb_aws_provider_destroy(provider);
@@ -329,8 +355,8 @@ struct flb_aws_provider *flb_endpoint_provider_create(struct flb_config *config,
 
     implementation->client = generator->create();
     if (!implementation->client) {
-        flb_aws_provider_destroy(provider);
         flb_upstream_destroy(upstream);
+        flb_aws_provider_destroy(provider);
         flb_error("[aws_credentials] HTTP Provider: client creation error");
         return NULL;
     }

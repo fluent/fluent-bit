@@ -19,6 +19,7 @@
 
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_input_blob.h>
+#include <fluent-bit/flb_file.h>
 
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -54,10 +55,19 @@ int blob_file_append(struct blob_ctx *ctx, char *path, struct stat *st)
 #endif
 
     /* try to open the file */
-    fd = open(path, O_RDONLY);
+    if (ctx->follow_symlinks) {
+        fd = open(path, O_RDONLY);
+    }
+    else {
+        fd = flb_file_open_safe(NULL, path, O_RDONLY, 0, 0);
+    }
     if (fd == -1) {
         flb_errno();
         flb_plg_error(ctx->ins, "cannot open %s", path);
+        return -1;
+    }
+    if (fstat(fd, st) != 0 || !S_ISREG(st->st_mode)) {
+        close(fd);
         return -1;
     }
     close(fd);
@@ -78,11 +88,13 @@ int blob_file_append(struct blob_ctx *ctx, char *path, struct stat *st)
 
 #ifdef FLB_HAVE_SQLDB
     /* insert the entry into the database */
-    bfile->db_id = blob_db_file_insert(ctx, path, st->st_size);
-    if (bfile->db_id < 0) {
-        cfl_sds_destroy(bfile->path);
-        flb_free(bfile);
-        return -1;
+    if (ctx->database_file) {
+        bfile->db_id = blob_db_file_insert(ctx, path, st->st_size);
+        if (bfile->db_id < 0) {
+            cfl_sds_destroy(bfile->path);
+            flb_free(bfile);
+            return -1;
+        }
     }
 #endif
 

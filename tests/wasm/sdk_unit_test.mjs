@@ -312,3 +312,121 @@ test('drain stays in FIFO order between push and stop on a warm instance', async
     assert.deepEqual(methods, ['start', 'push', 'drain', 'stop']);
     await sdk.destroy();
 });
+
+test('inspection methods are feature-detected and validated before queueing', async () => {
+    const plain = await createFluentBit(defaults);
+    assert.deepEqual(plain.info.features, []);
+    await assert.rejects(plain.evaluateCondition({condition: {default: true}, records: []}),
+                         {code: 'E_UNSUPPORTED'});
+    await assert.rejects(plain.start({yaml: 'pipeline: {}', trace: true}), {code: 'E_UNSUPPORTED'});
+    await assert.rejects(plain.getTopology(), {code: 'E_UNSUPPORTED'});
+    await assert.rejects(plain.takeTrace(), {code: 'E_UNSUPPORTED'});
+    await plain.destroy({force: true});
+
+    const requests = [];
+    let matched = [true, false];
+    reply = (worker, message) => {
+        if (message.type === 'init') {
+            worker.emit({type: 'ready', info: {abi: 1, engineVersion: 'test',
+                features: ['condition', 'topology', 'trace', 7]}});
+        }
+        if (message.type === 'request') {
+            requests.push(message);
+            const value = {evaluateCondition: {matched}, getTopology: {inputs: [], filters: [], outputs: []},
+                takeTrace: {events: [{stage: 'append'}], dropped: 2}}[message.method] ?? {engineMs: 1};
+            worker.emit({type: 'response', id: message.id, ok: true, value});
+        }
+    };
+    const sdk = await createFluentBit(defaults);
+    assert.deepEqual(sdk.info.features, ['condition', 'topology', 'trace']);
+    assert.equal(Object.isFrozen(sdk.info.features), true);
+    await assert.rejects(sdk.evaluateCondition({condition: [], records: []}), {code: 'E_ARGUMENT'});
+    await assert.rejects(sdk.evaluateCondition({condition: {}, records: [1]}), {code: 'E_ARGUMENT'});
+    await assert.rejects(sdk.evaluateCondition({condition: {}, records: [{}], metadata: []}),
+                         {code: 'E_ARGUMENT'});
+    await assert.rejects(sdk.start({yaml: 'pipeline: {}', trace: 'yes'}), {code: 'E_ARGUMENT'});
+    assert.equal(requests.length, 0);
+
+    const condition = {rules: [{field: '$level', op: 'eq', value: 'error'}]};
+    const result = await sdk.evaluateCondition({condition, records: [{level: 'error'}, {level: 'info'}]});
+    assert.deepEqual(result, {matched: [true, false]});
+    assert.equal(Object.isFrozen(result.matched), true);
+    assert.deepEqual(JSON.parse(new TextDecoder().decode(requests[0].payload.data)),
+                     {condition, records: [{level: 'error'}, {level: 'info'}]});
+    matched = [true];
+    await assert.rejects(sdk.evaluateCondition({condition, records: [{}, {}]}), {code: 'E_PROTOCOL'});
+
+    await assert.rejects(sdk.getTopology(), {code: 'E_STATE'});
+    await sdk.start({yaml: 'pipeline: {}', trace: true});
+    assert.equal(requests.at(-1).payload.trace, true);
+    assert.deepEqual(await sdk.getTopology(), {inputs: [], filters: [], outputs: []});
+    assert.deepEqual(await sdk.takeTrace(), {events: [{stage: 'append'}], dropped: 2});
+    await sdk.destroy({force: true});
+});
+
+test('OTLP payloads are feature-detected, validated and sent as written', async () => {
+    const plain = await createFluentBit(defaults);
+    await assert.rejects(plain.pushOtlp({input: 'app', signal: 'metrics', payload: {}}),
+                         {code: 'E_UNSUPPORTED'});
+    await plain.destroy({force: true});
+
+    const requests = [];
+    reply = (worker, message) => {
+        if (message.type === 'init') {
+            worker.emit({type: 'ready', info: {abi: 1, engineVersion: 'test', features: ['otlp']}});
+        }
+        if (message.type === 'request') {
+            requests.push(message);
+            worker.emit({type: 'response', id: message.id, ok: true,
+                         value: {acceptedBytes: message.payload?.data?.byteLength}});
+        }
+    };
+    const sdk = await createFluentBit(defaults);
+    const cyclic = {};
+    cyclic.self = cyclic;
+    for (const options of [null, {input: 'bad alias', signal: 'metrics', payload: {}},
+                           {input: 'app', signal: 'logs', payload: {}},
+                           {input: 'app', signal: 'metrics', payload: []},
+                           {input: 'app', signal: 'traces', payload: 7},
+                           {input: 'app', signal: 'traces', payload: cyclic}]) {
+        await assert.rejects(sdk.pushOtlp(options), {code: 'E_ARGUMENT'});
+    }
+    await assert.rejects(sdk.pushOtlp({input: 'app', signal: 'metrics',
+                                       payload: 'x'.repeat(1024 * 1024 + 1)}), {code: 'E_LIMIT'});
+    assert.equal(requests.length, 0);
+
+    // Text is not parsed here: a 64-bit value reaches the engine with every digit.
+    const text = '{"resourceMetrics":[{"asInt":18446744073709551615}]}';
+    assert.deepEqual(await sdk.pushOtlp({input: 'app', signal: 'metrics', payload: text}),
+                     {acceptedBytes: text.length});
+    await sdk.pushOtlp({input: 'app', signal: 'traces', payload: {resourceSpans: []}});
+    assert.deepEqual(requests.map(request => [request.method, request.payload.input, request.payload.signal,
+                                             new TextDecoder().decode(request.payload.data)]),
+                     [['pushOtlp', 'app', 'metrics', text], ['pushOtlp', 'app', 'traces', '{"resourceSpans":[]}']]);
+    await sdk.destroy({force: true});
+});
+
+test('the output line limit is validated, sent to the worker and bounds log batches', async () => {
+    await assert.rejects(createFluentBit({...defaults, outputLineLimit: 100}), {code: 'E_ARGUMENT'});
+    await assert.rejects(createFluentBit({...defaults, outputLineLimit: 2 * 1024 * 1024}), {code: 'E_ARGUMENT'});
+    let init;
+    const previous = reply;
+    reply = (worker, message) => {
+        if (message.type === 'init') { init = message.options; }
+        previous(worker, message);
+    };
+    const lines = [];
+    const errors = [];
+    const sdk = await createFluentBit({...defaults, outputLineLimit: 8192, onStdout: line => lines.push(line),
+                                       onError: failure => errors.push(failure.code)});
+    assert.equal(init.lineLimit, 8192);
+    instances[0].emit({type: 'logs', entries: [{stream: 'stdout', text: 'x'.repeat(8192)}], dropped: 0});
+    assert.equal(lines[0].length, 8192);
+    instances[0].emit({type: 'logs', entries: [{stream: 'stdout', text: 'x'.repeat(8192 + 25)}], dropped: 0});
+    assert.deepEqual(errors, ['E_PROTOCOL']);
+    assert.equal(sdk.state, 'failed');
+
+    const plain = await createFluentBit(defaults);
+    assert.equal(init.lineLimit, 4096);
+    await plain.destroy({force: true});
+});

@@ -48,6 +48,7 @@
 #include <fluent-bit/flb_dlfcn_win32.h>
 
 #define FLB_DIRCHAR '\\'
+#define FLB_PATH_SEPARATOR "\\"
 #define PATH_MAX MAX_PATH
 #define S_ISREG(m) (((m) & S_IFMT) == S_IFREG)
 #define S_ISLNK(m) (0)  /* Windows doesn't support S_IFLNK */
@@ -144,6 +145,7 @@ static inline int usleep(LONGLONG usec)
 #include <strings.h>
 
 #define FLB_DIRCHAR '/'
+#define FLB_PATH_SEPARATOR "/"
 #endif
 
 #ifdef FLB_HAVE_UNIX_SOCKET
