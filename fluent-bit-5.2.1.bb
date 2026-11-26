@@ -1,6 +1,6 @@
 # Fluent Bit - Yocto / Bitbake
 # ============================
-# The following Bitbake package the latest Fluent Bit stable release.
+# This recipe builds Fluent Bit from a published release tag.
 
 SUMMARY = "Fast Log processor and Forwarder"
 DESCRIPTION = "Fluent Bit is a data collector, processor and  \
@@ -16,7 +16,7 @@ LIC_FILES_CHKSUM = "file://LICENSE;md5=2ee41112a44fe7014dce33e26468ba93"
 SECTION = "net"
 
 PR = "r0"
-PV = "6.0.0"
+PV = "5.2.1"
 
 SRCREV = "v${PV}"
 SRC_URI = "git://github.com/fluent/fluent-bit.git;nobranch=1"
