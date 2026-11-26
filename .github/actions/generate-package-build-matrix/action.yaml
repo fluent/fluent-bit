@@ -60,6 +60,7 @@ runs:
         rpmmatrix=$(echo "{ \"distro\" : $rpmtargets}"|jq -c .)
         echo "RPM_MATRIX=$rpmmatrix" >> $GITHUB_ENV
       shell: bash
+      working-directory: version-check
 
     - name: 1.9 targets
       if: steps.determine-build-type.outputs.BUILD_TYPE == 'legacy'

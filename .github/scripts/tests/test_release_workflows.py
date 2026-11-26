@@ -1,4 +1,5 @@
 """Guard required release metadata dependencies and explicit file transfers."""
+import json
 import os
 import subprocess
 import tempfile
@@ -127,6 +128,26 @@ class WorkflowTests(unittest.TestCase):
                         else:
                             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                             self.assertEqual(output.read_text(), f"name={expected}\n")
+
+    def test_package_matrix_uses_the_requested_checkout(self):
+        action_path = ROOT / ".github/actions/generate-package-build-matrix/action.yaml"
+        steps = yaml.safe_load(action_path.read_text())["runs"]["steps"]
+        checkout = next(step for step in steps if "actions/checkout@" in step.get("uses", ""))
+        matrix = next(step for step in steps if step["name"] == "2.0+ targets")
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            for root, target in ((workspace, "centos/9"),
+                                 (workspace / checkout["with"]["path"], "opensuse/16.1")):
+                config = root / "packaging/build-config.json"
+                config.parent.mkdir(parents=True)
+                config.write_text(json.dumps({"linux_targets": [{"target": target, "type": "rpm"}]}))
+            output = workspace / "github-env"
+            subprocess.run(["bash", "-e", "-o", "pipefail", "-c", matrix["run"]],
+                           cwd=workspace / matrix.get("working-directory", "."),
+                           env={**os.environ, "GITHUB_ENV": str(output)}, check=True)
+            variables = dict(line.split("=", 1) for line in output.read_text().splitlines())
+            self.assertEqual(json.loads(variables["MATRIX"]), {"distro": ["opensuse/16.1"]})
+            self.assertEqual(json.loads(variables["RPM_MATRIX"]), {"distro": ["opensuse/16.1"]})
 
     def test_staging_generation_and_transfer(self):
         jobs = workflow("staging-build.yaml")["jobs"]

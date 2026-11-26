@@ -950,6 +950,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: release
     needs:
+      - staging-release-generate-package-matrix
       - staging-release-apt-packages
       - staging-release-yum-packages
     steps:
@@ -961,6 +962,10 @@ jobs:
           ./packaging/test-release-packages.sh
         shell: bash
         env:
+          INSTALL_SCRIPT: ./install.sh
+          TEST_ZYPPER_TARGETS: >-
+            ${{ contains(fromJSON(needs.staging-release-generate-package-matrix.outputs.rpm-build-matrix).distro, 'opensuse/16.1') &&
+            contains(fromJSON(needs.staging-release-generate-package-matrix.outputs.rpm-build-matrix).distro, 'sles/15.7') }}
           VERSION_TO_CHECK_FOR: ${{ github.event.inputs.version }}
           FLUENT_BIT_PACKAGES_URL: http://${{ secrets.AWS_S3_BUCKET_RELEASE }}.s3.amazonaws.com
           FLUENT_BIT_PACKAGES_KEY: http://${{ secrets.AWS_S3_BUCKET_RELEASE }}.s3.amazonaws.com/fluentbit.key

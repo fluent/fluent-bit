@@ -30,6 +30,8 @@ LINUX_REPO_PATHS=(
     "almalinux/8"
     "almalinux/9"
     "almalinux/10"
+    "opensuse/16.1"
+    "sles/15.7"
     "debian/bookworm"
     "debian/bullseye"
     "debian/buster"

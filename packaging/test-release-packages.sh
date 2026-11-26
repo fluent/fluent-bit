@@ -60,6 +60,14 @@ YUM_TARGETS=(
     "amazonlinux:2023"
 )
 
+ZYPPER_TARGETS=()
+if [[ "${TEST_ZYPPER_TARGETS:-false}" == "true" ]]; then
+    ZYPPER_TARGETS=(
+        "registry.opensuse.org/opensuse/leap:16.1"
+        "registry.suse.com/bci/bci-base:15.7"
+    )
+fi
+
 for IMAGE in "${YUM_TARGETS[@]}"
 do
     echo "Testing $IMAGE"
@@ -110,6 +118,30 @@ do
         $EXTRA_MOUNTS \
         "$IMAGE" \
         sh -c "apt-get update && apt-get install -y gpg curl;$INSTALL_CMD && /opt/fluent-bit/bin/fluent-bit --version" | tee "$LOG_FILE"
+    check_version "$LOG_FILE"
+    rm -f "$LOG_FILE"
+done
+
+# Preserve the container exit status when recording the install log.
+set -o pipefail
+for IMAGE in "${ZYPPER_TARGETS[@]}"
+do
+    echo "Testing $IMAGE"
+    LOG_FILE=$(mktemp)
+    # We do want word splitting for EXTRA_MOUNTS
+    # shellcheck disable=SC2086
+    $CONTAINER_RUNTIME run --rm -t \
+        -e FLUENT_BIT_PACKAGES_URL="${FLUENT_BIT_PACKAGES_URL:-https://packages.fluentbit.io}" \
+        -e FLUENT_BIT_PACKAGES_KEY="${FLUENT_BIT_PACKAGES_KEY:-https://packages.fluentbit.io/fluentbit.key}" \
+        -e FLUENT_BIT_RELEASE_VERSION="${FLUENT_BIT_RELEASE_VERSION:-$VERSION_TO_CHECK_FOR}" \
+        -e FLUENT_BIT_INSTALL_COMMAND_PREFIX="${FLUENT_BIT_INSTALL_COMMAND_PREFIX:-}" \
+        -e FLUENT_BIT_INSTALL_PACKAGE_NAME="${FLUENT_BIT_INSTALL_PACKAGE_NAME:-fluent-bit}" \
+        -e FLUENT_BIT_INSTALL_ZYPPER_PARAMETERS="${FLUENT_BIT_INSTALL_ZYPPER_PARAMETERS:-}" \
+        $EXTRA_MOUNTS \
+        "$IMAGE" \
+        sh -c "zypper --non-interactive --gpg-auto-import-keys refresh && \
+               zypper --non-interactive --gpg-auto-import-keys install -y gpg curl && \
+               $INSTALL_CMD && /opt/fluent-bit/bin/fluent-bit --version" | tee "$LOG_FILE"
     check_version "$LOG_FILE"
     rm -f "$LOG_FILE"
 done
