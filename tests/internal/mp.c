@@ -2062,6 +2062,10 @@ static void test_log_helpers_accept_empty_buffers(void)
                                                              FLB_MP_GROUPS_KEEP_LEADING_END |
                                                              FLB_MP_GROUPS_KEEP_TRAILING_OPEN) == 0);
     TEST_CHECK(out_buf == NULL && out_size == 0);
+    count = -1;
+    TEST_CHECK(flb_mp_normalize_log_buffer_groups_msgpack_with_count(NULL, 0,
+                    &out_buf, &out_size, 0, &count) == 0);
+    TEST_CHECK(out_buf == NULL && out_size == 0 && count == 0);
 }
 
 static void test_log_scan_matches_decoder(void)
@@ -2314,6 +2318,7 @@ static void check_normalized_layout(char *output, size_t output_size,
 static void check_group_normalization(const char *layout, const char *strict,
                                       const char *kept)
 {
+    int normalized_records;
     struct flb_log_event_encoder *encoder;
     struct flb_log_event_encoder *copy;
     struct flb_mp_chunk_cobj *chunk;
@@ -2348,6 +2353,14 @@ static void check_group_normalization(const char *layout, const char *strict,
                                                              &output, &output_size,
                                                              flags) == 0);
     check_normalized_layout(output, output_size, layout, kept, "msgpack kept");
+    flb_free(output);
+
+    normalized_records = -1;
+    TEST_CHECK(flb_mp_normalize_log_buffer_groups_msgpack_with_count(encoder->output_buffer,
+                    encoder->output_length, &output, &output_size, flags,
+                    &normalized_records) == 0);
+    check_normalized_layout(output, output_size, layout, kept, "msgpack counted");
+    TEST_CHECK(normalized_records == flb_mp_count_log_records(output, output_size));
     flb_free(output);
 
     /* the chunk normalizer with the same flags */
