@@ -1,5 +1,6 @@
 """Guard required release metadata dependencies and explicit file transfers."""
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -82,15 +83,74 @@ class WorkflowTests(unittest.TestCase):
 
     def test_current_release_series_publication(self):
         steps = self.release["staging-release-create-release"]["steps"]
-        for series, branch, latest in (("5.2", "5.2", False), ("6.0", "master", True)):
+        latest_output = "${{ needs.staging-release-version-check.outputs.make-latest }}"
+        for series, branch, latest in (("5.2", "5.2", latest_output), ("6.0", "master", True)):
             with self.subTest(series=series):
                 condition = f"startsWith(inputs.version, '{series}.')"
                 releases = [step["with"] for step in steps if step.get("if") == condition]
                 self.assertEqual(len(releases), 1)
                 self.assertEqual(releases[0]["target_commitish"], branch)
                 self.assertEqual(releases[0]["make_latest"], latest)
-        self.assertEqual(self.release["staging-release-images-latest-tags"]["if"],
-                         "startsWith(inputs.version, '6.0.')")
+        latest_images = self.release["staging-release-images-latest-tags"]
+        self.assertEqual(latest_images["if"],
+                         "needs.staging-release-version-check.outputs.make-latest == 'true'")
+        self.assertIn("staging-release-create-release", latest_images["needs"])
+
+    def test_latest_selection_for_maintenance_releases(self):
+        job = self.release["staging-release-version-check"]
+        step = next(step for step in job["steps"] if step.get("id") == "latest")
+        cases = [
+            ("5.2.2", "v5.2.1", True), ("5.2.2", "v5.2.2", True),
+            ("5.2.2", "v5.2.10", False), ("5.2.10", "v5.2.9", True),
+            ("5.2.2", "v6.0.0", False), ("5.2.2", "not-a-release", None),
+            ("5.2.2", "", None), ("5.1.5", "", False), ("6.0.0", "", True),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            gh = Path(directory) / "gh"
+            gh.write_text('#!/bin/sh\n[ -n "$LATEST_TAG" ] && printf "%s\\n" "$LATEST_TAG"\n')
+            gh.chmod(0o755)
+            output = Path(directory) / "output"
+            for version, latest, expected in cases:
+                with self.subTest(version=version, latest=latest):
+                    output.unlink(missing_ok=True)
+                    result = subprocess.run(
+                        ["bash", "-e", "-o", "pipefail", "-c", step["run"]],
+                        env={**os.environ, "PATH": f"{directory}:{os.environ['PATH']}",
+                             "RELEASE_VERSION": version, "LATEST_TAG": latest,
+                             "GITHUB_OUTPUT": str(output), "GITHUB_REPOSITORY": "fluent/fluent-bit"},
+                        capture_output=True, text=True)
+                    if expected is None:
+                        self.assertNotEqual(result.returncode, 0)
+                        self.assertFalse(output.exists())
+                    else:
+                        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                        self.assertEqual(output.read_text(), f"value={str(expected).lower()}\n")
+
+    def test_version_update_keeps_bitbake_on_the_published_tag(self):
+        steps = self.release["staging-release-create-version-update-pr"]["steps"]
+        update = next(step for step in steps if step.get("run") == "./update_version.sh")
+        self.assertEqual(update["env"]["BITBAKE_VERSION"], "${{ inputs.version }}")
+
+        files = ["update_version.sh", "CMakeLists.txt", "dockerfiles/Dockerfile",
+                 "snap/snapcraft.yaml", "include/fluent-bit/flb_version.h.in"]
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            for file in files:
+                destination = directory / file
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(ROOT / file, destination)
+            recipe = directory / "fluent-bit-5.2.1.bb"
+            recipe.write_text('PV = "5.2.1"\nSRCREV = "v${PV}"\n')
+            env = {**os.environ, "NEW_VERSION": "5.2.3", "BITBAKE_VERSION": "5.2.2",
+                   "DISABLE_COMMIT": "yes"}
+            for _ in range(2):
+                subprocess.run(["bash", str(directory / "update_version.sh")], env=env, check=True)
+            self.assertEqual(list(directory.glob("fluent-bit-*.bb")), [directory / "fluent-bit-5.2.2.bb"])
+            self.assertEqual((directory / "fluent-bit-5.2.2.bb").read_text(),
+                             'PV = "5.2.2"\nSRCREV = "v${PV}"\n')
+            self.assertIn("set(FLB_VERSION_PATCH  3)", (directory / "CMakeLists.txt").read_text())
+            self.assertIn("ARG RELEASE_VERSION=5.2.3", (directory / "dockerfiles/Dockerfile").read_text())
+            self.assertIn("version: '5.2.3'", (directory / "snap/snapcraft.yaml").read_text())
 
     def test_release_prs_use_verified_branch_as_explicit_base(self):
         for suffix in ("docs", "version-update"):
