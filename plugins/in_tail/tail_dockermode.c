@@ -21,6 +21,11 @@
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_unescape.h>
+#include <fluent-bit/flb_parser.h>
+#include <fluent-bit/multiline/flb_ml.h>
+#include <fluent-bit/multiline/flb_ml_parser.h>
+
+#include <limits.h>
 
 #include "tail_config.h"
 #include "tail_dockermode.h"
@@ -65,6 +70,165 @@ int flb_tail_dmode_create(struct flb_tail_config *ctx,
 
     return 0;
 }
+
+#ifdef FLB_HAVE_PARSER
+/*
+ * The legacy Docker mode joins the split lines on the raw JSON text, before
+ * any parser runs. The multiline core joins the value of the 'log' key once
+ * the parser has decoded every line. Both generate the same record only when
+ * the configured parser is a plain JSON one: return the reason that prevents
+ * the usage of the multiline core, or NULL if there is none.
+ */
+static const char *dmode_ml_blocker(struct flb_tail_config *ctx)
+{
+    if (ctx->docker_mode_parser) {
+        return "'docker_mode_parser' matches the raw JSON line, use a "
+               "'multiline' filter on the 'log' key instead";
+    }
+
+    if (!ctx->parser) {
+        return "no 'parser' is set, so the raw JSON line is kept as the record";
+    }
+
+    if (ctx->parser->type != FLB_PARSER_JSON) {
+        return "'parser' is not a JSON parser";
+    }
+
+    if (ctx->parser->decoders && mk_list_size(ctx->parser->decoders) > 0) {
+        return "'parser' uses decoders, which must run on the joined line";
+    }
+
+    if (ctx->ignore_older > 0) {
+        return "'ignore_older' also discards the records by their timestamp";
+    }
+
+    return NULL;
+}
+
+/*
+ * Docker mode is deprecated in favor of the multiline core. When the
+ * configuration allows it, replace the legacy implementation with a private
+ * multiline parser that behaves as the built-in 'docker' one, but honors the
+ * 'parser' set by the user.
+ *
+ * The flush timer of the multiline core is not used: it flushes every stream
+ * on a global schedule, no matter when the last fragment arrived. Docker mode
+ * waits 'docker_mode_flush' seconds since the last line of each file, so the
+ * plugin keeps that deadline (flb_tail_dmode_ml_pending_flush).
+ *
+ * On return 'ctx->docker_mode' is only enabled if the legacy implementation
+ * is the one in charge of the files content, 'ctx->docker_mode_ml' is set
+ * when the multiline core took over.
+ */
+int flb_tail_dmode_ml_create(struct flb_tail_config *ctx)
+{
+    int flush_ms;
+    char name[128];
+    const char *blocker;
+    struct flb_ml_parser *ml_parser;
+    struct flb_ml_parser_ins *parser_i;
+
+    if (ctx->ml_ctx) {
+        /* 'multiline.parser' always had priority in the files processing */
+        flb_plg_warn(ctx->ins, "'docker_mode' is deprecated and it is ignored "
+                     "when 'multiline.parser' is set, remove 'docker_mode' "
+                     "from the configuration");
+        ctx->docker_mode = FLB_FALSE;
+        return 0;
+    }
+
+    blocker = dmode_ml_blocker(ctx);
+    if (blocker) {
+        flb_plg_warn(ctx->ins, "'docker_mode' is deprecated and will be removed "
+                     "in a future release, migrate to 'multiline.parser docker'. "
+                     "Using the legacy implementation: %s", blocker);
+        return 0;
+    }
+
+    if (ctx->docker_mode_flush > INT_MAX / 1000) {
+        flush_ms = INT_MAX;
+    }
+    else {
+        flush_ms = ctx->docker_mode_flush * 1000;
+    }
+
+    /* The instance name is unique, so it is the multiline parser name */
+    snprintf(name, sizeof(name), "_tail_docker_mode.%s", ctx->ins->name);
+
+    ml_parser = flb_ml_parser_create(ctx->config, name,
+                                     FLB_ML_ENDSWITH, "\n", FLB_FALSE,
+                                     flush_ms,
+                                     "log", "stream", NULL,
+                                     ctx->parser, NULL);
+    if (!ml_parser) {
+        flb_plg_error(ctx->ins, "could not create docker mode multiline parser");
+        return -1;
+    }
+
+    ctx->ml_ctx = flb_ml_create(ctx->config, ctx->ins->name);
+    if (!ctx->ml_ctx) {
+        flb_ml_parser_destroy(ml_parser);
+        return -1;
+    }
+
+    parser_i = flb_ml_parser_instance_create(ctx->ml_ctx, name);
+    if (!parser_i) {
+        flb_ml_destroy(ctx->ml_ctx);
+        ctx->ml_ctx = NULL;
+        flb_ml_parser_destroy(ml_parser);
+        return -1;
+    }
+
+    ctx->docker_mode_ml = FLB_TRUE;
+    ctx->docker_mode_ml_parser = parser_i;
+    ctx->docker_mode = FLB_FALSE;
+    flb_plg_warn(ctx->ins, "'docker_mode' is deprecated and will be removed in "
+                 "a future release: split lines are now joined by the multiline "
+                 "core, replace 'docker_mode' with 'multiline.parser docker'");
+
+    return 0;
+}
+
+static void file_ml_pending_flush(struct flb_tail_config *ctx,
+                                  struct flb_tail_file *file, time_t now)
+{
+    if (file->dmode_flush_timeout == 0 || file->dmode_flush_timeout > now) {
+        return;
+    }
+    file->dmode_flush_timeout = 0;
+
+    /* A forced flush makes the callback ingest the record right away */
+    flb_ml_flush_parser_instance(ctx->ml_ctx, ctx->docker_mode_ml_parser,
+                                 file->ml_stream_id, FLB_TRUE);
+}
+
+/*
+ * Docker mode on top of the multiline core: flush the unfinished lines of the
+ * files that did not get new content before their deadline.
+ */
+int flb_tail_dmode_ml_pending_flush(struct flb_input_instance *ins,
+                                    struct flb_config *config, void *context)
+{
+    time_t now;
+    struct mk_list *head;
+    struct flb_tail_file *file;
+    struct flb_tail_config *ctx = context;
+
+    now = time(NULL);
+
+    mk_list_foreach(head, &ctx->files_static) {
+        file = mk_list_entry(head, struct flb_tail_file, _head);
+        file_ml_pending_flush(ctx, file, now);
+    }
+
+    mk_list_foreach(head, &ctx->files_event) {
+        file = mk_list_entry(head, struct flb_tail_file, _head);
+        file_ml_pending_flush(ctx, file, now);
+    }
+
+    return 0;
+}
+#endif
 
 static int modify_json_cond(char *js, size_t js_len,
                             char **val, size_t *val_len,

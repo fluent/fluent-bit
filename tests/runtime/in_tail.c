@@ -681,6 +681,186 @@ void flb_test_in_tail_dockermode_firstline_detection()
             NULL);
 }
 
+struct dockermode_test_result {
+    const char *target;
+    int matched[MAX_LINES];   /* times that every expected line was found */
+    int n_matched;            /* expected lines found for the first time */
+    int n_unexpected;         /* unknown or repeated records */
+};
+
+/* Every line of the .out file must show up in exactly one record */
+static int cb_check_dockermode_result(void *record, size_t size, void *data)
+{
+    int i;
+    int found = FLB_FALSE;
+    struct tail_file_lines *out;
+    struct dockermode_test_result *result = data;
+
+    out = get_out_file_content(result->target);
+
+    for (i = 0; i < out->lines_c; i++) {
+        if (strstr(record, out->lines[i]) == NULL) {
+            continue;
+        }
+
+        found = FLB_TRUE;
+        result->matched[i]++;
+        if (result->matched[i] == 1) {
+            result->n_matched++;
+        }
+        else {
+            result->n_unexpected++;
+        }
+        break;
+    }
+
+    if (found == FLB_FALSE) {
+        result->n_unexpected++;
+    }
+
+    if (size > 0) {
+        flb_free(record);
+    }
+    if (out->lines_c) {
+        flb_free(out->lines[0]);
+    }
+    flb_free(out);
+
+    return 0;
+}
+
+/*
+ * Docker mode tests where the input properties are fully defined by the
+ * caller, e.g. no 'parser' is set by default.
+ */
+static void do_test_dockermode(const char *target, int nExpected, ...)
+{
+    int ret;
+    int waited_ms = 0;
+    int in_ffd;
+    int out_ffd;
+    va_list va;
+    char *key;
+    char *value;
+    char path[PATH_MAX];
+    flb_ctx_t *ctx;
+    struct flb_lib_out_cb cb;
+    struct dockermode_test_result result = {0};
+
+    result.target = target;
+
+    cb.cb   = cb_check_dockermode_result;
+    cb.data = &result;
+
+    /* initialize */
+    set_result(0);
+
+    ctx = flb_create();
+    TEST_CHECK(ctx != NULL);
+
+    ret = flb_service_set(ctx,
+                          "Log_Level", "error",
+                          "Parsers_File", DPATH "/parsers.conf",
+                          "Flush", "0.5",
+                          "Grace", "1",
+                          NULL);
+    TEST_CHECK_(ret == 0, "setting service options");
+
+    in_ffd = flb_input(ctx, (char *) "tail", NULL);
+    TEST_CHECK(in_ffd >= 0);
+
+    /* Compose path based on target */
+    snprintf(path, sizeof(path) - 1, DPATH "/log/%s.log", target);
+    TEST_CHECK_(access(path, R_OK) == 0, "accessing log file: %s", path);
+
+    TEST_CHECK(flb_input_set(ctx, in_ffd,
+                             "tag", "test",
+                             "path", path,
+                             "docker_mode", "on",
+                             "read_from_head", "true",
+                             NULL) == 0);
+
+    va_start(va, nExpected);
+    while ((key = va_arg(va, char *))) {
+        value = va_arg(va, char *);
+        TEST_CHECK(value != NULL);
+        TEST_CHECK(flb_input_set(ctx, in_ffd, key, value, NULL) == 0);
+    }
+    va_end(va);
+
+    out_ffd = flb_output(ctx, (char *) "lib", &cb);
+    TEST_CHECK(out_ffd >= 0);
+    TEST_CHECK(flb_output_set(ctx, out_ffd,
+                              "match", "test",
+                              "format", "json",
+                              NULL) == 0);
+
+    ret = flb_start(ctx);
+    TEST_CHECK_(ret == 0, "starting engine");
+
+    /* Wait until every expected record has arrived */
+    while (result.n_matched < nExpected && waited_ms < 5000) {
+        flb_time_msleep(100);
+        waited_ms += 100;
+    }
+
+    /* Give some room to records that must not exist, e.g. duplicates */
+    flb_time_msleep(500);
+
+    TEST_CHECK(result.n_matched == nExpected);
+    TEST_MSG("result.n_matched: %i\nnExpected: %i", result.n_matched, nExpected);
+    TEST_CHECK(result.n_unexpected == 0);
+    TEST_MSG("result.n_unexpected: %i", result.n_unexpected);
+
+    ret = flb_stop(ctx);
+    TEST_CHECK_(ret == 0, "stopping engine");
+
+    flb_destroy(ctx);
+}
+
+/*
+ * Multiline core in charge: partial lines of different streams are mixed in
+ * the file, every stream must be joined on its own. The expected records have
+ * no 'time' key since the parser set by the user does not keep it.
+ */
+void flb_test_in_tail_dockermode_streams()
+{
+    do_test_dockermode("dockermode_streams", 3,
+                       "parser", "docker",
+                       NULL);
+}
+
+/* Legacy mode: without a parser the joined raw JSON line is the record */
+void flb_test_in_tail_dockermode_no_parser()
+{
+    do_test_dockermode("dockermode_no_parser", 2,
+                       NULL);
+}
+
+/* Legacy mode: a non JSON parser has to process the joined raw JSON line */
+void flb_test_in_tail_dockermode_regex_parser()
+{
+    do_test_dockermode("dockermode_regex_parser", 2,
+                       "parser", "docker_raw_line",
+                       NULL);
+}
+
+/* Legacy mode: the decoders of the parser run on the joined line */
+void flb_test_in_tail_dockermode_parser_decoders()
+{
+    do_test_dockermode("dockermode_parser_decoders", 2,
+                       "parser", "docker_decoders",
+                       NULL);
+}
+
+/* Docker mode is ignored when multiline.parser is set */
+void flb_test_in_tail_dockermode_multiline_parser()
+{
+    do_test_dockermode("dockermode_multiline_parser", 3,
+                       "multiline.parser", "docker",
+                       NULL);
+}
+
 void do_test_generic_enctype(char *system, const char *target, const char *enc, int tExpected, int nExpected, ...)
 {
     int64_t ret;
@@ -3251,6 +3431,11 @@ TEST_LIST = {
     {"in_tail_dockermode_multiple_lines",           flb_test_in_tail_dockermode_multiple_lines},
     {"in_tail_dockermode_splitted_multiple_lines",  flb_test_in_tail_dockermode_splitted_multiple_lines},
     {"in_tail_dockermode_firstline_detection",      flb_test_in_tail_dockermode_firstline_detection},
+    {"in_tail_dockermode_streams",                  flb_test_in_tail_dockermode_streams},
+    {"in_tail_dockermode_no_parser",                flb_test_in_tail_dockermode_no_parser},
+    {"in_tail_dockermode_regex_parser",             flb_test_in_tail_dockermode_regex_parser},
+    {"in_tail_dockermode_parser_decoders",          flb_test_in_tail_dockermode_parser_decoders},
+    {"in_tail_dockermode_multiline_parser",         flb_test_in_tail_dockermode_multiline_parser},
     {"in_tail_multiline_json_and_regex",            flb_test_in_tail_multiline_json_and_regex},
     {"in_tail_generic_enc_big5",                    flb_test_in_tail_generic_enc_big5},
     {"in_tail_generic_enc_gb18030",                 flb_test_in_tail_generic_enc_gb18030},

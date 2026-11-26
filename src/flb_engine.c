@@ -1961,6 +1961,13 @@ int flb_engine_shutdown(struct flb_config *config)
 #ifdef FLB_HAVE_STREAM_PROCESSOR
     if (config->stream_processor_ctx) {
         flb_sp_destroy(config->stream_processor_ctx);
+
+        /*
+         * Input plugins can still append records on their exit callback, e.g.
+         * in_tail flushes the pending multiline content of the files that are
+         * being removed. Do not leave a dangling reference for that path.
+         */
+        config->stream_processor_ctx = NULL;
     }
 #endif
 

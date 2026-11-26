@@ -1,0 +1,5 @@
+{"log":"out part1 ","stream":"stdout","time":"2020-03-24T10:00:00.000000001Z"}
+{"log":"err part1 ","stream":"stderr","time":"2020-03-24T10:00:00.000000002Z"}
+{"log":"out part2\n","stream":"stdout","time":"2020-03-24T10:00:00.000000003Z"}
+{"log":"err part2\n","stream":"stderr","time":"2020-03-24T10:00:00.000000004Z"}
+{"log":"single\n","stream":"stdout","time":"2020-03-24T10:00:00.000000005Z"}
