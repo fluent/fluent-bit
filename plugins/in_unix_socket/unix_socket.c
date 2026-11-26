@@ -441,6 +441,17 @@ static int in_unix_socket_exit(void *data, struct flb_config *config)
 
     ctx = data;
 
+    /*
+     * In DGRAM mode the dummy connection holds the server socket that the
+     * collector watches, and releasing the connection closes it: remove the
+     * collector from the event loop first.
+     */
+    if (ctx->collector_id != -1) {
+        flb_input_collector_delete(ctx->collector_id, ctx->ins);
+
+        ctx->collector_id = -1;
+    }
+
     mk_list_foreach_safe(head, tmp, &ctx->connections) {
         conn = mk_list_entry(head, struct unix_socket_conn, _head);
 
