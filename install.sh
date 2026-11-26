@@ -148,33 +148,14 @@ apt-get -y update
 $INSTALL_CMD_PREFIX apt-get -y $APT_PARAMETERS install $INSTALL_PACKAGE_NAME$APT_VERSION
 SCRIPT
     ;;
-    opensuse-leap)
-        $SUDO sh <<SCRIPT
+    opensuse-leap|sles)
+        REPO_DISTRO=${OS%-leap}
+        $SUDO sh -e <<SCRIPT
 rpm --import $RELEASE_KEY
 cat << EOF > /etc/zypp/repos.d/fluent-bit.repo
 [fluent-bit]
 name = Fluent Bit
-baseurl = $RELEASE_URL/opensuse/leap/VERSION_SUBSTR
-gpgcheck=1
-repo_gpgcheck=1
-gpgkey=$RELEASE_KEY
-enabled=1
-type=rpm-md
-autorefresh=1
-EOF
-sed -i 's|VERSION_SUBSTR|\$releasever|g' /etc/zypp/repos.d/fluent-bit.repo
-cat /etc/zypp/repos.d/fluent-bit.repo
-zypper --non-interactive --gpg-auto-import-keys refresh
-$INSTALL_CMD_PREFIX zypper --non-interactive --gpg-auto-import-keys $ZYPPER_PARAMETERS install $INSTALL_PACKAGE_NAME$ZYPPER_VERSION
-SCRIPT
-    ;;
-    sles)
-        $SUDO sh <<SCRIPT
-rpm --import $RELEASE_KEY
-cat << EOF > /etc/zypp/repos.d/fluent-bit.repo
-[fluent-bit]
-name = Fluent Bit
-baseurl = $RELEASE_URL/sles/VERSION_SUBSTR
+baseurl = $RELEASE_URL/$REPO_DISTRO/VERSION_SUBSTR
 gpgcheck=1
 repo_gpgcheck=1
 gpgkey=$RELEASE_KEY
