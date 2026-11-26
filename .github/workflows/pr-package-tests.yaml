@@ -12,6 +12,8 @@ on:
     branches:
       - master
 
+cache-mode: read
+
 # Cancel any running on push
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
@@ -102,7 +104,7 @@ jobs:
     name: PR - packages build Windows
     needs:
       - pr-package-test-build-get-meta
-    uses: ./.github/workflows/call-build-windows.yaml
+    uses: ./.github/workflows/call-build-windows.yaml # actionlint:ignore cache-operation -- GitHub skips the vcpkg cache save for this read-only caller.
     with:
       version: pr-${{ github.event.pull_request.number }}
       ref: ${{ github.event.pull_request.head.sha }}
