@@ -252,7 +252,6 @@ static int in_kafka_init(struct flb_input_instance *ins,
     rd_kafka_conf_res_t res;
     char errstr[512];
     (void) data;
-    char conf_val[16];
 
     /* Allocate space for the configuration context */
     ctx = flb_calloc(1, sizeof(struct flb_in_kafka_config));
@@ -320,24 +319,6 @@ static int in_kafka_init(struct flb_input_instance *ins,
 
     if (ctx->buffer_max_size > 0) {
         ctx->polling_threshold = ctx->buffer_max_size;
-
-        snprintf(conf_val, sizeof(conf_val), "%zu", ctx->polling_threshold - 512);
-        res = rd_kafka_conf_set(kafka_conf, "fetch.max.bytes", conf_val,
-                                errstr, sizeof(errstr));
-        if (res != RD_KAFKA_CONF_OK) {
-            flb_plg_error(ins, "Failed to set up fetch.max.bytes: %s, val = %s",
-                          rd_kafka_err2str(err), conf_val);
-            goto init_error;
-        }
-
-        snprintf(conf_val, sizeof(conf_val), "%zu", ctx->polling_threshold);
-        res = rd_kafka_conf_set(kafka_conf, "receive.message.max.bytes", conf_val,
-                                errstr, sizeof(errstr));
-        if (res != RD_KAFKA_CONF_OK) {
-            flb_plg_error(ins, "Failed to set up receive.message.max.bytes: %s, val = %s",
-                          rd_kafka_err2str(err), conf_val);
-            goto init_error;
-        }
     }
     else {
         ctx->polling_threshold = FLB_IN_KAFKA_UNLIMITED;
