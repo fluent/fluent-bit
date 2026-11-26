@@ -28,6 +28,7 @@
 #include <fluent-bit/flb_aws_util.h>
 #include <fluent-bit/aws/flb_aws_compress.h>
 #include <fluent-bit/flb_hash.h>
+#include <fluent-bit/flb_random.h>
 #include <fluent-bit/flb_crypto.h>
 #include <fluent-bit/flb_signv4.h>
 #include <fluent-bit/flb_scheduler.h>
@@ -39,6 +40,9 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+#ifndef FLB_SYSTEM_WINDOWS
+#include <dirent.h>
+#endif
 
 #include <msgpack.h>
 
@@ -859,6 +863,275 @@ static int write_seq_index(char *seq_index_file, uint64_t seq_index)
     return 0;
 }
 
+static int write_seq_index_atomic(const char *seq_index_file, uint64_t seq_index)
+{
+    FILE *fp;
+    int ret;
+    uint64_t suffix;
+    flb_sds_t temp_path;
+
+    if (flb_random_bytes((unsigned char *) &suffix, sizeof(suffix)) != 0) {
+        return -1;
+    }
+
+    temp_path = flb_sds_create_size(strlen(seq_index_file) + sizeof(".tmp.") + 16);
+    if (temp_path == NULL) {
+        return -1;
+    }
+
+    if (!flb_sds_printf(&temp_path, "%s.tmp.%016" PRIx64, seq_index_file, suffix)) {
+        flb_sds_destroy(temp_path);
+        return -1;
+    }
+
+    fp = fopen(temp_path, "wx");
+    if (fp == NULL) {
+        flb_errno();
+        flb_sds_destroy(temp_path);
+        return -1;
+    }
+
+    ret = 0;
+    if (fprintf(fp, "%" PRIu64, seq_index) < 0 || fflush(fp) != 0) {
+        ret = -1;
+    }
+    if (fclose(fp) != 0) {
+        ret = -1;
+    }
+    if (ret == 0) {
+#ifdef FLB_SYSTEM_WINDOWS
+        ret = MoveFileExA(temp_path, seq_index_file, MOVEFILE_REPLACE_EXISTING) ? 0 : -1;
+#else
+        ret = rename(temp_path, seq_index_file);
+#endif
+    }
+    if (ret != 0) {
+        remove(temp_path);
+    }
+
+    flb_sds_destroy(temp_path);
+    return ret;
+}
+
+static int prepare_tag_seq_index(struct flb_s3 *ctx,
+                                 const char *tag, size_t tag_len,
+                                 uint64_t *value, flb_sds_t *file_path)
+{
+    int ret;
+    int output_id_len;
+    size_t i;
+    size_t path_size;
+    unsigned char tag_digest[32];
+    char tag_digest_hex[65];
+    flb_sds_t path;
+    flb_sds_t tmp;
+
+    *file_path = NULL;
+
+    ret = flb_hash_simple(FLB_HASH_SHA256,
+                          (unsigned char *) tag, tag_len,
+                          tag_digest, sizeof(tag_digest));
+    if (ret != FLB_CRYPTO_SUCCESS) {
+        flb_plg_error(ctx->ins, "Failed to hash tag for sequential index metadata");
+        return -1;
+    }
+
+    for (i = 0; i < sizeof(tag_digest); i++) {
+        snprintf(tag_digest_hex + (i * 2), 3, "%02x",
+                 (unsigned int) tag_digest[i]);
+    }
+    tag_digest_hex[64] = '\0';
+
+    output_id_len = snprintf(NULL, 0, "%d", ctx->ins->id);
+    if (output_id_len < 0) {
+        flb_plg_error(ctx->ins,
+                      "Failed to format output ID for sequential index metadata");
+        return -1;
+    }
+
+    /* SDS allocates the terminating NUL separately. */
+    path_size = flb_sds_len(ctx->metadata_dir) +
+                (sizeof("/seq_index_") - 1) +
+                (size_t) output_id_len +
+                1 +                              /* digest separator */
+                (sizeof(tag_digest_hex) - 1);
+
+    path = flb_sds_create_size(path_size);
+    if (path == NULL) {
+        flb_errno();
+        return -1;
+    }
+
+    tmp = flb_sds_printf(&path, "%s/seq_index_%d_%s",
+                         ctx->metadata_dir, ctx->ins->id, tag_digest_hex);
+    if (tmp == NULL) {
+        flb_errno();
+        flb_sds_destroy(path);
+        return -1;
+    }
+    path = tmp;
+
+    if (access(path, F_OK) != 0) {
+        if (errno != ENOENT) {
+            flb_plg_error(ctx->ins,
+                          "Failed to access sequential index metadata file %s",
+                          path);
+            flb_sds_destroy(path);
+            return -1;
+        }
+
+        /* Start beyond keys previously allocated by the shared counter. */
+        *value = ctx->seq_index;
+        ret = write_seq_index_atomic(path, *value);
+        if (ret < 0) {
+            flb_plg_error(ctx->ins,
+                          "Failed to initialize sequential index metadata file %s",
+                          path);
+            flb_sds_destroy(path);
+            return -1;
+        }
+    }
+    else {
+        ret = read_seq_index(path, value);
+        if (ret < 0) {
+            flb_plg_error(ctx->ins,
+                          "Failed to read sequential index metadata file %s",
+                          path);
+            flb_sds_destroy(path);
+            return -1;
+        }
+    }
+
+    if (*value < ctx->seq_index) {
+        *value = ctx->seq_index;
+    }
+    *file_path = path;
+    return 0;
+}
+
+static int write_selected_seq_index(struct flb_s3 *ctx, char *path, uint64_t index)
+{
+    if (ctx->index_per_tag == FLB_TRUE) {
+        return write_seq_index_atomic(path, index);
+    }
+
+    return write_seq_index(path, index);
+}
+
+static int check_tag_seq_index(struct flb_s3 *ctx, const char *name,
+                               const char *prefix, size_t prefix_len, uint64_t *highest)
+{
+    int ret;
+    uint64_t value;
+    const char *hash;
+    flb_sds_t path;
+
+    if (strncmp(name, prefix, prefix_len) != 0) {
+        return 0;
+    }
+
+    hash = name + prefix_len;
+    if (strlen(hash) != 64 || strspn(hash, "0123456789abcdef") != 64) {
+        return 0;
+    }
+
+    path = flb_sds_create_size(flb_sds_len(ctx->metadata_dir) + strlen(name) + 2);
+    if (path == NULL) {
+        return -1;
+    }
+    if (flb_sds_printf(&path, "%s/%s", ctx->metadata_dir, name) == NULL) {
+        flb_sds_destroy(path);
+        return -1;
+    }
+    ret = read_seq_index(path, &value);
+    if (ret < 0) {
+        flb_plg_error(ctx->ins, "Failed to read sequential index metadata file %s", path);
+    }
+    else if (value == UINT64_MAX) {
+        flb_plg_error(ctx->ins, "Sequential index exhausted in metadata file %s", path);
+        ret = -1;
+    }
+    else if (value > *highest) {
+        *highest = value;
+    }
+    flb_sds_destroy(path);
+    return ret;
+}
+
+static int reconcile_shared_seq_index(struct flb_s3 *ctx)
+{
+    int ret = 0;
+    char prefix[32];
+    size_t prefix_len;
+    uint64_t highest = ctx->seq_index;
+#ifdef FLB_SYSTEM_WINDOWS
+    flb_sds_t pattern;
+    HANDLE handle;
+    WIN32_FIND_DATAA entry;
+#else
+    DIR *dir;
+    struct dirent *entry;
+#endif
+
+    prefix_len = snprintf(prefix, sizeof(prefix), "seq_index_%d_", ctx->ins->id);
+#ifdef FLB_SYSTEM_WINDOWS
+    pattern = flb_sds_create(ctx->metadata_dir);
+    if (pattern == NULL) {
+        return -1;
+    }
+    if (flb_sds_cat_safe(&pattern, "\\*", 2) < 0) {
+        flb_sds_destroy(pattern);
+        return -1;
+    }
+    handle = FindFirstFileA(pattern, &entry);
+    if (handle == INVALID_HANDLE_VALUE) {
+        ret = GetLastError() == ERROR_FILE_NOT_FOUND ? 0 : -1;
+        flb_sds_destroy(pattern);
+        return ret;
+    }
+    flb_sds_destroy(pattern);
+    do {
+        ret = check_tag_seq_index(ctx, entry.cFileName, prefix, prefix_len, &highest);
+        if (ret < 0) {
+            break;
+        }
+    } while (FindNextFileA(handle, &entry));
+    if (ret == 0 && GetLastError() != ERROR_NO_MORE_FILES) {
+        ret = -1;
+    }
+    FindClose(handle);
+#else
+    dir = opendir(ctx->metadata_dir);
+    if (dir == NULL) {
+        return -1;
+    }
+    for (;;) {
+        errno = 0;
+        entry = readdir(dir);
+        if (entry == NULL) {
+            ret = errno == 0 ? 0 : -1;
+            break;
+        }
+        ret = check_tag_seq_index(ctx, entry->d_name, prefix, prefix_len, &highest);
+        if (ret < 0) {
+            break;
+        }
+    }
+    closedir(dir);
+#endif
+    if (ret < 0) {
+        return -1;
+    }
+    if (highest > ctx->seq_index) {
+        ret = write_seq_index_atomic(ctx->seq_index_file, highest);
+        if (ret < 0) {
+            return -1;
+        }
+        ctx->seq_index = highest;
+    }
+    return 0;
+}
+
 static int init_seq_index(void *context) {
     int ret;
     const char *tmp;
@@ -941,6 +1214,10 @@ static int init_seq_index(void *context) {
         }
         flb_plg_info(ctx->ins, "Successfully recovered index. "
                      "Continuing at index=%"PRIu64, ctx->seq_index);
+    }
+    if (ctx->index_per_tag == FLB_FALSE && reconcile_shared_seq_index(ctx) < 0) {
+        flb_plg_error(ctx->ins, "Failed to reconcile shared sequential index with per-tag metadata");
+        return -1;
     }
     return 0;
 }
@@ -1144,6 +1421,15 @@ static int cb_s3_init(struct flb_output_instance *ins,
     /* initialize config map */
     ret = flb_output_config_map_set(ins, (void *) ctx);
     if (ret == -1) {
+        return -1;
+    }
+
+    if (ctx->index_per_tag == FLB_TRUE &&
+        strstr(ctx->s3_key_format, "$INDEX") == NULL) {
+        flb_plg_error(ctx->ins,
+                      "'index_per_tag' requires '$INDEX' in 's3_key_format'");
+        s3_context_destroy(ctx);
+        flb_output_set_context(ins, NULL);
         return -1;
     }
 
@@ -2321,13 +2607,17 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t file_first_
                          char *body, size_t body_size, struct s3_file *chunk)
 {
     flb_sds_t s3_key = NULL;
+    flb_sds_t tag_seq_index_file = NULL;
     struct flb_http_client *c = NULL;
     struct flb_aws_header *headers = NULL;
     char *random_alphanumeric;
+    char *selected_seq_index_file;
     int append_random = FLB_FALSE;
     int len;
     int ret;
     int num_headers = 0;
+    uint64_t tag_seq_index;
+    uint64_t *selected_seq_index;
     int deferred = FLB_FALSE;
     int keep_uri;
     int advance_index;
@@ -2339,6 +2629,9 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t file_first_
     flb_sds_t uri;
     flb_sds_t tmp;
     char final_body_md5[25];
+
+    selected_seq_index = &ctx->seq_index;
+    selected_seq_index_file = ctx->seq_index_file;
 
     keep_uri = ctx->uploader_gate_initialized && chunk != NULL;
     recovery = keep_uri && chunk->retry.uri != NULL &&
@@ -2354,10 +2647,22 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t file_first_
         goto prepare_request;
     }
 
+    if (ctx->index_per_tag == FLB_TRUE) {
+        ret = prepare_tag_seq_index(ctx, tag, strlen(tag),
+                                    &tag_seq_index, &tag_seq_index_file);
+        if (ret < 0) {
+            return -1;
+        }
+
+        selected_seq_index = &tag_seq_index;
+        selected_seq_index_file = tag_seq_index_file;
+    }
+
     s3_key = flb_get_s3_key(ctx->s3_key_format, file_first_log_time, tag,
-                            ctx->tag_delimiters, ctx->seq_index);
+                            ctx->tag_delimiters, *selected_seq_index);
     if (!s3_key) {
         flb_plg_error(ctx->ins, "Failed to construct S3 Object Key for %s", tag);
+        flb_sds_destroy(tag_seq_index_file);
         return -1;
     }
 
@@ -2372,6 +2677,7 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t file_first_
     uri = flb_sds_create_size(len);
     if (uri == NULL) {
         flb_sds_destroy(s3_key);
+        flb_sds_destroy(tag_seq_index_file);
         return -1;
     }
 
@@ -2406,6 +2712,7 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t file_first_
         if (!random_alphanumeric) {
             flb_sds_destroy(s3_key);
             flb_sds_destroy(uri);
+            flb_sds_destroy(tag_seq_index_file);
             flb_plg_error(ctx->ins, "Failed to create randomness for S3 key %s", tag);
             return -1;
         }
@@ -2422,6 +2729,8 @@ static int s3_put_object(struct flb_s3 *ctx, const char *tag, time_t file_first_
 
     if (!tmp) {
         flb_sds_destroy(s3_key);
+        flb_sds_destroy(uri);
+        flb_sds_destroy(tag_seq_index_file);
         flb_plg_error(ctx->ins, "Failed to create PutObject URI");
         return -1;
     }
@@ -2436,16 +2745,36 @@ prepare_request:
         if (ret != 0) {
             flb_plg_error(ctx->ins, "Failed to create Content-MD5 header");
             flb_sds_destroy(uri);
+            flb_sds_destroy(tag_seq_index_file);
             return -1;
         }
     }
 
     /* Update file and increment index value right before request */
     if (advance_index) {
-        ctx->seq_index++;
+        if (ctx->index_per_tag == FLB_TRUE &&
+            *selected_seq_index == UINT64_MAX) {
+            flb_plg_error(ctx->ins,
+                          "Sequential index overflow for tag %s", tag);
+            flb_sds_destroy(uri);
+            flb_sds_destroy(tag_seq_index_file);
+            return -1;
+        }
 
-        ret = write_seq_index(ctx->seq_index_file, ctx->seq_index);
-        if (ret < 0 && access(ctx->seq_index_file, F_OK) == 0) {
+        (*selected_seq_index)++;
+
+        ret = write_selected_seq_index(ctx, selected_seq_index_file, *selected_seq_index);
+        if (ctx->index_per_tag == FLB_TRUE && ret < 0) {
+            (*selected_seq_index)--;
+            flb_plg_error(ctx->ins,
+                          "Failed to update sequential index metadata file %s",
+                          selected_seq_index_file);
+            flb_sds_destroy(uri);
+            flb_sds_destroy(tag_seq_index_file);
+            return -1;
+        }
+        else if (ctx->index_per_tag == FLB_FALSE &&
+                 ret < 0 && access(ctx->seq_index_file, F_OK) == 0) {
             ctx->seq_index--;
             flb_plg_error(ctx->ins, "Failed to update sequential index metadata file");
             flb_sds_destroy(uri);
@@ -2457,12 +2786,14 @@ prepare_request:
         tmp = flb_sds_create(uri);
         if (tmp == NULL) {
             flb_sds_destroy(uri);
+            flb_sds_destroy(tag_seq_index_file);
             return -1;
         }
         flb_sds_destroy(chunk->retry.uri);
         chunk->retry.uri = tmp;
         if (s3_uploader_state_write(ctx, "chunk", chunk->fsf->name, &chunk->retry) < 0) {
             flb_sds_destroy(uri);
+            flb_sds_destroy(tag_seq_index_file);
             return -1;
         }
     }
@@ -2486,6 +2817,7 @@ prepare_request:
     }
     if (deferred) {
         flb_sds_destroy(uri);
+        flb_sds_destroy(tag_seq_index_file);
         return S3_UPLOAD_DEFERRED;
     }
     if (c) {
@@ -2498,6 +2830,7 @@ prepare_request:
             final_key = uri + strlen(ctx->bucket) + 1;
             flb_plg_info(ctx->ins, "Successfully uploaded object %s", final_key);
             flb_sds_destroy(uri);
+            flb_sds_destroy(tag_seq_index_file);
             flb_http_client_destroy(c);
 
             return 0;
@@ -2516,14 +2849,17 @@ prepare_request:
 
 decrement_index:
     if (advance_index && !keep_uri) {
-        ctx->seq_index--;
+        (*selected_seq_index)--;
 
-        ret = write_seq_index(ctx->seq_index_file, ctx->seq_index);
+        ret = write_selected_seq_index(ctx, selected_seq_index_file, *selected_seq_index);
         if (ret < 0) {
-            flb_plg_error(ctx->ins, "Failed to decrement index after request error");
+            flb_plg_error(ctx->ins,
+                          "Failed to persist sequential index rollback after request error");
+            flb_sds_destroy(tag_seq_index_file);
             return -1;
         }
     }
+    flb_sds_destroy(tag_seq_index_file);
     return -1;
 }
 
@@ -2592,7 +2928,11 @@ static struct multipart_upload *create_upload(struct flb_s3 *ctx, const char *ta
     int ret;
     struct multipart_upload *m_upload = NULL;
     flb_sds_t s3_key = NULL;
+    flb_sds_t tag_seq_index_file = NULL;
     flb_sds_t tmp_sds = NULL;
+    char *selected_seq_index_file;
+    uint64_t tag_seq_index;
+    uint64_t *selected_seq_index;
 
     /* create new upload for this key */
     m_upload = flb_calloc(1, sizeof(struct multipart_upload));
@@ -2600,10 +2940,35 @@ static struct multipart_upload *create_upload(struct flb_s3 *ctx, const char *ta
         flb_errno();
         return NULL;
     }
+
+    selected_seq_index = &ctx->seq_index;
+    selected_seq_index_file = ctx->seq_index_file;
+
+    if (ctx->index_per_tag == FLB_TRUE) {
+        ret = prepare_tag_seq_index(ctx, tag, tag_len,
+                                    &tag_seq_index, &tag_seq_index_file);
+        if (ret < 0) {
+            flb_free(m_upload);
+            return NULL;
+        }
+
+        selected_seq_index = &tag_seq_index;
+        selected_seq_index_file = tag_seq_index_file;
+
+        if (*selected_seq_index == UINT64_MAX) {
+            flb_plg_error(ctx->ins,
+                          "Sequential index overflow for tag %s", tag);
+            flb_sds_destroy(tag_seq_index_file);
+            flb_free(m_upload);
+            return NULL;
+        }
+    }
+
     s3_key = flb_get_s3_key(ctx->s3_key_format, file_first_log_time, tag,
-                            ctx->tag_delimiters, ctx->seq_index);
+                            ctx->tag_delimiters, *selected_seq_index);
     if (!s3_key) {
         flb_plg_error(ctx->ins, "Failed to construct S3 Object Key for %s", tag);
+        flb_sds_destroy(tag_seq_index_file);
         flb_free(m_upload);
         return NULL;
     }
@@ -2613,6 +2978,7 @@ static struct multipart_upload *create_upload(struct flb_s3 *ctx, const char *ta
     if (!tmp_sds) {
         flb_errno();
         flb_sds_destroy(s3_key);
+        flb_sds_destroy(tag_seq_index_file);
         flb_free(m_upload);
         return NULL;
     }
@@ -2624,16 +2990,17 @@ static struct multipart_upload *create_upload(struct flb_s3 *ctx, const char *ta
 
     /* Update file and increment index value right before request */
     if (ctx->key_fmt_has_seq_index) {
-        ctx->seq_index++;
+        (*selected_seq_index)++;
 
-        ret = write_seq_index(ctx->seq_index_file, ctx->seq_index);
+        ret = write_selected_seq_index(ctx, selected_seq_index_file, *selected_seq_index);
         if (ret < 0) {
-            ctx->seq_index--;
+            (*selected_seq_index)--;
 
             mk_list_del(&m_upload->_head);
 
             flb_sds_destroy(tmp_sds);
             flb_sds_destroy(s3_key);
+            flb_sds_destroy(tag_seq_index_file);
 
             flb_free(m_upload);
 
@@ -2643,6 +3010,7 @@ static struct multipart_upload *create_upload(struct flb_s3 *ctx, const char *ta
         }
     }
 
+    flb_sds_destroy(tag_seq_index_file);
     return m_upload;
 }
 
@@ -6015,6 +6383,14 @@ static struct flb_config_map config_map[] = {
     "A series of characters which will be used to split the tag into “parts” for "
     "use with the s3_key_format option. See the in depth examples and tutorial in "
     "the documentation."
+    },
+
+    {
+     FLB_CONFIG_MAP_BOOL, "index_per_tag", "false",
+     0, FLB_TRUE, offsetof(struct flb_s3, index_per_tag),
+     "Maintain an independent $INDEX counter for each complete tag. "
+     "Changing modes with retained counter metadata reconciles the next index. "
+     "If the metadata is lost, use a new object key prefix to avoid reusing keys."
     },
 
     {

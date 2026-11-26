@@ -268,6 +268,7 @@ struct flb_s3 {
 
     uint64_t seq_index;
     int key_fmt_has_seq_index;
+    int index_per_tag;
     flb_sds_t metadata_dir;
     flb_sds_t seq_index_file;
 

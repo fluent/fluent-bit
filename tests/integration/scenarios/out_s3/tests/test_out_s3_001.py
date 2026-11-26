@@ -695,6 +695,30 @@ def test_out_s3_sequence_directory_after_shutdown(tmp_path, throttle):
     assert sequence.exists() == throttle
 
 
+def test_out_s3_index_per_tag_reconciles_retained_indexes(tmp_path):
+    config = _s3_throttle_config(tmp_path)
+    settings = yaml.safe_load(config.read_text())
+    output = settings["pipeline"]["outputs"][0]
+    settings["pipeline"]["outputs"] = [output]
+    output["s3_key_format"] = "/$TAG/$INDEX"
+
+    for index, per_tag in enumerate([False, True, False, True]):
+        output["index_per_tag"] = per_tag
+        config.write_text(yaml.safe_dump(settings))
+        service = Service(str(config))
+        try:
+            service.start()
+            _s3_push(service, "routed", "sequence migration")
+            expected_path = f"/throttled/routed/{index}"
+            completed = _s3_completed_requests(
+                service, lambda r: r["method"] == "PUT", 1
+            )
+            assert completed[0]["status"] == 200
+            assert completed[0]["path"] == expected_path
+        finally:
+            service.stop()
+
+
 @pytest.mark.parametrize("key_format", ["/$TAG/$INDEX", "/$TAG/fixed", "/" + "d" * 999 + "/fixed"])
 def test_out_s3_uploader_recovers_corrupt_journal(tmp_path, key_format):
     config = _s3_throttle_config(tmp_path)
