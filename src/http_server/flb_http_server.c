@@ -365,6 +365,44 @@ static int flb_http_server_session_write(struct flb_http_server_session *session
     return 0;
 }
 
+/* Connection is a comma-separated list of tokens (RFC 9110). */
+static int http_connection_header_has_token(const char *value, const char *token)
+{
+    size_t token_len;
+    const char *cursor;
+    const char *start;
+
+    if (value == NULL || token == NULL) {
+        return FLB_FALSE;
+    }
+
+    token_len = strlen(token);
+    cursor = value;
+
+    while (*cursor != '\0') {
+        while (*cursor == ' ' || *cursor == '\t' || *cursor == ',') {
+            cursor++;
+        }
+
+        if (*cursor == '\0') {
+            break;
+        }
+
+        start = cursor;
+        while (*cursor != '\0' && *cursor != ',' &&
+               *cursor != ' ' && *cursor != '\t') {
+            cursor++;
+        }
+
+        if ((size_t) (cursor - start) == token_len &&
+            strncasecmp(start, token, token_len) == 0) {
+            return FLB_TRUE;
+        }
+    }
+
+    return FLB_FALSE;
+}
+
 static int flb_http_server_should_connection_be_closed(
     struct flb_http_request *request)
 {
@@ -417,11 +455,17 @@ static int flb_http_server_should_connection_be_closed(
         keepalive = FLB_TRUE;
     }
 
-    /* Override protocol defaults by checking connection header */
+    /* Override protocol defaults by checking connection header.
+     * HTTP/1.1 keep-alive is the default, so "Connection: close" must
+     * opt out. "close" takes precedence when both tokens are present.
+     */
     connection_header_value = flb_http_request_get_header(request,
                                                           "connection");
-    if (connection_header_value &&
-        strcasecmp(connection_header_value, "keep-alive") == 0) {
+    if (http_connection_header_has_token(connection_header_value, "close")) {
+        keepalive = FLB_FALSE;
+    }
+    else if (http_connection_header_has_token(connection_header_value,
+                                              "keep-alive")) {
         keepalive = FLB_TRUE;
     }
 
@@ -555,6 +599,17 @@ static int flb_http_server_client_activity_event_handler(void *data)
 
         if (request->body != NULL && request->content_length == 0) {
             request->content_length = cfl_sds_len(request->body);
+        }
+
+        /* Announce the close before the handler commits the response,
+         * otherwise HTTP/1.1 clients that sent "Connection: close"
+         * get a keep-alive response and then wait for IO timeout.
+         */
+        if (request->protocol_version < HTTP_PROTOCOL_VERSION_20 &&
+            flb_http_server_should_connection_be_closed(request)) {
+            flb_http_response_set_header(response,
+                                         "Connection", 0,
+                                         "close", 0);
         }
 
         callback_context.request = request;
