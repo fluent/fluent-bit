@@ -23,3 +23,11 @@ target_link_libraries(flb-bench-output_throttle
   fluent-bit-static
   ${CMAKE_THREAD_LIBS_INIT}
 )
+
+if(FLB_PROCESSOR_ADAPTIVE)
+  add_executable(flb-bench-processor_adaptive flb-bench-processor_adaptive.c)
+  target_link_libraries(flb-bench-processor_adaptive
+    fluent-bit-static
+    ${CMAKE_THREAD_LIBS_INIT}
+  )
+endif()
