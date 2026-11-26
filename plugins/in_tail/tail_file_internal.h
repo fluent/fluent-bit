@@ -20,6 +20,7 @@
 #ifndef FLB_TAIL_INTERNAL_H
 #define FLB_TAIL_INTERNAL_H
 
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_input.h>
 #include <fluent-bit/flb_sds.h>
@@ -35,11 +36,19 @@
 #include "tail.h"
 #include "tail_config.h"
 
+#ifdef FLB_SYSTEM_WINDOWS
+typedef HANDLE flb_tail_file_handle;
+#define FLB_TAIL_FILE_INVALID_HANDLE INVALID_HANDLE_VALUE
+#else
+typedef int flb_tail_file_handle;
+#define FLB_TAIL_FILE_INVALID_HANDLE (-1)
+#endif
+
 struct flb_tail_file {
     /* Inotify */
     int watch_fd;
     /* file lookup info */
-    int fd;
+    flb_tail_file_handle fd;
     int64_t size;
     int64_t offset;             /* this represents the raw file offset, not
                                    the input data offset (see stream_offset) */

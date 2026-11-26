@@ -33,6 +33,15 @@
 
 #ifdef FLB_SYSTEM_WINDOWS
 #include "win32.h"
+#define tail_file_fstat win32_fstat
+#define tail_file_read win32_read
+#define tail_file_seek win32_seek
+#define tail_file_close CloseHandle
+#else
+#define tail_file_fstat fstat
+#define tail_file_read read
+#define tail_file_seek lseek
+#define tail_file_close close
 #endif
 
 #ifdef FLB_HAVE_REGEX

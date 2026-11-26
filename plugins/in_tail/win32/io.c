@@ -22,82 +22,94 @@
 #endif
 
 #include <Windows.h>
-#include <stdlib.h>
-#include <stdint.h>
-#include <fcntl.h>
-#include <io.h>
 #include <errno.h>
+#include <limits.h>
+#include <stdio.h>
 
+#include <fluent-bit/flb_compat.h>
 #include <fluent-bit/flb_mem.h>
 
 #include "interface.h"
 
-/*
- * POSIX IO emulation tailored for in_tail's usage.
- *
- * open(2) that does not acquire an exclusive lock.
- */
-
-int win32_open(const char *path, int flags)
+HANDLE win32_open(const char *path, int utf8)
 {
-    int fd;
-    int saved_errno;
-    HANDLE h;
+    HANDLE handle;
+    wchar_t *wide_path;
+    DWORD share = FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
 
-    h = CreateFileA(path,
-                    GENERIC_READ,
-                    FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,
-                    NULL,           /* lpSecurityAttributes */
-                    OPEN_EXISTING,  /* dwCreationDisposition */
-                    0,              /* dwFlagsAndAttributes */
-                    NULL);          /* hTemplateFile */
-    if (h == INVALID_HANDLE_VALUE) {
-        return -1;
-    }
-    fd = _open_osfhandle((intptr_t) h, _O_RDONLY);
-    if (fd == -1) {
-        saved_errno = errno;
-        CloseHandle(h);
-        errno = saved_errno;
+    if (utf8) {
+        wide_path = win32_utf8_to_wide(path);
+        if (wide_path == NULL) {
+            errno = EINVAL;
+            return INVALID_HANDLE_VALUE;
+        }
+
+        handle = CreateFileW(wide_path, GENERIC_READ, share, NULL, OPEN_EXISTING, 0, NULL);
+        if (handle == INVALID_HANDLE_VALUE) {
+            win32_propagate_last_error_to_errno();
+        }
+        flb_free(wide_path);
+        return handle;
     }
 
-    return fd;
+    handle = CreateFileA(path, GENERIC_READ, share, NULL, OPEN_EXISTING, 0, NULL);
+    if (handle == INVALID_HANDLE_VALUE) {
+        win32_propagate_last_error_to_errno();
+    }
+    return handle;
 }
 
-int win32_open_utf8(const char *path, int flags)
+ssize_t win32_read(HANDLE handle, void *buffer, size_t size)
 {
-    int fd;
-    int saved_errno;
-    HANDLE h;
-    wchar_t *wide_path;
+    DWORD requested;
+    DWORD bytes_read;
+    DWORD error;
 
-    wide_path = win32_utf8_to_wide(path);
-    if (wide_path == NULL) {
+    requested = size > INT_MAX ? INT_MAX : (DWORD) size;
+    if (ReadFile(handle, buffer, requested, &bytes_read, NULL)) {
+        return bytes_read;
+    }
+    error = GetLastError();
+    if (error == ERROR_HANDLE_EOF) {
+        return 0;
+    }
+
+    if (error == ERROR_LOCK_VIOLATION) {
+        /* Match CRT read semantics so Tail retries a locked byte range. */
+        errno = EACCES;
+        return -1;
+    }
+
+    win32_propagate_last_error_to_errno();
+    return -1;
+}
+
+int64_t win32_seek(HANDLE handle, int64_t offset, int whence)
+{
+    DWORD method;
+    LARGE_INTEGER distance;
+    LARGE_INTEGER position;
+
+    switch (whence) {
+    case SEEK_SET:
+        method = FILE_BEGIN;
+        break;
+    case SEEK_CUR:
+        method = FILE_CURRENT;
+        break;
+    case SEEK_END:
+        method = FILE_END;
+        break;
+    default:
         errno = EINVAL;
         return -1;
     }
 
-    h = CreateFileW(wide_path,
-                    GENERIC_READ,
-                    FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,
-                    NULL,           /* lpSecurityAttributes */
-                    OPEN_EXISTING,  /* dwCreationDisposition */
-                    0,              /* dwFlagsAndAttributes */
-                    NULL);          /* hTemplateFile */
-
-    if (h == INVALID_HANDLE_VALUE) {
+    distance.QuadPart = offset;
+    if (!SetFilePointerEx(handle, distance, &position, method)) {
         win32_propagate_last_error_to_errno();
-        flb_free(wide_path);
         return -1;
     }
 
-    flb_free(wide_path);
-    fd = _open_osfhandle((intptr_t) h, _O_RDONLY);
-    if (fd == -1) {
-        saved_errno = errno;
-        CloseHandle(h);
-        errno = saved_errno;
-    }
-
-    return fd;
+    return position.QuadPart;
 }

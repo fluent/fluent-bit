@@ -60,20 +60,16 @@
 #define FLB_TAIL_DB_OFFSET_MARKER_SIZE 32
 
 #ifdef FLB_SYSTEM_WINDOWS
-static inline int tail_file_open(struct flb_tail_config *ctx, const char *path,
-                                 int flags)
+static flb_tail_file_handle tail_file_open(struct flb_tail_config *ctx, const char *path)
 {
-    if (ctx->windows_path_encoding == FLB_TAIL_WINDOWS_PATH_ENCODING_UTF8) {
-        if (!ctx->follow_symlinks) {
-            return flb_file_open_safe_utf8(path, flags);
-        }
-        return win32_open_utf8(path, flags);
+    int utf8;
+
+    utf8 = ctx->windows_path_encoding == FLB_TAIL_WINDOWS_PATH_ENCODING_UTF8;
+    if (!ctx->follow_symlinks) {
+        return flb_file_open_safe_for_read(path, utf8 ? CP_UTF8 : CP_ACP);
     }
 
-    if (!ctx->follow_symlinks) {
-        return flb_file_open_safe(NULL, path, flags, 0, 0);
-    }
-    return open(path, flags);
+    return win32_open(path, utf8);
 }
 
 static inline int tail_file_stat(struct flb_tail_config *ctx, const char *path,
@@ -96,13 +92,12 @@ static inline int tail_file_lstat(struct flb_tail_config *ctx, const char *path,
     return lstat(path, st);
 }
 #else
-static inline int tail_file_open(struct flb_tail_config *ctx, const char *path,
-                                 int flags)
+static flb_tail_file_handle tail_file_open(struct flb_tail_config *ctx, const char *path)
 {
     if (ctx->follow_symlinks) {
-        return open(path, flags);
+        return open(path, O_RDONLY);
     }
-    return flb_file_open_safe(NULL, path, flags, 0, 0);
+    return flb_file_open_safe(NULL, path, O_RDONLY, 0, 0);
 }
 
 static inline int tail_file_stat(struct flb_tail_config *ctx, const char *path,
@@ -132,8 +127,8 @@ static int compute_offset_marker(struct flb_tail_file *file,
                                  uint64_t *marker,
                                  size_t *marker_size)
 {
-    off_t current;
-    off_t start;
+    int64_t current;
+    int64_t start;
     ssize_t bytes;
     size_t window;
     char buf[FLB_TAIL_DB_OFFSET_MARKER_SIZE];
@@ -145,31 +140,28 @@ static int compute_offset_marker(struct flb_tail_file *file,
         return 0;
     }
 
-    current = lseek(file->fd, 0, SEEK_CUR);
+    current = tail_file_seek(file->fd, 0, SEEK_CUR);
     if (current == -1) {
         flb_errno();
         return -1;
     }
 
-    window = offset;
-    if (window > sizeof(buf)) {
-        window = sizeof(buf);
-    }
+    window = offset > (int64_t) sizeof(buf) ? sizeof(buf) : (size_t) offset;
 
-    start = offset - window;
-    if (lseek(file->fd, start, SEEK_SET) == -1) {
+    start = offset - (int64_t) window;
+    if (tail_file_seek(file->fd, start, SEEK_SET) == -1) {
         flb_errno();
         return -1;
     }
 
-    bytes = read(file->fd, buf, window);
+    bytes = tail_file_read(file->fd, buf, window);
     if (bytes == -1) {
         flb_errno();
-        lseek(file->fd, current, SEEK_SET);
+        tail_file_seek(file->fd, current, SEEK_SET);
         return -1;
     }
 
-    if (lseek(file->fd, current, SEEK_SET) == -1) {
+    if (tail_file_seek(file->fd, current, SEEK_SET) == -1) {
         flb_errno();
         return -1;
     }
@@ -277,7 +269,7 @@ int flb_tail_file_reset_on_truncate(struct flb_tail_file *file,
     int64_t offset;
     struct flb_tail_config *ctx = file->config;
 
-    offset = lseek(file->fd, 0, SEEK_SET);
+    offset = tail_file_seek(file->fd, 0, SEEK_SET);
     if (offset == -1) {
         flb_errno();
         return -1;
@@ -1301,7 +1293,7 @@ static int set_file_position(struct flb_tail_config *ctx,
             }
 
             if (file->offset > 0) {
-                ret = lseek(file->fd, file->offset, SEEK_SET);
+                ret = tail_file_seek(file->fd, file->offset, SEEK_SET);
                 if (ret == -1) {
                     flb_errno();
                     return -1;
@@ -1311,7 +1303,7 @@ static int set_file_position(struct flb_tail_config *ctx,
                 }
             }
             else if (ctx->read_from_head == FLB_FALSE) {
-                ret = lseek(file->fd, 0, SEEK_END);
+                ret = tail_file_seek(file->fd, 0, SEEK_END);
                 if (ret == -1) {
                     flb_errno();
                     return -1;
@@ -1331,7 +1323,7 @@ static int set_file_position(struct flb_tail_config *ctx,
      * even when read_from_head is true; the flag only governs truly new
      * files that have no prior read position. */
     if (explicit_offset) {
-        ret = lseek(file->fd, file->offset, SEEK_SET);
+        ret = tail_file_seek(file->fd, file->offset, SEEK_SET);
 
         if (ret == -1) {
             flb_errno();
@@ -1350,7 +1342,7 @@ static int set_file_position(struct flb_tail_config *ctx,
         return 0;
     }
 
-    ret = lseek(file->fd, 0, SEEK_END);
+    ret = tail_file_seek(file->fd, 0, SEEK_END);
 
     if (ret == -1) {
         flb_errno();
@@ -1419,7 +1411,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
      * cmt_files_opened/closed pair (the matching opened increment lives at
      * the very end of this function, immediately before return 0).
      */
-    int fd = -1;
+    flb_tail_file_handle fd;
     int ret;
     uint64_t stream_id;
     uint64_t ts;
@@ -1447,15 +1439,15 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     }
     #endif
 
-    fd = tail_file_open(ctx, path, O_RDONLY);
-    if (fd == -1) {
+    fd = tail_file_open(ctx, path);
+    if (fd == FLB_TAIL_FILE_INVALID_HANDLE) {
         flb_errno();
         flb_plg_error(ctx->ins, "cannot open %s", path);
         return -1;
     }
 
     /* Use the opened inode, not metadata collected before the open. */
-    if (fstat(fd, st) != 0 || !S_ISREG(st->st_mode) ||
+    if (tail_file_fstat(fd, st) != 0 || !S_ISREG(st->st_mode) ||
         flb_tail_file_exists(st, ctx) == FLB_TRUE) {
         goto err_close_fd;
     }
@@ -1472,7 +1464,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     file->watch_fd  = -1;
     file->tail_mode = mode;
 
-    /* On non-windows environments check if the original path is a link */
+    /* Check if the original path is a link. */
     ret = tail_file_lstat(ctx, path, &lst);
     if (ret == 0) {
         if (S_ISLNK(lst.st_mode)) {
@@ -1790,7 +1782,7 @@ err_free_hash_key:
 err_free_file:
     flb_free(file);
 err_close_fd:
-    close(fd);
+    tail_file_close(fd);
     return -1;
 }
 
@@ -1851,9 +1843,8 @@ void flb_tail_file_remove(struct flb_tail_file *file)
     mk_list_del(&file->_head);
     flb_tail_fs_remove(ctx, file);
 
-    /* avoid deleting file with -1 fd */
-    if (file->fd != -1) {
-        close(file->fd);
+    if (file->fd != FLB_TAIL_FILE_INVALID_HANDLE) {
+        tail_file_close(file->fd);
     }
     if (file->tag_buf) {
         flb_free(file->tag_buf);
@@ -1911,7 +1902,7 @@ static int adjust_counters(struct flb_tail_config *ctx, struct flb_tail_file *fi
 
     (void) ctx;
 
-    ret = fstat(file->fd, &st);
+    ret = tail_file_fstat(file->fd, &st);
     if (ret == -1) {
         flb_errno();
         return FLB_TAIL_ERROR;
@@ -2109,7 +2100,7 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
             read_buffer = flb_decompression_context_get_append_buffer(
                             file->decompression_context);
 
-            raw_data_length = read(file->fd, read_buffer, read_size);
+            raw_data_length = tail_file_read(file->fd, read_buffer, read_size);
         }
         else {
             raw_data_length = 0;
@@ -2139,9 +2130,7 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
         }
     }
     else {
-        raw_data_length = read(file->fd,
-                               &file->buf_data[file->buf_len],
-                               read_size);
+        raw_data_length = tail_file_read(file->fd, &file->buf_data[file->buf_len], read_size);
 
         if (raw_data_length > 0) {
             stream_data_length = (size_t) raw_data_length;
@@ -2295,7 +2284,7 @@ int flb_tail_file_to_event(struct flb_tail_file *file)
     struct flb_tail_config *ctx = file->config;
 
     /* Check if the file promoted have pending bytes */
-    ret = fstat(file->fd, &st);
+    ret = tail_file_fstat(file->fd, &st);
     if (ret != 0) {
         flb_errno();
         return -1;
@@ -2355,8 +2344,6 @@ char *flb_tail_file_name(struct flb_tail_file *file)
     char tmp[128];
 #elif defined(__APPLE__)
     char path[PATH_MAX];
-#elif defined(FLB_SYSTEM_WINDOWS)
-    HANDLE h;
 #elif defined(FLB_SYSTEM_FREEBSD)
     struct kinfo_file *file_entries;
     int file_count;
@@ -2406,13 +2393,6 @@ char *flb_tail_file_name(struct flb_tail_file *file)
     int len;
     wchar_t *wide_buf;
 
-    h = (HANDLE) _get_osfhandle(file->fd);
-    if (h == INVALID_HANDLE_VALUE) {
-        flb_errno();
-        flb_free(buf);
-        return NULL;
-    }
-
     /* This function returns the length of the string excluding "\0"
      * and the resulting path has a "\\?\" prefix.
      */
@@ -2423,8 +2403,8 @@ char *flb_tail_file_name(struct flb_tail_file *file)
             return NULL;
         }
 
-        len = GetFinalPathNameByHandleW(h, wide_buf, PATH_MAX,
-                                        FILE_NAME_NORMALIZED);
+        len = GetFinalPathNameByHandleW(file->fd, wide_buf, PATH_MAX,
+                                       FILE_NAME_NORMALIZED);
         if (len == 0 || len >= PATH_MAX) {
             flb_free(wide_buf);
             flb_free(buf);
@@ -2442,7 +2422,7 @@ char *flb_tail_file_name(struct flb_tail_file *file)
         }
     }
     else {
-        len = GetFinalPathNameByHandleA(h, buf, PATH_MAX, FILE_NAME_NORMALIZED);
+        len = GetFinalPathNameByHandleA(file->fd, buf, PATH_MAX, FILE_NAME_NORMALIZED);
         if (len == 0 || len >= PATH_MAX) {
             flb_free(buf);
             return NULL;
@@ -2571,7 +2551,7 @@ static int check_purge_deleted_file(struct flb_tail_config *ctx,
     int64_t mtime;
     struct stat st;
 
-    ret = fstat(file->fd, &st);
+    ret = tail_file_fstat(file->fd, &st);
     if (ret == -1) {
         flb_plg_debug(ctx->ins, "error stat(2) %s, removing", file->name);
         flb_tail_file_remove(file);
@@ -2636,7 +2616,7 @@ int flb_tail_file_purge(struct flb_input_instance *ins,
     mk_list_foreach_safe(head, tmp, &ctx->files_rotated) {
         file = mk_list_entry(head, struct flb_tail_file, _rotate_head);
         if ((file->rotated + ctx->rotate_wait) <= now) {
-            ret = fstat(file->fd, &st);
+            ret = tail_file_fstat(file->fd, &st);
             if (ret == 0) {
                 flb_plg_debug(ctx->ins,
                               "inode=%"PRIu64" purge rotated file %s " \

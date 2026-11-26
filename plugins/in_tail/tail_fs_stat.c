@@ -74,7 +74,7 @@ static int tail_fs_event(struct flb_input_instance *ins,
         fst = file->fs_backend;
 
         /* Check current status of the file */
-        ret = fstat(file->fd, &st);
+        ret = tail_file_fstat(file->fd, &st);
         if (ret == -1) {
             flb_errno();
             continue;
@@ -111,7 +111,7 @@ static int tail_fs_check(struct flb_input_instance *ins,
         file = mk_list_entry(head, struct flb_tail_file, _head);
         fst = file->fs_backend;
 
-        ret = fstat(file->fd, &st);
+        ret = tail_file_fstat(file->fd, &st);
         if (ret == -1) {
             flb_plg_debug(ctx->ins, "error stat(2) %s, removing", file->name);
             flb_tail_file_remove(file);

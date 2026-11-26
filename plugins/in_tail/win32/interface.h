@@ -20,6 +20,7 @@
 #ifndef FLB_TAIL_WIN32_INTERFACE_H
 #define FLB_TAIL_WIN32_INTERFACE_H
 
+#include <fluent-bit/flb_compat.h>
 #include <wchar.h>
 
 struct win32_stat {
@@ -32,12 +33,13 @@ struct win32_stat {
 
 int win32_stat(const char *path, struct win32_stat *wst);
 int win32_lstat(const char *path, struct win32_stat *wst);
-int win32_fstat(int fd, struct win32_stat *wst);
+int win32_fstat(HANDLE handle, struct win32_stat *wst);
 int win32_stat_utf8(const char *path, struct win32_stat *wst);
 int win32_lstat_utf8(const char *path, struct win32_stat *wst);
 
-int win32_open(const char *path, int flags);
-int win32_open_utf8(const char *path, int flags);
+HANDLE win32_open(const char *path, int utf8);
+ssize_t win32_read(HANDLE handle, void *buffer, size_t size);
+int64_t win32_seek(HANDLE handle, int64_t offset, int whence);
 
 void win32_propagate_last_error_to_errno(void);
 wchar_t *win32_utf8_to_wide(const char *str);

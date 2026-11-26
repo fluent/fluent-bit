@@ -257,7 +257,7 @@ static int is_symlink_utf8(const char *path)
     return 0;
 }
 
-static int hstat(HANDLE h, struct win32_stat *wst)
+int win32_fstat(HANDLE h, struct win32_stat *wst)
 {
     BY_HANDLE_FILE_INFORMATION info;
     FILE_STANDARD_INFO std;
@@ -312,7 +312,7 @@ int win32_stat(const char *path, struct win32_stat *wst)
         return -1;
     }
 
-    if (hstat(h, wst)) {
+    if (win32_fstat(h, wst)) {
         CloseHandle(h);
         return -1;
     }
@@ -350,7 +350,7 @@ int win32_stat_utf8(const char *path, struct win32_stat *wst)
         return -1;
     }
 
-    if (hstat(h, wst)) {
+    if (win32_fstat(h, wst)) {
         CloseHandle(h);
         return -1;
     }
@@ -380,7 +380,7 @@ int win32_lstat(const char *path, struct win32_stat *wst)
         return -1;
     }
 
-    if (hstat(h, wst)) {
+    if (win32_fstat(h, wst)) {
         CloseHandle(h);
         return -1;
     }
@@ -422,7 +422,7 @@ int win32_lstat_utf8(const char *path, struct win32_stat *wst)
         return -1;
     }
 
-    if (hstat(h, wst)) {
+    if (win32_fstat(h, wst)) {
         CloseHandle(h);
         return -1;
     }
@@ -433,22 +433,4 @@ int win32_lstat_utf8(const char *path, struct win32_stat *wst)
 
     CloseHandle(h);
     return 0;
-}
-
-int win32_fstat(int fd, struct win32_stat *wst)
-{
-    HANDLE h;
-
-    SetLastError(0);
-    reset_errno();
-
-    h = (HANDLE) _get_osfhandle(fd);
-
-    if (h == INVALID_HANDLE_VALUE) {
-        win32_propagate_last_error_to_errno();
-
-        return -1;
-    }
-
-    return hstat(h, wst);
 }
