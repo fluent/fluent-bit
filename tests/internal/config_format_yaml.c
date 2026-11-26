@@ -8,6 +8,8 @@
 #include <fluent-bit/flb_str.h>
 #include <fluent-bit/flb_config_format.h>
 
+#include <yaml.h>
+
 #include <cfl/cfl.h>
 #include <cfl/cfl_list.h>
 
@@ -1274,7 +1276,102 @@ static void test_composition_errors()
     }
 }
 
+static void test_yaml_version_directive(void)
+{
+    const unsigned char document[] = "%YAML 1.2\n---\nservice: {}\n";
+    yaml_parser_t parser;
+    yaml_event_t event;
+    struct flb_cf *cf;
+    int supported;
+
+    /* Probe the linked parser directly, including distribution backports. */
+    TEST_ASSERT(yaml_parser_initialize(&parser));
+    yaml_parser_set_input_string(&parser, document, sizeof(document) - 1);
+    TEST_ASSERT(yaml_parser_parse(&parser, &event));
+    TEST_CHECK(event.type == YAML_STREAM_START_EVENT);
+    yaml_event_delete(&event);
+    supported = yaml_parser_parse(&parser, &event);
+    if (supported) {
+        TEST_CHECK(event.type == YAML_DOCUMENT_START_EVENT);
+        yaml_event_delete(&event);
+    }
+    else {
+        TEST_CHECK(parser.problem && strcmp(parser.problem, "found incompatible YAML document") == 0);
+    }
+    yaml_parser_delete(&parser);
+
+    cf = flb_cf_yaml_create(NULL, FLB_TESTS_CONF_PATH "/composition/yaml_1_2.yaml", NULL, 0);
+    TEST_CHECK((cf != NULL) == supported);
+    if (cf) {
+        test_composition_property(cf, "<<", "literal");
+        flb_cf_destroy(cf);
+    }
+}
+
+static void test_yaml_overlays(void)
+{
+    struct flb_cf *cf;
+    struct flb_cf_section *input;
+    struct cfl_variant *metrics;
+    struct cfl_variant *value;
+
+    struct cfl_list *head;
+    struct cfl_kvpair *pair;
+    int headers = 0;
+
+    cf = flb_cf_yaml_create(NULL, FLB_TESTS_CONF_PATH "/overlay/base.yaml", NULL, 0);
+    if (!TEST_CHECK(cf != NULL)) {
+        return;
+    }
+    if (!TEST_CHECK(cf->service != NULL && mk_list_size(&cf->inputs) == 3)) {
+        goto done;
+    }
+    test_composition_property(cf, "flush", "10");
+    input = mk_list_entry_first(&cf->inputs, struct flb_cf_section, _head_section);
+    value = cfl_kvlist_fetch(input->properties, "tag");
+    TEST_CHECK(value && value->type == CFL_VARIANT_STRING && !strcmp(value->data.as_string, "after"));
+    cfl_list_foreach(head, &input->properties->list) {
+        pair = cfl_list_entry(head, struct cfl_kvpair, _head);
+        if (strcasecmp(pair->key, "header") == 0) {
+            TEST_CHECK(pair->val->type == CFL_VARIANT_STRING &&
+                       !strcmp(pair->val->data.as_string, headers == 0 ? "first" : "second"));
+            headers++;
+        }
+    }
+    TEST_CHECK(headers == 2);
+    value = cfl_kvlist_fetch(cf->service->properties, "telemetry");
+    if (!TEST_CHECK(value && value->type == CFL_VARIANT_KVLIST)) {
+        goto done;
+    }
+    metrics = cfl_kvlist_fetch(value->data.as_kvlist, "metrics");
+    if (!TEST_CHECK(metrics && metrics->type == CFL_VARIANT_KVLIST)) {
+        goto done;
+    }
+    value = cfl_kvlist_fetch(metrics->data.as_kvlist, "keep");
+    TEST_CHECK(value && value->type == CFL_VARIANT_STRING && !strcmp(value->data.as_string, "old"));
+    value = cfl_kvlist_fetch(metrics->data.as_kvlist, "update");
+    TEST_CHECK(value && value->type == CFL_VARIANT_STRING && !strcmp(value->data.as_string, "last"));
+    value = cfl_kvlist_fetch(metrics->data.as_kvlist, "<<");
+    TEST_CHECK(value && value->type == CFL_VARIANT_STRING && !strcmp(value->data.as_string, "literal"));
+    value = cfl_kvlist_fetch(metrics->data.as_kvlist, "promoted");
+    if (TEST_CHECK(value && value->type == CFL_VARIANT_KVLIST)) {
+        value = cfl_kvlist_fetch(value->data.as_kvlist, "child");
+        TEST_CHECK(value && value->type == CFL_VARIANT_STRING && !strcmp(value->data.as_string, "new"));
+    }
+    value = cfl_kvlist_fetch(metrics->data.as_kvlist, "collapsed");
+    TEST_CHECK(value && value->type == CFL_VARIANT_STRING && !strcmp(value->data.as_string, "scalar"));
+    value = cfl_kvlist_fetch(metrics->data.as_kvlist, "items");
+    if (TEST_CHECK(value && value->type == CFL_VARIANT_ARRAY && value->data.as_array->entry_count == 1)) {
+        value = value->data.as_array->entries[0];
+        TEST_CHECK(value->type == CFL_VARIANT_STRING && !strcmp(value->data.as_string, "replaced"));
+    }
+done:
+    flb_cf_destroy(cf);
+}
+
 TEST_LIST = {
+    { "yaml_overlays", test_yaml_overlays},
+    { "yaml_version_directive", test_yaml_version_directive},
     {"entry_stream", test_entry_stream},
     { "composition", test_composition},
     { "composition_entry_stream", test_composition_entry_stream},

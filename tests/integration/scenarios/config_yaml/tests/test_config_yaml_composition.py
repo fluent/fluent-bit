@@ -17,7 +17,7 @@ def test_included_defaults_and_explicit_overrides(tmp_path, merge_first):
   service: &service
     flush: 60
     grace: 1
-    log_level: invalid_inherited_value
+    " log_level ": invalid_inherited_value
     http_server: on
     http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
   output: &output

@@ -28,6 +28,7 @@
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_router.h>
+#include <fluent-bit/flb_processor.h>
 #include <fluent-bit/flb_sds.h>
 #include <fluent-bit/flb_conditionals.h>
 #include <fluent-bit/config_format/flb_cf.h>
@@ -508,16 +509,10 @@ static int parse_processors(struct cfl_variant *variant,
             return -1;
         }
 
+        cfl_list_add(&processor->_head, out_list);
         if (add_processor_properties(processor, kvlist) != 0) {
-            route_processors_destroy(&processor->properties);
-            if (processor->name) {
-                flb_sds_destroy(processor->name);
-            }
-            flb_free(processor);
             return -1;
         }
-
-        cfl_list_add(&processor->_head, out_list);
     }
 
     return 0;
@@ -1042,6 +1037,7 @@ static int parse_route(struct cfl_variant *variant,
     processors_var = cfl_kvlist_fetch(kvlist, "processors");
     if (processors_var) {
         if (parse_processors(processors_var, &route->processors, config) != 0) {
+            route_processors_destroy(&route->processors);
             if (route->condition) {
                 route_condition_destroy(route->condition);
             }
@@ -1154,12 +1150,50 @@ static struct flb_input_instance *find_input_instance_by_index(struct flb_config
     return NULL;
 }
 
+static int load_input_processors(struct flb_input_routes *input, int type)
+{
+    struct cfl_list *head;
+    struct cfl_list *property_head;
+    struct flb_route_processor *processor;
+    struct flb_route_processor_property *property;
+    struct flb_processor_unit *unit;
+    struct flb_processor_instance *instance;
+
+    cfl_list_foreach(head, &input->processors) {
+        processor = cfl_list_entry(head, struct flb_route_processor, _head);
+        unit = flb_processor_unit_create(input->instance->processor, type, processor->name);
+        if (!unit) {
+            flb_error("[router] cannot load processor '%s' on input '%s'", processor->name, input->input_name);
+            return -1;
+        }
+        if (unit->unit_type == FLB_PROCESSOR_UNIT_NATIVE) {
+            instance = unit->ctx;
+            if ((type == FLB_PROCESSOR_LOGS && !instance->p->cb_process_logs && !instance->p->cb_process_logs_raw) ||
+                (type == FLB_PROCESSOR_METRICS && !instance->p->cb_process_metrics) ||
+                (type == FLB_PROCESSOR_TRACES && !instance->p->cb_process_traces)) {
+                flb_error("[router] processor '%s' does not support the routed signal on input '%s'",
+                          processor->name, input->input_name);
+                return -1;
+            }
+        }
+        cfl_list_foreach(property_head, &processor->properties) {
+            property = cfl_list_entry(property_head, struct flb_route_processor_property, _head);
+            if (flb_processor_unit_set_property_str(unit, property->key, property->value) != 0) {
+                flb_error("[router] cannot set '%s' on processor '%s'", property->key, processor->name);
+                return -1;
+            }
+        }
+    }
+    return 0;
+}
+
 static int parse_input_section(struct flb_cf_section *section,
                                struct cfl_list *input_routes,
                                struct flb_config *config,
                                size_t input_index)
 {
     uint32_t mask;
+    uint32_t signals = 0;
     size_t before_count;
     struct flb_input_routes *input;
     struct cfl_kvlist *kvlist;
@@ -1255,6 +1289,7 @@ static int parse_input_section(struct flb_cf_section *section,
             goto error;
         }
 
+        signals |= mask;
         before_count = cfl_list_size(&input->routes);
         if (parse_routes_block(pair->val, input, config, mask) != 0 ||
             cfl_list_size(&input->routes) == before_count) {
@@ -1266,6 +1301,18 @@ static int parse_input_section(struct flb_cf_section *section,
         goto skip;
     }
 
+    /* Install the sequence once per routed signal, even if several routes use it. */
+    if (config && !cfl_list_is_empty(&input->processors)) {
+        if (!input->instance || !input->instance->processor) {
+            flb_error("[router] missing processor chain for input '%s'", input->input_name);
+            goto error;
+        }
+        if (((signals & FLB_ROUTER_SIGNAL_LOGS) && load_input_processors(input, FLB_PROCESSOR_LOGS) < 0) ||
+            ((signals & FLB_ROUTER_SIGNAL_METRICS) && load_input_processors(input, FLB_PROCESSOR_METRICS) < 0) ||
+            ((signals & FLB_ROUTER_SIGNAL_TRACES) && load_input_processors(input, FLB_PROCESSOR_TRACES) < 0)) {
+            goto error;
+        }
+    }
     cfl_list_add(&input->_head, input_routes);
     return 1;
 

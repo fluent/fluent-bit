@@ -1434,6 +1434,11 @@ static int configure_plugins_type(struct flb_config *config, struct flb_cf *cf, 
             if (strcasecmp(kv->key, "name") == 0) {
                 continue;
             }
+            /* The router reads routed input processor sequences after plugin setup. */
+            if (type == FLB_CF_INPUT && kv->val->type == CFL_VARIANT_ARRAY &&
+                strcasecmp(kv->key, "processors") == 0 && cfl_kvlist_fetch(s->properties, "routes")) {
+                continue;
+            }
             if (strcasecmp(kv->key, "routes") == 0) {
                 continue;
             }

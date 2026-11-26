@@ -1,0 +1,27 @@
+%YAML 1.1
+---
+includes:
+  - $overlay fir*.yaml
+  - ./$overlay paths.yaml
+  - *last_overlay
+defaults:
+  common: &settings
+    keep: old
+    update: base
+service:
+  flush: 10
+  telemetry:
+    metrics:
+      <<: *settings
+      promoted: scalar
+      collapsed:
+        child: old
+      items:
+        - base
+pipeline:
+  inputs:
+    - name: dummy
+      alias: app
+      tag: before
+    - name: dummy
+      tag: independent

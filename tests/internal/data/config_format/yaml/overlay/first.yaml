@@ -1,0 +1,21 @@
+defaults:
+  tag: &settings after
+service:
+  telemetry:
+    metrics:
+      "<<": literal
+      update: first
+      promoted:
+        child: new
+      collapsed: scalar
+      items:
+        - replaced
+pipeline:
+  inputs:
+    - name: dummy
+      alias: app
+      tag: *settings
+      header: first
+      Header: second
+    - name: dummy
+      alias: extra

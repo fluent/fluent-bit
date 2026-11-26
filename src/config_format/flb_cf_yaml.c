@@ -55,6 +55,7 @@
 #endif
 
 #include <stdio.h>
+#include <stdlib.h>
 
 #define FLB_CF_YAML_MAX_INCLUDE_DEPTH 256
 
@@ -108,6 +109,9 @@ struct file_identity {
 };
 
 struct file_state {
+    int yaml_1_2;
+    int overlay_root;
+    struct mk_list overlays;
     flb_sds_t name;                /* borrowed file name */
     flb_sds_t path;                /* borrowed include directory */
 
@@ -127,6 +131,7 @@ struct local_ctx {
     struct cfl_list states;
 
     struct mk_list includes;
+    size_t overlay_count;
 
     int service_set;
     struct yaml_composition *composition;
@@ -277,6 +282,9 @@ static struct parser_state *state_pop(struct local_ctx *ctx);
 static struct parser_state *state_create(struct file_state *parent, struct file_state *file);
 static void state_destroy(struct parser_state *s);
 
+
+typedef int (*config_file_reader)(struct flb_cf *, struct local_ctx *,
+                                  struct file_state *, char *, int);
 
 static int read_config(struct flb_cf *cf, struct local_ctx *ctx,
                        struct file_state *parent, char *cfg_file, int resolved_path);
@@ -535,7 +543,8 @@ static int glob_directory_error(const char *path, int error)
 }
 
 static int read_glob(struct flb_cf *conf, struct local_ctx *ctx,
-                     struct parser_state *state, const char *path)
+                     struct parser_state *state, const char *path,
+                     config_file_reader reader)
 {
     int ret = -1;
     glob_t glb;
@@ -583,7 +592,7 @@ static int read_glob(struct flb_cf *conf, struct local_ctx *ctx,
     }
 
     for (idx = 0; idx < glb.gl_pathc; idx++) {
-        ret = read_config(conf, ctx, state->file, glb.gl_pathv[idx], FLB_TRUE);
+        ret = reader(conf, ctx, state->file, glb.gl_pathv[idx], FLB_TRUE);
 
         if (ret < 0) {
             break;
@@ -615,7 +624,8 @@ static char *dirname(char *path)
 }
 
 static int read_glob(struct flb_cf *conf, struct local_ctx *ctx,
-                     struct parser_state *state, const char *path)
+                     struct parser_state *state, const char *path,
+                     config_file_reader reader)
 {
     char *star, *p0, *p1;
     char pattern[MAX_PATH];
@@ -703,7 +713,7 @@ static int read_glob(struct flb_cf *conf, struct local_ctx *ctx,
         }
 
         if (strchr(p1, '*')) {
-            ret = read_glob(conf, ctx, state, buf);
+            ret = read_glob(conf, ctx, state, buf, reader);
             if (ret < 0) {
                 FindClose(hnd);
                 return -1;
@@ -715,7 +725,7 @@ static int read_glob(struct flb_cf *conf, struct local_ctx *ctx,
 
         if (ret == 0 && (st.st_mode & S_IFMT) == S_IFREG) {
 
-            if (read_config(conf, ctx, state->file, buf, FLB_TRUE) < 0) {
+            if (reader(conf, ctx, state->file, buf, FLB_TRUE) < 0) {
                 FindClose(hnd);
                 return -1;
             }
@@ -1179,7 +1189,7 @@ static int consume_event(struct flb_cf *conf, struct local_ctx *ctx,
             flb_debug("[config yaml] including: %s", value);
 
             if (strchr(value, '*') != NULL) {
-                ret = read_glob(conf, ctx, state, value);
+                ret = read_glob(conf, ctx, state, value, read_config);
             }
             else {
                 ret = read_config(conf, ctx, state->file, value, FLB_FALSE);
@@ -3335,6 +3345,7 @@ struct yaml_node {
     struct yaml_node *next;
     struct yaml_node *anchor_next;
     int resolved;
+    int yaml_1_2;
     int complete;
     size_t expanded_nodes;
     size_t expanded_bytes;
@@ -3468,6 +3479,9 @@ static int compose_include(struct flb_cf *conf, struct local_ctx *ctx,
                            struct file_state *file, struct yaml_node *path)
 {
     struct parser_state state = {0};
+    struct yaml_node *reference = path;
+    char *value;
+    size_t length;
     int ret;
 
     if (compose_resolve(ctx->composition, path, 0) != 0) {
@@ -3477,17 +3491,43 @@ static int compose_include(struct flb_cf *conf, struct local_ctx *ctx,
     if (path->event.type != YAML_SCALAR_EVENT) {
         return compose_error(path, "include path must be a scalar");
     }
+    value = (char *) path->event.data.scalar.value;
+    length = path->event.data.scalar.length;
+    if (memchr(value, '\0', length)) {
+        return compose_error(reference, "include path contains a null character");
+    }
+    if (strncmp(value, "$overlay", 8) == 0 &&
+        (value[8] == ' ' || value[8] == '\t' || value[8] == '\0')) {
+        if (file->include_parent && !file->overlay_root) {
+            return compose_error(reference, "$overlay requires an entry or overlay file");
+        }
+        value += 8;
+        value += strspn(value, " \t");
+        if (*value == '\0') {
+            return compose_error(reference, "$overlay requires a file path");
+        }
+        length = strlen(value);
+        if (++ctx->overlay_count >= YAML_COMPOSE_FILES ||
+            length > YAML_COMPOSE_BYTES - ctx->composition->bytes) {
+            return compose_error(reference, "overlay include limit exceeded");
+        }
+        ctx->composition->bytes += length;
+        if (flb_slist_add(&file->overlays, value) < 0) {
+            return -1;
+        }
+        return 0;
+    }
     state.file = file;
-    if (strchr((char *) path->event.data.scalar.value, '*')) {
-        ret = read_glob(conf, ctx, &state, (char *) path->event.data.scalar.value);
+    if (strchr(value, '*')) {
+        ret = read_glob(conf, ctx, &state, value, read_config);
     }
     else {
-        ret = read_config(conf, ctx, file, (char *) path->event.data.scalar.value, FLB_FALSE);
+        ret = read_config(conf, ctx, file, value, FLB_FALSE);
     }
     if (ret < 0) {
         flb_error("[config] including file '%s' at %s:%zu",
-                  path->event.data.scalar.value, path->file, path->event.start_mark.line + 1);
-        return compose_error(path, "could not compose included file");
+                  value, reference->file, reference->event.start_mark.line + 1);
+        return compose_error(reference, "could not compose included file");
     }
     return 0;
 }
@@ -3515,6 +3555,7 @@ static struct yaml_node *compose_node(struct flb_cf *conf, struct local_ctx *ctx
         yaml_event_delete(event);
         return NULL;
     }
+    node->yaml_1_2 = file->yaml_1_2;
     node->event = *event;
     memset(event, 0, sizeof(*event));
     node->next = composition->nodes;
@@ -3652,7 +3693,7 @@ static int compose_merge_key(struct yaml_node *node)
     }
     tag = node->event.data.scalar.tag;
     return (tag && strcmp((char *) tag, "tag:yaml.org,2002:merge") == 0) ||
-           (!tag && node->event.data.scalar.style == YAML_PLAIN_SCALAR_STYLE &&
+           (!tag && !node->yaml_1_2 && node->event.data.scalar.style == YAML_PLAIN_SCALAR_STYLE &&
             compose_scalar_is(node, "<<"));
 }
 
@@ -3822,7 +3863,7 @@ static int compose_shadowed(struct flb_cf *conf, struct yaml_composition *compos
         if (service && key->event.data.scalar.length > 0) {
             if (!key->service_key) {
                 key->service_key = flb_cf_key_translate(conf, (char *) name, key->event.data.scalar.length);
-                if (!key->service_key) {
+                if (!key->service_key || flb_sds_trim(key->service_key) < 0) {
                     return -1;
                 }
             }
@@ -3906,14 +3947,16 @@ static void compose_destroy(struct yaml_composition *composition)
 }
 
 /* Parse one stream. The root must be a mapping; multiple documents retain the
- * existing parser's shared service uniqueness constraint and anchor namespace.
+ * existing parser's shared service uniqueness constraint.
  */
 static int compose_read(struct flb_cf *conf, struct local_ctx *ctx,
                         struct file_state *file, yaml_parser_t *parser)
 {
     yaml_event_t event;
     struct yaml_node *root;
+    struct yaml_node *inherited_anchors = ctx->composition->anchors;
     int in_document = 0;
+    size_t documents = 0;
 
     while (1) {
         if (compose_parse_event(parser, &event, file->name) != 0) {
@@ -3924,6 +3967,17 @@ static int compose_read(struct flb_cf *conf, struct local_ctx *ctx,
             return 0;
         }
         if (event.type == YAML_DOCUMENT_START_EVENT) {
+            file->yaml_1_2 = event.data.document_start.version_directive &&
+                             event.data.document_start.version_directive->minor >= 2;
+            if (documents > 0) {
+                ctx->composition->anchors = inherited_anchors;
+            }
+            documents++;
+            if (documents > 1 && file->overlay_root) {
+                flb_error("[config] expected one YAML document per overlay file in %s", file->name);
+                yaml_event_delete(&event);
+                return -1;
+            }
             in_document = 1;
         }
         else if (in_document) {
@@ -3936,6 +3990,9 @@ static int compose_read(struct flb_cf *conf, struct local_ctx *ctx,
             root = compose_node(conf, ctx, file, parser, &event, 0, 1);
             if (root == NULL) {
                 return -1;
+            }
+            if (documents > 1 && !file->include_parent && ctx->overlay_count) {
+                return compose_error(root, "overlays require a single entry document");
             }
             in_document = 0;
         }
@@ -4000,8 +4057,316 @@ done:
     return ret;
 }
 
+/* Overlay ordinary configuration values after each YAML document has been
+ * interpreted. Only service maps recurse. Lists and input properties replace
+ * their corresponding value as a unit.
+ */
+static int overlay_properties(struct local_ctx *ctx, struct cfl_kvlist *target,
+                              struct cfl_kvlist *patch, int depth, int service)
+{
+    struct cfl_list *head;
+    struct cfl_list *next;
+    struct cfl_list *other;
+    struct cfl_list *tmp;
+    struct cfl_kvpair *pair;
+    struct cfl_kvpair *old;
+    struct cfl_variant *value;
+    int merged;
+
+    cfl_list_foreach_safe(head, next, &patch->list) {
+        pair = cfl_list_entry(head, struct cfl_kvpair, _head);
+        merged = FLB_FALSE;
+        cfl_list_foreach_safe(other, tmp, &target->list) {
+            old = cfl_list_entry(other, struct cfl_kvpair, _head);
+            if (++ctx->composition->work > YAML_COMPOSE_WORK || depth > YAML_COMPOSE_DEPTH) {
+                flb_error("[config] overlay composition limit exceeded");
+                return -1;
+            }
+            if ((depth == 0 ? strcasecmp(old->key, pair->key) : strcmp(old->key, pair->key)) != 0) {
+                continue;
+            }
+            if (!merged && service && old->val->type == CFL_VARIANT_KVLIST &&
+                pair->val->type == CFL_VARIANT_KVLIST) {
+                if (overlay_properties(ctx, old->val->data.as_kvlist, pair->val->data.as_kvlist,
+                                       depth + 1, service) < 0) {
+                    return -1;
+                }
+                merged = FLB_TRUE;
+            }
+            else {
+                cfl_kvpair_destroy(old);
+            }
+        }
+        if (merged) {
+            cfl_kvpair_destroy(pair);
+        }
+    }
+    /* Keep repeatable plugin properties from the same layer in their original order. */
+    cfl_list_foreach(head, &patch->list) {
+        pair = cfl_list_entry(head, struct cfl_kvpair, _head);
+        value = cfl_kvpair_take_value(pair);
+        if (cfl_kvlist_insert(target, pair->key, value) < 0) {
+            cfl_variant_destroy(value);
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static const char *overlay_string(struct flb_cf_section *section, char *key)
+{
+    struct cfl_variant *v;
+
+    v = cfl_kvlist_fetch(section->properties, key);
+    if (v && v->type == CFL_VARIANT_STRING && v->data.as_string[0]) {
+        return v->data.as_string;
+    }
+    return NULL;
+}
+
+static int compare_input_aliases(const void *left, const void *right)
+{
+    return strcmp(*(const char * const *) left, *(const char * const *) right);
+}
+
+/* Validate before moving properties out of a layer: aliases are borrowed strings. */
+static int overlay_validate_aliases(struct flb_cf *layer)
+{
+    struct mk_list *head;
+    struct flb_cf_section *input;
+    struct cfl_list *entry;
+    struct cfl_kvpair *property;
+    const char **aliases;
+    const char *alias;
+    int names;
+    int alias_keys;
+    size_t count = 0;
+    size_t i;
+
+    if (mk_list_is_empty(&layer->inputs) == 0) {
+        return 0;
+    }
+    aliases = flb_calloc(mk_list_size(&layer->inputs), sizeof(*aliases));
+    if (!aliases) {
+        return -1;
+    }
+    mk_list_foreach(head, &layer->inputs) {
+        input = mk_list_entry(head, struct flb_cf_section, _head_section);
+        names = 0;
+        alias_keys = 0;
+        cfl_list_foreach(entry, &input->properties->list) {
+            property = cfl_list_entry(entry, struct cfl_kvpair, _head);
+            if (strcasecmp(property->key, "alias") == 0) {
+                alias_keys++;
+            }
+            else if (strcasecmp(property->key, "name") == 0) {
+                names++;
+            }
+        }
+        alias = overlay_string(input, "alias");
+        if (names != 1 || !overlay_string(input, "name") ||
+            alias_keys > 1 || (alias_keys && !alias)) {
+            flb_error("[config] overlay inputs require one plugin name and at most one nonempty alias");
+            flb_free(aliases);
+            return -1;
+        }
+        if (alias) {
+            aliases[count++] = alias;
+        }
+    }
+    qsort(aliases, count, sizeof(*aliases), compare_input_aliases);
+    for (i = 1; i < count; i++) {
+        if (strcmp(aliases[i - 1], aliases[i]) == 0) {
+            flb_error("[config] duplicate input alias '%s' within configuration layer", aliases[i]);
+            flb_free(aliases);
+            return -1;
+        }
+    }
+    flb_free(aliases);
+    return 0;
+}
+
+/* Routed inputs also support a sequence consumed by flb_router_config_parse(). */
+static int validate_processor_sequences(struct flb_cf *cf)
+{
+    struct mk_list *head;
+    struct flb_cf_section *section;
+    struct cfl_list *entry;
+    struct cfl_kvpair *property;
+    struct cfl_variant *routes;
+
+    mk_list_foreach(head, &cf->sections) {
+        section = mk_list_entry(head, struct flb_cf_section, _head);
+        if (section->type != FLB_CF_INPUT && section->type != FLB_CF_OUTPUT) {
+            continue;
+        }
+        if (section->type == FLB_CF_INPUT) {
+            routes = cfl_kvlist_fetch(section->properties, "routes");
+            if (routes && routes->type == CFL_VARIANT_KVLIST &&
+                !cfl_list_is_empty(&routes->data.as_kvlist->list)) {
+                continue;
+            }
+        }
+        cfl_list_foreach(entry, &section->properties->list) {
+            property = cfl_list_entry(entry, struct cfl_kvpair, _head);
+            if (property->val->type == CFL_VARIANT_ARRAY && strcasecmp(property->key, "processors") == 0) {
+                flb_error("[config] %s processors must be a mapping keyed by signal type", section->name);
+                return -1;
+            }
+        }
+    }
+    return 0;
+}
+
+static int apply_overlay(struct flb_cf *conf, struct local_ctx *ctx, struct flb_cf *layer)
+{
+    struct mk_list *head;
+    struct mk_list *tmp;
+    struct mk_list *entry;
+    struct flb_cf_section *patch;
+    struct flb_cf_section *input;
+    struct flb_cf_section *target;
+    struct flb_cf_group *group;
+    struct flb_cf_group *old_group;
+    const char *alias;
+    const char *other_alias;
+    const char *name;
+    const char *base_name;
+
+    if (overlay_validate_aliases(layer) < 0) {
+        return -1;
+    }
+    if (mk_list_is_empty(&layer->env) != 0) {
+        flb_error("[config] overlays support only service and pipeline.inputs");
+        return -1;
+    }
+    mk_list_foreach(head, &layer->sections) {
+        patch = mk_list_entry(head, struct flb_cf_section, _head);
+        target = NULL;
+        if (patch->type == FLB_CF_SERVICE) {
+            target = flb_cf_section_create(conf, "service", 7);
+        }
+        else if (patch->type == FLB_CF_INPUT) {
+            alias = overlay_string(patch, "alias");
+            name = overlay_string(patch, "name");
+            mk_list_foreach(entry, &conf->inputs) {
+                if (!alias) {
+                    break;
+                }
+                if (++ctx->composition->work > YAML_COMPOSE_WORK) {
+                    flb_error("[config] overlay composition limit exceeded");
+                    return -1;
+                }
+                input = mk_list_entry(entry, struct flb_cf_section, _head_section);
+                other_alias = overlay_string(input, "alias");
+                if (other_alias && strcmp(alias, other_alias) == 0) {
+                    base_name = overlay_string(input, "name");
+                    if (strcasecmp(name, base_name) != 0) {
+                        flb_error("[config] plugin mismatch for overlay input '%s'", alias);
+                        return -1;
+                    }
+                    target = input;
+                    break;
+                }
+            }
+            if (!target) {
+                target = flb_cf_section_create(conf, "input", 5);
+            }
+            else if (cfl_kvlist_fetch(patch->properties, "processors")) {
+                old_group = flb_cf_group_get(conf, target, "processors");
+                if (old_group) {
+                    flb_cf_group_destroy(old_group);
+                }
+            }
+        }
+        else {
+            flb_error("[config] unsupported overlay section '%s'", patch->name);
+            return -1;
+        }
+        if (!target || overlay_properties(ctx, target->properties, patch->properties, 0,
+                                          patch->type == FLB_CF_SERVICE) < 0) {
+            return -1;
+        }
+        mk_list_foreach_safe(entry, tmp, &patch->groups) {
+            group = mk_list_entry(entry, struct flb_cf_group, _head);
+            if (patch->type == FLB_CF_INPUT && strcasecmp(group->name, "processors") == 0) {
+                cfl_kvlist_remove(target->properties, "processors");
+            }
+            old_group = flb_cf_group_get(conf, target, group->name);
+            if (old_group) {
+                flb_cf_group_destroy(old_group);
+            }
+            mk_list_del(&group->_head);
+            mk_list_add(&group->_head, &target->groups);
+        }
+    }
+    return 0;
+}
+
+static int read_config_file(struct flb_cf *conf, struct local_ctx *ctx,
+                            struct file_state *parent, char *cfg_file, int resolved_path,
+                            struct flb_cf *overlay_target);
+
+static int read_overlay(struct flb_cf *conf, struct local_ctx *ctx,
+                        struct file_state *file, char *path, int resolved_path)
+{
+    struct flb_cf *layer;
+    struct yaml_composition *composition = ctx->composition;
+    int ret;
+
+    /* Fresh document and anchor namespace; retain aggregate resource counts. */
+    compose_destroy(composition);
+    memset(&composition->root, 0, sizeof(composition->root));
+    composition->anchors = NULL;
+    composition->nodes = NULL;
+    ctx->service_set = 0;
+    ctx->event_file = NULL;
+    layer = flb_cf_create();
+    if (!layer) {
+        return -1;
+    }
+    flb_cf_set_origin_format(layer, FLB_CF_YAML);
+    ret = read_config_file(layer, ctx, file, path, resolved_path, conf);
+    flb_cf_destroy(layer);
+    if (ret < 0) {
+        flb_error("[config] could not apply overlay '%s'", path);
+        return -1;
+    }
+    return 0;
+}
+
+static int apply_overlay_files(struct flb_cf *conf, struct local_ctx *ctx, struct file_state *file)
+{
+    struct mk_list *head;
+    struct flb_slist_entry *entry;
+    struct parser_state state = {0};
+    int ret;
+
+    state.file = file;
+    mk_list_foreach(head, &file->overlays) {
+        entry = mk_list_entry(head, struct flb_slist_entry, _head);
+        if (strchr(entry->str, '*')) {
+            ret = read_glob(conf, ctx, &state, entry->str, read_overlay);
+        }
+        else {
+            ret = read_overlay(conf, ctx, file, entry->str, FLB_FALSE);
+        }
+        if (ret < 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
 static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
                        struct file_state *parent, char *cfg_file, int resolved_path)
+{
+    return read_config_file(conf, ctx, parent, cfg_file, resolved_path, NULL);
+}
+
+static int read_config_file(struct flb_cf *conf, struct local_ctx *ctx,
+                            struct file_state *parent, char *cfg_file, int resolved_path,
+                            struct flb_cf *overlay_target)
 {
     int ret;
     int code = 0;
@@ -4180,6 +4545,8 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
         return -1;
     }
     ctx->level++;
+    fstate.overlay_root = overlay_target != NULL;
+    flb_slist_create(&fstate.overlays);
 
     if (!yaml_parser_initialize(&parser)) {
         code = -1;
@@ -4196,6 +4563,22 @@ static int read_config(struct flb_cf *conf, struct local_ctx *ctx,
     if (fh != entry_file) {
         fclose(fh);
     }
+    if (code == 0 && (overlay_target || mk_list_is_empty(&fstate.overlays) != 0)) {
+        code = compose_interpret(conf, ctx, include_file);
+        if (code == 0) {
+            if (overlay_target) {
+                code = apply_overlay(overlay_target, ctx, conf);
+            }
+            else {
+                overlay_target = conf;
+                code = overlay_validate_aliases(conf);
+            }
+        }
+        if (code == 0) {
+            code = apply_overlay_files(overlay_target, ctx, &fstate);
+        }
+    }
+    flb_slist_destroy(&fstate.overlays);
     ctx->level--;
 
     flb_sds_destroy(include_file);
@@ -4255,9 +4638,14 @@ struct flb_cf *flb_cf_yaml_create(struct flb_cf *conf, char *file_path,
 
     /* Compose and resolve before interpreting runtime sections. */
     ret = read_config(conf, &ctx, NULL, file_path, FLB_FALSE);
-    if (ret == 0) {
+    if (ret == 0 && !ctx.overlay_count) {
         ret = compose_interpret(conf, &ctx, file_path);
     }
+
+    if (ret == 0) {
+        ret = validate_processor_sequences(conf);
+    }
+
     compose_destroy(&composition);
 
     if (ret == -1) {
