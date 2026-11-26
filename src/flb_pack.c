@@ -21,6 +21,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <limits.h>
+#include <locale.h>
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_mem.h>
@@ -1051,6 +1052,10 @@ static int msgpack2json_scalar(char *buf, int *off, size_t left,
     case MSGPACK_OBJECT_FLOAT64:
         {
             char temp[512] = {0};
+            const char *decimal_point;
+            char *separator;
+            size_t decimal_length;
+
             if (o->via.f64 == (double)(long long int)o->via.f64) {
                 i = snprintf(temp, sizeof(temp)-1, "%.1f", o->via.f64);
             }
@@ -1059,6 +1064,19 @@ static int msgpack2json_scalar(char *buf, int *off, size_t left,
             }
             else {
                 i = snprintf(temp, sizeof(temp)-1, "%.16g", o->via.f64);
+            }
+            /* Embedding applications may select a non-C numeric locale.
+             * JSON always requires a period, without changing process locale. */
+            decimal_point = localeconv()->decimal_point;
+            decimal_length = strlen(decimal_point);
+            if (decimal_length > 0 && strcmp(decimal_point, ".") != 0) {
+                separator = strstr(temp, decimal_point);
+                if (separator) {
+                    *separator = '.';
+                    memmove(separator + 1, separator + decimal_length,
+                            strlen(separator + decimal_length) + 1);
+                    i -= decimal_length - 1;
+                }
             }
             ret = try_to_write(buf, off, left, temp, i);
         }
