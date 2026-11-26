@@ -80,6 +80,18 @@ class WorkflowTests(unittest.TestCase):
         for name in ("staging-release-create-docs-pr", "staging-release-create-version-update-pr"):
             self.assertIn("staging-release-create-release", self.ancestors(name))
 
+    def test_current_release_series_publication(self):
+        steps = self.release["staging-release-create-release"]["steps"]
+        for series, branch, latest in (("5.2", "5.2", False), ("6.0", "master", True)):
+            with self.subTest(series=series):
+                condition = f"startsWith(inputs.version, '{series}.')"
+                releases = [step["with"] for step in steps if step.get("if") == condition]
+                self.assertEqual(len(releases), 1)
+                self.assertEqual(releases[0]["target_commitish"], branch)
+                self.assertEqual(releases[0]["make_latest"], latest)
+        self.assertEqual(self.release["staging-release-images-latest-tags"]["if"],
+                         "startsWith(inputs.version, '6.0.')")
+
     def test_release_prs_use_verified_branch_as_explicit_base(self):
         for suffix in ("docs", "version-update"):
             job = self.release[f"staging-release-create-{suffix}-pr"]
@@ -90,10 +102,11 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(create["with"]["base"], "${{ steps.release-branch.outputs.name }}")
             self.assertEqual(guard["env"]["RELEASE_VERSION"], "${{ inputs.version }}")
             self.assertLess(steps.index(guard), steps.index(create))
-            for series, expected in (("5.0", "5.0"), ("5.1", "5.1"), ("5.2", "master")):
-                with self.subTest(job=suffix, series=series):
+            for prefix, expected in (("5.0", "5.0"), ("5.1", "5.1"),
+                                     ("5.2.", "5.2"), ("6.0.", "master")):
+                with self.subTest(job=suffix, prefix=prefix):
                     checkouts = [step for step in steps if "actions/checkout@" in step.get("uses", "")
-                                 and step.get("if") == f"startsWith(inputs.version, '{series}')"]
+                                 and step.get("if") == f"startsWith(inputs.version, '{prefix}')"]
                     self.assertEqual(len(checkouts), 1)
                     self.assertEqual(checkouts[0]["with"]["ref"], expected)
                     self.assertLess(steps.index(checkouts[0]), steps.index(guard))
@@ -103,9 +116,11 @@ class WorkflowTests(unittest.TestCase):
             self.assertLess(steps.index(guard), steps.index(update))
 
     def test_release_branch_guard_rejects_wrong_checkout_before_updates(self):
-        cases = [("5.1.5", "5.1", "5.1"), ("5.2.0", "master", "master"),
-                 ("5.0.9", "5.0", "5.0"), ("5.1.5", "master", None),
-                 ("5.2.0", "5.1", None), ("5.10.0", "5.1", None),
+        cases = [("5.1.5", "5.1", "5.1"), ("5.2.2", "5.2", "5.2"),
+                 ("6.0.0", "master", "master"), ("5.0.9", "5.0", "5.0"),
+                 ("5.1.5", "master", None), ("5.2.2", "master", None),
+                 ("6.0.0", "5.2", None), ("5.10.0", "5.1", None),
+                 ("5.20.0", "5.2", None), ("6.1.0", "master", None),
                  ("invalid", "master", None), ("5.1", "5.1", None)]
         for suffix in ("docs", "version-update"):
             steps = self.release[f"staging-release-create-{suffix}-pr"]["steps"]
