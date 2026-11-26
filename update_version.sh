@@ -37,6 +37,14 @@ else
     exit 1
 fi
 
+# The post-release workflow advances the source version while keeping the
+# stable recipe on the tag it just published.
+BITBAKE_VERSION=${BITBAKE_VERSION:-$NEW_VERSION}
+if [[ ! "$BITBAKE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "ERROR: Invalid BitBake version: $BITBAKE_VERSION" >&2
+    exit 1
+fi
+
 # Get the current year
 NEW_COPYRIGHT_YEAR=${NEW_COPYRIGHT_YEAR:-$(date +%Y)}
 
@@ -75,20 +83,22 @@ sed_wrapper -i -E "s/(ARG RELEASE_VERSION=)[0-9]+\.[0-9]+\.[0-9]+/\1$NEW_VERSION
 sed_wrapper -i -E "s/version: '[0-9]+\.[0-9]+\.[0-9]+'/version: '$NEW_VERSION'/g" "$SCRIPT_DIR"/snap/snapcraft.yaml
 
 # Bitbake / Yocto
-if [[ -f "$SCRIPT_DIR/fluent-bit-$NEW_VERSION.bb" ]]; then
-    echo "ERROR: existing fluent-bit-$NEW_VERSION.bb"
+old_bb=$(find "$SCRIPT_DIR" -maxdepth 1 -type f -name 'fluent-bit-[0-9]*.[0-9]*.[0-9]*.bb' | head -n1)
+new_bb="$SCRIPT_DIR/fluent-bit-$BITBAKE_VERSION.bb"
+if [[ -z "$old_bb" ]]; then
+    echo "ERROR: no existing .bb file found" >&2
     exit 1
-else
-    old_bb=$(find "$SCRIPT_DIR" -maxdepth 1 -type f -name 'fluent-bit-[0-9]*.[0-9]*.[0-9]*.bb' | head -n1)
-    if [[ -z "$old_bb" ]]; then
-        echo "ERROR: no existing .bb file found" >&2
+fi
+if [[ "$old_bb" != "$new_bb" ]]; then
+    if [[ -e "$new_bb" ]]; then
+        echo "ERROR: existing fluent-bit-$BITBAKE_VERSION.bb" >&2
         exit 1
     fi
-    mv -vf "$old_bb" "$SCRIPT_DIR/fluent-bit-$NEW_VERSION.bb"
-    sed_wrapper -i -E \
-      "s/^PV *= *\"?[0-9]+\.[0-9]+\.[0-9]+\"?/PV = \"$NEW_VERSION\"/g" \
-      "$SCRIPT_DIR/fluent-bit-$NEW_VERSION.bb"
+    mv -v "$old_bb" "$new_bb"
 fi
+sed_wrapper -i -E \
+  "s/^PV *= *\"?[0-9]+\.[0-9]+\.[0-9]+\"?/PV = \"$BITBAKE_VERSION\"/g" \
+  "$new_bb"
 
 if [[ "${DISABLE_COMMIT:-no}" == "no" ]]; then
     if ! command -v git &> /dev/null ; then
@@ -100,8 +110,10 @@ if [[ "${DISABLE_COMMIT:-no}" == "no" ]]; then
     git commit -s -m "dockerfile: bump to v$NEW_VERSION" -- dockerfiles/*
     git commit -s -m "snap: bump to v$NEW_VERSION" snap/snapcraft.yaml
     # Handle renaming
-    git add "*.bb"
-    git commit -a -s -m "bitbake: bump to v$NEW_VERSION"
+    git add -- "$old_bb" "$new_bb"
+    if ! git diff --cached --quiet -- "$old_bb" "$new_bb"; then
+        git commit -s -m "bitbake: bump to v$BITBAKE_VERSION"
+    fi
 else
     echo "Skipping commits"
 fi
