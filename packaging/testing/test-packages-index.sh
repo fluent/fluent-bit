@@ -204,8 +204,8 @@ if ! jq -e '.versions[] | select(.version == "4.2.7") | .artifacts.linux[] | sel
 fi
 
 for label in 'opensuse/16.1 x86_64 rpm' 'sles/15.7 aarch64 rpm'; do
-    if ! jq -e --arg label "$label" \
-        '.versions[] | select(.version == "4.2.7") | .artifacts.linux[] | select(.label == $label)' \
+    if ! jq -e --arg artifact_label "$label" \
+        '.versions[] | select(.version == "4.2.7") | .artifacts.linux[] | select(.label == $artifact_label)' \
         "$OUTPUT_DIR/versions.json" >/dev/null; then
         echo "ERROR: versions.json missing $label artifact for 4.2.7" >&2
         exit 1
