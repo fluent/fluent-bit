@@ -30,6 +30,8 @@
 #include <cmetrics/cmetrics.h>
 #include <cprofiles/cprofiles.h>
 
+struct flb_log_view;
+
 /* Processor plugin result values */
 #define FLB_PROCESSOR_SUCCESS        0
 #define FLB_PROCESSOR_FAILURE       -1
@@ -77,7 +79,16 @@
 /* Declares the appended cb_preflight descriptor extension. */
 #define FLB_PROCESSOR_FLAG_PREFLIGHT (1 << 2)
 #define FLB_PROCESSOR_FLAG_INPUT_STOP (1 << 3)
-
+/*
+ * EXPERIMENTAL. Declares the appended cb_process_logs_view descriptor
+ * extension: the plugin can edit log records through CFL map views (see
+ * cfl_view.h) without receiving materialized CFL objects. An instance
+ * opts in during init by setting logs_view_maps to the FLB_LOG_VIEW_* maps
+ * its configuration needs. The callback must preserve the number of records
+ * and follows the FLB_PROCESSOR_FLAG_LOGS_WORKER_SAFE rules when that flag is
+ * also set. cb_process_logs stays mandatory as the fallback.
+ */
+#define FLB_PROCESSOR_FLAG_LOGS_VIEW (1 << 5)
 
 /* The current values mean the processor stack will
  * wait for 2 seconds at most in 50 millisecond increments
@@ -251,6 +262,11 @@ struct flb_processor_plugin {
      * A nonzero result is logged but cannot interrupt shutdown. */
     int (*cb_input_stop) (struct flb_processor_instance *, void *);
 
+    /* Optional extension, enabled only by FLB_PROCESSOR_FLAG_LOGS_VIEW. */
+    int (*cb_process_logs_view) (struct flb_processor_instance *,
+                                 struct flb_log_view *,
+                                 const char *,
+                                 int);
 };
 
 struct flb_processor_instance {
@@ -289,6 +305,7 @@ struct flb_processor_instance {
     size_t log_hold_limit;
     size_t log_held_delta;
     size_t log_held_current;
+    int logs_view_maps;                    /* FLB_LOG_VIEW_* needed, 0 disables views */
 };
 
 
@@ -339,6 +356,38 @@ int flb_processor_run_logs_chunk(struct flb_processor *proc,
                                  int worker_thread,
                                  void **out_buf, size_t *out_size,
                                  int *output_records);
+
+/*
+ * EXPERIMENTAL: run the logs processors on record views.
+ *
+ * A data source that can expose the 'maps' views checks the whole chain with
+ * flb_processor_logs_view_supported() before decoding anything, then brackets
+ * one batch with begin/end and calls flb_processor_logs_view_record() for
+ * every log record. Units stay locked between begin and end, and end accounts
+ * the batch on each unit like one invocation of its logs callback. A source
+ * that gives the batch up and hands it to another path, which accounts it
+ * there, ends the session with flb_processor_logs_view_cancel() instead.
+ */
+#define FLB_PROCESSOR_LOGS_VIEW_UNITS 8
+
+struct flb_processor_logs_view {
+    struct flb_processor *proc;
+    const char *tag;
+    int tag_len;
+    size_t count;
+    size_t locked;
+    struct flb_processor_instance *instances[FLB_PROCESSOR_LOGS_VIEW_UNITS];
+};
+
+int flb_processor_logs_view_supported(struct flb_processor *proc, int maps,
+                                      int worker_thread);
+int flb_processor_logs_view_begin(struct flb_processor *proc, int maps, int worker_thread,
+                                  const char *tag, size_t tag_len,
+                                  struct flb_processor_logs_view *session);
+int flb_processor_logs_view_record(void *session, struct flb_log_view *record);
+void flb_processor_logs_view_end(struct flb_processor_logs_view *session,
+                                 int records, int error);
+void flb_processor_logs_view_cancel(struct flb_processor_logs_view *session);
 
 struct flb_processor_unit *flb_processor_unit_create(struct flb_processor *proc,
                                                      int event_type,
