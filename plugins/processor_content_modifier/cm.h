@@ -114,6 +114,11 @@ int cm_logs_process_raw(struct flb_processor_instance **instances, size_t instan
                          void **out_buf, size_t *out_size,
                          const char *tag, int tag_len);
 
+struct flb_log_view;
+int cm_logs_view_maps(struct flb_processor_instance *ins);
+int cm_logs_process_view(struct flb_processor_instance *ins, struct flb_log_view *record,
+                         const char *tag, int tag_len);
+
 int cm_logs_process(struct flb_processor_instance *ins,
                     struct content_modifier_ctx *ctx,
                     struct flb_mp_chunk_cobj *chunk_cobj,
