@@ -52,4 +52,4 @@ spec:
       - name: log-state
         emptyDir: {}
       nodeSelector:
-        beta.kubernetes.io/os: windows
+        kubernetes.io/os: windows
