@@ -1,3 +1,4 @@
+import gzip
 import os
 from http.client import HTTPConnection
 import subprocess
@@ -38,12 +39,14 @@ class Service:
     def stop(self):
         self.service.stop()
 
-    def request(self, path, *, http_mode="http1.1", include_headers=False):
+    def request(self, path, *, http_mode="http1.1", include_headers=False, headers=None, extra_args=None):
         return run_curl_request(
             f"{self.base_url}{path}",
             method="GET",
             http_mode=http_mode,
             include_headers=include_headers,
+            headers=headers,
+            extra_args=extra_args,
         )
 
 
@@ -79,6 +82,63 @@ def test_out_prometheus_exporter_scrape_endpoint():
         service.stop()
 
 
+def test_out_prometheus_exporter_compression_negotiation():
+    cases = [
+        (None, 200, None),
+        ("", 200, None),
+        ("gzip", 200, "gzip"),
+        ("ZSTD", 200, "zstd"),
+        ("snappy", 200, "snappy"),
+        ("gzip;q=0, zstd;q=0.5", 200, "zstd"),
+        ("gzip ; Q=0.7, zstd;q=0.5", 200, "gzip"),
+        ("zstd, gzip", 200, "gzip"),
+        ("gzip;q=0, *;q=1", 200, "zstd"),
+        ("gzip;q=0, zstd;q=0, *;q=1", 200, None),
+        ("gzip;q=0.2, identity;q=0.5", 200, None),
+        ("gzip;q=0.000, br", 200, None),
+        ("gzip;q=1.1, x-gzip, gzip-extra", 200, None),
+        ("*;q=0, identity;q=0.5", 200, None),
+        ("*;q=0", 406, None),
+    ]
+
+    service = Service()
+    service.start()
+    metric = b"fluentbit_input_metrics_scrapes_total"
+    connection = HTTPConnection("127.0.0.1", service.exporter_port, timeout=10)
+
+    try:
+        service.service.wait_for_condition(
+            lambda: metric.decode() in service.request("/metrics")["body"],
+            timeout=10,
+            interval=1,
+            description="prometheus exporter metrics before encoding negotiation",
+        )
+        for accept_encoding, status, encoding in cases:
+            headers = {} if accept_encoding is None else {"Accept-Encoding": accept_encoding}
+            connection.request("GET", "/metrics", headers=headers)
+            response = connection.getresponse()
+            body = response.read()
+            assert response.status == status, accept_encoding
+            assert response.getheader("Vary") == "Accept-Encoding", accept_encoding
+            assert response.getheader("Content-Encoding") == encoding, accept_encoding
+            if status == 406:
+                assert not body
+                continue
+            assert int(response.getheader("Content-Length")) == len(body)
+            assert response.getheader("Content-Type").startswith("text/plain; version=0.0.4")
+            if encoding == "gzip":
+                assert metric in gzip.decompress(body)
+            elif encoding == "zstd":
+                assert body.startswith(bytes.fromhex("28 b5 2f fd"))
+            elif encoding == "snappy":
+                assert body
+            else:
+                assert metric in body
+    finally:
+        connection.close()
+        service.stop()
+
+
 def test_out_prometheus_exporter_http2_metrics():
     if not curl_supports_http2():
         return
@@ -93,7 +153,9 @@ def test_out_prometheus_exporter_http2_metrics():
                     response
                     if response["status_code"] == 200 and "fluentbit_input_metrics_scrapes_total" in response["body"]
                     else None
-                ) if (response := service.request("/metrics", http_mode="http2-prior-knowledge")) else None,
+                ) if (response := service.request("/metrics", http_mode="http2-prior-knowledge",
+                                                include_headers=True, headers=["Accept-Encoding: gzip"],
+                                                extra_args=["--compressed"])) else None,
                 timeout=10,
                 interval=1,
                 description="prometheus exporter http2 metrics",
@@ -102,6 +164,7 @@ def test_out_prometheus_exporter_http2_metrics():
             pytest.skip("Prometheus exporter does not support HTTP/2 prior knowledge in this Fluent Bit binary")
         assert metrics["status_code"] == 200
         assert metrics["http_version"] == "2"
+        assert _headers_map(metrics["headers_raw"])["content-encoding"] == "gzip"
         assert "fluentbit_input_metrics_scrapes_total" in metrics["body"]
     finally:
         service.stop()
