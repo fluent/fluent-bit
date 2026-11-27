@@ -952,24 +952,127 @@ static const struct escape_seq json_escape_table[128] = {
  * to escape special characters and convert utf-8 byte characters to string
  * representation.
  */
-static int flb_utils_write_str_escaped(char *buf, int *off, size_t size, const char *str, size_t str_len)
+/*
+ * Escape one multi-byte UTF-8 sequence starting at 'sequence', consuming no more
+ * than 'remaining' bytes of it. Returns FLB_TRUE and reports how many input bytes
+ * were taken in *consumed, or FLB_FALSE when the output buffer must grow.
+ *
+ * Both non-ASCII branches of flb_utils_write_str_escaped() funnel through here.
+ * Which branch is selected depends on whether plain char is signed, so keeping
+ * two implementations let them drift apart: one advanced past an extra byte per
+ * sequence and silently dropped the character that followed it, another emitted
+ * nothing at all for undecodable bytes, and one wrote \u1f600 where a consumer
+ * needs a surrogate pair. One implementation keeps every target identical.
+ */
+static inline int flb_utf8_write_sequence(char **p, size_t *available, off_t *offset,
+                                          const char *sequence, size_t remaining,
+                                          int *consumed)
 {
-    int i, b, ret, len, hex_bytes, utf_sequence_length, utf_sequence_number;
-    int processed_bytes = 0;
-    int is_valid, copypos = 0;
-    uint32_t c;
-    uint32_t codepoint = 0;
-    uint32_t state = 0;
-    size_t available;
-    uint8_t *s;
-    off_t offset = 0;
-    char tmp[16];
-    char *p;
-    const size_t inst_len = FLB_SIMD_VEC8_INST_LEN;
-
-    /* to encode codepoints > 0xFFFF */
+    int b;
+    int len;
+    int ret;
+    int length;
+    int is_valid = FLB_TRUE;
     uint16_t high;
     uint16_t low;
+    uint32_t codepoint = 0;
+    uint32_t state = FLB_UTF8_ACCEPT;
+    char tmp[16];
+
+    length = flb_utf8_len(sequence);
+
+    /* Decode only available bytes and preserve incomplete fragments. */
+    for (b = 0; b < length; b++) {
+        if ((size_t) b >= remaining) {
+            /* The value ends mid-sequence: keep the bytes as fragments. */
+            length = b;
+            is_valid = FLB_FALSE;
+            break;
+        }
+
+        tmp[b] = sequence[b];
+        ret = flb_utf8_decode(&state, &codepoint, (uint8_t) sequence[b]);
+
+        if (ret == FLB_UTF8_REJECT) {
+            if (b == 0) {
+                /* Consume an invalid leading byte on its own. */
+                length = 1;
+            }
+            else {
+                /* Reprocess the rejected byte as a new sequence. */
+                length = b;
+            }
+
+            is_valid = FLB_FALSE;
+            break;
+        }
+    }
+
+    if (is_valid) {
+        /* Handle codepoints beyond BMP (requires surrogate pairs in UTF-16) */
+        if (codepoint > 0xFFFF) {
+            high = 0xD800 + ((codepoint - 0x10000) >> 10);
+            low = 0xDC00 + ((codepoint - 0x10000) & 0x3FF);
+
+            len = snprintf(tmp, sizeof(tmp), "\\u%.4x\\u%.4x", high, low);
+        }
+        else {
+            len = snprintf(tmp, sizeof(tmp), "\\u%.4x", codepoint);
+        }
+
+        if (*available < (size_t) len) {
+            return FLB_FALSE;
+        }
+
+        memcpy(*p, tmp, len);
+        *p += len;
+        *offset += len;
+        *available -= len;
+    }
+    else {
+        if (*available < (size_t) length * 3) {
+            return FLB_FALSE;
+        }
+
+        /*
+         * Utf-8 sequence is invalid. Map fragments to private use area
+         * codepoints in range:
+         * 0x<FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR>00 to
+         * 0x<FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR>FF, so the consumer can
+         * tell corrupted input from content that was never there.
+         */
+        for (b = 0; b < length; ++b) {
+            /* unicode codepoint start */
+            *(*p)++ = (char) (0xE0 | (FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR >> 4));
+
+            /* codepoint middle: header tail plus the fragment's high bits */
+            *(*p)++ = (char) (0x80 |
+                              ((FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR << 2) & 0x3f) |
+                              ((tmp[b] >> 6) & 0x03));
+
+            /* codepoint tail: fragment low bits */
+            *(*p)++ = (char) (0x80 | (tmp[b] & 0x3f));
+
+            *offset += 3;
+            *available -= 3;
+        }
+    }
+
+    /* Always report progress so the caller cannot stall on one byte. */
+    *consumed = length > 0 ? length : 1;
+
+    return FLB_TRUE;
+}
+
+static int flb_utils_write_str_escaped(char *buf, int *off, size_t size, const char *str, size_t str_len)
+{
+    int i, b, len, consumed;
+    int copypos = 0;
+    uint32_t c;
+    size_t available;
+    off_t offset = 0;
+    char *p;
+    const size_t inst_len = FLB_SIMD_VEC8_INST_LEN;
 
     available = size - *off;
 
@@ -1051,187 +1154,23 @@ static int flb_utils_write_str_escaped(char *buf, int *off, size_t size, const c
             }
             /* Handle UTF-8 sequences from 0x80 to 0xFFFF */
             else if (c >= 0x80 && c <= 0xFFFF) {
-                hex_bytes = flb_utf8_len(&str[i]);
-
-                /* Handle invalid or truncated sequence */
-                if (hex_bytes == 0 || i + hex_bytes > str_len) {
-                    /* check for the minimum space required */
-                    if (available < 3) {
-                        return FLB_FALSE;
-                    }
-
-                    /* insert replacement character (U+FFFD) */
-                    p[0] = 0xEF;
-                    p[1] = 0xBF;
-                    p[2] = 0xBD;
-                    p += 3;
-                    offset += 3;
-                    available -= 3;
-
-                    /* skip the original byte */
-                    i++;
-                    continue;
+                if (flb_utf8_write_sequence(&p, &available, &offset, &str[i],
+                                            str_len - (size_t) i, &consumed) == FLB_FALSE) {
+                    return FLB_FALSE;
                 }
 
-                /* decode UTF-8 sequence */
-                state = FLB_UTF8_ACCEPT;
-                codepoint = 0;
-                processed_bytes = 0;
-
-                for (b = 0; b < hex_bytes; b++) {
-                    s = (unsigned char *) &str[i + b];
-                    ret = flb_utf8_decode(&state, &codepoint, *s);
-                    processed_bytes++;
-
-                    if (ret == FLB_UTF8_ACCEPT) {
-                        /* check if all required bytes for the sequence are processed */
-                        if (processed_bytes == hex_bytes) {
-                            break;
-                        }
-                    }
-                    else if (ret == FLB_UTF8_REJECT) {
-                        flb_warn("[pack] Invalid UTF-8 bytes found, skipping.");
-                        break;
-                    }
-                }
-
-                if (state == FLB_UTF8_ACCEPT) {
-                    len = snprintf(tmp, sizeof(tmp), "\\u%.4x", codepoint);
-                    if (available < len) {
-                        return FLB_FALSE;
-                    }
-                    memcpy(p, tmp, len);
-                    p += len;
-                    offset += len;
-                    available -= len;
-                }
-                else {
-                    flb_warn("[pack] Invalid UTF-8 bytes found, skipping.");
-                }
-
-                i += processed_bytes;
+                /* The loop footer below advances by one as well. */
+                i += consumed - 1;
             }
             /* Handle sequences beyond 0xFFFF */
             else if (c > 0xFFFF) {
-                utf_sequence_length = flb_utf8_len(str + i);
-
-                state = FLB_UTF8_ACCEPT;
-                codepoint = 0;
-                is_valid = FLB_TRUE;
-
-                /* Decode only available bytes and preserve incomplete fragments. */
-                for (utf_sequence_number = 0;
-                     utf_sequence_number < utf_sequence_length;
-                     utf_sequence_number++) {
-                    if (i >= str_len) {
-                        utf_sequence_length = utf_sequence_number;
-                        is_valid = FLB_FALSE;
-                        break;
-                    }
-
-                    ret = flb_utf8_decode(&state, &codepoint, (uint8_t) str[i]);
-
-                    if (ret == FLB_UTF8_REJECT) {
-                        if (utf_sequence_number == 0) {
-                            /* Consume an invalid leading byte on its own. */
-                            tmp[0] = str[i++];
-                            utf_sequence_length = 1;
-                        }
-                        else {
-                            /* Reprocess the rejected byte as a new sequence. */
-                            utf_sequence_length = utf_sequence_number;
-                        }
-                        is_valid = FLB_FALSE;
-                        break;
-                    }
-
-                    tmp[utf_sequence_number] = str[i++];
+                if (flb_utf8_write_sequence(&p, &available, &offset, &str[i],
+                                            str_len - (size_t) i, &consumed) == FLB_FALSE) {
+                    return FLB_FALSE;
                 }
 
-                --i;
-
-                if (is_valid) {
-                    if (available < utf_sequence_length) {
-                        /* not enough space */
-                        return FLB_FALSE;
-                    }
-
-                    /* Handle codepoints beyond BMP (requires surrogate pairs in UTF-16) */
-                    if (codepoint > 0xFFFF) {
-                        high = 0xD800 + ((codepoint - 0x10000) >> 10);
-                        low = 0xDC00 + ((codepoint - 0x10000) & 0x3FF);
-
-                        len = snprintf(tmp, sizeof(tmp), "\\u%.4x\\u%.4x", high, low);
-                    }
-                    else {
-                        len = snprintf(tmp, sizeof(tmp), "\\u%.4x", codepoint);
-                    }
-
-                    if (available < len) {
-                        /* not enough space */
-                        return FLB_FALSE;
-                    }
-                    memcpy(p, tmp, len);
-                    p += len;
-                    offset += len;
-                    available -= len;
-                }
-                else {
-                    if (available < utf_sequence_length * 3) {
-                        return FLB_FALSE;
-                    }
-
-                    /*
-                    * Utf-8 sequence is invalid. Map fragments to private use area
-                    * codepoints in range:
-                    * 0x<FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR>00 to
-                    * 0x<FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR>FF
-                    */
-                    for (b = 0; b < utf_sequence_length; ++b) {
-                        /*
-                        * Utf-8 private block invalid hex mapping. Format unicode charpoint
-                        * in the following format:
-                        *
-                        *      +--------+--------+--------+
-                        *      |1110PPPP|10PPPPHH|10HHHHHH|
-                        *      +--------+--------+--------+
-                        *
-                        * Where:
-                        *   P is FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR bits (1 byte)
-                        *   H is Utf-8 fragment hex bits (1 byte)
-                        *   1 is bit 1
-                        *   0 is bit 0
-                        */
-
-                        /* unicode codepoint start */
-                        *p = 0xE0;
-
-                        /* print unicode private block header first 4 bits */
-                        *p |= FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR >> 4;
-                        ++p;
-
-                        /* unicode codepoint middle */
-                        *p = 0x80;
-
-                        /* print end of unicode private block header last 4 bits */
-                        *p |= ((FLB_UTILS_FRAGMENT_PRIVATE_BLOCK_DESCRIPTOR << 2) & 0x3f);
-
-                        /* print hex fragment first 2 bits */
-                        *p |= (tmp[b] >> 6) & 0x03;
-                        ++p;
-
-                        /* unicode codepoint middle */
-                        *p = 0x80;
-
-                        /* print hex fragment last 6 bits */
-                        *p |= tmp[b] & 0x3f;
-                        ++p;
-
-                        offset += 3;
-                        available -= 3;
-                    }
-                }
-
+                /* The loop footer below advances by one as well. */
+                i += consumed - 1;
             }
              else {
                 if (available < 1) {
