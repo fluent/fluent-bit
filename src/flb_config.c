@@ -1579,16 +1579,18 @@ static int set_service_property(struct flb_config *config,
 }
 
 /* Load a struct flb_config_format context into a flb_config instance */
-int flb_config_load_config_format(struct flb_config *config, struct flb_cf *cf)
+static int config_load_config_format(struct flb_config *config, struct flb_cf *cf,
+                                     int *daemon_fd)
 {
     int ret;
-    flb_debug("[config] starting configuration loading");
     struct flb_cf_env_var *env_var;
     struct flb_kv *kv;
     struct mk_list *head;
     struct cfl_kvpair *ckv;
     struct cfl_list *chead;
     struct flb_cf_section *s;
+
+    flb_debug("[config] starting configuration loading");
 
     /* Process config environment vars */
     mk_list_foreach(head, &cf->env) {
@@ -1651,12 +1653,45 @@ int flb_config_load_config_format(struct flb_config *config, struct flb_cf *cf)
         }
     }
 
+#ifdef FLB_HAVE_FORK
+    if (daemon_fd) {
+        /* Resolve only the setting needed to choose the startup process. */
+        s = cf->service;
+        if (s) {
+            cfl_list_foreach(chead, &s->properties->list) {
+                ckv = cfl_list_entry(chead, struct cfl_kvpair, _head);
+                if (strcasecmp(ckv->key, FLB_CONF_STR_DAEMON) == 0 &&
+                    set_service_property(config, ckv) == -1) {
+                    flb_error("[config] could not configure service property '%s'", ckv->key);
+                    return -1;
+                }
+            }
+        }
+
+        if (config->daemon == FLB_TRUE) {
+            ret = flb_utils_daemon_fork(daemon_fd);
+            if (ret != 0) {
+                if (ret == -1) {
+                    flb_error("could not switch to daemon mode");
+                }
+                return ret;
+            }
+            flb_env_refresh_process_id(config->env);
+        }
+    }
+#endif
+
     /* Read main 'service' section */
     s = cf->service;
     if (s) {
         /* Iterate properties */
         cfl_list_foreach(chead, &s->properties->list) {
             ckv = cfl_list_entry(chead, struct cfl_kvpair, _head);
+#ifdef FLB_HAVE_FORK
+            if (daemon_fd && strcasecmp(ckv->key, FLB_CONF_STR_DAEMON) == 0) {
+                continue;
+            }
+#endif
             if (set_service_property(config, ckv) == -1) {
                 flb_error("[config] could not configure service property '%s'",
                           ckv->key);
@@ -1706,6 +1741,17 @@ int flb_config_load_config_format(struct flb_config *config, struct flb_cf *cf)
     }
 
     return 0;
+}
+
+int flb_config_load_config_format(struct flb_config *config, struct flb_cf *cf)
+{
+    return config_load_config_format(config, cf, NULL);
+}
+
+int flb_config_load_config_format_startup(struct flb_config *config, struct flb_cf *cf,
+                                         int *daemon_fd)
+{
+    return config_load_config_format(config, cf, daemon_fd);
 }
 
 int flb_config_task_map_resize(struct flb_config *config, size_t new_size)

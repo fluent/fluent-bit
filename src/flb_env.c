@@ -68,6 +68,11 @@ static int env_preset(struct flb_env *env)
     return 0;
 }
 
+void flb_env_refresh_process_id(struct flb_env *env)
+{
+    snprintf(env->process_id, sizeof(env->process_id), "%ld", (long) getpid());
+}
+
 struct flb_env *flb_env_create()
 {
     struct flb_env *env;
@@ -89,6 +94,7 @@ struct flb_env *flb_env_create()
     env->warn_unused = FLB_TRUE;
     env->ht = ht;
     mk_list_init(&env->vars);
+    flb_env_refresh_process_id(env);
     env_preset(env);
 
     return env;
@@ -309,6 +315,10 @@ const char *flb_env_get(struct flb_env *env, const char *key)
     ret = flb_hash_table_get(env->ht, key, len, &out_buf, &out_size);
     if (ret >= 0) {
         return (char *) out_buf;
+    }
+
+    if (strcmp(key, "FLUENT_BIT_PID") == 0) {
+        return env->process_id;
     }
 
     out_buf = getenv(key);

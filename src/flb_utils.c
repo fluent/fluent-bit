@@ -18,6 +18,7 @@
  */
 
 #include <fluent-bit/flb_file.h>
+#include <fluent-bit/flb_info.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,6 +27,9 @@
 #include <math.h>
 #include <errno.h>
 #include <limits.h>
+#ifdef FLB_HAVE_FORK
+#include <fcntl.h>
+#endif
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -210,37 +214,78 @@ void flb_utils_warn_c(const char *msg)
 }
 
 #ifdef FLB_HAVE_FORK
-/* Run current process in background mode */
-int flb_utils_set_daemon(struct flb_config *config)
+int flb_utils_daemon_fork(int *ready_fd)
 {
+    char ready;
+    int fds[2];
     pid_t pid;
+    ssize_t bytes;
 
-    if ((pid = fork()) < 0){
-        flb_error("Failed creating to switch to daemon mode (fork failed)");
-        exit(EXIT_FAILURE);
+    if (pipe(fds) == -1) {
+        flb_errno();
+        return -1;
     }
 
-    if (pid > 0) { /* parent */
-        exit(EXIT_SUCCESS);
+    if (fcntl(fds[1], F_SETFD, FD_CLOEXEC) == -1) {
+        flb_errno();
+        close(fds[0]);
+        close(fds[1]);
+        return -1;
     }
+
+    pid = fork();
+    if (pid < 0) {
+        flb_errno();
+        close(fds[0]);
+        close(fds[1]);
+        return -1;
+    }
+
+    if (pid > 0) {
+        /* EOF means the child exited before it finished configuration. */
+        close(fds[1]);
+        do {
+            bytes = read(fds[0], &ready, sizeof(ready));
+        } while (bytes == -1 && errno == EINTR);
+        close(fds[0]);
+        return bytes == sizeof(ready) ? FLB_DAEMON_PARENT_SUCCESS : FLB_DAEMON_PARENT_FAILURE;
+    }
+
+    close(fds[0]);
+    *ready_fd = fds[1];
+    return 0;
+}
+
+int flb_utils_daemon_detach(int ready_fd)
+{
+    const char ready = 1;
+    ssize_t bytes;
 
     /* set files mask */
     umask(0);
 
     /* Create new session */
-    setsid();
-
-    if (chdir("/") < 0) { /* make sure we can unmount the inherited filesystem */
-        flb_error("Unable to unmount the inherited filesystem");
-        exit(EXIT_FAILURE);
+    if (setsid() == -1 || chdir("/") == -1) {
+        flb_errno();
+        close(ready_fd);
+        return -1;
     }
 
     /* Our last STDOUT messages */
     flb_info("switching to background mode (PID=%ld)", (long) getpid());
 
+    do {
+        bytes = write(ready_fd, &ready, sizeof(ready));
+    } while (bytes == -1 && errno == EINTR);
+    if (bytes == -1) {
+        flb_errno();
+        close(ready_fd);
+        return -1;
+    }
+    close(ready_fd);
+
     fclose(stderr);
     fclose(stdout);
-
     return 0;
 }
 #endif

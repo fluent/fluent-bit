@@ -620,7 +620,34 @@ void test_file_env_var_drive_uri(void)
 }
 #endif
 
+static void test_process_id(void)
+{
+    char expected[32];
+    const char *value;
+    flb_sds_t expanded;
+    struct flb_env *env;
+
+    env = flb_env_create();
+    if (!TEST_CHECK(env != NULL)) {
+        return;
+    }
+
+    snprintf(expected, sizeof(expected), "%ld", (long) getpid());
+    value = flb_env_get(env, "FLUENT_BIT_PID");
+    if (TEST_CHECK(value != NULL)) {
+        TEST_CHECK(strcmp(value, expected) == 0);
+    }
+
+    expanded = flb_env_var_translate(env, "${FLUENT_BIT_PID}");
+    if (TEST_CHECK(expanded != NULL)) {
+        TEST_CHECK(strcmp(expanded, expected) == 0);
+        flb_sds_destroy(expanded);
+    }
+    flb_env_destroy(env);
+}
+
 TEST_LIST = {
+    { "process_id", test_process_id },
 #ifdef FLB_SYSTEM_WINDOWS
     { "file_env_var_drive_uri"       , test_file_env_var_drive_uri},
 #endif

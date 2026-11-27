@@ -843,13 +843,12 @@ static int flb_service_conf_path_set(struct flb_config *config, char *file)
 }
 
 
-static struct flb_cf *service_configure(struct flb_cf *cf,
-                                        struct flb_config *config, char *file)
+static int service_configure(struct flb_config *config, char *file, int *daemon_fd)
 {
-    int ret = -1;
+    struct flb_cf *cf = config->cf_main;
 
 #ifdef FLB_HAVE_STATIC_CONF
-        cf = flb_config_static_open(file);
+    cf = flb_config_static_open(file);
 #else
     if (file) {
         cf = flb_cf_create_from_file(cf, file);
@@ -857,22 +856,20 @@ static struct flb_cf *service_configure(struct flb_cf *cf,
 #endif
 
     if (!cf) {
-        return NULL;
+        return -1;
     }
 
+#ifdef FLB_HAVE_STATIC_CONF
+    flb_cf_destroy(config->cf_main);
+#endif
+    config->cf_main = cf;
 
     /* Set configuration root path */
     if (file) {
         flb_service_conf_path_set(config, file);
     }
 
-    ret = flb_config_load_config_format(config, cf);
-    if (ret != 0) {
-        return NULL;
-    }
-
-    config->cf_main = cf;
-    return cf;
+    return flb_config_load_config_format_startup(config, cf, daemon_fd);
 }
 
 #ifdef FLB_HAVE_CHUNK_TRACE
@@ -1370,6 +1367,7 @@ static int flb_main_run(int argc, char **argv)
 {
     int opt;
     int ret;
+    int daemon_fd = -1;
     int generate_config = FLB_FALSE;
     int log_level_set = FLB_FALSE;
     flb_sds_t json;
@@ -1382,7 +1380,6 @@ static int flb_main_run(int argc, char **argv)
 
     /* config format context */
     struct flb_cf *cf;
-    struct flb_cf *tmp;
     struct flb_cf_section *service;
     struct flb_cf_section *s;
     struct flb_cf_section *section;
@@ -1785,26 +1782,36 @@ static int flb_main_run(int argc, char **argv)
     }
 
     /* Load the service configuration file */
-    tmp = service_configure(cf, config, cfg_file);
+    ret = service_configure(config, cfg_file, &daemon_fd);
     flb_free(cfg_file);
-    if (!tmp) {
-        flb_cf_destroy(cf_opts);
-        flb_destroy(ctx);
-        flb_utils_error(FLB_ERR_CFG_FILE_STOP);
-    }
 #else
-    tmp = service_configure(cf, config, "fluent-bit.conf");
-    if (!tmp) {
+    ret = service_configure(config, "fluent-bit.conf", &daemon_fd);
+#endif
+
+#ifdef FLB_HAVE_FORK
+    if (ret == FLB_DAEMON_PARENT_SUCCESS || ret == FLB_DAEMON_PARENT_FAILURE) {
+        /* Leave the inherited notification event registered for the child. */
+        flb_free(ctx->event_channel);
+        ctx->event_channel = NULL;
+#ifdef FLB_HAVE_CHUNK_TRACE
+        flb_free(trace_input);
+        flb_free(trace_output);
+        if (trace_props) {
+            flb_kv_release(trace_props);
+            flb_free(trace_props);
+        }
+#endif
+        flb_cf_destroy(cf_opts);
+        flb_destroy(ctx);
+        exit(ret == FLB_DAEMON_PARENT_SUCCESS ? EXIT_SUCCESS : EXIT_FAILURE);
+    }
+#endif
+
+    if (ret != 0) {
         flb_cf_destroy(cf_opts);
         flb_destroy(ctx);
         flb_utils_error(FLB_ERR_CFG_FILE_STOP);
     }
-
-    /* destroy previous context and override */
-    flb_cf_destroy(cf);
-    config->cf_main = tmp;
-    cf = tmp;
-#endif
 
     /* Check co-routine stack size */
     if (config->coro_stack_size < getpagesize()) {
@@ -1830,9 +1837,10 @@ static int flb_main_run(int argc, char **argv)
     }
 
 #ifdef FLB_HAVE_FORK
-    /* Run in background/daemon mode */
-    if (config->daemon == FLB_TRUE) {
-        flb_utils_set_daemon(config);
+    if (daemon_fd >= 0 && flb_utils_daemon_detach(daemon_fd) == -1) {
+        flb_cf_destroy(cf_opts);
+        flb_destroy(ctx);
+        exit(EXIT_FAILURE);
     }
 #endif
 
