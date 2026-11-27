@@ -147,6 +147,12 @@ struct flb_sqldb *flb_tail_db_open(const char *path,
         return NULL;
     }
 
+    ret = db_apply_migration_if_needed(ctx, db, SQL_ALTER_FILES_ADD_GZIP_BOUNDARY);
+    if (ret != FLB_OK) {
+        flb_sqldb_close(db);
+        return NULL;
+    }
+
     return db;
 }
 
@@ -192,7 +198,8 @@ static int flb_tail_db_file_delete_by_id(struct flb_tail_config *ctx,
 static int db_file_exists(struct flb_tail_file *file,
                           struct flb_tail_config *ctx,
                           uint64_t *id, uint64_t *inode, off_t *offset,
-                          uint64_t *offset_marker, size_t *offset_marker_size)
+                          uint64_t *offset_marker, size_t *offset_marker_size,
+                          int64_t *boundary_offset)
 {
     int ret;
     int exists = FLB_FALSE;
@@ -226,6 +233,8 @@ static int db_file_exists(struct flb_tail_file *file,
 
         /* offset_marker_size: column 5 */
         *offset_marker_size = sqlite3_column_int64(ctx->stmt_get_file, 5);
+
+        *boundary_offset = sqlite3_column_int64(ctx->stmt_get_file, 6);
 
         /* Checking if the file's name and inode match exactly */
         if (ctx->compare_filename) {
@@ -279,6 +288,7 @@ static int db_file_insert(struct flb_tail_file *file, struct flb_tail_config *ct
     sqlite3_bind_int64(ctx->stmt_insert_file, 4, created);
     sqlite3_bind_int64(ctx->stmt_insert_file, 5, file->db_offset_marker);
     sqlite3_bind_int64(ctx->stmt_insert_file, 6, file->db_offset_marker_size);
+    sqlite3_bind_int64(ctx->stmt_insert_file, 7, file->gzip_boundary_offset);
 
     /* Run the insert */
     ret = sqlite3_step(ctx->stmt_insert_file);
@@ -474,11 +484,12 @@ error:
 }
 
 int flb_tail_db_file_set(struct flb_tail_file *file,
-                         struct flb_tail_config *ctx)
+                         struct flb_tail_config *ctx, int *restored)
 {
     int ret;
     uint64_t id = 0;
     off_t offset = 0;
+    int64_t boundary_offset = -1;
     uint64_t inode = 0;
     uint64_t offset_marker = 0;
     size_t offset_marker_size = 0;
@@ -494,7 +505,7 @@ int flb_tail_db_file_set(struct flb_tail_file *file,
 
     /* Check if the file exists */
     ret = db_file_exists(file, ctx, &id, &inode, &offset,
-                         &offset_marker, &offset_marker_size);
+                         &offset_marker, &offset_marker_size, &boundary_offset);
     if (ret == -1) {
         flb_plg_error(ctx->ins, "cannot execute query to check inode: %" PRIu64,
                       file->inode);
@@ -502,6 +513,7 @@ int flb_tail_db_file_set(struct flb_tail_file *file,
         return -1;
     }
 
+    *restored = ret;
     if (ret == FLB_FALSE) {
         /* Delete stale file of same inode */
         if (ctx->compare_filename && id > 0) {
@@ -514,6 +526,11 @@ int flb_tail_db_file_set(struct flb_tail_file *file,
     else {
         file->db_id = id;
         file->offset = offset;
+        if (file->decompression_context != NULL) {
+            /* The saved marker describes this decoded checkpoint. */
+            file->decoded_offset = offset;
+            file->gzip_boundary_offset = boundary_offset;
+        }
         file->db_offset_marker = offset_marker;
         file->db_offset_marker_size = offset_marker_size;
     }
@@ -549,7 +566,8 @@ int flb_tail_db_file_offset(struct flb_tail_file *file,
     sqlite3_bind_int64(ctx->stmt_offset, 1, db_offset);
     sqlite3_bind_int64(ctx->stmt_offset, 2, file->db_offset_marker);
     sqlite3_bind_int64(ctx->stmt_offset, 3, file->db_offset_marker_size);
-    sqlite3_bind_int64(ctx->stmt_offset, 4, file->db_id);
+    sqlite3_bind_int64(ctx->stmt_offset, 4, file->gzip_boundary_offset);
+    sqlite3_bind_int64(ctx->stmt_offset, 5, file->db_id);
 
     ret = sqlite3_step(ctx->stmt_offset);
 

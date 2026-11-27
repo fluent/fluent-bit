@@ -43,6 +43,11 @@ struct flb_tail_file {
     int64_t size;
     int64_t offset;             /* this represents the raw file offset, not
                                    the input data offset (see stream_offset) */
+    int64_t decoded_offset;     /* for compressed files: the last raw offset a decoder
+                                   could restart from (a payload boundary). Bytes read
+                                   past it are still inside a member and cannot be
+                                   reconstructed after a restart, so this is what gets
+                                   persisted instead of 'offset' */
     int64_t last_line;
     uint64_t  dev_id;
     uint64_t  inode;
@@ -116,6 +121,7 @@ struct flb_tail_file {
 
     /* database reference */
     uint64_t db_id;
+    int64_t gzip_boundary_offset; /* Last verified compressed checkpoint, or -1. */
     uint64_t db_offset_marker;
     size_t db_offset_marker_size;
 

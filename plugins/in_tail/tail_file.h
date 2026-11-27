@@ -143,7 +143,14 @@ static inline off_t flb_tail_file_db_offset(struct flb_tail_file *file)
      * be reconstructed later.
      */
     if (file->decompression_context != NULL) {
-        return file->offset;
+        /*
+         * A compressed file can only be resumed where a fresh decoder starts from
+         * scratch: a payload boundary. Bytes already read past that point sit
+         * inside a member, and inflate state cannot be rebuilt from mid-stream
+         * bytes, so persisting 'offset' here makes everything after the resume
+         * point permanently undecodable.
+         */
+        return file->decoded_offset;
     }
 
     if (file->buf_len > 0 && file->offset >= (off_t) file->buf_len) {
