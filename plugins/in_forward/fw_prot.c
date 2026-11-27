@@ -1795,6 +1795,13 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
 
                             goto cleanup_msgpack;
                         }
+                        /* Each forward message carries one self-contained compressed
+                         * payload and this context is destroyed when the message ends,
+                         * so every byte that will ever arrive is already about to be
+                         * appended. Declaring that explicitly lets a decoder report a
+                         * truncated payload as such instead of leaving the caller to
+                         * infer it from byte deltas. */
+                        conn->d_ctx->input_complete = FLB_TRUE;
                     }
                 }
 
@@ -1807,29 +1814,25 @@ int fw_prot_process(struct flb_input_instance *ins, struct fw_conn *conn)
                     size_t previous_input_length;
                     size_t total_decompressed;
                     int decomp_ret;
-                    size_t required_size;
+                    int reserve_ret;
 
                     total_decompressed = 0;
 
                     available_space = flb_decompression_context_get_available_space(conn->d_ctx);
                     if (len > available_space) {
-                        if (conn->d_ctx->input_buffer_length > SIZE_MAX - len) {
-                            flb_plg_error(ctx->ins,
-                                          "decompression input size overflow");
-
-                            goto cleanup_decompress;
-                        }
-
-                        required_size = conn->d_ctx->input_buffer_length + len;
-                        if (required_size > ctx->buffer_max_size) {
+                        /* reserve() sizes from the read cursor, not from the resident
+                         * length: the consumed prefix has to stay inside the block or
+                         * the memcpy below would run past it. */
+                        reserve_ret = flb_decompression_context_reserve(conn->d_ctx, len,
+                                                                        ctx->buffer_max_size);
+                        if (reserve_ret == FLB_DECOMPRESSOR_LIMIT_EXCEEDED) {
                             flb_plg_error(ctx->ins,
                                           "compressed payload exceeds limit (%zu bytes)",
                                           ctx->buffer_max_size);
 
                             goto cleanup_decompress;
                         }
-
-                        if (flb_decompression_context_resize_buffer(conn->d_ctx, required_size) != 0) {
+                        else if (reserve_ret != FLB_DECOMPRESSOR_SUCCESS) {
                             flb_plg_error(ctx->ins, "cannot resize decompression buffer");
 
                             goto cleanup_decompress;
