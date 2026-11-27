@@ -20,12 +20,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <inttypes.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 
 #include <chunkio/chunkio_compat.h>
 #include <chunkio/chunkio.h>
 #include <chunkio/cio_stream.h>
 #include <chunkio/cio_file.h>
+#include <chunkio/cio_file_native.h>
 #include <chunkio/cio_memfs.h>
 #include <chunkio/cio_chunk.h>
 #include <chunkio/cio_error.h>
@@ -37,6 +40,48 @@
 #endif
 
 #ifdef CIO_HAVE_BACKEND_FILESYSTEM
+/*
+ * Return the file last-write time with sub-second precision when the
+ * platform provides it. Pooled chunk files are named after their slot, so
+ * this timestamp is the only ordering information that survives a restart.
+ */
+static int scan_file_mtime(const char *path,
+                           uint64_t *sec, uint64_t *nsec)
+{
+#ifdef _WIN32
+    WIN32_FILE_ATTRIBUTE_DATA fad;
+    ULARGE_INTEGER t;
+    uint64_t ns100;
+
+    if (!GetFileAttributesExA(path, GetFileExInfoStandard, &fad)) {
+        return -1;
+    }
+
+    t.LowPart = fad.ftLastWriteTime.dwLowDateTime;
+    t.HighPart = fad.ftLastWriteTime.dwHighDateTime;
+
+    /* 100ns intervals since 1601-01-01 -> Unix epoch */
+    ns100 = t.QuadPart - 116444736000000000ULL;
+    *sec = ns100 / 10000000ULL;
+    *nsec = (ns100 % 10000000ULL) * 100ULL;
+#else
+    struct stat sb;
+
+    if (stat(path, &sb) != 0) {
+        return -1;
+    }
+#if defined(__APPLE__)
+    *sec = (uint64_t) sb.st_mtimespec.tv_sec;
+    *nsec = (uint64_t) sb.st_mtimespec.tv_nsec;
+#else
+    *sec = (uint64_t) sb.st_mtim.tv_sec;
+    *nsec = (uint64_t) sb.st_mtim.tv_nsec;
+#endif
+#endif
+
+    return 0;
+}
+
 static int cio_scan_stream_files(struct cio_ctx *ctx, struct cio_stream *st,
                                  char *chunk_extension)
 {
@@ -45,9 +90,16 @@ static int cio_scan_stream_files(struct cio_ctx *ctx, struct cio_stream *st,
     int err;
     int ext_off;
     int ext_len = 0;
+    int slot;
+    int have_time;
+    int have_size;
+    size_t file_size;
+    uint64_t mtime_sec = 0;
+    uint64_t mtime_nsec = 0;
     char *path;
     DIR *dir;
     struct dirent *ent;
+    struct cio_chunk *chunk;
 
     len = strlen(ctx->options.root_path) + strlen(st->name) + 2;
     path = malloc(len);
@@ -87,8 +139,24 @@ static int cio_scan_stream_files(struct cio_ctx *ctx, struct cio_stream *st,
             continue;
         }
 
-        /* Check the file matches the desired extension (if set) */
-        if (chunk_extension) {
+        /*
+         * File-slot pool: an empty slot file is a free slot, not a chunk.
+         * Leave it in place so new chunks reuse it; if the slot number is
+         * outside the current pool size (left over from a larger pool) it is
+         * not reusable, so unlink it instead of leaving an orphan behind.
+         */
+        slot = cio_stream_pool_slot_from_name(ent->d_name);
+
+        /*
+         * Check the file matches the desired extension (if set). Canonical
+         * slot artifacts always use the ".flb" physical name, but they are
+         * still chunks of this stream: a client loading another logical
+         * extension (e.g. ".out") must not lose its backlog. This also
+         * applies when the pool is disabled or the slot is outside a reduced
+         * pool size, otherwise an opt-out/shrink restart would hide the
+         * backlog.
+         */
+        if (chunk_extension && slot < 0) {
             len = strlen(ent->d_name);
             if (len <= ext_len) {
                 continue;
@@ -102,8 +170,67 @@ static int cio_scan_stream_files(struct cio_ctx *ctx, struct cio_stream *st,
 
         ctx->last_chunk_error = 0;
 
-        /* register every directory as a stream */
-        cio_chunk_open(ctx, st, ent->d_name, ctx->options.flags, 0, &err);
+        have_time = CIO_FALSE;
+        have_size = CIO_FALSE;
+        file_size = 0;
+        if (slot >= 0) {
+            struct stat sb;
+            char *spath;
+
+            spath = cio_file_native_compose_path(ctx->options.root_path,
+                                                 st->name, ent->d_name);
+            if (spath) {
+                if (stat(spath, &sb) == 0) {
+                    have_size = CIO_TRUE;
+                    file_size = (size_t) sb.st_size;
+
+                    if (scan_file_mtime(spath, &mtime_sec, &mtime_nsec) == 0) {
+                        have_time = CIO_TRUE;
+                    }
+                }
+
+                if (have_size == CIO_TRUE && file_size == 0) {
+                    if (cio_stream_pool_slot_valid(st, slot) == CIO_FALSE) {
+                        cio_file_native_delete_by_path(spath);
+                    }
+                    free(spath);
+                    continue;
+                }
+                free(spath);
+            }
+        }
+
+        /*
+         * Mark the stream as scanning while the existing file is opened: the
+         * filesystem backend must recover non-slot (legacy or fallback) names
+         * in place instead of redirecting them to a fresh slot.
+         */
+        st->scanning = CIO_TRUE;
+        chunk = cio_chunk_open(ctx, st, ent->d_name, ctx->options.flags, 0,
+                               &err);
+        st->scanning = CIO_FALSE;
+
+        /*
+         * A pooled chunk file only carries its slot name, so the original
+         * creation stamp is gone after a restart and backlog order (Fluent
+         * Bit sorts recovered chunks by name) would follow slot numbers.
+         * Keep the physical name, but give the in-memory chunk a logical
+         * name that embeds the file last-write time: it sorts like a stock
+         * generated chunk name and stays stable for the chunk lifetime.
+         */
+        if (chunk != NULL && slot >= 0 && have_time == CIO_TRUE) {
+            char order_name[128];
+            char *copy;
+
+            snprintf(order_name, sizeof(order_name),
+                     "slot-%06d-%" PRIu64 ".%09" PRIu64 ".flb",
+                     slot, mtime_sec, mtime_nsec);
+            copy = strdup(order_name);
+            if (copy != NULL) {
+                free(chunk->name);
+                chunk->name = copy;
+            }
+        }
 
         if (ctx->options.flags & CIO_DELETE_IRRECOVERABLE) {
             if (err == CIO_CORRUPTED) {

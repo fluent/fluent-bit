@@ -15,6 +15,12 @@ set(src
 
 set(libs cio-crc32)
 
+if(NOT WIN32)
+  set(libs
+    ${libs}
+    Threads::Threads)
+endif()
+
 if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
   set(src
     ${src}

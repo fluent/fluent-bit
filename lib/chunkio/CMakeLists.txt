@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.20)
 project(chunk-io C)
 
+if(NOT WIN32)
+  find_package(Threads REQUIRED)
+endif()
+
 set(CIO_VERSION_MAJOR  1)
 set(CIO_VERSION_MINOR  5)
 set(CIO_VERSION_PATCH  5)
@@ -25,6 +29,10 @@ option(CIO_LIB_STATIC        "Enable static library build"  On)
 option(CIO_LIB_SHARED        "Enable shared library build"  Off)
 option(CIO_SANITIZE_ADDRESS  "Enable address sanitizer"     Off)
 option(CIO_TESTS             "Enable tests"                 Off)
+
+if(CIO_TESTS)
+  add_definitions(-DCIO_TESTS)
+endif()
 option(CIO_BACKEND_FILESYSTEM "Enable filesystem backend"   On)
 
 # Force Option value
