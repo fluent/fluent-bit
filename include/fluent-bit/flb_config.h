@@ -413,6 +413,8 @@ int flb_config_set_property(struct flb_config *config,
                             const char *k, const char *v);
 int flb_config_set_program_name(struct flb_config *config, char *name);
 int flb_config_load_config_format(struct flb_config *config, struct flb_cf *cf);
+int flb_config_load_config_format_startup(struct flb_config *config, struct flb_cf *cf,
+                                          int *daemon_fd);
 int flb_config_task_map_resize(struct flb_config *config, size_t new_size);
 int flb_config_task_map_grow(struct flb_config *config);
 
