@@ -50,7 +50,7 @@ uint32_t flb_utf8_decode(uint32_t *state, uint32_t *codep, uint8_t byte)
             *codep = byte;
             return FLB_UTF8_ACCEPT;
         }
-        else if ((byte & 0xE0) == 0xC0) {
+        else if (byte >= 0xC2 && byte <= 0xDF) {
             /* start of a 2-byte sequence */
             *codep = byte & 0x1F;
             *state = 1;
@@ -74,6 +74,12 @@ uint32_t flb_utf8_decode(uint32_t *state, uint32_t *codep, uint8_t byte)
     else {
         /* continuation byte */
         if ((byte & 0xC0) == 0x80) {
+            /* Reject overlong three- and four-byte sequences at byte two. */
+            if ((*state == 2 && *codep == 0 && byte < 0xA0) ||
+                (*state == 3 && *codep == 0 && byte < 0x90)) {
+                *state = FLB_UTF8_REJECT;
+                return FLB_UTF8_REJECT;
+            }
             *codep = (*codep << 6) | (byte & 0x3F);
 
             /* reduce the expected continuation bytes */
