@@ -495,8 +495,10 @@ static void print_storage_info(struct flb_config *ctx, struct cio_ctx *cio)
         checksum = "off";
     }
 
-    flb_info("[storage] ver=%s, type=%s, sync=%s, checksum=%s, max_chunks_up=%i",
-             cio_version(), type, sync, checksum, ctx->storage_max_chunks_up);
+    flb_info("[storage] ver=%s, type=%s, sync=%s, checksum=%s, "
+             "max_chunks_up=%i, file_pool_size=%i",
+             cio_version(), type, sync, checksum, ctx->storage_max_chunks_up,
+             ctx->storage_file_pool_size);
 
     /* Storage input plugin */
     if (ctx->storage_input_plugin) {
@@ -708,6 +710,7 @@ int flb_storage_create(struct flb_config *ctx)
     opts.flags = flags;
     opts.log_cb = log_cb;
     opts.log_level = CIO_LOG_INFO;
+    opts.file_pool_size = ctx->storage_file_pool_size;
 
     /* Create chunkio context */
     cio = cio_create(&opts);
