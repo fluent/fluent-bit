@@ -40,7 +40,7 @@ struct flb_env {
     int warn_unused;        /* warn about unused environment variable */
     struct flb_hash_table *ht;
     struct mk_list vars;    /* list of environment variables */
-    char process_id[32];   /* PID at configuration initialization */
+    char process_id[32];   /* PID used by the built-in environment variable */
 };
 
 static inline void flb_env_warn_unused(struct flb_env *env, int warn)
@@ -49,6 +49,7 @@ static inline void flb_env_warn_unused(struct flb_env *env, int warn)
 }
 
 struct flb_env *flb_env_create();
+void flb_env_refresh_process_id(struct flb_env *env);
 void flb_env_destroy(struct flb_env *env);
 int flb_env_set(struct flb_env *env, const char *key, const char *val);
 int flb_env_set_extended(struct flb_env *env, const char *key, const char *val,

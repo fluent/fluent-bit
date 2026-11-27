@@ -68,6 +68,11 @@ static int env_preset(struct flb_env *env)
     return 0;
 }
 
+void flb_env_refresh_process_id(struct flb_env *env)
+{
+    snprintf(env->process_id, sizeof(env->process_id), "%ld", (long) getpid());
+}
+
 struct flb_env *flb_env_create()
 {
     struct flb_env *env;
@@ -89,7 +94,7 @@ struct flb_env *flb_env_create()
     env->warn_unused = FLB_TRUE;
     env->ht = ht;
     mk_list_init(&env->vars);
-    snprintf(env->process_id, sizeof(env->process_id), "%ld", (long) getpid());
+    flb_env_refresh_process_id(env);
     env_preset(env);
 
     return env;
