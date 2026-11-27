@@ -172,8 +172,9 @@ static void append_to_context(struct flb_decompression_context *ctx, const void 
     available_space = flb_decompression_context_get_available_space(ctx);
 
     if (size > available_space) {
-        size_t required_size = ctx->input_buffer_length + size;
-        flb_decompression_context_resize_buffer(ctx, required_size);
+        /* reserve() accounts for the consumed prefix; sizing from
+         * input_buffer_length alone would not cover the append cursor. */
+        TEST_CHECK(flb_decompression_context_reserve(ctx, size, 0) == FLB_DECOMPRESSOR_SUCCESS);
     }
 
     /* Get pointer to the write location */
