@@ -29,6 +29,17 @@
 
 /* returns length of next utf-8 sequence */
 int flb_utf8_len(const char *s);
+
+/*
+ * Decode one byte at a time. 'state' is an opaque accumulator: initialise it to
+ * FLB_UTF8_ACCEPT before each independent string, and classify bytes from the
+ * return value rather than from 'state'.
+ *
+ * After FLB_UTF8_REJECT the next byte starts a new character, so callers can
+ * keep scanning past ill-formed input instead of rejecting everything that
+ * follows. 'state' is deliberately left non-zero after a rejection so code that
+ * compares it against FLB_UTF8_ACCEPT still reports failure.
+ */
 uint32_t flb_utf8_decode(uint32_t *state, uint32_t *codep, uint8_t byte);
 void flb_utf8_print(char *input);
 
