@@ -185,6 +185,35 @@ def _write_config(tmp_path, name, contents):
     return config_file
 
 
+def test_builtin_process_id_matches_the_running_process(tmp_path):
+    config = """service:
+  flush: 1
+  grace: 1
+  http_server: on
+  http_port: ${FLUENT_BIT_HTTP_MONITORING_PORT}
+
+pipeline:
+  inputs:
+    - name: dummy
+      dummy: '{"fluent_bit_pid": ${FLUENT_BIT_PID}}'
+      samples: 1
+  outputs:
+    - name: stdout
+      match: '*'
+      format: json_lines
+      json_date_key: false
+"""
+    config_file = _write_config(tmp_path, "builtin_process_id.yaml", config)
+    service = Service(str(config_file))
+    service.start()
+    try:
+        log_text = service.wait_for_log_contains('"fluent_bit_pid":', timeout=15)
+        payload = _find_json_line(log_text, '"fluent_bit_pid":')
+        assert payload["fluent_bit_pid"] == service.flb.target_pid
+    finally:
+        service.stop()
+
+
 def test_environment_mapping_values_apply_through_pipeline(tmp_path):
     config_file = _write_config(
         tmp_path,
