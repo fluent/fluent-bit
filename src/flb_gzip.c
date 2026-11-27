@@ -24,6 +24,7 @@
 #include <fluent-bit/flb_compression.h>
 #include <miniz/miniz.h>
 #include <stdbool.h>
+#include <limits.h>
 
 /* Size to allocate for gzip decompression when we dont know the size. */
 #define FLB_GZIP_BUFFER_SIZE 1024 * 1024
@@ -775,7 +776,7 @@ static int flb_gzip_decompressor_process_optional_headers(
 
     /* Skip extra data if present */
     if (inner_context->gzip_header.header_flags & FEXTRA) {
-        if (context->input_buffer_length <= sizeof(uint16_t)) {
+        if (context->input_buffer_length < sizeof(uint16_t)) {
             return FLB_DECOMPRESSOR_INSUFFICIENT_DATA;
         }
 
@@ -848,7 +849,7 @@ static int flb_gzip_decompressor_process_optional_headers(
 
     /* Check header crc if present (lower 16 bits of the checksum)*/
     if (inner_context->gzip_header.header_flags & FHCRC) {
-        if (context->input_buffer_length <= sizeof(uint16_t)) {
+        if (context->input_buffer_length < sizeof(uint16_t)) {
             return FLB_DECOMPRESSOR_INSUFFICIENT_DATA;
         }
 
@@ -897,6 +898,8 @@ static int flb_gzip_decompressor_process_body_chunk(
                 void *output_buffer,
                 size_t *output_length)
 {
+    unsigned int                           input_size;
+    unsigned int                           output_size;
     size_t                                 processed_bytes;
     struct flb_gzip_decompression_context *inner_context;
     int                                    status;
@@ -908,14 +911,25 @@ static int flb_gzip_decompressor_process_body_chunk(
     inner_context = (struct flb_gzip_decompression_context *) \
                         context->inner_context;
 
+    /* miniz accepts unsigned int counts. Keep any unoffered input for the next call. */
+    input_size = (unsigned int) MZ_MIN(context->input_buffer_length, UINT_MAX);
+    output_size = (unsigned int) MZ_MIN(*output_length, UINT_MAX);
     inner_context->miniz_stream.next_in = context->read_buffer;
-    inner_context->miniz_stream.avail_in = context->input_buffer_length;
+    inner_context->miniz_stream.avail_in = input_size;
     inner_context->miniz_stream.next_out = output_buffer;
-    inner_context->miniz_stream.avail_out = *output_length;
+    inner_context->miniz_stream.avail_out = output_size;
 
     status = mz_inflate(&inner_context->miniz_stream, MZ_PARTIAL_FLUSH);
 
-    if (status != MZ_OK && status != MZ_STREAM_END) {
+    /*
+     * miniz reports MZ_BUF_ERROR when it cannot advance without more input, and
+     * it may already have emitted bytes before doing so. That is a wait for data
+     * rather than corruption: let the accounting below run so those bytes are
+     * reported, keep the inflate state intact for the next call, and return
+     * INSUFFICIENT_DATA at the end. Treating it as fatal pinned the context to
+     * STATE_FAILED whenever a delivery boundary landed at the end of a header.
+     */
+    if (status != MZ_OK && status != MZ_STREAM_END && status != MZ_BUF_ERROR) {
         context->state = FLB_DECOMPRESSOR_STATE_FAILED;
 
         mz_inflateEnd(&inner_context->miniz_stream);
@@ -926,10 +940,9 @@ static int flb_gzip_decompressor_process_body_chunk(
                                         FLB_DECOMPRESSOR_FAILURE;
     }
 
-    processed_bytes  = context->input_buffer_length;
-    processed_bytes -= inner_context->miniz_stream.avail_in;
+    processed_bytes = input_size - inner_context->miniz_stream.avail_in;
 
-    *output_length  -= inner_context->miniz_stream.avail_out;
+    *output_length = output_size - inner_context->miniz_stream.avail_out;
     inner_context->body_crc = mz_crc32(inner_context->body_crc, output_buffer, *output_length);
     inner_context->body_size += (uint32_t) *output_length;
 
@@ -940,7 +953,7 @@ static int flb_gzip_decompressor_process_body_chunk(
 #endif
 
     context->read_buffer = &context->read_buffer[processed_bytes];
-    context->input_buffer_length = inner_context->miniz_stream.avail_in;
+    context->input_buffer_length -= processed_bytes;
 
     if (status == MZ_STREAM_END) {
         mz_inflateEnd(&inner_context->miniz_stream);
@@ -948,6 +961,10 @@ static int flb_gzip_decompressor_process_body_chunk(
         context->state = FLB_DECOMPRESSOR_STATE_EXPECTING_FOOTER;
 
         memset(&inner_context->miniz_stream, 0, sizeof(mz_stream));
+    }
+
+    if (status == MZ_BUF_ERROR) {
+        return FLB_DECOMPRESSOR_INSUFFICIENT_DATA;
     }
 
     return FLB_DECOMPRESSOR_SUCCESS;
@@ -990,16 +1007,24 @@ int flb_gzip_decompressor_dispatch(struct flb_decompression_context *context,
     size_t output_buffer_size;
     int    status;
 
+    if (context == NULL || context->algorithm != FLB_COMPRESSION_ALGORITHM_GZIP ||
+        context->inner_context == NULL || output_buffer == NULL || output_length == NULL) {
+        return FLB_DECOMPRESSOR_FAILURE;
+    }
+
     output_buffer_size = *output_length;
 
     *output_length = 0;
 
-    status = FLB_DECOMPRESSOR_SUCCESS;
-
-    if (context == NULL ||
-        context->inner_context == NULL) {
-        status = FLB_DECOMPRESSOR_FAILURE;
+    if (context->state == FLB_DECOMPRESSOR_STATE_FAILED) {
+        return FLB_DECOMPRESSOR_FAILURE;
     }
+
+    if (output_buffer_size == 0) {
+        return FLB_DECOMPRESSOR_SUCCESS;
+    }
+
+    status = FLB_DECOMPRESSOR_SUCCESS;
 
     if (context->input_buffer_length == 0) {
         flb_debug("[gzip] unexpected call with an empty input buffer");
@@ -1030,6 +1055,14 @@ int flb_gzip_decompressor_dispatch(struct flb_decompression_context *context,
     if (status == FLB_DECOMPRESSOR_SUCCESS &&
         context->state == FLB_DECOMPRESSOR_STATE_EXPECTING_FOOTER) {
         status = flb_gzip_decompressor_process_footer(context);
+        /* Only a real footer failure invalidates the output. A footer that has not
+         * fully arrived is a wait, and the body stage may have emitted bytes in
+         * this very call: discarding them lost the tail of a member silently,
+         * because body_crc/body_size had already been updated for those bytes and
+         * the trailer still validated once it completed. */
+        if (status < 0) {
+            *output_length = 0;
+        }
     }
 
     return status;

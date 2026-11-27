@@ -483,6 +483,12 @@ static int http_uncompress_body(cfl_sds_t body, const char *encoding,
         previous_state = decoder->state;
         produced = sizeof(chunk);
         result = flb_decompress(decoder, chunk, &produced);
+        if (result == FLB_DECOMPRESSOR_INSUFFICIENT_DATA) {
+            /* The whole body is already resident, so a decoder that cannot advance
+             * has run out of stream rather than waited for more. */
+            result = FLB_DECOMPRESSOR_FAILURE;
+            goto error;
+        }
         if (result != FLB_DECOMPRESSOR_SUCCESS) {
             goto error;
         }

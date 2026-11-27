@@ -32,7 +32,7 @@ struct flb_sqldb *flb_tail_db_open(const char *path,
 
 int flb_tail_db_close(struct flb_sqldb *db);
 int flb_tail_db_file_set(struct flb_tail_file *file,
-                         struct flb_tail_config *ctx);
+                         struct flb_tail_config *ctx, int *restored);
 int flb_tail_db_file_offset(struct flb_tail_file *file,
                             struct flb_tail_config *ctx);
 int flb_tail_db_file_rotate(const char *new_name,

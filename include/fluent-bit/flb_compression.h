@@ -37,11 +37,27 @@
 
 #define FLB_DECOMPRESSOR_ALLOCATION_FAILURE              -5
 #define FLB_DECOMPRESSOR_LIMIT_EXCEEDED                  -4
-#define FLB_DECOMPRESSOR_FAILURE                         -1
-#define FLB_DECOMPRESSOR_CORRUPTED_HEADER                -2
 #define FLB_DECOMPRESSOR_INVALID_STATE                   -3
+#define FLB_DECOMPRESSOR_CORRUPTED_HEADER                -2
+#define FLB_DECOMPRESSOR_FAILURE                         -1
 #define FLB_DECOMPRESSOR_SUCCESS                          0
-#define FLB_DECOMPRESSOR_INSUFFICIENT_DATA                0
+/*
+ * The decoder cannot advance yet but is still able to: it needs more input, or,
+ * for a streaming caller, more room to write. This is not success and not an
+ * error. Negative values stay errors and zero stays "the decode advanced".
+ *
+ * It used to alias FLB_DECOMPRESSOR_SUCCESS, which made every `ret != SUCCESS`
+ * check silently swallow a wait (that is how the gzip header-boundary defect was
+ * written). Consumers therefore fall into two groups:
+ *   - streaming callers must consume any reported output (it will not be returned
+ *     again), retain the decoder state, and supply more input when available;
+ *   - one-shot callers, which already declared the input complete, must translate
+ *     it into FLB_DECOMPRESSOR_FAILURE because a decoder that cannot advance over
+ *     complete input has run out of stream.
+ * Third-party code compiled against the previous header must be rebuilt: only
+ * this constant changed value (0 -> 1); every error code keeps its number.
+ */
+#define FLB_DECOMPRESSOR_INSUFFICIENT_DATA                1
 
 #define FLB_DECOMPRESSION_BUFFER_SIZE                     (1024 * 1000)
 
@@ -65,11 +81,44 @@ struct flb_decompression_context {
 uint8_t *flb_decompression_context_get_append_buffer(
             struct flb_decompression_context *context);
 
+/*
+ * Space left for appending at the current read cursor. This already subtracts
+ * the consumed prefix (read_buffer - input_buffer), so a caller that grows the
+ * buffer must add that prefix back: use flb_decompression_context_reserve()
+ * instead of sizing from input_buffer_length alone.
+ */
 size_t flb_decompression_context_get_available_space(
             struct flb_decompression_context *context);
 
 int flb_decompression_context_resize_buffer(
         struct flb_decompression_context *context, size_t new_size);
+
+/*
+ * Make room to append `needed` bytes at the current read cursor, growing the
+ * allocation as required. This is the only safe way for a caller to size a grow:
+ * the target covers the consumed prefix plus the resident span plus `needed`, so
+ * the following get_append_buffer()/memcpy() pair cannot run past the new block.
+ * `maximum_size` caps the resulting allocation (0 means uncapped) and is the
+ * caller's policy, not the decoder's. Returns FLB_DECOMPRESSOR_SUCCESS when the
+ * space is available afterwards, FLB_DECOMPRESSOR_LIMIT_EXCEEDED when honouring
+ * the cap would be required, and another negative code on a real failure.
+ */
+int flb_decompression_context_reserve(struct flb_decompression_context *context,
+                                      size_t needed, size_t maximum_size);
+
+/*
+ * True when the decoder holds no undecoded bytes and can decode the next byte
+ * from scratch with no memory of what came before. This is the only kind of
+ * position a caller may persist as a resume point: anywhere else it would need
+ * decoder state that cannot be reconstructed, so resuming there makes the rest
+ * of the stream undecodable.
+ *
+ * Backends differ on what "from scratch" means. A gzip context is resumable at a
+ * member boundary; zstd at a frame boundary; framed Snappy only at the start of
+ * the stream, because this decoder recognises framing through the leading
+ * identifier chunk and a continuation span carries none.
+ */
+int flb_decompression_context_at_payload_boundary(struct flb_decompression_context *context);
 
 struct flb_decompression_context *flb_decompression_context_create(
                                     int algorithm,

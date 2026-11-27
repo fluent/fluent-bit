@@ -258,6 +258,141 @@ int flb_tail_file_read_offset_is_valid(struct flb_tail_file *file)
     return FLB_TRUE;
 }
 
+/*
+ * A compressed file can only be resumed where a fresh decoder starts from
+ * scratch, so the durable checkpoint trails the read cursor: bytes taken in but
+ * not yet decoded sit inside a member and cannot be reconstructed later.
+ */
+static void update_decoded_offset(struct flb_tail_file *file, int64_t boundary_offset)
+{
+    if (file->buf_len == 0 && !file->skip_next && boundary_offset > file->decoded_offset) {
+        file->decoded_offset = boundary_offset;
+        file->gzip_boundary_offset = boundary_offset;
+    }
+}
+
+/* Verify an uncertified gzip checkpoint using a
+ * separate decoder so the live decoder and line buffer stay untouched. */
+static int gzip_prefix_ends_at_boundary(struct flb_tail_file *file)
+{
+    struct flb_decompression_context *decoder;
+    unsigned char output[4096];
+    off_t remaining = file->offset;
+    ssize_t count;
+    size_t available;
+    size_t previous;
+    size_t produced;
+    int valid = FLB_FALSE;
+    int ret;
+
+    if (lseek(file->fd, 0, SEEK_SET) == -1) {
+        flb_errno();
+        return -1;
+    }
+    decoder = flb_decompression_context_create(FLB_COMPRESSION_ALGORITHM_GZIP,
+                                               file->config->buf_max_size);
+    if (decoder == NULL) {
+        return -1;
+    }
+
+    while (remaining > 0) {
+        available = flb_decompression_context_get_available_space(decoder);
+        if (available > sizeof(output)) {
+            available = sizeof(output);
+        }
+        if (available > (uint64_t) remaining) {
+            available = (size_t) remaining;
+        }
+        count = read(file->fd, flb_decompression_context_get_append_buffer(decoder), available);
+        if (count < 0) {
+            flb_errno();
+            valid = -1;
+            goto done;
+        }
+        if (count == 0) {
+            goto done;
+        }
+        decoder->input_buffer_length += (size_t) count;
+        remaining -= count;
+
+        do {
+            previous = decoder->input_buffer_length;
+            produced = sizeof(output);
+            ret = flb_decompress(decoder, output, &produced);
+            if (ret == FLB_DECOMPRESSOR_ALLOCATION_FAILURE) {
+                valid = -1;
+                goto done;
+            }
+            if (ret < 0) {
+                goto done;
+            }
+        } while (decoder->input_buffer_length > 0 &&
+                 (produced > 0 || decoder->input_buffer_length < previous));
+    }
+
+    valid = flb_decompression_context_at_payload_boundary(decoder);
+
+done:
+    flb_decompression_context_destroy(decoder);
+    return valid;
+}
+
+/*
+ * Offsets stored before compressed files were checkpointed at payload boundaries
+ * can land inside a deflate stream, where no decoder can pick the data up: the
+ * file then fails to decode forever and everything after that point is lost.
+ * Repair such a position by restarting the file from the beginning. Duplicates
+ * are recoverable, silent loss is not.
+ *
+ * Returns FLB_TRUE when the stored offset was reset, so callers can avoid their
+ * own "no offset known" handling. Return -1 on an I/O or allocation error
+ * so a transient failure does not overwrite a valid checkpoint.
+ */
+static int repair_compressed_resume_point(struct flb_tail_file *file)
+{
+    off_t original_offset;
+    int valid;
+
+    if (file->decompression_context == NULL || file->offset <= 0) {
+        return FLB_FALSE;
+    }
+
+    /* Legacy rows have no boundary provenance. Verify the prefix once, even
+     * mid-file: gzip header bytes can also occur inside a compressed member. */
+    original_offset = lseek(file->fd, 0, SEEK_CUR);
+    if (original_offset == -1) {
+        flb_errno();
+        return -1;
+    }
+
+    flb_plg_debug(file->config->ins, "verifying gzip checkpoint for %s", file->name);
+    valid = gzip_prefix_ends_at_boundary(file);
+
+    if (lseek(file->fd, original_offset, SEEK_SET) == -1) {
+        flb_errno();
+        return -1;
+    }
+
+    if (valid == -1) {
+        return -1;
+    }
+    if (valid) {
+        file->gzip_boundary_offset = file->offset;
+        return FLB_FALSE;
+    }
+
+    flb_plg_warn(file->config->ins,
+                 "stored offset %" PRId64 " for %s is not a gzip member boundary; "
+                 "resuming from the beginning (records may be duplicated)",
+                 file->offset, file->name);
+
+    file->offset = 0;
+    file->decoded_offset = 0;
+    file->gzip_boundary_offset = -1;
+
+    return FLB_TRUE;
+}
+
 static void update_resumable_offset_state(struct flb_tail_file *file)
 {
 #ifdef FLB_HAVE_SQLDB
@@ -288,9 +423,25 @@ int flb_tail_file_reset_on_truncate(struct flb_tail_file *file,
                   caller, file->inode, file->name, size_delta);
 
     file->offset = offset;
+    file->decoded_offset = offset;
+    file->gzip_boundary_offset = -1;
     file->stream_offset = offset;
     file->last_processed_bytes = 0;
     file->buf_len = 0;
+
+    /* The old inflate state belongs to content that no longer exists. */
+    if (file->decompression_context != NULL) {
+        flb_decompression_context_destroy(file->decompression_context);
+        file->decompression_context =
+            flb_decompression_context_create(FLB_COMPRESSION_ALGORITHM_GZIP,
+                                             ctx->buf_max_size);
+
+        if (file->decompression_context == NULL) {
+            flb_plg_error(ctx->ins, "cannot reset decompression context for %s",
+                          file->name);
+            return -1;
+        }
+    }
 
     update_resumable_offset_state(file);
     return 0;
@@ -1277,15 +1428,18 @@ static int set_file_position(struct flb_tail_config *ctx,
                              struct flb_tail_file *file,
                              int explicit_offset)
 {
+    int repaired = FLB_FALSE;
     int64_t ret;
 
 #ifdef FLB_HAVE_SQLDB
+    int restored;
+
     /*
      * If the database option is enabled, try to gather the file position. The
      * database function updates the file->offset entry.
      */
     if (ctx->db) {
-        ret = flb_tail_db_file_set(file, ctx);
+        ret = flb_tail_db_file_set(file, ctx, &restored);
         if (ret == 0) {
             if (file->offset > file->size ||
                 flb_tail_file_offset_marker_matches(file) != FLB_TRUE) {
@@ -1296,7 +1450,20 @@ static int set_file_position(struct flb_tail_config *ctx,
                  * content.
                  */
                 file->offset = 0;
+                file->decoded_offset = 0;
+                file->gzip_boundary_offset = -1;
                 file->stream_offset = 0;
+                flb_tail_db_file_offset(file, ctx);
+            }
+
+            /* The file marker was checked above. Only a checkpoint certified
+             * at this same offset can skip the legacy prefix scan. */
+            if (file->decompression_context != NULL && file->offset > 0 &&
+                (file->db_offset_marker_size == 0 || file->gzip_boundary_offset != file->offset)) {
+                repaired = repair_compressed_resume_point(file);
+                if (repaired == -1) {
+                    return -1;
+                }
                 flb_tail_db_file_offset(file, ctx);
             }
 
@@ -1310,13 +1477,16 @@ static int set_file_position(struct flb_tail_config *ctx,
                     file->stream_offset = ret;
                 }
             }
-            else if (ctx->read_from_head == FLB_FALSE) {
+            else if (ctx->read_from_head == FLB_FALSE && !repaired &&
+                     !(restored && file->decompression_context != NULL)) {
                 ret = lseek(file->fd, 0, SEEK_END);
                 if (ret == -1) {
                     flb_errno();
                     return -1;
                 }
                 file->offset = ret;
+                /* A seek alone does not verify the skipped gzip prefix. */
+                file->decoded_offset = ret;
                 if (file->decompression_context == NULL) {
                     file->stream_offset = ret;
                 }
@@ -1330,6 +1500,14 @@ static int set_file_position(struct flb_tail_config *ctx,
     /* A pre-set offset (e.g. from an aged-out re-pickup) must be honoured
      * even when read_from_head is true; the flag only governs truly new
      * files that have no prior read position. */
+    repaired = repair_compressed_resume_point(file);
+    if (repaired == -1) {
+        return -1;
+    }
+    if (repaired) {
+        flb_tail_file_update_offset_marker(file);
+    }
+
     if (explicit_offset) {
         ret = lseek(file->fd, file->offset, SEEK_SET);
 
@@ -1358,6 +1536,7 @@ static int set_file_position(struct flb_tail_config *ctx,
     }
 
     file->offset = ret;
+    file->decoded_offset = ret;
 
     if (file->decompression_context == NULL) {
         file->stream_offset = ret;
@@ -1499,6 +1678,8 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
 
     file->inode     = st->st_ino;
     file->offset    = 0;
+    file->decoded_offset = 0;
+    file->gzip_boundary_offset = -1;
     file->size      = st->st_size;
     file->buf_len   = 0;
     file->parsed    = 0;
@@ -1515,6 +1696,7 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
     if (offset != -1) {
         file->offset = offset;
     }
+    file->decoded_offset = file->offset;
 
     if (strlen(path) >= 3 &&
         strcasecmp(&path[strlen(path) - 3], ".gz") == 0) {
@@ -1525,6 +1707,11 @@ int flb_tail_file_append(char *path, struct stat *st, int mode,
         if (file->decompression_context == NULL) {
             goto err_free_hash_key;
         }
+
+        /* input_complete stays false on purpose: a tailed file has no declared end,
+         * so "the decoder cannot advance" means "wait for the next write", not
+         * "truncated member". That is what keeps a delivery boundary inside a
+         * member from being reported as corruption. */
     }
 
     /*
@@ -1941,6 +2128,7 @@ static int adjust_counters(struct flb_tail_config *ctx, struct flb_tail_file *fi
 
 int flb_tail_file_chunk(struct flb_tail_file *file)
 {
+    size_t                  previous_input_length;
     size_t                  decompression_buffer_capacity;
     size_t                  decompressed_data_length;
     size_t                  file_buffer_capacity;
@@ -1953,6 +2141,9 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
     char                   *tmp;
     int                     ret;
     int                     lines;
+    int64_t                 boundary_offset = -1;
+    int                     decode_error = FLB_FALSE;
+    int                     decoder_advanced = FLB_FALSE;
     struct flb_tail_config *ctx;
 
     /* Check if we the engine issued a pause */
@@ -1989,6 +2180,9 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
                 file->buf_len -= processed_bytes;
                 file->buf_data[file->buf_len] = '\0';
 
+                if (flb_decompression_context_at_payload_boundary(file->decompression_context)) {
+                    update_decoded_offset(file, file->offset);
+                }
                 update_resumable_offset_state(file);
                 return adjust_counters(ctx, file);
             }
@@ -2119,22 +2313,38 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
             file->decompression_context->input_buffer_length += \
                 (size_t) raw_data_length;
 
-            if (file->decompression_context->input_buffer_length > 0) {
-                decompressed_data_length = file_buffer_capacity;
-
+            while (file->decompression_context->input_buffer_length > 0 &&
+                   stream_data_length < file_buffer_capacity) {
+                previous_input_length = file->decompression_context->input_buffer_length;
+                decompressed_data_length = file_buffer_capacity - stream_data_length;
                 ret = flb_decompress(file->decompression_context,
-                                     &file->buf_data[file->buf_len],
+                                     &file->buf_data[file->buf_len + stream_data_length],
                                      &decompressed_data_length);
-
-                if (ret != 0) {
-                    flb_plg_error(ctx->ins,
-                                  "decompression failed for %s.",
-                                  file->name);
-
-                    return FLB_TAIL_ERROR;
+                if (ret < 0) {
+                    flb_plg_error(ctx->ins, "decompression failed for %s.", file->name);
+                    decode_error = FLB_TRUE;
+                    break;
                 }
 
-                stream_data_length = decompressed_data_length;
+                if (file->decompression_context->input_buffer_length < previous_input_length) {
+                    decoder_advanced = FLB_TRUE;
+                }
+                stream_data_length += decompressed_data_length;
+                if (ret == FLB_DECOMPRESSOR_SUCCESS &&
+                    file->decompression_context->state == FLB_DECOMPRESSOR_STATE_EXPECTING_HEADER) {
+                    /* The next member may already be buffered after this footer. */
+                    boundary_offset = file->offset + raw_data_length -
+                                      (int64_t) file->decompression_context->input_buffer_length;
+                }
+                else if (decompressed_data_length > 0) {
+                    /* Output now includes part of a later, unfinished member. */
+                    boundary_offset = -1;
+                }
+                if (ret == FLB_DECOMPRESSOR_INSUFFICIENT_DATA ||
+                    (previous_input_length == file->decompression_context->input_buffer_length &&
+                     decompressed_data_length == 0)) {
+                    break;
+                }
             }
         }
     }
@@ -2148,9 +2358,14 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
         }
     }
 
-    if (stream_data_length > 0 || raw_data_length > 0) {
+    if (decode_error && !decoder_advanced && stream_data_length == 0) {
+        return FLB_TAIL_ERROR;
+    }
+
+    if (stream_data_length > 0 || raw_data_length > 0 || decoder_advanced) {
         /* we read some data, let the content processor take care of it */
         file->offset += raw_data_length;
+
         file->buf_len += stream_data_length;
         file->buf_data[file->buf_len] = '\0';
 
@@ -2175,7 +2390,11 @@ int flb_tail_file_chunk(struct flb_tail_file *file)
         file->buf_len -= processed_bytes;
         file->buf_data[file->buf_len] = '\0';
 
+        update_decoded_offset(file, boundary_offset);
         update_resumable_offset_state(file);
+        if (decode_error) {
+            return FLB_TAIL_ERROR;
+        }
 
         /* adjust file counters, returns FLB_TAIL_OK or FLB_TAIL_ERROR */
         ret = adjust_counters(ctx, file);
