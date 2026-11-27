@@ -4,6 +4,15 @@ This file records the notable changes in each CFL release.
 
 ## Unreleased
 
+- Added experimental map views (`cfl_view.h`, documented in `VIEW.md`): a
+  performance optimization for high-load data transformation. A view is a
+  string-keyed map interface over data that stays where it already is, such
+  as the bytes it arrived in or a native `cfl_kvlist`, so pairs are edited
+  without building an object for each one. Views support lookup,
+  typed append and replace, rename, remove, optional copying of keys and
+  values, owned CFL objects, materialization into a kvlist or arena, and
+  committing edits back to a kvlist. The interface can change in any release
+  while it is experimental.
 - Added public request-lifetime arena allocation, duplication helpers,
   allocator callbacks, and optional bounded geometric chunk growth.
 - Reduced arena memory for CFL object graphs: objects use their natural

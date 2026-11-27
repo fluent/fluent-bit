@@ -25,6 +25,9 @@
 #include <fluent-bit/flb_mp_chunk.h>
 #include <fluent-bit/flb_opentelemetry.h>
 
+#include <fluent-bit/flb_opentelemetry_view.h>
+#include <fluent-bit/flb_processor.h>
+
 #include "opentelemetry.h"
 #include "opentelemetry_logs.h"
 #include "opentelemetry_utils.h"
@@ -76,6 +79,142 @@ static int opentelemetry_logs_json_encode_direct(struct flb_opentelemetry *ctx,
 }
 
 /*
+ * Protobuf logs straight from the encoded request to MessagePack records: no
+ * unpacked message tree and no CFL objects. When the input processors can
+ * edit record views, they do so while the records are written; a chain that
+ * needs CFL records keeps the path below. '*handled' stays FLB_FALSE when
+ * the request is left to the unpacking decoder, which also decides what is
+ * rejected.
+ */
+static int process_protobuf_logs_direct(struct flb_opentelemetry *ctx, flb_sds_t tag,
+                                        const void *payload, size_t size,
+                                        struct flb_opentelemetry_logs_decode_options *options,
+                                        int worker_thread, size_t *remaining, int *handled)
+{
+    struct flb_opentelemetry_log_buffer logs = {0};
+    struct flb_processor_logs_view session;
+    struct flb_log_view_editor editor;
+    char *trimmed;
+    int processed;
+    int result;
+    int ret;
+
+    *handled = FLB_FALSE;
+    processed = flb_input_log_chunk_supported(ctx->ins, worker_thread) == FLB_TRUE;
+    if (processed) {
+        /* processors look up log attributes under the default metadata key */
+        if (strcmp(options->metadata_key, "otlp") != 0 ||
+            !flb_processor_logs_view_supported(ctx->ins->processor,
+                                               FLB_LOG_VIEW_OTEL_LOG_ATTRIBUTES,
+                                               worker_thread) ||
+            flb_processor_logs_view_begin(ctx->ins->processor,
+                                          FLB_LOG_VIEW_OTEL_LOG_ATTRIBUTES, worker_thread,
+                                          tag, flb_sds_len(tag), &session) != 0) {
+            return 0;
+        }
+        editor.cb_record = flb_processor_logs_view_record;
+        editor.data = &session;
+        result = flb_opentelemetry_logs_proto_view_to_msgpack(payload, size, options,
+                                                              &editor, &logs);
+        if (result == FLB_OTEL_LOGS_VIEW_CANCELED) {
+            /*
+             * A processor failed on a record. What it means for the request
+             * is the business of the processor chain, not of this path.
+             */
+            result = FLB_OTEL_LOGS_VIEW_FALLBACK;
+        }
+        if (result == FLB_OTEL_LOGS_VIEW_FALLBACK) {
+            /* the unpacking decoder runs the processors, and accounts them */
+            flb_processor_logs_view_cancel(&session);
+        }
+        else {
+            flb_processor_logs_view_end(&session, (int) logs.records, result != 0);
+        }
+    }
+    else {
+        result = flb_opentelemetry_logs_proto_view_to_msgpack(payload, size, options, NULL,
+                                                              &logs);
+    }
+
+    if (result == FLB_OTEL_LOGS_VIEW_FALLBACK) {
+        flb_free(logs.data);
+        return 0;
+    }
+    *handled = FLB_TRUE;
+    if (result != 0) {
+        flb_plg_error(ctx->ins, "failed to process logs from protobuf payload");
+        flb_free(logs.data);
+        return -1;
+    }
+    if (logs.size == 0) {
+        /* like the Collector, a request without log records is accepted */
+        flb_free(logs.data);
+        return 0;
+    }
+
+    /* what the request is charged does not depend on what processors add */
+    *remaining -= logs.charged;
+    if (worker_thread) {
+        /* the queue takes the buffer and charges its limits with what was allocated */
+        if (logs.capacity > logs.size) {
+            trimmed = flb_realloc(logs.data, logs.size);
+            if (trimmed != NULL) {
+                logs.data = trimmed;
+                logs.capacity = logs.size;
+            }
+        }
+        if (processed) {
+            ret = flb_input_ingress_queue_log_processed_take_records(
+                      ctx->ins, logs.records, tag, flb_sds_len(tag),
+                      logs.data, logs.size, logs.capacity);
+        }
+        else {
+            ret = opentelemetry_ingest_logs_take(ctx, logs.records, tag, flb_sds_len(tag),
+                                                 logs.data, logs.size, logs.capacity);
+        }
+    }
+    else {
+        if (processed) {
+            ret = flb_input_log_append_processed_routed(ctx->ins, logs.records, tag,
+                                                        flb_sds_len(tag), logs.data,
+                                                        logs.size);
+        }
+        else if (flb_processor_is_active(ctx->ins->processor)) {
+            ret = opentelemetry_ingest_logs(ctx, tag, flb_sds_len(tag), logs.data, logs.size);
+        }
+        else {
+            /* the record count is known: nothing has to decode the buffer for it */
+            ret = flb_input_log_append_records(ctx->ins, logs.records, tag, flb_sds_len(tag),
+                                               logs.data, logs.size);
+        }
+        flb_free(logs.data);
+    }
+    if (ret != 0 && ret != FLB_INPUT_INGRESS_BUSY) {
+        flb_plg_error(ctx->ins, "failed to append logs to the input buffer");
+        ret = -1;
+    }
+
+    return ret;
+}
+
+int opentelemetry_process_logs_direct(struct flb_opentelemetry *ctx,
+                                      flb_sds_t tag,
+                                      void *data, size_t size,
+                                      size_t *remaining, int *handled)
+{
+    struct flb_opentelemetry_logs_decode_options options;
+
+    options.metadata_key = ctx->logs_metadata_key;
+    options.body_key = ctx->logs_body_key;
+    options.output_limit = *remaining;
+    options.protobuf_decode_max_size = ctx->protobuf_decode_max_size;
+
+    return process_protobuf_logs_direct(ctx, tag, data, size, &options,
+                                        opentelemetry_uses_worker_ingress_queue(ctx),
+                                        remaining, handled);
+}
+
+/*
  * Main function used from opentelemetry_prot.c to process logs either in JSON or Protobuf format.
  * -----------------------------------------------------------------------------------------------
  */
@@ -110,6 +249,7 @@ int opentelemetry_process_logs_with_budget(struct flb_opentelemetry *ctx,
     struct flb_opentelemetry_logs_protobuf_cfl *cfl_result;
     struct flb_opentelemetry_logs_json_cfl *json_cfl_result;
     int worker_thread;
+    int handled;
 
     buf = (char *) data;
     payload = data;
@@ -138,6 +278,14 @@ int opentelemetry_process_logs_with_budget(struct flb_opentelemetry *ctx,
         else {
             flb_plg_error(ctx->ins, "Unsupported content type %s", content_type);
             return -1;
+        }
+    }
+
+    if (is_proto == FLB_TRUE && ctx->otlp_log_views) {
+        ret = process_protobuf_logs_direct(ctx, tag, payload, payload_size, &decode_options,
+                                           worker_thread, remaining, &handled);
+        if (handled) {
+            return ret;
         }
     }
 

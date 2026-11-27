@@ -46,6 +46,7 @@ struct flb_opentelemetry {
     size_t protobuf_decode_max_size;
     size_t request_max_size;
     int profile_support_enabled;
+    int otlp_log_views;
     int encode_profiles_as_log;
     struct flb_oauth2_jwt_cfg oauth2_cfg;
     struct flb_oauth2_jwt_ctx *oauth2_ctx;

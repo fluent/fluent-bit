@@ -13,6 +13,7 @@ set(UNIT_TESTS_FILES
   variant.c
   arena.c
   object.c
+  view.c
   version.c
   utils.c
   )
@@ -42,6 +43,7 @@ set(PUBLIC_HEADERS
   cfl_variant.h
   cfl_arena.h
   cfl_version.h
+  cfl_view.h
   )
 
 configure_file(

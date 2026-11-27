@@ -322,6 +322,13 @@ jobs:
         with:
           submodules: true
 
+      # The sanitizer runtimes of the Clang in the container below reserve
+      # fixed address ranges. With the address space randomization of recent
+      # runner kernels some processes are mapped over those ranges and crash
+      # at startup, before any test code runs.
+      - name: Reduce address space randomization for the sanitizers
+        run: sudo sysctl -w vm.mmap_rnd_bits=28
+
       - uses: docker://lpenz/ghaction-cmake@sha256:b59f08ebbbae1ed35650f774e3f2fd77e9c56e10cc841349d923ab4b65724aed
         with:
           pre_command: |

@@ -28,7 +28,7 @@ struct protobuf_frame {
     const unsigned char *end;
 };
 
-static int read_varint(struct protobuf_frame *frame, uint64_t *value)
+static int read_long_varint(struct protobuf_frame *frame, uint64_t *value)
 {
     unsigned int shift;
     unsigned char byte;
@@ -50,7 +50,18 @@ static int read_varint(struct protobuf_frame *frame, uint64_t *value)
     return -1;
 }
 
-static int charge_budget(size_t *remaining, size_t amount)
+/* Tags, lengths and small values take one byte: read those without a call. */
+static inline int read_varint(struct protobuf_frame *frame, uint64_t *value)
+{
+    if (frame->cursor != frame->end && *frame->cursor < 0x80) {
+        *value = *frame->cursor++;
+        return 0;
+    }
+
+    return read_long_varint(frame, value);
+}
+
+static inline int charge_budget(size_t *remaining, size_t amount)
 {
     if (amount > *remaining) {
         return FLB_OTEL_PROTOBUF_LIMIT_EXCEEDED;

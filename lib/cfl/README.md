@@ -3,7 +3,8 @@
 CFL is a compact C library of data structures and low-level utilities used by
 [Fluent Bit](https://fluentbit.io/) and its companion telemetry libraries. It
 provides dynamic strings, intrusive lists, typed variants, arrays, key/value
-containers, hashing, checksums, atomics, and an optional arena allocator.
+containers, hashing, checksums, atomics, an optional arena allocator, and
+experimental map views for high-throughput data transformation.
 
 CFL started as a C library for Fluent Bit, a.k.a. `C:\Floppy`.
 
@@ -27,6 +28,9 @@ smaller interface.
 - xxHash wrappers and CRC32C checksums.
 - Optional arenas for allocation-heavy, bounded object graphs and arbitrary
   request-lifetime objects.
+- Experimental map views that keep data transformation cheap under high
+  load: key/value data is looked up and edited without building an object per
+  pair.
 - CMake support for embedding, installation, tests, and benchmarks.
 
 ## Core data structures
@@ -41,10 +45,18 @@ smaller interface.
 | `cfl_kvlist` | String-keyed map of variants |
 | `cfl_object` | Generic wrapper for a variant, array, or key/value list |
 | `cfl_arena` | Optional shared allocator for bounded CFL object graphs |
+| `cfl_view` | Experimental map interface for low-cost transformation of key/value data |
 
 Heap-backed constructors remain the default. Applications that construct and
 discard complete variant graphs can opt into `cfl_arena`; see
 [ARENA.md](ARENA.md) for its ownership model, API, examples, and tuning advice.
+
+High-load paths that transform key/value data, changing a few pairs of each
+map and writing the result back, can use `cfl_view` to avoid building a
+`cfl_kvlist` for each map. The same view code also runs over a native kvlist.
+The interface is experimental and can change between releases; see
+[VIEW.md](VIEW.md) for the model, ownership rules, and how to write a backend
+or an encoder.
 
 ## Utility interfaces
 
@@ -107,6 +119,8 @@ specific module headers they require.
 - Heap-created values are destroyed through their matching CFL destroy APIs.
 - Arena-created values are invalidated together by arena reset or destruction.
 - An arena is not thread-safe; access to a shared arena must be serialized.
+- A view borrows the data it describes and, by default, the keys and values
+  passed to its edits; it is not thread-safe either.
 
 ## Documentation
 
@@ -118,6 +132,8 @@ specific module headers they require.
 - Testing: enable `CFL_TESTS` and run the suite through CTest as shown above.
 - Optional arena allocation: see [ARENA.md](ARENA.md) for lifecycle and
   ownership rules.
+- Experimental map views: see [VIEW.md](VIEW.md) for the API, ownership rules,
+  and backend and encoder guides.
 - Performance tools: see [benchmarks/README.md](benchmarks/README.md) for the
   supplied benchmark programs and measurement guidance.
 

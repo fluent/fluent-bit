@@ -26,6 +26,7 @@
 #include <fluent-bit/flb_mp.h>
 #include <fluent-bit/flb_log_event_encoder.h>
 #include <fluent-bit/flb_opentelemetry.h>
+#include <fluent-bit/flb_opentelemetry_view.h>
 
 #include <fluent-bit/http_server/flb_http_server.h>
 
@@ -905,6 +906,47 @@ static int validate_protobuf_request(struct flb_opentelemetry *context,
     return 0;
 }
 
+static int is_logs_export_path(const char *path)
+{
+    return strcmp(path, "/v1/logs") == 0 ||
+           strcmp(path, "/opentelemetry.proto.collector.log.v1.LogService/Export") == 0 ||
+           strcmp(path, "/opentelemetry.proto.collector.logs.v1.LogsService/Export") == 0;
+}
+
+/*
+ * The direct logs decoder applies the structural rules of the validation
+ * itself and rejects nothing on its own: a request it does not take on is
+ * validated then, with the same responses. That saves a pass over every
+ * request, for a single message that cannot reach the decode budget. Several
+ * gRPC messages keep the validation up front, so that none is ingested when
+ * a later one is invalid.
+ */
+static int defer_logs_validation(struct flb_opentelemetry *context,
+                                 struct flb_http_request *request,
+                                 struct cfl_list *frames, int grpc_request)
+{
+    struct otlp_grpc_frame *frame;
+    size_t size;
+
+    if (!context->otlp_log_views || !is_logs_export_path(request->path) ||
+        opentelemetry_is_protobuf_content_type(request->content_type) != FLB_TRUE) {
+        return FLB_FALSE;
+    }
+    if (grpc_request) {
+        if (cfl_list_size(frames) != 1) {
+            return FLB_FALSE;
+        }
+        frame = cfl_list_entry_first(frames, struct otlp_grpc_frame, _head);
+        size = frame->size;
+    }
+    else {
+        size = cfl_sds_len(request->body);
+    }
+
+    return flb_opentelemetry_logs_proto_view_within_budget(size,
+                                                           context->protobuf_decode_max_size);
+}
+
 /*
  * Protocol handle for requests coming from HTTP/2 server backend. Note that
  * if the payload is compressed (Content-Encoding) it will be decompressed
@@ -918,6 +960,8 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
 {
     int ret = -1;
     int grpc_request = FLB_FALSE;
+    int validated = FLB_TRUE;
+    int handled;
     flb_sds_t tag = NULL;
     char payload_type;
     char *payload = NULL;
@@ -1015,7 +1059,8 @@ int opentelemetry_prot_handle_ng(struct flb_http_request *request,
             return -1;
         }
 
-        ret = validate_protobuf_request(context, request, &frames, FLB_TRUE);
+        validated = !defer_logs_validation(context, request, &frames, FLB_TRUE);
+        ret = validated ? validate_protobuf_request(context, request, &frames, FLB_TRUE) : 0;
         if (ret != 0) {
             destroy_grpc_frames(&frames);
             send_grpc_error_response_ng(response,
@@ -1037,7 +1082,8 @@ next_grpc_message:
             send_response_ng(response, 413, "OTLP request size exceeds limit\n");
             return -1;
         }
-        ret = validate_protobuf_request(context, request, &frames, FLB_FALSE);
+        validated = !defer_logs_validation(context, request, &frames, FLB_FALSE);
+        ret = validated ? validate_protobuf_request(context, request, &frames, FLB_FALSE) : 0;
         if (ret != 0) {
             send_response_ng(response,
                     ret == FLB_OTEL_PROTOBUF_LIMIT_EXCEEDED ? 413 : 400,
@@ -1101,9 +1147,36 @@ next_grpc_message:
             goto cleanup;
         }
 
-        ret = opentelemetry_process_logs_with_budget(context, request->content_type,
-                                                      tag, flb_sds_len(tag),
-                                                      payload, payload_size, &logs_remaining);
+        handled = FLB_FALSE;
+        if (!validated) {
+            ret = opentelemetry_process_logs_direct(context, tag, payload, payload_size,
+                                                    &logs_remaining, &handled);
+        }
+        if (!handled && !validated) {
+            /* not taken on: validate it now, and answer as the check up front does */
+            ret = validate_protobuf_request(context, request, &frames, grpc_request);
+            if (ret != 0) {
+                flb_sds_destroy(tag);
+                if (grpc_request) {
+                    destroy_grpc_frames(&frames);
+                    send_grpc_error_response_ng(response,
+                            ret == FLB_OTEL_PROTOBUF_LIMIT_EXCEEDED ? 8 : 3,
+                            "protobuf decode budget exceeded or invalid payload");
+                }
+                else {
+                    send_response_ng(response,
+                            ret == FLB_OTEL_PROTOBUF_LIMIT_EXCEEDED ? 413 : 400,
+                            "protobuf decode budget exceeded or invalid payload\n");
+                }
+                return -1;
+            }
+        }
+        if (!handled) {
+            ret = opentelemetry_process_logs_with_budget(context, request->content_type,
+                                                          tag, flb_sds_len(tag),
+                                                          payload, payload_size,
+                                                          &logs_remaining);
+        }
     }
     else if (context->profile_support_enabled &&
              is_profiles_export_path(request->path) == FLB_TRUE) {

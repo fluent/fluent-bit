@@ -23,6 +23,7 @@
 #include <fluent-bit/flb_mem.h>
 #include <fluent-bit/flb_event.h>
 #include <fluent-bit/flb_processor.h>
+#include <fluent-bit/flb_log_view.h>
 #include <fluent-bit/flb_processor_plugin.h>
 #include <fluent-bit/flb_filter.h>
 #include <fluent-bit/flb_kv.h>
@@ -2942,6 +2943,130 @@ int flb_processor_run_logs_chunk(struct flb_processor *proc,
     chunk_codec_destroy(&codec);
 
     return ret;
+}
+
+/*
+ * EXPERIMENTAL record views. The chain qualifies as a whole or not at all, so
+ * a data source never mixes view and CFL execution for one batch.
+ */
+int flb_processor_logs_view_supported(struct flb_processor *proc, int maps,
+                                      int worker_thread)
+{
+    size_t count = 0;
+    struct mk_list *head;
+    struct flb_processor_unit *pu;
+    struct flb_processor_instance *p_ins;
+
+    if (!proc || !proc->is_active || mk_list_is_empty(&proc->logs) == 0) {
+        return FLB_FALSE;
+    }
+
+    mk_list_foreach(head, &proc->logs) {
+        pu = mk_list_entry(head, struct flb_processor_unit, _head);
+        if (pu->unit_type == FLB_PROCESSOR_UNIT_FILTER || pu->condition != NULL ||
+            count == FLB_PROCESSOR_LOGS_VIEW_UNITS) {
+            return FLB_FALSE;
+        }
+
+        p_ins = pu->ctx;
+        if ((p_ins->p->flags & FLB_PROCESSOR_FLAG_LOGS_VIEW) == 0 ||
+            p_ins->p->cb_process_logs_view == NULL ||
+            p_ins->logs_view_maps == 0 || (p_ins->logs_view_maps & ~maps) != 0) {
+            return FLB_FALSE;
+        }
+        if (worker_thread == FLB_TRUE &&
+            (p_ins->p->flags & FLB_PROCESSOR_FLAG_LOGS_WORKER_SAFE) == 0) {
+            return FLB_FALSE;
+        }
+        count++;
+    }
+
+    return FLB_TRUE;
+}
+
+int flb_processor_logs_view_begin(struct flb_processor *proc, int maps, int worker_thread,
+                                  const char *tag, size_t tag_len,
+                                  struct flb_processor_logs_view *session)
+{
+    struct mk_list *head;
+    struct flb_processor_unit *pu;
+
+    memset(session, 0, sizeof(struct flb_processor_logs_view));
+    if (flb_processor_logs_view_supported(proc, maps, worker_thread) == FLB_FALSE) {
+        return -1;
+    }
+
+    session->proc = proc;
+    session->tag = tag;
+    session->tag_len = (int) tag_len;
+    mk_list_foreach(head, &proc->logs) {
+        pu = mk_list_entry(head, struct flb_processor_unit, _head);
+        if (acquire_lock(&pu->lock, FLB_PROCESSOR_LOCK_RETRY_LIMIT,
+                         FLB_PROCESSOR_LOCK_RETRY_DELAY) != FLB_TRUE) {
+            flb_processor_logs_view_cancel(session);
+            return -1;
+        }
+        session->instances[session->count++] = pu->ctx;
+        session->locked++;
+    }
+
+    return 0;
+}
+
+int flb_processor_logs_view_record(void *data, struct flb_log_view *record)
+{
+    size_t index;
+    struct flb_processor_instance *p_ins;
+    struct flb_processor_logs_view *session = data;
+
+    for (index = 0; index < session->count; index++) {
+        p_ins = session->instances[index];
+        if (p_ins->p->cb_process_logs_view(p_ins, record, session->tag,
+                                           session->tag_len) != FLB_PROCESSOR_SUCCESS) {
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+static void logs_view_release(struct flb_processor_logs_view *session, int account,
+                              int records, int error)
+{
+    size_t index;
+    const char *scope;
+    const char *owner;
+    struct flb_processor_unit *pu;
+
+    if (session->proc == NULL) {
+        return;
+    }
+
+    scope = processor_metrics_scope(session->proc);
+    owner = processor_metrics_owner(session->proc);
+    for (index = 0; index < session->locked; index++) {
+        pu = session->instances[index]->pu;
+        if (account) {
+            processor_metrics_update(session->proc, pu, scope, owner, "logs",
+                                     records, error ? 0 : records, 0, FLB_TRUE,
+                                     error ? FLB_TRUE : FLB_FALSE);
+        }
+        release_lock(&pu->lock, FLB_PROCESSOR_LOCK_RETRY_LIMIT,
+                     FLB_PROCESSOR_LOCK_RETRY_DELAY);
+    }
+    session->proc = NULL;
+    session->locked = 0;
+}
+
+void flb_processor_logs_view_end(struct flb_processor_logs_view *session,
+                                 int records, int error)
+{
+    logs_view_release(session, session->locked == session->count, records, error);
+}
+
+void flb_processor_logs_view_cancel(struct flb_processor_logs_view *session)
+{
+    logs_view_release(session, FLB_FALSE, 0, FLB_FALSE);
 }
 
 void flb_processor_destroy(struct flb_processor *proc)

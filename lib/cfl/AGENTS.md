@@ -22,7 +22,8 @@ and usable both as a bundled dependency and as an installed library.
 
 Start architecture work with [README.md](README.md), the relevant public header,
 and its matching source and test file. Arena ownership and tuning are detailed
-in [ARENA.md](ARENA.md).
+in [ARENA.md](ARENA.md). The experimental map views, their ownership rules, and
+the backend and encoder contracts are detailed in [VIEW.md](VIEW.md).
 
 ## Generated and bundled files
 
@@ -90,7 +91,7 @@ lint, installed consumers, and downstream consumers.
 - Check allocation failure and partial initialization. Preserve cleanup paths
   and ownership on every error return.
 - Verify container ownership transfer, arena lifetime, and mutation behavior
-  before changing variants, arrays, kvlists, or SDS storage.
+  before changing variants, arrays, kvlists, views, or SDS storage.
 - Avoid unrelated formatting, refactoring, generated output, or vendor churn.
 
 ## Compatibility and downstream boundaries

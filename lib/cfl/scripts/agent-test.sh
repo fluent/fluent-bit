@@ -2,7 +2,7 @@
 
 set -eu
 
-root_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+root_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 build_dir=${BUILD_DIR:-"$root_dir/build/agent"}
 
 if [ ! -f "$build_dir/CTestTestfile.cmake" ]; then

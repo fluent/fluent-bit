@@ -9,6 +9,8 @@ int main(void)
     char *request_name;
     uint64_t hash;
     struct cfl_arena *arena;
+    struct cfl_view view;
+    struct cfl_view_value value;
     struct cfl_array *array;
 
     result = cfl_init();
@@ -50,6 +52,17 @@ int main(void)
     }
 
     cfl_arena_destroy(arena);
+
+    cfl_view_init(&view);
+    cfl_view_copy_set(&view, CFL_TRUE);
+    cfl_view_reset(&view, NULL, NULL);
+    if (cfl_view_append_string(&view, "name", 4, "installed", 9) != 0 ||
+        cfl_view_get(&view, "name", 4, &value) != 1 ||
+        value.type != CFL_VARIANT_STRING || value.data.as_bytes.size != 9) {
+        cfl_view_destroy(&view);
+        return 1;
+    }
+    cfl_view_destroy(&view);
 
     return 0;
 }
