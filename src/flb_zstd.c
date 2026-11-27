@@ -191,10 +191,12 @@ int flb_zstd_decompressor_dispatch(struct flb_decompression_context *context,
     ZSTD_inBuffer input;
     ZSTD_outBuffer output;
     unsigned long long declared_size;
+    size_t frame_size;
     size_t remaining;
     size_t ret;
 
-    if (context == NULL || context->inner_context == NULL || output_length == NULL) {
+    if (context == NULL || context->algorithm != FLB_COMPRESSION_ALGORITHM_ZSTD ||
+        context->inner_context == NULL || output_buffer == NULL || output_length == NULL) {
         return FLB_DECOMPRESSOR_FAILURE;
     }
     zstd_ctx = context->inner_context;
@@ -202,7 +204,13 @@ int flb_zstd_decompressor_dispatch(struct flb_decompression_context *context,
     output.size = *output_length;
     output.pos = 0;
     *output_length = 0;
-    if (context->input_buffer_length == 0) {
+    if (context->state == FLB_DECOMPRESSOR_STATE_FAILED) {
+        return FLB_DECOMPRESSOR_FAILURE;
+    }
+    if (context->output_size > context->output_limit) {
+        return FLB_DECOMPRESSOR_LIMIT_EXCEEDED;
+    }
+    if (output.size == 0 || context->input_buffer_length == 0) {
         return FLB_DECOMPRESSOR_SUCCESS;
     }
     if (zstd_ctx->frame_size == 0) {
@@ -213,9 +221,9 @@ int flb_zstd_decompressor_dispatch(struct flb_decompression_context *context,
         if (ZSTD_isError(ret)) {
             return FLB_DECOMPRESSOR_FAILURE;
         }
-        zstd_ctx->frame_size = ret;
+        frame_size = ret;
         remaining = context->output_limit - context->output_size;
-        declared_size = ZSTD_getFrameContentSize(context->read_buffer, zstd_ctx->frame_size);
+        declared_size = ZSTD_getFrameContentSize(context->read_buffer, frame_size);
         if (declared_size != ZSTD_CONTENTSIZE_UNKNOWN && declared_size > remaining) {
             return FLB_DECOMPRESSOR_LIMIT_EXCEEDED;
         }
@@ -227,16 +235,17 @@ int flb_zstd_decompressor_dispatch(struct flb_decompression_context *context,
                 return FLB_DECOMPRESSOR_FAILURE;
             }
         }
+        zstd_ctx->frame_size = frame_size;
     }
     input.src = context->read_buffer;
     input.size = zstd_ctx->frame_size;
     input.pos = zstd_ctx->input_offset;
     ret = ZSTD_decompressStream(zstd_ctx->dctx, &output, &input);
     if (ZSTD_isError(ret)) {
+        context->state = FLB_DECOMPRESSOR_STATE_FAILED;
         if (ZSTD_getErrorCode(ret) == ZSTD_error_frameParameter_windowTooLarge) {
             return FLB_DECOMPRESSOR_LIMIT_EXCEEDED;
         }
-        context->state = FLB_DECOMPRESSOR_STATE_FAILED;
         return ZSTD_getErrorCode(ret) == ZSTD_error_memory_allocation ?
                FLB_DECOMPRESSOR_ALLOCATION_FAILURE : FLB_DECOMPRESSOR_FAILURE;
     }
@@ -282,4 +291,22 @@ void flb_zstd_decompression_context_destroy(void *context)
         }
         flb_free(zstd_ctx);
     }
+}
+
+int flb_zstd_decompression_context_at_boundary(void *context)
+{
+    struct flb_zstd_decompression_context *zstd_ctx = context;
+
+    if (zstd_ctx == NULL) {
+        return FLB_FALSE;
+    }
+
+    /* A frame size has been resolved but not fully consumed, or the decoder is
+     * part-way through feeding that frame: either way the next byte only makes
+     * sense with the current decode state. */
+    if (zstd_ctx->frame_size != 0 || zstd_ctx->input_offset != 0) {
+        return FLB_FALSE;
+    }
+
+    return FLB_TRUE;
 }

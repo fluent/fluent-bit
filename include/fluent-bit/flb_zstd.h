@@ -34,4 +34,12 @@ int flb_zstd_decompressor_dispatch(struct flb_decompression_context *context,
                                    size_t *output_length);
 void *flb_zstd_decompression_context_create(void);
 void flb_zstd_decompression_context_destroy(void *context);
+
+/*
+ * True when no frame is in flight, so the next byte can start a new frame with
+ * no memory of previous ones. A resolved but unconsumed frame size means the
+ * decoder is mid-frame even when nothing is resident.
+ */
+int flb_zstd_decompression_context_at_boundary(void *context);
+
 #endif
