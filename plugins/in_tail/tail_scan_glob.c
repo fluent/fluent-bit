@@ -54,6 +54,7 @@ static int tail_is_excluded(char *path, struct flb_tail_config *ctx)
 struct tail_glob_scan {
     struct flb_tail_config *ctx;
     time_t now;
+    bool time_sampled;
     int count;
 };
 
@@ -66,6 +67,12 @@ static void tail_scan_match(char *path, void *data)
     struct stat st;
     ssize_t ignored_file_size = -1;
     uint64_t aged_out_inode;
+
+    /* POSIX enumeration has finished by the time the first match arrives. */
+    if (!scan->time_sampled) {
+        scan->now = time(NULL);
+        scan->time_sampled = true;
+    }
 
     if (ctx->follow_symlinks) {
         ret = stat(path, &st);
@@ -171,7 +178,7 @@ static int tail_scan_path(const char *path, struct flb_tail_config *ctx)
 {
     int ret;
     struct stat st;
-    struct tail_glob_scan scan = {ctx, time(NULL), 0};
+    struct tail_glob_scan scan = {.ctx = ctx};
 
     flb_plg_debug(ctx->ins, "scanning path %s", path);
     ret = flb_file_glob(path, FLB_FILE_GLOB_EXPAND_TILDE, tail_scan_match, &scan);
