@@ -214,40 +214,6 @@ void flb_utils_warn_c(const char *msg)
 }
 
 #ifdef FLB_HAVE_FORK
-/* Run current process in background mode */
-int flb_utils_set_daemon(struct flb_config *config)
-{
-    pid_t pid;
-
-    if ((pid = fork()) < 0){
-        flb_error("Failed creating to switch to daemon mode (fork failed)");
-        exit(EXIT_FAILURE);
-    }
-
-    if (pid > 0) { /* parent */
-        exit(EXIT_SUCCESS);
-    }
-
-    /* set files mask */
-    umask(0);
-
-    /* Create new session */
-    setsid();
-
-    if (chdir("/") < 0) { /* make sure we can unmount the inherited filesystem */
-        flb_error("Unable to unmount the inherited filesystem");
-        exit(EXIT_FAILURE);
-    }
-
-    /* Our last STDOUT messages */
-    flb_info("switching to background mode (PID=%ld)", (long) getpid());
-
-    fclose(stderr);
-    fclose(stdout);
-
-    return 0;
-}
-
 int flb_utils_daemon_fork(int *ready_fd)
 {
     char ready;
