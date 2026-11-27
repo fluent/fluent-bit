@@ -1115,39 +1115,37 @@ static int flb_utils_write_str_escaped(char *buf, int *off, size_t size, const c
             else if (c > 0xFFFF) {
                 utf_sequence_length = flb_utf8_len(str + i);
 
-                /* skip truncated UTF-8 ? */
-                if (i + utf_sequence_length > str_len) {
-                    i++;
-                    break;
-                }
-
                 state = FLB_UTF8_ACCEPT;
                 codepoint = 0;
                 is_valid = FLB_TRUE;
 
-                /* Decode the sequence */
-                for (utf_sequence_number = 0; utf_sequence_number < utf_sequence_length; utf_sequence_number++) {
+                /* Decode only available bytes and preserve incomplete fragments. */
+                for (utf_sequence_number = 0;
+                     utf_sequence_number < utf_sequence_length;
+                     utf_sequence_number++) {
+                    if (i >= str_len) {
+                        utf_sequence_length = utf_sequence_number;
+                        is_valid = FLB_FALSE;
+                        break;
+                    }
+
                     ret = flb_utf8_decode(&state, &codepoint, (uint8_t) str[i]);
 
                     if (ret == FLB_UTF8_REJECT) {
-                        /* Handle invalid leading byte */
                         if (utf_sequence_number == 0) {
-                            flb_debug("[pack] unexpected UTF-8 leading byte, substituting character");
-                            tmp[utf_sequence_number] = str[i];
-                            utf_sequence_length = utf_sequence_number + 1; /* Process only this invalid byte */
-                            i++; /* Consume invalid byte */
+                            /* Consume an invalid leading byte on its own. */
+                            tmp[0] = str[i++];
+                            utf_sequence_length = 1;
                         }
-                        /* Handle invalid continuation byte */
                         else {
-                            flb_debug("[pack] unexpected UTF-8 continuation byte, substituting character");
-                            utf_sequence_length = utf_sequence_number; /* Adjust length */
+                            /* Reprocess the rejected byte as a new sequence. */
+                            utf_sequence_length = utf_sequence_number;
                         }
                         is_valid = FLB_FALSE;
                         break;
                     }
 
-                    tmp[utf_sequence_number] = str[i];
-                    ++i;
+                    tmp[utf_sequence_number] = str[i++];
                 }
 
                 --i;
