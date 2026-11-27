@@ -327,12 +327,17 @@ void test_write_str()
     TEST_CHECK(ret == FLB_TRUE);
     TEST_CHECK(memcmp(buf, jp_expected_output, off) == 0);
 
-    /* Truncated bytes: 'buf' should not be touched and off == 0 */
+    /*
+     * Truncated sequence: only the leading byte is inside the requested
+     * length, so it cannot be decoded. It must still survive as a private
+     * block fragment (U+E0E3) instead of disappearing without a trace.
+     */
     off = 0;
+    memset(buf, 0, size);
     ret = flb_utils_write_str(buf, &off, size, "\xe3\x81\x82\xe3", 1, FLB_TRUE);
     TEST_CHECK(ret == FLB_TRUE);
-    TEST_CHECK(off == 0);
-    TEST_CHECK(memcmp(buf, jp_expected_output, off) == 0);
+    TEST_CHECK(off == 3);
+    TEST_CHECK(memcmp(buf, "\xee\x83\xa3", off) == 0);
 
     /* Error: buffer too small */
     off = 0;
@@ -643,12 +648,82 @@ void test_write_str_invalid_leading_byte_case_2()
 void test_write_str_edge_cases()
 {
     struct write_str_case cases[] = {
-        /* Invalid unicode (one bad leading byte) */
+        /*
+         * A leading byte that reaches the end of the value cannot be decoded.
+         * It is preserved as its private block fragment (U+E0F3) rather than
+         * discarded, so the consumer can tell corruption from absence.
+         */
         {
-            "\xf3", 1,  /* will this buffer overrun? */
-            "",  /* discard invalid unicode */
+            "\xf3", 1,
+            "\xee\x83\xb3",
             FLB_TRUE
         },
+        { 0 }
+    };
+
+    write_str_test_cases(cases);
+}
+
+/*
+ * Overlong encodings decode to a codepoint that has a shorter legal form.
+ * Strict consumers reject them, so they must not be normalized into the value
+ * they encode: doing so lets the pipeline and the consumer disagree about the
+ * same payload (and smuggles escaped NUL or '/' into JSON strings).
+ */
+void test_write_str_overlong_sequences()
+{
+    struct write_str_case cases[] = {
+        /* 0xC0 0x80: overlong U+0000, must not become "\\u0000" */
+        { "\xc0\x80", 2, "\xee\x83\x80\xee\x82\x80", FLB_TRUE },
+        /* 0xC0 0xAF: overlong '/', must not become "/" */
+        { "\xc0\xaf", 2, "\xee\x83\x80\xee\x82\xaf", FLB_TRUE },
+        /* 0xE0 0x80 0xAD: overlong '-', must not become "-" */
+        { "\xe0\x80\xad", 3, "\xee\x83\xa0\xee\x82\x80\xee\x82\xad", FLB_TRUE },
+        /* 0xF0 0x80 0x80 0x80: overlong U+0000 with four bytes */
+        { "\xf0\x80\x80\x80", 4,
+          "\xee\x83\xb0\xee\x82\x80\xee\x82\x80\xee\x82\x80", FLB_TRUE },
+        /* Overlong encodings above the two-byte minimum. */
+        { "\xe0\x9f\xbf", 3, "\xee\x83\xa0\xee\x82\x9f\xee\x82\xbf", FLB_TRUE },
+        { "\xf0\x8f\xbf\xbf", 4,
+          "\xee\x83\xb0\xee\x82\x8f\xee\x82\xbf\xee\x82\xbf", FLB_TRUE },
+        /* Surrounding content must be untouched */
+        { "A\xc0\x80" "B", 4, "A\xee\x83\x80\xee\x82\x80" "B", FLB_TRUE },
+        { 0 }
+    };
+
+    write_str_test_cases(cases);
+}
+
+/*
+ * Bytes that cannot form a complete sequence at the end of a value are still
+ * data. They map to private block fragments, and an invalid lead byte must
+ * only consume itself so following valid bytes keep their representation.
+ */
+void test_write_str_truncated_sequences()
+{
+    struct write_str_case cases[] = {
+        /* Truncated 2-byte sequence at the very end */
+        { "x\xc3", 2, "x\xee\x83\x83", FLB_TRUE },
+        /* Two bytes of a 3-byte sequence, value ends there */
+        { "\xe2\x82", 2, "\xee\x83\xa2\xee\x82\x82", FLB_TRUE },
+        {
+            /* 0xFE and 0xFF are not lead bytes: each maps alone, so the
+             * trailing 'b' stays a literal 'b' */
+            "a\xfe\xff" "b", 4,
+            "a\xee\x83\xbe\xee\x83\xbf" "b", FLB_TRUE
+        },
+        /* A short invalid prefix must not consume following ASCII. */
+        { "\xe2" "A", 2, "\xee\x83\xa2" "A", FLB_TRUE },
+        { "\xf0\x90" "B", 3, "\xee\x83\xb0\xee\x82\x90" "B", FLB_TRUE },
+        /* Smallest legal codepoints for each sequence length. */
+        { "\xc2\x80", 2, "\\u0080", FLB_TRUE },
+        { "\xe0\xa0\x80", 3, "\\u0800", FLB_TRUE },
+        { "\xf0\x90\x80\x80", 4, "\\ud800\\udc00", FLB_TRUE },
+        /* Valid sequences are unaffected */
+        { "caf\xc3\xa9", 5, "caf\\u00e9", FLB_TRUE },
+        { "\xf0\x9f\x98\x80", 4, "\\ud83d\\ude00", FLB_TRUE },
+        /* Valid sequence followed by ASCII keeps every byte */
+        { "\xc3\xa9" "MARKER", 8, "\\u00e9" "MARKER", FLB_TRUE },
         { 0 }
     };
 
@@ -1123,6 +1198,8 @@ TEST_LIST = {
     { "test_write_str_invalid_trailing_bytes", test_write_str_invalid_trailing_bytes },
     { "test_write_str_invalid_leading_byte", test_write_str_invalid_leading_byte },
     { "test_write_str_edge_cases", test_write_str_edge_cases },
+    { "test_write_str_overlong_sequences", test_write_str_overlong_sequences },
+    { "test_write_str_truncated_sequences", test_write_str_truncated_sequences },
     { "test_write_str_invalid_leading_byte_case_2", test_write_str_invalid_leading_byte_case_2 },
     { "test_write_str_buffer_overrun", test_write_str_buffer_overrun },
     { "proxy_url_split", test_proxy_url_split },
