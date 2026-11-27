@@ -38,7 +38,12 @@ void flb_utils_warn_c(const char *msg);
 void flb_message(int type, const char *file, int line, const char *fmt, ...);
 
 #ifdef FLB_HAVE_FORK
+#define FLB_DAEMON_PARENT_SUCCESS 1
+#define FLB_DAEMON_PARENT_FAILURE 2
+
 int flb_utils_set_daemon(struct flb_config *config);
+int flb_utils_daemon_fork(int *ready_fd);
+int flb_utils_daemon_detach(int ready_fd);
 #endif
 
 void flb_utils_print_setup(struct flb_config *config);
