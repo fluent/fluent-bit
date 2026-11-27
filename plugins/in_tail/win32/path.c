@@ -24,66 +24,19 @@
 #include <Windows.h>
 #include <string.h>
 
+#include <fluent-bit/flb_file_glob.h>
 #include <fluent-bit/flb_mem.h>
 
 #include "interface.h"
 
 wchar_t *win32_utf8_to_wide(const char *str)
 {
-    int len;
-    wchar_t *buf;
-
-    if (str == NULL) {
-        return NULL;
-    }
-
-    len = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
-                              str, -1, NULL, 0);
-    if (len == 0) {
-        return NULL;
-    }
-
-    buf = flb_calloc(len, sizeof(wchar_t));
-    if (buf == NULL) {
-        return NULL;
-    }
-
-    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
-                            str, -1, buf, len) == 0) {
-        flb_free(buf);
-        return NULL;
-    }
-
-    return buf;
+    return flb_file_win32_utf8_to_wide(str);
 }
 
 char *win32_wide_to_utf8(const wchar_t *str)
 {
-    int len;
-    char *buf;
-
-    if (str == NULL) {
-        return NULL;
-    }
-
-    len = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS,
-                              str, -1, NULL, 0, NULL, NULL);
-    if (len == 0) {
-        return NULL;
-    }
-
-    buf = flb_calloc(len, sizeof(char));
-    if (buf == NULL) {
-        return NULL;
-    }
-
-    if (WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS,
-                            str, -1, buf, len, NULL, NULL) == 0) {
-        flb_free(buf);
-        return NULL;
-    }
-
-    return buf;
+    return flb_file_win32_wide_to_utf8(str);
 }
 
 size_t win32_remove_extended_path_prefix(wchar_t *path, size_t length)

@@ -12,6 +12,7 @@ set(src
   flb_log.c
   flb_env.c
   flb_file.c
+  flb_file_glob.c
   flb_uri.c
   flb_utf8.c
   flb_hash_table.c

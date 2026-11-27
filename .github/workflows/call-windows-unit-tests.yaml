@@ -271,13 +271,15 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Check Windows YAML includes and TLS certificate stores
+      - name: Check Windows Tail globbing, YAML includes, and TLS certificate stores
         if: matrix.config.arch == 'x64'
         shell: pwsh
         run: |
           python -m pip install pytest==8.2.2 requests==2.32.3 PyYAML==6.0.1 psutil==7.2.2 Flask==3.0.3
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $env:FLUENT_BIT_BINARY = "$PWD/build/bin/fluent-bit.exe"
+          python -m pytest -q tests/integration/scenarios/in_tail/tests/test_tail_glob.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m pytest -q tests/integration/scenarios/hot_reload_watch/tests/test_include_identity.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m pytest -q tests/integration/scenarios/out_http/tests/test_out_http_001.py tests/integration/scenarios/tls/tests/test_windows_root_update.py -k windows_certstore

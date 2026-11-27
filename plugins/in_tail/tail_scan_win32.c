@@ -24,6 +24,7 @@
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_compat.h>
+#include <fluent-bit/flb_file_glob.h>
 #include <fluent-bit/flb_input_plugin.h>
 #include <fluent-bit/flb_utils.h>
 
@@ -210,224 +211,41 @@ static int tail_register_file(const char *target, struct flb_tail_config *ctx,
     return ret;
 }
 
-/*
- * Perform patern match on the given path string. This function
- * supports patterns with "nested" wildcards like below.
- *
- *     tail_scan_pattern("C:\fluent-bit\*\*.txt", ctx);
- *
- * On success, the number of files found is returned (zero indicates
- * "no file found"). On error, -1 is returned.
- */
-static int tail_scan_pattern(const char *path, struct flb_tail_config *ctx)
-{
-    char *star, *p0, *p1;
-    char *pattern;
-    char *buf;
-    int ret;
-    int n_added = 0;
+struct tail_glob_scan {
+    struct flb_tail_config *ctx;
     time_t now;
-    int64_t mtime;
-    size_t prefix_len;
-    size_t pattern_len;
-    size_t candidate_len;
-    HANDLE h;
-    WIN32_FIND_DATA data;
-    WIN32_FIND_DATAW data_w;
-    wchar_t *wide_pattern;
-    char *filename;
+    int count;
+};
 
-    if (ctx->windows_path_encoding != FLB_TAIL_WINDOWS_PATH_ENCODING_UTF8) {
-        if (strlen(path) > MAX_PATH - 1) {
-            flb_plg_error(ctx->ins, "path too long '%s'", path);
-            return -1;
-        }
-    }
-
-    star = strchr(path, '*');
-    if (star == NULL) {
-        return -1;
-    }
-
-    /*
-     * C:\data\tmp\input_*.conf
-     *            0<-----|
-     */
-    p0 = star;
-    while (path <= p0 && *p0 != '\\') {
-        p0--;
-    }
-
-    /*
-     * C:\data\tmp\input_*.conf
-     *                   |---->1
-     */
-    p1 = star;
-    while (*p1 && *p1 != '\\') {
-        p1++;
-    }
-
-    pattern_len = p1 - path;
-    pattern = flb_malloc(pattern_len + 1);
-    if (pattern == NULL) {
-        flb_errno();
-        return -1;
-    }
-
-    memcpy(pattern, path, pattern_len);
-    pattern[pattern_len] = '\0';
-
-#ifdef FLB_SYSTEM_WINDOWS
-    wide_pattern = NULL;
-    if (ctx->windows_path_encoding == FLB_TAIL_WINDOWS_PATH_ENCODING_UTF8) {
-        wide_pattern = win32_utf8_to_wide(pattern);
-        if (wide_pattern == NULL) {
-            flb_plg_error(ctx->ins, "invalid UTF-8 path pattern '%s'", pattern);
-            flb_free(pattern);
-            return -1;
-        }
-
-        h = FindFirstFileW(wide_pattern, &data_w);
-        flb_free(wide_pattern);
-    }
-    else {
-        h = FindFirstFileA(pattern, &data);
-    }
-#else
-    h = FindFirstFileA(pattern, &data);
-#endif
-    if (h == INVALID_HANDLE_VALUE) {
-        flb_free(pattern);
-        return 0;  /* none matched */
-    }
-
-    flb_free(pattern);
-
-    now = time(NULL);
-    do {
-        filename = data.cFileName;
-#ifdef FLB_SYSTEM_WINDOWS
-        if (ctx->windows_path_encoding == FLB_TAIL_WINDOWS_PATH_ENCODING_UTF8) {
-            filename = win32_wide_to_utf8(data_w.cFileName);
-            if (filename == NULL) {
-                continue;
-            }
-        }
-#endif
-
-        /* Ignore the current and parent dirs */
-        if (!strcmp(".", filename) || !strcmp("..", filename)) {
-            goto next;
-        }
-
-        /* Avoid an infinite loop */
-        if (strchr(filename, '*')) {
-            goto next;
-        }
-
-        prefix_len = p0 - path + 1;
-        candidate_len = prefix_len + strlen(filename) + strlen(p1);
-
-        if (ctx->windows_path_encoding != FLB_TAIL_WINDOWS_PATH_ENCODING_UTF8) {
-            if (candidate_len > MAX_PATH - 1) {
-                flb_plg_warn(ctx->ins, "'%.*s%s%s' is too long",
-                             (int) prefix_len, path, filename, p1);
-                goto next;
-            }
-        }
-
-        buf = flb_malloc(candidate_len + 1);
-        if (buf == NULL) {
-            flb_errno();
-            goto next;
-        }
-
-        /* Create a path (prefix + filename + suffix) */
-        memcpy(buf, path, prefix_len);
-        memcpy(buf + prefix_len, filename, strlen(filename));
-        memcpy(buf + prefix_len + strlen(filename), p1, strlen(p1));
-        buf[candidate_len] = '\0';
-
-        if (strchr(p1, '*')) {
-            ret = tail_scan_pattern(buf, ctx); /* recursive */
-            if (ret >= 0) {
-                n_added += ret;
-            }
-            flb_free(buf);
-            goto next;
-        }
-
-        /* Try to register the target file */
-        ret = tail_register_file(buf, ctx, now);
-        if (ret == 0) {
-            n_added++;
-        }
-        flb_free(buf);
-
- next:
-#ifdef FLB_SYSTEM_WINDOWS
-        if (ctx->windows_path_encoding == FLB_TAIL_WINDOWS_PATH_ENCODING_UTF8) {
-            flb_free(filename);
-        }
-#endif
-    } while (
-#ifdef FLB_SYSTEM_WINDOWS
-             ctx->windows_path_encoding == FLB_TAIL_WINDOWS_PATH_ENCODING_UTF8 ?
-             FindNextFileW(h, &data_w) != 0 :
-#endif
-             FindNextFileA(h, &data) != 0);
-
-    FindClose(h);
-    return n_added;
-}
-
-static int tail_filepath(char *buf, int len, const char *basedir, const char *filename)
+static void tail_scan_match(char *path, void *data)
 {
-    char drive[_MAX_DRIVE];
-    char dir[_MAX_DIR];
-    char fname[_MAX_FNAME];
-    char ext[_MAX_EXT];
-    char tmp[MAX_PATH];
-    int ret;
+    struct tail_glob_scan *scan = data;
 
-    ret = _splitpath_s(basedir, drive, _MAX_DRIVE, dir, _MAX_DIR, NULL, 0, NULL, 0);
-    if (ret) {
-        return -1;
+    if (tail_register_file(path, scan->ctx, scan->now) == 0) {
+        scan->count++;
     }
-
-    ret = _splitpath_s(filename, NULL, 0, NULL, 0, fname, _MAX_FNAME, ext, _MAX_EXT);
-    if (ret) {
-        return -1;
-    }
-
-    ret = _makepath_s(tmp, MAX_PATH, drive, dir, fname, ext);
-    if (ret) {
-        return -1;
-    }
-
-    if (_fullpath(buf, tmp, len) == NULL) {
-        return -1;
-    }
-
-    return 0;
 }
 
 static int tail_scan_path(const char *path, struct flb_tail_config *ctx)
 {
     int ret;
-    int n_added = 0;
-    time_t now;
+    unsigned int flags = 0;
+    struct tail_glob_scan scan = {ctx, time(NULL), 0};
 
-    if (strchr(path, '*')) {
-        return tail_scan_pattern(path, ctx);
+    if (strchr(path, '*') == NULL) {
+        return tail_register_file(path, ctx, scan.now) == 0;
+    }
+    if (ctx->windows_path_encoding == FLB_TAIL_WINDOWS_PATH_ENCODING_UTF8) {
+        flags = FLB_FILE_GLOB_WINDOWS_UTF8;
     }
 
-    /* No wildcard involved. Let's just handle the file... */
-    now = time(NULL);
-    ret = tail_register_file(path, ctx, now);
-    if (ret == 0) {
-        n_added++;
+    ret = flb_file_glob(path, flags, tail_scan_match, &scan);
+    if (ret != FLB_FILE_GLOB_SUCCESS && ret != FLB_FILE_GLOB_NO_MATCHES) {
+        flb_plg_warn(ctx->ins, "glob error %i for path '%s'", ret, path);
+        if (scan.count == 0) {
+            return -1;
+        }
     }
 
-    return n_added;
+    return scan.count;
 }
