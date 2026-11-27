@@ -1,3 +1,6 @@
+import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -59,5 +62,36 @@ pipeline:
         service.start()
         assert_log_set(service.wait_for_records(3), ["first", "second", "literal-suffix"])
         service.assert_no_new_records_for(3)
+    finally:
+        service.stop()
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="requires Linux LD_PRELOAD")
+def test_in_tail_glob_matches_age_at_end_of_scan(tmp_path):
+    compiler = shutil.which("cc")
+    if compiler is None:
+        pytest.skip("slow glob injection requires a C compiler")
+
+    library = tmp_path / "slow_glob.so"
+    subprocess.run(
+        [compiler, "-shared", "-fPIC", "-Wall", "-Wextra", "-o", str(library),
+         str(Path(__file__).with_name("slow_glob.c")), "-ldl"],
+        check=True,
+    )
+
+    target = tmp_path / "ages-during-glob.log"
+    target.write_bytes(b"too old by the end of globbing\n")
+    service = Service("tail_ignore_older.yaml", tail_path=target, db_path=tmp_path / "tail.db")
+    preload = os.pathsep.join(filter(None, (str(library), os.getenv("LD_PRELOAD"))))
+    service.service.extra_env.update({
+        "LD_PRELOAD": preload,
+        "TAIL_TEST_SLOW_GLOB_PATH": target,
+    })
+
+    try:
+        service.start()
+        service.assert_no_new_records_for(0)
+        log = Path(service.flb.log_file).read_text(encoding="utf-8")
+        assert f"excluded={target} (ignore_older)" in log
     finally:
         service.stop()
