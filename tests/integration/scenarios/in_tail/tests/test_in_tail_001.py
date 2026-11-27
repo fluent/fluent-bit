@@ -22,6 +22,9 @@ skip_on_windows = pytest.mark.skipif(
 
 
 POLLING_CONFIGS = {
+    "tail_gzip_db_small_buffer.yaml",
+    "tail_gzip_db.yaml",
+    "tail_gzip_db_read_from_tail.yaml",
     "tail_ignore_active_older.yaml",
     "tail_ignore_older.yaml",
     "tail_stat.yaml",
@@ -227,6 +230,94 @@ def assert_log_set(records, expected_logs):
     assert sorted(logs) == sorted(expected_logs)
     for expected in expected_logs:
         assert logs.count(expected) == 1
+
+
+def gzip_member(lines):
+    """One complete gzip member; mtime=0 keeps FLG clear so the header is 10 bytes."""
+    payload = "".join(f"{line}\n" for line in lines).encode("utf-8")
+    return gzip.compress(payload, mtime=0)
+
+
+def read_db_offset(db_path, name, timeout=20):
+    """Wait until the db holds a row for 'name' and return its stored offset."""
+    deadline = time.time() + timeout
+
+    while time.time() < deadline:
+        if os.path.exists(db_path):
+            conn = sqlite3.connect(db_path)
+            try:
+                row = next(
+                    conn.execute(
+                        "select offset from in_tail_files where name = ?", (str(name),)
+                    ),
+                    None,
+                )
+            except sqlite3.OperationalError:
+                row = None
+            finally:
+                conn.close()
+
+            if row is not None:
+                return row[0]
+
+        time.sleep(0.5)
+
+    raise TimeoutError(f"Timed out waiting for a db entry for {name}")
+
+
+def wait_for_db_offset(db_path, name, expected, timeout=20):
+    deadline = time.time() + timeout
+
+    while True:
+        current = read_db_offset(db_path, name, timeout=timeout)
+        if current == expected or time.time() >= deadline:
+            return current
+        time.sleep(0.5)
+
+
+def seed_db_offset(db_path, name, offset, inode):
+    """Write a resume point the way an older Fluent Bit would have persisted it."""
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS in_tail_files (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                offset INTEGER,
+                inode INTEGER,
+                created INTEGER,
+                rotated INTEGER DEFAULT 0,
+                offset_marker INTEGER DEFAULT 0,
+                offset_marker_size INTEGER DEFAULT 0
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO in_tail_files (name, offset, inode, created, rotated) "
+            "VALUES (?, ?, ?, ?, 0)",
+            (str(name), offset, inode, int(time.time())),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def write_and_sync_bytes(path, data):
+    with open(path, "ab") as handle:
+        handle.write(data)
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def read_fluent_bit_log(service):
+    log_path = service.flb.log_file if service.flb else None
+
+    if not log_path or not os.path.exists(log_path):
+        return ""
+
+    with open(log_path, encoding="utf-8", errors="replace") as handle:
+        return handle.read()
 
 
 def wait_for_path_absent(path, timeout=20):
@@ -1110,6 +1201,304 @@ def test_in_tail_reads_gzip_static_file(workspace):
         service.stop()
 
     assert_log_set(records, ["gzip-line-1", "gzip-line-2"])
+
+
+@skip_on_windows
+def test_in_tail_gzip_restart_inside_member_loses_nothing(workspace):
+    log_file = workspace / "resume-inside-member.log.gz"
+    db_path = workspace / "tail.db"
+
+    first = gzip_member([f"L{i}" for i in range(1, 6)])
+    second = gzip_member([f"M{i}" for i in range(1, 4)])
+
+    # Deliver the complete body without its footer: the lines are readable,
+    # but the decoder cannot yet certify a boundary.
+    log_file.write_bytes(first[:-8])
+
+    first_run = Service("tail_gzip_db.yaml", tail_path=log_file, db_path=db_path)
+    try:
+        first_run.start()
+        assert_log_set(first_run.wait_for_records(5), [f"L{i}" for i in range(1, 6)])
+        assert read_db_offset(db_path, log_file) == 0
+    finally:
+        first_run.stop()
+
+    with open(log_file, "ab") as handle:
+        handle.write(first[-8:])
+        handle.flush()
+        os.fsync(handle.fileno())
+
+    write_and_sync_bytes(log_file, second)
+
+    second_run = Service("tail_gzip_db.yaml", tail_path=log_file, db_path=db_path)
+    try:
+        second_run.start()
+        records = second_run.wait_for_records(8, timeout=20)
+        log_text = read_fluent_bit_log(second_run)
+    finally:
+        second_run.stop()
+
+    assert_log_set(records, [f"L{i}" for i in range(1, 6)] +
+                   [f"M{i}" for i in range(1, 4)])
+    assert "decompression failed" not in log_text
+
+
+@skip_on_windows
+def test_in_tail_gzip_content_appended_while_down_is_picked_up(workspace):
+    log_file = workspace / "appended-while-down.log.gz"
+    db_path = workspace / "tail.db"
+
+    first = gzip_member([f"L{i}" for i in range(1, 6)])
+    second = gzip_member([f"M{i}" for i in range(1, 4)])
+
+    write_and_sync_bytes(log_file, first)
+
+    # read_from_head is off: the first run must tail from the end and record that
+    # position without replaying what it skipped.
+    first_run = Service("tail_gzip_db_read_from_tail.yaml",
+                        tail_path=log_file, db_path=db_path)
+    try:
+        first_run.start()
+        recorded_offset = wait_for_db_offset(db_path, log_file, len(first))
+        assert recorded_offset == len(first)
+        first_run.assert_no_new_records_for(0)
+    finally:
+        first_run.stop()
+
+    write_and_sync_bytes(log_file, second)
+
+    second_run = Service("tail_gzip_db_read_from_tail.yaml",
+                         tail_path=log_file, db_path=db_path)
+    try:
+        second_run.start()
+        records = second_run.wait_for_records(3, timeout=20)
+    finally:
+        second_run.stop()
+
+    assert_log_set(records, [f"M{i}" for i in range(1, 4)])
+
+
+@skip_on_windows
+@pytest.mark.parametrize("replace_file", [True, False], ids=["copytruncate", "partial-append"])
+def test_in_tail_gzip_restore_db_checkpoint(workspace, replace_file):
+    log_file = workspace / "checkpoint.log.gz"
+    db_path = workspace / "tail.db"
+    first = gzip_member(["aaa"])
+    second = gzip_member(["bbb"])
+    log_file.write_bytes(first)
+
+    service = Service("tail_gzip_db.yaml", tail_path=log_file, db_path=db_path)
+    try:
+        service.start()
+        assert_log_set(service.wait_for_records(1), ["aaa"])
+        assert wait_for_db_offset(db_path, log_file, len(first)) == len(first)
+    finally:
+        service.stop()
+
+    if replace_file:
+        # Truncate in place so the inode and size still match the saved position.
+        assert len(second) == len(first)
+        log_file.write_bytes(second)
+    else:
+        # The new line can be emitted, but its missing footer prevents a checkpoint.
+        write_and_sync_bytes(log_file, second[:-8])
+
+    service = Service("tail_gzip_db.yaml", tail_path=log_file, db_path=db_path)
+    try:
+        service.start()
+        assert_log_set(service.wait_for_records(1), ["bbb"])
+        assert read_db_offset(db_path, log_file) == len(first)
+    finally:
+        service.stop()
+
+
+@skip_on_windows
+@pytest.mark.parametrize("complete", [True, False], ids=["complete", "unfinished"])
+def test_in_tail_gzip_legacy_eof_checkpoint(workspace, complete):
+    log_file = workspace / "legacy-eof.gz"
+    db_path = workspace / "tail.db"
+    first = gzip_member(["first"])
+    prefix = first if complete else first[:-8]
+    log_file.write_bytes(prefix)
+    seed_db_offset(db_path, log_file, len(prefix), log_file.stat().st_ino)
+
+    service = Service("tail_gzip_db_read_from_tail.yaml", tail_path=log_file, db_path=db_path)
+    try:
+        service.start()
+        expected = ["second"] if complete else ["first", "second"]
+        if not complete:
+            assert wait_for_db_offset(db_path, log_file, 0) == 0
+        write_and_sync_bytes(log_file, first[len(prefix):] + gzip_member(["second"]))
+        records = service.wait_for_records(len(expected))
+        assert_log_set(records, expected)
+    finally:
+        service.stop()
+
+
+@skip_on_windows
+def test_in_tail_gzip_restore_zero_when_reading_from_tail(workspace):
+    log_file = workspace / "zero-checkpoint.gz"
+    db_path = workspace / "tail.db"
+    member = gzip_member(["first"])
+    log_file.touch()
+
+    service = Service("tail_gzip_db_read_from_tail.yaml", tail_path=log_file, db_path=db_path)
+    try:
+        service.start()
+        assert read_db_offset(db_path, log_file) == 0
+        write_and_sync_bytes(log_file, member[:-8])
+        assert_log_set(service.wait_for_records(1), ["first"])
+        assert read_db_offset(db_path, log_file) == 0
+    finally:
+        service.stop()
+
+    write_and_sync_bytes(log_file, member[-8:])
+    service = Service("tail_gzip_db_read_from_tail.yaml", tail_path=log_file, db_path=db_path)
+    try:
+        service.start()
+        assert_log_set(service.wait_for_records(1), ["first"])
+        assert wait_for_db_offset(db_path, log_file, len(member)) == len(member)
+    finally:
+        service.stop()
+
+
+@skip_on_windows
+def test_in_tail_gzip_resume_line_across_members(workspace):
+    log_file = workspace / "unfinished-line.gz"
+    db_path = workspace / "tail.db"
+    first = gzip.compress(b"seen\nleft", mtime=0)
+    second = gzip.compress(b"right\n", mtime=0)
+    log_file.write_bytes(first)
+
+    service = Service("tail_gzip_db.yaml", tail_path=log_file, db_path=db_path)
+    try:
+        service.start()
+        assert_log_set(service.wait_for_records(1), ["seen"])
+        assert read_db_offset(db_path, log_file) == 0
+    finally:
+        service.stop()
+
+    write_and_sync_bytes(log_file, second)
+    service = Service("tail_gzip_db.yaml", tail_path=log_file, db_path=db_path)
+    try:
+        service.start()
+        assert_log_set(service.wait_for_records(2), ["seen", "leftright"])
+        assert wait_for_db_offset(db_path, log_file, len(first + second)) == len(first + second)
+    finally:
+        service.stop()
+
+
+@skip_on_windows
+def test_in_tail_gzip_legacy_mid_member_offset_restarts_at_beginning(workspace):
+    log_file = workspace / "legacy-mid-member-offset.log.gz"
+    db_path = workspace / "tail.db"
+
+    first = gzip_member([f"L{i}" for i in range(1, 6)])
+
+    with open(log_file, "wb") as handle:
+        handle.write(first)
+
+    # A resume point exactly as a build without payload-boundary checkpointing
+    # would have left it: inside the deflate stream, and no marker to reject it.
+    seed_db_offset(db_path, log_file, 20, os.stat(log_file).st_ino)
+
+    service = Service("tail_gzip_db_read_from_tail.yaml",
+                      tail_path=log_file, db_path=db_path)
+
+    try:
+        service.start()
+        records = service.wait_for_records(5, timeout=20)
+        log_text = read_fluent_bit_log(service)
+    finally:
+        service.stop()
+
+    # read_from_head is off, so a repair that failed to override the "no usable
+    # position" handling would seek straight to end-of-file and lose every line.
+    assert_log_set(records, [f"L{i}" for i in range(1, 6)])
+    assert "is not a gzip member boundary" in log_text
+    assert "decompression failed" not in log_text
+
+
+@skip_on_windows
+def test_in_tail_gzip_verified_eof_skips_prefix_scan(workspace):
+    log_file = workspace / "verified.gz"
+    db_path = workspace / "tail.db"
+    member = gzip_member(["first"])
+    log_file.write_bytes(member)
+    seed_db_offset(db_path, log_file, len(member), log_file.stat().st_ino)
+    for legacy in (True, False):
+        service = Service("tail_gzip_db.yaml", tail_path=log_file, db_path=db_path)
+        try:
+            service.start()
+            service.assert_no_new_records_for(0)
+            assert ("verifying gzip checkpoint" in read_fluent_bit_log(service)) == legacy
+            with sqlite3.connect(db_path) as db:
+                assert db.execute("select gzip_boundary_offset from in_tail_files where name = ?",
+                                  (str(log_file),)).fetchone() == (len(member),)
+        finally:
+            service.stop()
+
+
+@skip_on_windows
+def test_in_tail_gzip_legacy_embedded_magic(workspace):
+    log_file = workspace / "embedded.gz"
+    db_path = workspace / "tail.db"
+    member = bytearray(gzip_member(["original"]))
+    member[3] = 4  # FEXTRA: the optional header can contain arbitrary bytes.
+    member[10:10] = bytes.fromhex("0300 1f8b08")
+    log_file.write_bytes(member)
+    seed_db_offset(db_path, log_file, 12, log_file.stat().st_ino)
+    service = Service("tail_gzip_db.yaml", tail_path=log_file, db_path=db_path)
+    try:
+        service.start()
+        assert_log_set(service.wait_for_records(1), ["original"])
+    finally:
+        service.stop()
+
+
+@skip_on_windows
+def test_in_tail_gzip_valid_member_before_corrupt_footer(workspace):
+    log_file = workspace / "bad-second.gz"
+    bad = bytearray(gzip_member(["bad"]))
+    bad[-8] ^= 1
+    log_file.write_bytes(gzip_member(["good"]) + bad)
+    service = Service("tail_gzip_db.yaml", tail_path=log_file, db_path=workspace / "tail.db")
+    try:
+        service.start()
+        assert_log_set(service.wait_for_records(1), ["good"])
+        assert "decompression failed" in read_fluent_bit_log(service)
+    finally:
+        service.stop()
+
+
+@skip_on_windows
+@pytest.mark.parametrize("truncated", [True, False], ids=["skip-remainder", "empty-member"])
+def test_in_tail_gzip_checkpoint_after_full_output_buffer(workspace, truncated):
+    log_file = workspace / "full-output.gz"
+    db_path = workspace / "tail.db"
+    line = "x" * (1023 if truncated else 1022)
+    first = gzip.compress(line.encode() if truncated else (line + "\n").encode(), mtime=0)
+    prefix = first if truncated else first + gzip.compress(b"", mtime=0)
+    log_file.write_bytes(prefix)
+    config = "tail_gzip_db_small_buffer.yaml"
+    service = Service(config, tail_path=log_file, db_path=db_path)
+    try:
+        service.start()
+        assert_log_set(service.wait_for_records(1), [line])
+        expected = 0 if truncated else len(prefix)
+        assert wait_for_db_offset(db_path, log_file, expected) == expected
+    finally:
+        service.stop()
+
+    suffix = ["discard", "next"] if truncated else ["next"]
+    write_and_sync_bytes(log_file, gzip_member(suffix))
+    service = Service(config, tail_path=log_file, db_path=db_path)
+    try:
+        service.start()
+        expected = [line, "next"] if truncated else ["next"]
+        assert_log_set(service.wait_for_records(len(expected)), expected)
+    finally:
+        service.stop()
 
 
 def test_in_tail_exclude_path_skips_matching_files(workspace):
