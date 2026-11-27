@@ -1,12 +1,17 @@
 import json
 import os
+import re
+import subprocess
 from pathlib import Path
 
+import psutil
 import pytest
 
 from utils.data_utils import read_file
-from utils.fluent_bit_manager import FluentBitStartupError
+from utils.fluent_bit_manager import FluentBitStartupError, _resolve_binary_path
+from utils.memory_check import valgrind_enabled
 from utils.test_service import FluentBitTestService
+from utils.valgrind import assert_valgrind_clean
 
 
 class Service:
@@ -212,6 +217,120 @@ pipeline:
         assert payload["fluent_bit_pid"] == service.flb.target_pid
     finally:
         service.stop()
+
+
+def _daemon_command(tmp_path, *options):
+    command = [str(Path(_resolve_binary_path()).resolve()), *options, "-c", "daemon.yaml"]
+    if valgrind_enabled():
+        command = [
+            "valgrind",
+            f"--log-file={tmp_path}/valgrind.%p.log",
+            "--leak-check=full",
+            "--show-leak-kinds=all",
+            *command,
+        ]
+    return command
+
+
+def _check_daemon_valgrind_logs(tmp_path):
+    if valgrind_enabled() and os.environ.get("VALGRIND_STRICT"):
+        logs = list(tmp_path.glob("valgrind.*.log"))
+        assert logs
+        for log in logs:
+            assert_valgrind_clean(log)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="daemon mode requires fork")
+@pytest.mark.parametrize("daemon_source", ["service", "cli"])
+def test_daemon_expands_builtin_process_id(tmp_path, daemon_source):
+    daemon_setting = '  daemon: "${DAEMON_ENABLED}"' if daemon_source == "service" else ""
+    options = ["--daemon"] if daemon_source == "cli" else []
+    config_file = _write_config(tmp_path, "daemon.yaml", f"""service:
+  flush: 1
+  grace: 1
+  log_level: info
+  log_file: "{tmp_path}/engine-${{FLUENT_BIT_PID}}.log"
+{daemon_setting}
+
+env:
+  DAEMON_ENABLED: "on"
+
+pipeline:
+  inputs:
+    - name: dummy
+      dummy: '{{"fluent_bit_pid": ${{FLUENT_BIT_PID}}}}'
+      samples: 1
+  outputs:
+    - name: file
+      match: '*'
+      path: "{tmp_path}"
+      file: record.json
+      format: plain
+""")
+    service = Service(config_file)
+    launcher_log = tmp_path / "launcher.log"
+    output = tmp_path / "record.json"
+    timeout = 60 if valgrind_enabled() else 15
+
+    with launcher_log.open("w", encoding="utf-8") as console:
+        with subprocess.Popen(_daemon_command(tmp_path, *options), cwd=tmp_path,
+                              stdout=console, stderr=subprocess.STDOUT) as launcher:
+            try:
+                status = launcher.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                launcher.kill()
+                raise
+            launcher_pid = launcher.pid
+
+    console_output = launcher_log.read_text(encoding="utf-8")
+    detached = re.search(r"switching to background mode \(PID=(\d+)\)", console_output)
+    assert detached, console_output
+    daemon_pid = int(detached.group(1))
+    daemon = psutil.Process(daemon_pid)
+    try:
+        assert status == 0, console_output
+        assert daemon_pid != launcher_pid
+        service.service.wait_for_condition(
+            lambda: output.exists() and output.stat().st_size > 0,
+            timeout=timeout, description="daemon output record",
+        )
+        payload = _find_json_line(output.read_text(encoding="utf-8"), '"fluent_bit_pid":')
+        assert payload["fluent_bit_pid"] == daemon_pid
+        assert f"pid={daemon_pid}" in (tmp_path / f"engine-{daemon_pid}.log").read_text(
+            encoding="utf-8"
+        )
+    finally:
+        try:
+            daemon.terminate()
+            service.service.wait_for_condition(
+                lambda: not daemon.is_running() or daemon.status() == psutil.STATUS_ZOMBIE,
+                timeout=timeout, description="daemon shutdown",
+            )
+        except psutil.NoSuchProcess:
+            pass
+        except TimeoutError:
+            daemon.kill()
+            raise
+
+    _check_daemon_valgrind_logs(tmp_path)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="daemon mode requires fork")
+def test_daemon_launcher_reports_invalid_pipeline(tmp_path):
+    _write_config(tmp_path, "daemon.yaml", """service:
+  daemon: on
+
+pipeline:
+  inputs:
+    - name: nonexistent_daemon_test_plugin
+""")
+    result = subprocess.run(
+        _daemon_command(tmp_path), cwd=tmp_path, capture_output=True, text=True,
+        timeout=60 if valgrind_enabled() else 15, check=False,
+    )
+    assert result.returncode != 0
+    assert "nonexistent_daemon_test_plugin" in result.stderr
+    _check_daemon_valgrind_logs(tmp_path)
 
 
 def test_environment_mapping_values_apply_through_pipeline(tmp_path):
