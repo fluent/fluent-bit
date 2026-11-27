@@ -356,39 +356,29 @@ static struct flb_hash_table_entry *hash_get_entry(struct flb_hash_table *ht,
 
 static int entry_set_value(struct flb_hash_table_entry *entry, void *val, size_t val_size)
 {
-    char *ptr;
+    char *copy = NULL;
 
-    /*
-     * If the entry already contains a previous value in the heap, just remove
-     * the previously assigned memory.
-     */
-    if (entry->val_size > 0) {
-        flb_free(entry->val);
-    }
-
-    /*
-     * Now set the new value. If val_size > 0, we create a new memory area, otherwise
-     * it means the caller just wants to store a pointer address, no allocation
-     * is required.
-     */
+    /* Prepare a copy before releasing the old value. */
     if (val_size > 0) {
-        entry->val = flb_malloc(val_size + 1);
-        if (!entry->val) {
+        copy = flb_malloc(val_size + 1);
+        if (copy == NULL) {
             flb_errno();
             return -1;
         }
 
-        /*
-         * Copy the buffer and append a NULL byte in case the caller set and
-         * expects a string.
-         */
-        memcpy(entry->val, val, val_size);
-        ptr = (char *) entry->val;
-        ptr[val_size] = '\0';
+        memcpy(copy, val, val_size);
+        copy[val_size] = '\0';
+    }
+
+    if (entry->val_size > 0) {
+        flb_free(entry->val);
+    }
+
+    if (copy != NULL) {
+        entry->val = copy;
         entry->val_size = val_size;
     }
     else {
-        /* just do a reference */
         entry->val = val;
         entry->val_size = -1;
     }
@@ -468,12 +458,17 @@ int flb_hash_table_add(struct flb_hash_table *ht, const char *key, int key_len,
 
     /* Store the key and value as a new memory region */
     entry->key = flb_strndup(key, key_len);
+    if (entry->key == NULL) {
+        flb_free(entry);
+        return -1;
+    }
     entry->key_len = key_len;
     entry->val_size = 0;
 
     /* store or reference the value */
     ret = entry_set_value(entry, val, val_size);
     if (ret == -1) {
+        flb_free(entry->key);
         flb_free(entry);
         return -1;
     }
