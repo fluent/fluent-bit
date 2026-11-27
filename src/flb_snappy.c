@@ -85,7 +85,7 @@ int flb_snappy_uncompress(char *in_data, size_t in_len,
         return -1;
     }
 
-    tmp_data = flb_malloc(tmp_len);
+    tmp_data = flb_malloc(tmp_len == 0 ? 1 : tmp_len);
 
     if (tmp_data == NULL) {
         flb_errno();
