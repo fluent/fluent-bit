@@ -23,6 +23,7 @@ set(UNIT_TESTS_FILES
   http_client.c
   http_retry_after.c
   utils.c
+  utf8.c
   gzip.c
   compression.c
   zstd.c

@@ -24,6 +24,20 @@
 #include <string.h>
 #include <inttypes.h>
 
+/*
+ * Internal marker for a rejected sequence.
+ *
+ * The decoder keeps the number of continuation bytes still pending in *state
+ * (1..3), so FLB_UTF8_REJECT could not double as that marker: it equals 1, which
+ * reads back as "one continuation byte pending". A caller feeding a stream kept
+ * rejecting every later byte instead of resuming after the ill-formed subpart,
+ * which is what Unicode recommends skipping only the maximal invalid subpart.
+ *
+ * The value stays non-zero on purpose: code that tests 'state ==
+ * FLB_UTF8_ACCEPT' after a loop must still see failure, not success.
+ */
+#define FLB_UTF8_STATE_REJECTED 0xFE
+
 static const char trailing_bytes_for_utf8[256] = {
     0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
     0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
@@ -43,14 +57,19 @@ int flb_utf8_len(const char *s)
 
 uint32_t flb_utf8_decode(uint32_t *state, uint32_t *codep, uint8_t byte)
 {
-    /* Start of a new character */
-    if (*state == 0) {
+    /*
+     * Start of a new character. A previous rejection is treated as idle so the
+     * next byte is interpreted on its own merits instead of inheriting the
+     * failed sequence.
+     */
+    if (*state == FLB_UTF8_ACCEPT || *state == FLB_UTF8_STATE_REJECTED) {
         if (byte <= 0x7F) {
             /* ASCII */
+            *state = FLB_UTF8_ACCEPT;
             *codep = byte;
             return FLB_UTF8_ACCEPT;
         }
-        else if ((byte & 0xE0) == 0xC0) {
+        else if (byte >= 0xC2 && byte <= 0xDF) {
             /* start of a 2-byte sequence */
             *codep = byte & 0x1F;
             *state = 1;
@@ -67,13 +86,19 @@ uint32_t flb_utf8_decode(uint32_t *state, uint32_t *codep, uint8_t byte)
         }
         else {
             /* invalid first byte */
-            *state = FLB_UTF8_REJECT;
+            *state = FLB_UTF8_STATE_REJECTED;
             return FLB_UTF8_REJECT;
         }
     }
     else {
         /* continuation byte */
         if ((byte & 0xC0) == 0x80) {
+            /* Reject overlong three- and four-byte sequences at byte two. */
+            if ((*state == 2 && *codep == 0 && byte < 0xA0) ||
+                (*state == 3 && *codep == 0 && byte < 0x90)) {
+                *state = FLB_UTF8_STATE_REJECTED;
+                return FLB_UTF8_REJECT;
+            }
             *codep = (*codep << 6) | (byte & 0x3F);
 
             /* reduce the expected continuation bytes */
@@ -81,7 +106,7 @@ uint32_t flb_utf8_decode(uint32_t *state, uint32_t *codep, uint8_t byte)
         }
         else {
             /* invalid continuation byte */
-            *state = FLB_UTF8_REJECT;
+            *state = FLB_UTF8_STATE_REJECTED;
             return FLB_UTF8_REJECT;
         }
     }
@@ -90,12 +115,12 @@ uint32_t flb_utf8_decode(uint32_t *state, uint32_t *codep, uint8_t byte)
         /* sequence complete */
         if (*codep >= 0xD800 && *codep <= 0xDFFF) {
             /* invalid surrogate pair */
-            *state = FLB_UTF8_REJECT;
+            *state = FLB_UTF8_STATE_REJECTED;
             return FLB_UTF8_REJECT;
         }
         else if (*codep > 0x10FFFF) {
             /* codepoint is out of range */
-            *state = FLB_UTF8_REJECT;
+            *state = FLB_UTF8_STATE_REJECTED;
             return FLB_UTF8_REJECT;
         }
         return FLB_UTF8_ACCEPT;
