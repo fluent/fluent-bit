@@ -2078,6 +2078,32 @@ def test_in_forward_secure_forward_rejects_large_ping_container(header):
         service.stop()
 
 
+def test_in_forward_secure_forward_rejects_empty_ping_type():
+    service = Service("in_forward_secure.yaml")
+    service.start()
+
+    try:
+        with socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=5) as sock:
+            _recv_msgpack_value(sock)
+            sock.sendall(_pack_obj(["", "", "", "", "", ""]))
+            try:
+                assert sock.recv(1) == b""
+            except ConnectionResetError:
+                pass
+
+        with socket.create_connection(("127.0.0.1", service.flb_listener_port), timeout=5) as sock:
+            pong = _secure_forward_handshake(
+                sock,
+                username=SECURE_USERNAME,
+                password=SECURE_PASSWORD,
+                shared_key=SECURE_SHARED_KEY,
+            )
+        assert pong[0] == "PONG"
+        assert pong[1] is True
+    finally:
+        service.stop()
+
+
 def test_in_forward_e2e_forward_receiver_preserves_metadata_and_signal_options():
     service = ForwardReceiverService("in_forward_to_forward_receiver.yaml")
     service.start()
