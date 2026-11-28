@@ -576,7 +576,7 @@ static int check_ping(struct flb_input_instance *ins,
         return -1;
     }
 
-    if (strncmp(o.via.str.ptr, "PING", 4) != 0 || o.via.str.size != 4) {
+    if (o.via.str.size != 4 || strncmp(o.via.str.ptr, "PING", 4) != 0) {
         flb_free(serverside);
         msgpack_unpacked_destroy(&result);
         return -1;
