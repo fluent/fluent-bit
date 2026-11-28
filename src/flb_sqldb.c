@@ -90,6 +90,7 @@ struct flb_sqldb *flb_sqldb_open(const char *path, const char *desc,
         if (ret) {
             flb_error("[sqldb] cannot open database %s", path);
 
+            sqlite3_close(sdb);
             flb_lock_destroy(&db->lock);
             flb_free(db);
 
