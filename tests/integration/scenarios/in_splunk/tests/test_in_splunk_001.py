@@ -262,6 +262,34 @@ def test_in_splunk_hec_auth_status_codes(case):
     assert result["body"] == case["body"]
 
 
+SPLUNK_HEC_LETTERS_TOKEN = "abcdef12-abcd-abcd-abcd-abcdef123456"
+
+
+@pytest.mark.parametrize(
+    "authorization,status_code",
+    [
+        (f"Splunk {SPLUNK_HEC_LETTERS_TOKEN}", 200),
+        (f"splunk {SPLUNK_HEC_LETTERS_TOKEN}", 200),
+        (f"Splunk {SPLUNK_HEC_LETTERS_TOKEN.upper()}", 403),
+    ],
+    ids=["exact", "lowercase_scheme", "uppercase_token"],
+)
+def test_in_splunk_hec_token_is_case_sensitive(authorization, status_code):
+    service = Service("splunk_http1_token_auth_letters.yaml")
+    service.start()
+
+    result = run_curl_request(
+        f"http://localhost:{service.flb_listener_port}{SPLUNK_HEC_ENDPOINT}",
+        json.dumps({"event": "x"}),
+        headers=[f"Authorization: {authorization}", "Content-Type: application/json"],
+        http_mode="http1.1",
+    )
+
+    service.stop()
+
+    assert result["status_code"] == status_code
+
+
 @pytest.mark.parametrize(
     "config_file",
     [

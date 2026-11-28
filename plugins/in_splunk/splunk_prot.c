@@ -601,6 +601,19 @@ static int send_json_message_response_ng(struct flb_http_response *response,
     return 0;
 }
 
+/* compare in constant time so the token is not leaked through timing */
+static int token_equals(const char *a, const char *b, size_t len)
+{
+    size_t i;
+    unsigned char diff = 0;
+
+    for (i = 0; i < len; i++) {
+        diff |= (unsigned char) a[i] ^ (unsigned char) b[i];
+    }
+
+    return diff == 0;
+}
+
 static int validate_auth_header_ng(struct flb_splunk *ctx, struct flb_http_request *request)
 {
     struct mk_list *tmp;
@@ -625,9 +638,10 @@ static int validate_auth_header_ng(struct flb_splunk *ctx, struct flb_http_reque
                 continue;
             }
 
-            if (strncasecmp(splunk_token->header,
-                        auth_header,
-                        splunk_token->length) == 0) {
+            /* the "Splunk " scheme is case-insensitive, the token is not */
+            if (strncasecmp(auth_header, "Splunk ", 7) == 0 &&
+                token_equals(splunk_token->header + 7, auth_header + 7,
+                             splunk_token->length - 7)) {
                 return SPLUNK_AUTH_SUCCESS;
             }
         }
